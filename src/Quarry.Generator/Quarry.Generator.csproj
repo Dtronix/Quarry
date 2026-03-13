@@ -15,6 +15,7 @@
     <!-- Package metadata -->
     <PackageId>Quarry.Generator</PackageId>
     <Description>Source generators and analyzers for Quarry SQL builder</Description>
+    <IsPackable>true</IsPackable>
     <DevelopmentDependency>true</DevelopmentDependency>
     <IncludeBuildOutput>true</IncludeBuildOutput>
     <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>

@@ -15,5 +15,6 @@
     <RepositoryType>git</RepositoryType>
     <PackageTags>sql;orm;aot;source-generator;database</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>logo-128.png</PackageIcon>
   </PropertyGroup>
 </Project>
