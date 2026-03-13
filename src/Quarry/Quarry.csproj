@@ -9,6 +9,7 @@
     <PackageId>Quarry</PackageId>
     <Description>Type-safe SQL builder and query reader for .NET 10 with AOT support</Description>
     <IsPackable>true</IsPackable>
+    <PackageReadmeSource>$(MSBuildThisFileDirectory)../../README.md</PackageReadmeSource>
   </PropertyGroup>
 
   <ItemGroup>

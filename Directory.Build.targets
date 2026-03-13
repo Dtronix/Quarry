@@ -19,11 +19,16 @@
     </Task>
   </UsingTask>
 
+  <PropertyGroup>
+    <PackageReadmeSource Condition="'$(PackageReadmeSource)' == ''">$(MSBuildProjectDirectory)/README.md</PackageReadmeSource>
+  </PropertyGroup>
+
   <Target Name="StripHtmlImages" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
-    <StripImgTags InputFile="$(MSBuildThisFileDirectory)README.md"
+    <StripImgTags InputFile="$(PackageReadmeSource)"
                   OutputFile="$(IntermediateOutputPath)README.md" />
     <ItemGroup>
       <None Include="$(IntermediateOutputPath)README.md" Pack="true" PackagePath="\" />
+      <None Include="$(MSBuildThisFileDirectory)docs/images/logo-128.png" Pack="true" PackagePath="\" />
     </ItemGroup>
   </Target>
 </Project>
