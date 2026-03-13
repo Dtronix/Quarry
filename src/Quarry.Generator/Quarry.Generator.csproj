@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DefineConstants>QUARRY_GENERATOR</DefineConstants>
+
+    <!-- Source Generator configuration -->
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+
+    <!-- Disable analyzer release tracking (RS2008) - not shipping as a public analyzer package -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+
+    <!-- Package metadata -->
+    <PackageId>Quarry.Generator</PackageId>
+    <Description>Source generators and analyzers for Quarry SQL builder</Description>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <IncludeBuildOutput>true</IncludeBuildOutput>
+    <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Allow test projects to access internal types -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quarry.Tests" />
+  </ItemGroup>
+
+  <!-- Shared code (compiled into this assembly) -->
+  <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
+  <ItemGroup>
+    <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);QUARRY_GENERATOR</DefineConstants>
+  </PropertyGroup>
+
+</Project>

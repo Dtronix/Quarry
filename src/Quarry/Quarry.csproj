@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Package metadata -->
+    <PackageId>Quarry</PackageId>
+    <Description>Type-safe SQL builder and query reader for .NET 10 with AOT support</Description>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quarry.Tests" />
+    <InternalsVisibleTo Include="Quarry.IntegrationTests" />
+    <InternalsVisibleTo Include="Quarry.Benchmarks" />
+    <InternalsVisibleTo Include="Quarry.Generator" />
+    <InternalsVisibleTo Include="Quarry.Tool" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Logsmith" Version="0.4.2" />
+  </ItemGroup>
+
+  <!-- Shared project (compiled into this assembly) -->
+  <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
+  <ItemGroup>
+    <Compile Remove="..\Quarry.Shared\Migration\**\*.cs" />
+    <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Quarry.Generator/Quarry.Generator.csproj"
+                      IncludeAssets="analyzers"
+                      PrivateAssets="none" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Check if release
+        id: release
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            echo "is_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        run: dotnet build Quarry.sln -c Release
+
+      - name: Test
+        run: dotnet test Quarry.sln -c Release --no-build
+
+      - name: Pack
+        run: >-
+          dotnet pack Quarry.sln
+          -c Release
+          --no-build
+          -p:IncludeSymbols=true
+          -p:SymbolPackageFormat=snupkg
+          -o staging
+
+      - name: Upload NuGet artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: staging/*
+
+      - name: Push to NuGet
+        if: steps.release.outputs.is_release == 'true'
+        run: >-
+          dotnet nuget push "staging/*.nupkg"
+          --source https://api.nuget.org/v3/index.json
+          --api-key ${{ secrets.ORG_NUGET_AUTH_TOKEN }}
+          --skip-duplicate
+
+      - name: Create GitHub Release
+        if: steps.release.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            staging/*.nupkg
+            staging/*.snupkg
