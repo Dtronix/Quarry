@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Scaffolding</RootNamespace>
+
+    <!-- Emit generated source files to disk for inspection -->
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+
+    <!-- Required for Quarry's compile-time query interceptors -->
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Scaffolding;Quarry.Generated</InterceptorsNamespaces>
+
+    <!-- Detect whether quarry scaffold has generated schema files.
+         Before scaffolding: only create-db compiles.
+         After scaffolding:  full query demo compiles via HAS_SCHEMAS. -->
+    <DefineConstants Condition="Exists('Schemas/SchoolDbContext.cs')">$(DefineConstants);HAS_SCHEMAS</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
+    <ProjectReference Include="../../Quarry/Quarry.csproj" />
+    <ProjectReference Include="../../Quarry.Generator/Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
+</Project>

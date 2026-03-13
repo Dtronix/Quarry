@@ -1,0 +1,112 @@
+using Quarry.Tests.Samples;
+using Pg = Quarry.Tests.Samples.Pg;
+using My = Quarry.Tests.Samples.My;
+using Ss = Quarry.Tests.Samples.Ss;
+
+namespace Quarry.Tests.SqlOutput;
+
+#pragma warning disable QRY001
+
+[TestFixture]
+internal class CrossDialectDeleteTests : CrossDialectTestBase
+{
+    #region Basic Where
+
+    [Test]
+    public void Delete_Where_Equality()
+    {
+        AssertDialects(
+            Lite.Delete<User>().Where(u => u.UserId == 1).ToTestCase(),
+            Pg.Delete<Pg.User>().Where(u => u.UserId == 1).ToTestCase(),
+            My.Delete<My.User>().Where(u => u.UserId == 1).ToTestCase(),
+            Ss.Delete<Ss.User>().Where(u => u.UserId == 1).ToTestCase(),
+            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
+            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
+            mysql:  "DELETE FROM `users` WHERE (`UserId` = 1)",
+            ss:     "DELETE FROM [users] WHERE ([UserId] = 1)");
+    }
+
+    [Test]
+    public void Delete_Where_GreaterThan()
+    {
+        AssertDialects(
+            Lite.Delete<User>().Where(u => u.UserId > 100).ToTestCase(),
+            Pg.Delete<Pg.User>().Where(u => u.UserId > 100).ToTestCase(),
+            My.Delete<My.User>().Where(u => u.UserId > 100).ToTestCase(),
+            Ss.Delete<Ss.User>().Where(u => u.UserId > 100).ToTestCase(),
+            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
+            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
+            mysql:  "DELETE FROM `users` WHERE (`UserId` > 100)",
+            ss:     "DELETE FROM [users] WHERE ([UserId] > 100)");
+    }
+
+    #endregion
+
+    #region Boolean
+
+    [Test]
+    public void Delete_Where_Boolean()
+    {
+        AssertDialects(
+            Lite.Delete<User>().Where(u => u.IsActive).ToTestCase(),
+            Pg.Delete<Pg.User>().Where(u => u.IsActive).ToTestCase(),
+            My.Delete<My.User>().Where(u => u.IsActive).ToTestCase(),
+            Ss.Delete<Ss.User>().Where(u => u.IsActive).ToTestCase(),
+            sqlite: "DELETE FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "DELETE FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "DELETE FROM `users` WHERE `IsActive` = 1",
+            ss:     "DELETE FROM [users] WHERE [IsActive] = 1");
+    }
+
+    [Test]
+    public void Delete_Where_NegatedBoolean()
+    {
+        AssertDialects(
+            Lite.Delete<User>().Where(u => !u.IsActive).ToTestCase(),
+            Pg.Delete<Pg.User>().Where(u => !u.IsActive).ToTestCase(),
+            My.Delete<My.User>().Where(u => !u.IsActive).ToTestCase(),
+            Ss.Delete<Ss.User>().Where(u => !u.IsActive).ToTestCase(),
+            sqlite: "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
+            pg:     "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
+            mysql:  "DELETE FROM `users` WHERE NOT (`IsActive`)",
+            ss:     "DELETE FROM [users] WHERE NOT ([IsActive])");
+    }
+
+    #endregion
+
+    #region Multiple Where (AND)
+
+    [Test]
+    public void Delete_MultipleWhere()
+    {
+        AssertDialects(
+            Lite.Delete<User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            Pg.Delete<Pg.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            My.Delete<My.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            Ss.Delete<Ss.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = 1",
+            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = TRUE",
+            mysql:  "DELETE FROM `users` WHERE (`UserId` = 1) AND `IsActive` = 1",
+            ss:     "DELETE FROM [users] WHERE ([UserId] = 1) AND [IsActive] = 1");
+    }
+
+    #endregion
+
+    #region Other Entities
+
+    [Test]
+    public void Delete_Order_Where()
+    {
+        AssertDialects(
+            Lite.Delete<Order>().Where(o => o.OrderId == 42).ToTestCase(),
+            Pg.Delete<Pg.Order>().Where(o => o.OrderId == 42).ToTestCase(),
+            My.Delete<My.Order>().Where(o => o.OrderId == 42).ToTestCase(),
+            Ss.Delete<Ss.Order>().Where(o => o.OrderId == 42).ToTestCase(),
+            sqlite: "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
+            pg:     "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
+            mysql:  "DELETE FROM `orders` WHERE (`OrderId` = 42)",
+            ss:     "DELETE FROM [orders] WHERE ([OrderId] = 42)");
+    }
+
+    #endregion
+}

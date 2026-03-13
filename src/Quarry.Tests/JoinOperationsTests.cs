@@ -1,0 +1,808 @@
+using NUnit.Framework;
+using Quarry;
+using Quarry.Generators.Models;
+using Quarry.Generators.Generation;
+using Quarry.Generators.Translation;
+using System.Text;
+
+// Use explicit namespace aliases to avoid ambiguity
+using CoreJoinClause = Quarry.Internal.JoinClause;
+using CoreJoinKind = Quarry.Internal.JoinKind;
+using GenJoinClauseKind = Quarry.Generators.Models.JoinClauseKind;
+
+namespace Quarry.Tests;
+
+#pragma warning disable QRY001 // Tests construct builders directly without a context chain
+
+/// <summary>
+/// Tests for Phase 7: Join Operations
+/// </summary>
+[TestFixture]
+public class JoinOperationsTests
+{
+    #region QueryState JoinClause Tests
+
+    [Test]
+    public void QueryState_WithJoin_AddsJoinClause()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", "public");
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "users.id = orders.user_id");
+        var newState = state.WithJoin(joinClause);
+
+        Assert.That(newState.JoinClauses.Length, Is.EqualTo(1));
+        Assert.That(newState.JoinClauses[0].Kind, Is.EqualTo(CoreJoinKind.Inner));
+        Assert.That(newState.JoinClauses[0].JoinedTableName, Is.EqualTo("orders"));
+        Assert.That(newState.JoinClauses[0].OnConditionSql, Is.EqualTo("users.id = orders.user_id"));
+    }
+
+    [Test]
+    public void QueryState_WithJoin_MultipleJoins_AccumulatesJoins()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", "public");
+
+        var join1 = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "users.id = orders.user_id");
+        var join2 = new CoreJoinClause(CoreJoinKind.Left, "items", null, null, "orders.id = items.order_id");
+
+        var newState = state.WithJoin(join1).WithJoin(join2);
+
+        Assert.That(newState.JoinClauses.Length, Is.EqualTo(2));
+        Assert.That(newState.JoinClauses[0].Kind, Is.EqualTo(CoreJoinKind.Inner));
+        Assert.That(newState.JoinClauses[1].Kind, Is.EqualTo(CoreJoinKind.Left));
+    }
+
+    [Test]
+    public void QueryState_WithJoin_IsImmutable()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", "public");
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "users.id = orders.user_id");
+        var newState = state.WithJoin(joinClause);
+
+        Assert.That(state.JoinClauses.Length, Is.EqualTo(0));
+        Assert.That(newState.JoinClauses.Length, Is.EqualTo(1));
+        Assert.That(state, Is.Not.SameAs(newState));
+    }
+
+    #endregion
+
+    #region SqlBuilder Join SQL Generation Tests
+
+    [Test]
+    public void SqlBuilder_WithInnerJoin_GeneratesCorrectSql()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "\"t0\".\"id\" = \"t1\".\"user_id\"");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\""));
+        Assert.That(sql, Does.Contain("ON \"t0\".\"id\" = \"t1\".\"user_id\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithLeftJoin_GeneratesCorrectSql()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Left, "orders", null, null, "\"users\".\"id\" = \"orders\".\"user_id\"");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("LEFT JOIN \"orders\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithRightJoin_GeneratesCorrectSql()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Right, "orders", null, null, "\"users\".\"id\" = \"orders\".\"user_id\"");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("RIGHT JOIN \"orders\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoinAndSchema_GeneratesQualifiedTableName()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", "public");
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", "public", null, "\"users\".\"id\" = \"orders\".\"user_id\"");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("INNER JOIN \"public\".\"orders\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoinAlias_GeneratesAliasedTableName()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, "o", "\"users\".\"id\" = \"o\".\"user_id\"");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("\"orders\" AS \"o\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithMultipleJoins_GeneratesJoinsInOrder()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var join1 = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "\"users\".\"id\" = \"orders\".\"user_id\"");
+        var join2 = new CoreJoinClause(CoreJoinKind.Left, "items", null, null, "\"orders\".\"id\" = \"items\".\"order_id\"");
+        state = state.WithJoin(join1).WithJoin(join2);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        var innerJoinPos = sql.IndexOf("INNER JOIN");
+        var leftJoinPos = sql.IndexOf("LEFT JOIN");
+        Assert.That(innerJoinPos, Is.LessThan(leftJoinPos));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoinAndWhere_GeneratesCorrectOrder()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "\"users\".\"id\" = \"orders\".\"user_id\"");
+        state = state.WithJoin(joinClause).WithWhere("\"orders\".\"total\" > 100");
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        var joinPos = sql.IndexOf("JOIN");
+        var wherePos = sql.IndexOf("WHERE");
+        Assert.That(joinPos, Is.LessThan(wherePos));
+    }
+
+    #endregion
+
+    #region JoinedQueryBuilder Tests
+
+    [Test]
+    public void JoinedQueryBuilder_Offset_AppliesOffset()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var newBuilder = builder.Offset(10);
+        var sql = newBuilder.ToSql();
+
+        Assert.That(sql, Does.Contain("OFFSET 10"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_Limit_AppliesLimit()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var newBuilder = builder.Limit(5);
+        var sql = newBuilder.ToSql();
+
+        Assert.That(sql, Does.Contain("LIMIT 5"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_Distinct_AppliesDistinct()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var newBuilder = builder.Distinct();
+        var sql = newBuilder.ToSql();
+
+        Assert.That(sql, Does.Contain("SELECT DISTINCT"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_MethodChaining_WorksCorrectly()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var newBuilder = builder.Offset(10).Limit(5).Distinct();
+        var sql = newBuilder.ToSql();
+
+        Assert.That(sql, Does.Contain("SELECT DISTINCT"));
+        Assert.That(sql, Does.Contain("LIMIT 5"));
+        Assert.That(sql, Does.Contain("OFFSET 10"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_Offset_ThrowsOnNegative()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Offset(-1));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_Limit_ThrowsOnNegative()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Limit(-1));
+    }
+
+    #endregion
+
+    #region Dialect-Specific Join SQL Tests
+
+    [Test]
+    public void SqlBuilder_WithJoin_PostgreSQL_UsesDoubleQuotes()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "condition");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("\"users\""));
+        Assert.That(sql, Does.Contain("\"orders\""));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoin_MySQL_UsesBackticks()
+    {
+        var dialect = SqlDialect.MySQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "condition");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("`users`"));
+        Assert.That(sql, Does.Contain("`orders`"));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoin_SqlServer_UsesBrackets()
+    {
+        var dialect = SqlDialect.SqlServer;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "condition");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("[users]"));
+        Assert.That(sql, Does.Contain("[orders]"));
+    }
+
+    [Test]
+    public void SqlBuilder_WithJoin_SQLite_UsesDoubleQuotes()
+    {
+        var dialect = SqlDialect.SQLite;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        var joinClause = new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "condition");
+        state = state.WithJoin(joinClause);
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("\"users\""));
+        Assert.That(sql, Does.Contain("\"orders\""));
+    }
+
+    [Test]
+    public void SqlBuilder_ThreeTableJoin_PostgreSQL_UsesDoubleQuotesAndAliases()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "t0.\"id\" = t1.\"user_id\""));
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "payments", null, null, "t1.\"id\" = t2.\"order_id\""));
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("\"users\" AS \"t0\""));
+        Assert.That(sql, Does.Contain("\"orders\" AS \"t1\""));
+        Assert.That(sql, Does.Contain("\"payments\" AS \"t2\""));
+    }
+
+    [Test]
+    public void SqlBuilder_ThreeTableJoin_MySQL_UsesBackticksAndAliases()
+    {
+        var dialect = SqlDialect.MySQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "t0.`id` = t1.`user_id`"));
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "payments", null, null, "t1.`id` = t2.`order_id`"));
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("`users` AS `t0`"));
+        Assert.That(sql, Does.Contain("`orders` AS `t1`"));
+        Assert.That(sql, Does.Contain("`payments` AS `t2`"));
+    }
+
+    [Test]
+    public void SqlBuilder_ThreeTableJoin_SqlServer_UsesBracketsAndAliases()
+    {
+        var dialect = SqlDialect.SqlServer;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "[t0].[id] = [t1].[user_id]"));
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "payments", null, null, "[t1].[id] = [t2].[order_id]"));
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("[users] AS [t0]"));
+        Assert.That(sql, Does.Contain("[orders] AS [t1]"));
+        Assert.That(sql, Does.Contain("[payments] AS [t2]"));
+    }
+
+    [Test]
+    public void SqlBuilder_ThreeTableJoin_SQLite_UsesDoubleQuotesAndAliases()
+    {
+        var dialect = SqlDialect.SQLite;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "t0.\"id\" = t1.\"user_id\""));
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "payments", null, null, "t1.\"id\" = t2.\"order_id\""));
+
+        var sql = Quarry.Internal.SqlBuilder.BuildSelectSql(state);
+
+        Assert.That(sql, Does.Contain("\"users\" AS \"t0\""));
+        Assert.That(sql, Does.Contain("\"orders\" AS \"t1\""));
+        Assert.That(sql, Does.Contain("\"payments\" AS \"t2\""));
+    }
+
+    #endregion
+
+    #region JoinClauseInfo Tests
+
+    [Test]
+    public void JoinClauseInfo_Constructor_SetsProperties()
+    {
+        var info = new JoinClauseInfo(
+            GenJoinClauseKind.Left,
+            "Order",
+            "orders",
+            "t1.user_id = t2.id",
+            Array.Empty<ParameterInfo>());
+
+        Assert.That(info.JoinKind, Is.EqualTo(GenJoinClauseKind.Left));
+        Assert.That(info.JoinedEntityName, Is.EqualTo("Order"));
+        Assert.That(info.JoinedTableName, Is.EqualTo("orders"));
+        Assert.That(info.OnConditionSql, Is.EqualTo("t1.user_id = t2.id"));
+        Assert.That(info.IsSuccess, Is.True);
+        Assert.That(info.Kind, Is.EqualTo(ClauseKind.Join));
+    }
+
+    [Test]
+    public void JoinClauseInfo_SqlFragment_EqualsOnConditionSql()
+    {
+        var info = new JoinClauseInfo(
+            GenJoinClauseKind.Inner,
+            "Order",
+            "orders",
+            "t1.id = t2.user_id",
+            Array.Empty<ParameterInfo>());
+
+        Assert.That(info.SqlFragment, Is.EqualTo("t1.id = t2.user_id"));
+    }
+
+    #endregion
+
+    #region InterceptorCodeGenerator Join Tests
+
+    [Test]
+    public void InterceptorCodeGenerator_Join_GeneratesFallbackWithConcreteType()
+    {
+        var sites = new List<UsageSiteInfo>
+        {
+            CreateJoinUsageSite(InterceptorKind.Join, null)
+        };
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext",
+            "TestNamespace",
+            sites);
+
+        Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
+        Assert.That(source, Does.Contain("return __b.Join(condition)"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_LeftJoin_GeneratesFallbackWithConcreteType()
+    {
+        var sites = new List<UsageSiteInfo>
+        {
+            CreateJoinUsageSite(InterceptorKind.LeftJoin, null)
+        };
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext",
+            "TestNamespace",
+            sites);
+
+        Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
+        Assert.That(source, Does.Contain("return __b.LeftJoin(condition)"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_RightJoin_GeneratesFallbackWithConcreteType()
+    {
+        var sites = new List<UsageSiteInfo>
+        {
+            CreateJoinUsageSite(InterceptorKind.RightJoin, null)
+        };
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext",
+            "TestNamespace",
+            sites);
+
+        Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
+        Assert.That(source, Does.Contain("return __b.RightJoin(condition)"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_Join_WithClauseInfo_GeneratesOptimizedJoin()
+    {
+        var clauseInfo = new JoinClauseInfo(
+            GenJoinClauseKind.Inner,
+            "TestOrder",
+            "test_orders",
+            "\"t1\".\"id\" = \"t2\".\"user_id\"",
+            Array.Empty<ParameterInfo>());
+
+        var sites = new List<UsageSiteInfo>
+        {
+            CreateJoinUsageSite(InterceptorKind.Join, clauseInfo)
+        };
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext",
+            "TestNamespace",
+            sites);
+
+        Assert.That(source, Does.Contain("JoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
+        Assert.That(source, Does.Contain("JoinKind.Inner"));
+        Assert.That(source, Does.Contain("AddJoinClause"));
+    }
+
+    private UsageSiteInfo CreateJoinUsageSite(InterceptorKind kind, ClauseInfo? clauseInfo)
+    {
+        return new UsageSiteInfo(
+            methodName: kind.ToString(),
+            filePath: "Test.cs",
+            line: 10,
+            column: 5,
+            builderTypeName: "IQueryBuilder",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: kind,
+            invocationSyntax: null!,
+            uniqueId: "abc12345",
+            resultTypeName: null,
+            nonAnalyzableReason: null,
+            contextClassName: "TestContext",
+            projectionInfo: null,
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",  // Test data for unit tests
+            interceptableLocationVersion: 1,
+            joinedEntityTypeName: "TestOrder");
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_ChainedJoin_2To3_GeneratesCorrectTypes()
+    {
+        var clauseInfo = new JoinClauseInfo(
+            GenJoinClauseKind.Inner,
+            "TestItem",
+            "test_items",
+            @"""t2"".""order_id"" = ""t1"".""id""",
+            Array.Empty<ParameterInfo>());
+
+        var site = new UsageSiteInfo(
+            methodName: "Join",
+            filePath: "Test.cs",
+            line: 10,
+            column: 5,
+            builderTypeName: "IJoinedQueryBuilder",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: InterceptorKind.Join,
+            invocationSyntax: null!,
+            uniqueId: "chain23",
+            contextClassName: "TestContext",
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",
+            joinedEntityTypeName: "global::TestNamespace.TestItem",
+            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+
+        Assert.That(source, Does.Contain("JoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem>"));
+        Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
+        Assert.That(source, Does.Contain("AddJoinClause<TestNamespace.TestItem>"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_ChainedJoin_3To4_GeneratesCorrectTypes()
+    {
+        var clauseInfo = new JoinClauseInfo(
+            GenJoinClauseKind.Left,
+            "TestCategory",
+            "test_categories",
+            @"""t3"".""id"" = ""t2"".""category_id""",
+            Array.Empty<ParameterInfo>());
+
+        var site = new UsageSiteInfo(
+            methodName: "LeftJoin",
+            filePath: "Test.cs",
+            line: 15,
+            column: 5,
+            builderTypeName: "IJoinedQueryBuilder3",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: InterceptorKind.LeftJoin,
+            invocationSyntax: null!,
+            uniqueId: "chain34",
+            contextClassName: "TestContext",
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",
+            joinedEntityTypeName: "global::TestNamespace.TestCategory",
+            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+
+        Assert.That(source, Does.Contain("JoinedQueryBuilder4<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, TestNamespace.TestCategory>"));
+        Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
+        Assert.That(source, Does.Contain("JoinKind.Left"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_JoinedWhere_2Table_GeneratesCorrectInterceptor()
+    {
+        var clauseInfo = ClauseInfo.Success(ClauseKind.Where, @"""t0"".""id"" > 5", Array.Empty<ParameterInfo>());
+
+        var site = new UsageSiteInfo(
+            methodName: "Where",
+            filePath: "Test.cs",
+            line: 20,
+            column: 5,
+            builderTypeName: "IJoinedQueryBuilder",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: InterceptorKind.Where,
+            invocationSyntax: null!,
+            uniqueId: "jwhere2",
+            contextClassName: "TestContext",
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",
+            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+
+        Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
+        Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, bool>>"));
+        Assert.That(source, Does.Contain("AddWhereClause"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_JoinedOrderBy_3Table_GeneratesCorrectInterceptor()
+    {
+        var clauseInfo = new OrderByClauseInfo(@"""t2"".""item_name""", false, Array.Empty<ParameterInfo>());
+
+        // Without concrete key type — uses arity-matching fallback with generic T1, T2, T3, TKey
+        var site = new UsageSiteInfo(
+            methodName: "OrderBy",
+            filePath: "Test.cs",
+            line: 25,
+            column: 5,
+            builderTypeName: "IJoinedQueryBuilder3",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: InterceptorKind.OrderBy,
+            invocationSyntax: null!,
+            uniqueId: "jorder3",
+            contextClassName: "TestContext",
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",
+            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+
+        Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<T1, T2, T3> builder"));
+        Assert.That(source, Does.Contain("Expression<Func<T1, T2, T3, TKey>>"));
+        Assert.That(source, Does.Contain("AddOrderByClause"));
+    }
+
+    [Test]
+    public void InterceptorCodeGenerator_JoinedOrderBy_3Table_ConcreteKeyType_GeneratesNonGenericInterceptor()
+    {
+        var clauseInfo = new OrderByClauseInfo(@"""t2"".""item_name""", false, Array.Empty<ParameterInfo>());
+
+        // With concrete key type — generates non-generic (arity 0) interceptor
+        var site = new UsageSiteInfo(
+            methodName: "OrderBy",
+            filePath: "Test.cs",
+            line: 25,
+            column: 5,
+            builderTypeName: "IJoinedQueryBuilder3",
+            entityTypeName: "global::TestNamespace.TestUser",
+            isAnalyzable: true,
+            kind: InterceptorKind.OrderBy,
+            invocationSyntax: null!,
+            uniqueId: "jorder3c",
+            contextClassName: "TestContext",
+            clauseInfo: clauseInfo,
+            interceptableLocationData: "dGVzdGRhdGE=",
+            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" },
+            keyTypeName: "global::System.String");
+
+        var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+
+        Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
+        Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, System.String>>"));
+        Assert.That(source, Does.Not.Contain("<TKey>"));
+        Assert.That(source, Does.Contain("AddOrderByClause"));
+    }
+
+    #endregion
+
+    #region 3-Table and 4-Table Builder Tests
+
+    [Test]
+    public void JoinedQueryBuilder3_Where_ReturnsNewInstance()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var result = builder.Where((u, o, i) => true);
+
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result, Is.Not.SameAs(builder));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_Offset_AppliesOffset()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var sql = builder.Offset(10).ToSql();
+        Assert.That(sql, Does.Contain("OFFSET 10"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_AddWhereClause_UpdatesState()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var result = builder.AddWhereClause("\"t0\".\"id\" = 1");
+        var sql = result.ToSql();
+        Assert.That(sql, Does.Contain("WHERE \"t0\".\"id\" = 1"));
+    }
+
+    [Test]
+    public void JoinedQueryBuilder4_Where_ReturnsNewInstance()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder4<TestUser, TestOrder, TestItem, TestCategory>(state);
+
+        var result = builder.Where((u, o, i, c) => true);
+        Assert.That(result, Is.Not.Null);
+    }
+
+    [Test]
+    public void JoinedQueryBuilder4_NoJoinMethod()
+    {
+        var methods = typeof(JoinedQueryBuilder4<TestUser, TestOrder, TestItem, TestCategory>).GetMethods();
+        var joinMethods = methods.Where(m => m.Name == "Join" || m.Name == "LeftJoin" || m.Name == "RightJoin").ToArray();
+        Assert.That(joinMethods, Is.Empty);
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_Join_ReturnsBuilder3()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var result = builder.Join<TestItem>((u, o, i) => true);
+        Assert.That(result, Is.InstanceOf<JoinedQueryBuilder3<TestUser, TestOrder, TestItem>>());
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_Join_ReturnsBuilder4()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var result = builder.Join<TestCategory>((u, o, i, c) => true);
+        Assert.That(result, Is.InstanceOf<JoinedQueryBuilder4<TestUser, TestOrder, TestItem, TestCategory>>());
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_AddJoinClause_ReturnsBuilder3WithState()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        state = state.WithJoin(new CoreJoinClause(CoreJoinKind.Inner, "orders", null, null, "cond1"));
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var result = builder.AddJoinClause<TestItem>(CoreJoinKind.Inner, "items", "\"t1\".\"id\" = \"t2\".\"order_id\"");
+        var sql = result.ToSql();
+        Assert.That(sql, Does.Contain("INNER JOIN"));
+    }
+
+    #endregion
+
+    #region Test Entity Classes
+
+    private class TestUser
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = null!;
+    }
+
+    private class TestOrder
+    {
+        public int Id { get; set; }
+        public int UserId { get; set; }
+        public decimal Total { get; set; }
+    }
+
+    private class TestItem
+    {
+        public int Id { get; set; }
+        public int OrderId { get; set; }
+        public string ItemName { get; set; } = null!;
+    }
+
+    private class TestCategory
+    {
+        public int Id { get; set; }
+        public string CategoryName { get; set; } = null!;
+    }
+
+    #endregion
+}

@@ -1,0 +1,19 @@
+<Project>
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <Authors>DJGosnell</Authors>
+    <Copyright>Copyright (c) DJGosnell</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Dtronix/Quarry</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Dtronix/Quarry</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>sql;orm;aot;source-generator;database</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+</Project>

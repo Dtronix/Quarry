@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quarry.Analyzers.Tests" />
+  </ItemGroup>
+
+  <!-- Shared files from Quarry.Generator via file linking -->
+  <ItemGroup>
+    <Compile Include="..\Quarry.Generator\Models\*.cs" Link="Shared\Models\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Parsing\*.cs" Link="Shared\Parsing\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Translation\*.cs" Link="Shared\Translation\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Projection\ProjectionAnalyzer.cs" Link="Shared\Projection\ProjectionAnalyzer.cs" />
+    <Compile Include="..\Quarry.Generator\DiagnosticDescriptors.cs" Link="Shared\DiagnosticDescriptors.cs" />
+    <Compile Include="..\Quarry.Generator\Sql\*.cs" Link="Shared\Sql\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!-- Shared project (compiled into this assembly) -->
+  <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
+  <ItemGroup>
+    <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);QUARRY_GENERATOR</DefineConstants>
+  </PropertyGroup>
+
+</Project>

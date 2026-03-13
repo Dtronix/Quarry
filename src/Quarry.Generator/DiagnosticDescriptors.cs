@@ -1,0 +1,539 @@
+using Microsoft.CodeAnalysis;
+
+namespace Quarry.Generators;
+
+/// <summary>
+/// Diagnostic descriptors for Quarry analyzer and generator diagnostics.
+/// </summary>
+internal static class DiagnosticDescriptors
+{
+    private const string Category = "Quarry";
+
+    /// <summary>
+    /// QRY001: Query not fully analyzable.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor QueryNotAnalyzable = new(
+        id: "QRY001",
+        title: "Query not fully analyzable",
+        messageFormat: "Query is not fully analyzable: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The query chain contains patterns that prevent compile-time analysis. " +
+                     "The original runtime method will be used instead. " +
+                     "Consider restructuring the query as a fluent chain without variable assignment or conditionals.");
+
+    /// <summary>
+    /// QRY002: Schema class missing required Table property.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor MissingTableProperty = new(
+        id: "QRY002",
+        title: "Missing Table property",
+        messageFormat: "Schema class '{0}' is missing required static 'Table' property",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Schema classes must define a static 'Table' property that returns the database table name.");
+
+    /// <summary>
+    /// QRY003: Invalid column type, no TypeMapping found.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidColumnType = new(
+        id: "QRY003",
+        title: "Invalid column type",
+        messageFormat: "Column '{0}' has type '{1}' which has no registered TypeMapping",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The column type is not a supported primitive type and has no custom TypeMapping registered.");
+
+    /// <summary>
+    /// QRY004: Navigation property references unknown schema.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor UnknownNavigationSchema = new(
+        id: "QRY004",
+        title: "Unknown navigation target",
+        messageFormat: "Navigation property '{0}' references unknown entity '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The navigation property references an entity type that is not defined in the context.");
+
+    /// <summary>
+    /// QRY005: Select projection includes unmapped property.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor UnmappedProjectionProperty = new(
+        id: "QRY005",
+        title: "Unmapped projection property",
+        messageFormat: "Select projection includes property '{0}' which is not mapped to a database column",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The projection includes a property that does not correspond to a database column.");
+
+    /// <summary>
+    /// QRY006: Where expression contains unsupported operation.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor UnsupportedWhereOperation = new(
+        id: "QRY006",
+        title: "Unsupported Where operation",
+        messageFormat: "Where expression contains unsupported operation: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The Where clause contains an operation that cannot be translated to SQL.");
+
+    /// <summary>
+    /// QRY007: Join references undefined relationship.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor UndefinedJoinRelationship = new(
+        id: "QRY007",
+        title: "Undefined join relationship",
+        messageFormat: "Join references undefined relationship: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The navigation-based join references a relationship that is not defined in the schema.");
+
+    /// <summary>
+    /// QRY008: Potential SQL injection in Sql.Raw usage.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor PotentialSqlInjection = new(
+        id: "QRY008",
+        title: "Potential SQL injection",
+        messageFormat: "Sql.Raw() call may be vulnerable to SQL injection if user input is included",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Sql.Raw() bypasses SQL generation and may be vulnerable to SQL injection. " +
+                     "Ensure any user input is properly parameterized.");
+
+    /// <summary>
+    /// QRY009: GroupBy required when using aggregate without full entity select.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor GroupByRequiredForAggregate = new(
+        id: "QRY009",
+        title: "GroupBy required for aggregate",
+        messageFormat: "Aggregate function '{0}' used without GroupBy for non-aggregate columns",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "When using aggregate functions with non-aggregate columns in the projection, " +
+                     "a GroupBy clause is required.");
+
+    /// <summary>
+    /// QRY010: Multiple Key columns defined, composite keys not supported.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor CompositeKeyNotSupported = new(
+        id: "QRY010",
+        title: "Composite keys not supported",
+        messageFormat: "Schema '{0}' has multiple Key columns; composite keys are not supported",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Quarry does not support composite primary keys. Use a single Key<T> column.");
+
+    /// <summary>
+    /// QRY011: Select() required before execution.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SelectRequired = new(
+        id: "QRY011",
+        title: "Select required before execution",
+        messageFormat: "Select() must be called before {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A Select() clause is required before executing a query to specify the projection.");
+
+    /// <summary>
+    /// QRY012: Update/Delete requires Where() or All().
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor WhereOrAllRequired = new(
+        id: "QRY012",
+        title: "Where or All required",
+        messageFormat: "{0} requires either Where() to filter rows or All() to explicitly affect all rows",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Update and Delete operations require either a Where clause to filter rows, " +
+                     "or an explicit All() call to confirm affecting all rows.");
+
+    /// <summary>
+    /// QRY013: GUID key requires ClientGenerated() modifier.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor GuidKeyRequiresClientGenerated = new(
+        id: "QRY013",
+        title: "GUID key requires ClientGenerated",
+        messageFormat: "Key<Guid> column '{0}' requires ClientGenerated() modifier",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "GUID primary keys cannot be auto-generated by most databases. " +
+                     "Use the ClientGenerated() modifier to indicate the value is generated client-side.");
+
+    /// <summary>
+    /// QRY014: Anonymous type projection not supported.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor AnonymousTypeNotSupported = new(
+        id: "QRY014",
+        title: "Anonymous type projection not supported",
+        messageFormat: "Anonymous type projections are not supported. Use a named record, class, or tuple instead: Select(u => new MyDto {{ ... }}) or Select(u => (u.Id, u.Name)).",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Quarry requires named types for Select() projections to enable compile-time optimization.");
+
+    /// <summary>
+    /// QRY015: Ambiguous context resolution for entity type.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor AmbiguousContextResolution = new(
+        id: "QRY015",
+        title: "Ambiguous context resolution",
+        messageFormat: "Multiple QuarryContext types found for entity '{0}'. Unable to determine dialect from call site. Using '{1}' ({2}). Assign the query builder from a typed context property to resolve.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Multiple QuarryContext subclasses register the same entity type, and the call site " +
+                     "could not be resolved to a specific context. The first registered context's dialect " +
+                     "will be used. To fix, ensure the query builder is obtained from a typed context property.");
+
+    // ─── Subquery diagnostics (QRY020–QRY024) ─────────────────────────
+
+    /// <summary>
+    /// QRY020: .All() called without predicate.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor AllRequiresPredicate = new(
+        id: "QRY020",
+        title: "All() requires a predicate",
+        messageFormat: "All() must be called with a predicate lambda",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The All() method on a navigation collection requires a predicate. " +
+                     "Calling All() without a predicate is semantically meaningless.");
+
+    /// <summary>
+    /// QRY021: Navigation property's related entity not found in registry.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SubqueryEntityNotFound = new(
+        id: "QRY021",
+        title: "Subquery entity not found",
+        messageFormat: "Navigation property '{0}' references entity '{1}' which was not found in the context",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The navigation subquery references an entity that is not registered in any QuarryContext.");
+
+    /// <summary>
+    /// QRY022: FK property not found on inner entity's columns.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SubqueryForeignKeyNotFound = new(
+        id: "QRY022",
+        title: "Subquery FK column not found",
+        messageFormat: "Foreign key property '{0}' not found on entity '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The navigation's foreign key property was not found as a column on the related entity.");
+
+    /// <summary>
+    /// QRY023: FK-to-PK correlation couldn't be resolved.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor SubqueryCorrelationAmbiguous = new(
+        id: "QRY023",
+        title: "Subquery correlation ambiguous",
+        messageFormat: "Could not determine primary key column on '{0}' for subquery correlation with FK '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The FK-to-PK correlation for the subquery could not be resolved. " +
+                     "The outer entity may have multiple primary keys or no matching column.");
+
+    /// <summary>
+    /// QRY024: Subquery method called on non-navigation property.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SubqueryOnNonNavigation = new(
+        id: "QRY024",
+        title: "Subquery on non-navigation property",
+        messageFormat: "Method '{0}' was called on '{1}' which is not a Many<T> navigation property",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Subquery methods (Any, All, Count) can only be called on Many<T> navigation properties.");
+
+    /// <summary>
+    /// QRY025: Subquery on entity with composite primary key (unsupported).
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SubqueryCompositePrimaryKey = new(
+        id: "QRY025",
+        title: "Subquery on composite-PK entity unsupported",
+        messageFormat: "Navigation subquery on entity '{0}' is not supported because it has a composite primary key",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Navigation subqueries require a single primary key column for FK-to-PK correlation. " +
+                     "Entities with composite primary keys cannot be used as the outer entity in a subquery.");
+
+    /// <summary>
+    /// QRY016: Generated SQL contains unbound parameter placeholders.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor UnboundParameterPlaceholder = new(
+        id: "QRY016",
+        title: "Unbound parameter placeholder in generated SQL",
+        messageFormat: "Generated SQL contains parameter placeholder '{0}' that is not bound to a value. The query will fail at runtime.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The generated interceptor SQL references a parameter placeholder (@p0, @p1, etc.) " +
+                     "that has no corresponding parameter binding. This typically indicates a bug in " +
+                     "the expression translator where a value was parameterized but not tracked for binding.");
+
+    /// <summary>
+    /// QRY017: TypeMapping TCustom does not match column type.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor TypeMappingMismatch = new(
+        id: "QRY017",
+        title: "TypeMapping type mismatch",
+        messageFormat: "Column '{0}' has type '{1}' but TypeMapping '{2}' expects '{3}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The column's declared type does not match the TCustom type parameter of the TypeMapping. " +
+                     "This will cause compile errors or incorrect behavior in generated code.");
+
+    /// <summary>
+    /// QRY018: Duplicate TypeMapping for the same custom type.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor DuplicateTypeMapping = new(
+        id: "QRY018",
+        title: "Duplicate TypeMapping for custom type",
+        messageFormat: "Custom type '{0}' is mapped by multiple TypeMapping classes: '{1}' and '{2}'. Only one mapping per custom type is allowed.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Two or more TypeMapping classes map the same TCustom type. " +
+                     "The runtime TypeMappingRegistry allows only one mapping per custom type. " +
+                     "Remove the duplicate mapping or consolidate into a single TypeMapping class.");
+
+    /// <summary>
+    /// QRY019: Clause not translatable at compile time.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor ClauseNotTranslatable = new(
+        id: "QRY019",
+        title: "Clause not translatable at compile time",
+        messageFormat: "{0} clause could not be translated to SQL at compile time. The original runtime method will be used instead.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The source generator could not translate this clause expression to SQL. " +
+                     "The query will use the original runtime method, which evaluates the expression tree at runtime. " +
+                     "Consider restructuring the expression for compile-time analysis.");
+
+    // ─── Custom EntityReader diagnostics (QRY026–QRY027) ────────────────────
+
+    /// <summary>
+    /// QRY026: Custom entity reader detected and active for entity.
+    /// Severity: Info
+    /// </summary>
+    public static readonly DiagnosticDescriptor CustomEntityReaderActive = new(
+        id: "QRY026",
+        title: "Custom entity reader active",
+        messageFormat: "Custom entity reader '{0}' is active for entity '{1}'. The generated reader will delegate to this class.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "A custom EntityReader<T> class has been detected on the schema and will be used for entity materialization.");
+
+    /// <summary>
+    /// QRY027: [EntityReader] type doesn't inherit EntityReader&lt;T&gt; or T doesn't match entity.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor InvalidEntityReaderType = new(
+        id: "QRY027",
+        title: "Invalid entity reader type",
+        messageFormat: "Type '{0}' specified in [EntityReader] on '{1}' must inherit from EntityReader<{2}>",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The type specified in the [EntityReader] attribute must inherit from EntityReader<T> " +
+                     "where T matches the entity type derived from the schema class name.");
+
+    // ─── Index diagnostics (QRY028) ─────────────────────────────────────
+
+    /// <summary>
+    /// QRY028: Column-level Unique() overlaps with explicit unique Index().
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor UniqueColumnOverlapsIndex = new(
+        id: "QRY028",
+        title: "Redundant unique constraint",
+        messageFormat: "Column '{0}' has a .Unique() modifier that overlaps with unique index '{1}' on the same column",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A column has both a .Unique() modifier and an explicit single-column unique Index() on the same column. " +
+                     "Remove one to avoid redundancy.");
+
+    // ─── Chain analysis diagnostics (QRY030–QRY032) ───────────────────
+
+    /// <summary>
+    /// QRY030: Query chain fully analyzed, tier 1 applied.
+    /// Severity: Info
+    /// </summary>
+    public static readonly DiagnosticDescriptor ChainOptimizedTier1 = new(
+        id: "QRY030",
+        title: "Query chain optimized (tier 1)",
+        messageFormat: "Query chain fully analyzed at {0}: tier 1 applied ({1} variants)",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "The query chain was fully analyzed and all clause combinations were enumerated. " +
+                     "A pre-built SQL dispatch table will be emitted with zero runtime string work.");
+
+    /// <summary>
+    /// QRY031: Query chain analyzed, tier 2 applied.
+    /// Severity: Info
+    /// </summary>
+    public static readonly DiagnosticDescriptor ChainOptimizedTier2 = new(
+        id: "QRY031",
+        title: "Query chain optimized (tier 2)",
+        messageFormat: "Query chain analyzed at {0}: tier 2 applied ({1} conditional clauses exceed dispatch threshold)",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "The query chain was analyzed but has too many conditional clause combinations for a dispatch table. " +
+                     "Pre-quoted fragment concatenation will be used instead.");
+
+    /// <summary>
+    /// QRY032: Query chain not analyzable for pre-built SQL.
+    /// Severity: Info
+    /// </summary>
+    public static readonly DiagnosticDescriptor ChainNotAnalyzable = new(
+        id: "QRY032",
+        title: "Query chain not analyzable",
+        messageFormat: "Query chain at {0} not analyzable for pre-built SQL: {1}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "The query chain could not be analyzed for pre-built SQL optimization. " +
+                     "The existing runtime SqlBuilder path will be used. This is not an error — " +
+                     "consider restructuring the query to enable optimization.");
+
+    // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
+
+    /// <summary>
+    /// QRY050: Schema changed since last snapshot.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor SchemaChangedSinceSnapshot = new(
+        id: "QRY050",
+        title: "Schema changed since last snapshot",
+        messageFormat: "Schema has changed since the last migration snapshot. Run 'dotnet quarry migrate add' to scaffold a new migration.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The current schema does not match the latest migration snapshot.");
+
+    /// <summary>
+    /// QRY051: Migration references unknown table/column.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor MigrationReferencesUnknown = new(
+        id: "QRY051",
+        title: "Migration references unknown table/column",
+        messageFormat: "Migration references unknown table or column '{0}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A migration class references a table or column name that does not exist in the known schema.");
+
+    /// <summary>
+    /// QRY052: Migration version gap or duplicate.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor MigrationVersionError = new(
+        id: "QRY052",
+        title: "Migration version gap or duplicate",
+        messageFormat: "Migration version error: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The migration version sequence has a gap or duplicate.");
+
+    /// <summary>
+    /// QRY053: Pending migrations detected.
+    /// Severity: Info
+    /// </summary>
+    public static readonly DiagnosticDescriptor PendingMigrations = new(
+        id: "QRY053",
+        title: "Pending migrations detected",
+        messageFormat: "{0} pending migration(s) detected",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "There are migration classes with versions higher than the latest snapshot.");
+
+    /// <summary>
+    /// QRY054: Destructive migration without backup.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor DestructiveWithoutBackup = new(
+        id: "QRY054",
+        title: "Destructive migration step without backup",
+        messageFormat: "Destructive migration step without backup in Migration {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A migration contains destructive steps (DropTable, DropColumn) but the Backup method is empty.");
+
+    /// <summary>
+    /// QRY055: Nullable to non-null without data migration.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor NullableToNonNullWithoutMigration = new(
+        id: "QRY055",
+        title: "Nullable to non-null change without data migration",
+        messageFormat: "Nullable to non-null change without data migration step in Migration {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A column changed from nullable to non-null without an accompanying data migration step.");
+
+    /// <summary>
+    /// QRY900: Internal generator error.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor InternalError = new(
+        id: "QRY900",
+        title: "Internal generator error",
+        messageFormat: "Internal error in Quarry generator: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "An unexpected error occurred in the Quarry source generator.");
+}

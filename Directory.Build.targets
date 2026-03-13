@@ -1,0 +1,29 @@
+<Project>
+  <UsingTask TaskName="StripImgTags"
+             TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <InputFile ParameterType="System.String" Required="true" />
+      <OutputFile ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        var content = File.ReadAllText(InputFile);
+        content = Regex.Replace(content, @"(?<=\S)[ \t]*<img[^>]*/?>[ \t]*(?=\S)", " ", RegexOptions.IgnoreCase);
+        content = Regex.Replace(content, @"[ \t]*<img[^>]*/?>[ \t]*\r?\n?", string.Empty, RegexOptions.IgnoreCase | RegexOptions.Multiline);
+        Directory.CreateDirectory(Path.GetDirectoryName(OutputFile));
+        File.WriteAllText(OutputFile, content);
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="StripHtmlImages" BeforeTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
+    <StripImgTags InputFile="$(MSBuildThisFileDirectory)README.md"
+                  OutputFile="$(IntermediateOutputPath)README.md" />
+    <ItemGroup>
+      <None Include="$(IntermediateOutputPath)README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+  </Target>
+</Project>
