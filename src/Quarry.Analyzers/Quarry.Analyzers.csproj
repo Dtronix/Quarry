@@ -6,6 +6,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>
     <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
+    <IsPackable>true</IsPackable>
     <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
 
