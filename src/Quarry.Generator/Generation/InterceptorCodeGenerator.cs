@@ -181,6 +181,7 @@ internal static partial class InterceptorCodeGenerator
         // Sites not part of any chain go into a "Standalone" group
         var processedSiteIds = new HashSet<string>();
         var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites)>();
+        var siteByUniqueId = allSitesForGeneration.ToDictionary(s => s.UniqueId);
 
         if (prebuiltChains != null)
         {
@@ -190,16 +191,14 @@ internal static partial class InterceptorCodeGenerator
                 // Add clause sites in chain order
                 foreach (var clause in chain.Analysis.Clauses)
                 {
-                    var matchingSite = allSitesForGeneration.FirstOrDefault(s => s.UniqueId == clause.Site.UniqueId);
-                    if (matchingSite != null)
+                    if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var matchingSite))
                     {
                         chainSites.Add(matchingSite);
                         processedSiteIds.Add(matchingSite.UniqueId);
                     }
                 }
                 // Add execution site
-                var execSite = allSitesForGeneration.FirstOrDefault(s => s.UniqueId == chain.Analysis.ExecutionSite.UniqueId);
-                if (execSite != null)
+                if (siteByUniqueId.TryGetValue(chain.Analysis.ExecutionSite.UniqueId, out var execSite))
                 {
                     chainSites.Add(execSite);
                     processedSiteIds.Add(execSite.UniqueId);

@@ -333,7 +333,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
             {
                 diagnostics.Add(new DiagnosticInfo(
-                    "QRY014",
+                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
                     DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)));
                 sitesToSkip.Add(site);
                 continue;
@@ -343,7 +343,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
             {
                 diagnostics.Add(new DiagnosticInfo(
-                    "QRY001",
+                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
                     DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                     site.NonAnalyzableReason));
             }
@@ -379,7 +379,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 {
                     var chosen = list[0];
                     diagnostics.Add(new DiagnosticInfo(
-                        "QRY015",
+                        DiagnosticDescriptors.AmbiguousContextResolution.Id,
                         DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                         site.EntityTypeName,
                         chosen.Context.ClassName,
@@ -402,7 +402,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     if (!boundIndices.Contains(index))
                     {
                         diagnostics.Add(new DiagnosticInfo(
-                            "QRY016",
+                            DiagnosticDescriptors.UnboundParameterPlaceholder.Id,
                             DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                             match.Value));
                     }
@@ -417,7 +417,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             if (clauseKind != null)
             {
                 diagnostics.Add(new DiagnosticInfo(
-                    "QRY019",
+                    DiagnosticDescriptors.ClauseNotTranslatable.Id,
                     DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                     clauseKind));
             }
@@ -493,6 +493,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     fileChainMemberIds.Add(clause.Site.UniqueId);
             }
 
+            // Include analyzable sites, plus non-analyzable sites that aren't chain clause members.
+            // Non-analyzable non-chain sites carry InvocationSyntax needed for diagnostic location.
             var fileSites = sites
                 .Where(s => s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
                 .ToList();
@@ -621,18 +623,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// <summary>
     /// Maps a diagnostic ID to its descriptor for deferred reporting.
     /// </summary>
-    private static DiagnosticDescriptor? GetDescriptorById(string id) => id switch
+    private static readonly Dictionary<string, DiagnosticDescriptor> s_deferredDescriptors = new[]
     {
-        "QRY001" => DiagnosticDescriptors.QueryNotAnalyzable,
-        "QRY014" => DiagnosticDescriptors.AnonymousTypeNotSupported,
-        "QRY015" => DiagnosticDescriptors.AmbiguousContextResolution,
-        "QRY016" => DiagnosticDescriptors.UnboundParameterPlaceholder,
-        "QRY019" => DiagnosticDescriptors.ClauseNotTranslatable,
-        "QRY030" => DiagnosticDescriptors.ChainOptimizedTier1,
-        "QRY031" => DiagnosticDescriptors.ChainOptimizedTier2,
-        "QRY032" => DiagnosticDescriptors.ChainNotAnalyzable,
-        _ => null
-    };
+        DiagnosticDescriptors.QueryNotAnalyzable,
+        DiagnosticDescriptors.AnonymousTypeNotSupported,
+        DiagnosticDescriptors.AmbiguousContextResolution,
+        DiagnosticDescriptors.UnboundParameterPlaceholder,
+        DiagnosticDescriptors.ClauseNotTranslatable,
+        DiagnosticDescriptors.ChainOptimizedTier1,
+        DiagnosticDescriptors.ChainOptimizedTier2,
+        DiagnosticDescriptors.ChainNotAnalyzable,
+    }.ToDictionary(d => d.Id);
+
+    private static DiagnosticDescriptor? GetDescriptorById(string id) =>
+        s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
     /// <summary>
     /// Analyzes execution chains for pre-built SQL optimization.
@@ -699,7 +703,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 case OptimizationTier.PrebuiltDispatch:
                     diagnostics.Add(new DiagnosticInfo(
-                        "QRY030",
+                        DiagnosticDescriptors.ChainOptimizedTier1.Id,
                         diagLocation,
                         locationDisplay,
                         result.PossibleMasks.Count.ToString()));
@@ -707,7 +711,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
                 case OptimizationTier.PrequotedFragments:
                     diagnostics.Add(new DiagnosticInfo(
-                        "QRY031",
+                        DiagnosticDescriptors.ChainOptimizedTier2.Id,
                         diagLocation,
                         locationDisplay,
                         result.ConditionalClauses.Count.ToString()));
@@ -715,7 +719,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
                 case OptimizationTier.RuntimeBuild:
                     diagnostics.Add(new DiagnosticInfo(
-                        "QRY032",
+                        DiagnosticDescriptors.ChainNotAnalyzable.Id,
                         diagLocation,
                         locationDisplay,
                         result.NotAnalyzableReason ?? "unknown reason"));
