@@ -57,6 +57,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
+        // Phase 1 output: Per-context entity/context/metadata generation (no Collect needed)
+        // Each context is independently cached — changing one context doesn't regenerate others.
+        context.RegisterSourceOutput(contextDeclarations,
+            static (spc, contextInfo) => GenerateEntityAndContextCode(contextInfo, spc));
+
+        // Phase 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
+        context.RegisterSourceOutput(contextDeclarations.Collect(),
+            static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
+
         // Phase 2: Register a syntax provider to find Quarry method invocations
         var usageSites = context.SyntaxProvider
             .CreateSyntaxProvider(
@@ -73,7 +82,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var allData = compilationAndContexts
             .Combine(usageSites.Collect());
 
-        // Register source output
+        // Register source output for interceptors
         context.RegisterSourceOutput(allData,
             static (spc, source) => Execute(source.Left.Left, source.Left.Right, source.Right, spc));
 
@@ -133,7 +142,165 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Executes the generation logic.
+    /// Generates entity classes, context class, and metadata for a single context.
+    /// Registered per-context (no Collect) so that changing one context doesn't regenerate others.
+    /// </summary>
+    private static void GenerateEntityAndContextCode(
+        ContextInfo contextInfo,
+        SourceProductionContext context)
+    {
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        try
+        {
+            // Generate entity classes and validate column types
+            foreach (var entity in contextInfo.Entities)
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+
+                // Report QRY003 for columns with unsupported types and no mapping,
+                // and QRY017 for TypeMapping TCustom mismatches
+                foreach (var column in entity.Columns)
+                {
+                    if (column.CustomTypeMappingClass == null &&
+                        !column.IsEnum &&
+                        column.ReaderMethodName == "GetValue" &&
+                        !IsKnownFallbackType(column.FullClrType))
+                    {
+                        var diagnostic = Diagnostic.Create(
+                            DiagnosticDescriptors.InvalidColumnType,
+                            entity.Location,
+                            column.PropertyName,
+                            column.FullClrType);
+                        context.ReportDiagnostic(diagnostic);
+                    }
+
+                    if (column.MappingMismatchExpectedType != null)
+                    {
+                        var diagnostic = Diagnostic.Create(
+                            DiagnosticDescriptors.TypeMappingMismatch,
+                            entity.Location,
+                            column.PropertyName,
+                            column.FullClrType,
+                            column.CustomTypeMappingClass,
+                            column.MappingMismatchExpectedType);
+                        context.ReportDiagnostic(diagnostic);
+                    }
+                }
+
+                // Report QRY026 (info) for valid custom entity reader
+                if (entity.CustomEntityReaderClass != null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.CustomEntityReaderActive,
+                        entity.Location,
+                        entity.CustomEntityReaderClass,
+                        entity.EntityName));
+                }
+
+                // Report QRY027 (error) for invalid custom entity reader
+                if (entity.InvalidEntityReaderClass != null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InvalidEntityReaderType,
+                        entity.Location,
+                        entity.InvalidEntityReaderClass,
+                        entity.SchemaClassName,
+                        entity.EntityName));
+                }
+
+                // Report QRY028 (warning) for column-level Unique() overlapping with explicit unique Index()
+                foreach (var column in entity.Columns)
+                {
+                    if (!column.Modifiers.IsUnique) continue;
+
+                    foreach (var index in entity.Indexes)
+                    {
+                        if (index.IsUnique && index.Columns.Count == 1 &&
+                            index.Columns[0].PropertyName == column.PropertyName)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticDescriptors.UniqueColumnOverlapsIndex,
+                                entity.Location,
+                                column.PropertyName,
+                                index.Name));
+                        }
+                    }
+                }
+
+                var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
+                var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
+                context.AddSource(entityFileName, entitySource);
+            }
+
+            // Generate context class with constructors and query builder properties
+            var contextSource = ContextCodeGenerator.GenerateContextClass(contextInfo);
+            var contextFileName = $"{contextInfo.ClassName}.g.cs";
+            context.AddSource(contextFileName, contextSource);
+
+            // Generate metadata file
+            var metadataSource = MetadataCodeGenerator.GenerateMetadata(contextInfo);
+            var metadataFileName = $"{contextInfo.ClassName}.Metadata.g.cs";
+            context.AddSource(metadataFileName, metadataSource);
+        }
+        catch (Exception ex)
+        {
+            // Report diagnostic for generation failure
+            var diagnostic = Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                contextInfo.Location,
+                $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}");
+
+            context.ReportDiagnostic(diagnostic);
+        }
+    }
+
+    /// <summary>
+    /// Checks for duplicate TypeMappings across all contexts.
+    /// Registered on collected contexts since it needs cross-context comparison.
+    /// </summary>
+    private static void CheckDuplicateTypeMappings(
+        ImmutableArray<ContextInfo> contexts,
+        SourceProductionContext context)
+    {
+        if (contexts.IsDefaultOrEmpty)
+            return;
+
+        // Track customType → (mappingClass, location) to detect conflicts
+        var seenMappings = new Dictionary<string, (string MappingClass, Location? Location)>();
+
+        foreach (var contextInfo in contexts)
+        {
+            foreach (var entity in contextInfo.Entities)
+            {
+                foreach (var column in entity.Columns)
+                {
+                    if (column.CustomTypeMappingClass == null)
+                        continue;
+
+                    if (seenMappings.TryGetValue(column.FullClrType, out var existing))
+                    {
+                        if (existing.MappingClass != column.CustomTypeMappingClass)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticDescriptors.DuplicateTypeMapping,
+                                entity.Location,
+                                column.FullClrType,
+                                existing.MappingClass,
+                                column.CustomTypeMappingClass));
+                        }
+                    }
+                    else
+                    {
+                        seenMappings[column.FullClrType] = (column.CustomTypeMappingClass, entity.Location);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Executes the interceptor generation logic (Phase 2).
     /// </summary>
     private static void Execute(
         Compilation compilation,
@@ -141,156 +308,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         ImmutableArray<UsageSiteInfo> usageSites,
         SourceProductionContext context)
     {
-        // Phase 0: Check for duplicate TypeMappings across all contexts
-        if (!contexts.IsDefaultOrEmpty)
-        {
-            // Track customType → (mappingClass, location) to detect conflicts
-            var seenMappings = new Dictionary<string, (string MappingClass, Location? Location)>();
-
-            foreach (var contextInfo in contexts)
-            {
-                foreach (var entity in contextInfo.Entities)
-                {
-                    foreach (var column in entity.Columns)
-                    {
-                        if (column.CustomTypeMappingClass == null)
-                            continue;
-
-                        if (seenMappings.TryGetValue(column.FullClrType, out var existing))
-                        {
-                            if (existing.MappingClass != column.CustomTypeMappingClass)
-                            {
-                                context.ReportDiagnostic(Diagnostic.Create(
-                                    DiagnosticDescriptors.DuplicateTypeMapping,
-                                    entity.Location,
-                                    column.FullClrType,
-                                    existing.MappingClass,
-                                    column.CustomTypeMappingClass));
-                            }
-                        }
-                        else
-                        {
-                            seenMappings[column.FullClrType] = (column.CustomTypeMappingClass, entity.Location);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Phase 1: Generate entity and context code
-        if (!contexts.IsDefaultOrEmpty)
-        {
-            foreach (var contextInfo in contexts)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-
-                try
-                {
-                    // Generate entity classes and validate column types
-                    foreach (var entity in contextInfo.Entities)
-                    {
-                        context.CancellationToken.ThrowIfCancellationRequested();
-
-                        // Report QRY003 for columns with unsupported types and no mapping,
-                        // and QRY017 for TypeMapping TCustom mismatches
-                        foreach (var column in entity.Columns)
-                        {
-                            if (column.CustomTypeMappingClass == null &&
-                                !column.IsEnum &&
-                                column.ReaderMethodName == "GetValue" &&
-                                !IsKnownFallbackType(column.FullClrType))
-                            {
-                                var diagnostic = Diagnostic.Create(
-                                    DiagnosticDescriptors.InvalidColumnType,
-                                    entity.Location,
-                                    column.PropertyName,
-                                    column.FullClrType);
-                                context.ReportDiagnostic(diagnostic);
-                            }
-
-                            if (column.MappingMismatchExpectedType != null)
-                            {
-                                var diagnostic = Diagnostic.Create(
-                                    DiagnosticDescriptors.TypeMappingMismatch,
-                                    entity.Location,
-                                    column.PropertyName,
-                                    column.FullClrType,
-                                    column.CustomTypeMappingClass,
-                                    column.MappingMismatchExpectedType);
-                                context.ReportDiagnostic(diagnostic);
-                            }
-                        }
-
-                        // Report QRY026 (info) for valid custom entity reader
-                        if (entity.CustomEntityReaderClass != null)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(
-                                DiagnosticDescriptors.CustomEntityReaderActive,
-                                entity.Location,
-                                entity.CustomEntityReaderClass,
-                                entity.EntityName));
-                        }
-
-                        // Report QRY027 (error) for invalid custom entity reader
-                        if (entity.InvalidEntityReaderClass != null)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(
-                                DiagnosticDescriptors.InvalidEntityReaderType,
-                                entity.Location,
-                                entity.InvalidEntityReaderClass,
-                                entity.SchemaClassName,
-                                entity.EntityName));
-                        }
-
-                        // Report QRY028 (warning) for column-level Unique() overlapping with explicit unique Index()
-                        foreach (var column in entity.Columns)
-                        {
-                            if (!column.Modifiers.IsUnique) continue;
-
-                            foreach (var index in entity.Indexes)
-                            {
-                                if (index.IsUnique && index.Columns.Count == 1 &&
-                                    index.Columns[0].PropertyName == column.PropertyName)
-                                {
-                                    context.ReportDiagnostic(Diagnostic.Create(
-                                        DiagnosticDescriptors.UniqueColumnOverlapsIndex,
-                                        entity.Location,
-                                        column.PropertyName,
-                                        index.Name));
-                                }
-                            }
-                        }
-
-                        var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
-                        var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
-                        context.AddSource(entityFileName, entitySource);
-                    }
-
-                    // Generate context class with constructors and query builder properties
-                    var contextSource = ContextCodeGenerator.GenerateContextClass(contextInfo);
-                    var contextFileName = $"{contextInfo.ClassName}.g.cs";
-                    context.AddSource(contextFileName, contextSource);
-
-                    // Generate metadata file
-                    var metadataSource = MetadataCodeGenerator.GenerateMetadata(contextInfo);
-                    var metadataFileName = $"{contextInfo.ClassName}.Metadata.g.cs";
-                    context.AddSource(metadataFileName, metadataSource);
-
-                }
-                catch (Exception ex)
-                {
-                    // Report diagnostic for generation failure
-                    var diagnostic = Diagnostic.Create(
-                        DiagnosticDescriptors.InternalError,
-                        contextInfo.Location,
-                        $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}");
-
-                    context.ReportDiagnostic(diagnostic);
-                }
-            }
-        }
-
-        // Phase 2: Generate interceptors and report warnings
+        // Generate interceptors and report warnings
         if (!usageSites.IsDefaultOrEmpty)
         {
             GenerateInterceptors(compilation, contexts, usageSites, context);
