@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Quarry.Generators.Models;
@@ -6,7 +7,7 @@ namespace Quarry.Generators.Models;
 /// Represents the analyzed projection from a Select() lambda expression.
 /// Contains all information needed to generate column list and reader delegate.
 /// </summary>
-internal sealed class ProjectionInfo
+internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
 {
     public ProjectionInfo(
         ProjectionKind kind,
@@ -79,12 +80,32 @@ internal sealed class ProjectionInfo
             nonOptimalReason: reason,
             failureReason: failureReason);
     }
+
+    public bool Equals(ProjectionInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && ResultTypeName == other.ResultTypeName
+            && IsOptimalPath == other.IsOptimalPath
+            && NonOptimalReason == other.NonOptimalReason
+            && FailureReason == other.FailureReason
+            && CustomEntityReaderClass == other.CustomEntityReaderClass
+            && EqualityHelpers.SequenceEqual(Columns, other.Columns);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ProjectionInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count);
+    }
 }
 
 /// <summary>
 /// Represents a single column in a projection.
 /// </summary>
-internal sealed class ProjectedColumn
+internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
 {
     public ProjectedColumn(
         string propertyName,
@@ -209,6 +230,35 @@ internal sealed class ProjectedColumn
     /// When true, reader code must cast the integral value to the enum type.
     /// </summary>
     public bool IsEnum { get; }
+
+    public bool Equals(ProjectedColumn? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return PropertyName == other.PropertyName
+            && ColumnName == other.ColumnName
+            && ClrType == other.ClrType
+            && FullClrType == other.FullClrType
+            && IsNullable == other.IsNullable
+            && Ordinal == other.Ordinal
+            && Alias == other.Alias
+            && SqlExpression == other.SqlExpression
+            && IsAggregateFunction == other.IsAggregateFunction
+            && CustomTypeMapping == other.CustomTypeMapping
+            && IsValueType == other.IsValueType
+            && ReaderMethodName == other.ReaderMethodName
+            && TableAlias == other.TableAlias
+            && IsForeignKey == other.IsForeignKey
+            && ForeignKeyEntityName == other.ForeignKeyEntityName
+            && IsEnum == other.IsEnum;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ProjectedColumn);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable);
+    }
 }
 
 /// <summary>

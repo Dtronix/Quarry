@@ -818,7 +818,7 @@ internal static class CompileTimeSqlBuilder
 /// <summary>
 /// Result of building a pre-built SQL string for a specific mask variant.
 /// </summary>
-internal sealed class PrebuiltSqlResult
+internal sealed class PrebuiltSqlResult : IEquatable<PrebuiltSqlResult>
 {
     public PrebuiltSqlResult(string sql, int parameterCount)
     {
@@ -835,6 +835,17 @@ internal sealed class PrebuiltSqlResult
     /// Gets the total number of parameters in this SQL variant.
     /// </summary>
     public int ParameterCount { get; }
+
+    public bool Equals(PrebuiltSqlResult? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Sql == other.Sql && ParameterCount == other.ParameterCount;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as PrebuiltSqlResult);
+
+    public override int GetHashCode() => HashCode.Combine(Sql, ParameterCount);
 }
 
 /// <summary>

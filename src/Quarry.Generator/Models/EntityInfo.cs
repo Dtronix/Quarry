@@ -1,3 +1,4 @@
+using System;
 using Microsoft.CodeAnalysis;
 using Quarry.Shared.Migration;
 
@@ -6,7 +7,7 @@ namespace Quarry.Generators.Models;
 /// <summary>
 /// Represents a discovered entity type and its schema metadata.
 /// </summary>
-internal sealed class EntityInfo
+internal sealed class EntityInfo : IEquatable<EntityInfo>
 {
     /// <summary>
     /// The entity class name (e.g., "User").
@@ -98,5 +99,29 @@ internal sealed class EntityInfo
         CustomEntityReaderClass = customEntityReaderClass;
         InvalidEntityReaderClass = invalidEntityReaderClass;
         CompositeKeyColumns = compositeKeyColumns;
+    }
+
+    public bool Equals(EntityInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return EntityName == other.EntityName
+            && SchemaClassName == other.SchemaClassName
+            && SchemaNamespace == other.SchemaNamespace
+            && TableName == other.TableName
+            && NamingStyle == other.NamingStyle
+            && EqualityHelpers.SequenceEqual(Columns, other.Columns)
+            && EqualityHelpers.SequenceEqual(Navigations, other.Navigations)
+            && EqualityHelpers.SequenceEqual(Indexes, other.Indexes)
+            && EqualityHelpers.NullableSequenceEqual(CompositeKeyColumns, other.CompositeKeyColumns)
+            && CustomEntityReaderClass == other.CustomEntityReaderClass
+            && InvalidEntityReaderClass == other.InvalidEntityReaderClass;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as EntityInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(EntityName, SchemaClassName, TableName, NamingStyle, Columns.Count);
     }
 }

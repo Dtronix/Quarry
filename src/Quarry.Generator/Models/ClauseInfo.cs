@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Quarry.Generators.Translation;
 
@@ -7,7 +8,7 @@ namespace Quarry.Generators.Models;
 /// Represents the analyzed result of a clause expression (Where, OrderBy, GroupBy, Having, Set).
 /// Contains the SQL fragment and parameter information for code generation.
 /// </summary>
-internal class ClauseInfo
+internal class ClauseInfo : IEquatable<ClauseInfo>
 {
     public ClauseInfo(
         ClauseKind kind,
@@ -63,12 +64,30 @@ internal class ClauseInfo
     {
         return new ClauseInfo(kind, string.Empty, System.Array.Empty<ParameterInfo>(), isSuccess: false, errorMessage: error);
     }
+
+    public bool Equals(ClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && SqlFragment == other.SqlFragment
+            && IsSuccess == other.IsSuccess
+            && ErrorMessage == other.ErrorMessage
+            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, SqlFragment, IsSuccess, Parameters.Count);
+    }
 }
 
 /// <summary>
 /// Represents information about an OrderBy clause, including column and direction.
 /// </summary>
-internal sealed class OrderByClauseInfo : ClauseInfo
+internal sealed class OrderByClauseInfo : ClauseInfo, IEquatable<OrderByClauseInfo>
 {
     public OrderByClauseInfo(
         string columnSql,
@@ -89,12 +108,28 @@ internal sealed class OrderByClauseInfo : ClauseInfo
     /// Gets whether the order is descending.
     /// </summary>
     public bool IsDescending { get; }
+
+    public bool Equals(OrderByClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ColumnSql == other.ColumnSql
+            && IsDescending == other.IsDescending
+            && base.Equals(other);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as OrderByClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, ColumnSql, IsDescending);
+    }
 }
 
 /// <summary>
 /// Represents information about a Set clause for Update operations.
 /// </summary>
-internal sealed class SetClauseInfo : ClauseInfo
+internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
 {
     public SetClauseInfo(
         string columnSql,
@@ -123,12 +158,29 @@ internal sealed class SetClauseInfo : ClauseInfo
     /// When set, the value should be wrapped with ToDb() before binding.
     /// </summary>
     public string? CustomTypeMappingClass { get; }
+
+    public bool Equals(SetClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ColumnSql == other.ColumnSql
+            && ParameterIndex == other.ParameterIndex
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && base.Equals(other);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, ColumnSql, ParameterIndex);
+    }
 }
 
 /// <summary>
 /// Represents information about a Join clause.
 /// </summary>
-internal sealed class JoinClauseInfo : ClauseInfo
+internal sealed class JoinClauseInfo : ClauseInfo, IEquatable<JoinClauseInfo>
 {
     public JoinClauseInfo(
         JoinClauseKind joinKind,
@@ -177,6 +229,26 @@ internal sealed class JoinClauseInfo : ClauseInfo
     /// Gets the alias for the joined table (e.g., "t1"), or null if no alias.
     /// </summary>
     public string? TableAlias { get; }
+
+    public bool Equals(JoinClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return JoinKind == other.JoinKind
+            && JoinedEntityName == other.JoinedEntityName
+            && JoinedTableName == other.JoinedTableName
+            && OnConditionSql == other.OnConditionSql
+            && JoinedSchemaName == other.JoinedSchemaName
+            && TableAlias == other.TableAlias
+            && base.Equals(other);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as JoinClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, JoinKind, JoinedEntityName, JoinedTableName);
+    }
 }
 
 /// <summary>

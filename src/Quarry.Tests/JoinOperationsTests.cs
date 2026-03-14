@@ -431,6 +431,7 @@ public class JoinOperationsTests
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "TestContext",
             "TestNamespace",
+            "test0000",
             sites);
 
         Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
@@ -448,6 +449,7 @@ public class JoinOperationsTests
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "TestContext",
             "TestNamespace",
+            "test0000",
             sites);
 
         Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
@@ -465,6 +467,7 @@ public class JoinOperationsTests
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "TestContext",
             "TestNamespace",
+            "test0000",
             sites);
 
         Assert.That(source, Does.Contain("public static IJoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
@@ -489,6 +492,7 @@ public class JoinOperationsTests
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "TestContext",
             "TestNamespace",
+            "test0000",
             sites);
 
         Assert.That(source, Does.Contain("JoinedQueryBuilder<TestNamespace.TestUser, TestOrder>"));
@@ -547,7 +551,7 @@ public class JoinOperationsTests
             joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
 
         Assert.That(source, Does.Contain("JoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem>"));
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
@@ -582,7 +586,7 @@ public class JoinOperationsTests
             joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
 
         Assert.That(source, Does.Contain("JoinedQueryBuilder4<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, TestNamespace.TestCategory>"));
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
@@ -611,7 +615,7 @@ public class JoinOperationsTests
             joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
         Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, bool>>"));
@@ -641,7 +645,7 @@ public class JoinOperationsTests
             joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<T1, T2, T3> builder"));
         Assert.That(source, Does.Contain("Expression<Func<T1, T2, T3, TKey>>"));
@@ -672,7 +676,7 @@ public class JoinOperationsTests
             keyTypeName: "global::System.String");
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
         Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, System.String>>"));

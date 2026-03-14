@@ -30,7 +30,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Contain("private static readonly TestApp.MoneyMapping _mapper_TestApp_MoneyMapping = new();"),
             "Should emit cached static readonly mapping instance");
@@ -49,7 +49,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         // Count occurrences of the field declaration
         var fieldDecl = "private static readonly TestApp.MoneyMapping _mapper_TestApp_MoneyMapping = new();";
@@ -71,7 +71,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Not.Contain("_mapper_"),
             "Should not emit any mapping fields when no columns use TypeMapping");
@@ -93,7 +93,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Contain("_mapper_TestApp_MoneyMapping.ToDb(entity.Balance)"),
             "Insert interceptor should wrap mapped column value with ToDb()");
@@ -112,7 +112,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Contain("entity.AccountId"),
             "Non-mapped column should use entity property directly");
@@ -142,7 +142,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Contain("_mapper_TestApp_MoneyMapping.ToDb("),
             "Where interceptor should wrap mapped parameter with ToDb()");
@@ -163,7 +163,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Contain("_mapper_TestApp_MoneyMapping.ToDb(value)"),
             "Set interceptor should wrap value with ToDb() for mapped column");
@@ -184,7 +184,7 @@ public class TypeMappingInterceptorTests
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", usageSites);
+            "AppDbContext", "TestApp", "test0000", usageSites);
 
         Assert.That(result, Does.Not.Contain("ToDb(value)"),
             "Set interceptor should not wrap value for non-mapped column");

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Quarry.Generators.Sql;
@@ -19,7 +20,7 @@ internal enum QueryKind
 /// needed by <see cref="Quarry.Generators.Generation.InterceptorCodeGenerator"/> to emit
 /// an execution interceptor.
 /// </summary>
-internal sealed class PrebuiltChainInfo
+internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
 {
     public PrebuiltChainInfo(
         ChainAnalysisResult analysis,
@@ -120,4 +121,30 @@ internal sealed class PrebuiltChainInfo
     /// Used by the first clause interceptor to pre-allocate the parameter array.
     /// </summary>
     public int MaxParameterCount { get; }
+
+    public bool Equals(PrebuiltChainInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return EntityTypeName == other.EntityTypeName
+            && ResultTypeName == other.ResultTypeName
+            && Dialect == other.Dialect
+            && TableName == other.TableName
+            && SchemaName == other.SchemaName
+            && QueryKind == other.QueryKind
+            && MaxParameterCount == other.MaxParameterCount
+            && Analysis.Equals(other.Analysis)
+            && EqualityHelpers.DictionaryEqual(SqlMap, other.SqlMap)
+            && ReaderDelegateCode == other.ReaderDelegateCode
+            && (ProjectionInfo is null ? other.ProjectionInfo is null : ProjectionInfo.Equals(other.ProjectionInfo))
+            && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
+            && EqualityHelpers.TupleListEqual(JoinedTableInfos, other.JoinedTableInfos);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as PrebuiltChainInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(EntityTypeName, TableName, Dialect, QueryKind, SqlMap.Count);
+    }
 }

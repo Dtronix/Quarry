@@ -1107,7 +1107,7 @@ public static class Queries
         var result = RunGenerator(compilation);
 
         var interceptorsTree = result.GeneratedTrees
-            .FirstOrDefault(t => t.FilePath.EndsWith("Interceptors.g.cs"));
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var interceptorsCode = interceptorsTree!.GetText().ToString();
