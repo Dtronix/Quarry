@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Quarry.Generators.Translation;
@@ -61,7 +62,7 @@ internal sealed class ExpressionTranslationResult
 /// <summary>
 /// Represents a parameter extracted from an expression.
 /// </summary>
-internal sealed class ParameterInfo
+internal sealed class ParameterInfo : IEquatable<ParameterInfo>
 {
     public ParameterInfo(
         int index,
@@ -131,4 +132,25 @@ internal sealed class ParameterInfo
     /// {MappingInstance}.ToDb(value) before binding.
     /// </summary>
     public string? CustomTypeMappingClass { get; set; }
+
+    public bool Equals(ParameterInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Index == other.Index
+            && Name == other.Name
+            && ClrType == other.ClrType
+            && ValueExpression == other.ValueExpression
+            && IsCollection == other.IsCollection
+            && IsCaptured == other.IsCaptured
+            && ExpressionPath == other.ExpressionPath
+            && CustomTypeMappingClass == other.CustomTypeMappingClass;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ParameterInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Index, Name, ClrType, ValueExpression);
+    }
 }

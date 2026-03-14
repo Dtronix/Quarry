@@ -1,3 +1,4 @@
+using System;
 using Quarry.Generators.Sql;
 using Quarry;
 using Microsoft.CodeAnalysis;
@@ -7,7 +8,7 @@ namespace Quarry.Generators.Models;
 /// <summary>
 /// Represents a discovered Quarry context with its configuration and entity mappings.
 /// </summary>
-internal sealed class ContextInfo
+internal sealed class ContextInfo : IEquatable<ContextInfo>
 {
     /// <summary>
     /// The name of the context class.
@@ -61,5 +62,24 @@ internal sealed class ContextInfo
         Entities = entities;
         EntityMappings = entityMappings;
         Location = location;
+    }
+
+    public bool Equals(ContextInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ClassName == other.ClassName
+            && Namespace == other.Namespace
+            && Dialect == other.Dialect
+            && Schema == other.Schema
+            && EqualityHelpers.SequenceEqual(Entities, other.Entities)
+            && EqualityHelpers.SequenceEqual(EntityMappings, other.EntityMappings);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ContextInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(ClassName, Namespace, Dialect, Schema, Entities.Count);
     }
 }

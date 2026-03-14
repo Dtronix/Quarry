@@ -1,3 +1,4 @@
+using System;
 using Microsoft.CodeAnalysis;
 using Quarry.Shared.Migration;
 
@@ -6,7 +7,7 @@ namespace Quarry.Generators.Models;
 /// <summary>
 /// Represents a column defined in a schema.
 /// </summary>
-internal sealed class ColumnInfo
+internal sealed class ColumnInfo : IEquatable<ColumnInfo>
 {
     /// <summary>
     /// The property name in the schema (e.g., "UserId").
@@ -194,13 +195,41 @@ internal sealed class ColumnInfo
             _ => "GetValue" // Fallback for custom types
         };
     }
+
+    public bool Equals(ColumnInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return PropertyName == other.PropertyName
+            && ColumnName == other.ColumnName
+            && ClrType == other.ClrType
+            && FullClrType == other.FullClrType
+            && IsNullable == other.IsNullable
+            && Kind == other.Kind
+            && ReferencedEntityName == other.ReferencedEntityName
+            && Modifiers.Equals(other.Modifiers)
+            && IsValueType == other.IsValueType
+            && ReaderMethodName == other.ReaderMethodName
+            && IsEnum == other.IsEnum
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && DbClrType == other.DbClrType
+            && DbReaderMethodName == other.DbReaderMethodName
+            && MappingMismatchExpectedType == other.MappingMismatchExpectedType;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ColumnInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Kind, IsNullable);
+    }
 }
 
 
 /// <summary>
 /// Column modifiers extracted from fluent configuration.
 /// </summary>
-internal sealed class ColumnModifiers
+internal sealed class ColumnModifiers : IEquatable<ColumnModifiers>
 {
     /// <summary>Whether this is an identity/auto-increment column.</summary>
     public bool IsIdentity { get; }
@@ -264,5 +293,30 @@ internal sealed class ColumnModifiers
         CustomTypeMapping = customTypeMapping;
         IsUnique = isUnique;
         IsSensitive = isSensitive;
+    }
+
+    public bool Equals(ColumnModifiers? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return IsIdentity == other.IsIdentity
+            && IsClientGenerated == other.IsClientGenerated
+            && IsComputed == other.IsComputed
+            && MaxLength == other.MaxLength
+            && Precision == other.Precision
+            && Scale == other.Scale
+            && HasDefault == other.HasDefault
+            && IsForeignKey == other.IsForeignKey
+            && MappedName == other.MappedName
+            && CustomTypeMapping == other.CustomTypeMapping
+            && IsUnique == other.IsUnique
+            && IsSensitive == other.IsSensitive;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ColumnModifiers);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(IsIdentity, IsComputed, MaxLength, IsForeignKey, MappedName);
     }
 }
