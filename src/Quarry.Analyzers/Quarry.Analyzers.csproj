@@ -7,6 +7,7 @@
     <IsRoslynComponent>true</IsRoslynComponent>
     <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
     <IsPackable>true</IsPackable>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
     <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
 
