@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Quarry.Generators.Translation;
 
@@ -7,7 +8,7 @@ namespace Quarry.Generators.Models;
 /// Represents the analyzed execution context for an Execute*Async() or ToAsyncEnumerable() call.
 /// Contains all information needed to assemble complete SQL and wire up the reader.
 /// </summary>
-internal sealed class ExecutionInfo
+internal sealed class ExecutionInfo : IEquatable<ExecutionInfo>
 {
     public ExecutionInfo(
         ExecutionKind kind,
@@ -125,12 +126,40 @@ internal sealed class ExecutionInfo
     /// </summary>
     public string? NonOptimalReason { get; }
 
+    public bool Equals(ExecutionInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && EntityTypeName == other.EntityTypeName
+            && ResultTypeName == other.ResultTypeName
+            && IsOptimalPath == other.IsOptimalPath
+            && SelectSql == other.SelectSql
+            && GroupBySql == other.GroupBySql
+            && HavingSql == other.HavingSql
+            && Offset == other.Offset
+            && Limit == other.Limit
+            && IsDistinct == other.IsDistinct
+            && NonOptimalReason == other.NonOptimalReason
+            && EqualityHelpers.SequenceEqual(WhereClauses, other.WhereClauses)
+            && EqualityHelpers.SequenceEqual(OrderByClauses, other.OrderByClauses)
+            && EqualityHelpers.SequenceEqual(JoinClauses, other.JoinClauses)
+            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
+            && (ProjectionInfo is null ? other.ProjectionInfo is null : ProjectionInfo.Equals(other.ProjectionInfo));
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ExecutionInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, EntityTypeName, ResultTypeName, IsOptimalPath, SelectSql);
+    }
 }
 
 /// <summary>
 /// Represents an ORDER BY clause element.
 /// </summary>
-internal sealed class OrderByClause
+internal sealed class OrderByClause : IEquatable<OrderByClause>
 {
     public OrderByClause(string columnSql, bool isDescending)
     {
@@ -147,12 +176,23 @@ internal sealed class OrderByClause
     /// Gets whether the order is descending.
     /// </summary>
     public bool IsDescending { get; }
+
+    public bool Equals(OrderByClause? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ColumnSql == other.ColumnSql && IsDescending == other.IsDescending;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as OrderByClause);
+
+    public override int GetHashCode() => HashCode.Combine(ColumnSql, IsDescending);
 }
 
 /// <summary>
 /// Represents a JOIN clause element.
 /// </summary>
-internal sealed class JoinClause
+internal sealed class JoinClause : IEquatable<JoinClause>
 {
     public JoinClause(
         JoinKind kind,
@@ -185,6 +225,20 @@ internal sealed class JoinClause
     /// Gets the ON condition SQL.
     /// </summary>
     public string OnConditionSql { get; }
+
+    public bool Equals(JoinClause? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && JoinedEntityName == other.JoinedEntityName
+            && JoinedTableName == other.JoinedTableName
+            && OnConditionSql == other.OnConditionSql;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as JoinClause);
+
+    public override int GetHashCode() => HashCode.Combine(Kind, JoinedEntityName, JoinedTableName);
 }
 
 /// <summary>

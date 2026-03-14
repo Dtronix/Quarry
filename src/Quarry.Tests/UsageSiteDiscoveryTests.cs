@@ -227,7 +227,7 @@ public class Service
 
         // Check that interceptors file is generated
         var interceptorsFile = result.GeneratedTrees
-            .FirstOrDefault(t => t.FilePath.EndsWith(".Interceptors.g.cs"));
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
 
         // Note: Interceptors may not be generated if there are no analyzable sites
         // or if all sites are fluent chains that don't need interception

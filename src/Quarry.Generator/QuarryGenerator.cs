@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,6 +12,7 @@ using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Generators.Parsing;
+using Quarry.Generators.Utilities;
 using Quarry.Shared.Migration;
 
 namespace Quarry.Generators;
@@ -57,6 +59,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
+        // Phase 1 output: Per-context entity/context/metadata generation (no Collect needed)
+        // Each context is independently cached — changing one context doesn't regenerate others.
+        context.RegisterSourceOutput(contextDeclarations,
+            static (spc, contextInfo) => GenerateEntityAndContextCode(contextInfo, spc));
+
+        // Phase 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
+        context.RegisterSourceOutput(contextDeclarations.Collect(),
+            static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
+
         // Phase 2: Register a syntax provider to find Quarry method invocations
         var usageSites = context.SyntaxProvider
             .CreateSyntaxProvider(
@@ -69,13 +80,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var compilationAndContexts = context.CompilationProvider
             .Combine(contextDeclarations.Collect());
 
-        // Combine usage sites with compilation and contexts
-        var allData = compilationAndContexts
-            .Combine(usageSites.Collect());
+        // Combine usage sites with compilation and contexts, fan out per-file
+        var perFileGroups = compilationAndContexts
+            .Combine(usageSites.Collect())
+            .SelectMany(static (data, ct) =>
+                GroupByFileAndProcess(data.Left.Left, data.Left.Right, data.Right, ct));
 
-        // Register source output
-        context.RegisterSourceOutput(allData,
-            static (spc, source) => Execute(source.Left.Left, source.Left.Right, source.Right, spc));
+        // Per-file output — only regenerates files whose group changed
+        context.RegisterSourceOutput(perFileGroups,
+            static (spc, group) => EmitFileInterceptors(spc, group));
 
         // Phase 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
@@ -133,214 +146,210 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Executes the generation logic.
+    /// Generates entity classes, context class, and metadata for a single context.
+    /// Registered per-context (no Collect) so that changing one context doesn't regenerate others.
     /// </summary>
-    private static void Execute(
-        Compilation compilation,
-        ImmutableArray<ContextInfo> contexts,
-        ImmutableArray<UsageSiteInfo> usageSites,
+    private static void GenerateEntityAndContextCode(
+        ContextInfo contextInfo,
         SourceProductionContext context)
     {
-        // Phase 0: Check for duplicate TypeMappings across all contexts
-        if (!contexts.IsDefaultOrEmpty)
+        context.CancellationToken.ThrowIfCancellationRequested();
+
+        try
         {
-            // Track customType → (mappingClass, location) to detect conflicts
-            var seenMappings = new Dictionary<string, (string MappingClass, Location? Location)>();
-
-            foreach (var contextInfo in contexts)
-            {
-                foreach (var entity in contextInfo.Entities)
-                {
-                    foreach (var column in entity.Columns)
-                    {
-                        if (column.CustomTypeMappingClass == null)
-                            continue;
-
-                        if (seenMappings.TryGetValue(column.FullClrType, out var existing))
-                        {
-                            if (existing.MappingClass != column.CustomTypeMappingClass)
-                            {
-                                context.ReportDiagnostic(Diagnostic.Create(
-                                    DiagnosticDescriptors.DuplicateTypeMapping,
-                                    entity.Location,
-                                    column.FullClrType,
-                                    existing.MappingClass,
-                                    column.CustomTypeMappingClass));
-                            }
-                        }
-                        else
-                        {
-                            seenMappings[column.FullClrType] = (column.CustomTypeMappingClass, entity.Location);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Phase 1: Generate entity and context code
-        if (!contexts.IsDefaultOrEmpty)
-        {
-            foreach (var contextInfo in contexts)
+            // Generate entity classes and validate column types
+            foreach (var entity in contextInfo.Entities)
             {
                 context.CancellationToken.ThrowIfCancellationRequested();
 
-                try
+                // Report QRY003 for columns with unsupported types and no mapping,
+                // and QRY017 for TypeMapping TCustom mismatches
+                foreach (var column in entity.Columns)
                 {
-                    // Generate entity classes and validate column types
-                    foreach (var entity in contextInfo.Entities)
+                    if (column.CustomTypeMappingClass == null &&
+                        !column.IsEnum &&
+                        column.ReaderMethodName == "GetValue" &&
+                        !IsKnownFallbackType(column.FullClrType))
                     {
-                        context.CancellationToken.ThrowIfCancellationRequested();
-
-                        // Report QRY003 for columns with unsupported types and no mapping,
-                        // and QRY017 for TypeMapping TCustom mismatches
-                        foreach (var column in entity.Columns)
-                        {
-                            if (column.CustomTypeMappingClass == null &&
-                                !column.IsEnum &&
-                                column.ReaderMethodName == "GetValue" &&
-                                !IsKnownFallbackType(column.FullClrType))
-                            {
-                                var diagnostic = Diagnostic.Create(
-                                    DiagnosticDescriptors.InvalidColumnType,
-                                    entity.Location,
-                                    column.PropertyName,
-                                    column.FullClrType);
-                                context.ReportDiagnostic(diagnostic);
-                            }
-
-                            if (column.MappingMismatchExpectedType != null)
-                            {
-                                var diagnostic = Diagnostic.Create(
-                                    DiagnosticDescriptors.TypeMappingMismatch,
-                                    entity.Location,
-                                    column.PropertyName,
-                                    column.FullClrType,
-                                    column.CustomTypeMappingClass,
-                                    column.MappingMismatchExpectedType);
-                                context.ReportDiagnostic(diagnostic);
-                            }
-                        }
-
-                        // Report QRY026 (info) for valid custom entity reader
-                        if (entity.CustomEntityReaderClass != null)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(
-                                DiagnosticDescriptors.CustomEntityReaderActive,
-                                entity.Location,
-                                entity.CustomEntityReaderClass,
-                                entity.EntityName));
-                        }
-
-                        // Report QRY027 (error) for invalid custom entity reader
-                        if (entity.InvalidEntityReaderClass != null)
-                        {
-                            context.ReportDiagnostic(Diagnostic.Create(
-                                DiagnosticDescriptors.InvalidEntityReaderType,
-                                entity.Location,
-                                entity.InvalidEntityReaderClass,
-                                entity.SchemaClassName,
-                                entity.EntityName));
-                        }
-
-                        // Report QRY028 (warning) for column-level Unique() overlapping with explicit unique Index()
-                        foreach (var column in entity.Columns)
-                        {
-                            if (!column.Modifiers.IsUnique) continue;
-
-                            foreach (var index in entity.Indexes)
-                            {
-                                if (index.IsUnique && index.Columns.Count == 1 &&
-                                    index.Columns[0].PropertyName == column.PropertyName)
-                                {
-                                    context.ReportDiagnostic(Diagnostic.Create(
-                                        DiagnosticDescriptors.UniqueColumnOverlapsIndex,
-                                        entity.Location,
-                                        column.PropertyName,
-                                        index.Name));
-                                }
-                            }
-                        }
-
-                        var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
-                        var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
-                        context.AddSource(entityFileName, entitySource);
+                        var diagnostic = Diagnostic.Create(
+                            DiagnosticDescriptors.InvalidColumnType,
+                            entity.Location,
+                            column.PropertyName,
+                            column.FullClrType);
+                        context.ReportDiagnostic(diagnostic);
                     }
 
-                    // Generate context class with constructors and query builder properties
-                    var contextSource = ContextCodeGenerator.GenerateContextClass(contextInfo);
-                    var contextFileName = $"{contextInfo.ClassName}.g.cs";
-                    context.AddSource(contextFileName, contextSource);
-
-                    // Generate metadata file
-                    var metadataSource = MetadataCodeGenerator.GenerateMetadata(contextInfo);
-                    var metadataFileName = $"{contextInfo.ClassName}.Metadata.g.cs";
-                    context.AddSource(metadataFileName, metadataSource);
-
+                    if (column.MappingMismatchExpectedType != null)
+                    {
+                        var diagnostic = Diagnostic.Create(
+                            DiagnosticDescriptors.TypeMappingMismatch,
+                            entity.Location,
+                            column.PropertyName,
+                            column.FullClrType,
+                            column.CustomTypeMappingClass,
+                            column.MappingMismatchExpectedType);
+                        context.ReportDiagnostic(diagnostic);
+                    }
                 }
-                catch (Exception ex)
+
+                // Report QRY026 (info) for valid custom entity reader
+                if (entity.CustomEntityReaderClass != null)
                 {
-                    // Report diagnostic for generation failure
-                    var diagnostic = Diagnostic.Create(
-                        DiagnosticDescriptors.InternalError,
-                        contextInfo.Location,
-                        $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}");
-
-                    context.ReportDiagnostic(diagnostic);
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.CustomEntityReaderActive,
+                        entity.Location,
+                        entity.CustomEntityReaderClass,
+                        entity.EntityName));
                 }
-            }
-        }
 
-        // Phase 2: Generate interceptors and report warnings
-        if (!usageSites.IsDefaultOrEmpty)
+                // Report QRY027 (error) for invalid custom entity reader
+                if (entity.InvalidEntityReaderClass != null)
+                {
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.InvalidEntityReaderType,
+                        entity.Location,
+                        entity.InvalidEntityReaderClass,
+                        entity.SchemaClassName,
+                        entity.EntityName));
+                }
+
+                // Report QRY028 (warning) for column-level Unique() overlapping with explicit unique Index()
+                foreach (var column in entity.Columns)
+                {
+                    if (!column.Modifiers.IsUnique) continue;
+
+                    foreach (var index in entity.Indexes)
+                    {
+                        if (index.IsUnique && index.Columns.Count == 1 &&
+                            index.Columns[0].PropertyName == column.PropertyName)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticDescriptors.UniqueColumnOverlapsIndex,
+                                entity.Location,
+                                column.PropertyName,
+                                index.Name));
+                        }
+                    }
+                }
+
+                var entitySource = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
+                var entityFileName = $"{contextInfo.Namespace}.{entity.EntityName}.g.cs";
+                context.AddSource(entityFileName, entitySource);
+            }
+
+            // Generate context class with constructors and query builder properties
+            var contextSource = ContextCodeGenerator.GenerateContextClass(contextInfo);
+            var contextFileName = $"{contextInfo.ClassName}.g.cs";
+            context.AddSource(contextFileName, contextSource);
+
+            // Generate metadata file
+            var metadataSource = MetadataCodeGenerator.GenerateMetadata(contextInfo);
+            var metadataFileName = $"{contextInfo.ClassName}.Metadata.g.cs";
+            context.AddSource(metadataFileName, metadataSource);
+        }
+        catch (Exception ex)
         {
-            GenerateInterceptors(compilation, contexts, usageSites, context);
+            // Report diagnostic for generation failure
+            var diagnostic = Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                contextInfo.Location,
+                $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}");
+
+            context.ReportDiagnostic(diagnostic);
         }
     }
 
     /// <summary>
-    /// Generates interceptor files and reports diagnostics for non-analyzable queries.
+    /// Checks for duplicate TypeMappings across all contexts.
+    /// Registered on collected contexts since it needs cross-context comparison.
     /// </summary>
-    private static void GenerateInterceptors(
+    private static void CheckDuplicateTypeMappings(
+        ImmutableArray<ContextInfo> contexts,
+        SourceProductionContext context)
+    {
+        if (contexts.IsDefaultOrEmpty)
+            return;
+
+        // Track customType → (mappingClass, location) to detect conflicts
+        var seenMappings = new Dictionary<string, (string MappingClass, Location? Location)>();
+
+        foreach (var contextInfo in contexts)
+        {
+            foreach (var entity in contextInfo.Entities)
+            {
+                foreach (var column in entity.Columns)
+                {
+                    if (column.CustomTypeMappingClass == null)
+                        continue;
+
+                    if (seenMappings.TryGetValue(column.FullClrType, out var existing))
+                    {
+                        if (existing.MappingClass != column.CustomTypeMappingClass)
+                        {
+                            context.ReportDiagnostic(Diagnostic.Create(
+                                DiagnosticDescriptors.DuplicateTypeMapping,
+                                entity.Location,
+                                column.FullClrType,
+                                existing.MappingClass,
+                                column.CustomTypeMappingClass));
+                        }
+                    }
+                    else
+                    {
+                        seenMappings[column.FullClrType] = (column.CustomTypeMappingClass, entity.Location);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Groups all usage sites by (context, source file) and processes them into FileInterceptorGroups.
+    /// Replaces the old Execute()+GenerateInterceptors() flow with per-file incremental output.
+    /// </summary>
+    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcess(
         Compilation compilation,
         ImmutableArray<ContextInfo> contexts,
         ImmutableArray<UsageSiteInfo> usageSites,
-        SourceProductionContext context)
+        CancellationToken ct)
     {
+        if (usageSites.IsDefaultOrEmpty)
+            return ImmutableArray<FileInterceptorGroup>.Empty;
+
+        ct.ThrowIfCancellationRequested();
+
         // Build a lookup from entity type name to EntityInfo
         var entityLookup = BuildEntityLookup(contexts);
 
         // Build entity registry (entityName → EntityInfo) for subquery resolution
         var entityRegistry = BuildEntityRegistry(contexts);
 
-        // Report diagnostics for non-analyzable queries and anonymous type projections
+        // Collect diagnostics for non-analyzable queries and anonymous type projections
+        var diagnostics = new List<DiagnosticInfo>();
         var sitesToSkip = new HashSet<UsageSiteInfo>();
         foreach (var site in usageSites)
         {
             // Check for anonymous type projection failure (QRY014 - Error)
             if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.AnonymousTypeNotSupported,
-                    location);
-
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)));
                 sitesToSkip.Add(site);
                 continue;
             }
 
-            // Report QRY001 warnings for non-analyzable queries
+            // Collect QRY001 warnings for non-analyzable queries
             if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.QueryNotAnalyzable,
-                    location,
-                    site.NonAnalyzableReason);
-
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                    site.NonAnalyzableReason));
             }
         }
+
+        ct.ThrowIfCancellationRequested();
 
         // Enrich usage sites with entity metadata from contexts
         var enrichedSites = usageSites
@@ -349,9 +358,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .ToList();
 
         // Discover and enrich missing chain members from resolved navigation joins.
-        // When Join(u => u.Nav) has an unresolved type parameter, downstream calls (Select, Execute)
-        // aren't discovered because the semantic model can't resolve the chain types. After
-        // enrichment resolves the navigation entity type, we can synthetically discover these.
         var discoveredLocationKeys = new HashSet<string>(
             usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
         var navJoinChainSites = DiscoverNavigationJoinChainMembers(
@@ -361,7 +367,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             enrichedSites.AddRange(navJoinChainSites);
         }
 
-        // Report QRY015 for ambiguous context resolution
+        ct.ThrowIfCancellationRequested();
+
+        // Collect QRY015 for ambiguous context resolution
         foreach (var site in enrichedSites)
         {
             if (site.ContextClassName == null)
@@ -370,18 +378,17 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (list != null && list.Count > 1)
                 {
                     var chosen = list[0];
-                    var diagnostic = Diagnostic.Create(
-                        DiagnosticDescriptors.AmbiguousContextResolution,
-                        site.InvocationSyntax.GetLocation(),
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.AmbiguousContextResolution.Id,
+                        DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                         site.EntityTypeName,
                         chosen.Context.ClassName,
-                        chosen.Context.Dialect);
-                    context.ReportDiagnostic(diagnostic);
+                        chosen.Context.Dialect.ToString()));
                 }
             }
         }
 
-        // Report QRY016 for unbound parameter placeholders in generated SQL
+        // Collect QRY016 for unbound parameter placeholders in generated SQL
         foreach (var site in enrichedSites)
         {
             if (site.ClauseInfo is { IsSuccess: true } clause)
@@ -394,44 +401,40 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     var index = int.Parse(match.Groups[1].Value);
                     if (!boundIndices.Contains(index))
                     {
-                        var diagnostic = Diagnostic.Create(
-                            DiagnosticDescriptors.UnboundParameterPlaceholder,
-                            site.InvocationSyntax.GetLocation(),
-                            match.Value);
-                        context.ReportDiagnostic(diagnostic);
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.UnboundParameterPlaceholder.Id,
+                            DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                            match.Value));
                     }
                 }
             }
         }
 
-        // Report QRY019 for clause interceptors that could not be translated
+        // Collect QRY019 for clause interceptors that could not be translated
         foreach (var site in enrichedSites)
         {
             var clauseKind = GetNonTranslatableClauseKind(site);
             if (clauseKind != null)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.ClauseNotTranslatable,
-                    location,
-                    clauseKind);
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ClauseNotTranslatable.Id,
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                    clauseKind));
             }
         }
 
+        ct.ThrowIfCancellationRequested();
+
         // Analyze execution chains for pre-built SQL optimization tiers.
-        // Chain analysis needs ALL usage sites (including non-analyzable ones) because
-        // variable-based chains have clause sites marked non-analyzable by the per-site
-        // AnalyzabilityChecker, but ChainAnalyzer can still analyze them as a whole.
         var allSitesForChainAnalysis = usageSites
             .Where(s => !sitesToSkip.Contains(s))
             .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry))
             .ToList();
-        // Include synthetically discovered navigation join chain members
         if (navJoinChainSites.Count > 0)
             allSitesForChainAnalysis.AddRange(navJoinChainSites);
-        var prebuiltChains = AnalyzeExecutionChains(
-            compilation, allSitesForChainAnalysis, context, entityLookup);
+        var (prebuiltChains, chainDiagnostics) = AnalyzeExecutionChainsWithDiagnostics(
+            compilation, allSitesForChainAnalysis, entityLookup, ct);
+        diagnostics.AddRange(chainDiagnostics);
 
         // Build a set of chain member UniqueIds so we can include non-analyzable clause
         // sites that are part of analyzed chains (e.g., conditional clauses inside if-blocks).
@@ -443,7 +446,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
-        // so that GenerateInterceptorsFile can emit interceptors for conditional clause sites.
         var enrichedSiteIds = new HashSet<string>(enrichedSites.Select(s => s.UniqueId));
         var additionalChainSites = allSitesForChainAnalysis
             .Where(s => chainMemberUniqueIds.Contains(s.UniqueId) && !enrichedSiteIds.Contains(s.UniqueId))
@@ -451,67 +453,204 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         var allSitesForGeneration = enrichedSites.Concat(additionalChainSites).ToList();
 
-        // Group usage sites by (context, namespace) so each context gets its own interceptors file
-        var sitesByContext = allSitesForGeneration
-            .GroupBy(s => s.ContextClassName ?? "Quarry")
+        ct.ThrowIfCancellationRequested();
+
+        // Group by (contextClassName, filePath) for per-file output
+        var fileGroups = allSitesForGeneration
+            .GroupBy(s => (ContextClassName: s.ContextClassName ?? "Quarry", FilePath: s.FilePath))
             .ToList();
 
-        foreach (var group in sitesByContext)
+        var result = ImmutableArray.CreateBuilder<FileInterceptorGroup>(fileGroups.Count);
+
+        foreach (var group in fileGroups)
         {
             var sites = group.ToList();
-
             if (sites.Count == 0)
                 continue;
 
-            try
+            var contextClassName = group.Key.ContextClassName;
+            var filePath = group.Key.FilePath;
+
+            // Compute human-readable file tag for output filename
+            var fileTag = FileHasher.ComputeFileTag(filePath);
+
+            // Derive namespace
+            var namespaceName = sites.Select(s => s.ContextNamespace)
+                                    .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
+                                ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
+
+            // Filter pre-built chains for this context AND this file
+            var fileChains = prebuiltChains
+                .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName
+                         && c.Analysis.ExecutionSite.FilePath == filePath)
+                .ToList();
+
+            // Separate chain member sites for this file
+            var fileChainMemberIds = new HashSet<string>();
+            foreach (var chain in fileChains)
             {
-                var contextClassName = group.Key;
-
-                // Derive namespace: prefer enriched ContextNamespace, fall back to entity type namespace
-                var namespaceName = sites.Select(s => s.ContextNamespace)
-                                        .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
-                                    ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
-
-                // Filter pre-built chains for this context
-                var contextChains = prebuiltChains
-                    .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName)
-                    .ToList();
-
-                // Generate interceptors file
-                var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
-                    contextClassName,
-                    namespaceName,
-                    sites,
-                    contextChains);
-
-                var fileName = $"{contextClassName}.Interceptors.g.cs";
-                context.AddSource(fileName, interceptorsSource);
+                foreach (var clause in chain.Analysis.Clauses)
+                    fileChainMemberIds.Add(clause.Site.UniqueId);
             }
-            catch (Exception ex)
+
+            // Include analyzable sites, plus non-analyzable sites that aren't chain clause members.
+            // Non-analyzable non-chain sites carry InvocationSyntax needed for diagnostic location.
+            var fileSites = sites
+                .Where(s => s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
+                .ToList();
+            var fileChainMemberSites = sites
+                .Where(s => !s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
+                .ToList();
+
+            // Collect diagnostics for this file
+            var fileDiagnostics = diagnostics
+                .Where(d => d.Location.FilePath == filePath)
+                .ToList();
+
+            result.Add(new FileInterceptorGroup(
+                contextClassName,
+                namespaceName,
+                filePath,
+                fileTag,
+                fileSites,
+                fileChains,
+                fileChainMemberSites,
+                fileDiagnostics));
+        }
+
+        // Create diagnostic-only groups for files that have diagnostics but no sites in any group.
+        // This happens when a file has only non-analyzable sites (QRY001/QRY014).
+        var coveredFilePaths = new HashSet<string>(fileGroups.Select(g => g.Key.FilePath));
+        var orphanedDiagnostics = diagnostics
+            .Where(d => !coveredFilePaths.Contains(d.Location.FilePath))
+            .GroupBy(d => d.Location.FilePath)
+            .ToList();
+
+        foreach (var orphanGroup in orphanedDiagnostics)
+        {
+            var filePath = orphanGroup.Key;
+            var fileTag = FileHasher.ComputeFileTag(filePath);
+
+            // Find the original non-analyzable site to get the SyntaxTree for location reconstruction
+            var originalSite = usageSites.FirstOrDefault(s => s.FilePath == filePath);
+
+            result.Add(new FileInterceptorGroup(
+                "Quarry",
+                null,
+                filePath,
+                fileTag,
+                Array.Empty<UsageSiteInfo>(),
+                Array.Empty<PrebuiltChainInfo>(),
+                Array.Empty<UsageSiteInfo>(),
+                orphanGroup.ToList()));
+        }
+
+        return result.ToImmutable();
+    }
+
+    /// <summary>
+    /// Emits interceptor source and reports diagnostics for a single (context, file) group.
+    /// </summary>
+    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group)
+    {
+        // Report all deferred diagnostics
+        SyntaxTree? syntaxTree = null;
+        foreach (var site in group.Sites)
+        {
+            if (site.InvocationSyntax?.SyntaxTree != null)
             {
-                // Report diagnostic for interceptor generation failure
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.InternalError,
-                    Location.None,
-                    $"Failed to generate interceptors: {ex.Message}");
-
-                context.ReportDiagnostic(diagnostic);
+                syntaxTree = site.InvocationSyntax.SyntaxTree;
+                break;
             }
+        }
+        if (syntaxTree == null)
+        {
+            foreach (var site in group.ChainMemberSites)
+            {
+                if (site.InvocationSyntax?.SyntaxTree != null)
+                {
+                    syntaxTree = site.InvocationSyntax.SyntaxTree;
+                    break;
+                }
+            }
+        }
+
+        foreach (var diag in group.Diagnostics)
+        {
+            var descriptor = GetDescriptorById(diag.DiagnosticId);
+            if (descriptor == null) continue;
+
+            var location = syntaxTree != null
+                ? diag.Location.ToLocation(syntaxTree)
+                : Location.None;
+
+            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+        }
+
+        // Merge sites and chain member sites
+        var mergedSites = new List<UsageSiteInfo>(group.Sites.Count + group.ChainMemberSites.Count);
+        mergedSites.AddRange(group.Sites);
+        mergedSites.AddRange(group.ChainMemberSites);
+
+        if (mergedSites.Count == 0)
+            return;
+
+        try
+        {
+            // Generate interceptors file
+            var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
+                group.ContextClassName,
+                group.ContextNamespace,
+                group.FileTag,
+                mergedSites,
+                group.Chains as IReadOnlyList<PrebuiltChainInfo>);
+
+            var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
+            spc.AddSource(fileName, interceptorsSource);
+        }
+        catch (Exception ex)
+        {
+            // Report diagnostic for interceptor generation failure
+            var diagnostic = Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                Location.None,
+                $"Failed to generate interceptors: {ex.Message}");
+
+            spc.ReportDiagnostic(diagnostic);
         }
     }
 
     /// <summary>
+    /// Maps a diagnostic ID to its descriptor for deferred reporting.
+    /// </summary>
+    private static readonly Dictionary<string, DiagnosticDescriptor> s_deferredDescriptors = new[]
+    {
+        DiagnosticDescriptors.QueryNotAnalyzable,
+        DiagnosticDescriptors.AnonymousTypeNotSupported,
+        DiagnosticDescriptors.AmbiguousContextResolution,
+        DiagnosticDescriptors.UnboundParameterPlaceholder,
+        DiagnosticDescriptors.ClauseNotTranslatable,
+        DiagnosticDescriptors.ChainOptimizedTier1,
+        DiagnosticDescriptors.ChainOptimizedTier2,
+        DiagnosticDescriptors.ChainNotAnalyzable,
+    }.ToDictionary(d => d.Id);
+
+    private static DiagnosticDescriptor? GetDescriptorById(string id) =>
+        s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
+
+    /// <summary>
     /// Analyzes execution chains for pre-built SQL optimization.
     /// Identifies execution call sites, performs dataflow analysis on their query chains,
-    /// builds pre-built SQL maps for tier 1 chains, and reports QRY030-032 diagnostics.
+    /// builds pre-built SQL maps for tier 1 chains, and collects QRY030-032 diagnostics.
     /// </summary>
-    private static IReadOnlyList<PrebuiltChainInfo> AnalyzeExecutionChains(
+    private static (IReadOnlyList<PrebuiltChainInfo> Chains, List<DiagnosticInfo> Diagnostics) AnalyzeExecutionChainsWithDiagnostics(
         Compilation compilation,
         List<UsageSiteInfo> enrichedSites,
-        SourceProductionContext context,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        CancellationToken ct)
     {
         var prebuiltChains = new List<PrebuiltChainInfo>();
+        var diagnostics = new List<DiagnosticInfo>();
 
         // Find execution sites (including joined builders)
         var executionSites = enrichedSites
@@ -519,7 +658,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .ToList();
 
         if (executionSites.Count == 0)
-            return prebuiltChains;
+            return (prebuiltChains, diagnostics);
 
         // Group all sites by syntax tree for efficient lookup
         var sitesByTree = enrichedSites
@@ -529,6 +668,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         foreach (var executionSite in executionSites)
         {
+            ct.ThrowIfCancellationRequested();
+
             var tree = executionSite.InvocationSyntax.SyntaxTree;
             if (tree == null)
                 continue;
@@ -549,37 +690,37 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
 
             var result = ChainAnalyzer.AnalyzeChain(
-                executionSite, sitesInTree, semanticModel, context.CancellationToken);
+                executionSite, sitesInTree, semanticModel, ct);
 
             if (result == null)
                 continue;
 
-            // Report diagnostic based on tier
-            var location = executionSite.InvocationSyntax.GetLocation();
+            // Collect diagnostic based on tier
+            var diagLocation = DiagnosticLocation.FromSyntaxNode(executionSite.InvocationSyntax);
             var locationDisplay = $"{GetRelativePath(executionSite.FilePath)}:{executionSite.Line}";
 
             switch (result.Tier)
             {
                 case OptimizationTier.PrebuiltDispatch:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier1,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ChainOptimizedTier1.Id,
+                        diagLocation,
                         locationDisplay,
-                        result.PossibleMasks.Count));
+                        result.PossibleMasks.Count.ToString()));
                     break;
 
                 case OptimizationTier.PrequotedFragments:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier2,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ChainOptimizedTier2.Id,
+                        diagLocation,
                         locationDisplay,
-                        result.ConditionalClauses.Count));
+                        result.ConditionalClauses.Count.ToString()));
                     break;
 
                 case OptimizationTier.RuntimeBuild:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainNotAnalyzable,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.ChainNotAnalyzable.Id,
+                        diagLocation,
                         locationDisplay,
                         result.NotAnalyzableReason ?? "unknown reason"));
                     break;
@@ -598,7 +739,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
-        return prebuiltChains;
+        return (prebuiltChains, diagnostics);
     }
 
     /// <summary>

@@ -382,7 +382,7 @@ public class InlineExtractionGeneratorTests
             interceptableLocationVersion: 1);
 
         return InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestApp", new List<UsageSiteInfo> { site });
+            "TestContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
     }
 
     #endregion

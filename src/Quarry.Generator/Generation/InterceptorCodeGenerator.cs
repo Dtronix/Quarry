@@ -26,6 +26,7 @@ internal static partial class InterceptorCodeGenerator
     public static string GenerateInterceptorsFile(
         string contextClassName,
         string? contextNamespace,
+        string fileTag,
         IReadOnlyList<UsageSiteInfo> usageSites,
         IReadOnlyList<PrebuiltChainInfo>? prebuiltChains = null)
     {
@@ -99,7 +100,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"/// <summary>");
         sb.AppendLine($"/// Generated interceptors for {contextClassName} query methods.");
         sb.AppendLine($"/// </summary>");
-        sb.AppendLine($"file static class {contextClassName}Interceptors");
+        sb.AppendLine($"file static class {contextClassName}Interceptors_{fileTag}");
         sb.AppendLine("{");
 
         // Build chain analysis lookups for execution interceptor generation
@@ -171,23 +172,66 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine();
         }
 
-        // Generate interceptor methods grouped by kind.
-        // Include non-analyzable sites that are part of analyzed chains (conditional clause sites).
-        var groupedSites = usageSites
+        // Build the filtered list of sites for generation
+        var allSitesForGeneration = usageSites
             .Where(s => s.IsAnalyzable || chainMemberIds.Contains(s.UniqueId))
-            .GroupBy(s => s.Kind)
-            .OrderBy(g => g.Key);
+            .ToList();
 
-        foreach (var group in groupedSites)
+        // Group interceptors by chain (execution terminal → all clause sites in that chain)
+        // Sites not part of any chain go into a "Standalone" group
+        var processedSiteIds = new HashSet<string>();
+        var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites)>();
+        var siteByUniqueId = allSitesForGeneration.ToDictionary(s => s.UniqueId);
+
+        if (prebuiltChains != null)
         {
-            sb.AppendLine($"    #region {group.Key} Interceptors");
-            sb.AppendLine();
+            foreach (var chain in prebuiltChains)
+            {
+                var chainSites = new List<UsageSiteInfo>();
+                // Add clause sites in chain order
+                foreach (var clause in chain.Analysis.Clauses)
+                {
+                    if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var matchingSite))
+                    {
+                        chainSites.Add(matchingSite);
+                        processedSiteIds.Add(matchingSite.UniqueId);
+                    }
+                }
+                // Add execution site
+                if (siteByUniqueId.TryGetValue(chain.Analysis.ExecutionSite.UniqueId, out var execSite))
+                {
+                    chainSites.Add(execSite);
+                    processedSiteIds.Add(execSite.UniqueId);
+                }
 
-            foreach (var site in group)
+                if (chainSites.Count > 0)
+                {
+                    var execMethod = chain.Analysis.ExecutionSite.MethodName;
+                    var label = $"Chain: {execMethod} at line {chain.Analysis.ExecutionSite.Line}";
+                    chainGroups.Add((label, chainSites));
+                }
+            }
+        }
+
+        // Remaining sites not part of any chain
+        var standaloneSites = allSitesForGeneration
+            .Where(s => !processedSiteIds.Contains(s.UniqueId))
+            .ToList();
+
+        if (standaloneSites.Count > 0)
+        {
+            chainGroups.Add(("Standalone Interceptors", standaloneSites));
+        }
+
+        // Generate grouped output
+        foreach (var (label, sites) in chainGroups)
+        {
+            sb.AppendLine($"    #region {label}");
+            sb.AppendLine();
+            foreach (var site in sites)
             {
                 GenerateInterceptorMethod(sb, site, staticFields, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds);
             }
-
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
         }

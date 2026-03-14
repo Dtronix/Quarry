@@ -1,3 +1,4 @@
+using System;
 using Quarry.Generators.Sql;
 using Quarry;
 using Microsoft.CodeAnalysis;
@@ -8,7 +9,7 @@ namespace Quarry.Generators.Models;
 /// Represents a discovered method call site on a Quarry builder type.
 /// Contains the location information needed for [InterceptsLocation] attribute generation.
 /// </summary>
-internal sealed class UsageSiteInfo
+internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
 {
     public UsageSiteInfo(
         string methodName,
@@ -227,6 +228,45 @@ internal sealed class UsageSiteInfo
     /// instead of the explicit-lambda overload (Expression&lt;Func&lt;T, TJoined, bool&gt;&gt;).
     /// </summary>
     public bool IsNavigationJoin { get; }
+
+    public bool Equals(UsageSiteInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return MethodName == other.MethodName
+            && FilePath == other.FilePath
+            && Line == other.Line
+            && Column == other.Column
+            && BuilderTypeName == other.BuilderTypeName
+            && EntityTypeName == other.EntityTypeName
+            && ResultTypeName == other.ResultTypeName
+            && IsAnalyzable == other.IsAnalyzable
+            && NonAnalyzableReason == other.NonAnalyzableReason
+            && Kind == other.Kind
+            && ContextClassName == other.ContextClassName
+            && ContextNamespace == other.ContextNamespace
+            && UniqueId == other.UniqueId
+            && (ProjectionInfo is null ? other.ProjectionInfo is null : ProjectionInfo.Equals(other.ProjectionInfo))
+            && (ClauseInfo is null ? other.ClauseInfo is null : ClauseInfo.Equals(other.ClauseInfo))
+            && (PendingClauseInfo is null ? other.PendingClauseInfo is null : PendingClauseInfo.Equals(other.PendingClauseInfo))
+            && (InsertInfo is null ? other.InsertInfo is null : InsertInfo.Equals(other.InsertInfo))
+            && InterceptableLocationData == other.InterceptableLocationData
+            && InterceptableLocationVersion == other.InterceptableLocationVersion
+            && JoinedEntityTypeName == other.JoinedEntityTypeName
+            && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
+            && Dialect == other.Dialect
+            && (UpdateInfo is null ? other.UpdateInfo is null : UpdateInfo.Equals(other.UpdateInfo))
+            && KeyTypeName == other.KeyTypeName
+            && (RawSqlTypeInfo is null ? other.RawSqlTypeInfo is null : RawSqlTypeInfo.Equals(other.RawSqlTypeInfo))
+            && IsNavigationJoin == other.IsNavigationJoin;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as UsageSiteInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(MethodName, FilePath, Line, Column, UniqueId);
+    }
 }
 
 /// <summary>

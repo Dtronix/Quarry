@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Quarry.Generators.Models;
@@ -73,7 +74,7 @@ internal enum BranchKind
 /// Result of analyzing a query chain's control flow from declaration to execution.
 /// Produced by <see cref="Quarry.Generators.Parsing.ChainAnalyzer"/>.
 /// </summary>
-internal sealed class ChainAnalysisResult
+internal sealed class ChainAnalysisResult : IEquatable<ChainAnalysisResult>
 {
     public ChainAnalysisResult(
         OptimizationTier tier,
@@ -129,12 +130,32 @@ internal sealed class ChainAnalysisResult
     /// Non-null when the chain contains such methods — execution interceptors should be skipped.
     /// </summary>
     public IReadOnlyList<string>? UnmatchedMethodNames { get; }
+
+    public bool Equals(ChainAnalysisResult? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Tier == other.Tier
+            && NotAnalyzableReason == other.NotAnalyzableReason
+            && EqualityHelpers.SequenceEqual(Clauses, other.Clauses)
+            && ExecutionSite.Equals(other.ExecutionSite)
+            && EqualityHelpers.SequenceEqual(ConditionalClauses, other.ConditionalClauses)
+            && EqualityHelpers.SequenceEqual(PossibleMasks, other.PossibleMasks)
+            && EqualityHelpers.NullableSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ChainAnalysisResult);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Tier, Clauses.Count, ConditionalClauses.Count, PossibleMasks.Count);
+    }
 }
 
 /// <summary>
 /// A clause site within an analyzed query chain.
 /// </summary>
-internal sealed class ChainedClauseSite
+internal sealed class ChainedClauseSite : IEquatable<ChainedClauseSite>
 {
     public ChainedClauseSite(
         UsageSiteInfo site,
@@ -167,12 +188,26 @@ internal sealed class ChainedClauseSite
     /// Gets the role this clause plays in the query.
     /// </summary>
     public ClauseRole Role { get; }
+
+    public bool Equals(ChainedClauseSite? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return IsConditional == other.IsConditional
+            && BitIndex == other.BitIndex
+            && Role == other.Role
+            && Site.Equals(other.Site);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ChainedClauseSite);
+
+    public override int GetHashCode() => HashCode.Combine(IsConditional, BitIndex, Role);
 }
 
 /// <summary>
 /// A conditional clause with its assigned bit index and branch classification.
 /// </summary>
-internal sealed class ConditionalClause
+internal sealed class ConditionalClause : IEquatable<ConditionalClause>
 {
     public ConditionalClause(
         int bitIndex,
@@ -198,4 +233,17 @@ internal sealed class ConditionalClause
     /// Gets the branch classification for this conditional clause.
     /// </summary>
     public BranchKind BranchKind { get; }
+
+    public bool Equals(ConditionalClause? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return BitIndex == other.BitIndex
+            && BranchKind == other.BranchKind
+            && Site.Equals(other.Site);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ConditionalClause);
+
+    public override int GetHashCode() => HashCode.Combine(BitIndex, BranchKind);
 }

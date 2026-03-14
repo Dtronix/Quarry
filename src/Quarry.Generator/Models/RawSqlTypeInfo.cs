@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace Quarry.Generators.Models;
@@ -5,7 +6,7 @@ namespace Quarry.Generators.Models;
 /// <summary>
 /// Describes the resolved result type T for a RawSqlAsync&lt;T&gt; or RawSqlScalarAsync&lt;T&gt; call site.
 /// </summary>
-internal sealed class RawSqlTypeInfo
+internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
 {
     public RawSqlTypeInfo(
         string resultTypeName,
@@ -45,6 +46,24 @@ internal sealed class RawSqlTypeInfo
     /// For scalar types, the DbDataReader method to call (e.g., "GetInt32", "GetString").
     /// </summary>
     public string? ScalarReaderMethod { get; }
+
+    public bool Equals(RawSqlTypeInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ResultTypeName == other.ResultTypeName
+            && TypeKind == other.TypeKind
+            && HasCancellationToken == other.HasCancellationToken
+            && ScalarReaderMethod == other.ScalarReaderMethod
+            && EqualityHelpers.SequenceEqual(Properties, other.Properties);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as RawSqlTypeInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(ResultTypeName, TypeKind, HasCancellationToken, Properties.Count);
+    }
 }
 
 /// <summary>
@@ -71,7 +90,7 @@ internal enum RawSqlTypeKind
 /// <summary>
 /// Describes a single property on the result type for reader code generation.
 /// </summary>
-internal sealed class RawSqlPropertyInfo
+internal sealed class RawSqlPropertyInfo : IEquatable<RawSqlPropertyInfo>
 {
     public RawSqlPropertyInfo(
         string propertyName,
@@ -146,4 +165,27 @@ internal sealed class RawSqlPropertyInfo
     /// The referenced entity type name for FK properties.
     /// </summary>
     public string? ReferencedEntityName { get; }
+
+    public bool Equals(RawSqlPropertyInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return PropertyName == other.PropertyName
+            && ClrType == other.ClrType
+            && FullClrType == other.FullClrType
+            && ReaderMethodName == other.ReaderMethodName
+            && IsNullable == other.IsNullable
+            && IsEnum == other.IsEnum
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && DbReaderMethodName == other.DbReaderMethodName
+            && IsForeignKey == other.IsForeignKey
+            && ReferencedEntityName == other.ReferencedEntityName;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as RawSqlPropertyInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PropertyName, ClrType, ReaderMethodName, IsNullable);
+    }
 }

@@ -31,9 +31,10 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
-        Assert.That(result, Does.Contain("ExecuteFetchAll Interceptors"));
+        Assert.That(result, Does.Contain("Standalone Interceptors"));
         Assert.That(result, Does.Not.Contain("async Task<List<User>>"));
     }
 
@@ -48,6 +49,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("async Task<User>"));
@@ -64,6 +66,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("async Task<User?>"));
@@ -80,6 +83,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("ExecuteFetchSingleAsyncFallback"));
@@ -96,6 +100,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("ExecuteScalarCoreAsync"));
@@ -112,6 +117,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("ExecuteNonQueryCoreAsync"));
@@ -128,6 +134,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("IAsyncEnumerable<User>"));
@@ -155,6 +162,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("ExecuteWithReaderAsync"));
@@ -171,6 +179,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Not.Contain("ExecuteFetchAllAsyncFallback"));
@@ -189,6 +198,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         // Assert
@@ -209,6 +219,7 @@ public class ExecutionInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext",
             "TestApp",
+            "test0000",
             usageSites);
 
         Assert.That(result, Does.Contain("sealed class InterceptsLocationAttribute"));
@@ -411,7 +422,7 @@ public class ExecutionInterceptorTests
             interceptableLocationVersion: 1);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
 
         // Sensitive column should have isSensitive: true
         Assert.That(result, Does.Contain("isSensitive: true"));
@@ -448,7 +459,7 @@ public class ExecutionInterceptorTests
             interceptableLocationVersion: 1);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
 
         // Sensitive column's AddSetClause should have isSensitive: true
         Assert.That(result, Does.Contain("isSensitive: true"));
@@ -547,7 +558,7 @@ public class ExecutionInterceptorTests
             interceptableLocationVersion: 1);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
 
         // FK column should have .Id extraction
         Assert.That(result, Does.Contain("entity.UserId.Id"));
@@ -583,7 +594,7 @@ public class ExecutionInterceptorTests
             interceptableLocationVersion: 1);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
 
         // FK column should have .Id extraction
         Assert.That(result, Does.Contain("entity.UserId.Id"));
@@ -616,7 +627,7 @@ public class ExecutionInterceptorTests
             interceptableLocationVersion: 1);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
 
         // FK column should extract .Id
         Assert.That(result, Does.Contain("e.UserId.Id"));

@@ -1,9 +1,11 @@
+using System;
+
 namespace Quarry.Generators.Models;
 
 /// <summary>
 /// Represents an index defined in a schema.
 /// </summary>
-internal sealed class IndexInfo
+internal sealed class IndexInfo : IEquatable<IndexInfo>
 {
     /// <summary>
     /// The index name (from the property name in the schema).
@@ -59,12 +61,32 @@ internal sealed class IndexInfo
         FilterIsBoolColumn = filterIsBoolColumn;
         IncludeColumns = includeColumns ?? Array.Empty<string>();
     }
+
+    public bool Equals(IndexInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Name == other.Name
+            && IsUnique == other.IsUnique
+            && IndexType == other.IndexType
+            && Filter == other.Filter
+            && FilterIsBoolColumn == other.FilterIsBoolColumn
+            && EqualityHelpers.SequenceEqual(Columns, other.Columns)
+            && EqualityHelpers.SequenceEqual(IncludeColumns, other.IncludeColumns);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as IndexInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Name, IsUnique, IndexType, Columns.Count);
+    }
 }
 
 /// <summary>
 /// Represents a column in an index with its sort direction.
 /// </summary>
-internal sealed class IndexColumnInfo
+internal sealed class IndexColumnInfo : IEquatable<IndexColumnInfo>
 {
     /// <summary>
     /// The property name of the column.
@@ -80,6 +102,21 @@ internal sealed class IndexColumnInfo
     {
         PropertyName = propertyName;
         Direction = direction;
+    }
+
+    public bool Equals(IndexColumnInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return PropertyName == other.PropertyName
+            && Direction == other.Direction;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as IndexColumnInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PropertyName, Direction);
     }
 }
 

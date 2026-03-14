@@ -1,3 +1,4 @@
+using System;
 using Quarry.Generators.Sql;
 using Quarry;
 namespace Quarry.Generators.Models;
@@ -5,7 +6,7 @@ namespace Quarry.Generators.Models;
 /// <summary>
 /// Contains insert operation metadata for interceptor generation.
 /// </summary>
-internal sealed class InsertInfo
+internal sealed class InsertInfo : IEquatable<InsertInfo>
 {
     /// <summary>
     /// Gets the columns to insert (excluding Identity and Computed columns).
@@ -101,12 +102,29 @@ internal sealed class InsertInfo
             _ => $"\"{columnName}\""  // SQLite, PostgreSQL
         };
     }
+
+    public bool Equals(InsertInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return IdentityColumnName == other.IdentityColumnName
+            && IdentityPropertyName == other.IdentityPropertyName
+            && QuotedIdentityColumnName == other.QuotedIdentityColumnName
+            && EqualityHelpers.SequenceEqual(Columns, other.Columns);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as InsertInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(IdentityColumnName, IdentityPropertyName, Columns.Count);
+    }
 }
 
 /// <summary>
 /// Information about a column in an insert operation.
 /// </summary>
-internal sealed class InsertColumnInfo
+internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
 {
     /// <summary>
     /// Gets the property name in the entity class.
@@ -191,5 +209,29 @@ internal sealed class InsertColumnInfo
         ForeignKeyEntityName = foreignKeyEntityName;
         CustomTypeMappingClass = customTypeMappingClass;
         IsSensitive = isSensitive;
+    }
+
+    public bool Equals(InsertColumnInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return PropertyName == other.PropertyName
+            && ColumnName == other.ColumnName
+            && QuotedColumnName == other.QuotedColumnName
+            && ClrType == other.ClrType
+            && FullClrType == other.FullClrType
+            && IsNullable == other.IsNullable
+            && IsValueType == other.IsValueType
+            && IsForeignKey == other.IsForeignKey
+            && ForeignKeyEntityName == other.ForeignKeyEntityName
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && IsSensitive == other.IsSensitive;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as InsertColumnInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, IsNullable);
     }
 }
