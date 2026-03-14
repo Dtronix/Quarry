@@ -175,7 +175,7 @@ public class EntityReaderTests
 
         var usageSite = CreateSelectUsageSite(projection, "User");
         var code = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestDb", "TestApp", new[] { usageSite });
+            "TestDb", "TestApp", "test0000", new[] { usageSite });
 
         Assert.That(code, Does.Contain($"private static readonly {ReaderFqn} _entityReader_TestApp_UserReader = new();"),
             "Should emit cached EntityReader instance as static readonly field");
@@ -194,7 +194,7 @@ public class EntityReaderTests
 
         var usageSite = CreateSelectUsageSite(projection, "User");
         var code = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestDb", "TestApp", new[] { usageSite });
+            "TestDb", "TestApp", "test0000", new[] { usageSite });
 
         Assert.That(code, Does.Not.Contain("_entityReader_"),
             "Should not emit EntityReader field when no custom reader is configured");

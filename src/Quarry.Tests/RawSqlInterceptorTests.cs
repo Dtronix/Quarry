@@ -29,7 +29,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("Task<List<UserDto>>"));
@@ -57,7 +57,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("CancellationToken cancellationToken,"));
@@ -82,7 +82,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("CancellationToken.None"));
@@ -106,7 +106,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("Task<List<int>>"));
@@ -128,7 +128,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("Task<List<string>>"));
@@ -153,7 +153,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("Task<int>"));
@@ -175,7 +175,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("Task<string>"));
@@ -197,7 +197,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("CancellationToken cancellationToken,"));
@@ -226,7 +226,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("(UserStatus)r.GetInt32(i)"));
@@ -250,7 +250,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(i))"));
@@ -274,7 +274,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
         Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(i))"));
@@ -302,7 +302,7 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert - all properties handled (nullable check is via IsDBNull in the for loop)
         Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
@@ -332,11 +332,10 @@ public class RawSqlInterceptorTests
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { dtoSite, scalarSite });
+            "AppDbContext", "TestApp", "test0000", new[] { dtoSite, scalarSite });
 
         // Assert
-        Assert.That(result, Does.Contain("RawSqlAsync Interceptors"));
-        Assert.That(result, Does.Contain("RawSqlScalarAsync Interceptors"));
+        Assert.That(result, Does.Contain("Standalone Interceptors"));
         Assert.That(result, Does.Contain("RawSqlAsyncWithReader"));
         Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"));
     }
@@ -356,7 +355,7 @@ public class RawSqlInterceptorTests
         var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "EmptyDto", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain("new EmptyDto()"));
         Assert.That(result, Does.Contain("switch (r.GetName(i))"));
@@ -391,7 +390,7 @@ public class RawSqlInterceptorTests
         var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, clrType, rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"),
             $"Should generate converter for {clrType}");
@@ -420,7 +419,7 @@ public class RawSqlInterceptorTests
         var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, clrType, rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain($"r.{readerMethod}(0)"),
             $"Should generate r.{readerMethod}(0) for scalar {clrType}");
@@ -442,7 +441,7 @@ public class RawSqlInterceptorTests
         var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, "int?", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"),
             "Should generate converter for nullable int");
@@ -473,7 +472,7 @@ public class RawSqlInterceptorTests
         var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "MixedDto", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", new[] { site });
+            "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain("case \"Id\": item.Id = r.GetInt32(i); break;"));
         Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));

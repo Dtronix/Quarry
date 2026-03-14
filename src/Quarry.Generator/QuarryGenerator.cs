@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -11,6 +12,7 @@ using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Generators.Parsing;
+using Quarry.Generators.Utilities;
 using Quarry.Shared.Migration;
 
 namespace Quarry.Generators;
@@ -78,13 +80,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var compilationAndContexts = context.CompilationProvider
             .Combine(contextDeclarations.Collect());
 
-        // Combine usage sites with compilation and contexts
-        var allData = compilationAndContexts
-            .Combine(usageSites.Collect());
+        // Combine usage sites with compilation and contexts, fan out per-file
+        var perFileGroups = compilationAndContexts
+            .Combine(usageSites.Collect())
+            .SelectMany(static (data, ct) =>
+                GroupByFileAndProcess(data.Left.Left, data.Left.Right, data.Right, ct));
 
-        // Register source output for interceptors
-        context.RegisterSourceOutput(allData,
-            static (spc, source) => Execute(source.Left.Left, source.Left.Right, source.Right, spc));
+        // Per-file output — only regenerates files whose group changed
+        context.RegisterSourceOutput(perFileGroups,
+            static (spc, group) => EmitFileInterceptors(spc, group));
 
         // Phase 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
@@ -300,65 +304,52 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Executes the interceptor generation logic (Phase 2).
+    /// Groups all usage sites by (context, source file) and processes them into FileInterceptorGroups.
+    /// Replaces the old Execute()+GenerateInterceptors() flow with per-file incremental output.
     /// </summary>
-    private static void Execute(
+    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcess(
         Compilation compilation,
         ImmutableArray<ContextInfo> contexts,
         ImmutableArray<UsageSiteInfo> usageSites,
-        SourceProductionContext context)
+        CancellationToken ct)
     {
-        // Generate interceptors and report warnings
-        if (!usageSites.IsDefaultOrEmpty)
-        {
-            GenerateInterceptors(compilation, contexts, usageSites, context);
-        }
-    }
+        if (usageSites.IsDefaultOrEmpty)
+            return ImmutableArray<FileInterceptorGroup>.Empty;
 
-    /// <summary>
-    /// Generates interceptor files and reports diagnostics for non-analyzable queries.
-    /// </summary>
-    private static void GenerateInterceptors(
-        Compilation compilation,
-        ImmutableArray<ContextInfo> contexts,
-        ImmutableArray<UsageSiteInfo> usageSites,
-        SourceProductionContext context)
-    {
+        ct.ThrowIfCancellationRequested();
+
         // Build a lookup from entity type name to EntityInfo
         var entityLookup = BuildEntityLookup(contexts);
 
         // Build entity registry (entityName → EntityInfo) for subquery resolution
         var entityRegistry = BuildEntityRegistry(contexts);
 
-        // Report diagnostics for non-analyzable queries and anonymous type projections
+        // Collect diagnostics for non-analyzable queries and anonymous type projections
+        var diagnostics = new List<DiagnosticInfo>();
         var sitesToSkip = new HashSet<UsageSiteInfo>();
         foreach (var site in usageSites)
         {
             // Check for anonymous type projection failure (QRY014 - Error)
             if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.AnonymousTypeNotSupported,
-                    location);
-
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    "QRY014",
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)));
                 sitesToSkip.Add(site);
                 continue;
             }
 
-            // Report QRY001 warnings for non-analyzable queries
+            // Collect QRY001 warnings for non-analyzable queries
             if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.QueryNotAnalyzable,
-                    location,
-                    site.NonAnalyzableReason);
-
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    "QRY001",
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                    site.NonAnalyzableReason));
             }
         }
+
+        ct.ThrowIfCancellationRequested();
 
         // Enrich usage sites with entity metadata from contexts
         var enrichedSites = usageSites
@@ -367,9 +358,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .ToList();
 
         // Discover and enrich missing chain members from resolved navigation joins.
-        // When Join(u => u.Nav) has an unresolved type parameter, downstream calls (Select, Execute)
-        // aren't discovered because the semantic model can't resolve the chain types. After
-        // enrichment resolves the navigation entity type, we can synthetically discover these.
         var discoveredLocationKeys = new HashSet<string>(
             usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
         var navJoinChainSites = DiscoverNavigationJoinChainMembers(
@@ -379,7 +367,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             enrichedSites.AddRange(navJoinChainSites);
         }
 
-        // Report QRY015 for ambiguous context resolution
+        ct.ThrowIfCancellationRequested();
+
+        // Collect QRY015 for ambiguous context resolution
         foreach (var site in enrichedSites)
         {
             if (site.ContextClassName == null)
@@ -388,18 +378,17 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (list != null && list.Count > 1)
                 {
                     var chosen = list[0];
-                    var diagnostic = Diagnostic.Create(
-                        DiagnosticDescriptors.AmbiguousContextResolution,
-                        site.InvocationSyntax.GetLocation(),
+                    diagnostics.Add(new DiagnosticInfo(
+                        "QRY015",
+                        DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
                         site.EntityTypeName,
                         chosen.Context.ClassName,
-                        chosen.Context.Dialect);
-                    context.ReportDiagnostic(diagnostic);
+                        chosen.Context.Dialect.ToString()));
                 }
             }
         }
 
-        // Report QRY016 for unbound parameter placeholders in generated SQL
+        // Collect QRY016 for unbound parameter placeholders in generated SQL
         foreach (var site in enrichedSites)
         {
             if (site.ClauseInfo is { IsSuccess: true } clause)
@@ -412,44 +401,40 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     var index = int.Parse(match.Groups[1].Value);
                     if (!boundIndices.Contains(index))
                     {
-                        var diagnostic = Diagnostic.Create(
-                            DiagnosticDescriptors.UnboundParameterPlaceholder,
-                            site.InvocationSyntax.GetLocation(),
-                            match.Value);
-                        context.ReportDiagnostic(diagnostic);
+                        diagnostics.Add(new DiagnosticInfo(
+                            "QRY016",
+                            DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                            match.Value));
                     }
                 }
             }
         }
 
-        // Report QRY019 for clause interceptors that could not be translated
+        // Collect QRY019 for clause interceptors that could not be translated
         foreach (var site in enrichedSites)
         {
             var clauseKind = GetNonTranslatableClauseKind(site);
             if (clauseKind != null)
             {
-                var location = site.InvocationSyntax.GetLocation();
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.ClauseNotTranslatable,
-                    location,
-                    clauseKind);
-                context.ReportDiagnostic(diagnostic);
+                diagnostics.Add(new DiagnosticInfo(
+                    "QRY019",
+                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
+                    clauseKind));
             }
         }
 
+        ct.ThrowIfCancellationRequested();
+
         // Analyze execution chains for pre-built SQL optimization tiers.
-        // Chain analysis needs ALL usage sites (including non-analyzable ones) because
-        // variable-based chains have clause sites marked non-analyzable by the per-site
-        // AnalyzabilityChecker, but ChainAnalyzer can still analyze them as a whole.
         var allSitesForChainAnalysis = usageSites
             .Where(s => !sitesToSkip.Contains(s))
             .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry))
             .ToList();
-        // Include synthetically discovered navigation join chain members
         if (navJoinChainSites.Count > 0)
             allSitesForChainAnalysis.AddRange(navJoinChainSites);
-        var prebuiltChains = AnalyzeExecutionChains(
-            compilation, allSitesForChainAnalysis, context, entityLookup);
+        var (prebuiltChains, chainDiagnostics) = AnalyzeExecutionChainsWithDiagnostics(
+            compilation, allSitesForChainAnalysis, entityLookup, ct);
+        diagnostics.AddRange(chainDiagnostics);
 
         // Build a set of chain member UniqueIds so we can include non-analyzable clause
         // sites that are part of analyzed chains (e.g., conditional clauses inside if-blocks).
@@ -461,7 +446,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
-        // so that GenerateInterceptorsFile can emit interceptors for conditional clause sites.
         var enrichedSiteIds = new HashSet<string>(enrichedSites.Select(s => s.UniqueId));
         var additionalChainSites = allSitesForChainAnalysis
             .Where(s => chainMemberUniqueIds.Contains(s.UniqueId) && !enrichedSiteIds.Contains(s.UniqueId))
@@ -469,67 +453,200 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         var allSitesForGeneration = enrichedSites.Concat(additionalChainSites).ToList();
 
-        // Group usage sites by (context, namespace) so each context gets its own interceptors file
-        var sitesByContext = allSitesForGeneration
-            .GroupBy(s => s.ContextClassName ?? "Quarry")
+        ct.ThrowIfCancellationRequested();
+
+        // Group by (contextClassName, filePath) for per-file output
+        var fileGroups = allSitesForGeneration
+            .GroupBy(s => (ContextClassName: s.ContextClassName ?? "Quarry", FilePath: s.FilePath))
             .ToList();
 
-        foreach (var group in sitesByContext)
+        var result = ImmutableArray.CreateBuilder<FileInterceptorGroup>(fileGroups.Count);
+
+        foreach (var group in fileGroups)
         {
             var sites = group.ToList();
-
             if (sites.Count == 0)
                 continue;
 
-            try
+            var contextClassName = group.Key.ContextClassName;
+            var filePath = group.Key.FilePath;
+
+            // Compute stable file hash
+            var stableFileHash = FileHasher.ComputeStableHash(filePath);
+
+            // Derive namespace
+            var namespaceName = sites.Select(s => s.ContextNamespace)
+                                    .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
+                                ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
+
+            // Filter pre-built chains for this context AND this file
+            var fileChains = prebuiltChains
+                .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName
+                         && c.Analysis.ExecutionSite.FilePath == filePath)
+                .ToList();
+
+            // Separate chain member sites for this file
+            var fileChainMemberIds = new HashSet<string>();
+            foreach (var chain in fileChains)
             {
-                var contextClassName = group.Key;
-
-                // Derive namespace: prefer enriched ContextNamespace, fall back to entity type namespace
-                var namespaceName = sites.Select(s => s.ContextNamespace)
-                                        .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
-                                    ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
-
-                // Filter pre-built chains for this context
-                var contextChains = prebuiltChains
-                    .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName)
-                    .ToList();
-
-                // Generate interceptors file
-                var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
-                    contextClassName,
-                    namespaceName,
-                    sites,
-                    contextChains);
-
-                var fileName = $"{contextClassName}.Interceptors.g.cs";
-                context.AddSource(fileName, interceptorsSource);
+                foreach (var clause in chain.Analysis.Clauses)
+                    fileChainMemberIds.Add(clause.Site.UniqueId);
             }
-            catch (Exception ex)
+
+            var fileSites = sites
+                .Where(s => s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
+                .ToList();
+            var fileChainMemberSites = sites
+                .Where(s => !s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
+                .ToList();
+
+            // Collect diagnostics for this file
+            var fileDiagnostics = diagnostics
+                .Where(d => d.Location.FilePath == filePath)
+                .ToList();
+
+            result.Add(new FileInterceptorGroup(
+                contextClassName,
+                namespaceName,
+                filePath,
+                stableFileHash,
+                fileSites,
+                fileChains,
+                fileChainMemberSites,
+                fileDiagnostics));
+        }
+
+        // Create diagnostic-only groups for files that have diagnostics but no sites in any group.
+        // This happens when a file has only non-analyzable sites (QRY001/QRY014).
+        var coveredFilePaths = new HashSet<string>(fileGroups.Select(g => g.Key.FilePath));
+        var orphanedDiagnostics = diagnostics
+            .Where(d => !coveredFilePaths.Contains(d.Location.FilePath))
+            .GroupBy(d => d.Location.FilePath)
+            .ToList();
+
+        foreach (var orphanGroup in orphanedDiagnostics)
+        {
+            var filePath = orphanGroup.Key;
+            var stableFileHash = FileHasher.ComputeStableHash(filePath);
+
+            // Find the original non-analyzable site to get the SyntaxTree for location reconstruction
+            var originalSite = usageSites.FirstOrDefault(s => s.FilePath == filePath);
+
+            result.Add(new FileInterceptorGroup(
+                "Quarry",
+                null,
+                filePath,
+                stableFileHash,
+                Array.Empty<UsageSiteInfo>(),
+                Array.Empty<PrebuiltChainInfo>(),
+                Array.Empty<UsageSiteInfo>(),
+                orphanGroup.ToList()));
+        }
+
+        return result.ToImmutable();
+    }
+
+    /// <summary>
+    /// Emits interceptor source and reports diagnostics for a single (context, file) group.
+    /// </summary>
+    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group)
+    {
+        // Report all deferred diagnostics
+        SyntaxTree? syntaxTree = null;
+        foreach (var site in group.Sites)
+        {
+            if (site.InvocationSyntax?.SyntaxTree != null)
             {
-                // Report diagnostic for interceptor generation failure
-                var diagnostic = Diagnostic.Create(
-                    DiagnosticDescriptors.InternalError,
-                    Location.None,
-                    $"Failed to generate interceptors: {ex.Message}");
-
-                context.ReportDiagnostic(diagnostic);
+                syntaxTree = site.InvocationSyntax.SyntaxTree;
+                break;
             }
+        }
+        if (syntaxTree == null)
+        {
+            foreach (var site in group.ChainMemberSites)
+            {
+                if (site.InvocationSyntax?.SyntaxTree != null)
+                {
+                    syntaxTree = site.InvocationSyntax.SyntaxTree;
+                    break;
+                }
+            }
+        }
+
+        foreach (var diag in group.Diagnostics)
+        {
+            var descriptor = GetDescriptorById(diag.DiagnosticId);
+            if (descriptor == null) continue;
+
+            var location = syntaxTree != null
+                ? diag.Location.ToLocation(syntaxTree)
+                : Location.None;
+
+            spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+        }
+
+        // Merge sites and chain member sites
+        var mergedSites = new List<UsageSiteInfo>(group.Sites.Count + group.ChainMemberSites.Count);
+        mergedSites.AddRange(group.Sites);
+        mergedSites.AddRange(group.ChainMemberSites);
+
+        if (mergedSites.Count == 0)
+            return;
+
+        try
+        {
+            // Generate interceptors file
+            var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
+                group.ContextClassName,
+                group.ContextNamespace,
+                group.StableFileHash,
+                mergedSites,
+                group.Chains as IReadOnlyList<PrebuiltChainInfo>);
+
+            var fileName = $"{group.ContextClassName}.Interceptors.{group.StableFileHash}.g.cs";
+            spc.AddSource(fileName, interceptorsSource);
+        }
+        catch (Exception ex)
+        {
+            // Report diagnostic for interceptor generation failure
+            var diagnostic = Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                Location.None,
+                $"Failed to generate interceptors: {ex.Message}");
+
+            spc.ReportDiagnostic(diagnostic);
         }
     }
 
     /// <summary>
+    /// Maps a diagnostic ID to its descriptor for deferred reporting.
+    /// </summary>
+    private static DiagnosticDescriptor? GetDescriptorById(string id) => id switch
+    {
+        "QRY001" => DiagnosticDescriptors.QueryNotAnalyzable,
+        "QRY014" => DiagnosticDescriptors.AnonymousTypeNotSupported,
+        "QRY015" => DiagnosticDescriptors.AmbiguousContextResolution,
+        "QRY016" => DiagnosticDescriptors.UnboundParameterPlaceholder,
+        "QRY019" => DiagnosticDescriptors.ClauseNotTranslatable,
+        "QRY030" => DiagnosticDescriptors.ChainOptimizedTier1,
+        "QRY031" => DiagnosticDescriptors.ChainOptimizedTier2,
+        "QRY032" => DiagnosticDescriptors.ChainNotAnalyzable,
+        _ => null
+    };
+
+    /// <summary>
     /// Analyzes execution chains for pre-built SQL optimization.
     /// Identifies execution call sites, performs dataflow analysis on their query chains,
-    /// builds pre-built SQL maps for tier 1 chains, and reports QRY030-032 diagnostics.
+    /// builds pre-built SQL maps for tier 1 chains, and collects QRY030-032 diagnostics.
     /// </summary>
-    private static IReadOnlyList<PrebuiltChainInfo> AnalyzeExecutionChains(
+    private static (IReadOnlyList<PrebuiltChainInfo> Chains, List<DiagnosticInfo> Diagnostics) AnalyzeExecutionChainsWithDiagnostics(
         Compilation compilation,
         List<UsageSiteInfo> enrichedSites,
-        SourceProductionContext context,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        CancellationToken ct)
     {
         var prebuiltChains = new List<PrebuiltChainInfo>();
+        var diagnostics = new List<DiagnosticInfo>();
 
         // Find execution sites (including joined builders)
         var executionSites = enrichedSites
@@ -537,7 +654,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .ToList();
 
         if (executionSites.Count == 0)
-            return prebuiltChains;
+            return (prebuiltChains, diagnostics);
 
         // Group all sites by syntax tree for efficient lookup
         var sitesByTree = enrichedSites
@@ -547,6 +664,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         foreach (var executionSite in executionSites)
         {
+            ct.ThrowIfCancellationRequested();
+
             var tree = executionSite.InvocationSyntax.SyntaxTree;
             if (tree == null)
                 continue;
@@ -567,37 +686,37 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
 
             var result = ChainAnalyzer.AnalyzeChain(
-                executionSite, sitesInTree, semanticModel, context.CancellationToken);
+                executionSite, sitesInTree, semanticModel, ct);
 
             if (result == null)
                 continue;
 
-            // Report diagnostic based on tier
-            var location = executionSite.InvocationSyntax.GetLocation();
+            // Collect diagnostic based on tier
+            var diagLocation = DiagnosticLocation.FromSyntaxNode(executionSite.InvocationSyntax);
             var locationDisplay = $"{GetRelativePath(executionSite.FilePath)}:{executionSite.Line}";
 
             switch (result.Tier)
             {
                 case OptimizationTier.PrebuiltDispatch:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier1,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        "QRY030",
+                        diagLocation,
                         locationDisplay,
-                        result.PossibleMasks.Count));
+                        result.PossibleMasks.Count.ToString()));
                     break;
 
                 case OptimizationTier.PrequotedFragments:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier2,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        "QRY031",
+                        diagLocation,
                         locationDisplay,
-                        result.ConditionalClauses.Count));
+                        result.ConditionalClauses.Count.ToString()));
                     break;
 
                 case OptimizationTier.RuntimeBuild:
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainNotAnalyzable,
-                        location,
+                    diagnostics.Add(new DiagnosticInfo(
+                        "QRY032",
+                        diagLocation,
                         locationDisplay,
                         result.NotAnalyzableReason ?? "unknown reason"));
                     break;
@@ -616,7 +735,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
-        return prebuiltChains;
+        return (prebuiltChains, diagnostics);
     }
 
     /// <summary>
