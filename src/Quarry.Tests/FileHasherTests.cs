@@ -6,52 +6,69 @@ namespace Quarry.Tests;
 public class FileHasherTests
 {
     [Test]
-    public void ComputeStableHash_SamePath_ReturnsSameHash()
+    public void ComputeFileTag_SamePath_ReturnsSameTag()
     {
-        var hash1 = FileHasher.ComputeStableHash("/src/Models/User.cs");
-        var hash2 = FileHasher.ComputeStableHash("/src/Models/User.cs");
-        Assert.That(hash1, Is.EqualTo(hash2));
+        var tag1 = FileHasher.ComputeFileTag("/src/Models/User.cs");
+        var tag2 = FileHasher.ComputeFileTag("/src/Models/User.cs");
+        Assert.That(tag1, Is.EqualTo(tag2));
     }
 
     [Test]
-    public void ComputeStableHash_DifferentPaths_ReturnsDifferentHashes()
+    public void ComputeFileTag_DifferentPaths_ReturnsDifferentTags()
     {
-        var hash1 = FileHasher.ComputeStableHash("/src/Models/User.cs");
-        var hash2 = FileHasher.ComputeStableHash("/src/Models/Order.cs");
-        Assert.That(hash1, Is.Not.EqualTo(hash2));
+        var tag1 = FileHasher.ComputeFileTag("/src/Models/User.cs");
+        var tag2 = FileHasher.ComputeFileTag("/src/Models/Order.cs");
+        Assert.That(tag1, Is.Not.EqualTo(tag2));
     }
 
     [Test]
-    public void ComputeStableHash_NormalizesSlashes()
+    public void ComputeFileTag_NormalizesSlashes()
     {
-        var forward = FileHasher.ComputeStableHash("src/Models/User.cs");
-        var back = FileHasher.ComputeStableHash("src\\Models\\User.cs");
+        var forward = FileHasher.ComputeFileTag("src/Models/User.cs");
+        var back = FileHasher.ComputeFileTag("src\\Models\\User.cs");
         Assert.That(forward, Is.EqualTo(back));
     }
 
     [Test]
-    public void ComputeStableHash_NormalizesCase()
+    public void ComputeFileTag_StripsExtension()
     {
-        var lower = FileHasher.ComputeStableHash("src/models/user.cs");
-        var upper = FileHasher.ComputeStableHash("SRC/MODELS/USER.CS");
-        var mixed = FileHasher.ComputeStableHash("Src/Models/User.cs");
-        Assert.That(lower, Is.EqualTo(upper));
-        Assert.That(lower, Is.EqualTo(mixed));
+        var tag = FileHasher.ComputeFileTag("src/Models/User.cs");
+        Assert.That(tag, Is.EqualTo("src_Models_User"));
     }
 
     [Test]
-    public void ComputeStableHash_Returns8HexCharacters()
+    public void ComputeFileTag_StripsDriveLetter()
     {
-        var hash = FileHasher.ComputeStableHash("/any/path/file.cs");
-        Assert.That(hash.Length, Is.EqualTo(8));
-        Assert.That(hash, Does.Match("^[0-9a-f]{8}$"));
+        var tag = FileHasher.ComputeFileTag("C:\\Projects\\App\\Models\\User.cs");
+        Assert.That(tag, Is.EqualTo("Projects_App_Models_User"));
     }
 
     [Test]
-    public void ComputeStableHash_MixedSlashesAndCase_AllNormalize()
+    public void ComputeFileTag_StripsLeadingSlash()
     {
-        var hash1 = FileHasher.ComputeStableHash("C:\\Projects\\App\\Models\\User.cs");
-        var hash2 = FileHasher.ComputeStableHash("c:/projects/app/models/user.cs");
-        Assert.That(hash1, Is.EqualTo(hash2));
+        var tag = FileHasher.ComputeFileTag("/src/Models/User.cs");
+        Assert.That(tag, Is.EqualTo("src_Models_User"));
+    }
+
+    [Test]
+    public void ComputeFileTag_PreservesCase()
+    {
+        var tag = FileHasher.ComputeFileTag("Src/Models/User.cs");
+        Assert.That(tag, Is.EqualTo("Src_Models_User"));
+    }
+
+    [Test]
+    public void ComputeFileTag_MixedSlashes_Normalizes()
+    {
+        var tag1 = FileHasher.ComputeFileTag("C:\\Projects\\App\\Models\\User.cs");
+        var tag2 = FileHasher.ComputeFileTag("C:/Projects/App/Models/User.cs");
+        Assert.That(tag1, Is.EqualTo(tag2));
+    }
+
+    [Test]
+    public void ComputeFileTag_ContainsOnlyValidIdentifierChars()
+    {
+        var tag = FileHasher.ComputeFileTag("/some path/with spaces/file.name.cs");
+        Assert.That(tag, Does.Match("^[A-Za-z0-9_]+$"));
     }
 }

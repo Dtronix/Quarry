@@ -1,31 +1,51 @@
-using System.Security.Cryptography;
 using System.Text;
 
 namespace Quarry.Generators.Utilities;
 
 /// <summary>
-/// Generates stable, short, filesystem-safe hashes from file paths.
+/// Generates stable, human-readable, filesystem-safe tags from file paths.
 /// Used for unique output filenames in per-file interceptor generation.
 /// </summary>
 internal static class FileHasher
 {
     /// <summary>
-    /// Computes a stable 8-character hex hash from a file path.
-    /// Normalizes path (lowercase, forward slashes) before hashing.
+    /// Converts a file path into a sanitized, human-readable tag suitable for
+    /// use in filenames and C# identifiers. Strips the extension, normalizes
+    /// separators to underscores, and removes invalid characters.
+    /// Example: "src/Models/User.cs" → "src_Models_User"
     /// </summary>
-    public static string ComputeStableHash(string filePath)
+    public static string ComputeFileTag(string filePath)
     {
-        var normalized = filePath.Replace('\\', '/').ToLowerInvariant();
-        var bytes = Encoding.UTF8.GetBytes(normalized);
+        // Normalize slashes
+        var normalized = filePath.Replace('\\', '/');
 
-#if NET6_0_OR_GREATER
-        var hash = SHA256.HashData(bytes);
-#else
-        using var sha256 = SHA256.Create();
-        var hash = sha256.ComputeHash(bytes);
-#endif
+        // Strip file extension
+        var dotIndex = normalized.LastIndexOf('.');
+        if (dotIndex > normalized.LastIndexOf('/') + 1)
+            normalized = normalized.Substring(0, dotIndex);
 
-        // Take first 4 bytes → 8 hex chars. Collision probability is negligible at project scale.
-        return $"{hash[0]:x2}{hash[1]:x2}{hash[2]:x2}{hash[3]:x2}";
+        // Strip leading drive letter (e.g. "C:/") or leading slash
+        if (normalized.Length >= 2 && normalized[1] == ':')
+            normalized = normalized.Substring(2);
+        normalized = normalized.TrimStart('/');
+
+        // Replace path separators and other non-identifier chars with underscores
+        var sb = new StringBuilder(normalized.Length);
+        foreach (var c in normalized)
+        {
+            if (c == '/')
+                sb.Append('_');
+            else if (char.IsLetterOrDigit(c) || c == '_')
+                sb.Append(c);
+            // Skip other characters (spaces, dots, etc.)
+        }
+
+        // Collapse consecutive underscores and trim
+        var result = sb.ToString();
+        while (result.Contains("__"))
+            result = result.Replace("__", "_");
+        result = result.Trim('_');
+
+        return result.Length > 0 ? result : "unknown";
     }
 }

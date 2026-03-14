@@ -14,7 +14,7 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
         string contextClassName,
         string? contextNamespace,
         string sourceFilePath,
-        string stableFileHash,
+        string fileTag,
         IReadOnlyList<UsageSiteInfo> sites,
         IReadOnlyList<PrebuiltChainInfo> chains,
         IReadOnlyList<UsageSiteInfo> chainMemberSites,
@@ -23,7 +23,7 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
         ContextClassName = contextClassName;
         ContextNamespace = contextNamespace;
         SourceFilePath = sourceFilePath;
-        StableFileHash = stableFileHash;
+        FileTag = fileTag;
         Sites = sites;
         Chains = chains;
         ChainMemberSites = chainMemberSites;
@@ -46,9 +46,9 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
     public string SourceFilePath { get; }
 
     /// <summary>
-    /// Gets the stable hash of the source file path, used in output filename.
+    /// Gets the sanitized file tag derived from the source path, used in output filename and class name.
     /// </summary>
-    public string StableFileHash { get; }
+    public string FileTag { get; }
 
     /// <summary>
     /// Gets all analyzable usage sites from this file for this context.
@@ -78,7 +78,7 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
         return ContextClassName == other.ContextClassName
             && ContextNamespace == other.ContextNamespace
             && SourceFilePath == other.SourceFilePath
-            && StableFileHash == other.StableFileHash
+            && FileTag == other.FileTag
             && EqualityHelpers.SequenceEqual(Sites, other.Sites)
             && EqualityHelpers.SequenceEqual(Chains, other.Chains)
             && EqualityHelpers.SequenceEqual(ChainMemberSites, other.ChainMemberSites)
@@ -88,5 +88,5 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
     public override bool Equals(object? obj) => Equals(obj as FileInterceptorGroup);
 
     public override int GetHashCode()
-        => HashCode.Combine(ContextClassName, SourceFilePath, StableFileHash, Sites.Count);
+        => HashCode.Combine(ContextClassName, SourceFilePath, FileTag, Sites.Count);
 }

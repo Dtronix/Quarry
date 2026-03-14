@@ -26,7 +26,7 @@ internal static partial class InterceptorCodeGenerator
     public static string GenerateInterceptorsFile(
         string contextClassName,
         string? contextNamespace,
-        string stableFileHash,
+        string fileTag,
         IReadOnlyList<UsageSiteInfo> usageSites,
         IReadOnlyList<PrebuiltChainInfo>? prebuiltChains = null)
     {
@@ -100,7 +100,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"/// <summary>");
         sb.AppendLine($"/// Generated interceptors for {contextClassName} query methods.");
         sb.AppendLine($"/// </summary>");
-        sb.AppendLine($"file static class {contextClassName}Interceptors_{stableFileHash}");
+        sb.AppendLine($"file static class {contextClassName}Interceptors_{fileTag}");
         sb.AppendLine("{");
 
         // Build chain analysis lookups for execution interceptor generation

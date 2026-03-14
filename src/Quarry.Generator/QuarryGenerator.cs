@@ -471,8 +471,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             var contextClassName = group.Key.ContextClassName;
             var filePath = group.Key.FilePath;
 
-            // Compute stable file hash
-            var stableFileHash = FileHasher.ComputeStableHash(filePath);
+            // Compute human-readable file tag for output filename
+            var fileTag = FileHasher.ComputeFileTag(filePath);
 
             // Derive namespace
             var namespaceName = sites.Select(s => s.ContextNamespace)
@@ -511,7 +511,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 contextClassName,
                 namespaceName,
                 filePath,
-                stableFileHash,
+                fileTag,
                 fileSites,
                 fileChains,
                 fileChainMemberSites,
@@ -529,7 +529,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         foreach (var orphanGroup in orphanedDiagnostics)
         {
             var filePath = orphanGroup.Key;
-            var stableFileHash = FileHasher.ComputeStableHash(filePath);
+            var fileTag = FileHasher.ComputeFileTag(filePath);
 
             // Find the original non-analyzable site to get the SyntaxTree for location reconstruction
             var originalSite = usageSites.FirstOrDefault(s => s.FilePath == filePath);
@@ -538,7 +538,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 "Quarry",
                 null,
                 filePath,
-                stableFileHash,
+                fileTag,
                 Array.Empty<UsageSiteInfo>(),
                 Array.Empty<PrebuiltChainInfo>(),
                 Array.Empty<UsageSiteInfo>(),
@@ -601,11 +601,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
                 group.ContextClassName,
                 group.ContextNamespace,
-                group.StableFileHash,
+                group.FileTag,
                 mergedSites,
                 group.Chains as IReadOnlyList<PrebuiltChainInfo>);
 
-            var fileName = $"{group.ContextClassName}.Interceptors.{group.StableFileHash}.g.cs";
+            var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
         }
         catch (Exception ex)
