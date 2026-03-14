@@ -17,7 +17,8 @@ internal static partial class InterceptorCodeGenerator
     /// Handles both initial joins (QueryBuilder→JoinedQueryBuilder) and
     /// chained joins (JoinedQueryBuilder→JoinedQueryBuilder3, etc.)
     /// </summary>
-    private static void GenerateJoinInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    private static void GenerateJoinInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo as JoinClauseInfo;
@@ -50,7 +51,20 @@ internal static partial class InterceptorCodeGenerator
             var returnTypeArgs = string.Join(", ", allTypes);
             var funcTypeArgs = string.Join(", ", allTypes) + ", bool";
 
-            if (clauseInfo != null && clauseInfo.IsSuccess)
+            if (prebuiltChain != null && clauseInfo != null && clauseInfo.IsSuccess)
+            {
+                // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
+                sb.AppendLine($"    public static {returnBuilderName}<{returnTypeArgs}> {methodName}(");
+                sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder,");
+                sb.AppendLine($"        Expression<Func<{funcTypeArgs}>> _)");
+                sb.AppendLine($"    {{");
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteReceiverBuilderName}<{receiverTypeArgs}>>(builder);");
+                if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
+                    sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
+                sb.AppendLine($"        return __b.AsJoined<{joinedType}>();");
+                sb.AppendLine($"    }}");
+            }
+            else if (clauseInfo != null && clauseInfo.IsSuccess)
             {
                 var escapedSql = EscapeStringLiteral(clauseInfo.OnConditionSql);
                 sb.AppendLine($"    public static {returnBuilderName}<{returnTypeArgs}> {methodName}(");
@@ -80,6 +94,30 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        return __b.{methodCall}(condition);");
                 sb.AppendLine($"    }}");
             }
+        }
+        else if (prebuiltChain != null && clauseInfo != null && clauseInfo.IsSuccess)
+        {
+            // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
+            var joinedEntityName = clauseInfo.JoinedEntityName;
+
+            if (site.IsNavigationJoin)
+            {
+                sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
+                sb.AppendLine($"        this {thisType}<{entityType}> builder,");
+                sb.AppendLine($"        Expression<Func<{entityType}, NavigationList<{joinedEntityName}>>> _)");
+            }
+            else
+            {
+                sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
+                sb.AppendLine($"        this {thisType}<{entityType}> builder,");
+                sb.AppendLine($"        Expression<Func<{entityType}, {joinedEntityName}, bool>> _)");
+            }
+            sb.AppendLine($"    {{");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+            if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
+                sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
+            sb.AppendLine($"        return __b.AsJoined<{joinedEntityName}>();");
+            sb.AppendLine($"    }}");
         }
         else if (clauseInfo != null && clauseInfo.IsSuccess)
         {

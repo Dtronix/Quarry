@@ -494,6 +494,18 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
         return projected;
     }
 
+    /// <summary>
+    /// Creates a joined builder for the prebuilt path, transferring the PrebuiltParams array.
+    /// Performs only a type conversion without modifying state (no JoinClause/alias mutation).
+    /// </summary>
+    public JoinedQueryBuilder<T, TJoined> AsJoined<TJoined>() where TJoined : class
+    {
+        var joined = new JoinedQueryBuilder<T, TJoined>(_state);
+        joined.PrebuiltParams = PrebuiltParams;
+        joined.PrebuiltParamIndex = PrebuiltParamIndex;
+        return joined;
+    }
+
     #endregion
 
     #region Generated Code Methods for Select

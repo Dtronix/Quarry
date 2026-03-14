@@ -187,7 +187,7 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.Join:
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
-                GenerateJoinInterceptor(sb, site, methodName);
+                GenerateJoinInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain);
                 break;
 
             case InterceptorKind.ExecuteFetchAll:
