@@ -71,6 +71,119 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a carrier Limit/Offset interceptor method.
+    /// </summary>
+    private static void GenerateCarrierPaginationInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        CarrierClassInfo carrier, PrebuiltChainInfo chain)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
+
+        sb.AppendLine($"    public static {receiverType} {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder, int count)");
+        sb.AppendLine($"    {{");
+
+        var fieldName = site.Kind == InterceptorKind.Limit ? "Limit" : "Offset";
+
+        // Check if this is a runtime value (carrier has the field) or constant (noop)
+        if (HasCarrierField(carrier, site.Kind == InterceptorKind.Limit ? FieldRole.Limit : FieldRole.Offset))
+        {
+            sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).{fieldName} = count;");
+        }
+
+        sb.AppendLine($"        return builder;");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Generates a carrier Distinct interceptor method (always noop — Distinct is baked into SQL).
+    /// </summary>
+    private static void GenerateCarrierDistinctInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
+
+        sb.AppendLine($"    public static {receiverType} {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return builder;");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Generates a carrier WithTimeout interceptor method.
+    /// </summary>
+    private static void GenerateCarrierWithTimeoutInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
+
+        sb.AppendLine($"    public static {receiverType} {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder, TimeSpan timeout)");
+        sb.AppendLine($"    {{");
+
+        if (HasCarrierField(carrier, FieldRole.Timeout))
+        {
+            sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).Timeout = timeout;");
+        }
+
+        sb.AppendLine($"        return builder;");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Resolves the receiver interface type for a carrier interceptor method.
+    /// Uses the chain's resolved result type (via ProjectionInfo) to avoid broken tuple types
+    /// from the semantic model on non-clause sites like Limit/Offset.
+    /// </summary>
+    private static string ResolveCarrierReceiverType(UsageSiteInfo site, string entityType, PrebuiltChainInfo? chain = null)
+    {
+        // Resolve result type: use chain's enriched projection for broken tuples,
+        // but preserve element names (no sanitization) since interceptors need exact type match.
+        string? resultType = null;
+        if (site.ResultTypeName != null)
+        {
+            var resolved = chain != null
+                ? ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                : site.ResultTypeName;
+            if (!string.IsNullOrEmpty(resolved))
+                resultType = GetShortTypeName(resolved!);
+        }
+
+        if (site.JoinedEntityTypeNames != null && site.JoinedEntityTypeNames.Count >= 2)
+        {
+            var joinedTypes = site.JoinedEntityTypeNames.Select(GetShortTypeName).ToArray();
+            if (resultType != null)
+            {
+                return site.JoinedEntityTypeNames.Count switch
+                {
+                    2 => $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}, {resultType}>",
+                    3 => $"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {resultType}>",
+                    4 => $"IJoinedQueryBuilder4<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {joinedTypes[3]}, {resultType}>",
+                    _ => $"IJoinedQueryBuilder<{string.Join(", ", joinedTypes)}, {resultType}>"
+                };
+            }
+            return site.JoinedEntityTypeNames.Count switch
+            {
+                2 => $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}>",
+                3 => $"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}>",
+                4 => $"IJoinedQueryBuilder4<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {joinedTypes[3]}>",
+                _ => $"IJoinedQueryBuilder<{string.Join(", ", joinedTypes)}>"
+            };
+        }
+
+        if (resultType != null)
+            return $"IQueryBuilder<{entityType}, {resultType}>";
+
+        return $"IQueryBuilder<{entityType}>";
+    }
+
+    /// <summary>
     /// Emits a complete carrier clause body for Where/Having/OrderBy/GroupBy interceptors.
     /// This method handles the full body: carrier creation (first-in-chain), parameter extraction
     /// using the same FieldInfo mechanism as the prebuilt path, clause bit setting, and return.

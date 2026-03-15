@@ -51,11 +51,12 @@ internal static partial class InterceptorCodeGenerator
             return; // Don't emit anything for this site
         }
 
-        // Limit/Offset/Distinct/WithTimeout are tracked for chain analysis only — they don't need
-        // their own interceptor methods. The builder methods are simple property setters.
+        // Limit/Offset/Distinct/WithTimeout are tracked for chain analysis only on the non-carrier path.
+        // On the carrier path, they need interceptors to set carrier fields or act as noops.
         if (site.Kind is InterceptorKind.Limit or InterceptorKind.Offset or InterceptorKind.Distinct or InterceptorKind.WithTimeout)
         {
-            return;
+            if (!isCarrierSite)
+                return;
         }
 
         // For execution interceptors: only emit if we have a pre-built chain for this site
@@ -277,6 +278,22 @@ internal static partial class InterceptorCodeGenerator
 
             case InterceptorKind.RawSqlScalarAsync:
                 GenerateRawSqlScalarAsyncInterceptor(sb, site, methodName);
+                break;
+
+            case InterceptorKind.Limit:
+            case InterceptorKind.Offset:
+                if (carrierInfo != null && carrierChain != null)
+                    GenerateCarrierPaginationInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                break;
+
+            case InterceptorKind.Distinct:
+                if (carrierInfo != null && carrierChain != null)
+                    GenerateCarrierDistinctInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                break;
+
+            case InterceptorKind.WithTimeout:
+                if (carrierInfo != null && carrierChain != null)
+                    GenerateCarrierWithTimeoutInterceptor(sb, site, methodName, carrierInfo, carrierChain);
                 break;
 
             default:

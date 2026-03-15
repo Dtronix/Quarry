@@ -986,12 +986,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return null;
             }
 
-            // Clause kinds without carrier-aware interceptor branches.
-            // These run on the real builder, creating a mismatch with the carrier terminal.
+            // Delete/Update clause kinds don't have carrier-aware interceptor branches yet.
             if (clause.Role is ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
-                or ClauseRole.UpdateSet or ClauseRole.Set
-                or ClauseRole.Limit or ClauseRole.Offset or ClauseRole.Distinct
-                or ClauseRole.WithTimeout)
+                or ClauseRole.UpdateSet or ClauseRole.Set)
             {
                 return null;
             }
