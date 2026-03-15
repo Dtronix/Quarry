@@ -10,7 +10,7 @@ internal class JoinIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Join_InnerJoin_ReturnsMatchedRows()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
             .ExecuteFetchAllAsync();
@@ -24,7 +24,7 @@ internal class JoinIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Join_Where_LeftTable_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => u.IsActive)
             .Select((u, o) => (u.UserName, o.Total))
@@ -40,7 +40,7 @@ internal class JoinIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Join_Where_RightTable_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 100)
             .Select((u, o) => (u.UserName, o.Total))

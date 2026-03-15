@@ -15,10 +15,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     {
         var priority = OrderPriority.Urgent;
         AssertDialects(
-            Lite.Orders.Where(o => o.Priority == priority).ToTestCase(),
-            Pg.Orders.Where(o => o.Priority == priority).ToTestCase(),
-            My.Orders.Where(o => o.Priority == priority).ToTestCase(),
-            Ss.Orders.Where(o => o.Priority == priority).ToTestCase(),
+            Lite.Orders().Where(o => o.Priority == priority).ToTestCase(),
+            Pg.Orders().Where(o => o.Priority == priority).ToTestCase(),
+            My.Orders().Where(o => o.Priority == priority).ToTestCase(),
+            Ss.Orders().Where(o => o.Priority == priority).ToTestCase(),
             sqlite: "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
             pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
             mysql:  "SELECT * FROM `orders` WHERE (`Priority` = @p0)",

@@ -33,7 +33,7 @@ public class AggregateBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_Count()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Select(u => Sql.Count())
             .ExecuteScalarAsync<int>();
     }
@@ -64,7 +64,7 @@ public class AggregateBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<decimal> Quarry_Sum()
     {
-        return await QuarryDb.Orders
+        return await QuarryDb.Orders()
             .Select(o => Sql.Sum(o.Total))
             .ExecuteScalarAsync<decimal>();
     }
@@ -95,7 +95,7 @@ public class AggregateBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<decimal> Quarry_Avg()
     {
-        return await QuarryDb.Orders
+        return await QuarryDb.Orders()
             .Select(o => Sql.Avg(o.Total))
             .ExecuteScalarAsync<decimal>();
     }

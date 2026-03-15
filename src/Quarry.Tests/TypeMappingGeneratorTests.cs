@@ -93,7 +93,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts { get; }
+    public partial IQueryBuilder<Account> Accounts();
 }
 ";
 
@@ -123,7 +123,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts { get; }
+    public partial IQueryBuilder<Account> Accounts();
 }
 ";
 
@@ -156,7 +156,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts { get; }
+    public partial IQueryBuilder<Account> Accounts();
 }
 ";
 
@@ -200,7 +200,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts { get; }
+    public partial IQueryBuilder<Account> Accounts();
 }
 ";
 
@@ -228,7 +228,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts { get; }
+    public partial IQueryBuilder<Account> Accounts();
 }
 ";
 
@@ -260,7 +260,7 @@ public class ItemSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Item> Items { get; }
+    public partial IQueryBuilder<Item> Items();
 }
 ";
 
@@ -292,7 +292,7 @@ public class EventSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Event> Events { get; }
+    public partial IQueryBuilder<Event> Events();
 }
 ";
 
@@ -324,7 +324,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IQueryBuilder<User> Users();
 }
 ";
 

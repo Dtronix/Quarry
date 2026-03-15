@@ -131,17 +131,18 @@ internal static class ContextParser
         var entities = new List<EntityInfo>();
         var mappings = new List<EntityMapping>();
 
-        // Find all partial property declarations with QueryBuilder<T> type
-        var properties = classDeclaration.Members
-            .OfType<PropertyDeclarationSyntax>()
-            .Where(p => p.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword)))
-            .Where(p => IsQueryBuilderProperty(p));
+        // Find all partial method declarations with QueryBuilder<T> return type
+        var methods = classDeclaration.Members
+            .OfType<MethodDeclarationSyntax>()
+            .Where(m => m.Modifiers.Any(mod => mod.IsKind(SyntaxKind.PartialKeyword)))
+            .Where(m => m.ParameterList.Parameters.Count == 0)
+            .Where(m => IsQueryBuilderReturnType(m));
 
-        foreach (var property in properties)
+        foreach (var method in methods)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var entityTypeName = ExtractEntityTypeName(property);
+            var entityTypeName = ExtractEntityTypeNameFromMethod(method);
             if (entityTypeName == null)
                 continue;
 
@@ -154,7 +155,7 @@ internal static class ContextParser
             if (schemaInfo != null)
             {
                 entities.Add(schemaInfo);
-                mappings.Add(new EntityMapping(property.Identifier.Text, schemaInfo));
+                mappings.Add(new EntityMapping(method.Identifier.Text, schemaInfo));
             }
         }
 
@@ -162,11 +163,11 @@ internal static class ContextParser
     }
 
     /// <summary>
-    /// Checks if a property declaration is a QueryBuilder&lt;T&gt; property.
+    /// Checks if a method declaration returns a QueryBuilder&lt;T&gt; type.
     /// </summary>
-    private static bool IsQueryBuilderProperty(PropertyDeclarationSyntax property)
+    private static bool IsQueryBuilderReturnType(MethodDeclarationSyntax method)
     {
-        var genericName = property.Type as GenericNameSyntax;
+        var genericName = method.ReturnType as GenericNameSyntax;
         if (genericName == null)
             return false;
 
@@ -174,11 +175,11 @@ internal static class ContextParser
     }
 
     /// <summary>
-    /// Extracts the entity type name from a QueryBuilder&lt;T&gt; property.
+    /// Extracts the entity type name from a QueryBuilder&lt;T&gt; method return type.
     /// </summary>
-    private static string? ExtractEntityTypeName(PropertyDeclarationSyntax property)
+    private static string? ExtractEntityTypeNameFromMethod(MethodDeclarationSyntax method)
     {
-        var genericName = property.Type as GenericNameSyntax;
+        var genericName = method.ReturnType as GenericNameSyntax;
         if (genericName == null)
             return null;
 

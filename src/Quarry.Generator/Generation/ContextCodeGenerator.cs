@@ -123,7 +123,7 @@ internal static class ContextCodeGenerator
     }
 
     /// <summary>
-    /// Generates a QueryBuilder property for an entity.
+    /// Generates a QueryBuilder factory method for an entity.
     /// </summary>
     private static void GenerateQueryBuilderProperty(StringBuilder sb, EntityMapping mapping, string? schemaName, string access)
     {
@@ -133,20 +133,19 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// <summary>");
         sb.AppendLine($"    /// Gets a query builder for the {entity.TableName} table.");
         sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    {access} partial IQueryBuilder<{entity.EntityName}> {propertyName}");
-        sb.AppendLine($"    {{");
 
         // Pass 'this' as IQueryExecutionContext for query execution support
         if (!string.IsNullOrEmpty(schemaName))
         {
-            sb.AppendLine($"        get => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
+            sb.AppendLine($"    {access} partial IQueryBuilder<{entity.EntityName}> {propertyName}()");
+            sb.AppendLine($"        => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
         }
         else
         {
-            sb.AppendLine($"        get => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
+            sb.AppendLine($"    {access} partial IQueryBuilder<{entity.EntityName}> {propertyName}()");
+            sb.AppendLine($"        => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
         }
 
-        sb.AppendLine($"    }}");
         sb.AppendLine();
     }
 

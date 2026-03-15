@@ -16,10 +16,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void GroupBy_SingleColumn()
     {
         AssertDialects(
-            Lite.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Pg.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            My.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Ss.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Lite.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Pg.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            My.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Ss.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
             sqlite: "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, COUNT(*) FROM `orders` GROUP BY `Status`",
@@ -34,10 +34,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void Having_CountGreaterThan()
     {
         AssertDialects(
-            Lite.Orders.GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Pg.Orders.GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            My.Orders.GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Ss.Orders.GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Lite.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Pg.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            My.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Ss.Orders().GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
             sqlite: "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             pg:     "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             mysql:  "SELECT `Status`, COUNT(*) FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
@@ -52,10 +52,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void Select_Count_Sum()
     {
         AssertDialects(
-            Lite.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            Pg.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            My.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            Ss.Orders.GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
+            Lite.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
+            Pg.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
+            My.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
+            Ss.Orders().GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
             sqlite: "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, COUNT(*), SUM(\"Total\") FROM `orders` GROUP BY `Status`",

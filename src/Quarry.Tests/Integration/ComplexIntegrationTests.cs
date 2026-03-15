@@ -12,7 +12,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_Comparison_Select_ReturnsFilteredData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.UserId > 1)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -29,7 +29,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_NullAndBoolean_Select_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.Email != null)
             .Where(u => u.IsActive)
             .Select(u => (u.UserName, u.Email))
@@ -43,7 +43,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_BoolAndComparison_Select_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 1)
             .Select(u => (u.UserId, u.UserName, u.Email))
@@ -62,7 +62,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Distinct_Where_Select_ReturnsDistinctRows()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Distinct()
             .Where(u => u.IsActive)
             .Select(u => (u.UserName, u.Email))
@@ -82,7 +82,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_Select_LimitOffset_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserName, u.Email))
             .Limit(1).Offset(1)
@@ -96,7 +96,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_Select_Limit_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .Limit(1)
@@ -113,7 +113,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Orders_Where_Select_Correct()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
             .Where(o => o.Total > 100)
             .Select(o => (o.OrderId, o.Total, o.Status))
             .ExecuteFetchAllAsync();
@@ -130,7 +130,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Join_Where_Boolean_Select_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => u.IsActive)
             .Select((u, o) => (u.UserName, o.Total))
@@ -145,7 +145,7 @@ internal class ComplexIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Join_Where_RightTable_Select_Correct()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 50)
             .Select((u, o) => (u.UserName, o.Total, o.Status))

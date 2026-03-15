@@ -185,8 +185,8 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
     /// <para>Example:</para>
     /// <code>
     /// var results = await db.Union(
-    ///     db.Users.Select(u => new { u.UserId, u.UserName }).Where(u => u.IsActive),
-    ///     db.Users.Select(u => new { u.UserId, u.UserName }).Where(u => u.CreatedAt > recentDate)
+    ///     db.Users().Select(u => new { u.UserId, u.UserName }).Where(u => u.IsActive),
+    ///     db.Users().Select(u => new { u.UserId, u.UserName }).Where(u => u.CreatedAt > recentDate)
     /// ).ExecuteFetchAllAsync();
     /// </code>
     /// </remarks>

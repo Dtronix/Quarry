@@ -32,21 +32,21 @@ public class EndToEndSqlTests
     [Test]
     public void Select_Tuple_TwoColumns()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.UserName)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\""));
     }
 
     [Test]
     public void Select_Tuple_ThreeColumns()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\""));
     }
 
     [Test]
     public void Select_Dto_UserSummary()
     {
-        var sql = _db.Users.Select(u => new UserSummaryDto
+        var sql = _db.Users().Select(u => new UserSummaryDto
         {
             UserId = u.UserId,
             UserName = u.UserName,
@@ -58,7 +58,7 @@ public class EndToEndSqlTests
     [Test]
     public void Select_Dto_UserWithEmail()
     {
-        var sql = _db.Users.Select(u => new UserWithEmailDto
+        var sql = _db.Users().Select(u => new UserWithEmailDto
         {
             UserId = u.UserId,
             UserName = u.UserName,
@@ -70,7 +70,7 @@ public class EndToEndSqlTests
     [Test]
     public void Select_Dto_OrderSummary()
     {
-        var sql = _db.Orders.Select(o => new OrderSummaryDto
+        var sql = _db.Orders().Select(o => new OrderSummaryDto
         {
             OrderId = o.OrderId,
             Total = o.Total,
@@ -86,28 +86,28 @@ public class EndToEndSqlTests
     [Test]
     public void Where_BooleanProperty()
     {
-        var sql = _db.Users.Where(u => u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => u.IsActive).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
     [Test]
     public void Where_NegatedBooleanProperty()
     {
-        var sql = _db.Users.Where(u => !u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => !u.IsActive).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE NOT (\"IsActive\")"));
     }
 
     [Test]
     public void Where_Comparison_GreaterThan()
     {
-        var sql = _db.Users.Where(u => u.UserId > 0).ToSql();
+        var sql = _db.Users().Where(u => u.UserId > 0).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"UserId\" > 0)"));
     }
 
     [Test]
     public void Where_MultipleChained()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .ToSql();
@@ -121,7 +121,7 @@ public class EndToEndSqlTests
     [Test]
     public void Where_ThenSelect_Tuple()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .ToSql();
@@ -131,7 +131,7 @@ public class EndToEndSqlTests
     [Test]
     public void Where_ThenSelect_Dto()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => new UserSummaryDto
             {
@@ -150,21 +150,21 @@ public class EndToEndSqlTests
     [Test]
     public void Limit()
     {
-        var sql = _db.Users.Limit(10).ToSql();
+        var sql = _db.Users().Limit(10).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10"));
     }
 
     [Test]
     public void LimitAndOffset()
     {
-        var sql = _db.Users.Limit(10).Offset(20).ToSql();
+        var sql = _db.Users().Limit(10).Offset(20).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10 OFFSET 20"));
     }
 
     [Test]
     public void Distinct()
     {
-        var sql = _db.Users.Distinct().ToSql();
+        var sql = _db.Users().Distinct().ToSql();
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\""));
     }
 
@@ -193,14 +193,14 @@ public class EndToEndSqlTests
     [Test]
     public void Orders_Select_Tuple()
     {
-        var sql = _db.Orders.Select(o => (o.OrderId, o.Total)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT \"OrderId\", \"Total\" FROM \"orders\""));
     }
 
     [Test]
     public void Orders_Where()
     {
-        var sql = _db.Orders.Where(o => o.OrderId > 0).ToSql();
+        var sql = _db.Orders().Where(o => o.OrderId > 0).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"orders\" WHERE (\"OrderId\" > 0)"));
     }
 
@@ -211,7 +211,7 @@ public class EndToEndSqlTests
     [Test]
     public void Join_TwoTables_Select_Tuple()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
             .ToSql();
@@ -224,7 +224,7 @@ public class EndToEndSqlTests
     [Test]
     public void Join_TwoTables_Select_Dto()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto
             {

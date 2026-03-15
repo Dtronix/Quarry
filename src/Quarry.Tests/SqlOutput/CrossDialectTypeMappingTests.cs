@@ -52,10 +52,10 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
     public void Select_TupleWithMappedColumn_GeneratesCorrectSql()
     {
         AssertDialects(
-            Lite.Accounts.Select(a => (a.AccountId, a.Balance)).ToTestCase(),
-            Pg.Accounts.Select(a => (a.AccountId, a.Balance)).ToTestCase(),
-            My.Accounts.Select(a => (a.AccountId, a.Balance)).ToTestCase(),
-            Ss.Accounts.Select(a => (a.AccountId, a.Balance)).ToTestCase(),
+            Lite.Accounts().Select(a => (a.AccountId, a.Balance)).ToTestCase(),
+            Pg.Accounts().Select(a => (a.AccountId, a.Balance)).ToTestCase(),
+            My.Accounts().Select(a => (a.AccountId, a.Balance)).ToTestCase(),
+            Ss.Accounts().Select(a => (a.AccountId, a.Balance)).ToTestCase(),
             sqlite: "SELECT \"AccountId\", \"Balance\" FROM \"accounts\"",
             pg:     "SELECT \"AccountId\", \"Balance\" FROM \"accounts\"",
             mysql:  "SELECT `AccountId`, `Balance` FROM `accounts`",
@@ -70,10 +70,10 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
     public void Where_OnNonMappedColumn_GeneratesStandardWhere()
     {
         AssertDialects(
-            Lite.Accounts.Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
-            Pg.Accounts.Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
-            My.Accounts.Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
-            Ss.Accounts.Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
+            Lite.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
+            Pg.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
+            My.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
+            Ss.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToTestCase(),
             sqlite: "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = 1)",
             pg:     "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = TRUE)",
             mysql:  "SELECT `AccountId`, `AccountName` FROM `accounts` WHERE (`IsActive` = 1)",

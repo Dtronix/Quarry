@@ -16,7 +16,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_PostgreSQL()
     {
         using var db = new Quarry.Tests.Samples.SchemaPg.SchemaPgDb(Connection);
-        Assert.That(db.Users.ToSql(),
+        Assert.That(db.Users().ToSql(),
             Is.EqualTo("SELECT * FROM \"public\".\"users\""));
     }
 
@@ -24,7 +24,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_MySQL()
     {
         using var db = new Quarry.Tests.Samples.SchemaMy.SchemaMyDb(Connection);
-        Assert.That(db.Users.ToSql(),
+        Assert.That(db.Users().ToSql(),
             Is.EqualTo("SELECT * FROM `myapp`.`users`"));
     }
 
@@ -32,7 +32,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_SqlServer()
     {
         using var db = new Quarry.Tests.Samples.SchemaSs.SchemaSsDb(Connection);
-        Assert.That(db.Users.ToSql(),
+        Assert.That(db.Users().ToSql(),
             Is.EqualTo("SELECT * FROM [dbo].[users]"));
     }
 
@@ -44,10 +44,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_MapToColumn_CreditLimit()
     {
         AssertDialects(
-            Lite.Accounts.Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            Pg.Accounts.Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            My.Accounts.Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            Ss.Accounts.Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
+            Lite.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
+            Pg.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
+            My.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
+            Ss.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
             sqlite: "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
             pg:     "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
             mysql:  "SELECT `AccountId`, `credit_limit` FROM `accounts`",
@@ -62,10 +62,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SingleColumn()
     {
         AssertDialects(
-            Lite.Users.Select(u => u.UserName).ToTestCase(),
-            Pg.Users.Select(u => u.UserName).ToTestCase(),
-            My.Users.Select(u => u.UserName).ToTestCase(),
-            Ss.Users.Select(u => u.UserName).ToTestCase(),
+            Lite.Users().Select(u => u.UserName).ToTestCase(),
+            Pg.Users().Select(u => u.UserName).ToTestCase(),
+            My.Users().Select(u => u.UserName).ToTestCase(),
+            Ss.Users().Select(u => u.UserName).ToTestCase(),
             sqlite: "SELECT \"UserName\" FROM \"users\"",
             pg:     "SELECT \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserName` FROM `users`",
@@ -80,10 +80,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Where_RefId_ForeignKey()
     {
         AssertDialects(
-            Lite.Orders.Where(o => o.UserId.Id == 5).ToTestCase(),
-            Pg.Orders.Where(o => o.UserId.Id == 5).ToTestCase(),
-            My.Orders.Where(o => o.UserId.Id == 5).ToTestCase(),
-            Ss.Orders.Where(o => o.UserId.Id == 5).ToTestCase(),
+            Lite.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
+            Pg.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
+            My.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
+            Ss.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
             sqlite: "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
             pg:     "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
             mysql:  "SELECT * FROM `orders` WHERE (`UserId` = 5)",

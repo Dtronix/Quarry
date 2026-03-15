@@ -61,7 +61,7 @@ public class ComplexQueryBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserOrderDto>> Quarry_JoinFilterPaginate()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.IsActive)
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto
@@ -116,7 +116,7 @@ public class ComplexQueryBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_MultiJoinAggregate()
     {
-        var results = await QuarryDb.Users
+        var results = await QuarryDb.Users()
             .Where(u => u.IsActive)
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)

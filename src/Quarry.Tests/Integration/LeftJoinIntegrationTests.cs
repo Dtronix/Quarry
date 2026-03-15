@@ -11,7 +11,7 @@ internal class LeftJoinIntegrationTests : SqliteIntegrationTestBase
     public async Task LeftJoin_ReturnsAllLeftRowsIncludingUnmatched()
     {
         // Project only left-table columns to avoid NULL read errors on right-table columns
-        var results = await Db.Users
+        var results = await Db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => u.UserName)
             .ExecuteFetchAllAsync();
@@ -25,7 +25,7 @@ internal class LeftJoinIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task LeftJoin_Where_LeftTable_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => u.IsActive)
             .Select((u, o) => (u.UserName, o.Total))
@@ -39,7 +39,7 @@ internal class LeftJoinIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task LeftJoin_Where_RightTable_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 100)
             .Select((u, o) => (u.UserName, o.Total))

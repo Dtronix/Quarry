@@ -30,7 +30,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""public"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IQueryBuilder<User> Users();
 }
 ";
 

@@ -53,7 +53,7 @@ public class StringOpBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserSummaryDto>> Quarry_Contains()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.UserName.Contains("User05"))
             .Select(u => new UserSummaryDto
             {
@@ -109,7 +109,7 @@ public class StringOpBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserSummaryDto>> Quarry_StartsWith()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.UserName.StartsWith("User0"))
             .Select(u => new UserSummaryDto
             {

@@ -294,7 +294,7 @@ internal static class ScaffoldCodeGenerator
         {
             var entityName = ToEntityName(className);
             var propName = PluralizeForNavigation(className);
-            sb.Append("    public partial IQueryBuilder<").Append(entityName).Append("> ").Append(propName).AppendLine(" { get; }");
+            sb.Append("    public partial IQueryBuilder<").Append(entityName).Append("> ").Append(propName).AppendLine("();");
         }
 
         sb.AppendLine("}");

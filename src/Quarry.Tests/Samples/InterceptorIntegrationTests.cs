@@ -46,7 +46,7 @@ public class InterceptorIntegrationTests
     public void Where_BooleanProperty_GeneratesWhereClause()
     {
         // This triggers the Where interceptor with a boolean property access
-        var sql = _db.Users.Where(u => u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => u.IsActive).ToSql();
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("IsActive"));
@@ -55,7 +55,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Where_MultipleChained_GeneratesAndConditions()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .ToSql();
@@ -71,7 +71,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_TwoColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.UserName)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToSql();
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -83,7 +83,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_ThreeColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -93,7 +93,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_WithNullableColumn_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.Email)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.Email)).ToSql();
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"Email\""));
@@ -102,7 +102,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_AllColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, u.LastLogin)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, u.LastLogin)).ToSql();
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -115,7 +115,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_OrderEntity_GeneratesCorrectSql()
     {
-        var sql = _db.Orders.Select(o => (o.OrderId, o.Total, o.Status)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total, o.Status)).ToSql();
 
         Assert.That(sql, Does.Contain("\"OrderId\""));
         Assert.That(sql, Does.Contain("\"Total\""));
@@ -130,7 +130,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Entity_User_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => u).ToSql();
+        var sql = _db.Users().Select(u => u).ToSql();
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -144,7 +144,7 @@ public class InterceptorIntegrationTests
     public void Select_Entity_Account_WithForeignKey_GeneratesCorrectSql()
     {
         // Account has Ref<User, int> UserId — entity projection must wrap FK columns
-        var sql = _db.Accounts.Select(a => a).ToSql();
+        var sql = _db.Accounts().Select(a => a).ToSql();
 
         Assert.That(sql, Does.Contain("\"AccountId\""));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -157,7 +157,7 @@ public class InterceptorIntegrationTests
     public void Select_Entity_Order_WithForeignKey_GeneratesCorrectSql()
     {
         // Order has Ref<User, int> UserId — entity projection must wrap FK columns
-        var sql = _db.Orders.Select(o => o).ToSql();
+        var sql = _db.Orders().Select(o => o).ToSql();
 
         Assert.That(sql, Does.Contain("\"OrderId\""));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -174,7 +174,7 @@ public class InterceptorIntegrationTests
     public void Select_Dto_UserSummary_GeneratesCorrectSql()
     {
         // Note: DTO property names must match entity property names for generator to work
-        var sql = _db.Users.Select(u => new UserSummaryDto
+        var sql = _db.Users().Select(u => new UserSummaryDto
         {
             UserId = u.UserId,
             UserName = u.UserName,
@@ -189,7 +189,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Dto_UserWithEmail_GeneratesCorrectSql()
     {
-        var sql = _db.Users.Select(u => new UserWithEmailDto
+        var sql = _db.Users().Select(u => new UserWithEmailDto
         {
             UserId = u.UserId,
             UserName = u.UserName,
@@ -204,7 +204,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Dto_OrderSummary_GeneratesCorrectSql()
     {
-        var sql = _db.Orders.Select(o => new OrderSummaryDto
+        var sql = _db.Orders().Select(o => new OrderSummaryDto
         {
             OrderId = o.OrderId,
             Total = o.Total,
@@ -223,7 +223,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Where_ThenSelect_Tuple_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .ToSql();
@@ -239,7 +239,7 @@ public class InterceptorIntegrationTests
     public void Where_ThenSelect_Dto_GeneratesBothClauses()
     {
         // Note: DTO property names must match entity property names for generator to work
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive })
             .ToSql();
@@ -256,7 +256,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_WithLimit_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Select(u => (u.UserId, u.UserName))
             .Limit(10)
             .ToSql();
@@ -269,7 +269,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_WithOffsetLimit_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Select(u => (u.UserId, u.UserName))
             .Offset(20)
             .Limit(10)
@@ -287,7 +287,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ComplexChain_WhereTupleSelectLimitOffset_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName, u.Email))
             .Limit(50)
@@ -307,7 +307,7 @@ public class InterceptorIntegrationTests
     public void ComplexChain_WhereTupleWithExternalCapturedParameter_GeneratesCorrectSql()
     {
         int externalValueParameter = 44;
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.UserId >= externalValueParameter)
             .Select(u => (u.UserId, u.UserName, u.Email))
             .ToSql();
@@ -325,7 +325,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ComplexChain_MultipleWheresTupleSelect_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .Select(u => (u.UserId, u.UserName))
@@ -344,7 +344,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Where_WithLimit_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Limit(10)
             .ToSql();
@@ -356,7 +356,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Where_WithLimitOffset_GeneratesAllClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Offset(20)
             .Limit(10)
@@ -374,7 +374,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Where_WithDistinct_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Distinct()
             .ToSql();
@@ -390,7 +390,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Orders_TupleSelect_GeneratesSql()
     {
-        var sql = _db.Orders.Select(o => (o.OrderId, o.Total)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToSql();
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -399,7 +399,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void OrderItems_TupleSelect_GeneratesSql()
     {
-        var sql = _db.OrderItems.Select(oi => (oi.OrderItemId, oi.ProductName)).ToSql();
+        var sql = _db.OrderItems().Select(oi => (oi.OrderItemId, oi.ProductName)).ToSql();
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -672,7 +672,7 @@ public class InterceptorIntegrationTests
         using var db = new TestDbContext(connection);
 
         // Use the context
-        var sql = db.Users.Where(u => u.IsActive).ToSql();
+        var sql = db.Users().Where(u => u.IsActive).ToSql();
         Assert.That(sql, Is.Not.Empty);
 
         // Disposal should not throw
@@ -687,24 +687,24 @@ public class InterceptorIntegrationTests
     public void Limit_NegativeValue_ThrowsArgumentOutOfRange()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            _db.Users.Where(u => u.IsActive).Limit(-1));
+            _db.Users().Where(u => u.IsActive).Limit(-1));
     }
 
     [Test]
     public void Offset_NegativeValue_ThrowsArgumentOutOfRange()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            _db.Users.Where(u => u.IsActive).Offset(-1));
+            _db.Users().Where(u => u.IsActive).Offset(-1));
     }
 
     [Test]
     public void WithTimeout_ZeroOrNegative_ThrowsArgumentOutOfRange()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            _db.Users.Where(u => u.IsActive).WithTimeout(TimeSpan.Zero));
+            _db.Users().Where(u => u.IsActive).WithTimeout(TimeSpan.Zero));
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            _db.Users.Where(u => u.IsActive).WithTimeout(TimeSpan.FromSeconds(-1)));
+            _db.Users().Where(u => u.IsActive).WithTimeout(TimeSpan.FromSeconds(-1)));
     }
 
     #endregion
@@ -714,7 +714,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ComplexChain_WhereLimitOffset_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Limit(100)
             .Offset(50)
@@ -728,7 +728,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ComplexChain_WhereDistinctLimit_GeneratesCorrectSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Where(u => u.IsActive)
             .Distinct()
             .Limit(20)
@@ -750,7 +750,7 @@ public class InterceptorIntegrationTests
         int value = 42;
 
         // Act - the captured variable should be extracted using direct path navigation
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName));
 
@@ -764,13 +764,13 @@ public class InterceptorIntegrationTests
     {
         // Arrange - first query with value = 42
         int value = 42;
-        var query1 = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query1 = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName));
 
         // Change the value and create a new query
         value = 100;
-        var query2 = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query2 = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName));
 
@@ -787,7 +787,7 @@ public class InterceptorIntegrationTests
         int maxValue = 100;
 
         // Act - multiple captured variables in a complex expression
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserId >= minValue && u.UserId <= maxValue)
             .Select(u => (u.UserId, u.UserName));
 
@@ -806,7 +806,7 @@ public class InterceptorIntegrationTests
         string searchTerm = "john";
 
         // Act - captured variable in method call
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserName.Contains(searchTerm))
             .Select(u => (u.UserId, u.UserName));
 
@@ -824,7 +824,7 @@ public class InterceptorIntegrationTests
             new DateTime(2024, 1, 15);
 
         // Act
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.LastLogin > cutoffDate)
             .Select(u => (u.UserId, u.UserName));
 
@@ -840,7 +840,7 @@ public class InterceptorIntegrationTests
         int threshold = 50;
 
         // Act
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => threshold <= u.UserId)
             .Select(u => (u.UserId, u.UserName));
 
@@ -857,7 +857,7 @@ public class InterceptorIntegrationTests
         int value2 = 20;
 
         // Act - captured variables in OR expression
-        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users
+        var query = (QueryBuilder<User, (int UserId, string UserName)>)_db.Users()
             .Where(u => u.UserId == value1 || u.UserId == value2)
             .Select(u => (u.UserId, u.UserName));
 
@@ -876,7 +876,7 @@ public class InterceptorIntegrationTests
     {
         int value = 42;
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -894,7 +894,7 @@ public class InterceptorIntegrationTests
     public async Task CapturedParameterExecution_ValueChanges_ReflectedInExecutedQuery()
     {
         int value = 42;
-        var results1 = await _db.Users
+        var results1 = await _db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -903,7 +903,7 @@ public class InterceptorIntegrationTests
         Assert.That(((DbParameter)cmd1Params[0]!).Value, Is.EqualTo(42));
 
         value = 100;
-        var results2 = await _db.Users
+        var results2 = await _db.Users()
             .Where(u => u.UserId >= value)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -917,7 +917,7 @@ public class InterceptorIntegrationTests
         int minValue = 10;
         int maxValue = 100;
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => u.UserId >= minValue && u.UserId <= maxValue)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -934,7 +934,7 @@ public class InterceptorIntegrationTests
     {
         string searchTerm = "john";
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => u.UserName.Contains(searchTerm))
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -950,7 +950,7 @@ public class InterceptorIntegrationTests
     {
         DateTime? cutoffDate = new DateTime(2024, 1, 15);
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => u.LastLogin > cutoffDate)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -966,7 +966,7 @@ public class InterceptorIntegrationTests
     {
         int threshold = 50;
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => threshold <= u.UserId)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -983,7 +983,7 @@ public class InterceptorIntegrationTests
         int value1 = 10;
         int value2 = 20;
 
-        var results = await _db.Users
+        var results = await _db.Users()
             .Where(u => u.UserId == value1 || u.UserId == value2)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -1002,7 +1002,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Join_UsersOrders_GeneratesInnerJoinSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .ToSql();
 
@@ -1014,7 +1014,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void LeftJoin_UsersOrders_GeneratesLeftJoinSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .ToSql();
 
@@ -1026,7 +1026,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void RightJoin_UsersOrders_GeneratesRightJoinSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .RightJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .ToSql();
 
@@ -1038,7 +1038,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Join_WithLimit_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Limit(10)
             .ToSql();
@@ -1050,7 +1050,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Join_WithOffset_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Offset(20)
             .Limit(10)
@@ -1064,7 +1064,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Join_WithDistinct_GeneratesBothClauses()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Distinct()
             .ToSql();
@@ -1076,7 +1076,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Join_OrdersOrderItems_GeneratesJoinSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .Join<OrderItem>((o, oi) => o.OrderId == oi.OrderId.Id)
             .ToSql();
 
@@ -1088,7 +1088,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void LeftJoin_OrdersOrderItems_GeneratesLeftJoinSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .LeftJoin<OrderItem>((o, oi) => o.OrderId == oi.OrderId.Id)
             .ToSql();
 
@@ -1103,7 +1103,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ThreeTableJoin_UsersOrdersOrderItems_GeneratesChainedJoinSql()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .ToSql();
@@ -1117,7 +1117,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ThreeTableJoin_WithWhere_GeneratesFilterClause()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Where((u, o, oi) => u.IsActive)
@@ -1130,7 +1130,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ThreeTableJoin_WithPagination_GeneratesOffsetLimit()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Offset(10)
@@ -1144,7 +1144,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ThreeTableJoin_MixedJoinTypes_LeftAndInner()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .ToSql();
@@ -1160,7 +1160,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void TwoTableJoin_Select_Dto_GeneratesSqlWithAliasedColumns()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto { UserName = u.UserName, Total = o.Total })
             .ToSql();
@@ -1173,7 +1173,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void TwoTableJoin_Select_Tuple_GeneratesSqlWithAliasedColumns()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
             .ToSql();
@@ -1185,7 +1185,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void ThreeTableJoin_Select_Dto_GeneratesSqlWithAliasedColumns()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => new UserOrderItemDto { UserName = u.UserName, Total = o.Total, ProductName = oi.ProductName })
@@ -1199,7 +1199,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void TwoTableJoin_Select_SingleColumn_GeneratesSqlWithAlias()
     {
-        var sql = _db.Users
+        var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => o.Total)
             .ToSql();
@@ -1514,7 +1514,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_TupleWithAvg_GeneratesCorrectSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
             .ToSql();
@@ -1527,7 +1527,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_TupleWithMin_GeneratesCorrectSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Min(o.Total)))
             .ToSql();
@@ -1540,7 +1540,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_TupleWithMax_GeneratesCorrectSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Max(o.Total)))
             .ToSql();
@@ -1553,7 +1553,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_TupleWithMultipleAggregates_GeneratesCorrectSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total), Sql.Count()))
             .ToSql();
@@ -1567,7 +1567,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void GroupBy_Having_Select_TupleWithAvg_GeneratesCorrectSql()
     {
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .GroupBy(o => o.Status)
             .Having(o => Sql.Count() > 1)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
@@ -1582,7 +1582,7 @@ public class InterceptorIntegrationTests
     public void Select_ThenGroupBy_TupleProjection_GeneratesCorrectSql()
     {
         // Bug B scenario: Select-then-GroupBy where element names could shadow types
-        var sql = _db.Orders
+        var sql = _db.Orders()
             .Select(o => (o.Status, Sql.Count()))
             .GroupBy(o => o.Status)
             .ToSql();
@@ -1711,7 +1711,7 @@ public class InterceptorIntegrationTests
     public async Task VariableBasedSelect_ExecutesFetchAll()
     {
         // Variable-based SELECT (QueryBuilder) chain
-        var query = _db.Users.Where(u => u.IsActive).Select(u => u);
+        var query = _db.Users().Where(u => u.IsActive).Select(u => u);
         var results = await query.ExecuteFetchAllAsync();
 
         Assert.That(results, Is.Not.Null);
@@ -1813,7 +1813,7 @@ public class InterceptorIntegrationTests
     {
         // Conditional WHERE on SELECT — condition true
         // Where must come before Select so the variable type stays IQueryBuilder<User>
-        IQueryBuilder<User> query = _db.Users;
+        IQueryBuilder<User> query = _db.Users();
         if (true)
         {
             query = query.Where(u => u.IsActive);
@@ -1832,7 +1832,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalSelect_WithConditionFalse_ExcludesConditionalWhere()
     {
         // Conditional WHERE on SELECT — condition false
-        IQueryBuilder<User> query = _db.Users;
+        IQueryBuilder<User> query = _db.Users();
         if (false)
         {
             query = query.Where(u => u.IsActive);
@@ -1853,7 +1853,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_TwoEntityInnerJoin_TupleProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
             .ExecuteFetchAllAsync();
@@ -1872,7 +1872,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_TwoEntityLeftJoin_DtoProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto { UserName = u.UserName, Total = o.Total })
             .ExecuteFetchAllAsync();
@@ -1889,7 +1889,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_ThreeEntityJoin_TupleProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => (u.UserName, o.Total, oi.ProductName))
@@ -1908,7 +1908,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_VariableBasedChain_GeneratesPrebuiltSql()
     {
-        var q = _db.Users
+        var q = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total));
         var results = await q.ExecuteFetchAllAsync();
@@ -1924,7 +1924,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_WithWhereAndOrderBy_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 100)
             .OrderBy((u, o) => u.UserName)
@@ -1943,7 +1943,7 @@ public class InterceptorIntegrationTests
     public async Task JoinExecution_WithWhere_DirectFluent_GeneratesPrebuiltSql()
     {
         // Direct fluent join with WHERE — no conditional branching
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => u.IsActive)
             .Select((u, o) => (u.UserName, o.Total))
@@ -1962,7 +1962,7 @@ public class InterceptorIntegrationTests
     {
         // Conditional WHERE on unprojected join builder (before Select)
         // Tests that chain analysis correctly handles hybrid variable+fluent tail
-        var q = _db.Users
+        var q = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id);
         if (true)
         {
@@ -1984,7 +1984,7 @@ public class InterceptorIntegrationTests
     public async Task JoinExecution_ConditionalWhere_FalsePath_ExcludesClause()
     {
         // Conditional WHERE on unprojected join builder (before Select)
-        var q = _db.Users
+        var q = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id);
         if (false)
         {
@@ -2004,7 +2004,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_SingleColumnProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => o.Total)
             .ExecuteFetchAllAsync();
@@ -2019,7 +2019,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_FourEntityJoin_TupleProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Join<Product>((u, o, oi, p) => oi.ProductName == p.ProductName)
@@ -2042,7 +2042,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task JoinExecution_FourEntityJoin_DtoProjection_GeneratesPrebuiltSql()
     {
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Join<Product>((u, o, oi, p) => oi.ProductName == p.ProductName)
@@ -2069,7 +2069,7 @@ public class InterceptorIntegrationTests
     {
         // Conditional WHERE on projected join builder (after Select)
         // This exercises the tuple TResult type in the Where interceptor signature
-        var q = _db.Users
+        var q = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total));
         if (true)
@@ -2090,7 +2090,7 @@ public class InterceptorIntegrationTests
     public async Task JoinExecution_ConditionalWhere_OnProjectedBuilder_FalsePath()
     {
         // Conditional WHERE on projected join builder (after Select)
-        var q = _db.Users
+        var q = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total));
         var neverTrue = DateTime.UtcNow.Year < 1;
@@ -2111,7 +2111,7 @@ public class InterceptorIntegrationTests
     public async Task JoinExecution_NavigationJoin_ExplicitType_TupleProjection_GeneratesPrebuiltSql()
     {
         // Navigation join with explicit type argument — semantic model can resolve TJoined
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join<Order>(u => u.Orders)
             .Select((u, o) => (u.UserName, o.Total))
             .ExecuteFetchAllAsync();
@@ -2128,7 +2128,7 @@ public class InterceptorIntegrationTests
     public async Task JoinExecution_NavigationJoin_InferredType_TupleProjection_GeneratesPrebuiltSql()
     {
         // Navigation join with inferred type — relies on syntactic resolution
-        var results = await _db.Users
+        var results = await _db.Users()
             .Join(u => u.Orders)
             .Select((u, o) => (u.UserName, o.Total))
             .ExecuteFetchAllAsync();
