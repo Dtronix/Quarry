@@ -114,6 +114,11 @@ internal static partial class InterceptorCodeGenerator
                 if (chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
                     continue;
 
+                // Validate execution terminal would be emitted — if not, carrier clause
+                // interceptors would create carriers with no terminal to consume them.
+                if (!WouldExecutionTerminalBeEmitted(chain))
+                    continue;
+
                 var resolvedBase = ResolveCarrierBaseClass(chain);
                 var carrier = CarrierClassBuilder.Build(chain, carrierIndex, resolvedBase);
                 if (carrier == null)

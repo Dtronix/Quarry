@@ -270,6 +270,13 @@ internal static partial class InterceptorCodeGenerator
     /// Prefers the semantic model's type (most qualified) but falls back to
     /// enriched ProjectionInfo type for tuples, single-column, and empty results.
     /// </summary>
+    /// <summary>
+    /// Public accessor for carrier eligibility checks in QuarryGenerator.
+    /// </summary>
+    internal static string? ResolveExecutionResultTypePublic(
+        string? siteResultType, string? chainResultType, ProjectionInfo? projectionInfo)
+        => ResolveExecutionResultType(siteResultType, chainResultType, projectionInfo);
+
     private static string? ResolveExecutionResultType(
         string? siteResultType,
         string? chainResultType,

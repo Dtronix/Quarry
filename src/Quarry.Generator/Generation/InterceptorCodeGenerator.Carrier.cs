@@ -8,6 +8,47 @@ namespace Quarry.Generators.Generation;
 internal static partial class InterceptorCodeGenerator
 {
     /// <summary>
+    /// Checks whether a chain's execution terminal would pass the generation checks
+    /// in GenerateInterceptorMethod. If not, the chain must not be carrier-eligible
+    /// because clause interceptors would create carriers with no terminal to consume them.
+    /// </summary>
+    private static bool WouldExecutionTerminalBeEmitted(PrebuiltChainInfo chain)
+    {
+        var site = chain.Analysis.ExecutionSite;
+
+        if (chain.Analysis.UnmatchedMethodNames != null)
+            return false;
+
+        if (site.Kind is InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
+            or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
+            or InterceptorKind.ToAsyncEnumerable)
+        {
+            var rawResult = ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            if (string.IsNullOrEmpty(rawResult))
+                return false;
+            if (chain.ReaderDelegateCode == null)
+                return false;
+            if (chain.ProjectionInfo != null && chain.ProjectionInfo.Columns.Any(c =>
+                c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
+                return false;
+        }
+        else if (site.Kind is InterceptorKind.ExecuteScalar)
+        {
+            var rawResult = ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            if (string.IsNullOrEmpty(rawResult))
+                return false;
+        }
+        else if (site.Kind is InterceptorKind.ExecuteNonQuery)
+        {
+            if (chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+                || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Resolves the carrier base class name for a chain, handling tuple result types correctly.
     /// Must be called from InterceptorCodeGenerator where SanitizeTupleResultType is accessible.
     /// </summary>

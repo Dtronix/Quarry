@@ -831,9 +831,34 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
-        // Build chain parameter info for carrier optimization
+        // Build chain parameter info for carrier optimization.
+        // Carrier eligibility mirrors execution terminal checks — if the terminal would be
+        // skipped by GenerateInterceptorMethod, the chain must NOT be carrier-eligible,
+        // otherwise clause interceptors create carriers with no terminal to consume them.
         var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null;
+        var isCarrierEligible = chainParams != null
+            && result.UnmatchedMethodNames == null;
+
+        if (isCarrierEligible && queryKind.Value == QueryKind.Select)
+        {
+            // SELECT terminal checks: result type resolution, reader delegate, ambiguous columns
+            var resolvedResult = InterceptorCodeGenerator.ResolveExecutionResultTypePublic(
+                executionSite.ResultTypeName, executionSite.ResultTypeName, projInfo);
+            if (string.IsNullOrEmpty(resolvedResult))
+                isCarrierEligible = false;
+            else if (readerCode == null)
+                isCarrierEligible = false;
+            else if (projInfo != null && projInfo.Columns.Any(c =>
+                c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
+                isCarrierEligible = false;
+        }
+        else if (isCarrierEligible && queryKind.Value is QueryKind.Delete or QueryKind.Update)
+        {
+            // NonQuery terminal checks: SQL variants must be non-empty and well-formed
+            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+                || (queryKind.Value == QueryKind.Update && v.Sql.Contains("SET  "))))
+                isCarrierEligible = false;
+        }
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,

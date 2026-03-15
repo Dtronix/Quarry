@@ -991,6 +991,12 @@ internal static class ChainAnalyzer
         IReadOnlyList<UsageSiteInfo> allSitesInMethod,
         SemanticModel semanticModel)
     {
+        // Only flag builder variables, not context variables.
+        // Context variables (QuarryContext subclasses) are expected to be reused across
+        // multiple queries. Builder variables should not be.
+        if (IsQuarryContextType(variable.Type))
+            return null;
+
         var executionCount = 0;
 
         foreach (var site in allSitesInMethod)
