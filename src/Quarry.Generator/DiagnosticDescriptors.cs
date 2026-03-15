@@ -444,6 +444,21 @@ internal static class DiagnosticDescriptors
                      "The existing runtime SqlBuilder path will be used. This is not an error — " +
                      "consider restructuring the query to enable optimization.");
 
+    /// <summary>
+    /// QRY033: Forked query chain — builder variable consumed by multiple execution paths.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor ForkedQueryChain = new(
+        id: "QRY033",
+        title: "Forked query chain",
+        messageFormat: "Query builder variable '{0}' is consumed by multiple execution paths. Each execution path must use its own builder chain expression.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A query builder variable is used as the receiver for multiple execution-terminating calls " +
+                     "(e.g., ExecuteFetchAllAsync). Each execution path must use its own independent builder chain " +
+                     "to avoid confusing aliasing behavior from the immutable builder contract.");
+
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 
     /// <summary>

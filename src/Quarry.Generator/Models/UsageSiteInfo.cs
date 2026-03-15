@@ -428,6 +428,12 @@ internal enum InterceptorKind
     Distinct,
 
     /// <summary>
+    /// WithTimeout() method - sets query timeout. Not intercepted on non-carrier path,
+    /// but tracked for chain analysis so carrier can store the timeout value.
+    /// </summary>
+    WithTimeout,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

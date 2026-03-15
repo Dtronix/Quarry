@@ -34,7 +34,9 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         QueryKind queryKind,
         ProjectionInfo? projectionInfo,
         IReadOnlyList<string>? joinedEntityTypeNames = null,
-        IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null)
+        IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null,
+        IReadOnlyList<ChainParameterInfo>? chainParameters = null,
+        bool isCarrierEligible = false)
     {
         Analysis = analysis;
         SqlMap = sqlMap;
@@ -49,6 +51,8 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         JoinedEntityTypeNames = joinedEntityTypeNames;
         JoinedTableInfos = joinedTableInfos;
         MaxParameterCount = sqlMap.Count > 0 ? sqlMap.Values.Max(v => v.ParameterCount) : 0;
+        ChainParameters = chainParameters ?? Array.Empty<ChainParameterInfo>();
+        IsCarrierEligible = isCarrierEligible;
     }
 
     /// <summary>
@@ -122,6 +126,17 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
     /// </summary>
     public int MaxParameterCount { get; }
 
+    /// <summary>
+    /// Gets the typed parameter information for carrier class field generation.
+    /// Empty when parameter types could not be resolved.
+    /// </summary>
+    public IReadOnlyList<ChainParameterInfo> ChainParameters { get; }
+
+    /// <summary>
+    /// Gets whether this chain qualifies for carrier class optimization.
+    /// </summary>
+    public bool IsCarrierEligible { get; }
+
     public bool Equals(PrebuiltChainInfo? other)
     {
         if (other is null) return false;
@@ -133,12 +148,14 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
             && SchemaName == other.SchemaName
             && QueryKind == other.QueryKind
             && MaxParameterCount == other.MaxParameterCount
+            && IsCarrierEligible == other.IsCarrierEligible
             && Analysis.Equals(other.Analysis)
             && EqualityHelpers.DictionaryEqual(SqlMap, other.SqlMap)
             && ReaderDelegateCode == other.ReaderDelegateCode
             && (ProjectionInfo is null ? other.ProjectionInfo is null : ProjectionInfo.Equals(other.ProjectionInfo))
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
-            && EqualityHelpers.TupleListEqual(JoinedTableInfos, other.JoinedTableInfos);
+            && EqualityHelpers.TupleListEqual(JoinedTableInfos, other.JoinedTableInfos)
+            && EqualityHelpers.SequenceEqual(ChainParameters, other.ChainParameters);
     }
 
     public override bool Equals(object? obj) => Equals(obj as PrebuiltChainInfo);

@@ -55,6 +55,21 @@ internal static class ChainAnalyzer
             return AnalyzeDirectFluentChain(executionSite, executionInvocation, allSitesInMethod);
         }
 
+        // Check for forked chains (QRY033) — applies to all tiers
+        var forkedVarName = DetectForkedChain(
+            receiverVariable, executionInvocation, allSitesInMethod, semanticModel);
+        if (forkedVarName != null)
+        {
+            return new ChainAnalysisResult(
+                tier: OptimizationTier.RuntimeBuild,
+                clauses: Array.Empty<ChainedClauseSite>(),
+                executionSite: executionSite,
+                conditionalClauses: Array.Empty<ConditionalClause>(),
+                possibleMasks: Array.Empty<ulong>(),
+                notAnalyzableReason: $"Forked chain: variable '{forkedVarName}' consumed by multiple execution paths",
+                forkedVariableName: forkedVarName);
+        }
+
         // Variable-based chain — perform full dataflow analysis
         return AnalyzeVariableChain(
             executionSite, executionInvocation, receiverVariable,
@@ -941,6 +956,7 @@ internal static class ChainAnalyzer
             InterceptorKind.Limit => ClauseRole.Limit,
             InterceptorKind.Offset => ClauseRole.Offset,
             InterceptorKind.Distinct => ClauseRole.Distinct,
+            InterceptorKind.WithTimeout => ClauseRole.WithTimeout,
             _ => null
         };
     }
@@ -959,6 +975,43 @@ internal static class ChainAnalyzer
             conditionalClauses: Array.Empty<ConditionalClause>(),
             possibleMasks: Array.Empty<ulong>(),
             notAnalyzableReason: reason);
+    }
+
+    /// <summary>
+    /// Detects forked chains: a builder variable consumed by multiple execution-terminating paths.
+    /// Returns the variable name if a fork is detected, null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// This applies to all optimization tiers. A builder variable that forks into
+    /// multiple execution paths is a compile error (QRY033) regardless of tier.
+    /// </remarks>
+    internal static string? DetectForkedChain(
+        ILocalSymbol variable,
+        InvocationExpressionSyntax executionInvocation,
+        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
+        SemanticModel semanticModel)
+    {
+        var executionCount = 0;
+
+        foreach (var site in allSitesInMethod)
+        {
+            if (!IsExecutionKind(site.Kind))
+                continue;
+
+            if (site.InvocationSyntax is not InvocationExpressionSyntax siteInvocation)
+                continue;
+
+            // Resolve the receiver variable for this execution site
+            var siteReceiver = ResolveReceiverVariable(siteInvocation, semanticModel);
+            if (siteReceiver != null && SymbolEqualityComparer.Default.Equals(siteReceiver, variable))
+            {
+                executionCount++;
+                if (executionCount > 1)
+                    return variable.Name;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

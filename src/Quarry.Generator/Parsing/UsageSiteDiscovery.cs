@@ -60,7 +60,8 @@ internal static class UsageSiteDiscovery
         ["ToSql"] = InterceptorKind.ToSql,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
-        ["Distinct"] = InterceptorKind.Distinct
+        ["Distinct"] = InterceptorKind.Distinct,
+        ["WithTimeout"] = InterceptorKind.WithTimeout
     };
 
     // Methods on InsertBuilder that need special handling

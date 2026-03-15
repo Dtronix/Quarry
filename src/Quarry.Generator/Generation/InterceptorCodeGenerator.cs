@@ -96,6 +96,48 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine("{");
         sb.AppendLine();
 
+        // Pass 1: Build carrier class infos for carrier-eligible chains and emit at namespace scope
+        var carrierLookup = new Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>();
+        var carrierClauseLookup = new Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>();
+        var carrierFirstClauseIds = new HashSet<string>();
+        if (prebuiltChains != null)
+        {
+            var carrierIndex = 0;
+            foreach (var chain in prebuiltChains)
+            {
+                if (!chain.IsCarrierEligible)
+                    continue;
+
+                // The carrier must be created at the first clause in the chain.
+                // If the first clause is conditional (variable-based chain with if-block first),
+                // the carrier can't be safely created — skip carrier for this chain.
+                if (chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
+                    continue;
+
+                var carrier = CarrierClassBuilder.Build(chain, carrierIndex);
+                if (carrier == null)
+                    continue;
+
+                carrierLookup[chain.Analysis.ExecutionSite.UniqueId] = (carrier, chain);
+                foreach (var clause in chain.Analysis.Clauses)
+                {
+                    carrierClauseLookup[clause.Site.UniqueId] = (carrier, chain);
+                }
+
+                if (chain.Analysis.Clauses.Count > 0)
+                {
+                    carrierFirstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
+                }
+                else
+                {
+                    carrierFirstClauseIds.Add(chain.Analysis.ExecutionSite.UniqueId);
+                }
+
+                EmitCarrierClass(sb, carrier);
+                carrierIndex++;
+            }
+        }
+
         // File-scoped interceptor class
         sb.AppendLine($"/// <summary>");
         sb.AppendLine($"/// Generated interceptors for {contextClassName} query methods.");
@@ -230,7 +272,7 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine();
             foreach (var site in sites)
             {
-                GenerateInterceptorMethod(sb, site, staticFields, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds);
+                GenerateInterceptorMethod(sb, site, staticFields, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();

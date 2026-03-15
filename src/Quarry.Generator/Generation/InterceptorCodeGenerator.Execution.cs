@@ -24,7 +24,8 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb,
         UsageSiteInfo site,
         string methodName,
-        PrebuiltChainInfo chain)
+        PrebuiltChainInfo chain,
+        CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(chain.EntityTypeName);
 
@@ -100,6 +101,25 @@ internal static partial class InterceptorCodeGenerator
 
         sb.AppendLine($"    {{");
 
+        if (carrier != null && chain.ReaderDelegateCode != null)
+        {
+            var carrierExecutorMethod = site.Kind switch
+            {
+                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleAsync<{resultType}>",
+                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerable<{resultType}>",
+                _ => ""
+            };
+            if (!string.IsNullOrEmpty(carrierExecutorMethod))
+            {
+                EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+                sb.AppendLine($"    }}");
+                return;
+            }
+        }
+
         // Cast to concrete type (receiver is always an interface)
         if (site.Kind == InterceptorKind.ExecuteScalar)
         {
@@ -140,7 +160,8 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb,
         UsageSiteInfo site,
         string methodName,
-        PrebuiltChainInfo chain)
+        PrebuiltChainInfo chain,
+        CarrierClassInfo? carrier = null)
     {
         var joinedNames = chain.JoinedEntityTypeNames!;
         var entityCount = joinedNames.Count;
@@ -209,6 +230,25 @@ internal static partial class InterceptorCodeGenerator
 
         sb.AppendLine($"    {{");
 
+        if (carrier != null && chain.ReaderDelegateCode != null)
+        {
+            var carrierExecutorMethod = site.Kind switch
+            {
+                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleAsync<{resultType}>",
+                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerable<{resultType}>",
+                _ => ""
+            };
+            if (!string.IsNullOrEmpty(carrierExecutorMethod))
+            {
+                EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+                sb.AppendLine($"    }}");
+                return;
+            }
+        }
+
         // Cast to concrete type (receiver is always an interface)
         if (site.Kind == InterceptorKind.ExecuteScalar)
         {
@@ -247,7 +287,8 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb,
         UsageSiteInfo site,
         string methodName,
-        PrebuiltChainInfo chain)
+        PrebuiltChainInfo chain,
+        CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(chain.EntityTypeName);
 
@@ -275,6 +316,13 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
+        if (carrier != null)
+        {
+            EmitCarrierNonQueryTerminal(sb, carrier, chain);
+            sb.AppendLine($"    }}");
+            return;
+        }
+
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderTypeName}>(builder);");
         var builderVar = "__b";
@@ -294,7 +342,8 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb,
         UsageSiteInfo site,
         string methodName,
-        PrebuiltChainInfo chain)
+        PrebuiltChainInfo chain,
+        CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(chain.EntityTypeName);
         var thisType = site.BuilderTypeName;
@@ -360,6 +409,13 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"    public static string {methodName}(");
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
+
+        if (carrier != null)
+        {
+            EmitCarrierToSqlTerminal(sb, carrier, chain);
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         if (chain.SqlMap.Count == 1)
         {

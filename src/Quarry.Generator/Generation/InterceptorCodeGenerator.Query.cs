@@ -22,17 +22,38 @@ internal static partial class InterceptorCodeGenerator
         Dictionary<string, PrebuiltChainInfo> chainLookup,
         Dictionary<string, int> clauseBitMap,
         Dictionary<string, PrebuiltChainInfo> chainClauseLookup,
-        HashSet<string> firstClauseIds)
+        HashSet<string> firstClauseIds,
+        Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>? carrierLookup = null,
+        Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>? carrierClauseLookup = null,
+        HashSet<string>? carrierFirstClauseIds = null)
     {
+        // Check if this site belongs to a carrier-optimized chain
+        var isCarrierSite = false;
+        CarrierClassInfo? carrierInfo = null;
+        PrebuiltChainInfo? carrierChain = null;
+
+        if (carrierLookup != null && carrierLookup.TryGetValue(site.UniqueId, out var carrierExec))
+        {
+            isCarrierSite = true;
+            carrierInfo = carrierExec.Carrier;
+            carrierChain = carrierExec.Chain;
+        }
+        else if (carrierClauseLookup != null && carrierClauseLookup.TryGetValue(site.UniqueId, out var carrierClause))
+        {
+            isCarrierSite = true;
+            carrierInfo = carrierClause.Carrier;
+            carrierChain = carrierClause.Chain;
+        }
+
         // Check for skippable Select sites BEFORE emitting the attribute
         if (site.Kind == InterceptorKind.Select && ShouldSkipSelectInterceptor(site))
         {
             return; // Don't emit anything for this site
         }
 
-        // Limit/Offset/Distinct are tracked for chain analysis only — they don't need
+        // Limit/Offset/Distinct/WithTimeout are tracked for chain analysis only — they don't need
         // their own interceptor methods. The builder methods are simple property setters.
-        if (site.Kind is InterceptorKind.Limit or InterceptorKind.Offset or InterceptorKind.Distinct)
+        if (site.Kind is InterceptorKind.Limit or InterceptorKind.Offset or InterceptorKind.Distinct or InterceptorKind.WithTimeout)
         {
             return;
         }
@@ -147,37 +168,44 @@ internal static partial class InterceptorCodeGenerator
         chainClauseLookup.TryGetValue(site.UniqueId, out var prebuiltClauseChain);
         var isFirstClauseInChain = prebuiltClauseChain != null && firstClauseIds.Contains(site.UniqueId);
 
+        // For carrier chains, override isFirstInChain with the carrier-specific entry point.
+        // In conditional chains, this is the first UNCONDITIONAL clause (not necessarily Clauses[0]).
+        if (isCarrierSite && carrierFirstClauseIds != null)
+        {
+            isFirstClauseInChain = carrierFirstClauseIds.Contains(site.UniqueId);
+        }
+
         // Generate method based on kind
         switch (site.Kind)
         {
             case InterceptorKind.Select:
                 if (isJoinedBuilder)
-                    GenerateJoinedSelectInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateJoinedSelectInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 else
-                    GenerateSelectInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateSelectInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.Where:
                 if (isJoinedBuilder)
-                    GenerateJoinedWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateJoinedWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 else
-                    GenerateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.OrderBy:
             case InterceptorKind.ThenBy:
                 if (isJoinedBuilder)
-                    GenerateJoinedOrderByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateJoinedOrderByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 else
-                    GenerateOrderByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                    GenerateOrderByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.GroupBy:
-                GenerateGroupByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateGroupByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.Having:
-                GenerateHavingInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateHavingInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.Set:
@@ -187,7 +215,7 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.Join:
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
-                GenerateJoinInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateJoinInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.ExecuteFetchAll:
@@ -199,20 +227,20 @@ internal static partial class InterceptorCodeGenerator
                 if (chainLookup.TryGetValue(site.UniqueId, out var selectChain))
                 {
                     if (selectChain.IsJoinChain)
-                        GeneratePrebuiltJoinExecutionInterceptor(sb, site, methodName, selectChain);
+                        GeneratePrebuiltJoinExecutionInterceptor(sb, site, methodName, selectChain, carrierInfo);
                     else
-                        GeneratePrebuiltSelectExecutionInterceptor(sb, site, methodName, selectChain);
+                        GeneratePrebuiltSelectExecutionInterceptor(sb, site, methodName, selectChain, carrierInfo);
                 }
                 break;
 
             case InterceptorKind.ExecuteNonQuery:
                 if (chainLookup.TryGetValue(site.UniqueId, out var nonQueryChain))
-                    GeneratePrebuiltNonQueryExecutionInterceptor(sb, site, methodName, nonQueryChain);
+                    GeneratePrebuiltNonQueryExecutionInterceptor(sb, site, methodName, nonQueryChain, carrierInfo);
                 break;
 
             case InterceptorKind.ToSql:
                 if (chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
-                    GeneratePrebuiltToSqlInterceptor(sb, site, methodName, toSqlChain);
+                    GeneratePrebuiltToSqlInterceptor(sb, site, methodName, toSqlChain, carrierInfo);
                 break;
 
             case InterceptorKind.DeleteWhere:
@@ -263,7 +291,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Select() interceptor with column list and typed reader delegate.
     /// </summary>
     private static void GenerateSelectInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var projection = site.ProjectionInfo;
@@ -278,6 +306,38 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
             sb.AppendLine($"        Func<{entityType}, {resultType}> _)");
             sb.AppendLine($"    {{");
+
+            if (carrier != null)
+            {
+                var targetInterface = $"IQueryBuilder<{entityType}, {resultType}>";
+                if (isFirstInChain)
+                {
+                    // Compute carrier site params
+                    var siteParams = new List<ChainParameterInfo>();
+                    var globalParamOffset = 0;
+                    foreach (var clause in prebuiltChain.Analysis.Clauses)
+                    {
+                        if (clause.Site.UniqueId == site.UniqueId)
+                        {
+                            if (clause.Site.ClauseInfo != null)
+                                for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                                    siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                            break;
+                        }
+                        if (clause.Site.ClauseInfo != null)
+                            globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                    }
+                    int? clauseBit = null;
+                    EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
+                }
+                else
+                {
+                    EmitCarrierSelect(sb, targetInterface);
+                }
+                sb.AppendLine($"    }}");
+                return;
+            }
+
             sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
@@ -366,7 +426,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Where() interceptor with SQL fragment and parameter binder.
     /// </summary>
     private static void GenerateWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -407,6 +467,19 @@ internal static partial class InterceptorCodeGenerator
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Non-translatable clause — skip interceptor entirely so the original method runs
+            return;
+        }
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var retInterface = site.ResultTypeName != null
+                ? $"IQueryBuilder<{entityType}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"IQueryBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields);
+            sb.AppendLine($"    }}");
             return;
         }
 
@@ -501,7 +574,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates an OrderBy/ThenBy interceptor with SQL fragment.
     /// </summary>
     private static void GenerateOrderByInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -555,6 +628,20 @@ internal static partial class InterceptorCodeGenerator
         }
 
         sb.AppendLine($"    {{");
+
+        // Carrier-optimized path
+        // Only when concrete key type is available (open-generic fallback can't use carrier types)
+        if (carrier != null && prebuiltChain != null && keyType != null)
+        {
+            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var retInterface = site.ResultTypeName != null
+                ? $"IQueryBuilder<{entityType}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"IQueryBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, retInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         // Cast to concrete type (receiver is always an interface)
         if (site.ResultTypeName != null)
@@ -637,7 +724,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a GroupBy interceptor with SQL fragment.
     /// </summary>
     private static void GenerateGroupByInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -686,6 +773,20 @@ internal static partial class InterceptorCodeGenerator
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Non-translatable clause — skip interceptor entirely so the original method runs
+            return;
+        }
+
+        // Carrier-optimized path
+        // Only when concrete key type is available (open-generic fallback can't use carrier types)
+        if (carrier != null && prebuiltChain != null && keyType != null)
+        {
+            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var retInterface = site.ResultTypeName != null
+                ? $"IQueryBuilder<{entityType}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"IQueryBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, retInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
             return;
         }
 
@@ -748,7 +849,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Having interceptor with SQL fragment.
     /// </summary>
     private static void GenerateHavingInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -776,6 +877,19 @@ internal static partial class InterceptorCodeGenerator
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Non-translatable clause — skip interceptor entirely so the original method runs
+            return;
+        }
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var retInterface = site.ResultTypeName != null
+                ? $"IQueryBuilder<{entityType}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"IQueryBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, retInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
             return;
         }
 

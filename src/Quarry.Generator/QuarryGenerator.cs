@@ -633,6 +633,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ChainOptimizedTier1,
         DiagnosticDescriptors.ChainOptimizedTier2,
         DiagnosticDescriptors.ChainNotAnalyzable,
+        DiagnosticDescriptors.ForkedQueryChain,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
@@ -718,11 +719,22 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     break;
 
                 case OptimizationTier.RuntimeBuild:
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ChainNotAnalyzable.Id,
-                        diagLocation,
-                        locationDisplay,
-                        result.NotAnalyzableReason ?? "unknown reason"));
+                    if (result.ForkedVariableName != null)
+                    {
+                        // QRY033: Forked chain — error severity
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.ForkedQueryChain.Id,
+                            diagLocation,
+                            result.ForkedVariableName));
+                    }
+                    else
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.ChainNotAnalyzable.Id,
+                            diagLocation,
+                            locationDisplay,
+                            result.NotAnalyzableReason ?? "unknown reason"));
+                    }
                     break;
             }
 
@@ -819,10 +831,17 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
+        // Build chain parameter info for carrier optimization
+        // Only SELECT queries for now; Delete/Update need carrier-aware clause interceptors
+        var chainParams = BuildChainParameters(result);
+        var isCarrierEligible = chainParams != null && queryKind.Value == QueryKind.Select;
+
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
             executionSite.EntityTypeName, executionSite.ResultTypeName,
-            dialect, tableName, schemaName, queryKind.Value, projInfo);
+            dialect, tableName, schemaName, queryKind.Value, projInfo,
+            chainParameters: chainParams,
+            isCarrierEligible: isCarrierEligible);
     }
 
     /// <summary>
@@ -931,12 +950,76 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var joinedTypeNames = joinedNames.ToList();
         var joinedTableInfos = tables;
 
+        // Build chain parameter info for carrier optimization
+        var chainParams = BuildChainParameters(result);
+        var isCarrierEligible = chainParams != null;
+
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
             executionSite.EntityTypeName, executionSite.ResultTypeName,
             dialect, tables[0].TableName, tables[0].SchemaName,
             QueryKind.Select, projInfo,
-            joinedTypeNames, joinedTableInfos);
+            joinedTypeNames, joinedTableInfos,
+            chainParameters: chainParams,
+            isCarrierEligible: isCarrierEligible);
+    }
+
+    /// <summary>
+    /// Builds a list of <see cref="ChainParameterInfo"/> for carrier class field generation
+    /// by walking clause sites in chain order and collecting their parameters with global indices.
+    /// Returns null if carrier parameter extraction fails (e.g., collection parameters that
+    /// cannot be represented as typed carrier fields).
+    /// </summary>
+    private static IReadOnlyList<ChainParameterInfo>? BuildChainParameters(ChainAnalysisResult result)
+    {
+        var chainParams = new List<ChainParameterInfo>();
+        var globalIndex = 0;
+
+        foreach (var clause in result.Clauses)
+        {
+            // OrderBy/ThenBy/GroupBy require resolved KeyTypeName for carrier path.
+            // Without it, the clause interceptor falls back to non-carrier (open-generic),
+            // creating a mismatch where the terminal expects a carrier but gets a real builder.
+            if (clause.Role is ClauseRole.OrderBy or ClauseRole.ThenBy or ClauseRole.GroupBy)
+            {
+                if (clause.Site.KeyTypeName == null)
+                    return null;
+            }
+
+            // Clause kinds without carrier-aware interceptor branches.
+            // These run on the real builder, creating a mismatch with the carrier terminal.
+            if (clause.Role is ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
+                or ClauseRole.UpdateSet or ClauseRole.Set
+                or ClauseRole.Limit or ClauseRole.Offset or ClauseRole.Distinct
+                or ClauseRole.WithTimeout)
+            {
+                return null;
+            }
+
+            if (clause.Site.ClauseInfo == null)
+                continue;
+
+            foreach (var param in clause.Site.ClauseInfo.Parameters)
+            {
+                // Collection parameters (IN clauses) cannot be represented as typed carrier fields
+                if (param.IsCollection)
+                    return null;
+
+                // Parameters with unresolved types cannot be carrier fields
+                if (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object?")
+                    return null;
+
+                chainParams.Add(new ChainParameterInfo(
+                    index: globalIndex,
+                    typeName: param.ClrType,
+                    valueExpression: param.ValueExpression,
+                    typeMapping: param.CustomTypeMappingClass));
+
+                globalIndex++;
+            }
+        }
+
+        return chainParams;
     }
 
     /// <summary>
