@@ -434,6 +434,13 @@ internal enum InterceptorKind
     WithTimeout,
 
     /// <summary>
+    /// Entity set factory method on QuarryContext (e.g., db.Users()).
+    /// Chain root — the first node in a query chain. On the carrier path,
+    /// the chain root interceptor creates the carrier unconditionally.
+    /// </summary>
+    ChainRoot,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

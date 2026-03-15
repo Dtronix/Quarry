@@ -50,7 +50,8 @@ internal enum ClauseRole
     DeleteWhere,
     UpdateWhere,
     UpdateSet,
-    WithTimeout
+    WithTimeout,
+    ChainRoot
 }
 
 /// <summary>

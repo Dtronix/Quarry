@@ -59,6 +59,15 @@ internal static partial class InterceptorCodeGenerator
                 return;
         }
 
+        // ChainRoot (entity set factory method, e.g., db.Users()).
+        // On carrier path: creates the carrier directly from the context (zero QueryBuilder allocation).
+        // On non-carrier path: skip (original method runs normally).
+        if (site.Kind is InterceptorKind.ChainRoot)
+        {
+            if (!isCarrierSite)
+                return;
+        }
+
         // For execution interceptors: only emit if we have a pre-built chain for this site
         // AND we can resolve the result type. Otherwise skip — the built-in execution methods
         // work correctly via the Select interceptor.
@@ -294,6 +303,11 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.WithTimeout:
                 if (carrierInfo != null && carrierChain != null)
                     GenerateCarrierWithTimeoutInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                break;
+
+            case InterceptorKind.ChainRoot:
+                if (carrierInfo != null && carrierChain != null)
+                    GenerateCarrierChainRootInterceptor(sb, site, methodName, carrierInfo, carrierChain);
                 break;
 
             default:

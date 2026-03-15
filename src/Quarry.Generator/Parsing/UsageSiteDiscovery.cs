@@ -93,9 +93,10 @@ internal static class UsageSiteDiscovery
         if (methodName == null)
             return false;
 
-        // Check if this is an interceptable method
+        // Check if this is an interceptable method or could be a context entity method
         return InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
-            || RawSqlMethods.ContainsKey(methodName);
+            || RawSqlMethods.ContainsKey(methodName)
+            || invocation.ArgumentList.Arguments.Count == 0; // Could be context entity method (Users(), Orders())
     }
 
     /// <summary>
@@ -191,6 +192,60 @@ internal static class UsageSiteDiscovery
         if (RawSqlMethods.TryGetValue(methodName, out var rawSqlKind) && IsQuarryContextType(containingType))
         {
             return DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
+        }
+
+        // Check for chain root: entity set factory methods on QuarryContext (e.g., db.Users())
+        if (IsQuarryContextType(containingType)
+            && methodSymbol.Parameters.Length == 0
+            && methodSymbol.ReturnType is INamedTypeSymbol returnType
+            && returnType is { Name: "IQueryBuilder", Arity: 1 })
+        {
+            var rootEntityType = returnType.TypeArguments[0];
+            var rootEntityTypeName = rootEntityType.ToDisplayString();
+
+            // Get interceptable location data
+            string? rootLocationData = null;
+            int rootLocationVersion = 1;
+#if QUARRY_GENERATOR
+            try
+            {
+#pragma warning disable RSEXPERIMENTAL002
+                var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+                if (interceptableLocation != null)
+                {
+                    rootLocationData = interceptableLocation.Data;
+                    rootLocationVersion = interceptableLocation.Version;
+                }
+            }
+            catch { }
+#endif
+            if (rootLocationData == null)
+                return null;
+
+            var rootFilePath = invocation.SyntaxTree.FilePath;
+            var rootLineSpan = invocation.SyntaxTree.GetLineSpan(invocation.Span);
+            var rootLine = rootLineSpan.StartLinePosition.Line + 1;
+            var rootColumn = rootLineSpan.StartLinePosition.Character + 1;
+            var rootUniqueId = GenerateUniqueId(rootFilePath, rootLine, rootColumn, methodName);
+
+            // Resolve context class name for the interceptor signature
+            var contextClassName = containingType.Name;
+
+            return new UsageSiteInfo(
+                methodName: methodName,
+                filePath: rootFilePath,
+                line: rootLine,
+                column: rootColumn,
+                builderTypeName: "IQueryBuilder",
+                entityTypeName: rootEntityTypeName,
+                isAnalyzable: true,
+                kind: InterceptorKind.ChainRoot,
+                invocationSyntax: invocation,
+                uniqueId: rootUniqueId,
+                contextClassName: contextClassName,
+                interceptableLocationData: rootLocationData,
+                interceptableLocationVersion: rootLocationVersion);
         }
 
         if (!IsQuarryBuilderType(containingType))

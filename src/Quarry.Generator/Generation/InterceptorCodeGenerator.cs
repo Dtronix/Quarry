@@ -108,10 +108,11 @@ internal static partial class InterceptorCodeGenerator
                 if (!chain.IsCarrierEligible)
                     continue;
 
-                // The carrier must be created at the first clause in the chain.
-                // If the first clause is conditional (variable-based chain with if-block first),
-                // the carrier can't be safely created — skip carrier for this chain.
-                if (chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
+                // With ChainRoot as carrier entry point, conditional first clauses are OK.
+                // The ChainRoot is always unconditional (entity factory method on context).
+                // Only skip if there's NO ChainRoot clause (shouldn't happen for direct fluent chains).
+                var hasChainRoot = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.ChainRoot);
+                if (!hasChainRoot && chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
                     continue;
 
                 // Validate execution terminal would be emitted — if not, carrier clause
@@ -130,13 +131,19 @@ internal static partial class InterceptorCodeGenerator
                     carrierClauseLookup[clause.Site.UniqueId] = (carrier, chain);
                 }
 
-                if (chain.Analysis.Clauses.Count > 0)
+                // With ChainRoot creating the carrier, no clause is "first in chain" for
+                // carrier creation. The ChainRoot interceptor handles carrier creation.
+                // Find the ChainRoot clause and mark it as the carrier entry point.
+                var chainRootClause = chain.Analysis.Clauses
+                    .FirstOrDefault(c => c.Role == ClauseRole.ChainRoot);
+                if (chainRootClause != null)
                 {
-                    carrierFirstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
+                    carrierFirstClauseIds.Add(chainRootClause.Site.UniqueId);
                 }
-                else
+                else if (chain.Analysis.Clauses.Count > 0)
                 {
-                    carrierFirstClauseIds.Add(chain.Analysis.ExecutionSite.UniqueId);
+                    // Fallback: no ChainRoot (shouldn't happen for carrier chains)
+                    carrierFirstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
                 }
 
                 EmitCarrierClass(sb, carrier);

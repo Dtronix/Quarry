@@ -44,7 +44,7 @@ public class ServiceA
 {
     public async void DoWork(TestDbContext db)
     {
-        await db.Users.Select(u => new { u.UserId, u.UserName }).ExecuteFetchAllAsync();
+        await db.Users().Select(u => new { u.UserId, u.UserName }).ExecuteFetchAllAsync();
     }
 }
 ";
@@ -59,7 +59,7 @@ public class ServiceB
 {
     public async void DoWork(TestDbContext db)
     {
-        await db.Users.Where(u => u.UserId == 1).Select(u => new { u.UserName }).ExecuteFetchFirstAsync();
+        await db.Users().Where(u => u.UserId == 1).Select(u => new { u.UserName }).ExecuteFetchFirstAsync();
     }
 }
 ";
@@ -167,7 +167,7 @@ public class ServiceA
 {
     public async void DoWork(TestDbContext db)
     {
-        await db.Users.Select(u => new { u.UserId, u.UserName }).ExecuteFetchAllAsync();
+        await db.Users().Select(u => new { u.UserId, u.UserName }).ExecuteFetchAllAsync();
     }
 }
 ";
@@ -237,7 +237,7 @@ public class ServiceA
 {
     public async void DoWork(TestDbContext db)
     {
-        await db.Users.Select(u => new { u.UserId }).ExecuteFetchAllAsync();
+        await db.Users().Select(u => new { u.UserId }).ExecuteFetchAllAsync();
     }
 }
 ";

@@ -119,6 +119,32 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a carrier ChainRoot interceptor (e.g., db.Users()).
+    /// Creates the carrier directly from the context — zero QueryBuilder allocation.
+    /// </summary>
+    private static void GenerateCarrierChainRootInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        CarrierClassInfo carrier, PrebuiltChainInfo chain)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+
+        // Determine the return interface based on query kind
+        var returnInterface = chain.QueryKind switch
+        {
+            QueryKind.Delete => $"IDeleteBuilder<{entityType}>",
+            QueryKind.Update => $"IUpdateBuilder<{entityType}>",
+            _ => $"IQueryBuilder<{entityType}>"
+        };
+
+        sb.AppendLine($"    public static {returnInterface} {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = (IQueryExecutionContext)@this }};");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Generates a carrier Limit/Offset interceptor method.
     /// </summary>
     private static void GenerateCarrierPaginationInterceptor(

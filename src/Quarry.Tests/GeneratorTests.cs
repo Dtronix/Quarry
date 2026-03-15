@@ -1098,7 +1098,7 @@ public static class Queries
 {
     public static void Test(TestDbContext db)
     {
-        db.Users.Select(u => u);
+        db.Users().Select(u => u);
     }
 }
 ";

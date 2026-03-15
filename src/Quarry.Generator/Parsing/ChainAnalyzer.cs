@@ -102,12 +102,23 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Check if the root is a local variable
+        // Check if the root is a local variable or parameter.
+        // QuarryContext variables are chain roots, not builder variables —
+        // treat chains rooted on context as direct fluent.
         if (receiver is IdentifierNameSyntax identifier)
         {
             var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-            if (symbol is ILocalSymbol local)
-                return local;
+            ITypeSymbol? varType = symbol switch
+            {
+                ILocalSymbol local => local.Type,
+                IParameterSymbol param => param.Type,
+                _ => null
+            };
+
+            if (varType != null && !IsQuarryContextType(varType))
+            {
+                return symbol as ILocalSymbol;
+            }
         }
 
         return null;
@@ -957,6 +968,7 @@ internal static class ChainAnalyzer
             InterceptorKind.Offset => ClauseRole.Offset,
             InterceptorKind.Distinct => ClauseRole.Distinct,
             InterceptorKind.WithTimeout => ClauseRole.WithTimeout,
+            InterceptorKind.ChainRoot => ClauseRole.ChainRoot,
             _ => null
         };
     }
