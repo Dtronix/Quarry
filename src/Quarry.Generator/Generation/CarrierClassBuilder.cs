@@ -25,7 +25,7 @@ internal static class CarrierClassBuilder
         // Fields: typed parameters P0, P1, ...
         foreach (var param in chain.ChainParameters)
         {
-            fields.Add(new CarrierField($"P{param.Index}", param.TypeName, FieldRole.Parameter));
+            fields.Add(new CarrierField($"P{param.Index}", NormalizeFieldType(param.TypeName), FieldRole.Parameter));
         }
 
         // Field: Mask (if chain has conditional clauses)
@@ -103,5 +103,49 @@ internal static class CarrierClassBuilder
             3 => $"JoinedCarrierBase4<{joinedTypesStr}>",
             _ => $"JoinedCarrierBase<{joinedTypesStr}>"
         };
+    }
+
+    /// <summary>
+    /// Known value types that don't need nullable annotation.
+    /// </summary>
+    private static readonly HashSet<string> ValueTypes = new(System.StringComparer.Ordinal)
+    {
+        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
+        "float", "double", "decimal", "bool", "char",
+        "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DateOnly", "TimeOnly",
+        "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
+        "Single", "Double", "Decimal", "Boolean", "Char"
+    };
+
+    /// <summary>
+    /// Normalizes a parameter type for carrier field emission.
+    /// - Normalizes <c>Nullable&lt;T&gt;</c> to <c>T?</c>
+    /// - Appends <c>?</c> to reference types (non-value-types without existing <c>?</c>)
+    ///   to suppress nullable warnings in <c>#nullable enable</c> context
+    /// </summary>
+    private static string NormalizeFieldType(string typeName)
+    {
+        // Normalize Nullable<T> → T?
+        if (typeName.StartsWith("System.Nullable<") || typeName.StartsWith("Nullable<"))
+        {
+            var inner = typeName.Substring(typeName.IndexOf('<') + 1).TrimEnd('>');
+            return inner + "?";
+        }
+
+        // Already nullable — pass through
+        if (typeName.EndsWith("?"))
+            return typeName;
+
+        // Value types don't need ?
+        if (ValueTypes.Contains(typeName))
+            return typeName;
+
+        // Enum types (usually PascalCase without dots) — assume value type, pass through
+        // Generic types, array types — pass through (complex to analyze)
+        if (typeName.Contains('<') || typeName.Contains('[') || typeName.Contains('.'))
+            return typeName;
+
+        // Reference types (string, class names) — append ? for nullable context
+        return typeName + "?";
     }
 }
