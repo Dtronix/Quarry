@@ -114,7 +114,8 @@ internal static partial class InterceptorCodeGenerator
                 if (chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
                     continue;
 
-                var carrier = CarrierClassBuilder.Build(chain, carrierIndex);
+                var resolvedBase = ResolveCarrierBaseClass(chain);
+                var carrier = CarrierClassBuilder.Build(chain, carrierIndex, resolvedBase);
                 if (carrier == null)
                     continue;
 

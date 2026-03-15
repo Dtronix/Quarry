@@ -7,6 +7,58 @@ namespace Quarry.Generators.Generation;
 
 internal static partial class InterceptorCodeGenerator
 {
+    /// <summary>
+    /// Resolves the carrier base class name for a chain, handling tuple result types correctly.
+    /// Must be called from InterceptorCodeGenerator where SanitizeTupleResultType is accessible.
+    /// </summary>
+    internal static string ResolveCarrierBaseClass(PrebuiltChainInfo chain)
+    {
+        var entityType = GetShortTypeName(chain.EntityTypeName);
+        var hasSelect = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Select);
+        var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;
+
+        string? resultType = null;
+        if (hasSelect && chain.ResultTypeName != null)
+        {
+            // Use the same resolution pipeline as execution terminals for tuple safety
+            var resolved = ResolveExecutionResultType(
+                chain.Analysis.ExecutionSite.ResultTypeName,
+                chain.ResultTypeName,
+                chain.ProjectionInfo);
+            if (!string.IsNullOrEmpty(resolved))
+                resultType = SanitizeTupleResultType(GetShortTypeName(resolved!));
+        }
+
+        if (joinCount == 0)
+        {
+            return resultType != null
+                ? $"CarrierBase<{entityType}, {resultType}>"
+                : $"CarrierBase<{entityType}>";
+        }
+
+        var joinedTypes = chain.JoinedEntityTypeNames!.Select(GetShortTypeName).ToArray();
+        var joinedStr = string.Join(", ", joinedTypes);
+
+        if (resultType != null)
+        {
+            return joinCount switch
+            {
+                1 => $"JoinedCarrierBase<{joinedStr}, {resultType}>",
+                2 => $"JoinedCarrierBase3<{joinedStr}, {resultType}>",
+                3 => $"JoinedCarrierBase4<{joinedStr}, {resultType}>",
+                _ => $"JoinedCarrierBase<{joinedStr}, {resultType}>"
+            };
+        }
+
+        return joinCount switch
+        {
+            1 => $"JoinedCarrierBase<{joinedStr}>",
+            2 => $"JoinedCarrierBase3<{joinedStr}>",
+            3 => $"JoinedCarrierBase4<{joinedStr}>",
+            _ => $"JoinedCarrierBase<{joinedStr}>"
+        };
+    }
+
     private static string GetJoinedConcreteBuilderTypeName(int entityCount, string[] entityTypes)
     {
         return entityCount switch
