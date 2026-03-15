@@ -14,6 +14,13 @@ internal static partial class InterceptorCodeGenerator
     internal static string ResolveCarrierBaseClass(PrebuiltChainInfo chain)
     {
         var entityType = GetShortTypeName(chain.EntityTypeName);
+
+        // Delete/Update chains use modification-specific base classes
+        if (chain.QueryKind == QueryKind.Delete)
+            return $"DeleteCarrierBase<{entityType}>";
+        if (chain.QueryKind == QueryKind.Update)
+            return $"UpdateCarrierBase<{entityType}>";
+
         var hasSelect = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Select);
         var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;
 
@@ -248,13 +255,15 @@ internal static partial class InterceptorCodeGenerator
         if (clauseBit.HasValue)
             sb.AppendLine($"        __c.Mask |= unchecked(({GetMaskType(chain)})(1 << {clauseBit.Value}));");
 
+        // Always use Unsafe.As for the return — handles interface crossings
+        // (e.g., IUpdateBuilder → IExecutableUpdateBuilder after Where)
         if (isFirstInChain)
         {
             sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
         }
         else
         {
-            sb.AppendLine("        return builder;");
+            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
         }
     }
 

@@ -18,7 +18,7 @@ internal static partial class InterceptorCodeGenerator
     /// DeleteBuilder returns IExecutableDeleteBuilder, and on ExecutableDeleteBuilder returns itself.
     /// </summary>
     private static void GenerateDeleteWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -50,6 +50,17 @@ internal static partial class InterceptorCodeGenerator
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Non-translatable clause — skip interceptor entirely so the original method runs
+            return;
+        }
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            var concreteBuilder = $"{concreteType}<{entityType}>";
+            var returnInterface = $"IExecutableDeleteBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
+            sb.AppendLine($"    }}");
             return;
         }
 
@@ -150,7 +161,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Set() interceptor with SQL fragment.
     /// </summary>
     private static void GenerateSetInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -163,6 +174,10 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        Expression<Func<{entityType}, TValue>> _,");
         sb.AppendLine($"        TValue value)");
         sb.AppendLine($"    {{");
+
+        // Note: Set interceptor uses open generic <T, TValue> signature — carrier path
+        // cannot use EmitCarrierClauseBody because the return type is IUpdateBuilder<T> not
+        // IUpdateBuilder<{entityType}>. Skip carrier for Set; the prebuilt BindParam path works.
 
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
@@ -216,7 +231,7 @@ internal static partial class InterceptorCodeGenerator
     /// The return type uses the interface variant: IUpdateBuilder&lt;T&gt; or IExecutableUpdateBuilder&lt;T&gt;.
     /// </summary>
     private static void GenerateUpdateSetInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -234,6 +249,17 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        Expression<Func<T, TValue>> _,");
         sb.AppendLine($"        TValue value) where T : class");
         sb.AppendLine($"    {{");
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
@@ -335,7 +361,7 @@ internal static partial class InterceptorCodeGenerator
     /// UpdateBuilder returns IExecutableUpdateBuilder, and on ExecutableUpdateBuilder returns itself.
     /// </summary>
     private static void GenerateUpdateWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
@@ -363,6 +389,23 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        this {receiverType} builder,");
         sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
         sb.AppendLine($"    {{");
+
+        if (clauseInfo == null || !clauseInfo.IsSuccess)
+        {
+            // Non-translatable clause — skip interceptor entirely so the original method runs
+            return;
+        }
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            var concreteBuilder = $"{concreteType}<{entityType}>";
+            var returnInterface = $"IExecutableUpdateBuilder<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");

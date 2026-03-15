@@ -832,9 +832,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         // Build chain parameter info for carrier optimization
-        // Only SELECT queries for now; Delete/Update need carrier-aware clause interceptors
         var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null && queryKind.Value == QueryKind.Select;
+        var isCarrierEligible = chainParams != null;
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
@@ -986,12 +985,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return null;
             }
 
-            // Delete/Update clause kinds don't have carrier-aware interceptor branches yet.
-            if (clause.Role is ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
-                or ClauseRole.UpdateSet or ClauseRole.Set)
-            {
+            // Set/UpdateSet use open generic signatures incompatible with carrier clause body.
+            // UpdateSetPoco similarly can't use carrier. Exclude these.
+            if (clause.Role is ClauseRole.Set or ClauseRole.UpdateSet)
                 return null;
-            }
 
             if (clause.Site.ClauseInfo == null)
                 continue;

@@ -210,7 +210,7 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.Set:
-                GenerateSetInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateSetInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.Join:
@@ -245,11 +245,11 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.DeleteWhere:
-                GenerateDeleteWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateDeleteWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.UpdateSet:
-                GenerateUpdateSetInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateUpdateSetInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.UpdateSetPoco:
@@ -257,7 +257,7 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.UpdateWhere:
-                GenerateUpdateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain);
+                GenerateUpdateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.InsertExecuteNonQuery:
