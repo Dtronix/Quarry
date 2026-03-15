@@ -93,10 +93,18 @@ internal static class UsageSiteDiscovery
         if (methodName == null)
             return false;
 
-        // Check if this is an interceptable method or could be a context entity method
-        return InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
-            || RawSqlMethods.ContainsKey(methodName)
-            || invocation.ArgumentList.Arguments.Count == 0; // Could be context entity method (Users(), Orders())
+        // Check if this is an interceptable method
+        if (InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
+            || RawSqlMethods.ContainsKey(methodName))
+            return true;
+
+        // Could be a context entity factory method (Users(), Orders(), Delete<T>(), Update<T>())
+        if (invocation.ArgumentList.Arguments.Count == 0
+            && invocation.Expression is MemberAccessExpressionSyntax
+            && methodName.Length > 0 && char.IsUpper(methodName[0]))
+            return true;
+
+        return false;
     }
 
     /// <summary>
