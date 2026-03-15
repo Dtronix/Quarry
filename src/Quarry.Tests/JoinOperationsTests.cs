@@ -780,6 +780,179 @@ public class JoinOperationsTests
 
     #endregion
 
+    #region AsJoined (Prebuilt Path) Tests
+
+    [Test]
+    public void QueryBuilder_AsJoined_ReturnsJoinedBuilderWithSameState()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var builder = new QueryBuilder<TestUser>(dialect, "users", null);
+
+        var result = builder.AsJoined<TestOrder>();
+
+        Assert.That(result, Is.InstanceOf<JoinedQueryBuilder<TestUser, TestOrder>>());
+    }
+
+    [Test]
+    public void QueryBuilder_AsJoined_DoesNotMutateJoinClauses()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var builder = new QueryBuilder<TestUser>(dialect, "users", null);
+
+        var result = builder.AsJoined<TestOrder>();
+
+        // AsJoined should NOT add JoinClauses or set FromTableAlias
+        var resultState = result.State;
+        Assert.Multiple(() =>
+        {
+            Assert.That(resultState.JoinClauses.Length, Is.EqualTo(0));
+            Assert.That(resultState.FromTableAlias, Is.Null);
+        });
+    }
+
+    [Test]
+    public void QueryBuilder_AsJoined_PropagatesPrebuiltParams()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var builder = new QueryBuilder<TestUser>(dialect, "users", null);
+        builder.AllocatePrebuiltParams(3);
+        builder.BindParam(42);
+
+        var result = builder.AsJoined<TestOrder>();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.PrebuiltParams, Is.Not.Null);
+            Assert.That(result.PrebuiltParams!.Length, Is.EqualTo(3));
+            Assert.That(result.PrebuiltParams![0], Is.EqualTo(42));
+            Assert.That(result.PrebuiltParamIndex, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_AsJoined_ReturnsBuilder3WithSameState()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var result = builder.AsJoined<TestItem>();
+
+        Assert.That(result, Is.InstanceOf<JoinedQueryBuilder3<TestUser, TestOrder, TestItem>>());
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_AsJoined_DoesNotMutateJoinClauses()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+
+        var result = builder.AsJoined<TestItem>();
+
+        var resultState = result.State;
+        Assert.Multiple(() =>
+        {
+            Assert.That(resultState.JoinClauses.Length, Is.EqualTo(0));
+            Assert.That(resultState.FromTableAlias, Is.Null);
+        });
+    }
+
+    [Test]
+    public void JoinedQueryBuilder_AsJoined_PropagatesPrebuiltParams()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
+        builder.AllocatePrebuiltParams(2);
+        builder.BindParam("hello");
+
+        var result = builder.AsJoined<TestItem>();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.PrebuiltParams, Is.Not.Null);
+            Assert.That(result.PrebuiltParams!.Length, Is.EqualTo(2));
+            Assert.That(result.PrebuiltParams![0], Is.EqualTo("hello"));
+            Assert.That(result.PrebuiltParamIndex, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_AsJoined_ReturnsBuilder4WithSameState()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var result = builder.AsJoined<TestCategory>();
+
+        Assert.That(result, Is.InstanceOf<JoinedQueryBuilder4<TestUser, TestOrder, TestItem, TestCategory>>());
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_AsJoined_DoesNotMutateJoinClauses()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+
+        var result = builder.AsJoined<TestCategory>();
+
+        var resultState = result.State;
+        Assert.Multiple(() =>
+        {
+            Assert.That(resultState.JoinClauses.Length, Is.EqualTo(0));
+            Assert.That(resultState.FromTableAlias, Is.Null);
+        });
+    }
+
+    [Test]
+    public void JoinedQueryBuilder3_AsJoined_PropagatesPrebuiltParams()
+    {
+        var dialect = SqlDialect.PostgreSQL;
+        var state = new Quarry.Internal.QueryState(dialect, "users", null);
+        var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
+        builder.AllocatePrebuiltParams(5);
+        builder.BindParam(100);
+        builder.BindParam(200);
+
+        var result = builder.AsJoined<TestCategory>();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.PrebuiltParams, Is.Not.Null);
+            Assert.That(result.PrebuiltParams!.Length, Is.EqualTo(5));
+            Assert.That(result.PrebuiltParams![0], Is.EqualTo(100));
+            Assert.That(result.PrebuiltParams![1], Is.EqualTo(200));
+            Assert.That(result.PrebuiltParamIndex, Is.EqualTo(2));
+        });
+    }
+
+    [Test]
+    public void AsJoined_VsAddJoinClause_StateIsDifferent()
+    {
+        // AsJoined should NOT add JoinClauses, while AddJoinClause should
+        var dialect = SqlDialect.PostgreSQL;
+        var builder = new QueryBuilder<TestUser>(dialect, "users", null);
+
+        var asJoinedResult = builder.AsJoined<TestOrder>();
+        var addJoinResult = builder.AddJoinClause<TestOrder>(CoreJoinKind.Inner, "orders", "cond");
+
+        Assert.Multiple(() =>
+        {
+            // AsJoined: no join clauses, no alias
+            Assert.That(asJoinedResult.State.JoinClauses.Length, Is.EqualTo(0));
+            Assert.That(asJoinedResult.State.FromTableAlias, Is.Null);
+
+            // AddJoinClause: has join clause and alias
+            Assert.That(addJoinResult.State.JoinClauses.Length, Is.EqualTo(1));
+            Assert.That(addJoinResult.State.FromTableAlias, Is.EqualTo("t0"));
+        });
+    }
+
+    #endregion
+
     #region Test Entity Classes
 
     private class TestUser

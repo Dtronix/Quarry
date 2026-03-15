@@ -147,6 +147,18 @@ public sealed class JoinedQueryBuilder<T1, T2> : IJoinedQueryBuilder<T1, T2>
         return projected;
     }
 
+    /// <summary>
+    /// Creates a 3-table joined builder for the prebuilt path, transferring the PrebuiltParams array.
+    /// Performs only a type conversion without modifying state (no JoinClause/alias mutation).
+    /// </summary>
+    public JoinedQueryBuilder3<T1, T2, T3> AsJoined<T3>() where T3 : class
+    {
+        var joined = new JoinedQueryBuilder3<T1, T2, T3>(_state);
+        joined.PrebuiltParams = PrebuiltParams;
+        joined.PrebuiltParamIndex = PrebuiltParamIndex;
+        return joined;
+    }
+
     #endregion
 
     #endregion
@@ -498,6 +510,18 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3> : IJoinedQueryBuilder3<T1, T
         projected.PrebuiltParams = PrebuiltParams;
         projected.PrebuiltParamIndex = PrebuiltParamIndex;
         return projected;
+    }
+
+    /// <summary>
+    /// Creates a 4-table joined builder for the prebuilt path, transferring the PrebuiltParams array.
+    /// Performs only a type conversion without modifying state (no JoinClause/alias mutation).
+    /// </summary>
+    public JoinedQueryBuilder4<T1, T2, T3, T4> AsJoined<T4>() where T4 : class
+    {
+        var joined = new JoinedQueryBuilder4<T1, T2, T3, T4>(_state);
+        joined.PrebuiltParams = PrebuiltParams;
+        joined.PrebuiltParamIndex = PrebuiltParamIndex;
+        return joined;
     }
 
     #endregion
