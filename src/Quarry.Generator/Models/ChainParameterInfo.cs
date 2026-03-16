@@ -12,12 +12,18 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         int index,
         string typeName,
         string valueExpression,
-        string? typeMapping = null)
+        string? typeMapping = null,
+        bool isSensitive = false,
+        bool isEnum = false,
+        string? enumUnderlyingType = null)
     {
         Index = index;
         TypeName = typeName;
         ValueExpression = valueExpression;
         TypeMapping = typeMapping;
+        IsSensitive = isSensitive;
+        IsEnum = isEnum;
+        EnumUnderlyingType = enumUnderlyingType;
     }
 
     /// <summary>
@@ -40,6 +46,24 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
     /// </summary>
     public string? TypeMapping { get; }
 
+    /// <summary>
+    /// Gets whether this parameter binds to a column marked as Sensitive().
+    /// When true, the terminal emits redacted parameter logging.
+    /// </summary>
+    public bool IsSensitive { get; }
+
+    /// <summary>
+    /// Gets whether this parameter's CLR type is an enum (or nullable enum).
+    /// When true, the terminal emits an inline cast to the underlying integral type.
+    /// </summary>
+    public bool IsEnum { get; }
+
+    /// <summary>
+    /// Gets the underlying integral type name for enum parameters (e.g., "int", "byte").
+    /// Only meaningful when <see cref="IsEnum"/> is true.
+    /// </summary>
+    public string? EnumUnderlyingType { get; }
+
     public bool Equals(ChainParameterInfo? other)
     {
         if (other is null) return false;
@@ -47,7 +71,10 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         return Index == other.Index
             && TypeName == other.TypeName
             && ValueExpression == other.ValueExpression
-            && TypeMapping == other.TypeMapping;
+            && TypeMapping == other.TypeMapping
+            && IsSensitive == other.IsSensitive
+            && IsEnum == other.IsEnum
+            && EnumUnderlyingType == other.EnumUnderlyingType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ChainParameterInfo);

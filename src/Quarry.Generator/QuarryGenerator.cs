@@ -1032,7 +1032,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     index: globalIndex,
                     typeName: param.ClrType,
                     valueExpression: param.ValueExpression,
-                    typeMapping: param.CustomTypeMappingClass));
+                    typeMapping: param.CustomTypeMappingClass,
+                    isEnum: param.IsEnum,
+                    enumUnderlyingType: param.EnumUnderlyingType));
 
                 globalIndex++;
             }
