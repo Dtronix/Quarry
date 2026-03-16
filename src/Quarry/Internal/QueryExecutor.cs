@@ -8,6 +8,19 @@ using Quarry.Logging;
 namespace Quarry.Internal;
 
 /// <summary>
+/// Execution mode for carrier-optimized command-based execution.
+/// </summary>
+internal enum ExecutionMode
+{
+    FetchAll,
+    First,
+    FirstOrDefault,
+    Single,
+    Scalar,
+    NonQuery
+}
+
+/// <summary>
 /// Internal helper for executing queries.
 /// </summary>
 internal static class QueryExecutor
@@ -608,6 +621,282 @@ internal static class QueryExecutor
             QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
 
         CheckSlowQuery(opId, ctx, elapsedMs, sql);
+    }
+
+    #endregion
+
+    #region Carrier command-based execution methods
+
+    /// <summary>
+    /// Executes a carrier-optimized query with a pre-built command and returns all results as a list.
+    /// The terminal interceptor owns command creation, parameter binding, SQL/param logging;
+    /// this method owns execution, materialization, completion logging, and slow query checks.
+    /// </summary>
+    public static async Task<List<TResult>> ExecuteCarrierWithCommandAsync<TResult>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        var results = new List<TResult>();
+        try
+        {
+            while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                results.Add(reader(dbReader));
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+        }
+
+        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            QueryLog.FetchCompleted(opId, results.Count, elapsedMs);
+
+        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+        return results;
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized query with a pre-built command and returns the first result.
+    /// </summary>
+    public static async Task<TResult> ExecuteCarrierFirstWithCommandAsync<TResult>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                    QueryLog.FetchCompleted(opId, 1, elapsedMs);
+
+                CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+                return reader(dbReader);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+        }
+
+        throw new InvalidOperationException("Sequence contains no elements.");
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized query with a pre-built command and returns the first result or default.
+    /// </summary>
+    public static async Task<TResult?> ExecuteCarrierFirstOrDefaultWithCommandAsync<TResult>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                    QueryLog.FetchCompleted(opId, 1, elapsedMs);
+
+                CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+                return reader(dbReader);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+        }
+
+        var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            QueryLog.FetchCompleted(opId, 0, elapsed);
+
+        CheckSlowQuery(opId, ctx, elapsed, command.CommandText);
+
+        return default;
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized query with a pre-built command and returns exactly one result.
+    /// </summary>
+    public static async Task<TResult> ExecuteCarrierSingleWithCommandAsync<TResult>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (!await dbReader.ReadAsync(ct).ConfigureAwait(false))
+                throw new InvalidOperationException("Sequence contains no elements.");
+
+            var result = reader(dbReader);
+
+            if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+                throw new InvalidOperationException("Sequence contains more than one element.");
+
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                QueryLog.FetchCompleted(opId, 1, elapsedMs);
+
+            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized scalar query with a pre-built command.
+    /// </summary>
+    public static async Task<TScalar> ExecuteCarrierScalarWithCommandAsync<TScalar>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+
+        try
+        {
+            var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+            if (result is null or DBNull)
+            {
+                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                    QueryLog.ScalarResult(opId, "null");
+
+                if (default(TScalar) is null)
+                    return default!;
+
+                throw new InvalidOperationException("Query returned null but expected a non-nullable value.");
+            }
+
+            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                QueryLog.ScalarResult(opId, result.ToString() ?? "null");
+
+            return (TScalar)Convert.ChangeType(result, Nullable.GetUnderlyingType(typeof(TScalar)) ?? typeof(TScalar));
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error executing scalar query: {ex.Message}", command.CommandText, ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized non-query (DELETE/UPDATE) with a pre-built command.
+    /// </summary>
+    public static async Task<int> ExecuteCarrierNonQueryWithCommandAsync(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+
+        try
+        {
+            var rowCount = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
+
+            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+            return rowCount;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error executing query: {ex.Message}", command.CommandText, ex);
+        }
+    }
+
+    /// <summary>
+    /// Executes a carrier-optimized query with a pre-built command and returns results as an async enumerable.
+    /// Separate from the command-based core due to yield return semantics.
+    /// </summary>
+    public static async IAsyncEnumerable<TResult> ToCarrierAsyncEnumerableWithCommandAsync<TResult>(
+        long opId, IQueryExecutionContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        int rowCount = 0;
+        while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            TResult result;
+            try
+            {
+                result = reader(dbReader);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                    QueryLog.QueryFailed(opId, ex);
+
+                throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            }
+
+            rowCount++;
+            yield return result;
+        }
+
+        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
+
+        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
     }
 
     /// <summary>
