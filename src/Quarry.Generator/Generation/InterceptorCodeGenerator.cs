@@ -203,6 +203,7 @@ internal static partial class InterceptorCodeGenerator
         }
 
         // Collect all static fields needed for cached extractors
+        var carrierMemberIds = new HashSet<string>(carrierClauseLookup.Keys);
         var staticFields = CollectStaticFields(usageSites, chainMemberIds);
 
         // Collect all unique TypeMapping classes used across all usage sites
@@ -211,11 +212,16 @@ internal static partial class InterceptorCodeGenerator
         // Collect all unique EntityReader classes used across all usage sites
         var entityReaderInstances = CollectEntityReaderInstances(usageSites, chainMemberIds);
 
-        if (staticFields.Count > 0 || mappingInstances.Count > 0 || entityReaderInstances.Count > 0)
+        // Filter out carrier member FieldInfo fields — those live on the carrier class now
+        var interceptorStaticFields = staticFields
+            .Where(f => f.SiteUniqueId == null || !carrierMemberIds.Contains(f.SiteUniqueId))
+            .ToList();
+
+        if (interceptorStaticFields.Count > 0 || mappingInstances.Count > 0 || entityReaderInstances.Count > 0)
         {
             sb.AppendLine("    #region Cached Fields");
             sb.AppendLine();
-            foreach (var field in staticFields)
+            foreach (var field in interceptorStaticFields)
             {
                 sb.AppendLine($"    private static FieldInfo? {field.FieldName};");
             }
@@ -311,12 +317,14 @@ internal static partial class InterceptorCodeGenerator
             string fieldName,
             string methodName,
             int parameterIndex,
-            string expressionPath)
+            string expressionPath,
+            string? siteUniqueId = null)
         {
             FieldName = fieldName;
             MethodName = methodName;
             ParameterIndex = parameterIndex;
             ExpressionPath = expressionPath;
+            SiteUniqueId = siteUniqueId;
         }
 
         public string FieldName { get; }
@@ -324,6 +332,8 @@ internal static partial class InterceptorCodeGenerator
         public int ParameterIndex { get; }
         /// <summary>Raw dot-separated path like "Body.Right" or "Body.Arguments[0]".</summary>
         public string ExpressionPath { get; }
+        /// <summary>The unique ID of the usage site this field belongs to.</summary>
+        public string? SiteUniqueId { get; }
     }
 
     /// <summary>
@@ -355,7 +365,8 @@ internal static partial class InterceptorCodeGenerator
                     fieldName,
                     methodName,
                     param.Index,
-                    param.ExpressionPath!));
+                    param.ExpressionPath!,
+                    siteUniqueId: site.UniqueId));
             }
         }
 

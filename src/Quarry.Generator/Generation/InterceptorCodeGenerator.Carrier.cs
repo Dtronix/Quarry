@@ -362,12 +362,23 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         }
 
-        // Extract and bind parameters using same FieldInfo extraction as prebuilt path
+        // Extract and bind parameters using FieldInfo extraction with carrier-owned statics
         var clauseInfo = site.ClauseInfo;
         if (clauseInfo != null && clauseInfo.Parameters.Count > 0)
         {
             if (hasResolvableCapturedParams)
-                GenerateCachedExtraction(sb, methodFields);
+            {
+                // Remap FieldInfo references from interceptor-class statics to carrier-class statics
+                var carrierFields = new List<CachedExtractorField>();
+                foreach (var mf in methodFields)
+                {
+                    var globalIdx = globalParamOffset + mf.ParameterIndex;
+                    var carrierFieldName = $"{carrier.ClassName}.F{globalIdx}";
+                    carrierFields.Add(new CachedExtractorField(
+                        carrierFieldName, mf.MethodName, mf.ParameterIndex, mf.ExpressionPath));
+                }
+                GenerateCachedExtraction(sb, carrierFields);
+            }
 
             var allParams = clauseInfo.Parameters.OrderBy(p => p.Index).ToList();
             for (int i = 0; i < allParams.Count; i++)
