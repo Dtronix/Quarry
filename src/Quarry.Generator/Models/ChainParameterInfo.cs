@@ -15,7 +15,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         string? typeMapping = null,
         bool isSensitive = false,
         bool isEnum = false,
-        string? enumUnderlyingType = null)
+        string? enumUnderlyingType = null,
+        bool needsFieldInfoCache = false)
     {
         Index = index;
         TypeName = typeName;
@@ -24,6 +25,7 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         IsSensitive = isSensitive;
         IsEnum = isEnum;
         EnumUnderlyingType = enumUnderlyingType;
+        NeedsFieldInfoCache = needsFieldInfoCache;
     }
 
     /// <summary>
@@ -64,6 +66,12 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
     /// </summary>
     public string? EnumUnderlyingType { get; }
 
+    /// <summary>
+    /// Gets whether this parameter is a captured variable that requires a static
+    /// <c>FieldInfo?</c> cache on the carrier class for expression tree extraction.
+    /// </summary>
+    public bool NeedsFieldInfoCache { get; }
+
     public bool Equals(ChainParameterInfo? other)
     {
         if (other is null) return false;
@@ -74,7 +82,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
             && TypeMapping == other.TypeMapping
             && IsSensitive == other.IsSensitive
             && IsEnum == other.IsEnum
-            && EnumUnderlyingType == other.EnumUnderlyingType;
+            && EnumUnderlyingType == other.EnumUnderlyingType
+            && NeedsFieldInfoCache == other.NeedsFieldInfoCache;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ChainParameterInfo);

@@ -1034,7 +1034,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     valueExpression: param.ValueExpression,
                     typeMapping: param.CustomTypeMappingClass,
                     isEnum: param.IsEnum,
-                    enumUnderlyingType: param.EnumUnderlyingType));
+                    enumUnderlyingType: param.EnumUnderlyingType,
+                    needsFieldInfoCache: param.IsCaptured && param.CanGenerateDirectPath));
 
                 globalIndex++;
             }

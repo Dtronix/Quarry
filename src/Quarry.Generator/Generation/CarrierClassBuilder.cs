@@ -49,11 +49,12 @@ internal static class CarrierClassBuilder
         if (chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.WithTimeout))
             fields.Add(new CarrierField("Timeout", "TimeSpan?", FieldRole.Timeout));
 
-        // Static FieldInfo cache fields — one per chain parameter (F0, F1, ...)
+        // Static FieldInfo cache fields — only for captured params needing expression tree extraction
         var staticFields = new List<CarrierStaticField>();
         foreach (var param in chain.ChainParameters)
         {
-            staticFields.Add(new CarrierStaticField($"F{param.Index}", "FieldInfo?", param.Index));
+            if (param.NeedsFieldInfoCache)
+                staticFields.Add(new CarrierStaticField($"F{param.Index}", "FieldInfo?", param.Index));
         }
 
         // Determine base class from chain shape (caller may provide pre-resolved base)
