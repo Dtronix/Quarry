@@ -129,15 +129,8 @@ internal static partial class InterceptorCodeGenerator
         var entityType = GetShortTypeName(site.EntityTypeName);
         var contextClass = site.ContextClassName ?? "QuarryContext";
 
-        // Determine the return interface based on query kind
-        var returnInterface = chain.QueryKind switch
-        {
-            QueryKind.Delete => $"IDeleteBuilder<{entityType}>",
-            QueryKind.Update => $"IUpdateBuilder<{entityType}>",
-            _ => $"IQueryBuilder<{entityType}>"
-        };
-
-        sb.AppendLine($"    public static {returnInterface} {methodName}(");
+        // Return type matches the context method: IEntityAccessor<T>
+        sb.AppendLine($"    public static IEntityAccessor<{entityType}> {methodName}(");
         sb.AppendLine($"        this {contextClass} @this)");
         sb.AppendLine($"    {{");
         sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = (IQueryExecutionContext)@this }};");

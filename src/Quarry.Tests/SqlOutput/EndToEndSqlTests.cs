@@ -181,7 +181,7 @@ public class EndToEndSqlTests
             IsActive = true,
             CreatedAt = new DateTime(2024, 1, 1)
         };
-        var sql = _db.Insert(user).ToSql();
+        var sql = _db.Users().Insert(user).ToSql();
         // Insert ToSql before execution shows column list (values added during execution)
         Assert.That(sql, Does.StartWith("INSERT INTO \"users\""));
     }
@@ -245,7 +245,7 @@ public class EndToEndSqlTests
     [Test]
     public void UpdateSetPoco_SingleColumn()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Where(u => u.UserId == 1)
             .ToSql();
@@ -256,7 +256,7 @@ public class EndToEndSqlTests
     [Test]
     public void UpdateSetPoco_MultipleColumns()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName", IsActive = false })
             .Where(u => u.UserId == 1)
             .ToSql();
@@ -268,7 +268,7 @@ public class EndToEndSqlTests
     [Test]
     public void UpdateSetPoco_WithAll()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { IsActive = false })
             .All()
             .ToSql();
@@ -279,7 +279,7 @@ public class EndToEndSqlTests
     [Test]
     public void UpdateSetPoco_MixedWithPropertySet()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Set(u => u.IsActive, true)
             .Where(u => u.UserId == 1)

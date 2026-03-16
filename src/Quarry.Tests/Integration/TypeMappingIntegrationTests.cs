@@ -117,7 +117,7 @@ internal class TypeMappingIntegrationTests
             IsActive = true
         };
 
-        var rowsAffected = await _db.Insert(account).ExecuteNonQueryAsync();
+        var rowsAffected = await _db.Accounts().Insert(account).ExecuteNonQueryAsync();
         Assert.That(rowsAffected, Is.EqualTo(1), "Should insert one row");
 
         var id = Convert.ToInt64(await ExecuteScalarAsync("SELECT last_insert_rowid()"));
@@ -278,7 +278,7 @@ internal class TypeMappingIntegrationTests
         var money = new Money(42.42m);
         var creditLimit = new Money(100m);
 
-        await _db.Insert(new Account
+        await _db.Accounts().Insert(new Account
         {
             UserId = 2,
             AccountName = "RoundTrip",

@@ -145,7 +145,7 @@ internal static class AnalyzabilityChecker
                 if (invokedMethod.ContainingType != null && IsQuarryContextType(invokedMethod.ContainingType))
                     return (true, null);
                 if (invokedMethod.ReturnType is INamedTypeSymbol rt
-                    && rt.Name is "IQueryBuilder" or "QueryBuilder" or "IDeleteBuilder" or "IUpdateBuilder")
+                    && rt.Name is "IQueryBuilder" or "QueryBuilder" or "IDeleteBuilder" or "IUpdateBuilder" or "EntityAccessor" or "IEntityAccessor")
                     return (true, null);
             }
         }

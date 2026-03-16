@@ -1214,7 +1214,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Insert_SingleEntity_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Insert(new User
+        var result = await _db.Users().Insert(new User
         {
             UserName = "testuser",
             Email = "test@example.com",
@@ -1245,7 +1245,7 @@ public class InterceptorIntegrationTests
             new User { UserName = "user3", IsActive = true, CreatedAt = DateTime.UtcNow }
         };
 
-        var result = await _db.InsertMany(entities).ExecuteNonQueryAsync();
+        var result = await _db.Users().InsertMany(entities).ExecuteNonQueryAsync();
 
         Assert.That(result, Is.EqualTo(3));
         Assert.That(_connection.LastCommand, Is.Not.Null);
@@ -1260,7 +1260,7 @@ public class InterceptorIntegrationTests
     {
         _connection.ScalarResult = 42;
 
-        var identity = await _db.Insert(new User
+        var identity = await _db.Users().Insert(new User
         {
             UserName = "newuser",
             Email = "new@example.com",
@@ -1278,7 +1278,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Insert_Order_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Insert(new Order
+        var result = await _db.Orders().Insert(new Order
         {
             UserId = 1,
             Total = 99.99m,
@@ -1299,7 +1299,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSet_SingleColumn_GeneratesSetClause()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "NewName")
             .Where(u => u.UserId == 1)
             .ToSql();
@@ -1315,7 +1315,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSet_MultipleColumns_GeneratesMultipleSetClauses()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "NewName")
             .Set(u => u.IsActive, false)
             .Where(u => u.UserId == 1)
@@ -1330,7 +1330,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSet_WithAll_GeneratesUpdateWithoutWhere()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.IsActive, false)
             .All()
             .ToSql();
@@ -1348,7 +1348,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateWhere_SimpleCondition_GeneratesWhereClause()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.IsActive)
             .ToSql();
@@ -1361,7 +1361,7 @@ public class InterceptorIntegrationTests
     public void UpdateWhere_WithCapturedParameter_GeneratesParameterizedWhere()
     {
         int userId = 42;
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.UserId == userId)
             .ToSql();
@@ -1373,7 +1373,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateWhere_ChainedWheres_GeneratesAndConditions()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
@@ -1387,7 +1387,7 @@ public class InterceptorIntegrationTests
     public void UpdateSet_OnExecutableBuilder_ChainedAfterWhere()
     {
         // Set() after Where() operates on ExecutableUpdateBuilder
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "First")
             .Where(u => u.UserId == 1)
             .Set(u => u.IsActive, true)
@@ -1402,7 +1402,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Update_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Update<User>()
+        var result = await _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
@@ -1421,7 +1421,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSetPoco_SingleColumn_GeneratesSetClause()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Where(u => u.UserId == 1)
             .ToSql();
@@ -1437,7 +1437,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSetPoco_MultipleColumns_GeneratesSetClauses()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName", IsActive = false })
             .Where(u => u.UserId == 1)
             .ToSql();
@@ -1451,7 +1451,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void UpdateSetPoco_WithAll_NoWhereClause()
     {
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { IsActive = false })
             .All()
             .ToSql();
@@ -1466,7 +1466,7 @@ public class InterceptorIntegrationTests
     public void UpdateSetPoco_MixedWithPropertySet()
     {
         // POCO Set followed by property Set — both should produce SET clauses
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Set(u => u.IsActive, true)
             .Where(u => u.UserId == 1)
@@ -1480,7 +1480,7 @@ public class InterceptorIntegrationTests
     public void UpdateSetPoco_OnExecutableBuilder_AfterWhere()
     {
         // POCO Set after Where() operates on ExecutableUpdateBuilder
-        var sql = _db.Update<User>()
+        var sql = _db.Users().Update()
             .Set(u => u.UserName, "First")
             .Where(u => u.UserId == 1)
             .Set(new User { IsActive = true })
@@ -1494,7 +1494,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task UpdateSetPoco_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Update<User>()
+        var result = await _db.Users().Update()
             .Set(new User { UserName = "Updated", IsActive = false })
             .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
@@ -1598,7 +1598,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Delete_WithWhere_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Delete<User>()
+        var result = await _db.Users().Delete()
             .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
 
@@ -1613,7 +1613,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Delete_WithMultipleWheres_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Delete<User>()
+        var result = await _db.Users().Delete()
             .Where(u => u.UserId > 100)
             .Where(u => !u.IsActive)
             .ExecuteNonQueryAsync();
@@ -1627,7 +1627,7 @@ public class InterceptorIntegrationTests
     [Test]
     public async Task Delete_All_ExecuteNonQueryAsync_Succeeds()
     {
-        var result = await _db.Delete<User>()
+        var result = await _db.Users().Delete()
             .All()
             .ExecuteNonQueryAsync();
 
@@ -1642,7 +1642,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Delete_WithWhere_ToSql_GeneratesCorrectSql()
     {
-        var sql = _db.Delete<User>()
+        var sql = _db.Users().Delete()
             .Where(u => u.UserId == 1)
             .ToSql();
 
@@ -1656,7 +1656,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Delete_WithBooleanWhere_ToSql_GeneratesCorrectSql()
     {
-        var sql = _db.Delete<User>()
+        var sql = _db.Users().Delete()
             .Where(u => u.IsActive)
             .ToSql();
 
@@ -1673,7 +1673,7 @@ public class InterceptorIntegrationTests
     public async Task VariableBasedDelete_ExecutesNonQuery()
     {
         // Simple variable-based DELETE chain — no conditionals, verifies variable chains work
-        var del = _db.Delete<User>().Where(u => u.UserId == 1);
+        var del = _db.Users().Delete().Where(u => u.UserId == 1);
         var result = await del.ExecuteNonQueryAsync();
 
         Assert.That(result, Is.EqualTo(1));
@@ -1686,7 +1686,7 @@ public class InterceptorIntegrationTests
     public async Task VariableBasedDeleteAll_ExecutesNonQuery()
     {
         // Variable DELETE with All() — verifies variable chains with All() work
-        var del = _db.Delete<User>().All();
+        var del = _db.Users().Delete().All();
         var result = await del.ExecuteNonQueryAsync();
 
         Assert.That(result, Is.EqualTo(1));
@@ -1698,7 +1698,7 @@ public class InterceptorIntegrationTests
     public async Task VariableBasedUpdate_ExecutesNonQuery()
     {
         // Variable-based UPDATE chain
-        var upd = _db.Update<User>().Set(u => u.UserName, "newname").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName, "newname").Where(u => u.UserId == 1);
         var result = await upd.ExecuteNonQueryAsync();
 
         Assert.That(result, Is.EqualTo(1));
@@ -1729,7 +1729,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalDelete_WithConditionTrue_IncludesConditionalWhere()
     {
         // Conditional WHERE on DELETE — condition true → bit 0 set → mask=1
-        var del = _db.Delete<User>().Where(u => u.UserId > 100);
+        var del = _db.Users().Delete().Where(u => u.UserId > 100);
         if (true) // always true — exercises the conditional branch path
         {
             del = del.Where(u => !u.IsActive);
@@ -1750,7 +1750,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalDelete_WithConditionFalse_ExcludesConditionalWhere()
     {
         // Conditional WHERE on DELETE — condition false → bit 0 not set → mask=0
-        var del = _db.Delete<User>().Where(u => u.UserId > 100);
+        var del = _db.Users().Delete().Where(u => u.UserId > 100);
         if (false) // always false — exercises the non-conditional path
         {
             del = del.Where(u => !u.IsActive);
@@ -1771,7 +1771,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalUpdate_WithConditionTrue_IncludesConditionalWhere()
     {
         // Conditional WHERE on UPDATE — condition true → mask includes conditional bit
-        var upd = _db.Update<User>().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
         if (true)
         {
             upd = upd.Where(u => u.IsActive);
@@ -1791,7 +1791,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalUpdate_WithConditionFalse_ExcludesConditionalWhere()
     {
         // Conditional WHERE on UPDATE — condition false → only base WHERE
-        var upd = _db.Update<User>().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
         if (false)
         {
             upd = upd.Where(u => u.IsActive);

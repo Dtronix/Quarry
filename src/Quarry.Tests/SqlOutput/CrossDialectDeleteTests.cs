@@ -16,10 +16,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_Where_Equality()
     {
         AssertDialects(
-            Lite.Delete<User>().Where(u => u.UserId == 1).ToTestCase(),
-            Pg.Delete<Pg.User>().Where(u => u.UserId == 1).ToTestCase(),
-            My.Delete<My.User>().Where(u => u.UserId == 1).ToTestCase(),
-            Ss.Delete<Ss.User>().Where(u => u.UserId == 1).ToTestCase(),
+            Lite.Users().Delete().Where(u => u.UserId == 1).ToTestCase(),
+            Pg.Users().Delete().Where(u => u.UserId == 1).ToTestCase(),
+            My.Users().Delete().Where(u => u.UserId == 1).ToTestCase(),
+            Ss.Users().Delete().Where(u => u.UserId == 1).ToTestCase(),
             sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
             pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
             mysql:  "DELETE FROM `users` WHERE (`UserId` = 1)",
@@ -30,10 +30,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_Where_GreaterThan()
     {
         AssertDialects(
-            Lite.Delete<User>().Where(u => u.UserId > 100).ToTestCase(),
-            Pg.Delete<Pg.User>().Where(u => u.UserId > 100).ToTestCase(),
-            My.Delete<My.User>().Where(u => u.UserId > 100).ToTestCase(),
-            Ss.Delete<Ss.User>().Where(u => u.UserId > 100).ToTestCase(),
+            Lite.Users().Delete().Where(u => u.UserId > 100).ToTestCase(),
+            Pg.Users().Delete().Where(u => u.UserId > 100).ToTestCase(),
+            My.Users().Delete().Where(u => u.UserId > 100).ToTestCase(),
+            Ss.Users().Delete().Where(u => u.UserId > 100).ToTestCase(),
             sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
             pg:     "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
             mysql:  "DELETE FROM `users` WHERE (`UserId` > 100)",
@@ -48,10 +48,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_Where_Boolean()
     {
         AssertDialects(
-            Lite.Delete<User>().Where(u => u.IsActive).ToTestCase(),
-            Pg.Delete<Pg.User>().Where(u => u.IsActive).ToTestCase(),
-            My.Delete<My.User>().Where(u => u.IsActive).ToTestCase(),
-            Ss.Delete<Ss.User>().Where(u => u.IsActive).ToTestCase(),
+            Lite.Users().Delete().Where(u => u.IsActive).ToTestCase(),
+            Pg.Users().Delete().Where(u => u.IsActive).ToTestCase(),
+            My.Users().Delete().Where(u => u.IsActive).ToTestCase(),
+            Ss.Users().Delete().Where(u => u.IsActive).ToTestCase(),
             sqlite: "DELETE FROM \"users\" WHERE \"IsActive\" = 1",
             pg:     "DELETE FROM \"users\" WHERE \"IsActive\" = TRUE",
             mysql:  "DELETE FROM `users` WHERE `IsActive` = 1",
@@ -62,10 +62,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_Where_NegatedBoolean()
     {
         AssertDialects(
-            Lite.Delete<User>().Where(u => !u.IsActive).ToTestCase(),
-            Pg.Delete<Pg.User>().Where(u => !u.IsActive).ToTestCase(),
-            My.Delete<My.User>().Where(u => !u.IsActive).ToTestCase(),
-            Ss.Delete<Ss.User>().Where(u => !u.IsActive).ToTestCase(),
+            Lite.Users().Delete().Where(u => !u.IsActive).ToTestCase(),
+            Pg.Users().Delete().Where(u => !u.IsActive).ToTestCase(),
+            My.Users().Delete().Where(u => !u.IsActive).ToTestCase(),
+            Ss.Users().Delete().Where(u => !u.IsActive).ToTestCase(),
             sqlite: "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
             pg:     "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
             mysql:  "DELETE FROM `users` WHERE NOT (`IsActive`)",
@@ -80,10 +80,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_MultipleWhere()
     {
         AssertDialects(
-            Lite.Delete<User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
-            Pg.Delete<Pg.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
-            My.Delete<My.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
-            Ss.Delete<Ss.User>().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            Lite.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            Pg.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            My.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
+            Ss.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToTestCase(),
             sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = 1",
             pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = TRUE",
             mysql:  "DELETE FROM `users` WHERE (`UserId` = 1) AND `IsActive` = 1",
@@ -98,10 +98,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     public void Delete_Order_Where()
     {
         AssertDialects(
-            Lite.Delete<Order>().Where(o => o.OrderId == 42).ToTestCase(),
-            Pg.Delete<Pg.Order>().Where(o => o.OrderId == 42).ToTestCase(),
-            My.Delete<My.Order>().Where(o => o.OrderId == 42).ToTestCase(),
-            Ss.Delete<Ss.Order>().Where(o => o.OrderId == 42).ToTestCase(),
+            Lite.Orders().Delete().Where(o => o.OrderId == 42).ToTestCase(),
+            Pg.Orders().Delete().Where(o => o.OrderId == 42).ToTestCase(),
+            My.Orders().Delete().Where(o => o.OrderId == 42).ToTestCase(),
+            Ss.Orders().Delete().Where(o => o.OrderId == 42).ToTestCase(),
             sqlite: "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
             pg:     "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
             mysql:  "DELETE FROM `orders` WHERE (`OrderId` = 42)",

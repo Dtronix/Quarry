@@ -29,48 +29,48 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
     private IQueryBuilder<T> CreateQueryBuilder()
         => QueryBuilder<T>.Create(_dialect, _tableName, _schemaName, _ctx);
 
-    IQueryBuilder<T> IEntityAccessor<T>.Where(Expression<Func<T, bool>> predicate)
+    public IQueryBuilder<T> Where(Expression<Func<T, bool>> predicate)
         => CreateQueryBuilder().Where(predicate);
 
-    IQueryBuilder<T, TResult> IEntityAccessor<T>.Select<TResult>(Func<T, TResult> selector)
+    public IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector)
         => CreateQueryBuilder().Select(selector);
 
-    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.Join<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+    public IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
         => CreateQueryBuilder().Join(condition);
 
-    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.LeftJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+    public IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
         => CreateQueryBuilder().LeftJoin(condition);
 
-    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.RightJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+    public IJoinedQueryBuilder<T, TJoined> RightJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
         => CreateQueryBuilder().RightJoin(condition);
 
-    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.Join<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
+    public IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
         => CreateQueryBuilder().Join(navigation);
 
-    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
+    public IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
         => CreateQueryBuilder().LeftJoin(navigation);
 
-    IQueryBuilder<T> IEntityAccessor<T>.Distinct()
+    public IQueryBuilder<T> Distinct()
         => CreateQueryBuilder().Distinct();
 
-    IQueryBuilder<T> IEntityAccessor<T>.WithTimeout(TimeSpan timeout)
+    public IQueryBuilder<T> WithTimeout(TimeSpan timeout)
         => CreateQueryBuilder().WithTimeout(timeout);
 
-    string IEntityAccessor<T>.ToSql()
+    public string ToSql()
         => throw new InvalidOperationException("ToSql requires a Select clause. Use .Select(u => u).ToSql() instead.");
 
     // ── Modification entry points ──
 
-    IDeleteBuilder<T> IEntityAccessor<T>.Delete()
+    public IDeleteBuilder<T> Delete()
         => new DeleteBuilder<T>(_dialect, _tableName, _schemaName, _ctx);
 
-    IUpdateBuilder<T> IEntityAccessor<T>.Update()
+    public IUpdateBuilder<T> Update()
         => new UpdateBuilder<T>(_dialect, _tableName, _schemaName, _ctx);
 
-    IInsertBuilder<T> IEntityAccessor<T>.Insert(T entity)
+    public IInsertBuilder<T> Insert(T entity)
         => new InsertBuilder<T>(_dialect, _tableName, _schemaName, _ctx, entity);
 
-    IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
+    public IInsertBuilder<T> InsertMany(IEnumerable<T> entities)
     {
         var builder = new InsertBuilder<T>(_dialect, _tableName, _schemaName, _ctx);
         foreach (var entity in entities)

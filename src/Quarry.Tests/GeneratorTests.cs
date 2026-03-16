@@ -91,7 +91,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""public"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -134,7 +134,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -171,7 +171,7 @@ public class OrderItemSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<OrderItem> OrderItems();
+    public partial IEntityAccessor<OrderItem> OrderItems();
 }
 ";
 
@@ -214,8 +214,8 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
-    public partial IQueryBuilder<Order> Orders();
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -256,8 +256,8 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
-    public partial IQueryBuilder<Order> Orders();
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -290,7 +290,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""public"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -329,7 +329,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -364,7 +364,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -427,7 +427,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.{dialect})]
 public partial class TestDbContext : QuarryContext
 {{
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }}
 ";
 
@@ -459,7 +459,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""myschema"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -494,7 +494,7 @@ public class ProductSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Product> Products();
+    public partial IEntityAccessor<Product> Products();
 }
 ";
 
@@ -527,7 +527,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -566,7 +566,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""public"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -606,7 +606,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -620,7 +620,7 @@ public partial class TestDbContext : QuarryContext
         var contextCode = contextSource!.GetText().ToString();
 
         // Check property implementation
-        Assert.That(contextCode, Does.Contain("public partial IQueryBuilder<User> Users"));
+        Assert.That(contextCode, Does.Contain("public partial IEntityAccessor<User> Users"));
         Assert.That(contextCode, Does.Contain("QueryBuilder<User>.Create(_dialect, \"users\", null, (IQueryExecutionContext)this)"));
     }
 
@@ -641,7 +641,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = ""myschema"")]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -677,7 +677,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.MySQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -717,8 +717,8 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
-    public partial IQueryBuilder<Order> Orders();
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -796,7 +796,7 @@ public class ItemSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Item> Items();
+    public partial IEntityAccessor<Item> Items();
 }
 ";
 
@@ -840,7 +840,7 @@ public class ItemSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Item> Items();
+    public partial IEntityAccessor<Item> Items();
 }
 ";
 
@@ -894,8 +894,8 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts();
-    public partial IQueryBuilder<Order> Orders();
+    public partial IEntityAccessor<Account> Accounts();
+    public partial IEntityAccessor<Order> Orders();
 }
 ";
 
@@ -940,7 +940,7 @@ public class AccountSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Account> Accounts();
+    public partial IEntityAccessor<Account> Accounts();
 }
 ";
 
@@ -988,7 +988,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -1042,7 +1042,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 ";
 
@@ -1091,7 +1091,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -1157,9 +1157,9 @@ public class EnrollmentSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Student> Students();
-    public partial IQueryBuilder<Course> Courses();
-    public partial IQueryBuilder<Enrollment> Enrollments();
+    public partial IEntityAccessor<Student> Students();
+    public partial IEntityAccessor<Course> Courses();
+    public partial IEntityAccessor<Enrollment> Enrollments();
 }
 ";
 
@@ -1212,9 +1212,9 @@ public class EnrollmentSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Student> Students();
-    public partial IQueryBuilder<Course> Courses();
-    public partial IQueryBuilder<Enrollment> Enrollments();
+    public partial IEntityAccessor<Student> Students();
+    public partial IEntityAccessor<Course> Courses();
+    public partial IEntityAccessor<Enrollment> Enrollments();
 }
 ";
 
@@ -1274,9 +1274,9 @@ public class EnrollmentSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Student> Students();
-    public partial IQueryBuilder<Course> Courses();
-    public partial IQueryBuilder<Enrollment> Enrollments();
+    public partial IEntityAccessor<Student> Students();
+    public partial IEntityAccessor<Course> Courses();
+    public partial IEntityAccessor<Enrollment> Enrollments();
 }
 ";
 

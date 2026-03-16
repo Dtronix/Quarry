@@ -214,7 +214,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task RoundTrip_InsertThenSelectEntity_UsesCustomReader()
     {
-        await _db.Insert(new Product
+        await _db.Products().Insert(new Product
         {
             ProductName = "Thingamajig",
             Price = 199.99m,

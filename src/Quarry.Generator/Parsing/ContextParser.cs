@@ -171,7 +171,7 @@ internal static class ContextParser
         if (genericName == null)
             return false;
 
-        return genericName.Identifier.Text is "QueryBuilder" or "IQueryBuilder";
+        return genericName.Identifier.Text is "QueryBuilder" or "IQueryBuilder" or "EntityAccessor" or "IEntityAccessor";
     }
 
     /// <summary>

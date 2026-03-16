@@ -44,7 +44,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class Db : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Svc

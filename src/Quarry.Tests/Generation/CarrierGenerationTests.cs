@@ -101,7 +101,7 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -136,7 +136,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -169,7 +169,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -200,7 +200,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -233,7 +233,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -280,7 +280,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -308,7 +308,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries
@@ -316,7 +316,7 @@ public static class Queries
     public static async Task Test(TestDbContext db)
     {
         var id = 42;
-        await db.Delete<User>().Where(u => u.UserId == id).ExecuteNonQueryAsync();
+        await db.Users().Delete().Where(u => u.UserId == id).ExecuteNonQueryAsync();
     }
 }
 ";
@@ -342,7 +342,7 @@ public static class Queries
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
+    public partial IEntityAccessor<User> Users();
 }
 
 public static class Queries

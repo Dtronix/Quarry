@@ -206,7 +206,8 @@ internal static class UsageSiteDiscovery
         if (IsQuarryContextType(containingType)
             && methodSymbol.Parameters.Length == 0
             && methodSymbol.ReturnType is INamedTypeSymbol returnType
-            && returnType is { Name: "IQueryBuilder", Arity: 1 })
+            && returnType is { Arity: 1 }
+            && returnType.Name is "IQueryBuilder" or "EntityAccessor" or "IEntityAccessor")
         {
             var rootEntityType = returnType.TypeArguments[0];
             var rootEntityTypeName = rootEntityType.ToDisplayString();

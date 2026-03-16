@@ -99,10 +99,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     {
         // DiscountedPrice is Computed() — should be excluded even if set
         AssertDialects(
-            Lite.Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
-            Pg.Insert(new Pg.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
-            My.Insert(new My.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
-            Ss.Insert(new Ss.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
+            Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
+            Pg.Products().Insert(new Pg.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
+            My.Products().Insert(new My.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
+            Ss.Products().Insert(new Ss.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
             sqlite: "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\"",
             pg:     "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES ($1, $2) RETURNING \"ProductId\"",
             mysql:  "INSERT INTO `products` (`ProductName`, `Price`) VALUES (?, ?)",
@@ -118,10 +118,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     {
         // WidgetId is ClientGenerated() GUID -- no RETURNING/OUTPUT clause
         AssertDialects(
-            Lite.Insert(new Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
-            Pg.Insert(new Pg.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
-            My.Insert(new My.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
-            Ss.Insert(new Ss.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
+            Lite.Widgets().Insert(new Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
+            Pg.Widgets().Insert(new Pg.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
+            My.Widgets().Insert(new My.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
+            Ss.Widgets().Insert(new Ss.Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
             sqlite: "INSERT INTO \"widgets\" (\"WidgetId\", \"WidgetName\") VALUES (@p0, @p1)",
             pg:     "INSERT INTO \"widgets\" (\"WidgetId\", \"WidgetName\") VALUES ($1, $2)",
             mysql:  "INSERT INTO `widgets` (`WidgetId`, `WidgetName`) VALUES (?, ?)",
@@ -136,10 +136,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Delete_All_NoWhereClause()
     {
         AssertDialects(
-            Lite.Delete<User>().All().ToTestCase(),
-            Pg.Delete<Pg.User>().All().ToTestCase(),
-            My.Delete<My.User>().All().ToTestCase(),
-            Ss.Delete<Ss.User>().All().ToTestCase(),
+            Lite.Users().Delete().All().ToTestCase(),
+            Pg.Users().Delete().All().ToTestCase(),
+            My.Users().Delete().All().ToTestCase(),
+            Ss.Users().Delete().All().ToTestCase(),
             sqlite: "DELETE FROM \"users\"",
             pg:     "DELETE FROM \"users\"",
             mysql:  "DELETE FROM `users`",

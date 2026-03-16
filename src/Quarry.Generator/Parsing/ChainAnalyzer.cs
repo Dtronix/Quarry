@@ -767,7 +767,8 @@ internal static class ChainAnalyzer
             or "DeleteBuilder" or "ExecutableDeleteBuilder" or "InsertBuilder"
             or "IQueryBuilder" or "IJoinedQueryBuilder" or "IJoinedQueryBuilder3"
             or "IJoinedQueryBuilder4" or "IUpdateBuilder" or "IExecutableUpdateBuilder"
-            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "IInsertBuilder";
+            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "IInsertBuilder"
+            or "EntityAccessor" or "IEntityAccessor";
     }
 
     /// <summary>

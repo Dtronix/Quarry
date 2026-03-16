@@ -5,7 +5,7 @@ namespace Quarry.Benchmarks.Context;
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class BenchDb : QuarryContext
 {
-    public partial IQueryBuilder<User> Users();
-    public partial IQueryBuilder<Order> Orders();
-    public partial IQueryBuilder<OrderItem> OrderItems();
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+    public partial IEntityAccessor<OrderItem> OrderItems();
 }

@@ -106,71 +106,8 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         }
     }
 
-    #region Update Operations
-
-    /// <summary>
-    /// Creates an UPDATE operation for an entity type.
-    /// This method is overridden by generated code with entity-specific implementations.
-    /// </summary>
-    /// <typeparam name="T">The entity type to update.</typeparam>
-    /// <returns>An UpdateBuilder for building the update operation.</returns>
-    public IUpdateBuilder<T> Update<T>() where T : class
-    {
-        throw new NotImplementedException(
-            "Update<T>() requires a generated context with entity mappings. " +
-            "Ensure the source generator has run and your context declares this entity type.");
-    }
-
-    #endregion
-
-    #region Delete Operations
-
-    /// <summary>
-    /// Creates a DELETE operation for an entity type.
-    /// This method is overridden by generated code with entity-specific implementations.
-    /// </summary>
-    /// <typeparam name="T">The entity type to delete.</typeparam>
-    /// <returns>A DeleteBuilder for building the delete operation.</returns>
-    public IDeleteBuilder<T> Delete<T>() where T : class
-    {
-        throw new NotImplementedException(
-            "Delete<T>() requires a generated context with entity mappings. " +
-            "Ensure the source generator has run and your context declares this entity type.");
-    }
-
-    #endregion
-
-    #region Insert Operations
-
-    /// <summary>
-    /// Creates an INSERT operation for a single entity.
-    /// This method is overridden by generated code with entity-specific implementations.
-    /// </summary>
-    /// <typeparam name="T">The entity type to insert.</typeparam>
-    /// <param name="entity">The entity to insert.</param>
-    /// <returns>An InsertBuilder for execution.</returns>
-    public IInsertBuilder<T> Insert<T>(T entity) where T : class
-    {
-        throw new NotImplementedException(
-            "Insert() requires a generated context with entity mappings. " +
-            "Ensure the source generator has run and your context declares this entity type.");
-    }
-
-    /// <summary>
-    /// Creates an INSERT operation for multiple entities.
-    /// This method is overridden by generated code with entity-specific implementations.
-    /// </summary>
-    /// <typeparam name="T">The entity type to insert.</typeparam>
-    /// <param name="entities">The entities to insert.</param>
-    /// <returns>An InsertBuilder for execution.</returns>
-    public IInsertBuilder<T> InsertMany<T>(IEnumerable<T> entities) where T : class
-    {
-        throw new NotImplementedException(
-            "InsertMany() requires a generated context with entity mappings. " +
-            "Ensure the source generator has run and your context declares this entity type.");
-    }
-
-    #endregion
+    // Update/Delete/Insert operations are now accessed via EntityAccessor:
+    // db.Users().Update(), db.Users().Delete(), db.Users().Insert(entity)
 
     #region Set Operations
 

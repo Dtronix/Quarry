@@ -66,23 +66,8 @@ internal static class ContextCodeGenerator
             GenerateQueryBuilderProperty(sb, mapping, context.Schema, access);
         }
 
-        // Insert methods
-        foreach (var mapping in context.EntityMappings)
-        {
-            GenerateInsertMethods(sb, mapping, context.Schema, access);
-        }
-
-        // Update methods
-        foreach (var mapping in context.EntityMappings)
-        {
-            GenerateUpdateMethod(sb, mapping, context.Schema, access);
-        }
-
-        // Generic Update<T>() override
-        GenerateGenericUpdateMethod(sb, context.EntityMappings, context.Schema, access);
-
-        // Generic Delete<T>() override
-        GenerateGenericDeleteMethod(sb, context.EntityMappings, context.Schema, access);
+        // Insert/Update/Delete methods are now accessed via EntityAccessor:
+        // db.Users().Insert(entity), db.Users().Update(), db.Users().Delete()
 
         sb.AppendLine("}");
 
@@ -123,7 +108,7 @@ internal static class ContextCodeGenerator
     }
 
     /// <summary>
-    /// Generates a QueryBuilder factory method for an entity.
+    /// Generates an EntityAccessor factory method for an entity.
     /// </summary>
     private static void GenerateQueryBuilderProperty(StringBuilder sb, EntityMapping mapping, string? schemaName, string access)
     {
@@ -131,19 +116,18 @@ internal static class ContextCodeGenerator
         var propertyName = mapping.PropertyName;
 
         sb.AppendLine($"    /// <summary>");
-        sb.AppendLine($"    /// Gets a query builder for the {entity.TableName} table.");
+        sb.AppendLine($"    /// Gets an entity accessor for the {entity.TableName} table.");
         sb.AppendLine($"    /// </summary>");
 
-        // Pass 'this' as IQueryExecutionContext for query execution support
         if (!string.IsNullOrEmpty(schemaName))
         {
-            sb.AppendLine($"    {access} partial IQueryBuilder<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
+            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
+            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
         }
         else
         {
-            sb.AppendLine($"    {access} partial IQueryBuilder<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => QueryBuilder<{entity.EntityName}>.Create(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
+            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
+            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
         }
 
         sb.AppendLine();
