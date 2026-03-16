@@ -26,7 +26,7 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
 
     // ── Query chain starters ──
 
-    private IQueryBuilder<T> CreateQueryBuilder()
+    public IQueryBuilder<T> CreateQueryBuilder()
         => QueryBuilder<T>.Create(_dialect, _tableName, _schemaName, _ctx);
 
     public IQueryBuilder<T> Where(Expression<Func<T, bool>> predicate)

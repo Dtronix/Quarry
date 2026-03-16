@@ -34,6 +34,8 @@ internal static partial class InterceptorCodeGenerator
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
         var concreteThisType = ToConcreteTypeName(returnType);
+        // When receiver is IEntityAccessor, use CreateQueryBuilder() to get a real QueryBuilder
+        var joinBuilderExpr = IsEntityAccessorType(thisType) ? EntityAccessorToQueryBuilder(entityType) : "builder";
 
         // Determine if this is a chained join (from JoinedQueryBuilder/3)
         var isChainedJoin = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
@@ -184,7 +186,7 @@ internal static partial class InterceptorCodeGenerator
             }
             else
             {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
             sb.AppendLine($"        return __b.AsJoined<{joinedEntityName}>();");
@@ -211,7 +213,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        Expression<Func<{entityType}, {joinedEntityName}, bool>> _)");
             }
             sb.AppendLine($"    {{");
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
             var escapedTableName = EscapeStringLiteral(clauseInfo.JoinedTableName);
             sb.AppendLine($"        return __b.AddJoinClause<{joinedEntityName}>({joinKind}, @\"{escapedTableName}\", @\"{escapedSql}\");");
             sb.AppendLine($"    }}");
@@ -235,7 +237,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, NavigationList<{joinedType}>>> navigation)");
                 sb.AppendLine($"    {{");
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
                 sb.AppendLine($"        // Fallback - navigation join not fully analyzed at compile time");
                 sb.AppendLine($"        return __b.{methodCall}(navigation);");
                 sb.AppendLine($"    }}");
@@ -247,7 +249,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {joinedType}, bool>> condition)");
                 sb.AppendLine($"    {{");
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
                 sb.AppendLine($"        // Fallback - join condition not fully analyzed at compile time");
                 sb.AppendLine($"        return __b.{methodCall}(condition);");
                 sb.AppendLine($"    }}");

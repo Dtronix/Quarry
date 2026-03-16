@@ -423,7 +423,10 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        Func<{entityType}, {resultType}> _)");
             sb.AppendLine($"    {{");
             sb.AppendLine($"        // Generated column list: {columnList}");
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            // When receiver is IEntityAccessor, builder is a boxed EntityAccessor struct —
+            // use CreateQueryBuilder() to get a real QueryBuilder before Unsafe.As cast
+            var builderExpr = IsEntityAccessorType(thisType) ? EntityAccessorToQueryBuilder(entityType) : "builder";
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>({builderExpr});");
             sb.AppendLine($"        return __b.SelectWithReader(");
             sb.AppendLine($"            {columnNames},");
             sb.AppendLine($"            {readerDelegate});");
@@ -451,7 +454,8 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        Func<T, TResult> selector) where T : class");
         sb.AppendLine($"    {{");
         sb.AppendLine($"        // Fallback path - projection not fully analyzed at compile time");
-        sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<T>>(builder);");
+        var fallbackBuilderExpr = IsEntityAccessorType(thisType) ? "((EntityAccessor<T>)(object)builder).CreateQueryBuilder()" : "builder";
+        sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<T>>({fallbackBuilderExpr});");
         sb.AppendLine($"        return __b.Select(selector);");
         sb.AppendLine($"    }}");
     }
@@ -519,14 +523,16 @@ internal static partial class InterceptorCodeGenerator
         }
 
         // Cast to concrete type (receiver is always an interface)
+        // When receiver is IEntityAccessor, use CreateQueryBuilder() to get a real QueryBuilder
+        var whereBuilderExpr = IsEntityAccessorType(thisType) ? EntityAccessorToQueryBuilder(entityType) : "builder";
         if (site.ResultTypeName != null)
         {
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}, {resultType}>>(builder);");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}, {resultType}>>({whereBuilderExpr});");
         }
         else
         {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>({whereBuilderExpr});");
         }
         var builderVar = "__b";
 

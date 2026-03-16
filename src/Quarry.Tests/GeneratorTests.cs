@@ -1062,14 +1062,11 @@ public partial class TestDbContext : QuarryContext
 using Quarry;
 using System.Data.Common;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace TestApp;
 
-public class User
-{
-    public int UserId { get; set; }
-    public string UserName { get; set; } = """";
-}
+public partial class User { }
 
 public class UserReader : EntityReader<User>
 {
@@ -1096,9 +1093,9 @@ public partial class TestDbContext : QuarryContext
 
 public static class Queries
 {
-    public static void Test(TestDbContext db)
+    public static async Task Test(TestDbContext db)
     {
-        db.Users.Select(u => u);
+        await db.Users().Select(u => new User { UserId = u.UserId, UserName = u.UserName }).ExecuteFetchAllAsync();
     }
 }
 ";

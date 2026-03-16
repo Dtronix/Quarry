@@ -537,6 +537,21 @@ internal static partial class InterceptorCodeGenerator
         => thisType is "IEntityAccessor" or "EntityAccessor" ? "IQueryBuilder" : thisType;
 
     /// <summary>
+    /// Returns true if the builder type name is an entity accessor type.
+    /// When true, the builder is a boxed EntityAccessor struct and must be
+    /// converted to a QueryBuilder via CreateQueryBuilder() before Unsafe.As casts.
+    /// </summary>
+    private static bool IsEntityAccessorType(string builderTypeName)
+        => builderTypeName is "IEntityAccessor" or "EntityAccessor";
+
+    /// <summary>
+    /// Returns the expression to convert a builder to a QueryBuilder when the receiver is IEntityAccessor.
+    /// Unboxes the EntityAccessor struct and calls CreateQueryBuilder() to get a real QueryBuilder.
+    /// </summary>
+    private static string EntityAccessorToQueryBuilder(string entityType)
+        => $"((EntityAccessor<{entityType}>)(object)builder).CreateQueryBuilder()";
+
+    /// <summary>
     /// Gets a short type name from a fully qualified type name.
     /// </summary>
     internal static string GetShortTypeName(string fullTypeName)
