@@ -970,6 +970,9 @@ internal static class ChainAnalyzer
             InterceptorKind.Distinct => ClauseRole.Distinct,
             InterceptorKind.WithTimeout => ClauseRole.WithTimeout,
             InterceptorKind.ChainRoot => ClauseRole.ChainRoot,
+            InterceptorKind.DeleteTransition => ClauseRole.DeleteTransition,
+            InterceptorKind.UpdateTransition => ClauseRole.UpdateTransition,
+            InterceptorKind.AllTransition => ClauseRole.AllTransition,
             _ => null
         };
     }

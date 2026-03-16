@@ -57,7 +57,7 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
         => CreateQueryBuilder().WithTimeout(timeout);
 
     public string ToSql()
-        => throw new InvalidOperationException("ToSql requires a Select clause. Use .Select(u => u).ToSql() instead.");
+        => CreateQueryBuilder().ToSql();
 
     // ── Modification entry points ──
 

@@ -441,6 +441,24 @@ internal enum InterceptorKind
     ChainRoot,
 
     /// <summary>
+    /// .Delete() transition on IEntityAccessor — switches from accessor to IDeleteBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    DeleteTransition,
+
+    /// <summary>
+    /// .Update() transition on IEntityAccessor — switches from accessor to IUpdateBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    UpdateTransition,
+
+    /// <summary>
+    /// .All() transition on IDeleteBuilder/IUpdateBuilder — switches to IExecutableDeleteBuilder/IExecutableUpdateBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    AllTransition,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

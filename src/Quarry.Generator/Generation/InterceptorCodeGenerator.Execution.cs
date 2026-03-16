@@ -101,20 +101,25 @@ internal static partial class InterceptorCodeGenerator
 
         sb.AppendLine($"    {{");
 
-        if (carrier != null && chain.ReaderDelegateCode != null)
+        if (carrier != null)
         {
+            // Carrier execution terminal — reader-based methods need ReaderDelegateCode,
+            // but ExecuteScalar does not use a reader delegate
             var carrierExecutorMethod = site.Kind switch
             {
                 InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleAsync<{resultType}>",
+                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarAsync<TScalar>",
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerable<{resultType}>",
                 _ => ""
             };
-            if (!string.IsNullOrEmpty(carrierExecutorMethod))
+            var hasRequiredReader = chain.ReaderDelegateCode != null || site.Kind == InterceptorKind.ExecuteScalar;
+            if (!string.IsNullOrEmpty(carrierExecutorMethod) && hasRequiredReader)
             {
-                EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+                var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
+                EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
                 sb.AppendLine($"    }}");
                 return;
             }

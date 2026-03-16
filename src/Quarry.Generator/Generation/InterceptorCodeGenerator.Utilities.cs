@@ -552,6 +552,16 @@ internal static partial class InterceptorCodeGenerator
         => $"((EntityAccessor<{entityType}>)(object)builder).CreateQueryBuilder()";
 
     /// <summary>
+    /// Returns true if the SQL fragment is a constant boolean TRUE tautology.
+    /// Used to elide WHERE clauses like .Where(u => true) that add no filtering.
+    /// </summary>
+    private static bool IsConstantTrueClause(string sqlFragment)
+    {
+        var trimmed = sqlFragment.Trim();
+        return trimmed is "TRUE" or "1" or "true";
+    }
+
+    /// <summary>
     /// Gets a short type name from a fully qualified type name.
     /// </summary>
     internal static string GetShortTypeName(string fullTypeName)

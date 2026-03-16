@@ -51,7 +51,10 @@ internal enum ClauseRole
     UpdateWhere,
     UpdateSet,
     WithTimeout,
-    ChainRoot
+    ChainRoot,
+    DeleteTransition,
+    UpdateTransition,
+    AllTransition
 }
 
 /// <summary>

@@ -63,7 +63,10 @@ internal static class UsageSiteDiscovery
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
         ["Distinct"] = InterceptorKind.Distinct,
-        ["WithTimeout"] = InterceptorKind.WithTimeout
+        ["WithTimeout"] = InterceptorKind.WithTimeout,
+        ["Delete"] = InterceptorKind.DeleteTransition,
+        ["Update"] = InterceptorKind.UpdateTransition,
+        ["All"] = InterceptorKind.AllTransition
     };
 
     // Methods on InsertBuilder that need special handling

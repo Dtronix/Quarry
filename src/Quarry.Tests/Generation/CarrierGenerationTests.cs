@@ -330,8 +330,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Delete chains don't have ChainRoot interception yet, so no carrier class is generated
-        Assert.That(code, Does.Not.Contain("Chain_"));
+        // Delete chains now use carrier classes since DeleteTransition is intercepted
+        Assert.That(code, Does.Contain("Chain_"));
         // The non-query terminal interceptor should still be present
         Assert.That(code, Does.Contain("ExecuteNonQueryAsync"));
     }

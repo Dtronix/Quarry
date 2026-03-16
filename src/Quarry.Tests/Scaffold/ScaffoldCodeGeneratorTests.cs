@@ -247,8 +247,8 @@ public class ScaffoldCodeGeneratorTests
             Assert.That(code, Does.Contain("namespace MyApp.Data;"));
             Assert.That(code, Does.Contain("[QuarryContext(Dialect = SqlDialect.SQLite)]"));
             Assert.That(code, Does.Contain("public partial class MyDbContext : QuarryContext"));
-            Assert.That(code, Does.Contain("public partial EntityAccessor<Customer> Customers();"));
-            Assert.That(code, Does.Contain("public partial EntityAccessor<Order> Orders();"));
+            Assert.That(code, Does.Contain("public partial IEntityAccessor<Customer> Customers();"));
+            Assert.That(code, Does.Contain("public partial IEntityAccessor<Order> Orders();"));
             Assert.That(code, Does.Contain("Auto-scaffolded by quarry"));
         });
     }

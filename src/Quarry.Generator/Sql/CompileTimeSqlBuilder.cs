@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
@@ -725,12 +726,30 @@ internal static class CompileTimeSqlBuilder
     {
         if (whereClauses.Count == 0) return;
 
+        // Filter out constant-true WHERE clauses (e.g., .Where(u => true) -> "TRUE" / "1")
+        // These are tautologies that add no filtering and should be elided from prebuilt SQL.
+        var effectiveClauses = whereClauses
+            .Where(wc => !IsConstantTrueClause(wc.Clause))
+            .ToList();
+        if (effectiveClauses.Count == 0) return;
+
         sb.Append(" WHERE ");
-        SqlClauseJoining.AppendAndJoinedConditions(sb, whereClauses.Count, (sb, i) =>
+        SqlClauseJoining.AppendAndJoinedConditions(sb, effectiveClauses.Count, (sb, i) =>
         {
-            var (wc, clauseIdx) = whereClauses[i];
+            var (wc, clauseIdx) = effectiveClauses[i];
             AppendClauseFragment(sb, wc, clauseIdx, templates, clauseBaseOffsets, dialect);
         });
+    }
+
+    /// <summary>
+    /// Returns true if a WHERE clause is a constant-true tautology that should be elided.
+    /// </summary>
+    private static bool IsConstantTrueClause(ChainedClauseSite clause)
+    {
+        var fragment = clause.Site.ClauseInfo?.SqlFragment;
+        if (fragment == null || clause.Site.ClauseInfo!.Parameters.Count > 0) return false;
+        var trimmed = fragment.Trim();
+        return trimmed is "TRUE" or "1" or "true";
     }
 
     /// <summary>

@@ -68,6 +68,15 @@ internal static partial class InterceptorCodeGenerator
                 return;
         }
 
+        // DeleteTransition/UpdateTransition (.Delete()/.Update() on IEntityAccessor).
+        // On carrier path: noop cast (carrier implements both IEntityAccessor and IDeleteBuilder/IUpdateBuilder).
+        // On non-carrier path: skip (original method runs normally).
+        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition)
+        {
+            if (!isCarrierSite)
+                return;
+        }
+
         // For execution interceptors: only emit if we have a pre-built chain for this site
         // AND we can resolve the result type. Otherwise skip — the built-in execution methods
         // work correctly via the Select interceptor.
@@ -308,6 +317,16 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.ChainRoot:
                 if (carrierInfo != null && carrierChain != null)
                     GenerateCarrierChainRootInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                break;
+
+            case InterceptorKind.DeleteTransition:
+            case InterceptorKind.UpdateTransition:
+                if (carrierInfo != null)
+                    GenerateCarrierTransitionInterceptor(sb, site, methodName);
+                break;
+
+            case InterceptorKind.AllTransition:
+                GenerateAllTransitionInterceptor(sb, site, methodName, carrierInfo);
                 break;
 
             default:
@@ -566,6 +585,24 @@ internal static partial class InterceptorCodeGenerator
         {
             // Generate optimized interceptor with pre-computed SQL
             var escapedSql = EscapeStringLiteral(clauseInfo.SqlFragment);
+
+            // Elide constant-true WHERE clauses (e.g., .Where(u => true) → "TRUE" / "1")
+            // These are tautologies that add no filtering — skip the AddWhereClause call entirely
+            if (IsConstantTrueClause(clauseInfo.SqlFragment) && clauseInfo.Parameters.Count == 0)
+            {
+                var bitSuffix0 = ClauseBitSuffix(clauseBit);
+                // When receiver is IEntityAccessor, need to create a QueryBuilder for the return type cast
+                if (IsEntityAccessorType(thisType))
+                {
+                    sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>({EntityAccessorToQueryBuilder(entityType)}){bitSuffix0};");
+                }
+                else
+                {
+                    sb.AppendLine($"        return builder{bitSuffix0};");
+                }
+                sb.AppendLine($"    }}");
+                return;
+            }
 
             // Check if any captured parameters lack extraction paths (e.g., captured variables in subqueries)
             var hasUnresolvableCaptured = clauseInfo.Parameters.Any(p => p.IsCaptured && !p.CanGenerateDirectPath);

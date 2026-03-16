@@ -138,6 +138,67 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a carrier Delete/Update transition interceptor.
+    /// .Delete()/.Update() on IEntityAccessor is a noop on the carrier path —
+    /// the carrier already implements both IEntityAccessor and IDeleteBuilder/IUpdateBuilder.
+    /// </summary>
+    private static void GenerateCarrierTransitionInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var returnType = site.Kind == InterceptorKind.DeleteTransition
+            ? $"IDeleteBuilder<{entityType}>"
+            : $"IUpdateBuilder<{entityType}>";
+
+        sb.AppendLine($"    public static {returnType} {methodName}(");
+        sb.AppendLine($"        this IEntityAccessor<{entityType}> builder)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Generates an All() transition interceptor.
+    /// .All() on IDeleteBuilder/IUpdateBuilder transitions to IExecutableDeleteBuilder/IExecutableUpdateBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// On the non-carrier path: delegates to the real All() method.
+    /// </summary>
+    private static void GenerateAllTransitionInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        CarrierClassInfo? carrier)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        // Determine receiver and return types based on builder kind
+        var isDelete = site.BuilderTypeName != null && site.BuilderTypeName.Contains("Delete");
+        var receiverType = isDelete
+            ? $"IDeleteBuilder<{entityType}>"
+            : $"IUpdateBuilder<{entityType}>";
+        var returnType = isDelete
+            ? $"IExecutableDeleteBuilder<{entityType}>"
+            : $"IExecutableUpdateBuilder<{entityType}>";
+        var concreteType = isDelete
+            ? $"DeleteBuilder<{entityType}>"
+            : $"UpdateBuilder<{entityType}>";
+
+        sb.AppendLine($"    public static {returnType} {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder)");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null)
+        {
+            // Carrier path: noop cast
+            sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
+        }
+        else
+        {
+            // Non-carrier path: delegate to the real All() method
+            sb.AppendLine($"        return Unsafe.As<{concreteType}>(builder).All();");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Generates a carrier Limit/Offset interceptor method.
     /// </summary>
     private static void GenerateCarrierPaginationInterceptor(
@@ -535,13 +596,16 @@ internal static partial class InterceptorCodeGenerator
             }
 
             var dialectStr = GetDialectLiteral(chain.Dialect);
-            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, __args, {readerExpression}, __timeout, cancellationToken);");
+            // ExecuteScalar doesn't use a reader delegate — omit it from the call
+            var readerArg = readerExpression != null ? $", {readerExpression}" : "";
+            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, __args{readerArg}, __timeout, cancellationToken);");
         }
         else
         {
             // Zero-param: use regular overload with empty array
             var dialectStr = GetDialectLiteral(chain.Dialect);
-            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, System.Array.Empty<object?>(), {readerExpression}, __timeout, cancellationToken);");
+            var readerArg = readerExpression != null ? $", {readerExpression}" : "";
+            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, System.Array.Empty<object?>(){readerArg}, __timeout, cancellationToken);");
         }
     }
 
