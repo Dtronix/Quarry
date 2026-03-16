@@ -117,6 +117,45 @@ internal sealed class CarrierInterfaceStub : IEquatable<CarrierInterfaceStub>
 }
 
 /// <summary>
+/// Describes a static field on the carrier class for caching FieldInfo or other
+/// per-chain state that should be isolated to the carrier.
+/// </summary>
+internal sealed class CarrierStaticField : IEquatable<CarrierStaticField>
+{
+    public CarrierStaticField(string name, string typeName, int parameterIndex)
+    {
+        Name = name;
+        TypeName = typeName;
+        ParameterIndex = parameterIndex;
+    }
+
+    /// <summary>
+    /// Gets the field name (e.g., "F0", "F1").
+    /// </summary>
+    public string Name { get; }
+
+    /// <summary>
+    /// Gets the C# type name (e.g., "FieldInfo?").
+    /// </summary>
+    public string TypeName { get; }
+
+    /// <summary>
+    /// Gets the global parameter index this field caches extraction for.
+    /// </summary>
+    public int ParameterIndex { get; }
+
+    public bool Equals(CarrierStaticField? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Name == other.Name && TypeName == other.TypeName && ParameterIndex == other.ParameterIndex;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as CarrierStaticField);
+    public override int GetHashCode() => HashCode.Combine(Name, TypeName, ParameterIndex);
+}
+
+/// <summary>
 /// Complete description of a generated carrier class for a PrebuiltDispatch chain.
 /// Used by the code generator to emit the <c>file sealed class</c> and to route
 /// interceptor methods through the carrier-optimized path.
@@ -127,12 +166,14 @@ internal sealed class CarrierClassInfo : IEquatable<CarrierClassInfo>
         string className,
         IReadOnlyList<string> implementedInterfaces,
         IReadOnlyList<CarrierField> fields,
-        IReadOnlyList<CarrierInterfaceStub> deadMethods)
+        IReadOnlyList<CarrierInterfaceStub> deadMethods,
+        IReadOnlyList<CarrierStaticField>? staticFields = null)
     {
         ClassName = className;
         ImplementedInterfaces = implementedInterfaces;
         Fields = fields;
         DeadMethods = deadMethods;
+        StaticFields = staticFields ?? System.Array.Empty<CarrierStaticField>();
     }
 
     /// <summary>
@@ -155,6 +196,11 @@ internal sealed class CarrierClassInfo : IEquatable<CarrierClassInfo>
     /// </summary>
     public IReadOnlyList<CarrierInterfaceStub> DeadMethods { get; }
 
+    /// <summary>
+    /// Gets the static fields on this carrier (FieldInfo caches for captured params).
+    /// </summary>
+    public IReadOnlyList<CarrierStaticField> StaticFields { get; }
+
     public bool Equals(CarrierClassInfo? other)
     {
         if (other is null) return false;
@@ -162,7 +208,8 @@ internal sealed class CarrierClassInfo : IEquatable<CarrierClassInfo>
         return ClassName == other.ClassName
             && EqualityHelpers.SequenceEqual(ImplementedInterfaces, other.ImplementedInterfaces)
             && EqualityHelpers.SequenceEqual(Fields, other.Fields)
-            && EqualityHelpers.SequenceEqual(DeadMethods, other.DeadMethods);
+            && EqualityHelpers.SequenceEqual(DeadMethods, other.DeadMethods)
+            && EqualityHelpers.SequenceEqual(StaticFields, other.StaticFields);
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierClassInfo);

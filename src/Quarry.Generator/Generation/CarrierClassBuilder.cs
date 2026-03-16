@@ -49,6 +49,13 @@ internal static class CarrierClassBuilder
         if (chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.WithTimeout))
             fields.Add(new CarrierField("Timeout", "TimeSpan?", FieldRole.Timeout));
 
+        // Static FieldInfo cache fields — one per chain parameter (F0, F1, ...)
+        var staticFields = new List<CarrierStaticField>();
+        foreach (var param in chain.ChainParameters)
+        {
+            staticFields.Add(new CarrierStaticField($"F{param.Index}", "FieldInfo?", param.Index));
+        }
+
         // Determine base class from chain shape (caller may provide pre-resolved base)
         var baseClassName = resolvedBaseClass ?? SelectBaseClass(chain);
 
@@ -58,7 +65,8 @@ internal static class CarrierClassBuilder
             className: className,
             implementedInterfaces: new[] { baseClassName },
             fields: fields,
-            deadMethods: System.Array.Empty<CarrierInterfaceStub>());
+            deadMethods: System.Array.Empty<CarrierInterfaceStub>(),
+            staticFields: staticFields);
     }
 
     /// <summary>

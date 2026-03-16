@@ -403,7 +403,7 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     private static void EmitCarrierClass(StringBuilder sb, CarrierClassInfo info)
     {
-        sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (2 allocations: carrier + param array)</remarks>");
+        sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");
 
         if (info.ImplementedInterfaces.Count > 0)
@@ -419,10 +419,16 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine();
         sb.AppendLine("{");
 
-        // Emit fields
+        // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)
         {
             sb.AppendLine($"    internal {field.TypeName} {field.Name};");
+        }
+
+        // Emit static fields (FieldInfo caches for captured params)
+        foreach (var staticField in info.StaticFields)
+        {
+            sb.AppendLine($"    internal static {staticField.TypeName} {staticField.Name};");
         }
 
         // Emit dead methods (explicit interface impls that throw)
