@@ -117,6 +117,9 @@ internal static class ChainAnalyzer
 
             if (varType != null && !IsQuarryContextType(varType))
             {
+                // IParameterSymbol: method parameters holding builder variables.
+                // Variable-based chain analysis requires declaration sites in the method body,
+                // which parameters lack. Return null to treat as direct fluent chain.
                 return symbol as ILocalSymbol;
             }
         }

@@ -38,6 +38,9 @@ public abstract class DeleteCarrierBase<T> : IEntityAccessor<T>, IDeleteBuilder<
     IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryPlan IEntityAccessor<T>.ToQueryPlan()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // IDeleteBuilder<T> explicit implementations
 
     IExecutableDeleteBuilder<T> IDeleteBuilder<T>.Where(Expression<Func<T, bool>> predicate)
@@ -104,6 +107,9 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryPlan IEntityAccessor<T>.ToQueryPlan()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // IUpdateBuilder<T> explicit implementations
 

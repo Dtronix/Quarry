@@ -87,4 +87,9 @@ public interface IEntityAccessor<T> where T : class
     /// Starts a bulk INSERT operation with the specified entities.
     /// </summary>
     IInsertBuilder<T> InsertMany(IEnumerable<T> entities);
+
+    /// <summary>
+    /// Returns a diagnostic query plan showing the optimization tier and SQL.
+    /// </summary>
+    QueryPlan ToQueryPlan();
 }

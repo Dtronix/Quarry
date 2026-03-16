@@ -53,6 +53,9 @@ public abstract class CarrierBase<T> : IEntityAccessor<T>, IQueryBuilder<T>
     IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryPlan IEntityAccessor<T>.ToQueryPlan()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // ── IQueryBuilder<T> methods ──
 
     IQueryBuilder<T> IQueryBuilder<T>.Where(Expression<Func<T, bool>> predicate)
@@ -139,6 +142,9 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryPlan IEntityAccessor<T>.ToQueryPlan()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // IQueryBuilder<T> explicit implementations
 

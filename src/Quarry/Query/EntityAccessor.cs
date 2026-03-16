@@ -77,4 +77,7 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
             builder.Values(entity);
         return builder;
     }
+
+    public QueryPlan ToQueryPlan()
+        => new QueryPlan(CreateQueryBuilder().ToSql(), QueryPlanTier.RuntimeBuild, _dialect);
 }

@@ -6,7 +6,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 namespace Quarry.Tests.SqlOutput;
 
 #pragma warning disable QRY001
-#pragma warning disable CS9144 // Pre-existing: cross-context Insert interceptor type mismatch for schema-qualified entities
 
 [TestFixture]
 internal class CrossDialectSchemaTests : CrossDialectTestBase
@@ -99,8 +98,6 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Insert_ComputedColumnExcluded()
     {
         // DiscountedPrice is Computed() — should be excluded even if set
-        // TODO: Cross-context Insert interceptor type mismatch for Product entity (pre-existing CS9144)
-        // Pg/My/Ss Products entity type differs from Lite's Product type in generated interceptors
         Assert.That(
             Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
             Is.EqualTo("INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\""));
@@ -114,7 +111,6 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Insert_ClientGeneratedGuid_NoReturning()
     {
         // WidgetId is ClientGenerated() GUID -- no RETURNING/OUTPUT clause
-        // TODO: Cross-context Insert interceptor type mismatch for Widget entity (pre-existing CS9144)
         Assert.That(
             Lite.Widgets().Insert(new Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
             Is.EqualTo("INSERT INTO \"widgets\" (\"WidgetId\", \"WidgetName\") VALUES (@p0, @p1)"));
