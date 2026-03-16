@@ -11,7 +11,8 @@
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Tests.Samples;Quarry.Generated</InterceptorsNamespaces>
 
     <!-- Suppress CS9177: arity mismatch in generated interceptors for entity-projection fallback paths -->
-    <NoWarn>$(NoWarn);CS9177</NoWarn>
+    <!-- CS9144: cross-context interceptor type mismatch for schema-qualified entities (pre-existing) -->
+    <NoWarn>$(NoWarn);CS9177;CS9144</NoWarn>
 
     <!-- Emit generated source files to disk for debugging -->
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>

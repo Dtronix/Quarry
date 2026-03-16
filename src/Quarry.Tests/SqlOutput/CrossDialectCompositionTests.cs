@@ -262,21 +262,25 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         AssertDialects(
             Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
             Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
             My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
             Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
@@ -368,18 +372,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         AssertDialects(
             Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
             Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
             My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
             Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
@@ -394,18 +402,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         AssertDialects(
             Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
             Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
             My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
             Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
@@ -420,18 +432,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         AssertDialects(
             Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
             Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
             My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
             Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
@@ -446,21 +462,25 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         AssertDialects(
             Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
             Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
             My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
             Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))

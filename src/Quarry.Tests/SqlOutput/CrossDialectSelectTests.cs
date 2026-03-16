@@ -126,10 +126,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Pagination_LimitOffset()
     {
         AssertDialects(
-            Lite.Users().Limit(10).Offset(20).ToTestCase(),
-            Pg.Users().Limit(10).Offset(20).ToTestCase(),
-            My.Users().Limit(10).Offset(20).ToTestCase(),
-            Ss.Users().Limit(10).Offset(20).ToTestCase(),
+            Lite.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
+            Pg.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
+            My.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
+            Ss.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
             sqlite: "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
             pg:     "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
             mysql:  "SELECT * FROM `users` LIMIT 10 OFFSET 20",
@@ -140,10 +140,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Pagination_LimitOnly()
     {
         AssertDialects(
-            Lite.Users().Limit(5).ToTestCase(),
-            Pg.Users().Limit(5).ToTestCase(),
-            My.Users().Limit(5).ToTestCase(),
-            Ss.Users().Limit(5).ToTestCase(),
+            Lite.Users().Where(u => true).Limit(5).ToTestCase(),
+            Pg.Users().Where(u => true).Limit(5).ToTestCase(),
+            My.Users().Where(u => true).Limit(5).ToTestCase(),
+            Ss.Users().Where(u => true).Limit(5).ToTestCase(),
             sqlite: "SELECT * FROM \"users\" LIMIT 5",
             pg:     "SELECT * FROM \"users\" LIMIT 5",
             mysql:  "SELECT * FROM `users` LIMIT 5",

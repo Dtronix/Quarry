@@ -1515,6 +1515,7 @@ public class InterceptorIntegrationTests
     public void Select_TupleWithAvg_GeneratesCorrectSql()
     {
         var sql = _db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
             .ToSql();
@@ -1528,6 +1529,7 @@ public class InterceptorIntegrationTests
     public void Select_TupleWithMin_GeneratesCorrectSql()
     {
         var sql = _db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Min(o.Total)))
             .ToSql();
@@ -1541,6 +1543,7 @@ public class InterceptorIntegrationTests
     public void Select_TupleWithMax_GeneratesCorrectSql()
     {
         var sql = _db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Max(o.Total)))
             .ToSql();
@@ -1554,6 +1557,7 @@ public class InterceptorIntegrationTests
     public void Select_TupleWithMultipleAggregates_GeneratesCorrectSql()
     {
         var sql = _db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total), Sql.Count()))
             .ToSql();
@@ -1568,6 +1572,7 @@ public class InterceptorIntegrationTests
     public void GroupBy_Having_Select_TupleWithAvg_GeneratesCorrectSql()
     {
         var sql = _db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Having(o => Sql.Count() > 1)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
@@ -1813,7 +1818,7 @@ public class InterceptorIntegrationTests
     {
         // Conditional WHERE on SELECT — condition true
         // Where must come before Select so the variable type stays IQueryBuilder<User>
-        IQueryBuilder<User> query = _db.Users();
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
         if (true)
         {
             query = query.Where(u => u.IsActive);
@@ -1832,7 +1837,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalSelect_WithConditionFalse_ExcludesConditionalWhere()
     {
         // Conditional WHERE on SELECT — condition false
-        IQueryBuilder<User> query = _db.Users();
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
         if (false)
         {
             query = query.Where(u => u.IsActive);

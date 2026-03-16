@@ -150,14 +150,14 @@ public class EndToEndSqlTests
     [Test]
     public void Limit()
     {
-        var sql = _db.Users().Limit(10).ToSql();
+        var sql = _db.Users().Where(u => true).Limit(10).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10"));
     }
 
     [Test]
     public void LimitAndOffset()
     {
-        var sql = _db.Users().Limit(10).Offset(20).ToSql();
+        var sql = _db.Users().Where(u => true).Limit(10).Offset(20).ToSql();
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10 OFFSET 20"));
     }
 
