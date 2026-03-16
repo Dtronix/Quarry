@@ -172,11 +172,17 @@ internal static partial class InterceptorCodeGenerator
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
+        // IEntityAccessor<T>.Distinct() returns IQueryBuilder<T>, not IEntityAccessor<T>
+        var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
+            ? $"IQueryBuilder<{entityType}>" : receiverType;
 
-        sb.AppendLine($"    public static {receiverType} {methodName}(");
+        sb.AppendLine($"    public static {returnTypeName} {methodName}(");
         sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return builder;");
+        if (returnTypeName != receiverType)
+            sb.AppendLine($"        return Unsafe.As<{returnTypeName}>(builder);");
+        else
+            sb.AppendLine($"        return builder;");
         sb.AppendLine($"    }}");
     }
 
@@ -210,6 +216,10 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     private static string ResolveCarrierReceiverType(UsageSiteInfo site, string entityType, PrebuiltChainInfo? chain = null)
     {
+        // If the site's receiver is IEntityAccessor, use that as the receiver type
+        if (site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor")
+            return $"IEntityAccessor<{entityType}>";
+
         // Resolve result type: use chain's enriched projection for broken tuples,
         // but preserve element names (no sanitization) since interceptors need exact type match.
         string? resultType = null;

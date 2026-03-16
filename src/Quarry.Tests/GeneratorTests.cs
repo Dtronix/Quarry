@@ -621,7 +621,7 @@ public partial class TestDbContext : QuarryContext
 
         // Check property implementation
         Assert.That(contextCode, Does.Contain("public partial IEntityAccessor<User> Users"));
-        Assert.That(contextCode, Does.Contain("QueryBuilder<User>.Create(_dialect, \"users\", null, (IQueryExecutionContext)this)"));
+        Assert.That(contextCode, Does.Contain("new EntityAccessor<User>(_dialect, \"users\", null, (IQueryExecutionContext)this)"));
     }
 
     [Test]
@@ -657,7 +657,7 @@ public partial class TestDbContext : QuarryContext
         // Check schema name constant
         Assert.That(contextCode, Does.Contain("_schemaName = \"myschema\""));
         // Check property uses schema name
-        Assert.That(contextCode, Does.Contain("QueryBuilder<User>.Create(_dialect, \"users\", _schemaName, (IQueryExecutionContext)this)"));
+        Assert.That(contextCode, Does.Contain("new EntityAccessor<User>(_dialect, \"users\", _schemaName, (IQueryExecutionContext)this)"));
     }
 
     [Test]
@@ -732,8 +732,8 @@ public partial class TestDbContext : QuarryContext
         var contextCode = contextSource!.GetText().ToString();
 
         // Check both properties
-        Assert.That(contextCode, Does.Contain("IQueryBuilder<User> Users"));
-        Assert.That(contextCode, Does.Contain("IQueryBuilder<Order> Orders"));
+        Assert.That(contextCode, Does.Contain("IEntityAccessor<User> Users"));
+        Assert.That(contextCode, Does.Contain("IEntityAccessor<Order> Orders"));
     }
 
     [Test]

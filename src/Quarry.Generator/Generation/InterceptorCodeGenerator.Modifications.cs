@@ -38,8 +38,9 @@ internal static partial class InterceptorCodeGenerator
 
         // Determine the receiver type: DeleteBuilder<T> or ExecutableDeleteBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var isExecutable = thisType.Contains("ExecutableDeleteBuilder");
-        var concreteType = ToConcreteTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
         var receiverType = $"{thisType}<{entityType}>";
 
         sb.AppendLine($"    public static IExecutableDeleteBuilder<{entityType}> {methodName}(");
@@ -167,9 +168,10 @@ internal static partial class InterceptorCodeGenerator
         var clauseInfo = site.ClauseInfo;
 
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
 
-        sb.AppendLine($"    public static {thisType}<{entityType}> {methodName}<TValue>(");
+        sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}<TValue>(");
         sb.AppendLine($"        this {thisType}<{entityType}> builder,");
         sb.AppendLine($"        Expression<Func<{entityType}, TValue>> _,");
         sb.AppendLine($"        TValue value)");
@@ -238,6 +240,7 @@ internal static partial class InterceptorCodeGenerator
 
         // Determine the receiver type: UpdateBuilder<T> or ExecutableUpdateBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var isExecutable = thisType.Contains("ExecutableUpdateBuilder");
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
@@ -381,8 +384,9 @@ internal static partial class InterceptorCodeGenerator
 
         // Determine the receiver type: UpdateBuilder<T> or ExecutableUpdateBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var isExecutable = thisType.Contains("ExecutableUpdateBuilder");
-        var concreteType = ToConcreteTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
         var receiverType = $"{thisType}<{entityType}>";
 
         sb.AppendLine($"    public static IExecutableUpdateBuilder<{entityType}> {methodName}(");

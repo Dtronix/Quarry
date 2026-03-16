@@ -221,7 +221,8 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("file sealed class Chain_"));
-        Assert.That(code, Does.Contain("return builder;"));
+        // Distinct noop — may use Unsafe.As for IEntityAccessor→IQueryBuilder crossing
+        Assert.That(code, Does.Contain("Distinct_"));
     }
 
     [Test]

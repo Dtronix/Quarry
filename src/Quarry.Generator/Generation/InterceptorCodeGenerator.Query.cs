@@ -332,8 +332,9 @@ internal static partial class InterceptorCodeGenerator
         {
             var resultType = GetShortTypeName(projection.ResultTypeName);
             var thisType = site.BuilderTypeName;
-            var concreteType = ToConcreteTypeName(thisType);
-            sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+            var returnType = ToReturnTypeName(thisType);
+            var concreteType = ToConcreteTypeName(returnType);
+            sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
             sb.AppendLine($"        Func<{entityType}, {resultType}> _)");
             sb.AppendLine($"    {{");
@@ -415,8 +416,9 @@ internal static partial class InterceptorCodeGenerator
         {
             var resultType = GetShortTypeName(projection.ResultTypeName);
             var thisType = site.BuilderTypeName;
-            var concreteType = ToConcreteTypeName(thisType);
-            sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+            var returnType = ToReturnTypeName(thisType);
+            var concreteType = ToConcreteTypeName(returnType);
+            sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
             sb.AppendLine($"        Func<{entityType}, {resultType}> _)");
             sb.AppendLine($"    {{");
@@ -442,8 +444,9 @@ internal static partial class InterceptorCodeGenerator
         // QueryBuilder<T>.Select<TResult> has total arity 2 (T + TResult).
         // Use arity 2 so the interceptor can match any Select<TResult> call.
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
-        sb.AppendLine($"    public static {thisType}<T, TResult> {methodName}<T, TResult>(");
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
+        sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult>(");
         sb.AppendLine($"        this {thisType}<T> builder,");
         sb.AppendLine($"        Func<T, TResult> selector) where T : class");
         sb.AppendLine($"    {{");
@@ -476,19 +479,20 @@ internal static partial class InterceptorCodeGenerator
         }
 
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
 
         // Check if this is on QueryBuilder<T> or QueryBuilder<T, TResult>
         if (site.ResultTypeName != null)
         {
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
-            sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+            sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
         }
         else
         {
-            sb.AppendLine($"    public static {thisType}<{entityType}> {methodName}(");
+            sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
         }
@@ -615,7 +619,8 @@ internal static partial class InterceptorCodeGenerator
         var keyType = site.KeyTypeName != null ? GetShortTypeName(site.KeyTypeName) : null;
 
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
 
         // Check if this is on QueryBuilder<T> or QueryBuilder<T, TResult>
         if (site.ResultTypeName != null)
@@ -624,7 +629,7 @@ internal static partial class InterceptorCodeGenerator
             if (keyType != null)
             {
                 // Non-generic interceptor (arity 0) — concrete key type
-                sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+                sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
@@ -632,7 +637,7 @@ internal static partial class InterceptorCodeGenerator
             else
             {
                 // Arity-matching interceptor — include all type params from class + method
-                sb.AppendLine($"    public static {thisType}<T, TResult> {methodName}<T, TResult, TKey>(");
+                sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {thisType}<T, TResult> builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
@@ -643,7 +648,7 @@ internal static partial class InterceptorCodeGenerator
             if (keyType != null)
             {
                 // Non-generic interceptor (arity 0) — concrete key type
-                sb.AppendLine($"    public static {thisType}<{entityType}> {methodName}(");
+                sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
@@ -651,7 +656,7 @@ internal static partial class InterceptorCodeGenerator
             else
             {
                 // Arity-matching interceptor — include all type params from class + method
-                sb.AppendLine($"    public static {thisType}<T> {methodName}<T, TKey>(");
+                sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
@@ -716,8 +721,8 @@ internal static partial class InterceptorCodeGenerator
         string returnCastClose;
         if (needsReturnCast)
         {
-            var returnType = site.ResultTypeName != null ? $"{thisType}<T, TResult>" : $"{thisType}<T>";
-            returnCastOpen = $"Unsafe.As<{returnType}>(";
+            var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
+            returnCastOpen = $"Unsafe.As<{castTarget}>(";
             returnCastClose = ")";
         }
         else
@@ -764,7 +769,8 @@ internal static partial class InterceptorCodeGenerator
         var keyType = site.KeyTypeName != null ? GetShortTypeName(site.KeyTypeName) : null;
 
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
 
         // Check if this is on QueryBuilder<T> or QueryBuilder<T, TResult>
         if (site.ResultTypeName != null)
@@ -772,13 +778,13 @@ internal static partial class InterceptorCodeGenerator
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
             if (keyType != null)
             {
-                sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+                sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _)");
             }
             else
             {
-                sb.AppendLine($"    public static {thisType}<T, TResult> {methodName}<T, TResult, TKey>(");
+                sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {thisType}<T, TResult> builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _) where T : class");
             }
@@ -787,13 +793,13 @@ internal static partial class InterceptorCodeGenerator
         {
             if (keyType != null)
             {
-                sb.AppendLine($"    public static {thisType}<{entityType}> {methodName}(");
+                sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _)");
             }
             else
             {
-                sb.AppendLine($"    public static {thisType}<T> {methodName}<T, TKey>(");
+                sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _) where T : class");
             }
@@ -865,8 +871,8 @@ internal static partial class InterceptorCodeGenerator
             string returnCastOpen = "", returnCastClose = "";
             if (needsReturnCast)
             {
-                var returnType = site.ResultTypeName != null ? $"{thisType}<T, TResult>" : $"{thisType}<T>";
-                returnCastOpen = $"Unsafe.As<{returnType}>(";
+                var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
+                returnCastOpen = $"Unsafe.As<{castTarget}>(";
                 returnCastClose = ")";
             }
 
@@ -886,19 +892,20 @@ internal static partial class InterceptorCodeGenerator
         var clauseInfo = site.ClauseInfo;
 
         var thisType = site.BuilderTypeName;
-        var concreteType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteType = ToConcreteTypeName(returnType);
 
         // Check if this is on QueryBuilder<T> or QueryBuilder<T, TResult>
         if (site.ResultTypeName != null)
         {
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
-            sb.AppendLine($"    public static {thisType}<{entityType}, {resultType}> {methodName}(");
+            sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> _)");
         }
         else
         {
-            sb.AppendLine($"    public static {thisType}<{entityType}> {methodName}(");
+            sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> _)");
         }

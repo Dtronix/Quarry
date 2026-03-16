@@ -32,7 +32,8 @@ internal static partial class InterceptorCodeGenerator
         };
 
         var thisType = site.BuilderTypeName;
-        var concreteThisType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteThisType = ToConcreteTypeName(returnType);
 
         // Determine if this is a chained join (from JoinedQueryBuilder/3)
         var isChainedJoin = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
@@ -283,6 +284,7 @@ internal static partial class InterceptorCodeGenerator
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.ClauseInfo;
@@ -481,6 +483,7 @@ internal static partial class InterceptorCodeGenerator
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.ClauseInfo;
@@ -658,6 +661,7 @@ internal static partial class InterceptorCodeGenerator
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var projection = site.ProjectionInfo;

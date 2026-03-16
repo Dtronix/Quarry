@@ -34,7 +34,9 @@ internal static class UsageSiteDiscovery
         "IExecutableUpdateBuilder",
         "IDeleteBuilder",
         "IExecutableDeleteBuilder",
-        "IInsertBuilder"
+        "IInsertBuilder",
+        "IEntityAccessor",
+        "EntityAccessor"
     };
 
     // Methods that can be intercepted (excluding builder-specific methods that need context)

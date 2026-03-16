@@ -530,6 +530,13 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Maps IEntityAccessor to the appropriate return type for interceptors.
+    /// IEntityAccessor methods return IQueryBuilder types, not IEntityAccessor types.
+    /// </summary>
+    private static string ToReturnTypeName(string thisType)
+        => thisType is "IEntityAccessor" or "EntityAccessor" ? "IQueryBuilder" : thisType;
+
+    /// <summary>
     /// Gets a short type name from a fully qualified type name.
     /// </summary>
     internal static string GetShortTypeName(string fullTypeName)
