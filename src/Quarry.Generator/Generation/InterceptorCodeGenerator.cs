@@ -52,6 +52,8 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine("using System.Diagnostics.CodeAnalysis;");
         sb.AppendLine("using Quarry;");
         sb.AppendLine("using Quarry.Internal;");
+        sb.AppendLine("using Quarry.Logging;");
+        sb.AppendLine("using Logsmith;");
 
         // Collect all unique entity type namespaces
         var entityNamespaces = usageSites

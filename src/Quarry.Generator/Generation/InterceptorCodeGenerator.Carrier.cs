@@ -547,7 +547,9 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
-    /// Emits a carrier execution terminal interceptor.
+    /// Emits a carrier execution terminal with inline per-parameter DbCommand binding.
+    /// Terminal owns: OpId, SQL/param logging, command creation, param binding.
+    /// Executor owns: connection open, execution, materialization, completion logging.
     /// </summary>
     private static void EmitCarrierExecutionTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
@@ -558,65 +560,31 @@ internal static partial class InterceptorCodeGenerator
         // Timeout resolution
         var hasTimeout = HasCarrierField(carrier, FieldRole.Timeout);
         if (hasTimeout)
-        {
             sb.AppendLine("        var __timeout = __c.Timeout ?? __c.Ctx!.DefaultTimeout;");
-        }
         else
-        {
             sb.AppendLine("        var __timeout = __c.Ctx!.DefaultTimeout;");
-        }
 
-        // SQL dispatch
+        // OpId + SQL dispatch
+        sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, chain);
 
-        // Parameter array fill
-        var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
-        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
-        var totalParamCount = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
+        // SQL logging
+        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
-        if (totalParamCount > 0)
-        {
-            sb.AppendLine($"        var __args = new object?[{totalParamCount}];");
-            for (int i = 0; i < paramCount; i++)
-            {
-                var param = chain.ChainParameters[i];
-                if (param.TypeMapping != null)
-                {
-                    sb.AppendLine($"        __args[{i}] = s_{param.TypeMapping}.ToDb(__c.P{i});");
-                }
-                else
-                {
-                    sb.AppendLine($"        __args[{i}] = __c.P{i};");
-                }
-            }
-            var nextIdx = paramCount;
-            if (hasLimitField)
-            {
-                sb.AppendLine($"        __args[{nextIdx}] = __c.Limit;");
-                nextIdx++;
-            }
-            if (hasOffsetField)
-            {
-                sb.AppendLine($"        __args[{nextIdx}] = __c.Offset;");
-            }
+        // Parameter logging
+        EmitInlineParameterLogging(sb, chain);
 
-            var dialectStr = GetDialectLiteral(chain.Dialect);
-            // ExecuteScalar doesn't use a reader delegate — omit it from the call
-            var readerArg = readerExpression != null ? $", {readerExpression}" : "";
-            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, __args{readerArg}, __timeout, cancellationToken);");
-        }
-        else
-        {
-            // Zero-param: use regular overload with empty array
-            var dialectStr = GetDialectLiteral(chain.Dialect);
-            var readerArg = readerExpression != null ? $", {readerExpression}" : "";
-            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__c.Ctx, sql, {dialectStr}, System.Array.Empty<object?>(){readerArg}, __timeout, cancellationToken);");
-        }
+        // Command creation + inline parameter binding
+        EmitInlineCommandCreation(sb, chain, carrier);
+
+        // Executor call
+        var readerArg = readerExpression != null ? $", {readerExpression}" : "";
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd{readerArg}, cancellationToken);");
     }
 
     /// <summary>
-    /// Emits a carrier non-query execution terminal (DELETE/UPDATE).
+    /// Emits a carrier non-query execution terminal (DELETE/UPDATE) with inline binding.
     /// </summary>
     private static void EmitCarrierNonQueryTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
@@ -625,41 +593,124 @@ internal static partial class InterceptorCodeGenerator
 
         var hasTimeout = HasCarrierField(carrier, FieldRole.Timeout);
         if (hasTimeout)
-        {
             sb.AppendLine("        var __timeout = __c.Timeout ?? __c.Ctx!.DefaultTimeout;");
-        }
         else
-        {
             sb.AppendLine("        var __timeout = __c.Ctx!.DefaultTimeout;");
-        }
 
+        sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, chain);
 
-        var paramCount = chain.ChainParameters.Count;
-        if (paramCount > 0)
-        {
-            sb.AppendLine($"        var __args = new object?[{paramCount}];");
-            for (int i = 0; i < paramCount; i++)
-            {
-                var param = chain.ChainParameters[i];
-                if (param.TypeMapping != null)
-                {
-                    sb.AppendLine($"        __args[{i}] = s_{param.TypeMapping}.ToDb(__c.P{i});");
-                }
-                else
-                {
-                    sb.AppendLine($"        __args[{i}] = __c.P{i};");
-                }
-            }
+        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
-            var dialectStr = GetDialectLiteral(chain.Dialect);
-            sb.AppendLine($"        return QueryExecutor.ExecuteCarrierNonQueryAsync(__c.Ctx, sql, {dialectStr}, __args, __timeout, cancellationToken);");
-        }
-        else
+        EmitInlineParameterLogging(sb, chain);
+        EmitInlineCommandCreation(sb, chain, carrier);
+
+        sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __c.Ctx, __cmd, cancellationToken);");
+    }
+
+    /// <summary>
+    /// Emits inline per-parameter logging (sensitivity-aware).
+    /// </summary>
+    private static void EmitInlineParameterLogging(StringBuilder sb, PrebuiltChainInfo chain)
+    {
+        var paramCount = chain.ChainParameters.Count;
+        var hasLimitField = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Limit);
+        var hasOffsetField = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Offset);
+        var totalParams = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
+
+        if (totalParams == 0)
+            return;
+
+        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName))");
+        sb.AppendLine("        {");
+        for (int i = 0; i < paramCount; i++)
         {
-            var dialectStr = GetDialectLiteral(chain.Dialect);
-            sb.AppendLine($"        return QueryExecutor.ExecuteCarrierNonQueryAsync(__c.Ctx, sql, {dialectStr}, System.Array.Empty<object?>(), __timeout, cancellationToken);");
+            var param = chain.ChainParameters[i];
+            if (param.IsSensitive)
+            {
+                sb.AppendLine($"            ParameterLog.BoundSensitive(__opId, {i});");
+            }
+            else
+            {
+                sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
+            }
         }
+        var nextLogIdx = paramCount;
+        if (hasLimitField)
+        {
+            sb.AppendLine($"            ParameterLog.Bound(__opId, {nextLogIdx}, __c.Limit.ToString());");
+            nextLogIdx++;
+        }
+        if (hasOffsetField)
+        {
+            sb.AppendLine($"            ParameterLog.Bound(__opId, {nextLogIdx}, __c.Offset.ToString());");
+        }
+        sb.AppendLine("        }");
+    }
+
+    /// <summary>
+    /// Emits inline DbCommand creation and per-parameter binding.
+    /// </summary>
+    private static void EmitInlineCommandCreation(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+    {
+        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
+        sb.AppendLine("        __cmd.CommandText = sql;");
+        sb.AppendLine("        __cmd.CommandTimeout = (int)__timeout.TotalSeconds;");
+
+        var paramCount = chain.ChainParameters.Count;
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+
+        // Inline binding for chain parameters
+        for (int i = 0; i < paramCount; i++)
+        {
+            var param = chain.ChainParameters[i];
+            sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
+            sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
+            sb.AppendLine($"        __p{i}.Value = {GetParameterValueExpression(param, i)};");
+            sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
+        }
+
+        // Inline binding for pagination parameters
+        var nextIdx = paramCount;
+        if (hasLimitField)
+        {
+            sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
+            sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
+            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
+            sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
+            nextIdx++;
+        }
+        if (hasOffsetField)
+        {
+            sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
+            sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
+            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
+            sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
+        }
+    }
+
+    /// <summary>
+    /// Gets the inline value expression for a parameter based on its type classification.
+    /// </summary>
+    private static string GetParameterValueExpression(ChainParameterInfo param, int index)
+    {
+        // Mapped type: use ToDb() conversion
+        if (param.TypeMapping != null)
+            return $"(object?)s_{param.TypeMapping}.ToDb(__c.P{index}) ?? DBNull.Value";
+
+        // Enum (non-nullable): inline cast to underlying integral type
+        if (param.IsEnum && !param.TypeName.EndsWith("?"))
+            return $"(object)({param.EnumUnderlyingType})__c.P{index}";
+
+        // Nullable enum: HasValue check + underlying cast
+        if (param.IsEnum && param.TypeName.EndsWith("?"))
+            return $"__c.P{index}.HasValue ? (object)({param.EnumUnderlyingType})__c.P{index}.Value : DBNull.Value";
+
+        // Default: null-safe boxing (handles simple types, nullable value types, and reference types)
+        return $"(object?)__c.P{index} ?? DBNull.Value";
     }
 
     /// <summary>

@@ -107,12 +107,12 @@ internal static partial class InterceptorCodeGenerator
             // but ExecuteScalar does not use a reader delegate
             var carrierExecutorMethod = site.Kind switch
             {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarAsync<TScalar>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerable<{resultType}>",
+                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
+                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
             var hasRequiredReader = chain.ReaderDelegateCode != null || site.Kind == InterceptorKind.ExecuteScalar;
@@ -239,11 +239,11 @@ internal static partial class InterceptorCodeGenerator
         {
             var carrierExecutorMethod = site.Kind switch
             {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleAsync<{resultType}>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerable<{resultType}>",
+                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
             if (!string.IsNullOrEmpty(carrierExecutorMethod))
