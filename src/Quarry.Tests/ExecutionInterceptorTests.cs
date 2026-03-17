@@ -270,7 +270,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void InsertInfo_WithInitializedPropertyNames_IncludesOnlySpecifiedColumns()
     {
-        // Simulates: db.Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync()
+        // Simulates: db.Users().Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync()
         // — inline initializer, generator extracts property names from syntax
         var entity = CreateTestEntity("User", new[]
         {
@@ -293,7 +293,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void InsertInfo_WithNullInitializedPropertyNames_IncludesAllNonIdentityColumns()
     {
-        // Simulates: var user = new User { UserName = "x" }; db.Insert(user).ExecuteNonQueryAsync()
+        // Simulates: var user = new User { UserName = "x" }; db.Users().Insert(user).ExecuteNonQueryAsync()
         // — variable reference, generator cannot extract property names, passes null
         var entity = CreateTestEntity("User", new[]
         {

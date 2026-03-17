@@ -16,7 +16,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithCount_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Count()))
             .ExecuteFetchAllAsync();
@@ -30,7 +31,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithSum_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Sum(o.Total)))
             .ExecuteFetchAllAsync();
@@ -43,7 +45,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithAvg_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
             .ExecuteFetchAllAsync();
@@ -57,7 +60,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithMin_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Min(o.Total)))
             .ExecuteFetchAllAsync();
@@ -71,7 +75,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithMax_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Max(o.Total)))
             .ExecuteFetchAllAsync();
@@ -85,7 +90,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_SelectWithMultipleAggregates_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total)))
             .ExecuteFetchAllAsync();
@@ -100,7 +106,8 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task GroupBy_Having_SelectWithAggregates_FiltersGroups()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
+            .Where(o => true)
             .GroupBy(o => o.Status)
             .Having(o => Sql.Count() > 1)
             .Select(o => (o.Status, Sql.Count(), Sql.Avg(o.Total)))

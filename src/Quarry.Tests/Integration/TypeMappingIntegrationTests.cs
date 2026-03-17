@@ -117,7 +117,7 @@ internal class TypeMappingIntegrationTests
             IsActive = true
         };
 
-        var rowsAffected = await _db.Insert(account).ExecuteNonQueryAsync();
+        var rowsAffected = await _db.Accounts().Insert(account).ExecuteNonQueryAsync();
         Assert.That(rowsAffected, Is.EqualTo(1), "Should insert one row");
 
         var id = Convert.ToInt64(await ExecuteScalarAsync("SELECT last_insert_rowid()"));
@@ -143,7 +143,7 @@ internal class TypeMappingIntegrationTests
     [Test]
     public async Task Select_TupleWithAllMappedColumns_ReconstitutesMoneyFromDb()
     {
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Where(a => a.AccountId == 1)
             .Select(a => (a.AccountId, a.AccountName, a.Balance, a.CreditLimit, a.IsActive))
             .ExecuteFetchAllAsync();
@@ -159,7 +159,7 @@ internal class TypeMappingIntegrationTests
     [Test]
     public async Task Select_AllAccounts_ReturnsCorrectMoneyValues()
     {
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Select(a => (a.AccountId, a.AccountName, a.Balance))
             .ExecuteFetchAllAsync();
 
@@ -175,7 +175,7 @@ internal class TypeMappingIntegrationTests
     [Test]
     public async Task Select_TupleWithMappedColumn_ReturnsMoney()
     {
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Where(a => a.AccountId == 1)
             .Select(a => (a.AccountName, a.Balance))
             .ExecuteFetchAllAsync();
@@ -192,7 +192,7 @@ internal class TypeMappingIntegrationTests
     [Test]
     public async Task Where_NonMappedColumn_FiltersCorrectly()
     {
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Where(a => a.IsActive == true)
             .Select(a => (a.AccountId, a.AccountName, a.Balance, a.IsActive))
             .ExecuteFetchAllAsync();
@@ -205,7 +205,7 @@ internal class TypeMappingIntegrationTests
     [Test]
     public async Task Where_ByAccountId_ReturnsSpecificAccount()
     {
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Where(a => a.AccountId == 2)
             .Select(a => (a.AccountId, a.AccountName, a.Balance))
             .ExecuteFetchAllAsync();
@@ -226,7 +226,7 @@ internal class TypeMappingIntegrationTests
         // This simulates the runtime fallback path: the Money struct goes into QueryState.Parameters
         // unconverted, and NormalizeParameterValue must convert it via TypeMappingRegistry.
         var results = await ((QueryBuilder<Account, (int AccountId, string AccountName, Money Balance)>)
-            _db.Accounts.Select(a => (a.AccountId, a.AccountName, a.Balance)))
+            _db.Accounts().Select(a => (a.AccountId, a.AccountName, a.Balance)))
             .AddWhereClause("\"Balance\" = @p0", new Money(1000.50m))
             .ExecuteFetchAllAsync();
 
@@ -243,7 +243,7 @@ internal class TypeMappingIntegrationTests
         // Seed data: Savings(1000.50, 5000), Checking(250.75, 1000), Savings(500, 2000)
         // Balance >= 1000 AND credit_limit >= 5000 → only account 1
         var results = await ((QueryBuilder<Account, (int AccountId, Money Balance, Money CreditLimit)>)
-            _db.Accounts.Select(a => (a.AccountId, a.Balance, a.CreditLimit)))
+            _db.Accounts().Select(a => (a.AccountId, a.Balance, a.CreditLimit)))
             .AddWhereClause("\"Balance\" >= @p0 AND \"credit_limit\" >= @p1",
                 new Money(1000m), new Money(5000m))
             .ExecuteFetchAllAsync();
@@ -259,7 +259,7 @@ internal class TypeMappingIntegrationTests
     {
         // Mix of Money (mapped) and int (primitive) parameters
         var results = await ((QueryBuilder<Account, (int AccountId, string AccountName, Money Balance)>)
-            _db.Accounts.Select(a => (a.AccountId, a.AccountName, a.Balance)))
+            _db.Accounts().Select(a => (a.AccountId, a.AccountName, a.Balance)))
             .AddWhereClause("\"Balance\" > @p0 AND \"UserId\" = @p1",
                 new Money(100m), 1)
             .ExecuteFetchAllAsync();
@@ -278,7 +278,7 @@ internal class TypeMappingIntegrationTests
         var money = new Money(42.42m);
         var creditLimit = new Money(100m);
 
-        await _db.Insert(new Account
+        await _db.Accounts().Insert(new Account
         {
             UserId = 2,
             AccountName = "RoundTrip",
@@ -287,7 +287,7 @@ internal class TypeMappingIntegrationTests
             IsActive = true
         }).ExecuteNonQueryAsync();
 
-        var results = await _db.Accounts
+        var results = await _db.Accounts()
             .Where(a => a.AccountName == "RoundTrip")
             .Select(a => (a.AccountName, a.Balance, a.CreditLimit))
             .ExecuteFetchAllAsync();

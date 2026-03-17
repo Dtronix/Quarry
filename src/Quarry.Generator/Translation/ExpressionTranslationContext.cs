@@ -153,10 +153,27 @@ internal sealed class ExpressionTranslationContext
     /// <param name="isCollection">Whether this is a collection parameter.</param>
     /// <param name="isCaptured">Whether this parameter is a captured variable from the enclosing scope.</param>
     /// <returns>The parameter placeholder (e.g., "@p0").</returns>
-    public string AddParameter(string clrType, string valueExpression, bool isCollection = false, bool isCaptured = false)
+    public string AddParameter(string clrType, string valueExpression, bool isCollection = false, bool isCaptured = false, ITypeSymbol? typeSymbol = null)
     {
         var name = $"@p{_parameterIndex}";
-        _parameters.Add(new ParameterInfo(_parameterIndex, name, clrType, valueExpression, isCollection, isCaptured));
+        var param = new ParameterInfo(_parameterIndex, name, clrType, valueExpression, isCollection, isCaptured);
+
+        // Detect enum types when the type symbol is available.
+        // This enables inline cast codegen in the carrier terminal.
+        if (typeSymbol != null)
+        {
+            var unwrapped = typeSymbol;
+            if (typeSymbol is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable)
+                unwrapped = nullable.TypeArguments[0];
+
+            if (unwrapped.TypeKind == TypeKind.Enum && unwrapped is INamedTypeSymbol enumType)
+            {
+                param.IsEnum = true;
+                param.EnumUnderlyingType = enumType.EnumUnderlyingType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "int";
+            }
+        }
+
+        _parameters.Add(param);
         _parameterIndex++;
         return FormatParameterPlaceholder(_parameterIndex - 1);
     }

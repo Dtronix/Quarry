@@ -735,7 +735,7 @@ internal static class ClauseTranslator
         if (argument is not ParenthesizedLambdaExpressionSyntax lambda)
             return null;
 
-        if (lambda.ParameterList.Parameters.Count < 2)
+        if (lambda.ParameterList.Parameters.Count != 2)
             return null;
 
         if (lambda.Body is not ExpressionSyntax body)

@@ -49,7 +49,13 @@ internal enum ClauseRole
     Distinct,
     DeleteWhere,
     UpdateWhere,
-    UpdateSet
+    UpdateSet,
+    WithTimeout,
+    ChainRoot,
+    DeleteTransition,
+    UpdateTransition,
+    AllTransition,
+    InsertTransition
 }
 
 /// <summary>
@@ -83,7 +89,8 @@ internal sealed class ChainAnalysisResult : IEquatable<ChainAnalysisResult>
         IReadOnlyList<ConditionalClause> conditionalClauses,
         IReadOnlyList<ulong> possibleMasks,
         string? notAnalyzableReason = null,
-        IReadOnlyList<string>? unmatchedMethodNames = null)
+        IReadOnlyList<string>? unmatchedMethodNames = null,
+        string? forkedVariableName = null)
     {
         Tier = tier;
         Clauses = clauses;
@@ -92,6 +99,7 @@ internal sealed class ChainAnalysisResult : IEquatable<ChainAnalysisResult>
         PossibleMasks = possibleMasks;
         NotAnalyzableReason = notAnalyzableReason;
         UnmatchedMethodNames = unmatchedMethodNames;
+        ForkedVariableName = forkedVariableName;
     }
 
     /// <summary>
@@ -131,12 +139,19 @@ internal sealed class ChainAnalysisResult : IEquatable<ChainAnalysisResult>
     /// </summary>
     public IReadOnlyList<string>? UnmatchedMethodNames { get; }
 
+    /// <summary>
+    /// Gets the variable name when a forked chain is detected (QRY033).
+    /// Non-null only when the chain was rejected due to a fork.
+    /// </summary>
+    public string? ForkedVariableName { get; }
+
     public bool Equals(ChainAnalysisResult? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         return Tier == other.Tier
             && NotAnalyzableReason == other.NotAnalyzableReason
+            && ForkedVariableName == other.ForkedVariableName
             && EqualityHelpers.SequenceEqual(Clauses, other.Clauses)
             && ExecutionSite.Equals(other.ExecutionSite)
             && EqualityHelpers.SequenceEqual(ConditionalClauses, other.ConditionalClauses)

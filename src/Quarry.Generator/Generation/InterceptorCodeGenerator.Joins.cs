@@ -18,7 +18,7 @@ internal static partial class InterceptorCodeGenerator
     /// chained joins (JoinedQueryBuilder→JoinedQueryBuilder3, etc.)
     /// </summary>
     private static void GenerateJoinInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo as JoinClauseInfo;
@@ -32,7 +32,10 @@ internal static partial class InterceptorCodeGenerator
         };
 
         var thisType = site.BuilderTypeName;
-        var concreteThisType = ToConcreteTypeName(thisType);
+        var returnType = ToReturnTypeName(thisType);
+        var concreteThisType = ToConcreteTypeName(returnType);
+        // When receiver is IEntityAccessor, use CreateQueryBuilder() to get a real QueryBuilder
+        var joinBuilderExpr = IsEntityAccessorType(thisType) ? EntityAccessorToQueryBuilder(entityType) : "builder";
 
         // Determine if this is a chained join (from JoinedQueryBuilder/3)
         var isChainedJoin = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
@@ -58,11 +61,47 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder,");
                 sb.AppendLine($"        Expression<Func<{funcTypeArgs}>> _)");
                 sb.AppendLine($"    {{");
+
+                if (carrier != null)
+                {
+                    // Compute carrier site params
+                    var siteParams = new List<ChainParameterInfo>();
+                    var globalParamOffset = 0;
+                    foreach (var clause in prebuiltChain.Analysis.Clauses)
+                    {
+                        if (clause.Site.UniqueId == site.UniqueId)
+                        {
+                            if (clause.Site.ClauseInfo != null)
+                                for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                                    siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                            break;
+                        }
+                        if (clause.Site.ClauseInfo != null)
+                            globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                    }
+
+                    var joinReturnType = $"{returnBuilderName}<{returnTypeArgs}>";
+                    if (isFirstInChain)
+                    {
+                        // For chained join first-in-chain, the incoming builder is the pre-join type
+                        var preJoinBuilderType = GetJoinedConcreteBuilderTypeName(priorTypes.Count, priorTypes.ToArray());
+                        EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
+                    }
+                    else
+                    {
+                        // Join noops need Unsafe.As since the return type differs from receiver
+                        sb.AppendLine($"        return Unsafe.As<{joinReturnType}>(builder);");
+                    }
+                    sb.AppendLine($"    }}");
+                }
+                else
+                {
                 sb.AppendLine($"        var __b = Unsafe.As<{concreteReceiverBuilderName}<{receiverTypeArgs}>>(builder);");
                 if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                     sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
                 sb.AppendLine($"        return __b.AsJoined<{joinedType}>();");
                 sb.AppendLine($"    }}");
+                }
             }
             else if (clauseInfo != null && clauseInfo.IsSuccess)
             {
@@ -113,11 +152,46 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        Expression<Func<{entityType}, {joinedEntityName}, bool>> _)");
             }
             sb.AppendLine($"    {{");
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+
+            if (carrier != null)
+            {
+                // Compute carrier site params
+                var siteParams = new List<ChainParameterInfo>();
+                var globalParamOffset = 0;
+                foreach (var clause in prebuiltChain.Analysis.Clauses)
+                {
+                    if (clause.Site.UniqueId == site.UniqueId)
+                    {
+                        if (clause.Site.ClauseInfo != null)
+                            for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                                siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                        break;
+                    }
+                    if (clause.Site.ClauseInfo != null)
+                        globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                }
+
+                var joinReturnType = $"IJoinedQueryBuilder<{entityType}, {joinedEntityName}>";
+                if (isFirstInChain)
+                {
+                    // For first join, the incoming builder is QueryBuilder<T>
+                    EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
+                }
+                else
+                {
+                    // Join noops need Unsafe.As since the return type differs from receiver
+                    sb.AppendLine($"        return Unsafe.As<{joinReturnType}>(builder);");
+                }
+                sb.AppendLine($"    }}");
+            }
+            else
+            {
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
             sb.AppendLine($"        return __b.AsJoined<{joinedEntityName}>();");
             sb.AppendLine($"    }}");
+            }
         }
         else if (clauseInfo != null && clauseInfo.IsSuccess)
         {
@@ -139,7 +213,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        Expression<Func<{entityType}, {joinedEntityName}, bool>> _)");
             }
             sb.AppendLine($"    {{");
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
             var escapedTableName = EscapeStringLiteral(clauseInfo.JoinedTableName);
             sb.AppendLine($"        return __b.AddJoinClause<{joinedEntityName}>({joinKind}, @\"{escapedTableName}\", @\"{escapedSql}\");");
             sb.AppendLine($"    }}");
@@ -163,7 +237,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, NavigationList<{joinedType}>>> navigation)");
                 sb.AppendLine($"    {{");
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
                 sb.AppendLine($"        // Fallback - navigation join not fully analyzed at compile time");
                 sb.AppendLine($"        return __b.{methodCall}(navigation);");
                 sb.AppendLine($"    }}");
@@ -175,7 +249,7 @@ internal static partial class InterceptorCodeGenerator
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {joinedType}, bool>> condition)");
                 sb.AppendLine($"    {{");
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>(builder);");
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
                 sb.AppendLine($"        // Fallback - join condition not fully analyzed at compile time");
                 sb.AppendLine($"        return __b.{methodCall}(condition);");
                 sb.AppendLine($"    }}");
@@ -206,12 +280,13 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Where() interceptor for joined query builders.
     /// </summary>
     private static void GenerateJoinedWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.ClauseInfo;
@@ -258,6 +333,46 @@ internal static partial class InterceptorCodeGenerator
         }
 
         sb.AppendLine($"    {{");
+
+        // Carrier-optimized path: bypass concrete type cast entirely
+        if (carrier != null && prebuiltChain != null)
+        {
+            // Compute carrier site params
+            var siteParams = new List<ChainParameterInfo>();
+            var globalParamOffset = 0;
+            foreach (var clause in prebuiltChain.Analysis.Clauses)
+            {
+                if (clause.Site.UniqueId == site.UniqueId)
+                {
+                    if (clause.Site.ClauseInfo != null)
+                        for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                            siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                    break;
+                }
+                if (clause.Site.ClauseInfo != null)
+                    globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+            }
+
+            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+            var returnInterface = site.ResultTypeName != null
+                ? $"{builderName}<{typeArgs}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"{builderName}<{typeArgs}>";
+
+            if (isFirstInChain)
+            {
+                EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+            }
+            else if (siteParams.Count > 0)
+            {
+                EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+            }
+            else
+            {
+                EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
+            }
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         // Cast to concrete type (receiver is always an interface)
         if (site.ResultTypeName != null)
@@ -364,12 +479,13 @@ internal static partial class InterceptorCodeGenerator
     /// Generates an OrderBy/ThenBy interceptor for joined query builders.
     /// </summary>
     private static void GenerateJoinedOrderByInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.ClauseInfo;
@@ -434,6 +550,47 @@ internal static partial class InterceptorCodeGenerator
         }
 
         sb.AppendLine($"    {{");
+
+        // Carrier-optimized path: bypass concrete type cast entirely
+        // Only when concrete key type is available (open-generic fallback can't use carrier types)
+        if (carrier != null && prebuiltChain != null && keyType != null)
+        {
+            // Compute carrier site params
+            var siteParams = new List<ChainParameterInfo>();
+            var globalParamOffset = 0;
+            foreach (var clause in prebuiltChain.Analysis.Clauses)
+            {
+                if (clause.Site.UniqueId == site.UniqueId)
+                {
+                    if (clause.Site.ClauseInfo != null)
+                        for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                            siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                    break;
+                }
+                if (clause.Site.ClauseInfo != null)
+                    globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+            }
+
+            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+            var returnInterface = site.ResultTypeName != null
+                ? $"{builderName}<{typeArgs}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
+                : $"{builderName}<{typeArgs}>";
+
+            if (isFirstInChain)
+            {
+                EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+            }
+            else if (siteParams.Count > 0)
+            {
+                EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+            }
+            else
+            {
+                EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
+            }
+            sb.AppendLine($"    }}");
+            return;
+        }
 
         // Cast to concrete type (receiver is always an interface)
         if (site.ResultTypeName != null && keyType != null)
@@ -500,12 +657,13 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Select() interceptor for joined query builders.
     /// </summary>
     private static void GenerateJoinedSelectInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false)
+        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
         var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
+        var returnType = ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var projection = site.ProjectionInfo;
@@ -518,6 +676,39 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        this {thisBuilderName}<{typeArgs}> builder,");
             sb.AppendLine($"        Func<{typeArgs}, {resultType}> _)");
             sb.AppendLine($"    {{");
+
+            if (carrier != null)
+            {
+                var targetInterface = $"{builderName}<{typeArgs}, {resultType}>";
+                if (isFirstInChain)
+                {
+                    // Compute carrier site params
+                    var siteParams = new List<ChainParameterInfo>();
+                    var globalParamOffset = 0;
+                    foreach (var clause in prebuiltChain.Analysis.Clauses)
+                    {
+                        if (clause.Site.UniqueId == site.UniqueId)
+                        {
+                            if (clause.Site.ClauseInfo != null)
+                                for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                                    siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
+                            break;
+                        }
+                        if (clause.Site.ClauseInfo != null)
+                            globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                    }
+                    var joinedBuilderType = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+                    int? clauseBit = null;
+                    EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
+                }
+                else
+                {
+                    EmitCarrierSelect(sb, targetInterface);
+                }
+                sb.AppendLine($"    }}");
+                return;
+            }
+
             sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{typeArgs}>>(builder);");
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");

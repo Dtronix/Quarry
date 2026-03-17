@@ -79,7 +79,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -122,7 +122,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -164,7 +164,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -209,7 +209,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -253,7 +253,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -310,7 +310,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -350,7 +350,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -387,7 +387,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -430,7 +430,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -473,7 +473,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -517,7 +517,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -557,7 +557,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -604,7 +604,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -648,13 +648,13 @@ public class ProductSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class UserDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 [QuarryContext(Dialect = SqlDialect.MySQL)]
 public partial class ProductDbContext : QuarryContext
 {
-    public partial IQueryBuilder<Product> Products { get; }
+    public partial IEntityAccessor<Product> Products();
 }
 
 public class Service

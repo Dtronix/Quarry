@@ -87,7 +87,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -128,7 +128,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -171,7 +171,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -217,7 +217,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -276,7 +276,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service
@@ -342,8 +342,8 @@ public class OrderSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
-    public partial IQueryBuilder<Order> Orders { get; }
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 
 public class Service
@@ -398,7 +398,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Service

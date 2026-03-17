@@ -77,7 +77,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task Select_IdentityProjection_UsesCustomReader()
     {
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId == 1)
             .Select(p => p)
             .ExecuteFetchAllAsync();
@@ -97,7 +97,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task Select_IdentityProjection_HandlesNullColumns()
     {
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId == 2)
             .Select(p => p)
             .ExecuteFetchAllAsync();
@@ -112,7 +112,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task Select_IdentityProjection_MultipleRows_AllHaveDisplayLabel()
     {
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId <= 3)
             .Select(p => p)
             .ExecuteFetchAllAsync();
@@ -135,7 +135,7 @@ internal class EntityReaderIntegrationTests
     public async Task Select_IdentityWithWhere_UsesCustomReader()
     {
         // Filter to seeded rows only to avoid interference from round-trip insert test
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId == 1)
             .Select(p => p)
             .ExecuteFetchAllAsync();
@@ -153,7 +153,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task Select_TupleProjection_DoesNotUseCustomReader()
     {
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId <= 3)
             .Select(p => (p.ProductId, p.ProductName, p.Price))
             .ExecuteFetchAllAsync();
@@ -167,7 +167,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task Select_SingleColumn_DoesNotUseCustomReader()
     {
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductId <= 3)
             .Select(p => p.ProductName)
             .ExecuteFetchAllAsync();
@@ -185,7 +185,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task ExecuteFetchFirst_UsesCustomReader()
     {
-        var product = await _db.Products
+        var product = await _db.Products()
             .Where(p => p.ProductId == 1)
             .Select(p => p)
             .ExecuteFetchFirstAsync();
@@ -197,7 +197,7 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task ExecuteFetchFirstOrDefault_UsesCustomReader()
     {
-        var product = await _db.Products
+        var product = await _db.Products()
             .Where(p => p.ProductId == 3)
             .Select(p => p)
             .ExecuteFetchFirstOrDefaultAsync();
@@ -214,14 +214,14 @@ internal class EntityReaderIntegrationTests
     [Test]
     public async Task RoundTrip_InsertThenSelectEntity_UsesCustomReader()
     {
-        await _db.Insert(new Product
+        await _db.Products().Insert(new Product
         {
             ProductName = "Thingamajig",
             Price = 199.99m,
             Description = "Premium item"
         }).ExecuteNonQueryAsync();
 
-        var results = await _db.Products
+        var results = await _db.Products()
             .Where(p => p.ProductName == "Thingamajig")
             .Select(p => p)
             .ExecuteFetchAllAsync();

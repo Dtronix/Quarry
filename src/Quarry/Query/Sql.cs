@@ -15,7 +15,7 @@ namespace Quarry;
 /// <para>
 /// Example usage:
 /// <code>
-/// var stats = await db.Orders
+/// var stats = await db.Orders()
 ///     .Select(o => new {
 ///         TotalOrders = Sql.Count(),
 ///         TotalRevenue = Sql.Sum(o.Total),
@@ -201,7 +201,7 @@ public static class Sql
     /// <para>
     /// Example:
     /// <code>
-    /// var users = await db.Users
+    /// var users = await db.Users()
     ///     .Where(u => Sql.Raw&lt;bool&gt;("CONTAINS(user_name, @p0)", searchTerm))
     ///     .Select(u => u)
     ///     .ExecuteFetchAllAsync();

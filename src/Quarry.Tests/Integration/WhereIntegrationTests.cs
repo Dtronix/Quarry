@@ -12,7 +12,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_Boolean_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -25,7 +25,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_NegatedBoolean_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => !u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -41,7 +41,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_GreaterThan_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.UserId > 1)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -54,7 +54,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_LessThanOrEqual_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.UserId <= 2)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -71,7 +71,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_IsNull_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.Email == null)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -83,7 +83,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_IsNotNull_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.Email != null)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -100,7 +100,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_MultipleChained_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .Select(u => (u.UserId, u.UserName))
@@ -114,7 +114,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_NullCheck_And_Boolean_FiltersCorrectly()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.Email != null)
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
@@ -131,7 +131,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_ThenSelect_Tuple_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
@@ -144,7 +144,7 @@ internal class WhereIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Where_ThenSelect_Dto_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Where(u => u.IsActive)
             .Select(u => new UserSummaryDto
             {

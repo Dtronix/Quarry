@@ -10,7 +10,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_Tuple_TwoColumns_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
 
@@ -23,7 +23,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_Tuple_ThreeColumns_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Select(u => (u.UserId, u.UserName, u.IsActive))
             .ExecuteFetchAllAsync();
 
@@ -36,7 +36,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_Dto_UserSummary_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Select(u => new UserSummaryDto
             {
                 UserId = u.UserId,
@@ -63,7 +63,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_Dto_UserWithEmail_ReturnsCorrectData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Select(u => new UserWithEmailDto
             {
                 UserId = u.UserId,
@@ -87,7 +87,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_OrdersTable_Tuple_ReturnsCorrectData()
     {
-        var results = await Db.Orders
+        var results = await Db.Orders()
             .Select(o => (o.OrderId, o.Total))
             .ExecuteFetchAllAsync();
 
@@ -100,7 +100,7 @@ internal class SelectIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task Select_LimitOffset_ReturnsPagedData()
     {
-        var results = await Db.Users
+        var results = await Db.Users()
             .Select(u => (u.UserId, u.UserName))
             .Limit(2).Offset(1)
             .ExecuteFetchAllAsync();

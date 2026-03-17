@@ -783,7 +783,7 @@ internal class DialectTypeMappingTests
 
         // Use AddWhereClause to bypass interceptor — exercises QueryExecutor.NormalizeParameterValue
         var results = await ((QueryBuilder<Account, (int AccountId, Money Balance)>)
-            db.Accounts.Select(a => (a.AccountId, a.Balance)))
+            db.Accounts().Select(a => (a.AccountId, a.Balance)))
             .AddWhereClause("\"Balance\" >= @p0", new Money(500m))
             .ExecuteFetchAllAsync();
 

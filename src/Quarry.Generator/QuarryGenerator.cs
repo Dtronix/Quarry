@@ -437,12 +437,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         diagnostics.AddRange(chainDiagnostics);
 
         // Build a set of chain member UniqueIds so we can include non-analyzable clause
-        // sites that are part of analyzed chains (e.g., conditional clauses inside if-blocks).
+        // and execution sites that are part of analyzed chains.
         var chainMemberUniqueIds = new HashSet<string>();
         foreach (var chain in prebuiltChains)
         {
             foreach (var clause in chain.Analysis.Clauses)
                 chainMemberUniqueIds.Add(clause.Site.UniqueId);
+            chainMemberUniqueIds.Add(chain.Analysis.ExecutionSite.UniqueId);
         }
 
         // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
@@ -491,6 +492,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 foreach (var clause in chain.Analysis.Clauses)
                     fileChainMemberIds.Add(clause.Site.UniqueId);
+                fileChainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
             }
 
             // Include analyzable sites, plus non-analyzable sites that aren't chain clause members.
@@ -633,6 +635,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ChainOptimizedTier1,
         DiagnosticDescriptors.ChainOptimizedTier2,
         DiagnosticDescriptors.ChainNotAnalyzable,
+        DiagnosticDescriptors.ForkedQueryChain,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
@@ -718,11 +721,22 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     break;
 
                 case OptimizationTier.RuntimeBuild:
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ChainNotAnalyzable.Id,
-                        diagLocation,
-                        locationDisplay,
-                        result.NotAnalyzableReason ?? "unknown reason"));
+                    if (result.ForkedVariableName != null)
+                    {
+                        // QRY033: Forked chain — error severity
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.ForkedQueryChain.Id,
+                            diagLocation,
+                            result.ForkedVariableName));
+                    }
+                    else
+                    {
+                        diagnostics.Add(new DiagnosticInfo(
+                            DiagnosticDescriptors.ChainNotAnalyzable.Id,
+                            diagLocation,
+                            locationDisplay,
+                            result.NotAnalyzableReason ?? "unknown reason"));
+                    }
                     break;
             }
 
@@ -770,16 +784,37 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         Dictionary<ulong, PrebuiltSqlResult>? sqlMap;
         try
         {
-            sqlMap = queryKind.Value switch
+            if (queryKind.Value == QueryKind.Insert)
             {
-                QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                _ => null
-            };
+                // Insert SQL is built from entity metadata, not from clause analysis
+                var insertInfo = executionSite.InsertInfo;
+                if (insertInfo == null || insertInfo.Columns.Count == 0)
+                    return null;
+                var columns = insertInfo.Columns.Select(c => c.QuotedColumnName).ToList();
+                // ExecuteScalar and ToSql include RETURNING clause; ExecuteNonQuery does not.
+                // Pass unquoted name — BuildInsertSql applies dialect-specific quoting.
+                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToSql
+                    ? insertInfo.IdentityColumnName : null;
+                var insertResult = CompileTimeSqlBuilder.BuildInsertSql(
+                    dialect, tableName, schemaName, columns, columns.Count, identityCol);
+                sqlMap = new Dictionary<ulong, PrebuiltSqlResult>
+                {
+                    [0UL] = new PrebuiltSqlResult(insertResult.Sql, columns.Count)
+                };
+            }
+            else
+            {
+                sqlMap = queryKind.Value switch
+                {
+                    QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    _ => null
+                };
+            }
         }
         catch
         {
@@ -819,10 +854,51 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
+        // Build chain parameter info for carrier optimization.
+        // Carrier eligibility mirrors execution terminal checks — if the terminal would be
+        // skipped by GenerateInterceptorMethod, the chain must NOT be carrier-eligible,
+        // otherwise clause interceptors create carriers with no terminal to consume them.
+        var chainParams = BuildChainParameters(result);
+        var isCarrierEligible = chainParams != null
+            && result.UnmatchedMethodNames == null;
+
+        if (isCarrierEligible && queryKind.Value == QueryKind.Select)
+        {
+            // SELECT terminal checks: result type resolution, reader delegate, ambiguous columns
+            var resolvedResult = InterceptorCodeGenerator.ResolveExecutionResultTypePublic(
+                executionSite.ResultTypeName, executionSite.ResultTypeName, projInfo);
+            if (string.IsNullOrEmpty(resolvedResult))
+                isCarrierEligible = false;
+            else if (readerCode == null)
+                isCarrierEligible = false;
+            else if (projInfo != null && projInfo.Columns.Any(c =>
+                c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
+                isCarrierEligible = false;
+        }
+        else if (isCarrierEligible && queryKind.Value is QueryKind.Delete or QueryKind.Update)
+        {
+            // NonQuery terminal checks: SQL variants must be non-empty and well-formed
+            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+                || (queryKind.Value == QueryKind.Update && v.Sql.Contains("SET  "))))
+                isCarrierEligible = false;
+        }
+        else if (isCarrierEligible && queryKind.Value == QueryKind.Insert)
+        {
+            // Insert terminal checks: SQL must be non-empty
+            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
+                isCarrierEligible = false;
+            // MySQL ExecuteScalar requires a separate SELECT LAST_INSERT_ID() query,
+            // which can't be done with a single carrier DbCommand.
+            if (executionSite.Kind == InterceptorKind.InsertExecuteScalar && dialect == SqlDialect.MySQL)
+                isCarrierEligible = false;
+        }
+
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
             executionSite.EntityTypeName, executionSite.ResultTypeName,
-            dialect, tableName, schemaName, queryKind.Value, projInfo);
+            dialect, tableName, schemaName, queryKind.Value, projInfo,
+            chainParameters: chainParams,
+            isCarrierEligible: isCarrierEligible);
     }
 
     /// <summary>
@@ -931,12 +1007,78 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var joinedTypeNames = joinedNames.ToList();
         var joinedTableInfos = tables;
 
+        // Build chain parameter info for carrier optimization
+        var chainParams = BuildChainParameters(result);
+        var isCarrierEligible = chainParams != null;
+
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
             executionSite.EntityTypeName, executionSite.ResultTypeName,
             dialect, tables[0].TableName, tables[0].SchemaName,
             QueryKind.Select, projInfo,
-            joinedTypeNames, joinedTableInfos);
+            joinedTypeNames, joinedTableInfos,
+            chainParameters: chainParams,
+            isCarrierEligible: isCarrierEligible);
+    }
+
+    /// <summary>
+    /// Builds a list of <see cref="ChainParameterInfo"/> for carrier class field generation
+    /// by walking clause sites in chain order and collecting their parameters with global indices.
+    /// Returns null if carrier parameter extraction fails (e.g., collection parameters that
+    /// cannot be represented as typed carrier fields).
+    /// </summary>
+    private static IReadOnlyList<ChainParameterInfo>? BuildChainParameters(ChainAnalysisResult result)
+    {
+        var chainParams = new List<ChainParameterInfo>();
+        var globalIndex = 0;
+
+        foreach (var clause in result.Clauses)
+        {
+            // OrderBy/ThenBy/GroupBy require resolved KeyTypeName for carrier path.
+            // Without it, the clause interceptor falls back to non-carrier (open-generic),
+            // creating a mismatch where the terminal expects a carrier but gets a real builder.
+            if (clause.Role is ClauseRole.OrderBy or ClauseRole.ThenBy or ClauseRole.GroupBy)
+            {
+                if (clause.Site.KeyTypeName == null)
+                    return null;
+            }
+
+            // Set/UpdateSet use open generic signatures incompatible with carrier clause body.
+            // UpdateSetPoco similarly can't use carrier. Exclude these.
+            if (clause.Role is ClauseRole.Set or ClauseRole.UpdateSet)
+                return null;
+
+            // InsertTransition has no expression parameters — skip parameter extraction
+            if (clause.Role is ClauseRole.InsertTransition)
+                continue;
+
+            if (clause.Site.ClauseInfo == null)
+                continue;
+
+            foreach (var param in clause.Site.ClauseInfo.Parameters)
+            {
+                // Collection parameters (IN clauses) cannot be represented as typed carrier fields
+                if (param.IsCollection)
+                    return null;
+
+                // Parameters with unresolved types cannot be carrier fields
+                if (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object?")
+                    return null;
+
+                chainParams.Add(new ChainParameterInfo(
+                    index: globalIndex,
+                    typeName: param.ClrType,
+                    valueExpression: param.ValueExpression,
+                    typeMapping: param.CustomTypeMappingClass,
+                    isEnum: param.IsEnum,
+                    enumUnderlyingType: param.EnumUnderlyingType,
+                    needsFieldInfoCache: param.IsCaptured && param.CanGenerateDirectPath));
+
+                globalIndex++;
+            }
+        }
+
+        return chainParams;
     }
 
     /// <summary>
@@ -964,6 +1106,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
                     return QueryKind.Select;
                 return null;
+
+            case InterceptorKind.InsertExecuteNonQuery:
+            case InterceptorKind.InsertExecuteScalar:
+            case InterceptorKind.InsertToSql:
+                return QueryKind.Insert;
 
             default:
                 return null;
