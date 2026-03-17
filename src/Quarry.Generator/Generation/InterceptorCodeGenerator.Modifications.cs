@@ -13,15 +13,20 @@ namespace Quarry.Generators.Generation;
 internal static partial class InterceptorCodeGenerator
 {
     /// <summary>
-    /// Generates a Where() interceptor for DeleteBuilder or ExecutableDeleteBuilder.
-    /// The return type is always IExecutableDeleteBuilder&lt;T&gt; since Where() on
-    /// DeleteBuilder returns IExecutableDeleteBuilder, and on ExecutableDeleteBuilder returns itself.
+    /// Generates a Where() interceptor for Delete or Update builders.
+    /// Handles both DeleteBuilder/ExecutableDeleteBuilder and UpdateBuilder/ExecutableUpdateBuilder.
+    /// The return type is always IExecutableDeleteBuilder&lt;T&gt; or IExecutableUpdateBuilder&lt;T&gt;
+    /// since Where() transitions the builder to the executable variant.
     /// </summary>
-    private static void GenerateDeleteWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
+    private static void GenerateModificationWhereInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName,
+        List<CachedExtractorField> staticFields, bool isDelete,
+        int? clauseBit = null, PrebuiltChainInfo? prebuiltChain = null,
+        bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.ClauseInfo;
+        var modKind = isDelete ? "Delete" : "Update";
 
         // Check if there are captured parameters that need runtime extraction
         var hasAnyParams = clauseInfo?.Parameters.Count > 0;
@@ -36,14 +41,13 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");
         }
 
-        // Determine the receiver type: DeleteBuilder<T> or ExecutableDeleteBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
-        var isExecutable = thisType.Contains("ExecutableDeleteBuilder");
+        var isExecutable = thisType.Contains($"Executable{modKind}Builder");
         var concreteType = ToConcreteTypeName(returnType);
         var receiverType = $"{thisType}<{entityType}>";
 
-        sb.AppendLine($"    public static IExecutableDeleteBuilder<{entityType}> {methodName}(");
+        sb.AppendLine($"    public static IExecutable{modKind}Builder<{entityType}> {methodName}(");
         sb.AppendLine($"        this {receiverType} builder,");
         sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
         sb.AppendLine($"    {{");
@@ -58,7 +62,7 @@ internal static partial class InterceptorCodeGenerator
         if (carrier != null && prebuiltChain != null)
         {
             var concreteBuilder = $"{concreteType}<{entityType}>";
-            var returnInterface = $"IExecutableDeleteBuilder<{entityType}>";
+            var returnInterface = $"IExecutable{modKind}Builder<{entityType}>";
             EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
             sb.AppendLine($"    }}");
@@ -88,7 +92,7 @@ internal static partial class InterceptorCodeGenerator
                 }
             }
 
-            // Non-executable receiver (IDeleteBuilder) must transition to executable via AsExecutable()
+            // Non-executable receiver must transition to executable via AsExecutable()
             var returnExpr = isExecutable ? builderVar : $"{builderVar}.AsExecutable()";
             if (clauseBit.HasValue)
                 sb.AppendLine($"        return {returnExpr}.SetClauseBit({clauseBit.Value});");
@@ -99,24 +103,19 @@ internal static partial class InterceptorCodeGenerator
         }
 
         {
-            // Generate optimized interceptor with pre-computed SQL
+            // Standalone path: pre-computed SQL with AddParameter index capture
             var escapedSql = EscapeStringLiteral(clauseInfo.SqlFragment);
-
-            // Check if any captured parameters lack extraction paths
             var hasUnresolvableCaptured = clauseInfo.Parameters.Any(p => p.IsCaptured && !p.CanGenerateDirectPath);
             var bitSuffix = ClauseBitSuffix(clauseBit);
 
             if (hasUnresolvableCaptured)
             {
-                // Emit SQL-only clause (parameters cannot be extracted at compile time)
                 var resolvableParams = clauseInfo.Parameters
                     .Where(p => !p.IsCaptured)
                     .OrderBy(p => p.Index)
                     .ToList();
                 if (resolvableParams.Count > 0)
                 {
-                    // Use AddParameter with index capture so @pN placeholders account for
-                    // any prior parameters
                     var transformedSql = escapedSql;
                     for (int i = resolvableParams.Count - 1; i >= 0; i--)
                     {
@@ -136,8 +135,6 @@ internal static partial class InterceptorCodeGenerator
                 if (hasResolvableCapturedParams)
                     GenerateCachedExtraction(sb, methodFields);
 
-                // Add parameters via AddParameter, capturing the runtime index so @pN
-                // placeholders account for any prior parameters
                 var allParams = clauseInfo.Parameters.OrderBy(p => p.Index).ToList();
                 var transformedSql = escapedSql;
                 for (int i = allParams.Count - 1; i >= 0; i--)
@@ -337,12 +334,7 @@ internal static partial class InterceptorCodeGenerator
             foreach (var column in updateInfo.Columns)
             {
                 var escapedColumnSql = EscapeStringLiteral(column.QuotedColumnName);
-                var valueExpr = column.IsForeignKey
-                    ? $"e.{column.PropertyName}.Id"
-                    : $"e.{column.PropertyName}";
-                if (column.CustomTypeMappingClass != null)
-                    valueExpr = $"{GetMappingFieldName(column.CustomTypeMappingClass)}.ToDb({valueExpr})";
-
+                var valueExpr = GetColumnValueExpression("e", column.PropertyName, column.IsForeignKey, column.CustomTypeMappingClass);
                 var sensitiveArg = column.IsSensitive ? ", isSensitive: true" : "";
                 sb.AppendLine($"        {builderVar}.AddSetClause(@\"{escapedColumnSql}\", {valueExpr}{sensitiveArg});");
             }
@@ -357,159 +349,6 @@ internal static partial class InterceptorCodeGenerator
 
         sb.AppendLine($"    }}");
     }
-
-    /// <summary>
-    /// Generates a Where() interceptor for UpdateBuilder or ExecutableUpdateBuilder.
-    /// The return type is always IExecutableUpdateBuilder&lt;T&gt; since Where() on
-    /// UpdateBuilder returns IExecutableUpdateBuilder, and on ExecutableUpdateBuilder returns itself.
-    /// </summary>
-    private static void GenerateUpdateWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
-        PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
-
-        // Check if there are captured parameters that need runtime extraction
-        var hasAnyParams = clauseInfo?.Parameters.Count > 0;
-        var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
-        var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
-
-        // Emit trim suppression if we'll use FieldInfo.GetValue inline
-        var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
-        if (methodFields.Count > 0)
-        {
-            sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
-            sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");
-        }
-
-        // Determine the receiver type: UpdateBuilder<T> or ExecutableUpdateBuilder<T> (or interface variants)
-        var thisType = site.BuilderTypeName;
-        var returnType = ToReturnTypeName(thisType);
-        var isExecutable = thisType.Contains("ExecutableUpdateBuilder");
-        var concreteType = ToConcreteTypeName(returnType);
-        var receiverType = $"{thisType}<{entityType}>";
-
-        sb.AppendLine($"    public static IExecutableUpdateBuilder<{entityType}> {methodName}(");
-        sb.AppendLine($"        this {receiverType} builder,");
-        sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
-        sb.AppendLine($"    {{");
-
-        if (clauseInfo == null || !clauseInfo.IsSuccess)
-        {
-            // Non-translatable clause — skip interceptor entirely so the original method runs
-            return;
-        }
-
-        // Carrier-optimized path
-        if (carrier != null && prebuiltChain != null)
-        {
-            var concreteBuilder = $"{concreteType}<{entityType}>";
-            var returnInterface = $"IExecutableUpdateBuilder<{entityType}>";
-            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        // Cast to concrete type (receiver is always an interface)
-        sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
-        var builderVar = "__b";
-
-        // Simplified prebuilt chain path: BindParam instead of AddWhereClause
-        if (prebuiltChain != null)
-        {
-            if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
-                sb.AppendLine($"        {builderVar}.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
-
-            if (hasAnyParams == true)
-            {
-                if (hasResolvableCapturedParams)
-                    GenerateCachedExtraction(sb, methodFields);
-
-                var allParams = clauseInfo!.Parameters.OrderBy(p => p.Index).ToList();
-                foreach (var p in allParams)
-                {
-                    var expr = p.IsCaptured ? $"p{p.Index}" : p.ValueExpression;
-                    sb.AppendLine($"        {builderVar}.BindParam({WrapWithToDb(expr, p)});");
-                }
-            }
-
-            // Non-executable receiver (IUpdateBuilder) must transition to executable via AsExecutable()
-            var returnExpr = isExecutable ? builderVar : $"{builderVar}.AsExecutable()";
-            if (clauseBit.HasValue)
-                sb.AppendLine($"        return {returnExpr}.SetClauseBit({clauseBit.Value});");
-            else
-                sb.AppendLine($"        return {returnExpr};");
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        if (clauseInfo != null && clauseInfo.IsSuccess)
-        {
-            // Generate optimized interceptor with pre-computed SQL
-            var escapedSql = EscapeStringLiteral(clauseInfo.SqlFragment);
-
-            // Check if any captured parameters lack extraction paths
-            var hasUnresolvableCaptured = clauseInfo.Parameters.Any(p => p.IsCaptured && !p.CanGenerateDirectPath);
-            var bitSuffix = ClauseBitSuffix(clauseBit);
-
-            if (hasUnresolvableCaptured)
-            {
-                // Emit SQL-only clause (parameters cannot be extracted at compile time)
-                var resolvableParams = clauseInfo.Parameters
-                    .Where(p => !p.IsCaptured)
-                    .OrderBy(p => p.Index)
-                    .ToList();
-                if (resolvableParams.Count > 0)
-                {
-                    // Use AddParameter with index capture so @pN placeholders account for
-                    // any prior parameters (e.g. from SET clauses)
-                    var transformedSql = escapedSql;
-                    for (int i = resolvableParams.Count - 1; i >= 0; i--)
-                    {
-                        var p = resolvableParams[i];
-                        sb.AppendLine($"        var _pi{p.Index} = {builderVar}.AddParameter({WrapWithToDb(p.ValueExpression, p)});");
-                        transformedSql = transformedSql.Replace($"@p{p.Index}", $"@p{{_pi{p.Index}}}");
-                    }
-                    sb.AppendLine($"        return {builderVar}.AddWhereClause($@\"{transformedSql}\"){bitSuffix};");
-                }
-                else
-                {
-                    sb.AppendLine($"        return {builderVar}.AddWhereClause(@\"{escapedSql}\"){bitSuffix};");
-                }
-            }
-            else if (hasAnyParams)
-            {
-                if (hasResolvableCapturedParams)
-                    GenerateCachedExtraction(sb, methodFields);
-
-                // Add parameters via AddParameter, capturing the runtime index so @pN
-                // placeholders account for any prior parameters (e.g. from SET clauses)
-                var allParams = clauseInfo.Parameters.OrderBy(p => p.Index).ToList();
-                var transformedSql = escapedSql;
-                for (int i = allParams.Count - 1; i >= 0; i--)
-                {
-                    var p = allParams[i];
-                    var valueExpr = p.IsCaptured ? $"p{p.Index}" : p.ValueExpression;
-                    sb.AppendLine($"        var _pi{p.Index} = {builderVar}.AddParameter({WrapWithToDb(valueExpr, p)});");
-                    transformedSql = transformedSql.Replace($"@p{p.Index}", $"@p{{_pi{p.Index}}}");
-                }
-                sb.AppendLine($"        return {builderVar}.AddWhereClause($@\"{transformedSql}\"){bitSuffix};");
-            }
-            else
-            {
-                sb.AppendLine($"        return {builderVar}.AddWhereClause(@\"{escapedSql}\"){bitSuffix};");
-            }
-        }
-        else
-        {
-            // Non-translatable clause — skip interceptor entirely so the original method runs
-            return;
-        }
-
-        sb.AppendLine($"    }}");
-    }
-
 
     /// <summary>
     /// Generates an InsertBuilder ExecuteNonQueryAsync() interceptor.
@@ -527,35 +366,16 @@ internal static partial class InterceptorCodeGenerator
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
             sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<{entityType}>>(builder);");
-            // Generate column array
-            var columnNames = string.Join(", ", insertInfo.Columns.Select(c => $"@\"{EscapeStringLiteral(c.QuotedColumnName)}\""));
-            sb.AppendLine($"        // Set up columns (excluding identity and computed columns)");
-            sb.AppendLine($"        __b.SetColumns(new[] {{ {columnNames} }});");
-            sb.AppendLine();
 
-            // Generate entity property extraction
-            sb.AppendLine($"        // Extract values from each entity");
+            EmitInsertColumnSetup(sb, insertInfo);
+
+            // Extract values from each entity
             sb.AppendLine($"        foreach (var entity in __b.Entities)");
             sb.AppendLine($"        {{");
-            sb.AppendLine($"            var paramIndices = new List<int>({insertInfo.Columns.Count});");
-
-            foreach (var column in insertInfo.Columns)
-            {
-                var valueExpr = column.IsForeignKey
-                    ? $"entity.{column.PropertyName}.Id"
-                    : $"entity.{column.PropertyName}";
-                if (column.CustomTypeMappingClass != null)
-                    valueExpr = $"{GetMappingFieldName(column.CustomTypeMappingClass)}.ToDb({valueExpr})";
-
-                var sensitiveArg = column.IsSensitive ? ", isSensitive: true" : "";
-                sb.AppendLine($"            paramIndices.Add(__b.AddParameter({valueExpr}{sensitiveArg}));");
-            }
-
-            sb.AppendLine($"            __b.AddRow(paramIndices);");
+            EmitInsertEntityBindings(sb, insertInfo, "entity", "__b", "            ");
             sb.AppendLine($"        }}");
             sb.AppendLine();
 
-            sb.AppendLine($"        // Execute the insert");
             sb.AppendLine($"        return Quarry.Internal.ModificationExecutor.ExecuteInsertNonQueryAsync(__b.State, __b.Entities, cancellationToken);");
         }
         else
@@ -586,22 +406,17 @@ internal static partial class InterceptorCodeGenerator
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
             sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<T>>(builder);");
-            // Generate column array
-            var columnNames = string.Join(", ", insertInfo.Columns.Select(c => $"@\"{EscapeStringLiteral(c.QuotedColumnName)}\""));
-            sb.AppendLine($"        // Set up columns (excluding identity and computed columns)");
-            sb.AppendLine($"        __b.SetColumns(new[] {{ {columnNames} }});");
-            sb.AppendLine();
+
+            EmitInsertColumnSetup(sb, insertInfo);
 
             // Set identity column if present
             if (!string.IsNullOrEmpty(insertInfo.IdentityColumnName))
             {
-                sb.AppendLine($"        // Set identity column for RETURNING clause");
                 sb.AppendLine($"        __b.SetIdentityColumn(@\"{EscapeStringLiteral(insertInfo.IdentityColumnName!)}\");");
                 sb.AppendLine();
             }
 
-            // Validate single entity
-            sb.AppendLine($"        // Validate single entity insert");
+            // Validate single entity insert
             sb.AppendLine($"        if (__b.Entities.Count != 1)");
             sb.AppendLine($"        {{");
             sb.AppendLine($"            throw new InvalidOperationException(");
@@ -614,24 +429,9 @@ internal static partial class InterceptorCodeGenerator
             // At the call site T is always the concrete entity type (e.g. User),
             // so this cast is safe.
             sb.AppendLine($"        var entity = Unsafe.As<{entityType}>(__b.Entities[0]);");
-            sb.AppendLine($"        var paramIndices = new List<int>({insertInfo.Columns.Count});");
-
-            foreach (var column in insertInfo.Columns)
-            {
-                var valueExpr = column.IsForeignKey
-                    ? $"entity.{column.PropertyName}.Id"
-                    : $"entity.{column.PropertyName}";
-                if (column.CustomTypeMappingClass != null)
-                    valueExpr = $"{GetMappingFieldName(column.CustomTypeMappingClass)}.ToDb({valueExpr})";
-
-                var sensitiveArg = column.IsSensitive ? ", isSensitive: true" : "";
-                sb.AppendLine($"        paramIndices.Add(__b.AddParameter({valueExpr}{sensitiveArg}));");
-            }
-
-            sb.AppendLine($"        __b.AddRow(paramIndices);");
+            EmitInsertEntityBindings(sb, insertInfo, "entity", "__b", "        ");
             sb.AppendLine();
 
-            sb.AppendLine($"        // Execute the insert with identity return");
             sb.AppendLine($"        return Quarry.Internal.ModificationExecutor.ExecuteInsertScalarAsync<T, TKey>(__b.State, __b.Entities[0], cancellationToken);");
         }
         else
@@ -658,16 +458,11 @@ internal static partial class InterceptorCodeGenerator
 
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
-            // Generate column array
-            var columnNames = string.Join(", ", insertInfo.Columns.Select(c => $"@\"{EscapeStringLiteral(c.QuotedColumnName)}\""));
-            sb.AppendLine($"        // Set up columns (excluding identity and computed columns)");
-            sb.AppendLine($"        __b.SetColumns(new[] {{ {columnNames} }});");
-            sb.AppendLine();
+            EmitInsertColumnSetup(sb, insertInfo);
 
             // Set identity column if present (for RETURNING/OUTPUT clause)
             if (!string.IsNullOrEmpty(insertInfo.IdentityColumnName))
             {
-                sb.AppendLine($"        // Set identity column for RETURNING clause");
                 sb.AppendLine($"        __b.SetIdentityColumn(@\"{EscapeStringLiteral(insertInfo.IdentityColumnName!)}\");");
                 sb.AppendLine();
             }
@@ -676,4 +471,49 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        return __b.ToSqlDirect();");
         sb.AppendLine($"    }}");
     }
+
+    #region Modification Helpers
+
+    /// <summary>
+    /// Gets the value expression for an entity column property, handling FK navigation and type mapping.
+    /// Used by Insert, Update POCO, and other entity property extraction code.
+    /// </summary>
+    private static string GetColumnValueExpression(string entityVar, string propertyName, bool isForeignKey, string? customTypeMappingClass)
+    {
+        var valueExpr = isForeignKey
+            ? $"{entityVar}.{propertyName}.Id"
+            : $"{entityVar}.{propertyName}";
+        if (customTypeMappingClass != null)
+            valueExpr = $"{GetMappingFieldName(customTypeMappingClass)}.ToDb({valueExpr})";
+        return valueExpr;
+    }
+
+    /// <summary>
+    /// Emits the column setup code shared by all insert interceptors.
+    /// </summary>
+    private static void EmitInsertColumnSetup(StringBuilder sb, InsertInfo insertInfo)
+    {
+        var columnNames = string.Join(", ", insertInfo.Columns.Select(c => $"@\"{EscapeStringLiteral(c.QuotedColumnName)}\""));
+        sb.AppendLine($"        __b.SetColumns(new[] {{ {columnNames} }});");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits entity property extraction and parameter binding for insert operations.
+    /// </summary>
+    private static void EmitInsertEntityBindings(StringBuilder sb, InsertInfo insertInfo, string entityVar, string builderVar, string indent)
+    {
+        sb.AppendLine($"{indent}var paramIndices = new List<int>({insertInfo.Columns.Count});");
+
+        foreach (var column in insertInfo.Columns)
+        {
+            var valueExpr = GetColumnValueExpression(entityVar, column.PropertyName, column.IsForeignKey, column.CustomTypeMappingClass);
+            var sensitiveArg = column.IsSensitive ? ", isSensitive: true" : "";
+            sb.AppendLine($"{indent}paramIndices.Add({builderVar}.AddParameter({valueExpr}{sensitiveArg}));");
+        }
+
+        sb.AppendLine($"{indent}{builderVar}.AddRow(paramIndices);");
+    }
+
+    #endregion
 }

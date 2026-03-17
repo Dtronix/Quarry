@@ -564,7 +564,7 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     private static void EmitCarrierExecutionTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
-        string readerExpression, string executorMethod)
+        string? readerExpression, string executorMethod)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 

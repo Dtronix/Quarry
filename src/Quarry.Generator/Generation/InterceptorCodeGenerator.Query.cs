@@ -263,7 +263,7 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.DeleteWhere:
-                GenerateDeleteWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.UpdateSet:
@@ -275,7 +275,7 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.UpdateWhere:
-                GenerateUpdateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: false, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.InsertExecuteNonQuery:
