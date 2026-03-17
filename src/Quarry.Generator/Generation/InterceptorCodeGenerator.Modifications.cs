@@ -353,7 +353,8 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Generates an InsertBuilder ExecuteNonQueryAsync() interceptor.
     /// </summary>
-    private static void GenerateInsertExecuteNonQueryInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    private static void GenerateInsertExecuteNonQueryInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -365,6 +366,15 @@ internal static partial class InterceptorCodeGenerator
 
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
+            // Carrier-optimized path
+            if (carrier != null && prebuiltChain != null)
+            {
+                EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                    "ExecuteCarrierNonQueryWithCommandAsync");
+                sb.AppendLine($"    }}");
+                return;
+            }
+
             sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<{entityType}>>(builder);");
 
             EmitInsertColumnSetup(sb, insertInfo);
@@ -390,7 +400,8 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Generates an InsertBuilder ExecuteScalarAsync() interceptor for identity return.
     /// </summary>
-    private static void GenerateInsertExecuteScalarInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    private static void GenerateInsertExecuteScalarInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -405,6 +416,15 @@ internal static partial class InterceptorCodeGenerator
 
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
+            // Carrier-optimized path
+            if (carrier != null && prebuiltChain != null)
+            {
+                EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                    "ExecuteCarrierScalarWithCommandAsync<TKey>", isScalar: true);
+                sb.AppendLine($"    }}");
+                return;
+            }
+
             sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<T>>(builder);");
 
             EmitInsertColumnSetup(sb, insertInfo);
@@ -446,7 +466,8 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Generates an InsertBuilder ToSql() interceptor that populates column metadata for SQL preview.
     /// </summary>
-    private static void GenerateInsertToSqlInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    private static void GenerateInsertToSqlInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -454,6 +475,15 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"    public static string {methodName}(");
         sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
         sb.AppendLine($"    {{");
+
+        // Carrier-optimized path: return pre-computed SQL directly
+        if (carrier != null && prebuiltChain != null)
+        {
+            EmitCarrierToSqlTerminal(sb, carrier, prebuiltChain);
+            sb.AppendLine($"    }}");
+            return;
+        }
+
         sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<{entityType}>>(builder);");
 
         if (insertInfo != null && insertInfo.Columns.Count > 0)

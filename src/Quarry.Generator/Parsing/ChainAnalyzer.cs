@@ -976,6 +976,7 @@ internal static class ChainAnalyzer
             InterceptorKind.DeleteTransition => ClauseRole.DeleteTransition,
             InterceptorKind.UpdateTransition => ClauseRole.UpdateTransition,
             InterceptorKind.AllTransition => ClauseRole.AllTransition,
+            InterceptorKind.InsertTransition => ClauseRole.InsertTransition,
             _ => null
         };
     }
@@ -1051,7 +1052,10 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteScalar
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable
-            or InterceptorKind.ToSql;
+            or InterceptorKind.ToSql
+            or InterceptorKind.InsertExecuteNonQuery
+            or InterceptorKind.InsertExecuteScalar
+            or InterceptorKind.InsertToSql;
     }
 
     #region Internal Types

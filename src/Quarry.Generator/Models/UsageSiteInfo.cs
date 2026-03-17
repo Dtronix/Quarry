@@ -459,6 +459,12 @@ internal enum InterceptorKind
     AllTransition,
 
     /// <summary>
+    /// .Insert(entity) transition on IEntityAccessor — switches from accessor to IInsertBuilder.
+    /// On the carrier path: stores entity reference and returns carrier as IInsertBuilder.
+    /// </summary>
+    InsertTransition,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

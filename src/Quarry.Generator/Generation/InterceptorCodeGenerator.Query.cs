@@ -68,10 +68,10 @@ internal static partial class InterceptorCodeGenerator
                 return;
         }
 
-        // DeleteTransition/UpdateTransition (.Delete()/.Update() on IEntityAccessor).
-        // On carrier path: noop cast (carrier implements both IEntityAccessor and IDeleteBuilder/IUpdateBuilder).
+        // DeleteTransition/UpdateTransition/InsertTransition (.Delete()/.Update()/.Insert() on IEntityAccessor).
+        // On carrier path: noop cast or entity store (carrier implements both interfaces).
         // On non-carrier path: skip (original method runs normally).
-        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition)
+        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition or InterceptorKind.InsertTransition)
         {
             if (!isCarrierSite)
                 return;
@@ -279,15 +279,24 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.InsertExecuteNonQuery:
-                GenerateInsertExecuteNonQueryInterceptor(sb, site, methodName);
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var insertChain);
+                    GenerateInsertExecuteNonQueryInterceptor(sb, site, methodName, insertChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.InsertExecuteScalar:
-                GenerateInsertExecuteScalarInterceptor(sb, site, methodName);
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var insertScalarChain);
+                    GenerateInsertExecuteScalarInterceptor(sb, site, methodName, insertScalarChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.InsertToSql:
-                GenerateInsertToSqlInterceptor(sb, site, methodName);
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var insertToSqlChain);
+                    GenerateInsertToSqlInterceptor(sb, site, methodName, insertToSqlChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.RawSqlAsync:
@@ -323,6 +332,11 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.UpdateTransition:
                 if (carrierInfo != null)
                     GenerateCarrierTransitionInterceptor(sb, site, methodName);
+                break;
+
+            case InterceptorKind.InsertTransition:
+                if (carrierInfo != null)
+                    GenerateCarrierInsertTransitionInterceptor(sb, site, methodName, carrierInfo);
                 break;
 
             case InterceptorKind.AllTransition:

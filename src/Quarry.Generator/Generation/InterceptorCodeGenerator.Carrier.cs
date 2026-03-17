@@ -44,6 +44,13 @@ internal static partial class InterceptorCodeGenerator
                 || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return false;
         }
+        else if (site.Kind is InterceptorKind.InsertExecuteNonQuery
+            or InterceptorKind.InsertExecuteScalar
+            or InterceptorKind.InsertToSql)
+        {
+            if (chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
+                return false;
+        }
 
         return true;
     }
@@ -56,11 +63,13 @@ internal static partial class InterceptorCodeGenerator
     {
         var entityType = GetShortTypeName(chain.EntityTypeName);
 
-        // Delete/Update chains use modification-specific base classes
+        // Modification chains use modification-specific base classes
         if (chain.QueryKind == QueryKind.Delete)
             return $"DeleteCarrierBase<{entityType}>";
         if (chain.QueryKind == QueryKind.Update)
             return $"UpdateCarrierBase<{entityType}>";
+        if (chain.QueryKind == QueryKind.Insert)
+            return $"InsertCarrierBase<{entityType}>";
 
         var hasSelect = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Select);
         var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;
@@ -154,6 +163,26 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        this IEntityAccessor<{entityType}> builder)");
         sb.AppendLine($"    {{");
         sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Generates a carrier Insert transition interceptor.
+    /// .Insert(entity) on IEntityAccessor stores the entity on the carrier and
+    /// returns it as IInsertBuilder.
+    /// </summary>
+    private static void GenerateCarrierInsertTransitionInterceptor(
+        StringBuilder sb, UsageSiteInfo site, string methodName, CarrierClassInfo carrier)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static IInsertBuilder<{entityType}> {methodName}(");
+        sb.AppendLine($"        this IEntityAccessor<{entityType}> builder,");
+        sb.AppendLine($"        {entityType} entity)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        sb.AppendLine($"        __c.Entity = entity;");
+        sb.AppendLine($"        return Unsafe.As<IInsertBuilder<{entityType}>>(__c);");
         sb.AppendLine($"    }}");
     }
 
@@ -715,6 +744,65 @@ internal static partial class InterceptorCodeGenerator
 
         // Default: null-safe boxing (handles simple types, nullable value types, and reference types)
         return $"(object?)__c.P{index} ?? DBNull.Value";
+    }
+
+    /// <summary>
+    /// Emits a carrier insert execution terminal with inline per-parameter DbCommand binding.
+    /// Extracts entity properties directly from the carrier's Entity field.
+    /// </summary>
+    private static void EmitCarrierInsertTerminal(
+        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        string executorMethod, bool isScalar = false)
+    {
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+
+        sb.AppendLine("        var __opId = OpId.Next();");
+        EmitCarrierSqlDispatch(sb, chain);
+
+        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
+
+        // Command creation + inline parameter binding from entity properties
+        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
+            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
+            : "__c.Ctx!.DefaultTimeout";
+        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
+        sb.AppendLine("        __cmd.CommandText = sql;");
+        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+
+        // Bind entity properties as parameters using InsertInfo
+        var insertInfo = chain.Analysis.ExecutionSite.InsertInfo;
+        if (insertInfo != null)
+        {
+            var entityType = GetShortTypeName(chain.EntityTypeName);
+            for (int i = 0; i < insertInfo.Columns.Count; i++)
+            {
+                var col = insertInfo.Columns[i];
+                var valueExpr = GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass);
+                sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
+                sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
+                sb.AppendLine($"        __p{i}.Value = (object?){valueExpr} ?? DBNull.Value;");
+                sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
+            }
+
+            // Parameter logging
+            if (insertInfo.Columns.Count > 0)
+            {
+                sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName))");
+                sb.AppendLine("        {");
+                for (int i = 0; i < insertInfo.Columns.Count; i++)
+                {
+                    var col = insertInfo.Columns[i];
+                    if (col.IsSensitive)
+                        sb.AppendLine($"            ParameterLog.BoundSensitive(__opId, {i});");
+                    else
+                        sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __p{i}.Value?.ToString() ?? \"null\");");
+                }
+                sb.AppendLine("        }");
+            }
+        }
+
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
     }
 
     /// <summary>

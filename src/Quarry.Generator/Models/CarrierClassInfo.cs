@@ -13,7 +13,8 @@ internal enum FieldRole
     ClauseMask,
     Limit,
     Offset,
-    Timeout
+    Timeout,
+    Entity
 }
 
 /// <summary>

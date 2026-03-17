@@ -12,7 +12,8 @@ internal enum QueryKind
 {
     Select,
     Delete,
-    Update
+    Update,
+    Insert
 }
 
 /// <summary>

@@ -54,7 +54,8 @@ internal enum ClauseRole
     ChainRoot,
     DeleteTransition,
     UpdateTransition,
-    AllTransition
+    AllTransition,
+    InsertTransition
 }
 
 /// <summary>

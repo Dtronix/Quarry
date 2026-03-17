@@ -49,6 +49,13 @@ internal static class CarrierClassBuilder
         if (chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.WithTimeout))
             fields.Add(new CarrierField("Timeout", "TimeSpan?", FieldRole.Timeout));
 
+        // Field: Entity (for insert chains — stores the entity passed to .Insert())
+        if (chain.QueryKind == QueryKind.Insert)
+        {
+            var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+            fields.Add(new CarrierField("Entity", entityType + "?", FieldRole.Entity));
+        }
+
         // Static FieldInfo cache fields — only for captured params needing expression tree extraction
         var staticFields = new List<CarrierStaticField>();
         foreach (var param in chain.ChainParameters)

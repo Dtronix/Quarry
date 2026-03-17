@@ -782,16 +782,37 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         Dictionary<ulong, PrebuiltSqlResult>? sqlMap;
         try
         {
-            sqlMap = queryKind.Value switch
+            if (queryKind.Value == QueryKind.Insert)
             {
-                QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
-                    result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                _ => null
-            };
+                // Insert SQL is built from entity metadata, not from clause analysis
+                var insertInfo = executionSite.InsertInfo;
+                if (insertInfo == null || insertInfo.Columns.Count == 0)
+                    return null;
+                var columns = insertInfo.Columns.Select(c => c.QuotedColumnName).ToList();
+                // ExecuteScalar and ToSql include RETURNING clause; ExecuteNonQuery does not.
+                // Pass unquoted name — BuildInsertSql applies dialect-specific quoting.
+                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToSql
+                    ? insertInfo.IdentityColumnName : null;
+                var insertResult = CompileTimeSqlBuilder.BuildInsertSql(
+                    dialect, tableName, schemaName, columns, columns.Count, identityCol);
+                sqlMap = new Dictionary<ulong, PrebuiltSqlResult>
+                {
+                    [0UL] = new PrebuiltSqlResult(insertResult.Sql, columns.Count)
+                };
+            }
+            else
+            {
+                sqlMap = queryKind.Value switch
+                {
+                    QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
+                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
+                    _ => null
+                };
+            }
         }
         catch
         {
@@ -857,6 +878,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             // NonQuery terminal checks: SQL variants must be non-empty and well-formed
             if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
                 || (queryKind.Value == QueryKind.Update && v.Sql.Contains("SET  "))))
+                isCarrierEligible = false;
+        }
+        else if (isCarrierEligible && queryKind.Value == QueryKind.Insert)
+        {
+            // Insert terminal checks: SQL must be non-empty
+            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
+                isCarrierEligible = false;
+            // MySQL ExecuteScalar requires a separate SELECT LAST_INSERT_ID() query,
+            // which can't be done with a single carrier DbCommand.
+            if (executionSite.Kind == InterceptorKind.InsertExecuteScalar && dialect == SqlDialect.MySQL)
                 isCarrierEligible = false;
         }
 
@@ -1015,6 +1046,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             if (clause.Role is ClauseRole.Set or ClauseRole.UpdateSet)
                 return null;
 
+            // InsertTransition has no expression parameters — skip parameter extraction
+            if (clause.Role is ClauseRole.InsertTransition)
+                continue;
+
             if (clause.Site.ClauseInfo == null)
                 continue;
 
@@ -1069,6 +1104,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
                     return QueryKind.Select;
                 return null;
+
+            case InterceptorKind.InsertExecuteNonQuery:
+            case InterceptorKind.InsertExecuteScalar:
+            case InterceptorKind.InsertToSql:
+                return QueryKind.Insert;
 
             default:
                 return null;

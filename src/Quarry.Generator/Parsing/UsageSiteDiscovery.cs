@@ -66,7 +66,8 @@ internal static class UsageSiteDiscovery
         ["WithTimeout"] = InterceptorKind.WithTimeout,
         ["Delete"] = InterceptorKind.DeleteTransition,
         ["Update"] = InterceptorKind.UpdateTransition,
-        ["All"] = InterceptorKind.AllTransition
+        ["All"] = InterceptorKind.AllTransition,
+        ["Insert"] = InterceptorKind.InsertTransition
     };
 
     // Methods on InsertBuilder that need special handling
