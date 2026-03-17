@@ -44,7 +44,7 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class Db : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 public class Svc
@@ -294,7 +294,7 @@ public class Svc
     public void FluentChain_WhereSelectExecute_Tier1_NoClauses()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.UserId > 0).Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Where(u => u.UserId > 0).Select(u => u).ExecuteFetchAllAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -309,7 +309,7 @@ public class Svc
     public void FluentChain_MultiClause_CorrectRoles()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.IsActive).OrderBy(u => u.UserName).Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Where(u => u.IsActive).OrderBy(u => u.UserName).Select(u => u).ExecuteFetchAllAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -325,7 +325,7 @@ public class Svc
     public void FluentChain_AllClausesUnconditional()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.Age > 18).Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Where(u => u.Age > 18).Select(u => u).ExecuteFetchAllAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -341,7 +341,7 @@ public class Svc
     public void VariableChain_Unconditional_Tier1()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         q = q.OrderBy(u => u.UserName);
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -357,7 +357,7 @@ public class Svc
     public void VariableChain_Unconditional_ClausesPopulated()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.Age > 0);
+        var q = db.Users().Where(u => u.Age > 0);
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
 
@@ -375,7 +375,7 @@ public class Svc
     public void IndependentConditional_SingleIf_OneBit_TwoMasks()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -395,7 +395,7 @@ public class Svc
     public void IndependentConditional_TwoIfs_TwoBits_FourMasks()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -413,7 +413,7 @@ public class Svc
     public void IndependentConditional_FourIfs_FourBits_SixteenMasks()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -435,7 +435,7 @@ public class Svc
     public void IndependentConditional_ConditionalHasBitIndex_UnconditionalDoesNot()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -457,7 +457,7 @@ public class Svc
     public void MutuallyExclusive_IfElse_OneBit()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         else
@@ -477,7 +477,7 @@ public class Svc
     public void MixedBranches_IndependentAndExclusive_CorrectMasks()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.Where(u => u.Age > 21);
         if (condition2)
@@ -503,7 +503,7 @@ public class Svc
     public void FiveConditionals_ExceedsThreshold_Tier2()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -527,7 +527,7 @@ public class Svc
     public void SixConditionals_Tier2()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -556,7 +556,7 @@ public class Svc
     public void Disqualified_AssignedInForLoop()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         for (int i = 0; i < 3; i++)
             q = q.Where(u => u.Age > 0);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -571,7 +571,7 @@ public class Svc
     public void Disqualified_AssignedInForeachLoop()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         var items = new[] { 1, 2, 3 };
         foreach (var item in items)
             q = q.Where(u => u.Age > 0);
@@ -587,7 +587,7 @@ public class Svc
     public void Disqualified_AssignedInWhileLoop()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         while (condition)
             q = q.Where(u => u.Age > 0);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -602,7 +602,7 @@ public class Svc
     public void Disqualified_AssignedInDoWhileLoop()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         do { q = q.Where(u => u.Age > 0); } while (condition);
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -616,7 +616,7 @@ public class Svc
     public void Disqualified_AssignedInTryCatch()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         try { q = q.Where(u => u.Age > 0); } catch { }
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -630,7 +630,7 @@ public class Svc
     public void Disqualified_PassedAsArgument()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         Console.WriteLine(q);
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -644,7 +644,7 @@ public class Svc
     public void Disqualified_CapturedInLambda()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         Action a = () => { var x = q; };
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -658,7 +658,7 @@ public class Svc
     public void Disqualified_CapturedInLocalFunction()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         void LocalFunc() { var x = q; }
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -674,7 +674,7 @@ public class Svc
     {
         // MaxIfNestingDepth is 2, check is depth > 2, so we need 4 levels (depth 3)
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
         {
             if (condition2)
@@ -703,7 +703,7 @@ public class Svc
     {
         // query.Where(...).ExecuteFetchAllAsync() — the Where is on the execution chain
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         await q.Where(u => u.Age > 18).Select(u => u).ExecuteFetchAllAsync();
 ");
 
@@ -718,7 +718,7 @@ public class Svc
     public void EmptyChain_NoClauseSites_Tier1()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -731,7 +731,7 @@ public class Svc
     public void VariableChain_NoConditional_SingleMask()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users;
+        var q = db.Users();
         q = q.Where(u => u.IsActive);
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -782,7 +782,7 @@ public class Svc
     public void Integration_FluentChain_EmitsQRY030()
     {
         var diagnostics = RunGeneratorAndGetDiagnostics(@"
-        await db.Users.Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
 ", "QRY030");
 
         Assert.That(diagnostics, Has.Count.GreaterThanOrEqualTo(1));
@@ -793,7 +793,7 @@ public class Svc
     public void Integration_ManyConditionals_EmitsQRY031()
     {
         var diagnostics = RunGeneratorAndGetDiagnostics(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -815,7 +815,7 @@ public class Svc
     public void Integration_LoopAssignment_EmitsQRY032()
     {
         var diagnostics = RunGeneratorAndGetDiagnostics(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         for (int i = 0; i < 3; i++)
             q = q.Where(u => u.Age > 0);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -829,7 +829,7 @@ public class Svc
     public void Integration_QRY032_ReasonMessageFlowsThrough()
     {
         var diagnostics = RunGeneratorAndGetDiagnostics(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         try { q = q.Where(u => u.Age > 0); } catch { }
         await q.Select(u => u).ExecuteFetchAllAsync();
 ", "QRY032");
@@ -846,7 +846,7 @@ public class Svc
     public void FluentChain_ExecuteFetchFirstAsync_Tier1()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.IsActive).Select(u => u).ExecuteFetchFirstAsync();
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchFirstAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -858,7 +858,7 @@ public class Svc
     public void FluentChain_ExecuteFetchFirstOrDefaultAsync_Tier1()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.IsActive).Select(u => u).ExecuteFetchFirstOrDefaultAsync();
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchFirstOrDefaultAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -869,7 +869,7 @@ public class Svc
     public void FluentChain_ExecuteFetchSingleAsync_Tier1()
     {
         var result = AnalyzeChain(@"
-        await db.Users.Where(u => u.UserId == 1).Select(u => u).ExecuteFetchSingleAsync();
+        await db.Users().Where(u => u.UserId == 1).Select(u => u).ExecuteFetchSingleAsync();
 ");
 
         Assert.That(result, Is.Not.Null);
@@ -880,7 +880,7 @@ public class Svc
     public void VariableChain_ExecuteFetchFirstAsync_WithConditional_Tier1()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         await q.Select(u => u).ExecuteFetchFirstAsync();
@@ -900,7 +900,7 @@ public class Svc
     public void IndependentConditional_TwoBits_CorrectMaskValues()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -923,7 +923,7 @@ public class Svc
     public void MutuallyExclusive_IfElse_NoNeitherMask()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         else
@@ -947,7 +947,7 @@ public class Svc
     public void MixedBranches_CorrectCartesianProduct()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.Where(u => u.Age > 21);
         if (condition2)
@@ -983,7 +983,7 @@ public class Svc
     public void VariableChain_ConditionalClauses_HaveCorrectRoles()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.OrderBy(u => u.UserName);
         if (condition2)
@@ -1008,7 +1008,7 @@ public class Svc
     public void VariableChain_UnconditionalAndConditional_MixedRoles()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         q = q.OrderBy(u => u.UserName);
         if (condition)
             q = q.Where(u => u.Age > 21);
@@ -1043,7 +1043,7 @@ public class Svc
     public void Disqualified_AssignedFromNonQuarryMethod()
     {
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         q = GetQuery();
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
@@ -1062,10 +1062,10 @@ public class Svc
     public void MultipleExecutionSites_EachAnalyzedIndependently()
     {
         var results = AnalyzeAllChains(@"
-        var q1 = db.Users.Where(u => u.IsActive);
+        var q1 = db.Users().Where(u => u.IsActive);
         await q1.Select(u => u).ExecuteFetchAllAsync();
 
-        var q2 = db.Users.Where(u => u.Age > 21);
+        var q2 = db.Users().Where(u => u.Age > 21);
         if (condition)
             q2 = q2.OrderBy(u => u.UserName);
         await q2.Select(u => u).ExecuteFetchAllAsync();
@@ -1086,9 +1086,9 @@ public class Svc
     public void MultipleExecutionSites_DifferentTiers()
     {
         var results = AnalyzeAllChains(@"
-        await db.Users.Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
 
-        var q = db.Users.Where(u => u.Age > 21);
+        var q = db.Users().Where(u => u.Age > 21);
         for (int i = 0; i < 3; i++)
             q = q.Where(u => u.Age > 0);
         await q.Select(u => u).ExecuteFetchAllAsync();
@@ -1112,7 +1112,7 @@ public class Svc
     {
         // q has Where from variable assignment; OrderBy + Select are on the terminal chain
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         await q.OrderBy(u => u.UserName).Select(u => u).ExecuteFetchAllAsync();
 ");
 
@@ -1133,7 +1133,7 @@ public class Svc
     {
         // q has conditional Where; OrderBy is unconditional on terminal chain
         var result = AnalyzeChain(@"
-        var q = db.Users.Where(u => u.IsActive);
+        var q = db.Users().Where(u => u.IsActive);
         if (condition)
             q = q.Where(u => u.Age > 21);
         await q.OrderBy(u => u.UserName).Select(u => u).ExecuteFetchAllAsync();
@@ -1160,7 +1160,7 @@ public class Svc
     {
         // Variable holds the raw builder with no clauses added
         var result = AnalyzeChain(@"
-        var q = db.Users;
+        var q = db.Users();
         await q.Select(u => u).ExecuteFetchAllAsync();
 ");
 
@@ -1176,7 +1176,7 @@ public class Svc
     {
         // Variable starts as raw builder, only clause is conditional
         var result = AnalyzeChain(@"
-        var q = db.Users;
+        var q = db.Users();
         if (condition)
             q = q.Where(u => u.IsActive);
         await q.Select(u => u).ExecuteFetchAllAsync();

@@ -51,7 +51,7 @@ public class PaginationBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<EfUser>> Quarry_LimitOffset()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Select(u => new EfUser
             {
                 UserId = u.UserId,
@@ -108,7 +108,7 @@ public class PaginationBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<EfUser>> Quarry_FirstPage()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Select(u => new EfUser
             {
                 UserId = u.UserId,

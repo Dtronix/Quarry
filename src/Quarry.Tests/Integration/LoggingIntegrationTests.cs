@@ -128,7 +128,7 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users
+        await db.Users()
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
 
@@ -154,7 +154,7 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
@@ -173,8 +173,8 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users.Select(u => u.UserName).ExecuteFetchAllAsync();
-        await db.Users.Select(u => u.UserId).ExecuteFetchAllAsync();
+        await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        await db.Users().Select(u => u.UserId).ExecuteFetchAllAsync();
 
         var queryEntries = _sink.Entries
             .Where(e => e.Category == "Quarry.Query")
@@ -194,7 +194,7 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
 
@@ -210,7 +210,7 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users
+        await db.Users()
             .Where(u => u.UserId == -999)
             .Select(u => u.UserName)
             .ExecuteFetchFirstOrDefaultAsync();
@@ -227,7 +227,7 @@ internal partial class LoggingIntegrationTests
     {
         await using var db = new TestDbContext(_connection);
 
-        await db.Users
+        await db.Users()
             .Select(u => Sql.Count())
             .ExecuteScalarAsync<int>();
 
@@ -414,7 +414,7 @@ internal partial class LoggingIntegrationTests
 
         // Use a captured variable so the interceptor generates a parameterized query
         var userId = 1;
-        await db.Users
+        await db.Users()
             .Where(u => u.UserId == userId)
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
@@ -456,7 +456,7 @@ internal partial class LoggingIntegrationTests
 
         // Use a captured variable so the interceptor generates a parameterized query
         var userId = 1;
-        await db.Users
+        await db.Users()
             .Where(u => u.UserId == userId)
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
@@ -482,7 +482,7 @@ internal partial class LoggingIntegrationTests
         await using var db = new TestDbContext(_connection);
         db.SlowQueryThreshold = TimeSpan.Zero; // Everything is "slow"
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
@@ -500,7 +500,7 @@ internal partial class LoggingIntegrationTests
         await using var db = new TestDbContext(_connection);
         db.SlowQueryThreshold = null;
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
@@ -517,7 +517,7 @@ internal partial class LoggingIntegrationTests
         await using var db = new TestDbContext(_connection);
         db.SlowQueryThreshold = TimeSpan.FromMinutes(10);
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
@@ -534,7 +534,7 @@ internal partial class LoggingIntegrationTests
         await using var db = new TestDbContext(_connection);
         db.SlowQueryThreshold = TimeSpan.Zero;
 
-        await db.Users
+        await db.Users()
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
@@ -561,7 +561,7 @@ internal partial class LoggingIntegrationTests
         try
         {
             await using var db = new TestDbContext(_connection);
-            await db.Users.Select(u => u.UserName).ExecuteFetchAllAsync();
+            await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
 
             var debugEntries = _sink.Entries
                 .Where(e => e.Level == LogLevel.Debug)
@@ -590,7 +590,7 @@ internal partial class LoggingIntegrationTests
             await using var db = new TestDbContext(_connection);
             db.SlowQueryThreshold = TimeSpan.Zero; // Force slow query warning
 
-            await db.Users.Select(u => u.UserName).ExecuteFetchAllAsync();
+            await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
 
             var queryEntries = _sink.Entries
                 .Where(e => e.Category == "Quarry.Query")
@@ -624,7 +624,7 @@ internal partial class LoggingIntegrationTests
 
             // Use a captured variable so the interceptor generates a parameterized query
             var userId = 1;
-            await db.Users
+            await db.Users()
                 .Where(u => u.UserId == userId)
                 .Select(u => u.UserName)
                 .ExecuteFetchAllAsync();
@@ -715,7 +715,7 @@ internal partial class LoggingIntegrationTests
         await using var db = new TestDbContext(_connection);
 
         var count = 0;
-        await foreach (var name in db.Users.Select(u => u.UserName).ToAsyncEnumerable())
+        await foreach (var name in db.Users().Select(u => u.UserName).ToAsyncEnumerable())
         {
             count++;
         }

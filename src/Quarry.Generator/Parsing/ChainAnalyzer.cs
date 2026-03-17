@@ -55,6 +55,21 @@ internal static class ChainAnalyzer
             return AnalyzeDirectFluentChain(executionSite, executionInvocation, allSitesInMethod);
         }
 
+        // Check for forked chains (QRY033) — applies to all tiers
+        var forkedVarName = DetectForkedChain(
+            receiverVariable, executionInvocation, allSitesInMethod, semanticModel);
+        if (forkedVarName != null)
+        {
+            return new ChainAnalysisResult(
+                tier: OptimizationTier.RuntimeBuild,
+                clauses: Array.Empty<ChainedClauseSite>(),
+                executionSite: executionSite,
+                conditionalClauses: Array.Empty<ConditionalClause>(),
+                possibleMasks: Array.Empty<ulong>(),
+                notAnalyzableReason: $"Forked chain: variable '{forkedVarName}' consumed by multiple execution paths",
+                forkedVariableName: forkedVarName);
+        }
+
         // Variable-based chain — perform full dataflow analysis
         return AnalyzeVariableChain(
             executionSite, executionInvocation, receiverVariable,
@@ -87,12 +102,26 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Check if the root is a local variable
+        // Check if the root is a local variable or parameter.
+        // QuarryContext variables are chain roots, not builder variables —
+        // treat chains rooted on context as direct fluent.
         if (receiver is IdentifierNameSyntax identifier)
         {
             var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-            if (symbol is ILocalSymbol local)
-                return local;
+            ITypeSymbol? varType = symbol switch
+            {
+                ILocalSymbol local => local.Type,
+                IParameterSymbol param => param.Type,
+                _ => null
+            };
+
+            if (varType != null && !IsQuarryContextType(varType))
+            {
+                // IParameterSymbol: method parameters holding builder variables.
+                // Variable-based chain analysis requires declaration sites in the method body,
+                // which parameters lack. Return null to treat as direct fluent chain.
+                return symbol as ILocalSymbol;
+            }
         }
 
         return null;
@@ -741,7 +770,8 @@ internal static class ChainAnalyzer
             or "DeleteBuilder" or "ExecutableDeleteBuilder" or "InsertBuilder"
             or "IQueryBuilder" or "IJoinedQueryBuilder" or "IJoinedQueryBuilder3"
             or "IJoinedQueryBuilder4" or "IUpdateBuilder" or "IExecutableUpdateBuilder"
-            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "IInsertBuilder";
+            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "IInsertBuilder"
+            or "EntityAccessor" or "IEntityAccessor";
     }
 
     /// <summary>
@@ -941,6 +971,12 @@ internal static class ChainAnalyzer
             InterceptorKind.Limit => ClauseRole.Limit,
             InterceptorKind.Offset => ClauseRole.Offset,
             InterceptorKind.Distinct => ClauseRole.Distinct,
+            InterceptorKind.WithTimeout => ClauseRole.WithTimeout,
+            InterceptorKind.ChainRoot => ClauseRole.ChainRoot,
+            InterceptorKind.DeleteTransition => ClauseRole.DeleteTransition,
+            InterceptorKind.UpdateTransition => ClauseRole.UpdateTransition,
+            InterceptorKind.AllTransition => ClauseRole.AllTransition,
+            InterceptorKind.InsertTransition => ClauseRole.InsertTransition,
             _ => null
         };
     }
@@ -962,6 +998,49 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
+    /// Detects forked chains: a builder variable consumed by multiple execution-terminating paths.
+    /// Returns the variable name if a fork is detected, null otherwise.
+    /// </summary>
+    /// <remarks>
+    /// This applies to all optimization tiers. A builder variable that forks into
+    /// multiple execution paths is a compile error (QRY033) regardless of tier.
+    /// </remarks>
+    internal static string? DetectForkedChain(
+        ILocalSymbol variable,
+        InvocationExpressionSyntax executionInvocation,
+        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
+        SemanticModel semanticModel)
+    {
+        // Only flag builder variables, not context variables.
+        // Context variables (QuarryContext subclasses) are expected to be reused across
+        // multiple queries. Builder variables should not be.
+        if (IsQuarryContextType(variable.Type))
+            return null;
+
+        var executionCount = 0;
+
+        foreach (var site in allSitesInMethod)
+        {
+            if (!IsExecutionKind(site.Kind))
+                continue;
+
+            if (site.InvocationSyntax is not InvocationExpressionSyntax siteInvocation)
+                continue;
+
+            // Resolve the receiver variable for this execution site
+            var siteReceiver = ResolveReceiverVariable(siteInvocation, semanticModel);
+            if (siteReceiver != null && SymbolEqualityComparer.Default.Equals(siteReceiver, variable))
+            {
+                executionCount++;
+                if (executionCount > 1)
+                    return variable.Name;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Checks if an InterceptorKind represents an execution method.
     /// </summary>
     internal static bool IsExecutionKind(InterceptorKind kind)
@@ -973,7 +1052,10 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteScalar
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable
-            or InterceptorKind.ToSql;
+            or InterceptorKind.ToSql
+            or InterceptorKind.InsertExecuteNonQuery
+            or InterceptorKind.InsertExecuteScalar
+            or InterceptorKind.InsertToSql;
     }
 
     #region Internal Types

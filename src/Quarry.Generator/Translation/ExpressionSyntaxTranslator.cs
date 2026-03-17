@@ -202,7 +202,7 @@ internal static class ExpressionSyntaxTranslator
         var clrType = typeInfo.Type.ToDisplayString();
         var valueExpression = expression.ToFullString().Trim();
 
-        return context.AddParameter(clrType, valueExpression, isCaptured: true);
+        return context.AddParameter(clrType, valueExpression, isCaptured: true, typeSymbol: typeInfo.Type);
     }
 
     /// <summary>
@@ -654,7 +654,7 @@ internal static class ExpressionSyntaxTranslator
                     var typeInfo = context.SemanticModel.GetTypeInfo(paramArg);
                     var clrType = typeInfo.Type?.ToDisplayString() ?? "object";
                     var valueExpr = paramArg.ToFullString().Trim();
-                    var paramPlaceholder = context.AddParameter(clrType, valueExpr);
+                    var paramPlaceholder = context.AddParameter(clrType, valueExpr, typeSymbol: typeInfo.Type);
                     rawSql = rawSql.Replace(placeholder, paramPlaceholder);
                 }
             }
@@ -996,7 +996,7 @@ internal static class ExpressionSyntaxTranslator
 
         var clrType = typeInfo.Type.ToDisplayString();
         var valueExpression = receiver.ToFullString().Trim();
-        var param = context.AddParameter(clrType, valueExpression, isCollection: true);
+        var param = context.AddParameter(clrType, valueExpression, isCollection: true, typeSymbol: typeInfo.Type);
 
         // The runtime will expand this to individual parameters
         return $"{elementSql} IN ({param})";

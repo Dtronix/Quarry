@@ -136,6 +136,20 @@ internal static class AnalyzabilityChecker
             }
         }
 
+        // If receiver is an invocation (like db.Users()), check the method return type
+        if (receiver is InvocationExpressionSyntax nestedInvocation)
+        {
+            var invokedSymbol = semanticModel.GetSymbolInfo(nestedInvocation).Symbol;
+            if (invokedSymbol is IMethodSymbol invokedMethod)
+            {
+                if (invokedMethod.ContainingType != null && IsQuarryContextType(invokedMethod.ContainingType))
+                    return (true, null);
+                if (invokedMethod.ReturnType is INamedTypeSymbol rt
+                    && rt.Name is "IQueryBuilder" or "QueryBuilder" or "IDeleteBuilder" or "IUpdateBuilder" or "EntityAccessor" or "IEntityAccessor")
+                    return (true, null);
+            }
+        }
+
         // Default: assume analyzable for other patterns
         return (true, null);
     }

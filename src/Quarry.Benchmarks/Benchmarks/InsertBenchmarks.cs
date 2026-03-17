@@ -65,7 +65,7 @@ public class InsertBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_SingleInsert()
     {
-        return await QuarryDb.Insert(new User
+        return await QuarryDb.Users().Insert(new User
         {
             UserName = "BenchUser",
             Email = "bench@example.com",
@@ -134,6 +134,6 @@ public class InsertBenchmarks : BenchmarkBase
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         });
-        return await QuarryDb.InsertMany(users).ExecuteNonQueryAsync();
+        return await QuarryDb.Users().InsertMany(users).ExecuteNonQueryAsync();
     }
 }

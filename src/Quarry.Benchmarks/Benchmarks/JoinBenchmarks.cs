@@ -47,7 +47,7 @@ public class JoinBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserOrderDto>> Quarry_InnerJoin()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto
             {
@@ -112,7 +112,7 @@ public class JoinBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserOrderItemDto>> Quarry_ThreeTableJoin()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => new UserOrderItemDto

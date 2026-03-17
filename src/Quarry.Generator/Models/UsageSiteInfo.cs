@@ -428,6 +428,43 @@ internal enum InterceptorKind
     Distinct,
 
     /// <summary>
+    /// WithTimeout() method - sets query timeout. Not intercepted on non-carrier path,
+    /// but tracked for chain analysis so carrier can store the timeout value.
+    /// </summary>
+    WithTimeout,
+
+    /// <summary>
+    /// Entity set factory method on QuarryContext (e.g., db.Users()).
+    /// Chain root — the first node in a query chain. On the carrier path,
+    /// the chain root interceptor creates the carrier unconditionally.
+    /// </summary>
+    ChainRoot,
+
+    /// <summary>
+    /// .Delete() transition on IEntityAccessor — switches from accessor to IDeleteBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    DeleteTransition,
+
+    /// <summary>
+    /// .Update() transition on IEntityAccessor — switches from accessor to IUpdateBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    UpdateTransition,
+
+    /// <summary>
+    /// .All() transition on IDeleteBuilder/IUpdateBuilder — switches to IExecutableDeleteBuilder/IExecutableUpdateBuilder.
+    /// On the carrier path: noop cast (carrier implements both interfaces).
+    /// </summary>
+    AllTransition,
+
+    /// <summary>
+    /// .Insert(entity) transition on IEntityAccessor — switches from accessor to IInsertBuilder.
+    /// On the carrier path: stores entity reference and returns carrier as IInsertBuilder.
+    /// </summary>
+    InsertTransition,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

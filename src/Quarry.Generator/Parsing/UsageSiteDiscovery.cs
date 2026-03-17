@@ -34,7 +34,9 @@ internal static class UsageSiteDiscovery
         "IExecutableUpdateBuilder",
         "IDeleteBuilder",
         "IExecutableDeleteBuilder",
-        "IInsertBuilder"
+        "IInsertBuilder",
+        "IEntityAccessor",
+        "EntityAccessor"
     };
 
     // Methods that can be intercepted (excluding builder-specific methods that need context)
@@ -60,7 +62,12 @@ internal static class UsageSiteDiscovery
         ["ToSql"] = InterceptorKind.ToSql,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
-        ["Distinct"] = InterceptorKind.Distinct
+        ["Distinct"] = InterceptorKind.Distinct,
+        ["WithTimeout"] = InterceptorKind.WithTimeout,
+        ["Delete"] = InterceptorKind.DeleteTransition,
+        ["Update"] = InterceptorKind.UpdateTransition,
+        ["All"] = InterceptorKind.AllTransition,
+        ["Insert"] = InterceptorKind.InsertTransition
     };
 
     // Methods on InsertBuilder that need special handling
@@ -93,8 +100,17 @@ internal static class UsageSiteDiscovery
             return false;
 
         // Check if this is an interceptable method
-        return InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
-            || RawSqlMethods.ContainsKey(methodName);
+        if (InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
+            || RawSqlMethods.ContainsKey(methodName))
+            return true;
+
+        // Could be a context entity factory method (Users(), Orders(), Delete<T>(), Update<T>())
+        if (invocation.ArgumentList.Arguments.Count == 0
+            && invocation.Expression is MemberAccessExpressionSyntax
+            && methodName.Length > 0 && char.IsUpper(methodName[0]))
+            return true;
+
+        return false;
     }
 
     /// <summary>
@@ -190,6 +206,61 @@ internal static class UsageSiteDiscovery
         if (RawSqlMethods.TryGetValue(methodName, out var rawSqlKind) && IsQuarryContextType(containingType))
         {
             return DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
+        }
+
+        // Check for chain root: entity set factory methods on QuarryContext (e.g., db.Users())
+        if (IsQuarryContextType(containingType)
+            && methodSymbol.Parameters.Length == 0
+            && methodSymbol.ReturnType is INamedTypeSymbol returnType
+            && returnType is { Arity: 1 }
+            && returnType.Name is "IQueryBuilder" or "EntityAccessor" or "IEntityAccessor")
+        {
+            var rootEntityType = returnType.TypeArguments[0];
+            var rootEntityTypeName = rootEntityType.ToDisplayString();
+
+            // Get interceptable location data
+            string? rootLocationData = null;
+            int rootLocationVersion = 1;
+#if QUARRY_GENERATOR
+            try
+            {
+#pragma warning disable RSEXPERIMENTAL002
+                var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+                if (interceptableLocation != null)
+                {
+                    rootLocationData = interceptableLocation.Data;
+                    rootLocationVersion = interceptableLocation.Version;
+                }
+            }
+            catch { }
+#endif
+            if (rootLocationData == null)
+                return null;
+
+            var rootFilePath = invocation.SyntaxTree.FilePath;
+            var rootLineSpan = invocation.SyntaxTree.GetLineSpan(invocation.Span);
+            var rootLine = rootLineSpan.StartLinePosition.Line + 1;
+            var rootColumn = rootLineSpan.StartLinePosition.Character + 1;
+            var rootUniqueId = GenerateUniqueId(rootFilePath, rootLine, rootColumn, methodName);
+
+            // Resolve context class name for the interceptor signature
+            var contextClassName = containingType.Name;
+
+            return new UsageSiteInfo(
+                methodName: methodName,
+                filePath: rootFilePath,
+                line: rootLine,
+                column: rootColumn,
+                builderTypeName: "IQueryBuilder",
+                entityTypeName: rootEntityTypeName,
+                isAnalyzable: true,
+                kind: InterceptorKind.ChainRoot,
+                invocationSyntax: invocation,
+                uniqueId: rootUniqueId,
+                contextClassName: contextClassName,
+                interceptableLocationData: rootLocationData,
+                interceptableLocationVersion: rootLocationVersion);
         }
 
         if (!IsQuarryBuilderType(containingType))

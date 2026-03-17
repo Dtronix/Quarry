@@ -50,7 +50,7 @@ public class FilterBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<EfUser>> Quarry_WhereActive()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.IsActive)
             .Select(u => new EfUser
             {
@@ -109,7 +109,7 @@ public class FilterBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserSummaryDto>> Quarry_WhereCompound()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.IsActive)
             .Where(u => u.Email != null)
             .Select(u => new UserSummaryDto
@@ -163,7 +163,7 @@ public class FilterBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<EfUser?> Quarry_WhereById()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Where(u => u.UserId == 42)
             .Select(u => new EfUser
             {

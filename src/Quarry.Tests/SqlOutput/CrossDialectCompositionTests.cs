@@ -22,25 +22,25 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Join_Where_OrderBy_Limit_Offset()
     {
         AssertDialects(
-            Lite.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
                 .Limit(10).Offset(0)
                 .Select((u, o) => (u.UserName, o.Total, o.Status))
                 .ToTestCase(),
-            Pg.Users.Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
                 .Limit(10).Offset(0)
                 .Select((u, o) => (u.UserName, o.Total, o.Status))
                 .ToTestCase(),
-            My.Users.Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
                 .Limit(10).Offset(0)
                 .Select((u, o) => (u.UserName, o.Total, o.Status))
                 .ToTestCase(),
-            Ss.Users.Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
                 .Limit(10).Offset(0)
@@ -60,22 +60,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Where_Boolean_Subquery_OrderBy_Select()
     {
         AssertDialects(
-            Lite.Users
+            Lite.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            Pg.Users
+            Pg.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            My.Users
+            My.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            Ss.Users
+            Ss.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
@@ -94,22 +94,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void ThreeTableJoin_Where_DeepestTable()
     {
         AssertDialects(
-            Lite.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
                 .ToTestCase(),
-            Pg.Users.Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
                 .ToTestCase(),
-            My.Users.Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<My.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
                 .ToTestCase(),
-            Ss.Users.Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
@@ -128,22 +128,22 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Where_Any_And_All_MultipleSubqueries()
     {
         AssertDialects(
-            Lite.Users
+            Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Pg.Users
+            Pg.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            My.Users
+            My.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Ss.Users
+            Ss.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
                 .Select(u => (u.UserId, u.UserName))
@@ -162,25 +162,25 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Where_NullCheck_Contains_OrderBy_Limit()
     {
         AssertDialects(
-            Lite.Users
+            Lite.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
                 .Limit(5)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            Pg.Users
+            Pg.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
                 .Limit(5)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            My.Users
+            My.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
                 .Limit(5)
                 .Select(u => (u.UserName, u.Email))
                 .ToTestCase(),
-            Ss.Users
+            Ss.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
                 .Limit(5)
@@ -201,19 +201,19 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     {
         var statuses = new[] { "pending", "processing", "shipped" };
         AssertDialects(
-            Lite.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .ToTestCase(),
-            Pg.Users.Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .ToTestCase(),
-            My.Users.Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .ToTestCase(),
-            Ss.Users.Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .ToTestCase(),
@@ -231,19 +231,19 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Where_CountSubquery_WithEnumPredicate()
     {
         AssertDialects(
-            Lite.Users
+            Lite.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Pg.Users
+            Pg.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            My.Users
+            My.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Ss.Users
+            Ss.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
@@ -261,22 +261,26 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void GroupBy_Having_Aggregates()
     {
         AssertDialects(
-            Lite.Orders
+            Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
-            Pg.Orders
+            Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
-            My.Orders
+            My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToTestCase(),
-            Ss.Orders
+            Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
@@ -295,28 +299,28 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Join_Distinct_OrderBy_Limit()
     {
         AssertDialects(
-            Lite.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
                 .Distinct()
                 .Limit(20)
                 .Select((u, o) => u.UserName)
                 .ToTestCase(),
-            Pg.Users.Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
                 .Distinct()
                 .Limit(20)
                 .Select((u, o) => u.UserName)
                 .ToTestCase(),
-            My.Users.Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
                 .Distinct()
                 .Limit(20)
                 .Select((u, o) => u.UserName)
                 .ToTestCase(),
-            Ss.Users.Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
                 .Distinct()
@@ -337,19 +341,19 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void Where_NestedThreeLevelSubquery()
     {
         AssertDialects(
-            Lite.Users
+            Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Pg.Users
+            Pg.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            My.Users
+            My.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
-            Ss.Users
+            Ss.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
                 .ToTestCase(),
@@ -367,19 +371,23 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void GroupBy_Select_WithAvg()
     {
         AssertDialects(
-            Lite.Orders
+            Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
-            Pg.Orders
+            Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
-            My.Orders
+            My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
-            Ss.Orders
+            Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToTestCase(),
@@ -393,19 +401,23 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void GroupBy_Select_WithMin()
     {
         AssertDialects(
-            Lite.Orders
+            Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
-            Pg.Orders
+            Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
-            My.Orders
+            My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
-            Ss.Orders
+            Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToTestCase(),
@@ -419,19 +431,23 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void GroupBy_Select_WithMax()
     {
         AssertDialects(
-            Lite.Orders
+            Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
-            Pg.Orders
+            Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
-            My.Orders
+            My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
-            Ss.Orders
+            Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToTestCase(),
@@ -445,22 +461,26 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     public void GroupBy_Having_Select_AllAggregates()
     {
         AssertDialects(
-            Lite.Orders
+            Lite.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
-            Pg.Orders
+            Pg.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
-            My.Orders
+            My.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToTestCase(),
-            Ss.Orders
+            Ss.Orders()
+                .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))

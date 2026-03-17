@@ -133,6 +133,19 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
     /// </summary>
     public string? CustomTypeMappingClass { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether this parameter's CLR type is an enum (or nullable enum).
+    /// When true, the carrier terminal emits an inline cast to the underlying integral type
+    /// instead of relying on runtime <c>GetType().IsEnum</c> + <c>Convert.ChangeType</c>.
+    /// </summary>
+    public bool IsEnum { get; set; }
+
+    /// <summary>
+    /// Gets or sets the underlying integral type name for enum parameters (e.g., "int", "byte").
+    /// Only meaningful when <see cref="IsEnum"/> is true.
+    /// </summary>
+    public string? EnumUnderlyingType { get; set; }
+
     public bool Equals(ParameterInfo? other)
     {
         if (other is null) return false;
@@ -144,7 +157,9 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
             && IsCollection == other.IsCollection
             && IsCaptured == other.IsCaptured
             && ExpressionPath == other.ExpressionPath
-            && CustomTypeMappingClass == other.CustomTypeMappingClass;
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && IsEnum == other.IsEnum
+            && EnumUnderlyingType == other.EnumUnderlyingType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ParameterInfo);

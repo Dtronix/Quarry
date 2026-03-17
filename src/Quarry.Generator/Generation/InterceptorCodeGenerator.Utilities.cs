@@ -270,6 +270,13 @@ internal static partial class InterceptorCodeGenerator
     /// Prefers the semantic model's type (most qualified) but falls back to
     /// enriched ProjectionInfo type for tuples, single-column, and empty results.
     /// </summary>
+    /// <summary>
+    /// Public accessor for carrier eligibility checks in QuarryGenerator.
+    /// </summary>
+    internal static string? ResolveExecutionResultTypePublic(
+        string? siteResultType, string? chainResultType, ProjectionInfo? projectionInfo)
+        => ResolveExecutionResultType(siteResultType, chainResultType, projectionInfo);
+
     private static string? ResolveExecutionResultType(
         string? siteResultType,
         string? chainResultType,
@@ -520,6 +527,38 @@ internal static partial class InterceptorCodeGenerator
         if (typeName.Length > 1 && typeName[0] == 'I' && char.IsUpper(typeName[1]))
             return typeName.Substring(1);
         return typeName;
+    }
+
+    /// <summary>
+    /// Maps IEntityAccessor to the appropriate return type for interceptors.
+    /// IEntityAccessor methods return IQueryBuilder types, not IEntityAccessor types.
+    /// </summary>
+    private static string ToReturnTypeName(string thisType)
+        => thisType is "IEntityAccessor" or "EntityAccessor" ? "IQueryBuilder" : thisType;
+
+    /// <summary>
+    /// Returns true if the builder type name is an entity accessor type.
+    /// When true, the builder is a boxed EntityAccessor struct and must be
+    /// converted to a QueryBuilder via CreateQueryBuilder() before Unsafe.As casts.
+    /// </summary>
+    private static bool IsEntityAccessorType(string builderTypeName)
+        => builderTypeName is "IEntityAccessor" or "EntityAccessor";
+
+    /// <summary>
+    /// Returns the expression to convert a builder to a QueryBuilder when the receiver is IEntityAccessor.
+    /// Unboxes the EntityAccessor struct and calls CreateQueryBuilder() to get a real QueryBuilder.
+    /// </summary>
+    private static string EntityAccessorToQueryBuilder(string entityType)
+        => $"((EntityAccessor<{entityType}>)(object)builder).CreateQueryBuilder()";
+
+    /// <summary>
+    /// Returns true if the SQL fragment is a constant boolean TRUE tautology.
+    /// Used to elide WHERE clauses like .Where(u => true) that add no filtering.
+    /// </summary>
+    private static bool IsConstantTrueClause(string sqlFragment)
+    {
+        var trimmed = sqlFragment.Trim();
+        return trimmed is "TRUE" or "1" or "true";
     }
 
     /// <summary>

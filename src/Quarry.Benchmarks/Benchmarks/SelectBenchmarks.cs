@@ -48,7 +48,7 @@ public class SelectBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<EfUser>> Quarry_SelectAll()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Select(u => new EfUser
             {
                 UserId = u.UserId,
@@ -105,7 +105,7 @@ public class SelectBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<List<UserSummaryDto>> Quarry_SelectProjection()
     {
-        return await QuarryDb.Users
+        return await QuarryDb.Users()
             .Select(u => new UserSummaryDto
             {
                 UserId = u.UserId,

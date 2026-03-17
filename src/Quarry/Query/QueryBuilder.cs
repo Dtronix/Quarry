@@ -19,7 +19,7 @@ namespace Quarry;
 /// <para>
 /// Example:
 /// <code>
-/// var baseQuery = db.Users.Where(u => u.IsActive);
+/// var baseQuery = db.Users().Where(u => u.IsActive);
 /// var ordered = baseQuery.OrderBy(u => u.UserName, Direction.Ascending);
 /// var paged = ordered.Offset(10).Limit(20);
 /// </code>
@@ -193,7 +193,7 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
     /// <remarks>
     /// <para>Example:</para>
     /// <code>
-    /// var ordersByUser = await db.Orders
+    /// var ordersByUser = await db.Orders()
     ///     .GroupBy(o => o.UserId)
     ///     .Select(o => new { o.UserId, Total = Sql.Sum(o.Total) })
     ///     .ExecuteFetchAllAsync();
@@ -215,7 +215,7 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
     /// <para>Having() is used after GroupBy() to filter groups based on aggregate conditions.</para>
     /// <para>Example:</para>
     /// <code>
-    /// var bigOrders = await db.Orders
+    /// var bigOrders = await db.Orders()
     ///     .GroupBy(o => o.UserId)
     ///     .Having(o => Sql.Count() > 5)
     ///     .Select(o => new { o.UserId, OrderCount = Sql.Count() })
@@ -309,7 +309,7 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
     /// <remarks>
     /// <para>Example:</para>
     /// <code>
-    /// var results = await db.Users
+    /// var results = await db.Users()
     ///     .Join&lt;Order&gt;((u, o) => u.UserId == o.UserId.Id)
     ///     .Select((u, o) => new { u.UserName, o.Total })
     ///     .ExecuteFetchAllAsync();
@@ -369,7 +369,7 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
     /// <para>Uses the relationship defined in the schema to generate the ON condition automatically.</para>
     /// <para>Example:</para>
     /// <code>
-    /// var results = await db.Users
+    /// var results = await db.Users()
     ///     .Join(u => u.Orders)
     ///     .Select((u, o) => new { u.UserName, o.Total })
     ///     .ExecuteFetchAllAsync();
