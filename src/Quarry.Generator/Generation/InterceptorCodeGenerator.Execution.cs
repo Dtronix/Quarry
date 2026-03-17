@@ -103,21 +103,23 @@ internal static partial class InterceptorCodeGenerator
 
         if (carrier != null)
         {
-            // Carrier execution terminal — reader-based methods need ReaderDelegateCode,
-            // but ExecuteScalar does not use a reader delegate
-            var carrierExecutorMethod = site.Kind switch
+            // Guard: use the same predicates as WouldExecutionTerminalBeEmitted
+            var canEmit = site.Kind == InterceptorKind.ExecuteScalar
+                ? CanEmitScalarTerminal(chain)
+                : CanEmitReaderTerminal(chain);
+
+            if (canEmit)
             {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
-                _ => ""
-            };
-            var hasRequiredReader = chain.ReaderDelegateCode != null || site.Kind == InterceptorKind.ExecuteScalar;
-            if (!string.IsNullOrEmpty(carrierExecutorMethod) && hasRequiredReader)
-            {
+                var carrierExecutorMethod = site.Kind switch
+                {
+                    InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+                    InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+                    InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+                    InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+                    InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
+                    InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
+                    _ => ""
+                };
                 var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
                 EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
                 sb.AppendLine($"    }}");
@@ -235,7 +237,7 @@ internal static partial class InterceptorCodeGenerator
 
         sb.AppendLine($"    {{");
 
-        if (carrier != null && chain.ReaderDelegateCode != null)
+        if (carrier != null && CanEmitReaderTerminal(chain))
         {
             var carrierExecutorMethod = site.Kind switch
             {
@@ -246,12 +248,9 @@ internal static partial class InterceptorCodeGenerator
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
-            if (!string.IsNullOrEmpty(carrierExecutorMethod))
-            {
-                EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
-                sb.AppendLine($"    }}");
-                return;
-            }
+            EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+            sb.AppendLine($"    }}");
+            return;
         }
 
         // Cast to concrete type (receiver is always an interface)
@@ -321,7 +320,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
-        if (carrier != null)
+        if (carrier != null && CanEmitNonQueryTerminal(chain))
         {
             EmitCarrierNonQueryTerminal(sb, carrier, chain);
             sb.AppendLine($"    }}");

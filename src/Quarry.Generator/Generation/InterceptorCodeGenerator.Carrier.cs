@@ -9,50 +9,84 @@ internal static partial class InterceptorCodeGenerator
 {
     /// <summary>
     /// Checks whether a chain's execution terminal would pass the generation checks
-    /// in GenerateInterceptorMethod. If not, the chain must not be carrier-eligible
+    /// in the terminal generator methods. If not, the chain must not be carrier-eligible
     /// because clause interceptors would create carriers with no terminal to consume them.
     /// </summary>
+    /// <remarks>
+    /// This method delegates to per-kind predicates (<see cref="CanEmitReaderTerminal"/>,
+    /// <see cref="CanEmitScalarTerminal"/>, <see cref="CanEmitNonQueryTerminal"/>,
+    /// <see cref="CanEmitInsertTerminal"/>) that are also used as guards in the terminal
+    /// generators themselves, ensuring the eligibility logic stays in sync.
+    /// </remarks>
     private static bool WouldExecutionTerminalBeEmitted(PrebuiltChainInfo chain)
     {
-        var site = chain.Analysis.ExecutionSite;
-
         if (chain.Analysis.UnmatchedMethodNames != null)
             return false;
 
-        if (site.Kind is InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
-            or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
-            or InterceptorKind.ToAsyncEnumerable)
+        var site = chain.Analysis.ExecutionSite;
+        return site.Kind switch
         {
-            var rawResult = ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
-            if (string.IsNullOrEmpty(rawResult))
-                return false;
-            if (chain.ReaderDelegateCode == null)
-                return false;
-            if (chain.ProjectionInfo != null && chain.ProjectionInfo.Columns.Any(c =>
-                c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
-                return false;
-        }
-        else if (site.Kind is InterceptorKind.ExecuteScalar)
-        {
-            var rawResult = ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
-            if (string.IsNullOrEmpty(rawResult))
-                return false;
-        }
-        else if (site.Kind is InterceptorKind.ExecuteNonQuery)
-        {
-            if (chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
-                || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
-                return false;
-        }
-        else if (site.Kind is InterceptorKind.InsertExecuteNonQuery
-            or InterceptorKind.InsertExecuteScalar
-            or InterceptorKind.InsertToSql)
-        {
-            if (chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
-                return false;
-        }
+            InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
+                or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
+                or InterceptorKind.ToAsyncEnumerable
+                => CanEmitReaderTerminal(chain),
+            InterceptorKind.ExecuteScalar
+                => CanEmitScalarTerminal(chain),
+            InterceptorKind.ExecuteNonQuery
+                => CanEmitNonQueryTerminal(chain),
+            InterceptorKind.InsertExecuteNonQuery or InterceptorKind.InsertExecuteScalar
+                or InterceptorKind.InsertToSql
+                => CanEmitInsertTerminal(chain),
+            _ => true
+        };
+    }
 
+    /// <summary>
+    /// Returns true if a reader-based terminal (FetchAll, FetchFirst, etc.) can be emitted.
+    /// Used by both carrier eligibility gating and the terminal generators.
+    /// </summary>
+    private static bool CanEmitReaderTerminal(PrebuiltChainInfo chain)
+    {
+        var rawResult = ResolveExecutionResultType(
+            chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+        if (string.IsNullOrEmpty(rawResult))
+            return false;
+        if (chain.ReaderDelegateCode == null)
+            return false;
+        if (chain.ProjectionInfo != null && chain.ProjectionInfo.Columns.Any(c =>
+            c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
+            return false;
         return true;
+    }
+
+    /// <summary>
+    /// Returns true if a scalar terminal (ExecuteScalar) can be emitted.
+    /// Used by both carrier eligibility gating and the terminal generators.
+    /// </summary>
+    private static bool CanEmitScalarTerminal(PrebuiltChainInfo chain)
+    {
+        var rawResult = ResolveExecutionResultType(
+            chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+        return !string.IsNullOrEmpty(rawResult);
+    }
+
+    /// <summary>
+    /// Returns true if a non-query terminal (DELETE/UPDATE ExecuteNonQuery) can be emitted.
+    /// Used by both carrier eligibility gating and the terminal generators.
+    /// </summary>
+    private static bool CanEmitNonQueryTerminal(PrebuiltChainInfo chain)
+    {
+        return !chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+            || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  ")));
+    }
+
+    /// <summary>
+    /// Returns true if an insert terminal can be emitted.
+    /// Used by both carrier eligibility gating and the terminal generators.
+    /// </summary>
+    private static bool CanEmitInsertTerminal(PrebuiltChainInfo chain)
+    {
+        return !chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql));
     }
 
     /// <summary>
@@ -684,6 +718,8 @@ internal static partial class InterceptorCodeGenerator
 
     /// <summary>
     /// Emits inline DbCommand creation and per-parameter binding.
+    /// Also emits dialect-aware parameter configuration for mapped types that implement
+    /// <c>IDialectAwareTypeMapping</c>, matching the behavior of <c>QueryExecutor.CreateCommand</c>.
     /// </summary>
     private static void EmitInlineCommandCreation(
         StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier, string timeoutExpr)
@@ -692,6 +728,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine("        __cmd.CommandText = sql;");
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
+        var dialectLiteral = GetDialectLiteral(chain.Dialect);
         var paramCount = chain.ChainParameters.Count;
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
@@ -703,6 +740,15 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
             sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
             sb.AppendLine($"        __p{i}.Value = {GetParameterValueExpression(param, i)};");
+
+            // Apply dialect-aware parameter configuration for mapped types
+            // (e.g., setting NpgsqlDbType.Jsonb for PostgreSQL jsonb columns)
+            if (param.TypeMapping != null)
+            {
+                var mappingField = GetMappingFieldName(param.TypeMapping);
+                sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+            }
+
             sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
         }
 
@@ -732,17 +778,20 @@ internal static partial class InterceptorCodeGenerator
     {
         // Mapped type: use ToDb() conversion
         if (param.TypeMapping != null)
-            return $"(object?)s_{param.TypeMapping}.ToDb(__c.P{index}) ?? DBNull.Value";
+            return $"(object?){GetMappingFieldName(param.TypeMapping)}.ToDb(__c.P{index}) ?? DBNull.Value";
 
-        // Enum (non-nullable): inline cast to underlying integral type
-        if (param.IsEnum && !param.TypeName.EndsWith("?"))
-            return $"(object)({param.EnumUnderlyingType})__c.P{index}";
+        // Enum with known underlying type: inline cast to underlying integral type
+        if (param.IsEnum && param.EnumUnderlyingType != null)
+        {
+            if (!param.TypeName.EndsWith("?"))
+                return $"(object)({param.EnumUnderlyingType})__c.P{index}";
 
-        // Nullable enum: HasValue check + underlying cast
-        if (param.IsEnum && param.TypeName.EndsWith("?"))
+            // Nullable enum: HasValue check + underlying cast
             return $"__c.P{index}.HasValue ? (object)({param.EnumUnderlyingType})__c.P{index}.Value : DBNull.Value";
+        }
 
-        // Default: null-safe boxing (handles simple types, nullable value types, and reference types)
+        // Default: null-safe boxing (handles simple types, nullable value types, reference types,
+        // and enums without a resolved underlying type)
         return $"(object?)__c.P{index} ?? DBNull.Value";
     }
 
