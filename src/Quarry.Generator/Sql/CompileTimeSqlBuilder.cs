@@ -51,7 +51,9 @@ internal static class CompileTimeSqlBuilder
         SqlDialect dialect,
         string tableName,
         string? schemaName,
-        string? fromTableAlias = null)
+        string? fromTableAlias = null,
+        int? literalLimit = null,
+        int? literalOffset = null)
     {
         var activeClauses = GetActiveClauses(mask, clauses);
         var activeIndices = GetActiveClauseIndices(mask, clauses);
@@ -197,15 +199,30 @@ internal static class CompileTimeSqlBuilder
             }
         }
 
-        // Pagination (Limit/Offset as parameters)
+        // Pagination (Limit/Offset)
         var limitClauses = GetClausesByRoleWithIndex(activeClauses, activeIndices, ClauseRole.Limit);
         var offsetClauses = GetClausesByRoleWithIndex(activeClauses, activeIndices, ClauseRole.Offset);
         bool hasLimit = limitClauses.Count > 0;
         bool hasOffset = offsetClauses.Count > 0;
 
-        if (hasLimit || hasOffset)
+        if (literalLimit != null || literalOffset != null)
         {
-            // SQL Server requires ORDER BY for OFFSET/FETCH
+            // Literal pagination for ToSql prebuilt chains — inline constant values directly
+            if (dialect == SqlDialect.SqlServer && allOrderClauses.Count == 0)
+            {
+                sb.Append(" ORDER BY (SELECT NULL)");
+            }
+
+            var pagination = FormatLiteralPagination(dialect, literalLimit, literalOffset);
+            if (!string.IsNullOrEmpty(pagination))
+            {
+                sb.Append(' ');
+                sb.Append(pagination);
+            }
+        }
+        else if (hasLimit || hasOffset)
+        {
+            // Parameterized pagination for execution terminals
             if (dialect == SqlDialect.SqlServer && allOrderClauses.Count == 0)
             {
                 sb.Append(" ORDER BY (SELECT NULL)");
@@ -445,12 +462,19 @@ internal static class CompileTimeSqlBuilder
     /// Clauses without parameters are not included (their SQL is static and used directly).
     /// </summary>
     public static Dictionary<int, SqlFragmentTemplate> BuildTemplates(
-        IReadOnlyList<ChainedClauseSite> clauses)
+        IReadOnlyList<ChainedClauseSite> clauses,
+        bool skipPaginationTemplates = false)
     {
         var templates = new Dictionary<int, SqlFragmentTemplate>();
         for (int i = 0; i < clauses.Count; i++)
         {
             var clause = clauses[i];
+
+            // When literal pagination is used (ToSql chains), skip Limit/Offset entirely
+            // so they are excluded from parameter offset computation and total parameter count.
+            if (skipPaginationTemplates && clause.Role is ClauseRole.Limit or ClauseRole.Offset)
+                continue;
+
             if (clause.Site.ClauseInfo != null && clause.Site.ClauseInfo.Parameters.Count > 0)
             {
                 templates[i] = SqlFragmentTemplate.FromClauseInfo(clause.Site.ClauseInfo);
@@ -498,13 +522,17 @@ internal static class CompileTimeSqlBuilder
         SqlDialect dialect,
         string tableName,
         string? schemaName,
-        string? fromTableAlias = null)
+        string? fromTableAlias = null,
+        int? literalLimit = null,
+        int? literalOffset = null)
     {
-        var templates = BuildTemplates(clauses);
+        var useLiteralPagination = literalLimit != null || literalOffset != null;
+        var templates = BuildTemplates(clauses, skipPaginationTemplates: useLiteralPagination);
         var map = new Dictionary<ulong, PrebuiltSqlResult>(possibleMasks.Count);
         foreach (var mask in possibleMasks)
         {
-            map[mask] = BuildSelectSql(mask, clauses, templates, dialect, tableName, schemaName, fromTableAlias);
+            map[mask] = BuildSelectSql(mask, clauses, templates, dialect, tableName, schemaName,
+                fromTableAlias, literalLimit, literalOffset);
         }
         return map;
     }
@@ -595,6 +623,16 @@ internal static class CompileTimeSqlBuilder
         int? limitParamIndex,
         int? offsetParamIndex)
         => SqlFormatting.FormatParameterizedPagination(dialect, limitParamIndex, offsetParamIndex);
+
+    /// <summary>
+    /// Formats pagination with literal integer values (for ToSql prebuilt chains).
+    /// Delegates to <see cref="SqlFormatting.FormatPagination"/>.
+    /// </summary>
+    public static string FormatLiteralPagination(
+        SqlDialect dialect,
+        int? limit,
+        int? offset)
+        => SqlFormatting.FormatPagination(dialect, limit, offset);
 
     /// <summary>
     /// Formats a boolean literal according to the dialect.

@@ -1215,6 +1215,169 @@ public class CompileTimeSqlBuilderTests
     }
 
     // ───────────────────────────────────────────────────────────────
+    // SELECT with literal Limit/Offset (ToSql prebuilt chains)
+    // ───────────────────────────────────────────────────────────────
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOffset_SQLite()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeLimitClause(0),
+            MakeOffsetClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SQLite, "Users", null,
+            literalLimit: 10, literalOffset: 20);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM \"Users\" LIMIT 10 OFFSET 20"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOffset_PostgreSQL()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeLimitClause(0),
+            MakeOffsetClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.PostgreSQL, "Users", null,
+            literalLimit: 10, literalOffset: 20);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM \"Users\" LIMIT 10 OFFSET 20"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOffset_MySQL()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeLimitClause(0),
+            MakeOffsetClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.MySQL, "Users", null,
+            literalLimit: 10, literalOffset: 20);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM `Users` LIMIT 10 OFFSET 20"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOffset_SqlServer()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeOrderByClause("[Name]", isDescending: false),
+            MakeLimitClause(0),
+            MakeOffsetClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SqlServer, "Users", null,
+            literalLimit: 10, literalOffset: 20);
+
+        Assert.That(result.Sql,
+            Is.EqualTo("SELECT * FROM [Users] ORDER BY [Name] ASC OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOnly_SQLite()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeLimitClause(0)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SQLite, "Users", null,
+            literalLimit: 50);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM \"Users\" LIMIT 50"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimitOffset_SqlServer_NoOrderBy_InjectsSelectNull()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeLimitClause(0),
+            MakeOffsetClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SqlServer, "Users", null,
+            literalLimit: 10, literalOffset: 20);
+
+        Assert.That(result.Sql,
+            Is.EqualTo("SELECT * FROM [Users] ORDER BY (SELECT NULL) OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralLimit_WithWhereParams_CorrectParamCount()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeWhereClause("\"IsActive\" = @p0", new[] { MakeParam(0, "@p0") }, isConditional: false),
+            MakeLimitClause(1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SQLite, "Users", null,
+            literalLimit: 10);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM \"Users\" WHERE \"IsActive\" = @p0 LIMIT 10"));
+        Assert.That(result.ParameterCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BuildSelectSqlMap_LiteralLimitOffset_AllVariants()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeWhereClause("\"Name\" = @p0", new[] { MakeParam(0, "@p0") },
+                isConditional: true, bitIndex: 0),
+            MakeLimitClause(1)
+        };
+
+        var masks = new List<ulong> { 0UL, 1UL };
+        var map = CompileTimeSqlBuilder.BuildSelectSqlMap(
+            masks, clauses, GenSqlDialect.SQLite, "Users", null,
+            literalLimit: 25);
+
+        // Mask 0: WHERE inactive — only LIMIT
+        Assert.That(map[0UL].Sql, Is.EqualTo("SELECT * FROM \"Users\" LIMIT 25"));
+        Assert.That(map[0UL].ParameterCount, Is.EqualTo(0));
+
+        // Mask 1: WHERE active — WHERE + LIMIT, @p0 for WHERE param only
+        Assert.That(map[1UL].Sql, Is.EqualTo("SELECT * FROM \"Users\" WHERE \"Name\" = @p0 LIMIT 25"));
+        Assert.That(map[1UL].ParameterCount, Is.EqualTo(1));
+    }
+
+    // ───────────────────────────────────────────────────────────────
     // SELECT with WHERE across MySQL and SqlServer
     // ───────────────────────────────────────────────────────────────
 
