@@ -906,7 +906,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             executionSite.EntityTypeName, executionSite.ResultTypeName,
             dialect, tableName, schemaName, queryKind.Value, projInfo,
             chainParameters: chainParams,
-            isCarrierEligible: isCarrierEligible);
+            isCarrierEligible: isCarrierEligible,
+            entitySchemaNamespace: entity.SchemaNamespace);
     }
 
     /// <summary>
@@ -1032,7 +1033,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             QueryKind.Select, projInfo,
             joinedTypeNames, joinedTableInfos,
             chainParameters: chainParams,
-            isCarrierEligible: isCarrierEligible);
+            isCarrierEligible: isCarrierEligible,
+            entitySchemaNamespace: resolvedEntities[0].SchemaNamespace);
     }
 
     /// <summary>

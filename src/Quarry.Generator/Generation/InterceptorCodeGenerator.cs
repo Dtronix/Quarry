@@ -73,9 +73,20 @@ internal static partial class InterceptorCodeGenerator
             .Where(ns => !string.IsNullOrEmpty(ns) && ns != "Quarry" && ns != "System")
             .Distinct();
 
+        // Collect entity schema namespaces from prebuilt chains — when entity types are error
+        // types (unresolved during first compilation pass), the schema namespace from entity
+        // metadata provides the using directive needed for cross-namespace resolution.
+        var chainSchemaNamespaces = prebuiltChains != null
+            ? prebuiltChains
+                .Select(c => c.EntitySchemaNamespace)
+                .Where(ns => !string.IsNullOrEmpty(ns) && ns != "Quarry" && ns != "System")
+                .Distinct()
+            : Enumerable.Empty<string?>();
+
         var allNamespaces = entityNamespaces
             .Concat(fileNamespaces)
             .Concat(contextNamespaces!)
+            .Concat(chainSchemaNamespaces!)
             .Distinct()
             .OrderBy(ns => ns);
 

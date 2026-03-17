@@ -37,7 +37,8 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         IReadOnlyList<string>? joinedEntityTypeNames = null,
         IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null,
         IReadOnlyList<ChainParameterInfo>? chainParameters = null,
-        bool isCarrierEligible = false)
+        bool isCarrierEligible = false,
+        string? entitySchemaNamespace = null)
     {
         Analysis = analysis;
         SqlMap = sqlMap;
@@ -54,6 +55,7 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         MaxParameterCount = sqlMap.Count > 0 ? sqlMap.Values.Max(v => v.ParameterCount) : 0;
         ChainParameters = chainParameters ?? Array.Empty<ChainParameterInfo>();
         IsCarrierEligible = isCarrierEligible;
+        EntitySchemaNamespace = entitySchemaNamespace;
     }
 
     /// <summary>
@@ -138,6 +140,12 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
     /// </summary>
     public bool IsCarrierEligible { get; }
 
+    /// <summary>
+    /// Gets the namespace of the entity's schema class. Used for cross-namespace using directives
+    /// when the entity type name is unqualified (error types during first compilation pass).
+    /// </summary>
+    public string? EntitySchemaNamespace { get; }
+
     public bool Equals(PrebuiltChainInfo? other)
     {
         if (other is null) return false;
@@ -150,6 +158,7 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
             && QueryKind == other.QueryKind
             && MaxParameterCount == other.MaxParameterCount
             && IsCarrierEligible == other.IsCarrierEligible
+            && EntitySchemaNamespace == other.EntitySchemaNamespace
             && Analysis.Equals(other.Analysis)
             && EqualityHelpers.DictionaryEqual(SqlMap, other.SqlMap)
             && ReaderDelegateCode == other.ReaderDelegateCode
