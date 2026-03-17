@@ -216,7 +216,7 @@ internal static class UsageSiteDiscovery
             && returnType.Name is "IQueryBuilder" or "EntityAccessor" or "IEntityAccessor")
         {
             var rootEntityType = returnType.TypeArguments[0];
-            var rootEntityTypeName = rootEntityType.ToDisplayString();
+            var rootEntityTypeName = rootEntityType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             // Get interceptable location data
             string? rootLocationData = null;
@@ -244,8 +244,11 @@ internal static class UsageSiteDiscovery
             var rootColumn = rootLineSpan.StartLinePosition.Character + 1;
             var rootUniqueId = GenerateUniqueId(rootFilePath, rootLine, rootColumn, methodName);
 
-            // Resolve context class name for the interceptor signature
+            // Resolve context class name and namespace for the interceptor signature
             var contextClassName = containingType.Name;
+            var contextNamespace = containingType.ContainingNamespace?.IsGlobalNamespace == false
+                ? containingType.ContainingNamespace.ToDisplayString()
+                : null;
 
             return new UsageSiteInfo(
                 methodName: methodName,
@@ -259,6 +262,7 @@ internal static class UsageSiteDiscovery
                 invocationSyntax: invocation,
                 uniqueId: rootUniqueId,
                 contextClassName: contextClassName,
+                contextNamespace: contextNamespace,
                 interceptableLocationData: rootLocationData,
                 interceptableLocationVersion: rootLocationVersion);
         }
