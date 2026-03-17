@@ -142,7 +142,8 @@ internal static partial class InterceptorCodeGenerator
 
         // Skip clause interceptors where the clause could not be translated to SQL.
         // The original runtime method will run instead. A QRY019 diagnostic is reported separately.
-        if (ShouldSkipNonTranslatableClause(site))
+        // Carrier-optimized sites always emit interceptors — their metadata is on the chain, not the site.
+        if (!isCarrierSite && ShouldSkipNonTranslatableClause(site))
         {
             return;
         }

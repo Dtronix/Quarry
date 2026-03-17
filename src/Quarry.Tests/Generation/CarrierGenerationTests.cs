@@ -365,4 +365,112 @@ public static class Queries
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("CarrierBase<User, User>"));
     }
+
+    [Test]
+    public void CarrierGeneration_InsertExecuteNonQuery()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Insert carrier uses InsertCarrierBase
+        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        // Carrier should have Entity field
+        Assert.That(code, Does.Contain("internal User? Entity;"));
+        // Insert transition stores entity on carrier
+        Assert.That(code, Does.Contain("__c.Entity = entity;"));
+        // Pre-built INSERT SQL
+        Assert.That(code, Does.Contain("INSERT INTO"));
+        Assert.That(code, Does.Contain("VALUES"));
+        // Inline parameter binding from entity properties
+        Assert.That(code, Does.Contain("__c.Entity!"));
+        // Carrier execution terminal uses inline command creation
+        Assert.That(code, Does.Contain("ExecuteCarrierNonQueryWithCommandAsync"));
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertExecuteScalar()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var id = await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Insert carrier with RETURNING clause
+        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        Assert.That(code, Does.Contain("RETURNING"));
+        // Carrier scalar execution
+        Assert.That(code, Does.Contain("ExecuteCarrierScalarWithCommandAsync"));
+    }
+
+    [Test]
+    public void CarrierGeneration_UpdateWithSetAndWhere()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int userId, string newName)
+    {
+        await db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Update chains with Set clauses may not be carrier-eligible (Set uses open generic),
+        // but the chain should still be analyzed and produce interceptors
+        Assert.That(code, Does.Contain("UPDATE"));
+    }
 }

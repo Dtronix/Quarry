@@ -437,12 +437,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         diagnostics.AddRange(chainDiagnostics);
 
         // Build a set of chain member UniqueIds so we can include non-analyzable clause
-        // sites that are part of analyzed chains (e.g., conditional clauses inside if-blocks).
+        // and execution sites that are part of analyzed chains.
         var chainMemberUniqueIds = new HashSet<string>();
         foreach (var chain in prebuiltChains)
         {
             foreach (var clause in chain.Analysis.Clauses)
                 chainMemberUniqueIds.Add(clause.Site.UniqueId);
+            chainMemberUniqueIds.Add(chain.Analysis.ExecutionSite.UniqueId);
         }
 
         // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
@@ -491,6 +492,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 foreach (var clause in chain.Analysis.Clauses)
                     fileChainMemberIds.Add(clause.Site.UniqueId);
+                fileChainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
             }
 
             // Include analyzable sites, plus non-analyzable sites that aren't chain clause members.
