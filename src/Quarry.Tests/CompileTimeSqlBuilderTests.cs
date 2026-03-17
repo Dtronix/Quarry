@@ -649,6 +649,74 @@ public class CompileTimeSqlBuilderTests
         Assert.That(r0.ParameterCount, Is.EqualTo(1));
     }
 
+    [Test]
+    public void BuildUpdateSql_ConditionalWhere_ParameterReindex()
+    {
+        // Unconditional SET + unconditional WHERE (no param) + conditional WHERE (1 param)
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeSetClause("\"UserName\"", 0, isConditional: false),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"UserId\" = 1", Array.Empty<ParameterInfo>(),
+                isConditional: false),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"IsActive\" = @p0", new[] { MakeParam(0, "@p0") },
+                isConditional: true, bitIndex: 0)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // Conditional WHERE active — SET @p0, WHERE @p1
+        var r1 = CompileTimeSqlBuilder.BuildUpdateSql(1UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r1.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1) AND (\"IsActive\" = @p1)"));
+        Assert.That(r1.ParameterCount, Is.EqualTo(2));
+
+        // Conditional WHERE inactive — SET @p0, WHERE no param
+        var r0 = CompileTimeSqlBuilder.BuildUpdateSql(0UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r0.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1"));
+        Assert.That(r0.ParameterCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BuildUpdateSql_ConditionalWhere_SetWithoutParams_ParameterReindex()
+    {
+        // Regression: SET clause with 0 params in ClauseInfo (enrichment fallback loses
+        // SetClauseInfo). The synthetic template in BuildTemplates must still account for
+        // the SET parameter so conditional WHERE parameters are offset correctly.
+        var setClauseInfo = ClauseInfo.Success(ClauseKind.Set, "\"UserName\"", Array.Empty<ParameterInfo>());
+        var setSite = new UsageSiteInfo(
+            methodName: "Set",
+            filePath: "test.cs",
+            line: 1,
+            column: 1,
+            builderTypeName: "Quarry.ExecutableUpdateBuilder`1",
+            entityTypeName: "User",
+            isAnalyzable: true,
+            kind: InterceptorKind.UpdateSet,
+            invocationSyntax: null!,
+            uniqueId: "test_set",
+            clauseInfo: setClauseInfo);
+
+        var clauses = new List<ChainedClauseSite>
+        {
+            new ChainedClauseSite(setSite, isConditional: false, bitIndex: null, ClauseRole.UpdateSet),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"UserId\" = 1", Array.Empty<ParameterInfo>(),
+                isConditional: false),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"IsActive\" = @p0", new[] { MakeParam(0, "@p0") },
+                isConditional: true, bitIndex: 0)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // Conditional WHERE active — SET @p0 (from synthetic template), WHERE @p1
+        var r1 = CompileTimeSqlBuilder.BuildUpdateSql(1UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r1.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1) AND (\"IsActive\" = @p1)"));
+        Assert.That(r1.ParameterCount, Is.EqualTo(2));
+    }
+
     // ───────────────────────────────────────────────────────────────
     // SELECT with ORDER BY across all 4 dialects
     // ───────────────────────────────────────────────────────────────

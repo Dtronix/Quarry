@@ -568,13 +568,6 @@ internal static partial class InterceptorCodeGenerator
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        // Timeout resolution
-        var hasTimeout = HasCarrierField(carrier, FieldRole.Timeout);
-        if (hasTimeout)
-            sb.AppendLine("        var __timeout = __c.Timeout ?? __c.Ctx!.DefaultTimeout;");
-        else
-            sb.AppendLine("        var __timeout = __c.Ctx!.DefaultTimeout;");
-
         // OpId + SQL dispatch
         sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, chain);
@@ -587,7 +580,10 @@ internal static partial class InterceptorCodeGenerator
         EmitInlineParameterLogging(sb, chain);
 
         // Command creation + inline parameter binding
-        EmitInlineCommandCreation(sb, chain, carrier);
+        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
+            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
+            : "__c.Ctx!.DefaultTimeout";
+        EmitInlineCommandCreation(sb, chain, carrier, timeoutExpr);
 
         // Executor call
         var readerArg = readerExpression != null ? $", {readerExpression}" : "";
@@ -602,12 +598,6 @@ internal static partial class InterceptorCodeGenerator
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        var hasTimeout = HasCarrierField(carrier, FieldRole.Timeout);
-        if (hasTimeout)
-            sb.AppendLine("        var __timeout = __c.Timeout ?? __c.Ctx!.DefaultTimeout;");
-        else
-            sb.AppendLine("        var __timeout = __c.Ctx!.DefaultTimeout;");
-
         sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, chain);
 
@@ -615,7 +605,10 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         EmitInlineParameterLogging(sb, chain);
-        EmitInlineCommandCreation(sb, chain, carrier);
+        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
+            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
+            : "__c.Ctx!.DefaultTimeout";
+        EmitInlineCommandCreation(sb, chain, carrier, timeoutExpr);
 
         sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __c.Ctx, __cmd, cancellationToken);");
     }
@@ -664,11 +657,11 @@ internal static partial class InterceptorCodeGenerator
     /// Emits inline DbCommand creation and per-parameter binding.
     /// </summary>
     private static void EmitInlineCommandCreation(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier, string timeoutExpr)
     {
         sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
-        sb.AppendLine("        __cmd.CommandTimeout = (int)__timeout.TotalSeconds;");
+        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
         var paramCount = chain.ChainParameters.Count;
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);

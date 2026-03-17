@@ -461,6 +461,26 @@ internal static class CompileTimeSqlBuilder
                 // They don't have ClauseInfo but need a template for parameter offset computation.
                 templates[i] = new SqlFragmentTemplate(new[] { "", "" }, new[] { 0 });
             }
+            else if (clause.Role is ClauseRole.UpdateSet)
+            {
+                // Each UpdateSet clause binds exactly 1 value parameter.
+                // The ClauseInfo may lack parameter metadata when the SetClauseInfo is replaced
+                // by a plain ClauseInfo during enrichment fallback, but the parameter is still
+                // bound at runtime via BindParam(). A synthetic template ensures
+                // ComputeParameterBaseOffsets accounts for the SET parameter.
+                if (clause.Site.Kind == InterceptorKind.UpdateSetPoco
+                    && clause.Site.UpdateInfo != null)
+                {
+                    var n = clause.Site.UpdateInfo.Columns.Count;
+                    var slots = new int[n];
+                    for (int j = 0; j < n; j++) slots[j] = j;
+                    templates[i] = new SqlFragmentTemplate(new string[n + 1], slots);
+                }
+                else
+                {
+                    templates[i] = new SqlFragmentTemplate(new[] { "", "" }, new[] { 0 });
+                }
+            }
         }
         return templates;
     }

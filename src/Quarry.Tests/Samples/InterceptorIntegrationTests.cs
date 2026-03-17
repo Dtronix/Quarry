@@ -1791,6 +1791,28 @@ public class InterceptorIntegrationTests
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("IsActive"));
     }
+    
+    [Test]
+    public async Task ConditionalUpdate_WithConditionTrue_IncludesConditionalWhere2()
+    {
+        var active = true;
+        var upd = _db.Users()
+            .Update().Set(u => u.UserName, "updated")
+            .Where(u => u.UserId == 1);
+        if (true)
+        {
+            upd = upd.Where(u => u.IsActive == active);
+        }
+        var result = await upd.ExecuteNonQueryAsync();
+
+        Assert.That(result, Is.EqualTo(1));
+        Assert.That(_connection.LastCommand, Is.Not.Null);
+        var sql = _connection.LastCommand!.CommandText;
+        Assert.That(sql, Does.Contain("UPDATE"));
+        Assert.That(sql, Does.Contain("SET"));
+        Assert.That(sql, Does.Contain("WHERE"));
+        Assert.That(sql, Does.Contain("IsActive"));
+    }
 
     [Test]
     public async Task ConditionalUpdate_WithConditionFalse_ExcludesConditionalWhere()
