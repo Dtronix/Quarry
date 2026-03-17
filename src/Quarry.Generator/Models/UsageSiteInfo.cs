@@ -39,7 +39,8 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         InsertInfo? updateInfo = null,
         string? keyTypeName = null,
         RawSqlTypeInfo? rawSqlTypeInfo = null,
-        bool isNavigationJoin = false)
+        bool isNavigationJoin = false,
+        int? constantIntValue = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -69,6 +70,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         KeyTypeName = keyTypeName;
         RawSqlTypeInfo = rawSqlTypeInfo;
         IsNavigationJoin = isNavigationJoin;
+        ConstantIntValue = constantIntValue;
     }
 
     /// <summary>
@@ -229,6 +231,13 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// </summary>
     public bool IsNavigationJoin { get; }
 
+    /// <summary>
+    /// Gets the compile-time constant integer value for Limit/Offset calls.
+    /// Non-null only when the argument is a constant (literal or const variable).
+    /// Used by ToSql prebuilt chains to inline literal pagination values instead of parameter placeholders.
+    /// </summary>
+    public int? ConstantIntValue { get; }
+
     public bool Equals(UsageSiteInfo? other)
     {
         if (other is null) return false;
@@ -258,7 +267,8 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
             && (UpdateInfo is null ? other.UpdateInfo is null : UpdateInfo.Equals(other.UpdateInfo))
             && KeyTypeName == other.KeyTypeName
             && (RawSqlTypeInfo is null ? other.RawSqlTypeInfo is null : RawSqlTypeInfo.Equals(other.RawSqlTypeInfo))
-            && IsNavigationJoin == other.IsNavigationJoin;
+            && IsNavigationJoin == other.IsNavigationJoin
+            && ConstantIntValue == other.ConstantIntValue;
     }
 
     public override bool Equals(object? obj) => Equals(obj as UsageSiteInfo);

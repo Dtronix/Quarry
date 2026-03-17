@@ -519,6 +519,18 @@ internal static class UsageSiteDiscovery
             }
         }
 
+        // Capture constant integer value for Limit/Offset calls.
+        // Used by ToSql prebuilt chains to inline literal pagination values.
+        int? constantIntValue = null;
+        if (kind is InterceptorKind.Limit or InterceptorKind.Offset
+            && invocation.ArgumentList.Arguments.Count > 0)
+        {
+            var argExpr = invocation.ArgumentList.Arguments[0].Expression;
+            var constValue = semanticModel.GetConstantValue(argExpr);
+            if (constValue.HasValue && constValue.Value is int intVal)
+                constantIntValue = intVal;
+        }
+
         return new UsageSiteInfo(
             methodName: methodName,
             filePath: filePath,
@@ -542,7 +554,8 @@ internal static class UsageSiteDiscovery
             joinedEntityTypeNames: joinedEntityTypeNames,
             initializedPropertyNames: initializedPropertyNames,
             keyTypeName: keyTypeName,
-            isNavigationJoin: isNavigationJoin);
+            isNavigationJoin: isNavigationJoin,
+            constantIntValue: constantIntValue);
     }
 
     /// <summary>
