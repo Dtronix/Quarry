@@ -1315,6 +1315,44 @@ public class CompileTimeSqlBuilderTests
     }
 
     [Test]
+    public void BuildSelectSql_LiteralOffsetOnly_SQLite()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeOffsetClause(0)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SQLite, "Users", null,
+            literalOffset: 30);
+
+        Assert.That(result.Sql, Is.EqualTo("SELECT * FROM \"Users\" OFFSET 30"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildSelectSql_LiteralOffsetOnly_SqlServer()
+    {
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeOrderByClause("[Id]", isDescending: false),
+            MakeOffsetClause(0)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses, skipPaginationTemplates: true);
+
+        var result = CompileTimeSqlBuilder.BuildSelectSql(
+            0UL, clauses, templates,
+            GenSqlDialect.SqlServer, "Users", null,
+            literalOffset: 15);
+
+        Assert.That(result.Sql,
+            Is.EqualTo("SELECT * FROM [Users] ORDER BY [Id] ASC OFFSET 15 ROWS"));
+        Assert.That(result.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
     public void BuildSelectSql_LiteralLimitOffset_SqlServer_NoOrderBy_InjectsSelectNull()
     {
         var clauses = new List<ChainedClauseSite>

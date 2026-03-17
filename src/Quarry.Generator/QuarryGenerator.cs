@@ -807,32 +807,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 // For ToSql terminals, extract constant Limit/Offset values to inline as literals.
                 // If any Limit/Offset clause has a non-constant value, skip prebuilt chain
                 // (the runtime ToSql path handles variable values correctly).
-                int? literalLimit = null;
-                int? literalOffset = null;
-                if (executionSite.Kind == InterceptorKind.ToSql && queryKind.Value == QueryKind.Select)
-                {
-                    foreach (var clause in result.Clauses)
-                    {
-                        if (clause.Role == ClauseRole.Limit)
-                        {
-                            if (clause.Site.ConstantIntValue == null)
-                                return null; // Variable limit — fall back to runtime
-                            literalLimit = clause.Site.ConstantIntValue;
-                        }
-                        else if (clause.Role == ClauseRole.Offset)
-                        {
-                            if (clause.Site.ConstantIntValue == null)
-                                return null; // Variable offset — fall back to runtime
-                            literalOffset = clause.Site.ConstantIntValue;
-                        }
-                    }
-                }
+                var pagination = ExtractLiteralPagination(result, executionSite.Kind);
+                if (pagination.HasVariablePagination)
+                    return null;
 
                 sqlMap = queryKind.Value switch
                 {
                     QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
                         result.PossibleMasks, result.Clauses, dialect, tableName, schemaName,
-                        literalLimit: literalLimit, literalOffset: literalOffset),
+                        literalLimit: pagination.Limit, literalOffset: pagination.Offset),
                     QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
                         result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
                     QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
@@ -1015,33 +998,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Build SQL map using CompileTimeSqlBuilder with join support
         // Join chains need "t0" alias on the primary table (matches runtime QueryState.WithJoin)
         // For ToSql terminals, extract constant Limit/Offset to inline as literals.
-        int? literalLimit = null;
-        int? literalOffset = null;
-        if (executionSite.Kind == InterceptorKind.ToSql)
-        {
-            foreach (var clause in result.Clauses)
-            {
-                if (clause.Role == ClauseRole.Limit)
-                {
-                    if (clause.Site.ConstantIntValue == null)
-                        return null;
-                    literalLimit = clause.Site.ConstantIntValue;
-                }
-                else if (clause.Role == ClauseRole.Offset)
-                {
-                    if (clause.Site.ConstantIntValue == null)
-                        return null;
-                    literalOffset = clause.Site.ConstantIntValue;
-                }
-            }
-        }
+        var joinPagination = ExtractLiteralPagination(result, executionSite.Kind);
+        if (joinPagination.HasVariablePagination)
+            return null;
 
         Dictionary<ulong, PrebuiltSqlResult>? sqlMap;
         try
         {
             sqlMap = CompileTimeSqlBuilder.BuildSelectSqlMap(
                 result.PossibleMasks, result.Clauses, dialect, tables[0].TableName, tables[0].SchemaName, "t0",
-                literalLimit: literalLimit, literalOffset: literalOffset);
+                literalLimit: joinPagination.Limit, literalOffset: joinPagination.Offset);
         }
         catch
         {
@@ -1127,6 +1093,39 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         return chainParams;
+    }
+
+    /// <summary>
+    /// Extracts constant Limit/Offset values from a chain's clause sites for ToSql terminals.
+    /// Returns <c>hasVariablePagination = true</c> if any Limit/Offset clause has a non-constant
+    /// value, meaning the chain should fall back to the runtime ToSql path.
+    /// </summary>
+    private static (int? Limit, int? Offset, bool HasVariablePagination) ExtractLiteralPagination(
+        ChainAnalysisResult result, InterceptorKind terminalKind)
+    {
+        if (terminalKind != InterceptorKind.ToSql)
+            return (null, null, false);
+
+        int? literalLimit = null;
+        int? literalOffset = null;
+
+        foreach (var clause in result.Clauses)
+        {
+            if (clause.Role == ClauseRole.Limit)
+            {
+                if (clause.Site.ConstantIntValue == null)
+                    return (null, null, true);
+                literalLimit = clause.Site.ConstantIntValue;
+            }
+            else if (clause.Role == ClauseRole.Offset)
+            {
+                if (clause.Site.ConstantIntValue == null)
+                    return (null, null, true);
+                literalOffset = clause.Site.ConstantIntValue;
+            }
+        }
+
+        return (literalLimit, literalOffset, false);
     }
 
     /// <summary>
