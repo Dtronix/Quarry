@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace Quarry;
 
@@ -21,7 +22,6 @@ public sealed class QueryDiagnostics
         int insertRowCount = 0)
     {
         Sql = sql;
-        Parameters = parameters;
         Kind = kind;
         Dialect = dialect;
         TableName = tableName;
@@ -30,6 +30,12 @@ public sealed class QueryDiagnostics
         Clauses = clauses ?? [];
         RawState = rawState;
         InsertRowCount = insertRowCount;
+
+        // When clauses carry per-clause parameters, derive the top-level list
+        // from active clauses only — inactive conditional clause params are excluded.
+        Parameters = Clauses.Count > 0 && Clauses.Any(c => c.Parameters.Count > 0)
+            ? Clauses.Where(c => c.IsActive).SelectMany(c => c.Parameters).ToList()
+            : parameters;
     }
 
     /// <summary>
@@ -116,12 +122,14 @@ public sealed class ClauseDiagnostic
     /// <summary>
     /// Creates a new clause diagnostic.
     /// </summary>
-    public ClauseDiagnostic(string clauseType, string sqlFragment, bool isConditional = false, bool isActive = true)
+    public ClauseDiagnostic(string clauseType, string sqlFragment, bool isConditional = false, bool isActive = true,
+        IReadOnlyList<DiagnosticParameter>? parameters = null)
     {
         ClauseType = clauseType;
         SqlFragment = sqlFragment;
         IsConditional = isConditional;
         IsActive = isActive;
+        Parameters = parameters ?? [];
     }
 
     /// <summary>
@@ -144,6 +152,11 @@ public sealed class ClauseDiagnostic
     /// Non-conditional clauses are always active. For conditional clauses, reflects the runtime clause mask bit.
     /// </summary>
     public bool IsActive { get; }
+
+    /// <summary>
+    /// Gets the bound parameters owned by this clause.
+    /// </summary>
+    public IReadOnlyList<DiagnosticParameter> Parameters { get; }
 }
 
 /// <summary>

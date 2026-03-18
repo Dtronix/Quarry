@@ -114,9 +114,16 @@ internal class CrossDialectDiagnosticsTests
         var name = "john";
         var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
 
+        // Top-level Parameters derived from active clause params
         Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(1));
         Assert.That(diag.Parameters[0].Name, Is.EqualTo("@p0"));
         Assert.That(diag.Parameters[0].Value, Is.EqualTo("john"));
+
+        // Per-clause Parameters
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where" && c.SqlFragment.Contains("UserName"));
+        Assert.That(whereClause.Parameters, Has.Count.EqualTo(1));
+        Assert.That(whereClause.Parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(whereClause.Parameters[0].Value, Is.EqualTo("john"));
     }
 
     [Test]
@@ -129,11 +136,19 @@ internal class CrossDialectDiagnosticsTests
             .Where(u => u.UserId == id)
             .ToDiagnostics();
 
+        // Top-level Parameters derived from active clause params
         Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(2));
         Assert.That(diag.Parameters[0].Name, Is.EqualTo("@p0"));
         Assert.That(diag.Parameters[0].Value, Is.EqualTo("john"));
         Assert.That(diag.Parameters[1].Name, Is.EqualTo("@p1"));
         Assert.That(diag.Parameters[1].Value, Is.EqualTo(42));
+
+        // Each Where clause owns its own parameter
+        var whereClauses = diag.Clauses.Where(c => c.ClauseType == "Where").ToList();
+        Assert.That(whereClauses[0].Parameters, Has.Count.EqualTo(1));
+        Assert.That(whereClauses[0].Parameters[0].Value, Is.EqualTo("john"));
+        Assert.That(whereClauses[1].Parameters, Has.Count.EqualTo(1));
+        Assert.That(whereClauses[1].Parameters[0].Value, Is.EqualTo(42));
     }
 
     #endregion
@@ -172,11 +187,20 @@ internal class CrossDialectDiagnosticsTests
         var diag = query.ToDiagnostics();
 
         Assert.That(diag.Sql, Does.Contain("UserName"));
+
+        // Top-level includes active clause params
         Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(diag.Parameters.Any(p => p.Value is string s && s == "john"), Is.True);
+
+        // Per-clause param on the conditional clause
+        var conditionalWhere = diag.Clauses.First(c => c.IsConditional && c.SqlFragment.Contains("UserName"));
+        Assert.That(conditionalWhere.IsActive, Is.True);
+        Assert.That(conditionalWhere.Parameters, Has.Count.EqualTo(1));
+        Assert.That(conditionalWhere.Parameters[0].Value, Is.EqualTo("john"));
     }
 
     [Test]
-    public void ToDiagnostics_ConditionalWithParamInactive_SqlExcludesClause()
+    public void ToDiagnostics_ConditionalWithParamInactive_TopLevelExcludesInactiveParams()
     {
         var name = "john";
         IQueryBuilder<User> query = _db.Users().Where(u => true);
@@ -187,6 +211,14 @@ internal class CrossDialectDiagnosticsTests
         var diag = query.ToDiagnostics();
 
         Assert.That(diag.Sql, Does.Not.Contain("UserName"));
+
+        // Top-level Parameters excludes inactive clause params
+        Assert.That(diag.Parameters.Any(p => p.Name == "@p0"), Is.False);
+
+        // The clause itself still has its parameter metadata
+        var conditionalWhere = diag.Clauses.First(c => c.IsConditional && c.SqlFragment.Contains("UserName"));
+        Assert.That(conditionalWhere.IsActive, Is.False);
+        Assert.That(conditionalWhere.Parameters, Has.Count.EqualTo(1));
     }
 
     #endregion

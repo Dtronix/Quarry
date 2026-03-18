@@ -647,52 +647,17 @@ internal static partial class InterceptorCodeGenerator
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
         EmitCarrierParameterLocals(sb, chain, carrier);
-        EmitDiagnosticParameterArray(sb, chain, carrier);
-        EmitDiagnosticClauseArray(sb, chain);
-        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
-    }
-
-    /// <summary>
-    /// Emits a DiagnosticParameter[] array from __pVal* locals.
-    /// </summary>
-    private static void EmitDiagnosticParameterArray(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
-    {
-        var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
-        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
-        var totalParams = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
-
-        if (totalParams == 0)
-        {
-            sb.AppendLine("        var __params = Array.Empty<DiagnosticParameter>();");
-            return;
-        }
-
-        sb.AppendLine("        var __params = new DiagnosticParameter[]");
-        sb.AppendLine("        {");
-        for (int i = 0; i < paramCount; i++)
-        {
-            sb.AppendLine($"            new(\"@p{i}\", __pVal{i}),");
-        }
-        var nextIdx = paramCount;
-        if (hasLimitField)
-        {
-            sb.AppendLine($"            new(\"@p{nextIdx}\", __pValL),");
-            nextIdx++;
-        }
-        if (hasOffsetField)
-        {
-            sb.AppendLine($"            new(\"@p{nextIdx}\", __pValO),");
-        }
-        sb.AppendLine("        };");
+        EmitDiagnosticClauseArray(sb, chain, carrier);
+        sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
     }
 
     /// <summary>
     /// Emits a ClauseDiagnostic[] array from compile-time clause metadata and runtime clause mask.
-    /// Skips transition roles and state-management clauses (ChainRoot, WithTimeout, etc.).
+    /// When a carrier is provided, each clause gets per-clause DiagnosticParameter[] referencing
+    /// the __pVal* locals. Skips transition roles and state-management clauses.
     /// </summary>
-    private static void EmitDiagnosticClauseArray(StringBuilder sb, PrebuiltChainInfo chain)
+    private static void EmitDiagnosticClauseArray(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo? carrier = null)
     {
         var diagnosticClauses = chain.Analysis.Clauses
             .Where(c => c.Role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
@@ -707,6 +672,22 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine("        var __clauses = Array.Empty<ClauseDiagnostic>();");
             return;
         }
+
+        // Track global parameter offset to map each clause to its __pVal* locals
+        var globalParamOffset = 0;
+        // Pre-compute per-clause offsets by walking ALL clauses (including non-diagnostic ones)
+        var clauseParamOffsets = new Dictionary<string, int>();
+        foreach (var clause in chain.Analysis.Clauses)
+        {
+            clauseParamOffsets[clause.Site.UniqueId] = globalParamOffset;
+            if (clause.Site.ClauseInfo != null)
+                globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+        }
+
+        // Compute pagination parameter indices (they follow chain params)
+        var paginationBaseIdx = chain.ChainParameters.Count;
+        var hasLimitField = carrier != null && HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = carrier != null && HasCarrierField(carrier, FieldRole.Offset);
 
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
@@ -728,7 +709,35 @@ internal static partial class InterceptorCodeGenerator
                 isActive = $"(__c.Mask & unchecked(({maskType})(1 << {clause.BitIndex!.Value}))) != 0";
             }
 
-            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}),");
+            // Emit per-clause parameters when carrier provides __pVal* locals
+            var clauseParamCount = clause.Site.ClauseInfo?.Parameters.Count ?? 0;
+            string paramsArg;
+
+            if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
+            {
+                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL) }}";
+            }
+            else if (carrier != null && clause.Role == ClauseRole.Offset && hasOffsetField)
+            {
+                var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
+                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO) }}";
+            }
+            else if (carrier != null && clauseParamCount > 0)
+            {
+                var offset = clauseParamOffsets[clause.Site.UniqueId];
+                var paramEntries = new List<string>();
+                for (int i = 0; i < clauseParamCount; i++)
+                {
+                    paramEntries.Add($"new(\"@p{offset + i}\", __pVal{offset + i})");
+                }
+                paramsArg = $", parameters: new DiagnosticParameter[] {{ {string.Join(", ", paramEntries)} }}";
+            }
+            else
+            {
+                paramsArg = "";
+            }
+
+            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
         }
         sb.AppendLine("        };");
     }
