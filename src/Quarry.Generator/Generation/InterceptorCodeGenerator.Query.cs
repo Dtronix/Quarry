@@ -139,6 +139,16 @@ internal static partial class InterceptorCodeGenerator
             if (toSqlChain.Analysis.UnmatchedMethodNames != null)
                 return;
         }
+        else if (site.Kind is InterceptorKind.ToDiagnostics)
+        {
+            if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
+                && diagChain.Analysis.UnmatchedMethodNames != null)
+                return;
+            // Runtime-delegating interceptors can only be generated for unprojected builders.
+            // Projected types (TResult) may reference types unavailable in the generated namespace.
+            if (!chainLookup.ContainsKey(site.UniqueId) && site.ResultTypeName != null)
+                return;
+        }
 
         // Skip clause interceptors where the clause could not be translated to SQL.
         // The original runtime method will run instead. A QRY019 diagnostic is reported separately.
@@ -263,6 +273,13 @@ internal static partial class InterceptorCodeGenerator
                     GeneratePrebuiltToSqlInterceptor(sb, site, methodName, toSqlChain, carrierInfo);
                 break;
 
+            case InterceptorKind.ToDiagnostics:
+                if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
+                    GeneratePrebuiltToDiagnosticsInterceptor(sb, site, methodName, toDiagChain, carrierInfo);
+                else
+                    GenerateRuntimeToDiagnosticsInterceptor(sb, site, methodName);
+                break;
+
             case InterceptorKind.DeleteWhere:
                 GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
@@ -297,6 +314,13 @@ internal static partial class InterceptorCodeGenerator
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertToSqlChain);
                     GenerateInsertToSqlInterceptor(sb, site, methodName, insertToSqlChain, carrierInfo);
+                }
+                break;
+
+            case InterceptorKind.InsertToDiagnostics:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var insertDiagChain);
+                    GenerateInsertToDiagnosticsInterceptor(sb, site, methodName, insertDiagChain, carrierInfo);
                 }
                 break;
 

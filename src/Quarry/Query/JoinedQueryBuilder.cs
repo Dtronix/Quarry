@@ -59,6 +59,14 @@ public sealed class JoinedQueryBuilder<T1, T2> : IJoinedQueryBuilder<T1, T2>
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
 
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
+
     internal QueryState State => _state;
 
     #region Join Chaining (2-table → 3-table)
@@ -223,6 +231,14 @@ public sealed class JoinedQueryBuilder<T1, T2, TResult> : IJoinedQueryBuilder<T1
         => new JoinedQueryBuilder<T1, T2, TResult>(_state.WithDistinct(), _selector, _reader);
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
+
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
 
     #region Execution Methods
 
@@ -424,6 +440,14 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3> : IJoinedQueryBuilder3<T1, T
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
 
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
+
     internal QueryState State => _state;
 
     #region Join Chaining (3-table → 4-table)
@@ -585,6 +609,14 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3, TResult> : IJoinedQueryBuild
         => new JoinedQueryBuilder3<T1, T2, T3, TResult>(_state.WithDistinct(), _selector, _reader);
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
+
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
 
     #region Execution Methods
 
@@ -786,6 +818,14 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4> : IJoinedQueryBuilder4<T
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
 
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
+
     internal QueryState State => _state;
 
     #region Internal Methods for Interceptors
@@ -907,6 +947,14 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4, TResult> : IJoinedQueryB
         => new JoinedQueryBuilder4<T1, T2, T3, T4, TResult>(_state.WithDistinct(), _selector, _reader);
 
     public string ToSql() => SqlBuilder.BuildSelectSql(_state);
+
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Select,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
 
     #region Execution Methods
 

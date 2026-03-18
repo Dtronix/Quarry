@@ -57,6 +57,14 @@ public sealed class UpdateBuilder<T> : IUpdateBuilder<T> where T : class
         return SqlModificationBuilder.BuildUpdateSql(_state);
     }
 
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Update,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
+
     internal UpdateState State => _state;
 
     #region Generated Code Methods
@@ -180,6 +188,14 @@ public sealed class ExecutableUpdateBuilder<T> : IExecutableUpdateBuilder<T> whe
     {
         return SqlModificationBuilder.BuildUpdateSql(_state);
     }
+
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(_state.Parameters),
+        DiagnosticQueryKind.Update,
+        _state.Dialect,
+        _state.TableName,
+        rawState: _state);
 
     public ulong ClauseMask => _state.ClauseMask;
 

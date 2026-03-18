@@ -59,6 +59,9 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
     public string ToSql()
         => CreateQueryBuilder().ToSql();
 
+    public QueryDiagnostics ToDiagnostics()
+        => CreateQueryBuilder().ToDiagnostics();
+
     // ── Modification entry points ──
 
     public IDeleteBuilder<T> Delete()

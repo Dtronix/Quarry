@@ -740,7 +740,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     break;
             }
 
-            // Build PrebuiltChainInfo for tier 1 chains
+            // Build PrebuiltChainInfo for tier 1 chains.
             if (result.Tier == OptimizationTier.PrebuiltDispatch)
             {
                 PrebuiltChainInfo? chainInfo;
@@ -793,7 +793,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 var columns = insertInfo.Columns.Select(c => c.QuotedColumnName).ToList();
                 // ExecuteScalar and ToSql include RETURNING clause; ExecuteNonQuery does not.
                 // Pass unquoted name — BuildInsertSql applies dialect-specific quoting.
-                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToSql
+                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToSql or InterceptorKind.InsertToDiagnostics
                     ? insertInfo.IdentityColumnName : null;
                 var insertResult = CompileTimeSqlBuilder.BuildInsertSql(
                     dialect, tableName, schemaName, columns, columns.Count, identityCol);
@@ -832,6 +832,17 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         if (sqlMap == null || sqlMap.Count == 0)
             return null;
+
+        // Bail out if any clause has captured parameters that can't generate direct extraction paths.
+        // Without extraction, the BindParam(p0) reference is unresolved, causing compile errors.
+        foreach (var clause in result.Clauses)
+        {
+            if (clause.Site.ClauseInfo?.Parameters is { Count: > 0 } clauseParams)
+            {
+                if (clauseParams.Any(p => p.IsCaptured && !p.CanGenerateDirectPath))
+                    return null;
+            }
+        }
 
         // Find the Select clause for reader delegate (SELECT queries only)
         string? readerCode = null;
@@ -873,11 +884,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         if (isCarrierEligible && queryKind.Value == QueryKind.Select)
         {
             // SELECT terminal checks: result type resolution, reader delegate, ambiguous columns
+            // ToDiagnostics doesn't read rows, so skip the reader check for it.
+            var isToDiag = executionSite.Kind == InterceptorKind.ToDiagnostics;
             var resolvedResult = InterceptorCodeGenerator.ResolveExecutionResultTypePublic(
                 executionSite.ResultTypeName, executionSite.ResultTypeName, projInfo);
             if (string.IsNullOrEmpty(resolvedResult))
                 isCarrierEligible = false;
-            else if (readerCode == null)
+            else if (readerCode == null && !isToDiag)
                 isCarrierEligible = false;
             else if (projInfo != null && projInfo.Columns.Any(c =>
                 c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
@@ -1024,7 +1037,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Build chain parameter info for carrier optimization
         var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null;
+        var isCarrierEligible = chainParams != null
+            && executionSite.Kind is not InterceptorKind.ToDiagnostics;
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
@@ -1105,7 +1119,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static (int? Limit, int? Offset, bool HasVariablePagination) ExtractLiteralPagination(
         ChainAnalysisResult result, InterceptorKind terminalKind)
     {
-        if (terminalKind != InterceptorKind.ToSql)
+        if (terminalKind is not InterceptorKind.ToSql and not InterceptorKind.ToDiagnostics)
             return (null, null, false);
 
         int? literalLimit = null;
@@ -1157,6 +1171,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 return null;
 
             case InterceptorKind.ToSql:
+            case InterceptorKind.ToDiagnostics:
                 if (executionSite.BuilderTypeName.Contains("DeleteBuilder"))
                     return QueryKind.Delete;
                 if (executionSite.BuilderTypeName.Contains("UpdateBuilder"))
@@ -1168,6 +1183,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             case InterceptorKind.InsertExecuteNonQuery:
             case InterceptorKind.InsertExecuteScalar:
             case InterceptorKind.InsertToSql:
+            case InterceptorKind.InsertToDiagnostics:
                 return QueryKind.Insert;
 
             default:
@@ -1327,7 +1343,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var needsClauseEnrichment = site.PendingClauseInfo != null;
         var needsInsertEnrichment = site.Kind is InterceptorKind.InsertExecuteNonQuery
                                                 or InterceptorKind.InsertExecuteScalar
-                                                or InterceptorKind.InsertToSql;
+                                                or InterceptorKind.InsertToSql
+                                                or InterceptorKind.InsertToDiagnostics;
         var needsUpdatePocoEnrichment = site.Kind == InterceptorKind.UpdateSetPoco;
         var needsJoinEnrichment = site.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
                                   && site.ClauseInfo == null

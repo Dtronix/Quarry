@@ -1,4 +1,5 @@
 using Quarry.Generators.Sql;
+using Quarry.Internal;
 using Quarry.Tests.Samples;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Pg = Quarry.Tests.Samples.Pg;
@@ -152,9 +153,62 @@ internal abstract class CrossDialectTestBase
         });
     }
 
+    /// <summary>
+    /// Unified QueryDiagnostics overload: dispatches compile-time verification
+    /// based on <see cref="DiagnosticQueryKind"/>.
+    /// </summary>
+    protected static void AssertDialects(
+        QueryDiagnostics sqliteDiag, QueryDiagnostics pgDiag,
+        QueryDiagnostics mysqlDiag, QueryDiagnostics ssDiag,
+        string sqlite, string pg, string mysql, string ss)
+    {
+        Assert.Multiple(() =>
+        {
+            // Runtime assertions
+            Assert.That(sqliteDiag.Sql, Is.EqualTo(sqlite), "SQLite runtime");
+            Assert.That(pgDiag.Sql, Is.EqualTo(pg), "PostgreSQL runtime");
+            Assert.That(mysqlDiag.Sql, Is.EqualTo(mysql), "MySQL runtime");
+            Assert.That(ssDiag.Sql, Is.EqualTo(ss), "SqlServer runtime");
+
+            // Compile-time equivalence assertions
+            AssertDiagnosticsCompileTime(sqliteDiag, "SQLite");
+            AssertDiagnosticsCompileTime(pgDiag, "PostgreSQL");
+            AssertDiagnosticsCompileTime(mysqlDiag, "MySQL");
+            AssertDiagnosticsCompileTime(ssDiag, "SqlServer");
+        });
+    }
+
     // ───────────────────────────────────────────────────────────────
     // Compile-time assertion helpers
     // ───────────────────────────────────────────────────────────────
+
+    private static void AssertDiagnosticsCompileTime(QueryDiagnostics diag, string dialectName)
+    {
+        // When the generated interceptor provides prebuilt SQL, RawState is null.
+        // Compile-time verification is unnecessary — the prebuilt SQL IS the compile-time output.
+        if (diag.RawState == null)
+            return;
+
+        switch (diag.Kind)
+        {
+            case DiagnosticQueryKind.Select:
+                AssertSelectCompileTime(
+                    new SqlTestCase(diag.Sql, (QueryState)diag.RawState!), dialectName);
+                break;
+            case DiagnosticQueryKind.Update:
+                AssertUpdateCompileTime(
+                    new UpdateTestCase(diag.Sql, (UpdateState)diag.RawState!), dialectName);
+                break;
+            case DiagnosticQueryKind.Delete:
+                AssertDeleteCompileTime(
+                    new DeleteTestCase(diag.Sql, (DeleteState)diag.RawState!), dialectName);
+                break;
+            case DiagnosticQueryKind.Insert:
+                AssertInsertCompileTime(
+                    new InsertTestCase(diag.Sql, (InsertState)diag.RawState!, diag.InsertRowCount), dialectName);
+                break;
+        }
+    }
 
     private static void AssertSelectCompileTime(SqlTestCase testCase, string dialectName)
     {

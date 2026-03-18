@@ -31,6 +31,8 @@ public abstract class JoinedCarrierBase<T1, T2> : IEntityAccessor<T1>, IQueryBui
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
     string IEntityAccessor<T1>.ToSql()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T1>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T1> IEntityAccessor<T1>.Delete()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T1> IEntityAccessor<T1>.Update()
@@ -93,6 +95,9 @@ public abstract class JoinedCarrierBase<T1, T2> : IEntityAccessor<T1>, IQueryBui
     string IQueryBuilder<T1>.ToSql()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryDiagnostics IQueryBuilder<T1>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // IJoinedQueryBuilder<T1, T2> explicit implementations
 
     IJoinedQueryBuilder<T1, T2, TResult> IJoinedQueryBuilder<T1, T2>.Select<TResult>(Func<T1, T2, TResult> selector)
@@ -127,6 +132,9 @@ public abstract class JoinedCarrierBase<T1, T2> : IEntityAccessor<T1>, IQueryBui
 
     string IJoinedQueryBuilder<T1, T2>.ToSql()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IJoinedQueryBuilder<T1, T2>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class JoinedCarrierBase<T1, T2, TResult> : IEntityAccessor<T1>, IQueryBuilder<T1>, IJoinedQueryBuilder<T1, T2>, IJoinedQueryBuilder<T1, T2, TResult>
@@ -157,6 +165,8 @@ public abstract class JoinedCarrierBase<T1, T2, TResult> : IEntityAccessor<T1>, 
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
     string IEntityAccessor<T1>.ToSql()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T1>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T1> IEntityAccessor<T1>.Delete()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T1> IEntityAccessor<T1>.Update()
@@ -219,6 +229,9 @@ public abstract class JoinedCarrierBase<T1, T2, TResult> : IEntityAccessor<T1>, 
     string IQueryBuilder<T1>.ToSql()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryDiagnostics IQueryBuilder<T1>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // IJoinedQueryBuilder<T1, T2> explicit implementations
 
     IJoinedQueryBuilder<T1, T2, TResult1> IJoinedQueryBuilder<T1, T2>.Select<TResult1>(Func<T1, T2, TResult1> selector)
@@ -253,6 +266,9 @@ public abstract class JoinedCarrierBase<T1, T2, TResult> : IEntityAccessor<T1>, 
 
     string IJoinedQueryBuilder<T1, T2>.ToSql()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IJoinedQueryBuilder<T1, T2>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // IJoinedQueryBuilder<T1, T2, TResult> explicit implementations
 
@@ -291,4 +307,7 @@ public abstract class JoinedCarrierBase<T1, T2, TResult> : IEntityAccessor<T1>, 
 
     string IJoinedQueryBuilder<T1, T2, TResult>.ToSql()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IJoinedQueryBuilder<T1, T2, TResult>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }

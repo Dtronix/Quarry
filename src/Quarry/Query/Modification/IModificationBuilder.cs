@@ -11,6 +11,7 @@ public interface IDeleteBuilder<T> where T : class
     IExecutableDeleteBuilder<T> All();
     IDeleteBuilder<T> WithTimeout(TimeSpan timeout);
     string ToSql();
+    QueryDiagnostics ToDiagnostics();
 }
 
 /// <summary>
@@ -22,6 +23,7 @@ public interface IExecutableDeleteBuilder<T> where T : class
     IExecutableDeleteBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     string ToSql();
+    QueryDiagnostics ToDiagnostics();
 }
 
 /// <summary>
@@ -35,6 +37,7 @@ public interface IUpdateBuilder<T> where T : class
     IExecutableUpdateBuilder<T> All();
     IUpdateBuilder<T> WithTimeout(TimeSpan timeout);
     string ToSql();
+    QueryDiagnostics ToDiagnostics();
 }
 
 /// <summary>
@@ -48,6 +51,7 @@ public interface IExecutableUpdateBuilder<T> where T : class
     IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     string ToSql();
+    QueryDiagnostics ToDiagnostics();
 }
 
 /// <summary>
@@ -60,4 +64,5 @@ public interface IInsertBuilder<T> where T : class
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
     string ToSql();
+    QueryDiagnostics ToDiagnostics();
 }

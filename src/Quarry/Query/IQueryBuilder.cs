@@ -89,6 +89,12 @@ public interface IQueryBuilder<T> where T : class
     /// Returns the generated SQL without executing the query.
     /// </summary>
     string ToSql();
+
+    /// <summary>
+    /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
+    /// bound parameters, and optimization metadata for this query chain.
+    /// </summary>
+    QueryDiagnostics ToDiagnostics();
 }
 
 /// <summary>
@@ -178,4 +184,10 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// Returns the generated SQL without executing the query.
     /// </summary>
     string ToSql();
+
+    /// <summary>
+    /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
+    /// bound parameters, and optimization metadata for this query chain.
+    /// </summary>
+    QueryDiagnostics ToDiagnostics();
 }
