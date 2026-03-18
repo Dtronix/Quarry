@@ -627,6 +627,66 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a runtime-delegating ToDiagnostics interceptor when no prebuilt chain exists.
+    /// Casts to the concrete builder and calls its runtime ToDiagnostics() implementation.
+    /// </summary>
+    private static void GenerateRuntimeToDiagnosticsInterceptor(
+        StringBuilder sb,
+        UsageSiteInfo site,
+        string methodName)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var thisType = site.BuilderTypeName;
+        var concreteType = ToConcreteTypeName(thisType);
+
+        // Determine the full this-parameter type and concrete type
+        string thisParamType;
+        string concreteParamType;
+
+        if (site.JoinedEntityTypeNames != null && site.JoinedEntityTypeNames.Count >= 2)
+        {
+            var joinTypeArgs = string.Join(", ", site.JoinedEntityTypeNames.Select(GetShortTypeName));
+            thisParamType = $"{thisType}<{joinTypeArgs}>";
+            concreteParamType = $"{concreteType}<{joinTypeArgs}>";
+        }
+        else if (IsEntityAccessorType(thisType))
+        {
+            thisParamType = $"{thisType}<{entityType}>";
+            concreteParamType = $"{concreteType}<{entityType}>";
+        }
+        else if (thisType.Contains("DeleteBuilder"))
+        {
+            thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
+            concreteParamType = $"ExecutableDeleteBuilder<{entityType}>";
+        }
+        else if (thisType.Contains("UpdateBuilder"))
+        {
+            thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
+            concreteParamType = $"ExecutableUpdateBuilder<{entityType}>";
+        }
+        else
+        {
+            thisParamType = $"{thisType}<{entityType}>";
+            concreteParamType = $"{concreteType}<{entityType}>";
+        }
+
+        sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
+        sb.AppendLine($"        this {thisParamType} builder)");
+        sb.AppendLine($"    {{");
+
+        if (IsEntityAccessorType(thisType))
+        {
+            sb.AppendLine($"        return ((EntityAccessor<{entityType}>)(object)builder).ToDiagnostics();");
+        }
+        else
+        {
+            sb.AppendLine($"        return Unsafe.As<{concreteParamType}>(builder).ToDiagnostics();");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Generates the dispatch table switch expression that maps ClauseMask values
     /// to pre-built SQL string literals.
     /// </summary>

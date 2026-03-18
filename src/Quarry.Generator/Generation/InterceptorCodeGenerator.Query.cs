@@ -132,11 +132,21 @@ internal static partial class InterceptorCodeGenerator
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics)
+        else if (site.Kind is InterceptorKind.ToSql)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
                 return;
             if (toSqlChain.Analysis.UnmatchedMethodNames != null)
+                return;
+        }
+        else if (site.Kind is InterceptorKind.ToDiagnostics)
+        {
+            if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
+                && diagChain.Analysis.UnmatchedMethodNames != null)
+                return;
+            // Runtime-delegating interceptors can only be generated for unprojected builders.
+            // Projected types (TResult) may reference types unavailable in the generated namespace.
+            if (!chainLookup.ContainsKey(site.UniqueId) && site.ResultTypeName != null)
                 return;
         }
 
@@ -266,6 +276,8 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.ToDiagnostics:
                 if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
                     GeneratePrebuiltToDiagnosticsInterceptor(sb, site, methodName, toDiagChain, carrierInfo);
+                else
+                    GenerateRuntimeToDiagnosticsInterceptor(sb, site, methodName);
                 break;
 
             case InterceptorKind.DeleteWhere:
