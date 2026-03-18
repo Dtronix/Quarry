@@ -538,8 +538,8 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        var __b = Unsafe.As<{builderTypeName}>(builder);");
         sb.Append($"        var __c = new {carrier.ClassName} {{ ");
 
-        var isToSqlOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics;
-        if (!isToSqlOnly)
+        var isReadOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics;
+        if (!isReadOnly)
         {
             sb.Append("Ctx = __b.State.ExecutionContext");
         }

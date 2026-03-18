@@ -652,6 +652,17 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Returns true if a clause role should be included in diagnostic output.
+    /// Excludes transition roles and state-management clauses (ChainRoot, WithTimeout, etc.).
+    /// </summary>
+    private static bool IsDiagnosticClauseRole(ClauseRole role)
+        => role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
+            or ClauseRole.ThenBy or ClauseRole.GroupBy or ClauseRole.Having
+            or ClauseRole.Join or ClauseRole.Set or ClauseRole.Limit or ClauseRole.Offset
+            or ClauseRole.Distinct or ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
+            or ClauseRole.UpdateSet;
+
+    /// <summary>
     /// Emits a ClauseDiagnostic[] array from compile-time clause metadata and runtime clause mask.
     /// When a carrier is provided, each clause gets per-clause DiagnosticParameter[] referencing
     /// the __pVal* locals. Skips transition roles and state-management clauses.
@@ -660,11 +671,7 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo? carrier = null)
     {
         var diagnosticClauses = chain.Analysis.Clauses
-            .Where(c => c.Role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
-                or ClauseRole.ThenBy or ClauseRole.GroupBy or ClauseRole.Having
-                or ClauseRole.Join or ClauseRole.Set or ClauseRole.Limit or ClauseRole.Offset
-                or ClauseRole.Distinct or ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
-                or ClauseRole.UpdateSet)
+            .Where(c => IsDiagnosticClauseRole(c.Role))
             .ToList();
 
         if (diagnosticClauses.Count == 0)
@@ -689,6 +696,9 @@ internal static partial class InterceptorCodeGenerator
         var hasLimitField = carrier != null && HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = carrier != null && HasCarrierField(carrier, FieldRole.Offset);
 
+        // Hoist mask type outside the loop — same for all conditional clauses in the chain
+        var maskType = diagnosticClauses.Any(c => c.IsConditional) ? GetMaskType(chain) : null;
+
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
         foreach (var clause in diagnosticClauses)
@@ -705,7 +715,6 @@ internal static partial class InterceptorCodeGenerator
             }
             else
             {
-                var maskType = GetMaskType(chain);
                 isActive = $"(__c.Mask & unchecked(({maskType})(1 << {clause.BitIndex!.Value}))) != 0";
             }
 
@@ -750,11 +759,7 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb, PrebuiltChainInfo chain, string concreteParamType)
     {
         var diagnosticClauses = chain.Analysis.Clauses
-            .Where(c => c.Role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
-                or ClauseRole.ThenBy or ClauseRole.GroupBy or ClauseRole.Having
-                or ClauseRole.Join or ClauseRole.Set or ClauseRole.Limit or ClauseRole.Offset
-                or ClauseRole.Distinct or ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
-                or ClauseRole.UpdateSet)
+            .Where(c => IsDiagnosticClauseRole(c.Role))
             .ToList();
 
         if (diagnosticClauses.Count == 0)
