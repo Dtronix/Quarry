@@ -621,6 +621,94 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Emits the common carrier terminal preamble: Unsafe.As cast, optional OpId, and SQL dispatch.
+    /// </summary>
+    private static void EmitCarrierPreamble(
+        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        bool emitOpId = true)
+    {
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        if (emitOpId)
+            sb.AppendLine("        var __opId = OpId.Next();");
+        EmitCarrierSqlDispatch(sb, chain);
+    }
+
+    /// <summary>
+    /// Emits parameter value extraction into __pVal* local variables.
+    /// These locals can be consumed by either <see cref="EmitCarrierCommandBinding"/> (execution)
+    /// or <see cref="EmitDiagnosticParameterArray"/> (diagnostics).
+    /// </summary>
+    private static void EmitCarrierParameterLocals(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+    {
+        var paramCount = chain.ChainParameters.Count;
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+
+        for (int i = 0; i < paramCount; i++)
+        {
+            var param = chain.ChainParameters[i];
+            sb.AppendLine($"        var __pVal{i} = {GetParameterValueExpression(param, i)};");
+        }
+
+        if (hasLimitField)
+            sb.AppendLine("        var __pValL = (object)__c.Limit;");
+        if (hasOffsetField)
+            sb.AppendLine("        var __pValO = (object)__c.Offset;");
+    }
+
+    /// <summary>
+    /// Emits DbCommand creation and binds __pVal* locals to parameters.
+    /// Must be called after <see cref="EmitCarrierParameterLocals"/>.
+    /// </summary>
+    private static void EmitCarrierCommandBinding(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier,
+        string timeoutExpr)
+    {
+        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
+        sb.AppendLine("        __cmd.CommandText = sql;");
+        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+
+        var dialectLiteral = GetDialectLiteral(chain.Dialect);
+        var paramCount = chain.ChainParameters.Count;
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+
+        for (int i = 0; i < paramCount; i++)
+        {
+            var param = chain.ChainParameters[i];
+            sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
+            sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
+            sb.AppendLine($"        __p{i}.Value = __pVal{i};");
+
+            if (param.TypeMapping != null)
+            {
+                var mappingField = GetMappingFieldName(param.TypeMapping);
+                sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+            }
+
+            sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
+        }
+
+        var nextIdx = paramCount;
+        if (hasLimitField)
+        {
+            sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
+            sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
+            sb.AppendLine($"        __pL.Value = __pValL;");
+            sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
+            nextIdx++;
+        }
+        if (hasOffsetField)
+        {
+            sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
+            sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
+            sb.AppendLine($"        __pO.Value = __pValO;");
+            sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
+        }
+    }
+
+    /// <summary>
     /// Emits a carrier execution terminal with inline per-parameter DbCommand binding.
     /// Terminal owns: OpId, SQL/param logging, command creation, param binding.
     /// Executor owns: connection open, execution, materialization, completion logging.
@@ -629,11 +717,7 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         string? readerExpression, string executorMethod)
     {
-        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
-        // OpId + SQL dispatch
-        sb.AppendLine("        var __opId = OpId.Next();");
-        EmitCarrierSqlDispatch(sb, chain);
+        EmitCarrierPreamble(sb, carrier, chain);
 
         // SQL logging
         sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
@@ -642,11 +726,12 @@ internal static partial class InterceptorCodeGenerator
         // Parameter logging
         EmitInlineParameterLogging(sb, chain);
 
-        // Command creation + inline parameter binding
+        // Parameter value extraction + command binding
+        EmitCarrierParameterLocals(sb, chain, carrier);
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
-        EmitInlineCommandCreation(sb, chain, carrier, timeoutExpr);
+        EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
 
         // Executor call
         var readerArg = readerExpression != null ? $", {readerExpression}" : "";
@@ -659,19 +744,18 @@ internal static partial class InterceptorCodeGenerator
     private static void EmitCarrierNonQueryTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
     {
-        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
-        sb.AppendLine("        var __opId = OpId.Next();");
-        EmitCarrierSqlDispatch(sb, chain);
+        EmitCarrierPreamble(sb, carrier, chain);
 
         sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         EmitInlineParameterLogging(sb, chain);
+
+        EmitCarrierParameterLocals(sb, chain, carrier);
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
-        EmitInlineCommandCreation(sb, chain, carrier, timeoutExpr);
+        EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
 
         sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __c.Ctx, __cmd, cancellationToken);");
     }
@@ -716,60 +800,6 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine("        }");
     }
 
-    /// <summary>
-    /// Emits inline DbCommand creation and per-parameter binding.
-    /// Also emits dialect-aware parameter configuration for mapped types that implement
-    /// <c>IDialectAwareTypeMapping</c>, matching the behavior of <c>QueryExecutor.CreateCommand</c>.
-    /// </summary>
-    private static void EmitInlineCommandCreation(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier, string timeoutExpr)
-    {
-        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
-        sb.AppendLine("        __cmd.CommandText = sql;");
-        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
-
-        var dialectLiteral = GetDialectLiteral(chain.Dialect);
-        var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
-        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
-
-        // Inline binding for chain parameters
-        for (int i = 0; i < paramCount; i++)
-        {
-            var param = chain.ChainParameters[i];
-            sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
-            sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
-            sb.AppendLine($"        __p{i}.Value = {GetParameterValueExpression(param, i)};");
-
-            // Apply dialect-aware parameter configuration for mapped types
-            // (e.g., setting NpgsqlDbType.Jsonb for PostgreSQL jsonb columns)
-            if (param.TypeMapping != null)
-            {
-                var mappingField = GetMappingFieldName(param.TypeMapping);
-                sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
-            }
-
-            sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
-        }
-
-        // Inline binding for pagination parameters
-        var nextIdx = paramCount;
-        if (hasLimitField)
-        {
-            sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
-            nextIdx++;
-        }
-        if (hasOffsetField)
-        {
-            sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
-            sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
-        }
-    }
 
     /// <summary>
     /// Gets the inline value expression for a parameter based on its type classification.
