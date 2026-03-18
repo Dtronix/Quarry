@@ -116,11 +116,12 @@ public sealed class ClauseDiagnostic
     /// <summary>
     /// Creates a new clause diagnostic.
     /// </summary>
-    public ClauseDiagnostic(string clauseType, string sqlFragment, bool isConditional = false)
+    public ClauseDiagnostic(string clauseType, string sqlFragment, bool isConditional = false, bool isActive = true)
     {
         ClauseType = clauseType;
         SqlFragment = sqlFragment;
         IsConditional = isConditional;
+        IsActive = isActive;
     }
 
     /// <summary>
@@ -137,6 +138,12 @@ public sealed class ClauseDiagnostic
     /// Gets whether this clause is conditionally applied.
     /// </summary>
     public bool IsConditional { get; }
+
+    /// <summary>
+    /// Gets whether this clause is active (included in the current query variant).
+    /// Non-conditional clauses are always active. For conditional clauses, reflects the runtime clause mask bit.
+    /// </summary>
+    public bool IsActive { get; }
 }
 
 /// <summary>
