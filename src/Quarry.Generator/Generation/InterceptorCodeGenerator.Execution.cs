@@ -537,12 +537,14 @@ internal static partial class InterceptorCodeGenerator
             return;
         }
 
+        // Non-carrier path: parameters aren't available in a structured way on the concrete builder,
+        // so emit empty params. Clause diagnostics are available from compile-time metadata.
         if (chain.SqlMap.Count == 1)
         {
             foreach (var kvp in chain.SqlMap)
             {
                 var escapedSql = EscapeStringLiteral(kvp.Value.Sql);
-                sb.AppendLine($"        return new QueryDiagnostics(@\"{escapedSql}\", Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+                sb.AppendLine($"        const string sql = @\"{escapedSql}\";");
             }
         }
         else
@@ -557,8 +559,10 @@ internal static partial class InterceptorCodeGenerator
             }
             sb.AppendLine($"            _ => throw new InvalidOperationException(\"Unexpected ClauseMask\")");
             sb.AppendLine($"        }};");
-            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
         }
+
+        EmitNonCarrierDiagnosticClauseArray(sb, chain, concreteParamType);
+        sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
 
         sb.AppendLine($"    }}");
     }
@@ -580,7 +584,11 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
         sb.AppendLine($"    {{");
 
-        if (chain != null && chain.SqlMap.Count > 0)
+        if (chain != null && chain.SqlMap.Count > 0 && carrier != null)
+        {
+            EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
+        }
+        else if (chain != null && chain.SqlMap.Count > 0)
         {
             foreach (var kvp in chain.SqlMap)
             {
@@ -598,32 +606,187 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
-    /// Emits a carrier ToDiagnostics terminal.
+    /// Emits a carrier insert ToDiagnostics terminal.
+    /// Extracts entity property values into DiagnosticParameter[] using the same access patterns
+    /// as <see cref="EmitCarrierInsertTerminal"/>.
+    /// </summary>
+    private static void EmitCarrierInsertToDiagnosticsTerminal(
+        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
+    {
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
+
+        var insertInfo = chain.Analysis.ExecutionSite.InsertInfo;
+        if (insertInfo != null && insertInfo.Columns.Count > 0)
+        {
+            sb.AppendLine("        var __params = new DiagnosticParameter[]");
+            sb.AppendLine("        {");
+            for (int i = 0; i < insertInfo.Columns.Count; i++)
+            {
+                var col = insertInfo.Columns[i];
+                var valueExpr = GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass);
+                sb.AppendLine($"            new(\"@p{i}\", (object?){valueExpr} ?? DBNull.Value),");
+            }
+            sb.AppendLine("        };");
+        }
+        else
+        {
+            sb.AppendLine("        var __params = Array.Empty<DiagnosticParameter>();");
+        }
+
+        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, true);");
+    }
+
+    /// <summary>
+    /// Emits a carrier ToDiagnostics terminal with full parameter and clause diagnostic output.
+    /// Uses the shared preamble for cast + SQL dispatch, then builds DiagnosticParameter[]
+    /// and ClauseDiagnostic[] arrays from carrier state and compile-time clause metadata.
     /// </summary>
     private static void EmitCarrierToDiagnosticsTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         string diagnosticKind, string isCarrierOptimized)
     {
-        if (chain.SqlMap.Count == 1)
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
+        EmitCarrierParameterLocals(sb, chain, carrier);
+        EmitDiagnosticParameterArray(sb, chain, carrier);
+        EmitDiagnosticClauseArray(sb, chain);
+        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
+    }
+
+    /// <summary>
+    /// Emits a DiagnosticParameter[] array from __pVal* locals.
+    /// </summary>
+    private static void EmitDiagnosticParameterArray(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+    {
+        var paramCount = chain.ChainParameters.Count;
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+        var totalParams = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
+
+        if (totalParams == 0)
         {
-            foreach (var kvp in chain.SqlMap)
-            {
-                sb.AppendLine($"        return new QueryDiagnostics(@\"{EscapeStringLiteral(kvp.Value.Sql)}\", Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
-            }
+            sb.AppendLine("        var __params = Array.Empty<DiagnosticParameter>();");
+            return;
         }
-        else
+
+        sb.AppendLine("        var __params = new DiagnosticParameter[]");
+        sb.AppendLine("        {");
+        for (int i = 0; i < paramCount; i++)
         {
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            sb.AppendLine("        var sql = __c.Mask switch");
-            sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlMap)
-            {
-                sb.AppendLine($"            {kvp.Key} => @\"{EscapeStringLiteral(kvp.Value.Sql)}\",");
-            }
-            sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
-            sb.AppendLine("        };");
-            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+            sb.AppendLine($"            new(\"@p{i}\", __pVal{i}),");
         }
+        var nextIdx = paramCount;
+        if (hasLimitField)
+        {
+            sb.AppendLine($"            new(\"@p{nextIdx}\", __pValL),");
+            nextIdx++;
+        }
+        if (hasOffsetField)
+        {
+            sb.AppendLine($"            new(\"@p{nextIdx}\", __pValO),");
+        }
+        sb.AppendLine("        };");
+    }
+
+    /// <summary>
+    /// Emits a ClauseDiagnostic[] array from compile-time clause metadata and runtime clause mask.
+    /// Skips transition roles and state-management clauses (ChainRoot, WithTimeout, etc.).
+    /// </summary>
+    private static void EmitDiagnosticClauseArray(StringBuilder sb, PrebuiltChainInfo chain)
+    {
+        var diagnosticClauses = chain.Analysis.Clauses
+            .Where(c => c.Role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
+                or ClauseRole.ThenBy or ClauseRole.GroupBy or ClauseRole.Having
+                or ClauseRole.Join or ClauseRole.Set or ClauseRole.Limit or ClauseRole.Offset
+                or ClauseRole.Distinct or ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
+                or ClauseRole.UpdateSet)
+            .ToList();
+
+        if (diagnosticClauses.Count == 0)
+        {
+            sb.AppendLine("        var __clauses = Array.Empty<ClauseDiagnostic>();");
+            return;
+        }
+
+        sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
+        sb.AppendLine("        {");
+        foreach (var clause in diagnosticClauses)
+        {
+            var clauseType = clause.Role.ToString();
+            var sqlFragment = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var escapedFragment = EscapeStringLiteral(sqlFragment);
+            var isConditional = clause.IsConditional ? "true" : "false";
+
+            string isActive;
+            if (!clause.IsConditional)
+            {
+                isActive = "true";
+            }
+            else
+            {
+                var maskType = GetMaskType(chain);
+                isActive = $"(__c.Mask & unchecked(({maskType})(1 << {clause.BitIndex!.Value}))) != 0";
+            }
+
+            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}),");
+        }
+        sb.AppendLine("        };");
+    }
+
+    /// <summary>
+    /// Emits a ClauseDiagnostic[] array for non-carrier prebuilt chains.
+    /// Uses __b.ClauseMask for conditional clause IsActive checks (single-variant chains have no __b).
+    /// </summary>
+    private static void EmitNonCarrierDiagnosticClauseArray(
+        StringBuilder sb, PrebuiltChainInfo chain, string concreteParamType)
+    {
+        var diagnosticClauses = chain.Analysis.Clauses
+            .Where(c => c.Role is ClauseRole.Select or ClauseRole.Where or ClauseRole.OrderBy
+                or ClauseRole.ThenBy or ClauseRole.GroupBy or ClauseRole.Having
+                or ClauseRole.Join or ClauseRole.Set or ClauseRole.Limit or ClauseRole.Offset
+                or ClauseRole.Distinct or ClauseRole.DeleteWhere or ClauseRole.UpdateWhere
+                or ClauseRole.UpdateSet)
+            .ToList();
+
+        if (diagnosticClauses.Count == 0)
+        {
+            sb.AppendLine("        var __clauses = Array.Empty<ClauseDiagnostic>();");
+            return;
+        }
+
+        // For multi-variant chains, we need __b for ClauseMask access.
+        // For single-variant chains, __b may not exist — all conditional clauses default to active
+        // since the single SQL variant was selected at compile time.
+        var hasConditional = diagnosticClauses.Any(c => c.IsConditional);
+        var needsMaskAccess = hasConditional && chain.SqlMap.Count > 1;
+
+        sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
+        sb.AppendLine("        {");
+        foreach (var clause in diagnosticClauses)
+        {
+            var clauseType = clause.Role.ToString();
+            var sqlFragment = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var escapedFragment = EscapeStringLiteral(sqlFragment);
+            var isConditional = clause.IsConditional ? "true" : "false";
+
+            string isActive;
+            if (!clause.IsConditional)
+            {
+                isActive = "true";
+            }
+            else if (needsMaskAccess)
+            {
+                isActive = $"(__b.ClauseMask & {(1UL << clause.BitIndex!.Value)}UL) != 0";
+            }
+            else
+            {
+                // Single-variant chain: conditional clause is active if it was included in the SQL
+                isActive = "true";
+            }
+
+            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}),");
+        }
+        sb.AppendLine("        };");
     }
 
     /// <summary>
