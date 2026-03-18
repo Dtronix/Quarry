@@ -791,9 +791,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (insertInfo == null || insertInfo.Columns.Count == 0)
                     return null;
                 var columns = insertInfo.Columns.Select(c => c.QuotedColumnName).ToList();
-                // ExecuteScalar and ToSql include RETURNING clause; ExecuteNonQuery does not.
+                // ExecuteScalar and ToDiagnostics include RETURNING clause; ExecuteNonQuery does not.
                 // Pass unquoted name — BuildInsertSql applies dialect-specific quoting.
-                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToSql or InterceptorKind.InsertToDiagnostics
+                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToDiagnostics
                     ? insertInfo.IdentityColumnName : null;
                 var insertResult = CompileTimeSqlBuilder.BuildInsertSql(
                     dialect, tableName, schemaName, columns, columns.Count, identityCol);
@@ -804,9 +804,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
             else
             {
-                // For ToSql terminals, extract constant Limit/Offset values to inline as literals.
+                // For ToDiagnostics terminals, extract constant Limit/Offset values to inline as literals.
                 // If any Limit/Offset clause has a non-constant value, skip prebuilt chain
-                // (the runtime ToSql path handles variable values correctly).
+                // (the runtime ToDiagnostics path handles variable values correctly).
                 var pagination = ExtractLiteralPagination(result, executionSite.Kind);
                 if (pagination.HasVariablePagination)
                     return null;
@@ -1011,7 +1011,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Build SQL map using CompileTimeSqlBuilder with join support
         // Join chains need "t0" alias on the primary table (matches runtime QueryState.WithJoin)
-        // For ToSql terminals, extract constant Limit/Offset to inline as literals.
+        // For ToDiagnostics terminals, extract constant Limit/Offset to inline as literals.
         var joinPagination = ExtractLiteralPagination(result, executionSite.Kind);
         if (joinPagination.HasVariablePagination)
             return null;
@@ -1112,14 +1112,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Extracts constant Limit/Offset values from a chain's clause sites for ToSql terminals.
+    /// Extracts constant Limit/Offset values from a chain's clause sites for ToDiagnostics terminals.
     /// Returns <c>hasVariablePagination = true</c> if any Limit/Offset clause has a non-constant
-    /// value, meaning the chain should fall back to the runtime ToSql path.
+    /// value, meaning the chain should fall back to the runtime ToDiagnostics path.
     /// </summary>
     private static (int? Limit, int? Offset, bool HasVariablePagination) ExtractLiteralPagination(
         ChainAnalysisResult result, InterceptorKind terminalKind)
     {
-        if (terminalKind is not InterceptorKind.ToSql and not InterceptorKind.ToDiagnostics)
+        if (terminalKind is not InterceptorKind.ToDiagnostics)
             return (null, null, false);
 
         int? literalLimit = null;
@@ -1170,7 +1170,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return QueryKind.Select;
                 return null;
 
-            case InterceptorKind.ToSql:
             case InterceptorKind.ToDiagnostics:
                 if (executionSite.BuilderTypeName.Contains("DeleteBuilder"))
                     return QueryKind.Delete;
@@ -1178,11 +1177,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return QueryKind.Update;
                 if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
                     return QueryKind.Select;
-                return null; // IEntityAccessor — trivial db.Users().ToSql(), no clauses to optimize
+                return null; // IEntityAccessor — trivial db.Users().ToDiagnostics(), no clauses to optimize
 
             case InterceptorKind.InsertExecuteNonQuery:
             case InterceptorKind.InsertExecuteScalar:
-            case InterceptorKind.InsertToSql:
             case InterceptorKind.InsertToDiagnostics:
                 return QueryKind.Insert;
 
@@ -1343,7 +1341,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var needsClauseEnrichment = site.PendingClauseInfo != null;
         var needsInsertEnrichment = site.Kind is InterceptorKind.InsertExecuteNonQuery
                                                 or InterceptorKind.InsertExecuteScalar
-                                                or InterceptorKind.InsertToSql
                                                 or InterceptorKind.InsertToDiagnostics;
         var needsUpdatePocoEnrichment = site.Kind == InterceptorKind.UpdateSetPoco;
         var needsJoinEnrichment = site.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin

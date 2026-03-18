@@ -16,7 +16,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\""));
     }
@@ -26,7 +26,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", "public");
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"public\".\"users\""));
     }
@@ -36,7 +36,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.MySQL, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM `users`"));
     }
@@ -46,7 +46,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.SqlServer, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM [users]"));
     }
@@ -56,7 +56,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.SQLite, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\""));
     }
@@ -99,22 +99,22 @@ public class QueryBuilderTests
     public void QueryBuilder_OriginalNotModifiedAfterOffset()
     {
         var original = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
-        var originalSql = original.ToSql();
+        var originalSql = original.ToDiagnostics().Sql;
 
         var _ = original.Offset(10);
 
-        Assert.That(original.ToSql(), Is.EqualTo(originalSql));
+        Assert.That(original.ToDiagnostics().Sql, Is.EqualTo(originalSql));
     }
 
     [Test]
     public void QueryBuilder_OriginalNotModifiedAfterLimit()
     {
         var original = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
-        var originalSql = original.ToSql();
+        var originalSql = original.ToDiagnostics().Sql;
 
         var _ = original.Limit(20);
 
-        Assert.That(original.ToSql(), Is.EqualTo(originalSql));
+        Assert.That(original.ToDiagnostics().Sql, Is.EqualTo(originalSql));
     }
 
     #endregion
@@ -126,7 +126,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Limit(10).ToSql();
+        var sql = builder.Limit(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10"));
     }
@@ -136,7 +136,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Offset(20).ToSql();
+        var sql = builder.Offset(20).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" OFFSET 20"));
     }
@@ -146,7 +146,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Offset(20).Limit(10).ToSql();
+        var sql = builder.Offset(20).Limit(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10 OFFSET 20"));
     }
@@ -156,7 +156,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.SqlServer, "users", null);
 
-        var sql = builder.Offset(20).Limit(10).ToSql();
+        var sql = builder.Offset(20).Limit(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT * FROM [users] ORDER BY (SELECT NULL) OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY"));
     }
@@ -182,7 +182,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Offset(0).ToSql();
+        var sql = builder.Offset(0).ToDiagnostics().Sql;
 
         // OFFSET 0 is effectively no offset, but we still allow it
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\""));
@@ -197,7 +197,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Distinct().ToSql();
+        var sql = builder.Distinct().ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\""));
     }
@@ -207,7 +207,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Distinct().Limit(10).ToSql();
+        var sql = builder.Distinct().Limit(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\" LIMIT 10"));
     }
@@ -225,7 +225,7 @@ public class QueryBuilderTests
             .Distinct()
             .Offset(10)
             .Limit(20)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\" LIMIT 20 OFFSET 10"));
     }
@@ -270,7 +270,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Select(e => e).Offset(10).ToSql();
+        var sql = builder.Select(e => e).Offset(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("OFFSET 10"));
     }
@@ -280,7 +280,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Select(e => e).Limit(20).ToSql();
+        var sql = builder.Select(e => e).Limit(20).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("LIMIT 20"));
     }
@@ -290,7 +290,7 @@ public class QueryBuilderTests
     {
         var builder = new QueryBuilder<TestEntity>(SqlDialectFactory.PostgreSQL, "users", null);
 
-        var sql = builder.Select(e => e).Distinct().ToSql();
+        var sql = builder.Select(e => e).Distinct().ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("DISTINCT"));
     }
@@ -305,7 +305,7 @@ public class QueryBuilderTests
             .Distinct()
             .Offset(5)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\" LIMIT 10 OFFSET 5"));
     }
@@ -346,7 +346,7 @@ public class QueryBuilderTests
 
         var builder = new QueryBuilder<TestEntity>(dialect, "users", null);
 
-        var sql = builder.Offset(20).Limit(10).ToSql();
+        var sql = builder.Offset(20).Limit(10).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(expected));
     }

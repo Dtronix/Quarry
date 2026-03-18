@@ -226,9 +226,9 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_ToSqlOnly()
+    public void CarrierGeneration_ToDiagnosticsOnly()
     {
-        // ToSql chain with captured parameter and tuple projection -- uses
+        // ToDiagnostics chain with captured parameter and tuple projection -- uses
         // the same fluent pattern as integration tests that produce carrier-based interceptors
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
@@ -241,7 +241,7 @@ public static class Queries
 {
     public static string Test(TestDbContext db, bool active)
     {
-        return db.Users().Where(u => u.IsActive == active).Select(u => (u.UserId, u.UserName)).ToSql();
+        return db.Users().Where(u => u.IsActive == active).Select(u => (u.UserId, u.UserName)).ToDiagnostics().Sql;
     }
 }
 ";
@@ -254,7 +254,7 @@ public static class Queries
 
         if (interceptorsTree == null || !interceptorsTree.GetText().ToString().Contains("InterceptsLocation"))
         {
-            // ToSql chains may not always produce interceptors in unit test compilation context;
+            // ToDiagnostics chains may not always produce interceptors in unit test compilation context;
             // verify that the generator at least ran and produced entity/context output.
             var entityTree = result.GeneratedTrees
                 .FirstOrDefault(t => t.FilePath.EndsWith("User.g.cs"));
@@ -264,18 +264,18 @@ public static class Queries
             var (_, diagnostics) = RunGeneratorWithDiagnostics(CreateCompilation(source));
             // QRY diagnostics may include warnings; just verify no QRY-prefixed errors
             var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
-            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid ToSql chain");
+            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid ToDiagnostics chain");
             return;
         }
 
         var code = interceptorsTree!.GetText().ToString();
-        // ToSql chains produce interceptors for clause sites even if the ToSql terminal isn't intercepted.
+        // ToDiagnostics chains produce interceptors for clause sites even if the ToDiagnostics terminal isn't intercepted.
         // Just verify the interceptors file was generated without errors.
         Assert.That(code.Length, Is.GreaterThan(100), "Should have generated interceptor content");
     }
 
     [Test]
-    public void CarrierGeneration_DeleteToSql_ProducesPrebuiltDispatch()
+    public void CarrierGeneration_DeleteToDiagnostics_ProducesPrebuiltDispatch()
     {
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
@@ -288,7 +288,7 @@ public static class Queries
 {
     public static string Test(TestDbContext db, int id)
     {
-        return db.Users().Delete().Where(u => u.UserId == id).ToSql();
+        return db.Users().Delete().Where(u => u.UserId == id).ToDiagnostics().Sql;
     }
 }
 ";
@@ -307,19 +307,19 @@ public static class Queries
 
             var (_, diagnostics) = RunGeneratorWithDiagnostics(CreateCompilation(source));
             var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
-            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid Delete ToSql chain");
+            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid Delete ToDiagnostics chain");
             return;
         }
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("Chain_"),
-            "Delete ToSql chain should be grouped into a carrier chain");
+            "Delete ToDiagnostics chain should be grouped into a carrier chain");
         Assert.That(code, Does.Contain("DELETE"),
-            "Delete ToSql chain should contain prebuilt DELETE SQL");
+            "Delete ToDiagnostics chain should contain prebuilt DELETE SQL");
     }
 
     [Test]
-    public void CarrierGeneration_UpdateToSql_ProducesPrebuiltDispatch()
+    public void CarrierGeneration_UpdateToDiagnostics_ProducesPrebuiltDispatch()
     {
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
@@ -332,7 +332,7 @@ public static class Queries
 {
     public static string Test(TestDbContext db, int userId, string newName)
     {
-        return db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ToSql();
+        return db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ToDiagnostics().Sql;
     }
 }
 ";
@@ -351,19 +351,19 @@ public static class Queries
 
             var (_, diagnostics) = RunGeneratorWithDiagnostics(CreateCompilation(source));
             var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
-            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid Update ToSql chain");
+            Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for a valid Update ToDiagnostics chain");
             return;
         }
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("UPDATE"),
-            "Update ToSql chain should contain prebuilt UPDATE SQL");
+            "Update ToDiagnostics chain should contain prebuilt UPDATE SQL");
     }
 
     [Test]
-    public void CarrierGeneration_EntityAccessorToSql_NoPrebuiltDispatch()
+    public void CarrierGeneration_EntityAccessorToDiagnostics_NoPrebuiltDispatch()
     {
-        // Bare db.Users().ToSql() should NOT produce PrebuiltDispatch — no clauses to optimize.
+        // Bare db.Users().ToDiagnostics().Sql should NOT produce PrebuiltDispatch — no clauses to optimize.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
@@ -375,7 +375,7 @@ public static class Queries
 {
     public static string Test(TestDbContext db)
     {
-        return db.Users().ToSql();
+        return db.Users().ToDiagnostics().Sql;
     }
 }
 ";
@@ -385,7 +385,7 @@ public static class Queries
 
         // Should not produce QRY errors — the chain is valid, just not optimizable
         var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
-        Assert.That(qryErrors, Is.Empty, "Bare IEntityAccessor ToSql should not produce errors");
+        Assert.That(qryErrors, Is.Empty, "Bare IEntityAccessor ToDiagnostics should not produce errors");
 
         // Verify no carrier class was generated for this trivial chain
         var interceptorsTree = result.GeneratedTrees
@@ -394,7 +394,7 @@ public static class Queries
         {
             var code = interceptorsTree.GetText().ToString();
             Assert.That(code, Does.Not.Contain("file sealed class Chain_"),
-                "Bare IEntityAccessor ToSql should not produce carrier class");
+                "Bare IEntityAccessor ToDiagnostics should not produce carrier class");
         }
     }
 

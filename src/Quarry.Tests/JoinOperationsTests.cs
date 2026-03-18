@@ -187,7 +187,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
 
         var newBuilder = builder.Offset(10);
-        var sql = newBuilder.ToSql();
+        var sql = newBuilder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("OFFSET 10"));
     }
@@ -200,7 +200,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
 
         var newBuilder = builder.Limit(5);
-        var sql = newBuilder.ToSql();
+        var sql = newBuilder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("LIMIT 5"));
     }
@@ -213,7 +213,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
 
         var newBuilder = builder.Distinct();
-        var sql = newBuilder.ToSql();
+        var sql = newBuilder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT DISTINCT"));
     }
@@ -226,7 +226,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
 
         var newBuilder = builder.Offset(10).Limit(5).Distinct();
-        var sql = newBuilder.ToSql();
+        var sql = newBuilder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT DISTINCT"));
         Assert.That(sql, Does.Contain("LIMIT 5"));
@@ -708,7 +708,7 @@ public class JoinOperationsTests
         var state = new Quarry.Internal.QueryState(dialect, "users", null);
         var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
 
-        var sql = builder.Offset(10).ToSql();
+        var sql = builder.Offset(10).ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("OFFSET 10"));
     }
 
@@ -720,7 +720,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder3<TestUser, TestOrder, TestItem>(state);
 
         var result = builder.AddWhereClause("\"t0\".\"id\" = 1");
-        var sql = result.ToSql();
+        var sql = result.ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("WHERE \"t0\".\"id\" = 1"));
     }
 
@@ -774,7 +774,7 @@ public class JoinOperationsTests
         var builder = new JoinedQueryBuilder<TestUser, TestOrder>(state);
 
         var result = builder.AddJoinClause<TestItem>(CoreJoinKind.Inner, "items", "\"t1\".\"id\" = \"t2\".\"order_id\"");
-        var sql = result.ToSql();
+        var sql = result.ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("INNER JOIN"));
     }
 

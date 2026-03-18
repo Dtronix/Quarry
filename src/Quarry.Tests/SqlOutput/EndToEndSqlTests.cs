@@ -32,14 +32,14 @@ public class EndToEndSqlTests
     [Test]
     public void Select_Tuple_TwoColumns()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\""));
     }
 
     [Test]
     public void Select_Tuple_ThreeColumns()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\""));
     }
 
@@ -51,7 +51,7 @@ public class EndToEndSqlTests
             UserId = u.UserId,
             UserName = u.UserName,
             IsActive = u.IsActive
-        }).ToSql();
+        }).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\""));
     }
 
@@ -63,7 +63,7 @@ public class EndToEndSqlTests
             UserId = u.UserId,
             UserName = u.UserName,
             Email = u.Email
-        }).ToSql();
+        }).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\""));
     }
 
@@ -75,7 +75,7 @@ public class EndToEndSqlTests
             OrderId = o.OrderId,
             Total = o.Total,
             Status = o.Status
-        }).ToSql();
+        }).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\""));
     }
 
@@ -86,21 +86,21 @@ public class EndToEndSqlTests
     [Test]
     public void Where_BooleanProperty()
     {
-        var sql = _db.Users().Where(u => u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => u.IsActive).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
     [Test]
     public void Where_NegatedBooleanProperty()
     {
-        var sql = _db.Users().Where(u => !u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => !u.IsActive).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE NOT (\"IsActive\")"));
     }
 
     [Test]
     public void Where_Comparison_GreaterThan()
     {
-        var sql = _db.Users().Where(u => u.UserId > 0).ToSql();
+        var sql = _db.Users().Where(u => u.UserId > 0).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"UserId\" > 0)"));
     }
 
@@ -110,7 +110,7 @@ public class EndToEndSqlTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND ((\"UserId\" > 0))"));
     }
 
@@ -124,7 +124,7 @@ public class EndToEndSqlTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
@@ -139,7 +139,7 @@ public class EndToEndSqlTests
                 UserName = u.UserName,
                 IsActive = u.IsActive
             })
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
@@ -150,21 +150,21 @@ public class EndToEndSqlTests
     [Test]
     public void Limit()
     {
-        var sql = _db.Users().Where(u => true).Limit(10).ToSql();
+        var sql = _db.Users().Where(u => true).Limit(10).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10"));
     }
 
     [Test]
     public void LimitAndOffset()
     {
-        var sql = _db.Users().Where(u => true).Limit(10).Offset(20).ToSql();
+        var sql = _db.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10 OFFSET 20"));
     }
 
     [Test]
     public void Distinct()
     {
-        var sql = _db.Users().Distinct().ToSql();
+        var sql = _db.Users().Distinct().ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\""));
     }
 
@@ -181,7 +181,7 @@ public class EndToEndSqlTests
             IsActive = true,
             CreatedAt = new DateTime(2024, 1, 1)
         };
-        var sql = _db.Users().Insert(user).ToSql();
+        var sql = _db.Users().Insert(user).ToDiagnostics().Sql;
         // Insert ToSql before execution shows column list (values added during execution)
         Assert.That(sql, Does.StartWith("INSERT INTO \"users\""));
     }
@@ -193,14 +193,14 @@ public class EndToEndSqlTests
     [Test]
     public void Orders_Select_Tuple()
     {
-        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT \"OrderId\", \"Total\" FROM \"orders\""));
     }
 
     [Test]
     public void Orders_Where()
     {
-        var sql = _db.Orders().Where(o => o.OrderId > 0).ToSql();
+        var sql = _db.Orders().Where(o => o.OrderId > 0).ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("SELECT * FROM \"orders\" WHERE (\"OrderId\" > 0)"));
     }
 
@@ -214,7 +214,7 @@ public class EndToEndSqlTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("FROM \"users\" AS \"t0\""));
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -231,7 +231,7 @@ public class EndToEndSqlTests
                 UserName = u.UserName,
                 Total = o.Total
             })
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("FROM \"users\" AS \"t0\""));
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -248,7 +248,7 @@ public class EndToEndSqlTests
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("SET \"UserName\" = @p0"));
         Assert.That(sql, Does.Contain("WHERE"));
     }
@@ -259,7 +259,7 @@ public class EndToEndSqlTests
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName", IsActive = false })
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("SET"));
         Assert.That(sql, Does.Contain("\"UserName\""));
         Assert.That(sql, Does.Contain("\"IsActive\""));
@@ -271,7 +271,7 @@ public class EndToEndSqlTests
         var sql = _db.Users().Update()
             .Set(new User { IsActive = false })
             .All()
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("SET \"IsActive\" = @p0"));
         Assert.That(sql, Does.Not.Contain("WHERE"));
     }
@@ -283,7 +283,7 @@ public class EndToEndSqlTests
             .Set(new User { UserName = "NewName" })
             .Set(u => u.IsActive, true)
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("\"UserName\""));
         Assert.That(sql, Does.Contain("\"IsActive\""));
     }

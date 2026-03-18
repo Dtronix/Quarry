@@ -59,101 +59,6 @@ internal abstract class CrossDialectTestBase
     }
 
     /// <summary>
-    /// SELECT overload: asserts runtime SQL matches expected, then verifies
-    /// compile-time SQL from the same state matches runtime output.
-    /// Pagination tests use prefix comparison (compile-time uses parameterized pagination).
-    /// </summary>
-    protected static void AssertDialects(
-        SqlTestCase sqliteCase, SqlTestCase pgCase,
-        SqlTestCase mysqlCase, SqlTestCase ssCase,
-        string sqlite, string pg, string mysql, string ss)
-    {
-        Assert.Multiple(() =>
-        {
-            // Runtime assertions
-            Assert.That(sqliteCase.RuntimeSql, Is.EqualTo(sqlite), "SQLite runtime");
-            Assert.That(pgCase.RuntimeSql, Is.EqualTo(pg), "PostgreSQL runtime");
-            Assert.That(mysqlCase.RuntimeSql, Is.EqualTo(mysql), "MySQL runtime");
-            Assert.That(ssCase.RuntimeSql, Is.EqualTo(ss), "SqlServer runtime");
-
-            // Compile-time equivalence assertions
-            AssertSelectCompileTime(sqliteCase, "SQLite");
-            AssertSelectCompileTime(pgCase, "PostgreSQL");
-            AssertSelectCompileTime(mysqlCase, "MySQL");
-            AssertSelectCompileTime(ssCase, "SqlServer");
-        });
-    }
-
-    /// <summary>
-    /// UPDATE overload: asserts runtime SQL matches expected, then verifies
-    /// compile-time SQL from the same state matches runtime output.
-    /// </summary>
-    protected static void AssertDialects(
-        UpdateTestCase sqliteCase, UpdateTestCase pgCase,
-        UpdateTestCase mysqlCase, UpdateTestCase ssCase,
-        string sqlite, string pg, string mysql, string ss)
-    {
-        Assert.Multiple(() =>
-        {
-            Assert.That(sqliteCase.RuntimeSql, Is.EqualTo(sqlite), "SQLite runtime");
-            Assert.That(pgCase.RuntimeSql, Is.EqualTo(pg), "PostgreSQL runtime");
-            Assert.That(mysqlCase.RuntimeSql, Is.EqualTo(mysql), "MySQL runtime");
-            Assert.That(ssCase.RuntimeSql, Is.EqualTo(ss), "SqlServer runtime");
-
-            AssertUpdateCompileTime(sqliteCase, "SQLite");
-            AssertUpdateCompileTime(pgCase, "PostgreSQL");
-            AssertUpdateCompileTime(mysqlCase, "MySQL");
-            AssertUpdateCompileTime(ssCase, "SqlServer");
-        });
-    }
-
-    /// <summary>
-    /// DELETE overload: asserts runtime SQL matches expected, then verifies
-    /// compile-time SQL from the same state matches runtime output.
-    /// </summary>
-    protected static void AssertDialects(
-        DeleteTestCase sqliteCase, DeleteTestCase pgCase,
-        DeleteTestCase mysqlCase, DeleteTestCase ssCase,
-        string sqlite, string pg, string mysql, string ss)
-    {
-        Assert.Multiple(() =>
-        {
-            Assert.That(sqliteCase.RuntimeSql, Is.EqualTo(sqlite), "SQLite runtime");
-            Assert.That(pgCase.RuntimeSql, Is.EqualTo(pg), "PostgreSQL runtime");
-            Assert.That(mysqlCase.RuntimeSql, Is.EqualTo(mysql), "MySQL runtime");
-            Assert.That(ssCase.RuntimeSql, Is.EqualTo(ss), "SqlServer runtime");
-
-            AssertDeleteCompileTime(sqliteCase, "SQLite");
-            AssertDeleteCompileTime(pgCase, "PostgreSQL");
-            AssertDeleteCompileTime(mysqlCase, "MySQL");
-            AssertDeleteCompileTime(ssCase, "SqlServer");
-        });
-    }
-
-    /// <summary>
-    /// INSERT overload: asserts runtime SQL matches expected, then verifies
-    /// compile-time SQL from the same state matches runtime output.
-    /// </summary>
-    protected static void AssertDialects(
-        InsertTestCase sqliteCase, InsertTestCase pgCase,
-        InsertTestCase mysqlCase, InsertTestCase ssCase,
-        string sqlite, string pg, string mysql, string ss)
-    {
-        Assert.Multiple(() =>
-        {
-            Assert.That(sqliteCase.RuntimeSql, Is.EqualTo(sqlite), "SQLite runtime");
-            Assert.That(pgCase.RuntimeSql, Is.EqualTo(pg), "PostgreSQL runtime");
-            Assert.That(mysqlCase.RuntimeSql, Is.EqualTo(mysql), "MySQL runtime");
-            Assert.That(ssCase.RuntimeSql, Is.EqualTo(ss), "SqlServer runtime");
-
-            AssertInsertCompileTime(sqliteCase, "SQLite");
-            AssertInsertCompileTime(pgCase, "PostgreSQL");
-            AssertInsertCompileTime(mysqlCase, "MySQL");
-            AssertInsertCompileTime(ssCase, "SqlServer");
-        });
-    }
-
-    /// <summary>
     /// Unified QueryDiagnostics overload: dispatches compile-time verification
     /// based on <see cref="DiagnosticQueryKind"/>.
     /// </summary>
@@ -192,85 +97,80 @@ internal abstract class CrossDialectTestBase
         switch (diag.Kind)
         {
             case DiagnosticQueryKind.Select:
-                AssertSelectCompileTime(
-                    new SqlTestCase(diag.Sql, (QueryState)diag.RawState!), dialectName);
+                AssertSelectCompileTime(diag.Sql, (QueryState)diag.RawState!, dialectName);
                 break;
             case DiagnosticQueryKind.Update:
-                AssertUpdateCompileTime(
-                    new UpdateTestCase(diag.Sql, (UpdateState)diag.RawState!), dialectName);
+                AssertUpdateCompileTime(diag.Sql, (UpdateState)diag.RawState!, dialectName);
                 break;
             case DiagnosticQueryKind.Delete:
-                AssertDeleteCompileTime(
-                    new DeleteTestCase(diag.Sql, (DeleteState)diag.RawState!), dialectName);
+                AssertDeleteCompileTime(diag.Sql, (DeleteState)diag.RawState!, dialectName);
                 break;
             case DiagnosticQueryKind.Insert:
-                AssertInsertCompileTime(
-                    new InsertTestCase(diag.Sql, (InsertState)diag.RawState!, diag.InsertRowCount), dialectName);
+                AssertInsertCompileTime(diag.Sql, (InsertState)diag.RawState!, diag.InsertRowCount, dialectName);
                 break;
         }
     }
 
-    private static void AssertSelectCompileTime(SqlTestCase testCase, string dialectName)
+    private static void AssertSelectCompileTime(string runtimeSql, QueryState state, string dialectName)
     {
         var (clauses, dialect, table, schema, alias) =
-            CompileTimeConverter.ConvertSelectState(testCase.State);
+            CompileTimeConverter.ConvertSelectState(state);
         var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
         var result = CompileTimeSqlBuilder.BuildSelectSql(
             0UL, clauses, templates, dialect, table, schema, alias);
 
-        bool hasPagination = testCase.State.Limit.HasValue || testCase.State.Offset.HasValue;
+        bool hasPagination = state.Limit.HasValue || state.Offset.HasValue;
         if (hasPagination)
         {
             // Compare non-pagination prefix only
-            var runtimePrefix = GetPaginationPrefix(testCase.RuntimeSql, dialect);
+            var runtimePrefix = GetPaginationPrefix(runtimeSql, dialect);
             var compilePrefix = GetPaginationPrefix(result.Sql, dialect);
             Assert.That(compilePrefix, Is.EqualTo(runtimePrefix),
                 $"{dialectName} compile-time prefix mismatch");
         }
         else
         {
-            Assert.That(result.Sql, Is.EqualTo(testCase.RuntimeSql),
+            Assert.That(result.Sql, Is.EqualTo(runtimeSql),
                 $"{dialectName} compile-time mismatch");
         }
     }
 
-    private static void AssertUpdateCompileTime(UpdateTestCase testCase, string dialectName)
+    private static void AssertUpdateCompileTime(string runtimeSql, UpdateState state, string dialectName)
     {
         var (clauses, dialect, table, schema) =
-            CompileTimeConverter.ConvertUpdateState(testCase.State);
+            CompileTimeConverter.ConvertUpdateState(state);
         var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
         var result = CompileTimeSqlBuilder.BuildUpdateSql(
             0UL, clauses, templates, dialect, table, schema);
 
-        Assert.That(result.Sql, Is.EqualTo(testCase.RuntimeSql),
+        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
             $"{dialectName} compile-time mismatch");
     }
 
-    private static void AssertDeleteCompileTime(DeleteTestCase testCase, string dialectName)
+    private static void AssertDeleteCompileTime(string runtimeSql, DeleteState state, string dialectName)
     {
         var (clauses, dialect, table, schema) =
-            CompileTimeConverter.ConvertDeleteState(testCase.State);
+            CompileTimeConverter.ConvertDeleteState(state);
         var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
         var result = CompileTimeSqlBuilder.BuildDeleteSql(
             0UL, clauses, templates, dialect, table, schema);
 
-        Assert.That(result.Sql, Is.EqualTo(testCase.RuntimeSql),
+        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
             $"{dialectName} compile-time mismatch");
     }
 
-    private static void AssertInsertCompileTime(InsertTestCase testCase, string dialectName)
+    private static void AssertInsertCompileTime(string runtimeSql, InsertState state, int rowCount, string dialectName)
     {
-        var state = testCase.State;
         var genDialect = (GenSqlDialect)(int)state.Dialect;
         var result = CompileTimeSqlBuilder.BuildInsertSql(
             genDialect,
             state.TableName,
             state.SchemaName,
             state.Columns,
-            state.Columns.Count * testCase.RowCount,
+            state.Columns.Count * rowCount,
             state.IdentityColumn);
 
-        Assert.That(result.Sql, Is.EqualTo(testCase.RuntimeSql),
+        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
             $"{dialectName} compile-time mismatch");
     }
 

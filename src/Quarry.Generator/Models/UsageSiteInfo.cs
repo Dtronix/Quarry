@@ -234,7 +234,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// <summary>
     /// Gets the compile-time constant integer value for Limit/Offset calls.
     /// Non-null only when the argument is a constant (literal or const variable).
-    /// Used by ToSql prebuilt chains to inline literal pagination values instead of parameter placeholders.
+    /// Used by ToDiagnostics prebuilt chains to inline literal pagination values instead of parameter placeholders.
     /// </summary>
     public int? ConstantIntValue { get; }
 
@@ -370,11 +370,6 @@ internal enum InterceptorKind
     ToAsyncEnumerable,
 
     /// <summary>
-    /// ToSql() method - returns prebuilt SQL string.
-    /// </summary>
-    ToSql,
-
-    /// <summary>
     /// ExecuteNonQueryAsync() on InsertBuilder - generates insert with entity property extraction.
     /// </summary>
     InsertExecuteNonQuery,
@@ -383,11 +378,6 @@ internal enum InterceptorKind
     /// ExecuteScalarAsync() on InsertBuilder - generates insert with identity return.
     /// </summary>
     InsertExecuteScalar,
-
-    /// <summary>
-    /// ToSql() on InsertBuilder - generates insert SQL with column metadata for preview.
-    /// </summary>
-    InsertToSql,
 
     /// <summary>
     /// ToDiagnostics() method - returns prebuilt QueryDiagnostics with SQL and optimization metadata.

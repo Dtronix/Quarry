@@ -22,7 +22,7 @@ public class SingleInsertTests
         // Add a single row with parameter indices
         builder.AddRow([0, 1]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"users\" (\"name\", \"email\") VALUES (@p0, @p1)"));
     }
@@ -35,7 +35,7 @@ public class SingleInsertTests
         builder.SetColumns(["\"name\""]);
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"public\".\"users\" (\"name\") VALUES (@p0)"));
     }
@@ -55,7 +55,7 @@ public class SingleInsertTests
         builder.SetColumns([quotedColumn]);
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(expected));
     }
@@ -69,7 +69,7 @@ public class SingleInsertTests
         builder.SetIdentityColumn("id");
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"users\" (\"name\") VALUES (@p0) RETURNING \"id\""));
     }
@@ -83,7 +83,7 @@ public class SingleInsertTests
         builder.SetIdentityColumn("id");
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"users\" (\"name\") VALUES ($1) RETURNING \"id\""));
     }
@@ -97,7 +97,7 @@ public class SingleInsertTests
         builder.SetIdentityColumn("id");
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Note: SQL Server OUTPUT clause is appended after VALUES in the current implementation
         Assert.That(sql, Is.EqualTo("INSERT INTO [users] ([name]) VALUES (@p0) OUTPUT INSERTED.[id]"));
@@ -113,7 +113,7 @@ public class SingleInsertTests
         builder.SetIdentityColumn("id");
         builder.AddRow([0]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // MySQL doesn't include RETURNING in the INSERT - it uses SELECT LAST_INSERT_ID() after
         Assert.That(sql, Is.EqualTo("INSERT INTO `users` (`name`) VALUES (?)"));
@@ -130,7 +130,7 @@ public class SingleInsertTests
         builder.AddRow([2, 3]);
         builder.AddRow([4, 5]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"users\" (\"name\", \"email\") VALUES (@p0, @p1), (@p2, @p3), (@p4, @p5)"));
     }
@@ -253,7 +253,7 @@ public class SingleInsertTests
         builder.AddRow([0, 1]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert - Verify exact SQL matches expected format
         const string expected = "INSERT INTO \"users\" (\"name\", \"email\") VALUES (@p0, @p1)";
@@ -271,7 +271,7 @@ public class SingleInsertTests
         builder.AddRow([0, 1]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert - Verify exact SQL matches expected format
         const string expected = "INSERT INTO \"users\" (\"name\", \"email\") VALUES ($1, $2)";
@@ -289,7 +289,7 @@ public class SingleInsertTests
         builder.AddRow([0, 1]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert - Verify exact SQL matches expected format
         const string expected = "INSERT INTO `users` (`name`, `email`) VALUES (?, ?)";
@@ -307,7 +307,7 @@ public class SingleInsertTests
         builder.AddRow([0, 1]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert - Verify exact SQL matches expected format
         const string expected = "INSERT INTO [users] ([name], [email]) VALUES (@p0, @p1)";
@@ -325,7 +325,7 @@ public class SingleInsertTests
         builder.AddRow([0]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert
         const string expected = "INSERT INTO \"users\" (\"name\") VALUES (@p0) RETURNING \"id\"";
@@ -343,7 +343,7 @@ public class SingleInsertTests
         builder.AddRow([0]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert
         const string expected = "INSERT INTO \"users\" (\"name\") VALUES ($1) RETURNING \"id\"";
@@ -361,7 +361,7 @@ public class SingleInsertTests
         builder.AddRow([0]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
         var lastInsertIdQuery = SqlModificationBuilder.GetLastInsertIdQuery(SqlDialect.MySQL);
 
         // Assert - MySQL doesn't include RETURNING, uses separate query
@@ -382,7 +382,7 @@ public class SingleInsertTests
         builder.AddRow([0]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert
         const string expected = "INSERT INTO [users] ([name]) VALUES (@p0) OUTPUT INSERTED.[id]";
@@ -396,25 +396,25 @@ public class SingleInsertTests
         var sqliteBuilder = new InsertBuilder<TestEntity>(SqlDialect.SQLite, "users", "main");
         sqliteBuilder.SetColumns(["\"name\""]);
         sqliteBuilder.AddRow([0]);
-        Assert.That(sqliteBuilder.ToSql(), Is.EqualTo("INSERT INTO \"main\".\"users\" (\"name\") VALUES (@p0)"));
+        Assert.That(sqliteBuilder.ToDiagnostics().Sql, Is.EqualTo("INSERT INTO \"main\".\"users\" (\"name\") VALUES (@p0)"));
 
         // PostgreSQL with schema
         var pgBuilder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", "public");
         pgBuilder.SetColumns(["\"name\""]);
         pgBuilder.AddRow([0]);
-        Assert.That(pgBuilder.ToSql(), Is.EqualTo("INSERT INTO \"public\".\"users\" (\"name\") VALUES ($1)"));
+        Assert.That(pgBuilder.ToDiagnostics().Sql, Is.EqualTo("INSERT INTO \"public\".\"users\" (\"name\") VALUES ($1)"));
 
         // MySQL with schema (database name)
         var mysqlBuilder = new InsertBuilder<TestEntity>(SqlDialect.MySQL, "users", "mydb");
         mysqlBuilder.SetColumns(["`name`"]);
         mysqlBuilder.AddRow([0]);
-        Assert.That(mysqlBuilder.ToSql(), Is.EqualTo("INSERT INTO `mydb`.`users` (`name`) VALUES (?)"));
+        Assert.That(mysqlBuilder.ToDiagnostics().Sql, Is.EqualTo("INSERT INTO `mydb`.`users` (`name`) VALUES (?)"));
 
         // SQL Server with schema
         var sqlServerBuilder = new InsertBuilder<TestEntity>(SqlDialect.SqlServer, "users", "dbo");
         sqlServerBuilder.SetColumns(["[name]"]);
         sqlServerBuilder.AddRow([0]);
-        Assert.That(sqlServerBuilder.ToSql(), Is.EqualTo("INSERT INTO [dbo].[users] ([name]) VALUES (@p0)"));
+        Assert.That(sqlServerBuilder.ToDiagnostics().Sql, Is.EqualTo("INSERT INTO [dbo].[users] ([name]) VALUES (@p0)"));
     }
 
     [Test]
@@ -438,7 +438,7 @@ public class SingleInsertTests
         builder.AddRow([4, 5]);
 
         // Act
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         // Assert
         const string expected = "INSERT INTO \"users\" (\"name\", \"email\") VALUES (@p0, @p1), (@p2, @p3), (@p4, @p5)";

@@ -463,45 +463,6 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"    }}");
     }
 
-    /// <summary>
-    /// Generates an InsertBuilder ToSql() interceptor that populates column metadata for SQL preview.
-    /// </summary>
-    private static void GenerateInsertToSqlInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo;
-
-        sb.AppendLine($"    public static string {methodName}(");
-        sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
-        sb.AppendLine($"    {{");
-
-        // Carrier-optimized path: return pre-computed SQL directly
-        if (carrier != null && prebuiltChain != null)
-        {
-            EmitCarrierToSqlTerminal(sb, carrier, prebuiltChain);
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<{entityType}>>(builder);");
-
-        if (insertInfo != null && insertInfo.Columns.Count > 0)
-        {
-            EmitInsertColumnSetup(sb, insertInfo);
-
-            // Set identity column if present (for RETURNING/OUTPUT clause)
-            if (!string.IsNullOrEmpty(insertInfo.IdentityColumnName))
-            {
-                sb.AppendLine($"        __b.SetIdentityColumn(@\"{EscapeStringLiteral(insertInfo.IdentityColumnName!)}\");");
-                sb.AppendLine();
-            }
-        }
-
-        sb.AppendLine($"        return __b.ToSqlDirect();");
-        sb.AppendLine($"    }}");
-    }
-
     #region Modification Helpers
 
     /// <summary>
