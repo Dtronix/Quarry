@@ -741,12 +741,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
 
             // Build PrebuiltChainInfo for tier 1 chains.
-            // ToDiagnostics terminals are analyzed (anchored) but don't emit prebuilt chains —
-            // the runtime ToDiagnostics() impl handles SQL generation. This avoids alias quoting
-            // differences between compile-time and runtime SQL builders.
-            if (result.Tier == OptimizationTier.PrebuiltDispatch
-                && executionSite.Kind is not InterceptorKind.ToDiagnostics
-                    and not InterceptorKind.InsertToDiagnostics)
+            if (result.Tier == OptimizationTier.PrebuiltDispatch)
             {
                 PrebuiltChainInfo? chainInfo;
                 if (executionSite.JoinedEntityTypeNames != null && executionSite.JoinedEntityTypeNames.Count >= 2)
@@ -883,21 +878,19 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // skipped by GenerateInterceptorMethod, the chain must NOT be carrier-eligible,
         // otherwise clause interceptors create carriers with no terminal to consume them.
         var chainParams = BuildChainParameters(result);
-        // ToDiagnostics is a diagnostic-only terminal — skip carrier optimization to avoid
-        // surfacing carrier parameter extraction edge cases in subquery/composition chains.
         var isCarrierEligible = chainParams != null
-            && result.UnmatchedMethodNames == null
-            && executionSite.Kind is not InterceptorKind.ToDiagnostics
-                and not InterceptorKind.InsertToDiagnostics;
+            && result.UnmatchedMethodNames == null;
 
         if (isCarrierEligible && queryKind.Value == QueryKind.Select)
         {
             // SELECT terminal checks: result type resolution, reader delegate, ambiguous columns
+            // ToDiagnostics doesn't read rows, so skip the reader check for it.
+            var isToDiag = executionSite.Kind == InterceptorKind.ToDiagnostics;
             var resolvedResult = InterceptorCodeGenerator.ResolveExecutionResultTypePublic(
                 executionSite.ResultTypeName, executionSite.ResultTypeName, projInfo);
             if (string.IsNullOrEmpty(resolvedResult))
                 isCarrierEligible = false;
-            else if (readerCode == null)
+            else if (readerCode == null && !isToDiag)
                 isCarrierEligible = false;
             else if (projInfo != null && projInfo.Columns.Any(c =>
                 c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
