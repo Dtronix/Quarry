@@ -44,10 +44,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_MapToColumn_CreditLimit()
     {
         AssertDialects(
-            Lite.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            Pg.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            My.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
-            Ss.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToTestCase(),
+            Lite.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToDiagnostics(),
+            Pg.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToDiagnostics(),
+            My.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToDiagnostics(),
+            Ss.Accounts().Select(a => (a.AccountId, a.CreditLimit)).ToDiagnostics(),
             sqlite: "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
             pg:     "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
             mysql:  "SELECT `AccountId`, `credit_limit` FROM `accounts`",
@@ -62,10 +62,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SingleColumn()
     {
         AssertDialects(
-            Lite.Users().Select(u => u.UserName).ToTestCase(),
-            Pg.Users().Select(u => u.UserName).ToTestCase(),
-            My.Users().Select(u => u.UserName).ToTestCase(),
-            Ss.Users().Select(u => u.UserName).ToTestCase(),
+            Lite.Users().Select(u => u.UserName).ToDiagnostics(),
+            Pg.Users().Select(u => u.UserName).ToDiagnostics(),
+            My.Users().Select(u => u.UserName).ToDiagnostics(),
+            Ss.Users().Select(u => u.UserName).ToDiagnostics(),
             sqlite: "SELECT \"UserName\" FROM \"users\"",
             pg:     "SELECT \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserName` FROM `users`",
@@ -80,10 +80,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Where_RefId_ForeignKey()
     {
         AssertDialects(
-            Lite.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
-            Pg.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
-            My.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
-            Ss.Orders().Where(o => o.UserId.Id == 5).ToTestCase(),
+            Lite.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
+            Pg.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
+            My.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
+            Ss.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
             sqlite: "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
             pg:     "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
             mysql:  "SELECT * FROM `orders` WHERE (`UserId` = 5)",
@@ -124,10 +124,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Delete_All_NoWhereClause()
     {
         AssertDialects(
-            Lite.Users().Delete().All().ToTestCase(),
-            Pg.Users().Delete().All().ToTestCase(),
-            My.Users().Delete().All().ToTestCase(),
-            Ss.Users().Delete().All().ToTestCase(),
+            Lite.Users().Delete().All().ToDiagnostics(),
+            Pg.Users().Delete().All().ToDiagnostics(),
+            My.Users().Delete().All().ToDiagnostics(),
+            Ss.Users().Delete().All().ToDiagnostics(),
             sqlite: "DELETE FROM \"users\"",
             pg:     "DELETE FROM \"users\"",
             mysql:  "DELETE FROM `users`",

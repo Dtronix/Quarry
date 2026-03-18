@@ -206,7 +206,17 @@ internal static partial class InterceptorCodeGenerator
                 }
                 if (chain.Analysis.Clauses.Count > 0)
                 {
-                    firstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
+                    // For non-carrier chains where the first clause is ChainRoot (which gets
+                    // skipped on the non-carrier path), the first REAL clause after it needs
+                    // to be treated as the chain entry so it emits AllocatePrebuiltParams.
+                    var firstClause = chain.Analysis.Clauses[0];
+                    firstClauseIds.Add(firstClause.Site.UniqueId);
+                    if (firstClause.Role == ClauseRole.ChainRoot
+                        && !carrierClauseLookup.ContainsKey(firstClause.Site.UniqueId)
+                        && chain.Analysis.Clauses.Count > 1)
+                    {
+                        firstClauseIds.Add(chain.Analysis.Clauses[1].Site.UniqueId);
+                    }
                 }
             }
         }

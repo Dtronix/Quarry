@@ -14,10 +14,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Tuple_TwoColumns()
     {
         AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).ToTestCase(),
-            Pg.Users().Select(u => (u.UserId, u.UserName)).ToTestCase(),
-            My.Users().Select(u => (u.UserId, u.UserName)).ToTestCase(),
-            Ss.Users().Select(u => (u.UserId, u.UserName)).ToTestCase(),
+            Lite.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName` FROM `users`",
@@ -28,10 +28,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Tuple_ThreeColumns()
     {
         AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToTestCase(),
-            Pg.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToTestCase(),
-            My.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToTestCase(),
-            Ss.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToTestCase(),
+            Lite.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users`",
@@ -42,10 +42,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Dto_UserSummary()
     {
         AssertDialects(
-            Lite.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToTestCase(),
-            Pg.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToTestCase(),
-            My.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToTestCase(),
-            Ss.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToTestCase(),
+            Lite.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Pg.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users`",
@@ -56,10 +56,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Dto_UserWithEmail()
     {
         AssertDialects(
-            Lite.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToTestCase(),
-            Pg.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToTestCase(),
-            My.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToTestCase(),
-            Ss.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToTestCase(),
+            Lite.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
+            Pg.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
+            My.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
+            Ss.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `Email` FROM `users`",
@@ -70,10 +70,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_OrdersTable_Tuple()
     {
         AssertDialects(
-            Lite.Orders().Select(o => (o.OrderId, o.Total)).ToTestCase(),
-            Pg.Orders().Select(o => (o.OrderId, o.Total)).ToTestCase(),
-            My.Orders().Select(o => (o.OrderId, o.Total)).ToTestCase(),
-            Ss.Orders().Select(o => (o.OrderId, o.Total)).ToTestCase(),
+            Lite.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
+            Pg.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
+            My.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
+            Ss.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
             sqlite: "SELECT \"OrderId\", \"Total\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", \"Total\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, `Total` FROM `orders`",
@@ -84,10 +84,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Distinct()
     {
         AssertDialects(
-            Lite.Users().Distinct().ToTestCase(),
-            Pg.Users().Distinct().ToTestCase(),
-            My.Users().Distinct().ToTestCase(),
-            Ss.Users().Distinct().ToTestCase(),
+            Lite.Users().Distinct().ToDiagnostics(),
+            Pg.Users().Distinct().ToDiagnostics(),
+            My.Users().Distinct().ToDiagnostics(),
+            Ss.Users().Distinct().ToDiagnostics(),
             sqlite: "SELECT DISTINCT * FROM \"users\"",
             pg:     "SELECT DISTINCT * FROM \"users\"",
             mysql:  "SELECT DISTINCT * FROM `users`",
@@ -98,10 +98,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Entity_User_AllColumns()
     {
         AssertDialects(
-            Lite.Users().Select(u => u).ToTestCase(),
-            Pg.Users().Select(u => u).ToTestCase(),
-            My.Users().Select(u => u).ToTestCase(),
-            Ss.Users().Select(u => u).ToTestCase(),
+            Lite.Users().Select(u => u).ToDiagnostics(),
+            Pg.Users().Select(u => u).ToDiagnostics(),
+            My.Users().Select(u => u).ToDiagnostics(),
+            Ss.Users().Select(u => u).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users`",
@@ -112,10 +112,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Select_Entity_Order_WithForeignKey()
     {
         AssertDialects(
-            Lite.Orders().Select(o => o).ToTestCase(),
-            Pg.Orders().Select(o => o).ToTestCase(),
-            My.Orders().Select(o => o).ToTestCase(),
-            Ss.Orders().Select(o => o).ToTestCase(),
+            Lite.Orders().Select(o => o).ToDiagnostics(),
+            Pg.Orders().Select(o => o).ToDiagnostics(),
+            My.Orders().Select(o => o).ToDiagnostics(),
+            Ss.Orders().Select(o => o).ToDiagnostics(),
             sqlite: "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders`",
@@ -126,10 +126,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Pagination_LimitOffset()
     {
         AssertDialects(
-            Lite.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
-            Pg.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
-            My.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
-            Ss.Users().Where(u => true).Limit(10).Offset(20).ToTestCase(),
+            Lite.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
+            Pg.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
+            My.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
+            Ss.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
             pg:     "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
             mysql:  "SELECT * FROM `users` LIMIT 10 OFFSET 20",
@@ -140,10 +140,10 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     public void Pagination_LimitOnly()
     {
         AssertDialects(
-            Lite.Users().Where(u => true).Limit(5).ToTestCase(),
-            Pg.Users().Where(u => true).Limit(5).ToTestCase(),
-            My.Users().Where(u => true).Limit(5).ToTestCase(),
-            Ss.Users().Where(u => true).Limit(5).ToTestCase(),
+            Lite.Users().Where(u => true).Limit(5).ToDiagnostics(),
+            Pg.Users().Where(u => true).Limit(5).ToDiagnostics(),
+            My.Users().Where(u => true).Limit(5).ToDiagnostics(),
+            Ss.Users().Where(u => true).Limit(5).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" LIMIT 5",
             pg:     "SELECT * FROM \"users\" LIMIT 5",
             mysql:  "SELECT * FROM `users` LIMIT 5",

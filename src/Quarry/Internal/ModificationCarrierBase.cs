@@ -30,6 +30,8 @@ public abstract class DeleteCarrierBase<T> : IEntityAccessor<T>, IDeleteBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
     string IEntityAccessor<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T> IEntityAccessor<T>.Delete()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T> IEntityAccessor<T>.Update()
@@ -69,8 +71,14 @@ public abstract class DeleteCarrierBase<T> : IEntityAccessor<T>, IDeleteBuilder<
     string IDeleteBuilder<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IDeleteBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryDiagnostics IDeleteBuilder<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     string IExecutableDeleteBuilder<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IExecutableDeleteBuilder<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<T>, IExecutableUpdateBuilder<T>
@@ -100,6 +108,8 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
     string IEntityAccessor<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T> IEntityAccessor<T>.Delete()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T> IEntityAccessor<T>.Update()
@@ -151,8 +161,14 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
     string IUpdateBuilder<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    QueryDiagnostics IUpdateBuilder<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     string IExecutableUpdateBuilder<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IExecutableUpdateBuilder<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<T>
@@ -182,6 +198,8 @@ public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
     string IEntityAccessor<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T> IEntityAccessor<T>.Delete()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T> IEntityAccessor<T>.Update()
@@ -210,4 +228,7 @@ public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<
 
     string IInsertBuilder<T>.ToSql()
         => throw new InvalidOperationException("Carrier method IInsertBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IInsertBuilder<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
