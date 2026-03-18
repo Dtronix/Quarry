@@ -16,10 +16,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void GroupBy_SingleColumn()
     {
         AssertDialects(
-            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, COUNT(*) FROM `orders` GROUP BY `Status`",
@@ -34,10 +34,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void Having_CountGreaterThan()
     {
         AssertDialects(
-            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            My.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
-            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToTestCase(),
+            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            My.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
+            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 5).Select(o => (o.Status, Sql.Count())).ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             pg:     "SELECT \"Status\", COUNT(*) FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             mysql:  "SELECT `Status`, COUNT(*) FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
@@ -52,10 +52,10 @@ internal class CrossDialectAggregateTests : CrossDialectTestBase
     public void Select_Count_Sum()
     {
         AssertDialects(
-            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
-            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToTestCase(),
+            Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToDiagnostics(),
+            Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToDiagnostics(),
+            My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToDiagnostics(),
+            Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total))).ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, COUNT(*), SUM(\"Total\") FROM `orders` GROUP BY `Status`",

@@ -15,10 +15,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     {
         var priority = OrderPriority.Urgent;
         AssertDialects(
-            Lite.Orders().Where(o => o.Priority == priority).ToTestCase(),
-            Pg.Orders().Where(o => o.Priority == priority).ToTestCase(),
-            My.Orders().Where(o => o.Priority == priority).ToTestCase(),
-            Ss.Orders().Where(o => o.Priority == priority).ToTestCase(),
+            Lite.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
+            Pg.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
+            My.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
+            Ss.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             sqlite: "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
             pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
             mysql:  "SELECT * FROM `orders` WHERE (`Priority` = @p0)",
@@ -68,10 +68,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     public void Update_Set_EnumColumn()
     {
         AssertDialects(
-            Lite.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToTestCase(),
-            Pg.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToTestCase(),
-            My.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToTestCase(),
-            Ss.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToTestCase(),
+            Lite.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            Pg.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            My.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            Ss.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
             sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE (\"OrderId\" = 1)",
             pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE (\"OrderId\" = 1)",
             mysql:  "UPDATE `orders` SET `Priority` = ? WHERE (`OrderId` = 1)",

@@ -448,6 +448,185 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a tier 1 ToDiagnostics interceptor that returns a QueryDiagnostics with pre-built SQL
+    /// and optimization metadata. Mirrors GeneratePrebuiltToSqlInterceptor but returns QueryDiagnostics.
+    /// </summary>
+    private static void GeneratePrebuiltToDiagnosticsInterceptor(
+        StringBuilder sb,
+        UsageSiteInfo site,
+        string methodName,
+        PrebuiltChainInfo chain,
+        CarrierClassInfo? carrier = null)
+    {
+        var entityType = GetShortTypeName(chain.EntityTypeName);
+        var thisType = site.BuilderTypeName;
+        var concreteType = ToConcreteTypeName(thisType);
+
+        // Determine the full this-parameter type based on query kind and builder shape
+        string thisParamType;
+        string concreteParamType;
+
+        if (chain.IsJoinChain)
+        {
+            var joinedNames = chain.JoinedEntityTypeNames!;
+            var joinTypeArgs = string.Join(", ", joinedNames.Select(GetShortTypeName));
+
+            if (chain.ResultTypeName != null)
+            {
+                var resultType = GetShortTypeName(
+                    ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName);
+                thisParamType = $"{thisType}<{joinTypeArgs}, {resultType}>";
+                concreteParamType = $"{concreteType}<{joinTypeArgs}, {resultType}>";
+            }
+            else
+            {
+                thisParamType = $"{thisType}<{joinTypeArgs}>";
+                concreteParamType = $"{concreteType}<{joinTypeArgs}>";
+            }
+        }
+        else if (chain.QueryKind == QueryKind.Select)
+        {
+            if (chain.ResultTypeName != null)
+            {
+                var resultType = GetShortTypeName(
+                    ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName);
+                thisParamType = $"{thisType}<{entityType}, {resultType}>";
+                concreteParamType = $"{concreteType}<{entityType}, {resultType}>";
+            }
+            else
+            {
+                thisParamType = $"{thisType}<{entityType}>";
+                concreteParamType = $"{concreteType}<{entityType}>";
+            }
+        }
+        else if (chain.QueryKind == QueryKind.Delete)
+        {
+            thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
+            concreteParamType = $"ExecutableDeleteBuilder<{entityType}>";
+        }
+        else if (chain.QueryKind == QueryKind.Update)
+        {
+            thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
+            concreteParamType = $"ExecutableUpdateBuilder<{entityType}>";
+        }
+        else
+        {
+            return;
+        }
+
+        var diagnosticKind = chain.QueryKind switch
+        {
+            QueryKind.Select => "DiagnosticQueryKind.Select",
+            QueryKind.Delete => "DiagnosticQueryKind.Delete",
+            QueryKind.Update => "DiagnosticQueryKind.Update",
+            _ => "DiagnosticQueryKind.Select"
+        };
+
+        var isCarrierOptimized = carrier != null ? "true" : "false";
+
+        sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
+        sb.AppendLine($"        this {thisParamType} builder)");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null)
+        {
+            EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
+            sb.AppendLine($"    }}");
+            return;
+        }
+
+        if (chain.SqlMap.Count == 1)
+        {
+            foreach (var kvp in chain.SqlMap)
+            {
+                var escapedSql = EscapeStringLiteral(kvp.Value.Sql);
+                sb.AppendLine($"        return new QueryDiagnostics(@\"{escapedSql}\", Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteParamType}>(builder);");
+            sb.AppendLine($"        var sql = __b.ClauseMask switch");
+            sb.AppendLine($"        {{");
+            foreach (var kvp in chain.SqlMap.OrderBy(k => k.Key))
+            {
+                var escapedSql = EscapeStringLiteral(kvp.Value.Sql);
+                sb.AppendLine($"            {kvp.Key}UL => @\"{escapedSql}\",");
+            }
+            sb.AppendLine($"            _ => throw new InvalidOperationException(\"Unexpected ClauseMask\")");
+            sb.AppendLine($"        }};");
+            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Generates a tier 1 ToDiagnostics interceptor for INSERT chains.
+    /// </summary>
+    private static void GenerateInsertToDiagnosticsInterceptor(
+        StringBuilder sb,
+        UsageSiteInfo site,
+        string methodName,
+        PrebuiltChainInfo? chain,
+        CarrierClassInfo? carrier = null)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var isCarrierOptimized = carrier != null ? "true" : "false";
+
+        sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
+        sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
+        sb.AppendLine($"    {{");
+
+        if (chain != null && chain.SqlMap.Count > 0)
+        {
+            foreach (var kvp in chain.SqlMap)
+            {
+                var escapedSql = EscapeStringLiteral(kvp.Value.Sql);
+                sb.AppendLine($"        return new QueryDiagnostics(@\"{escapedSql}\", Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+            }
+        }
+        else
+        {
+            // No prebuilt chain — fallback to runtime
+            sb.AppendLine($"        return Unsafe.As<InsertBuilder<{entityType}>>(builder).ToDiagnostics();");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a carrier ToDiagnostics terminal.
+    /// </summary>
+    private static void EmitCarrierToDiagnosticsTerminal(
+        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        string diagnosticKind, string isCarrierOptimized)
+    {
+        if (chain.SqlMap.Count == 1)
+        {
+            foreach (var kvp in chain.SqlMap)
+            {
+                sb.AppendLine($"        return new QueryDiagnostics(@\"{EscapeStringLiteral(kvp.Value.Sql)}\", Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+            }
+        }
+        else
+        {
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            sb.AppendLine("        var sql = __c.Mask switch");
+            sb.AppendLine("        {");
+            foreach (var kvp in chain.SqlMap)
+            {
+                sb.AppendLine($"            {kvp.Key} => @\"{EscapeStringLiteral(kvp.Value.Sql)}\",");
+            }
+            sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
+            sb.AppendLine("        };");
+            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
+        }
+    }
+
+    /// <summary>
     /// Generates the dispatch table switch expression that maps ClauseMask values
     /// to pre-built SQL string literals.
     /// </summary>

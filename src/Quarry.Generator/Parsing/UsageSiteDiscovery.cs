@@ -60,6 +60,7 @@ internal static class UsageSiteDiscovery
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
         ["ToSql"] = InterceptorKind.ToSql,
+        ["ToDiagnostics"] = InterceptorKind.ToDiagnostics,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
         ["Distinct"] = InterceptorKind.Distinct,
@@ -75,7 +76,8 @@ internal static class UsageSiteDiscovery
     {
         "ExecuteNonQueryAsync",
         "ExecuteScalarAsync",
-        "ToSql"
+        "ToSql",
+        "ToDiagnostics"
     };
 
     // RawSql methods on QuarryContext that we intercept
@@ -275,6 +277,8 @@ internal static class UsageSiteDiscovery
         {
             if (methodName == "ToSql" && IsInsertBuilderType(containingType.Name))
                 kind = InterceptorKind.InsertToSql;
+            else if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
+                kind = InterceptorKind.InsertToDiagnostics;
             else
                 return null;
         }
@@ -287,6 +291,7 @@ internal static class UsageSiteDiscovery
                 "ExecuteNonQueryAsync" => InterceptorKind.InsertExecuteNonQuery,
                 "ExecuteScalarAsync" => InterceptorKind.InsertExecuteScalar,
                 "ToSql" => InterceptorKind.InsertToSql,
+                "ToDiagnostics" => InterceptorKind.InsertToDiagnostics,
                 _ => kind
             };
         }
@@ -295,7 +300,8 @@ internal static class UsageSiteDiscovery
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
-            or InterceptorKind.InsertToSql)
+            or InterceptorKind.InsertToSql
+            or InterceptorKind.InsertToDiagnostics)
         {
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
         }

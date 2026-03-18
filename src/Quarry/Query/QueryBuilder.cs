@@ -431,6 +431,14 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
         return SqlBuilder.BuildSelectSql(_state);
     }
 
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(State.Parameters),
+        DiagnosticQueryKind.Select,
+        State.Dialect,
+        State.TableName,
+        rawState: State);
+
     /// <summary>
     /// Gets the internal state for use by generated code.
     /// </summary>
@@ -777,6 +785,14 @@ public sealed class QueryBuilder<TEntity, TResult> : IQueryBuilder<TEntity, TRes
     {
         return SqlBuilder.BuildSelectSql(_state);
     }
+
+    public QueryDiagnostics ToDiagnostics() => new(
+        ToSql(),
+        DiagnosticsHelper.ConvertParameters(State.Parameters),
+        DiagnosticQueryKind.Select,
+        State.Dialect,
+        State.TableName,
+        rawState: State);
 
     #region Execution Methods
 

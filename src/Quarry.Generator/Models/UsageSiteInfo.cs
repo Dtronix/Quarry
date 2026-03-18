@@ -390,6 +390,16 @@ internal enum InterceptorKind
     InsertToSql,
 
     /// <summary>
+    /// ToDiagnostics() method - returns prebuilt QueryDiagnostics with SQL and optimization metadata.
+    /// </summary>
+    ToDiagnostics,
+
+    /// <summary>
+    /// ToDiagnostics() on InsertBuilder - generates insert SQL with column metadata for QueryDiagnostics.
+    /// </summary>
+    InsertToDiagnostics,
+
+    /// <summary>
     /// Where() on DeleteBuilder or ExecutableDeleteBuilder - generates WHERE clause for DELETE operations.
     /// </summary>
     DeleteWhere,

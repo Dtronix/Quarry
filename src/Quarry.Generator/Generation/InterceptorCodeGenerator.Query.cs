@@ -132,7 +132,7 @@ internal static partial class InterceptorCodeGenerator
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToSql)
+        else if (site.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
                 return;
@@ -263,6 +263,11 @@ internal static partial class InterceptorCodeGenerator
                     GeneratePrebuiltToSqlInterceptor(sb, site, methodName, toSqlChain, carrierInfo);
                 break;
 
+            case InterceptorKind.ToDiagnostics:
+                if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
+                    GeneratePrebuiltToDiagnosticsInterceptor(sb, site, methodName, toDiagChain, carrierInfo);
+                break;
+
             case InterceptorKind.DeleteWhere:
                 GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
@@ -297,6 +302,13 @@ internal static partial class InterceptorCodeGenerator
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertToSqlChain);
                     GenerateInsertToSqlInterceptor(sb, site, methodName, insertToSqlChain, carrierInfo);
+                }
+                break;
+
+            case InterceptorKind.InsertToDiagnostics:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var insertDiagChain);
+                    GenerateInsertToDiagnosticsInterceptor(sb, site, methodName, insertDiagChain, carrierInfo);
                 }
                 break;
 

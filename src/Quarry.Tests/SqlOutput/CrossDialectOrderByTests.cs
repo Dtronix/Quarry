@@ -16,10 +16,10 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     public void OrderBy_SingleColumn_Asc()
     {
         AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToTestCase(),
-            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToTestCase(),
-            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToTestCase(),
-            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToTestCase(),
+            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC",
@@ -30,10 +30,10 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     public void OrderBy_SingleColumn_Desc()
     {
         AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToTestCase(),
-            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToTestCase(),
-            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToTestCase(),
-            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToTestCase(),
+            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"CreatedAt\" DESC",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"CreatedAt\" DESC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `CreatedAt` DESC",
@@ -48,10 +48,10 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     public void OrderBy_ThenBy_MultiColumn()
     {
         AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToTestCase(),
-            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToTestCase(),
-            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToTestCase(),
-            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToTestCase(),
+            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC, \"CreatedAt\" ASC",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC, \"CreatedAt\" ASC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC, `CreatedAt` ASC",
@@ -66,10 +66,10 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     public void OrderBy_Joined_RightTableColumn()
     {
         AssertDialects(
-            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToTestCase(),
-            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToTestCase(),
-            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToTestCase(),
-            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToTestCase(),
+            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
+            Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
+            My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
+            Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
             sqlite: "SELECT t0.\"UserName\", t1.\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" ORDER BY \"t1\".\"Total\" ASC",
             pg:     "SELECT t0.\"UserName\", t1.\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" ORDER BY \"t1\".\"Total\" ASC",
             mysql:  "SELECT t0.\"UserName\", t1.\"Total\" FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`Total` ASC",

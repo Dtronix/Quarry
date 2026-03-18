@@ -66,6 +66,12 @@ public interface IEntityAccessor<T> where T : class
     /// </summary>
     string ToSql();
 
+    /// <summary>
+    /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
+    /// bound parameters, and optimization metadata for this query chain.
+    /// </summary>
+    QueryDiagnostics ToDiagnostics();
+
     // ── Modification entry points ──
 
     /// <summary>

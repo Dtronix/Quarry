@@ -35,7 +35,7 @@ internal static partial class InterceptorCodeGenerator
             InterceptorKind.ExecuteNonQuery
                 => CanEmitNonQueryTerminal(chain),
             InterceptorKind.InsertExecuteNonQuery or InterceptorKind.InsertExecuteScalar
-                or InterceptorKind.InsertToSql
+                or InterceptorKind.InsertToSql or InterceptorKind.InsertToDiagnostics
                 => CanEmitInsertTerminal(chain),
             _ => true
         };
@@ -538,7 +538,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        var __b = Unsafe.As<{builderTypeName}>(builder);");
         sb.Append($"        var __c = new {carrier.ClassName} {{ ");
 
-        var isToSqlOnly = chain.Analysis.ExecutionSite.Kind == InterceptorKind.ToSql;
+        var isToSqlOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics;
         if (!isToSqlOnly)
         {
             sb.Append("Ctx = __b.State.ExecutionContext");

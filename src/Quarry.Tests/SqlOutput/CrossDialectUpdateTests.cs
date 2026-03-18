@@ -16,10 +16,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     public void Update_Set_Where_Equality()
     {
         AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToTestCase(),
-            Pg.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToTestCase(),
-            My.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToTestCase(),
-            Ss.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToTestCase(),
+            Lite.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
             pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
             mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
@@ -30,10 +30,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     public void Update_Set_Where_Boolean()
     {
         AssertDialects(
-            Lite.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToTestCase(),
-            Pg.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToTestCase(),
-            My.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToTestCase(),
-            Ss.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToTestCase(),
+            Lite.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToDiagnostics(),
+            My.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.IsActive, false).Where(u => u.IsActive).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"IsActive\" = @p0 WHERE \"IsActive\" = 1",
             pg:     "UPDATE \"users\" SET \"IsActive\" = $1 WHERE \"IsActive\" = TRUE",
             mysql:  "UPDATE `users` SET `IsActive` = ? WHERE `IsActive` = 1",
@@ -48,10 +48,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     public void Update_SetPoco()
     {
         AssertDialects(
-            Lite.Users().Update().Set(new User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToTestCase(),
-            Pg.Users().Update().Set(new Pg.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToTestCase(),
-            My.Users().Update().Set(new My.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToTestCase(),
-            Ss.Users().Update().Set(new Ss.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToTestCase(),
+            Lite.Users().Update().Set(new User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(new Pg.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(new My.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(new Ss.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
             pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
             mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
@@ -66,10 +66,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     public void Update_MultipleSet()
     {
         AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToTestCase(),
-            Pg.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToTestCase(),
-            My.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToTestCase(),
-            Ss.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToTestCase(),
+            Lite.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
             pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
             mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
@@ -85,10 +85,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     {
         var id = 5;
         AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToTestCase(),
-            Pg.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToTestCase(),
-            My.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToTestCase(),
-            Ss.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToTestCase(),
+            Lite.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = @p1)",
             pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = @p1)",
             mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = @p1)",
@@ -103,10 +103,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     public void Update_Set_TypeMappedColumn()
     {
         AssertDialects(
-            Lite.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToTestCase(),
-            Pg.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToTestCase(),
-            My.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToTestCase(),
-            Ss.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToTestCase(),
+            Lite.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Pg.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            My.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Ss.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE (\"AccountId\" = 1)",
             pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE (\"AccountId\" = 1)",
             mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE (`AccountId` = 1)",
