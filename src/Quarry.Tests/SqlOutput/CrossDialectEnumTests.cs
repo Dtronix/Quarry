@@ -20,8 +20,8 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             My.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             Ss.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             sqlite: "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
-            pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
-            mysql:  "SELECT * FROM `orders` WHERE (`Priority` = @p0)",
+            pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = $1)",
+            mysql:  "SELECT * FROM `orders` WHERE (`Priority` = ?)",
             ss:     "SELECT * FROM [orders] WHERE ([Priority] = @p0)");
     }
 

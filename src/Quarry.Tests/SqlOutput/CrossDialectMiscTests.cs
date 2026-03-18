@@ -21,8 +21,8 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (LOWER(\"UserName\") = @p0)",
-            pg:     "SELECT * FROM \"users\" WHERE (LOWER(\"UserName\") = @p0)",
-            mysql:  "SELECT * FROM `users` WHERE (LOWER(`UserName`) = @p0)",
+            pg:     "SELECT * FROM \"users\" WHERE (LOWER(\"UserName\") = $1)",
+            mysql:  "SELECT * FROM `users` WHERE (LOWER(`UserName`) = ?)",
             ss:     "SELECT * FROM [users] WHERE (LOWER([UserName]) = @p0)");
     }
 
@@ -39,8 +39,8 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (UPPER(\"UserName\") = @p0)",
-            pg:     "SELECT * FROM \"users\" WHERE (UPPER(\"UserName\") = @p0)",
-            mysql:  "SELECT * FROM `users` WHERE (UPPER(`UserName`) = @p0)",
+            pg:     "SELECT * FROM \"users\" WHERE (UPPER(\"UserName\") = $1)",
+            mysql:  "SELECT * FROM `users` WHERE (UPPER(`UserName`) = ?)",
             ss:     "SELECT * FROM [users] WHERE (UPPER([UserName]) = @p0)");
     }
 
@@ -57,8 +57,8 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (TRIM(\"UserName\") = @p0)",
-            pg:     "SELECT * FROM \"users\" WHERE (TRIM(\"UserName\") = @p0)",
-            mysql:  "SELECT * FROM `users` WHERE (TRIM(`UserName`) = @p0)",
+            pg:     "SELECT * FROM \"users\" WHERE (TRIM(\"UserName\") = $1)",
+            mysql:  "SELECT * FROM `users` WHERE (TRIM(`UserName`) = ?)",
             ss:     "SELECT * FROM [users] WHERE (TRIM([UserName]) = @p0)");
     }
 

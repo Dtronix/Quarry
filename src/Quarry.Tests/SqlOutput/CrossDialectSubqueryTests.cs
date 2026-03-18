@@ -318,8 +318,8 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
             My.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
             Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
-            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
-            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', @p0, '%')))",
+            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || $1 || '%'))",
+            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', ?, '%')))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%' + @p0 + '%'))");
     }
 
@@ -332,8 +332,8 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
             My.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
             Ss.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE @p0 || '%'))",
-            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE @p0 || '%'))",
-            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT(@p0, '%')))",
+            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE $1 || '%'))",
+            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT(?, '%')))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE @p0 + '%'))");
     }
 

@@ -46,10 +46,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Limit(10).Offset(0)
                 .Select((u, o) => (u.UserName, o.Total, o.Status))
                 .ToDiagnostics(),
-            sqlite: "SELECT t0.\"UserName\", t1.\"Total\", t1.\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            pg:     "SELECT t0.\"UserName\", t1.\"Total\", t1.\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            mysql:  "SELECT t0.\"UserName\", t1.\"Total\", t1.\"Status\" FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` ORDER BY `t1`.`Total` DESC LIMIT 10",
-            ss:     "SELECT t0.\"UserName\", t1.\"Total\", t1.\"Status\" FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` ORDER BY `t1`.`Total` DESC LIMIT 10",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
     }
 
     #endregion
@@ -114,10 +114,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
                 .ToDiagnostics(),
-            sqlite: "SELECT t0.\"UserName\", t1.\"Status\", t2.\"ProductName\", t2.\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
-            pg:     "SELECT t0.\"UserName\", t1.\"Status\", t2.\"ProductName\", t2.\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
-            mysql:  "SELECT t0.\"UserName\", t1.\"Status\", t2.\"ProductName\", t2.\"Quantity\" FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t2`.`UnitPrice` > 50.00",
-            ss:     "SELECT t0.\"UserName\", t1.\"Status\", t2.\"ProductName\", t2.\"Quantity\" FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] INNER JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] WHERE [t2].[UnitPrice] > 50.00");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Status\", \"t2\".\"ProductName\", \"t2\".\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Status\", \"t2\".\"ProductName\", \"t2\".\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Status`, `t2`.`ProductName`, `t2`.`Quantity` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t2`.`UnitPrice` > 50.00",
+            ss:     "SELECT [t0].[UserName], [t1].[Status], [t2].[ProductName], [t2].[Quantity] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] INNER JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] WHERE [t2].[UnitPrice] > 50.00");
     }
 
     #endregion
@@ -187,8 +187,8 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Select(u => (u.UserName, u.Email))
                 .ToDiagnostics(),
             sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE (\"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || @p0 || '%') ORDER BY \"UserName\" DESC LIMIT 5",
-            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE (\"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || @p0 || '%') ORDER BY \"UserName\" DESC LIMIT 5",
-            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL AND `UserName` LIKE CONCAT('%', @p0, '%')) ORDER BY `UserName` DESC LIMIT 5",
+            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE (\"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || $1 || '%') ORDER BY \"UserName\" DESC LIMIT 5",
+            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL AND `UserName` LIKE CONCAT('%', ?, '%')) ORDER BY `UserName` DESC LIMIT 5",
             ss:     "SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL AND [UserName] LIKE '%' + @p0 + '%') ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
     }
 
@@ -217,10 +217,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .ToDiagnostics(),
-            sqlite: "SELECT t0.\"UserName\", t1.\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
-            pg:     "SELECT t0.\"UserName\", t1.\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
-            mysql:  "SELECT t0.\"UserName\", t1.\"Total\" FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Status` IN ('pending', 'processing', 'shipped')",
-            ss:     "SELECT t0.\"UserName\", t1.\"Total\" FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Status] IN ('pending', 'processing', 'shipped')");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Status` IN ('pending', 'processing', 'shipped')",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Status] IN ('pending', 'processing', 'shipped')");
     }
 
     #endregion
@@ -285,10 +285,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Having(o => Sql.Count() > 5)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
-            pg:     "SELECT \"Status\", COUNT(*), SUM(\"Total\") FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
-            mysql:  "SELECT `Status`, COUNT(*), SUM(\"Total\") FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
-            ss:     "SELECT [Status], COUNT(*), SUM(\"Total\") FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5");
+            sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
+            pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5");
     }
 
     #endregion
@@ -327,10 +327,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Limit(20)
                 .Select((u, o) => u.UserName)
                 .ToDiagnostics(),
-            sqlite: "SELECT DISTINCT t0.\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
-            pg:     "SELECT DISTINCT t0.\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
-            mysql:  "SELECT DISTINCT t0.\"UserName\" FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0 ORDER BY `t1`.`Total` ASC LIMIT 20",
-            ss:     "SELECT DISTINCT t0.\"UserName\" FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0 ORDER BY [t1].[Total] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
+            sqlite: "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
+            pg:     "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
+            mysql:  "SELECT DISTINCT `t0`.`UserName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0 ORDER BY `t1`.`Total` ASC LIMIT 20",
+            ss:     "SELECT DISTINCT [t0].[UserName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0 ORDER BY [t1].[Total] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
     }
 
     #endregion
@@ -391,10 +391,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Avg(o.Total)))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"Status\", AVG(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            pg:     "SELECT \"Status\", AVG(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, AVG(\"Total\") FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], AVG(\"Total\") FROM [orders] GROUP BY [Status]");
+            sqlite: "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            pg:     "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            mysql:  "SELECT `Status`, AVG(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], AVG(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
     }
 
     [Test]
@@ -421,10 +421,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Min(o.Total)))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"Status\", MIN(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            pg:     "SELECT \"Status\", MIN(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MIN(\"Total\") FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MIN(\"Total\") FROM [orders] GROUP BY [Status]");
+            sqlite: "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            pg:     "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            mysql:  "SELECT `Status`, MIN(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MIN(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
     }
 
     [Test]
@@ -451,10 +451,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .GroupBy(o => o.Status)
                 .Select(o => (o.Status, Sql.Max(o.Total)))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"Status\", MAX(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            pg:     "SELECT \"Status\", MAX(\"Total\") FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MAX(\"Total\") FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MAX(\"Total\") FROM [orders] GROUP BY [Status]");
+            sqlite: "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            pg:     "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
+            mysql:  "SELECT `Status`, MAX(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MAX(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
     }
 
     [Test]
@@ -485,10 +485,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Having(o => Sql.Count() > 1)
                 .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total)))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"Status\", COUNT(*), SUM(\"Total\"), AVG(\"Total\"), MIN(\"Total\"), MAX(\"Total\") FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
-            pg:     "SELECT \"Status\", COUNT(*), SUM(\"Total\"), AVG(\"Total\"), MIN(\"Total\"), MAX(\"Total\") FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
-            mysql:  "SELECT `Status`, COUNT(*), SUM(\"Total\"), AVG(\"Total\"), MIN(\"Total\"), MAX(\"Total\") FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
-            ss:     "SELECT [Status], COUNT(*), SUM(\"Total\"), AVG(\"Total\"), MIN(\"Total\"), MAX(\"Total\") FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+            sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3`, AVG(\"Total\") AS `Item4`, MIN(\"Total\") AS `Item5`, MAX(\"Total\") AS `Item6` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3], AVG(\"Total\") AS [Item4], MIN(\"Total\") AS [Item5], MAX(\"Total\") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
     }
 
     #endregion

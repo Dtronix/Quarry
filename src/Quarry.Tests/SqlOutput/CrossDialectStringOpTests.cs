@@ -21,8 +21,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
-            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
-            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT('%', @p0, '%')",
+            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || $1 || '%'",
+            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT('%', ?, '%')",
             ss:     "SELECT * FROM [users] WHERE [UserName] LIKE '%' + @p0 + '%'");
     }
 
@@ -35,8 +35,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
-            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', @p0, '%')",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || $1 || '%'",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', ?, '%')",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%' + @p0 + '%'");
     }
 
@@ -49,8 +49,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || @p0 || '%') AND (\"IsActive\" = 1)",
-            pg:     "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || @p0 || '%') AND (\"IsActive\" = TRUE)",
-            mysql:  "SELECT * FROM `users` WHERE (`UserName` LIKE CONCAT('%', @p0, '%')) AND (`IsActive` = 1)",
+            pg:     "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || $1 || '%') AND (\"IsActive\" = TRUE)",
+            mysql:  "SELECT * FROM `users` WHERE (`UserName` LIKE CONCAT('%', ?, '%')) AND (`IsActive` = 1)",
             ss:     "SELECT * FROM [users] WHERE ([UserName] LIKE '%' + @p0 + '%') AND ([IsActive] = 1)");
     }
 
@@ -67,8 +67,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE \"UserName\" LIKE @p0 || '%'",
-            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE @p0 || '%'",
-            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT(@p0, '%')",
+            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE $1 || '%'",
+            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT(?, '%')",
             ss:     "SELECT * FROM [users] WHERE [UserName] LIKE @p0 + '%'");
     }
 
@@ -81,8 +81,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE @p0 || '%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE @p0 || '%'",
-            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT(@p0, '%')",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE $1 || '%'",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT(?, '%')",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE @p0 + '%'");
     }
 
@@ -99,8 +99,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0",
-            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0",
-            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT('%', @p0)",
+            pg:     "SELECT * FROM \"users\" WHERE \"UserName\" LIKE '%' || $1",
+            mysql:  "SELECT * FROM `users` WHERE `UserName` LIKE CONCAT('%', ?)",
             ss:     "SELECT * FROM [users] WHERE [UserName] LIKE '%' + @p0");
     }
 
@@ -113,8 +113,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0",
-            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0",
-            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', @p0)",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || $1",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', ?)",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%' + @p0");
     }
 
@@ -131,8 +131,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
             Ss.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE \"Email\" LIKE '%' || @p0 || '%'",
-            pg:     "SELECT * FROM \"users\" WHERE \"Email\" LIKE '%' || @p0 || '%'",
-            mysql:  "SELECT * FROM `users` WHERE `Email` LIKE CONCAT('%', @p0, '%')",
+            pg:     "SELECT * FROM \"users\" WHERE \"Email\" LIKE '%' || $1 || '%'",
+            mysql:  "SELECT * FROM `users` WHERE `Email` LIKE CONCAT('%', ?, '%')",
             ss:     "SELECT * FROM [users] WHERE [Email] LIKE '%' + @p0 + '%'");
     }
 
@@ -149,8 +149,8 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || @p0 || '%') AND (\"UserName\" LIKE @p1 || '%')",
-            pg:     "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || @p0 || '%') AND (\"UserName\" LIKE @p1 || '%')",
-            mysql:  "SELECT * FROM `users` WHERE (`UserName` LIKE CONCAT('%', @p0, '%')) AND (`UserName` LIKE CONCAT(@p1, '%'))",
+            pg:     "SELECT * FROM \"users\" WHERE (\"UserName\" LIKE '%' || $1 || '%') AND (\"UserName\" LIKE $2 || '%')",
+            mysql:  "SELECT * FROM `users` WHERE (`UserName` LIKE CONCAT('%', ?, '%')) AND (`UserName` LIKE CONCAT(?, '%'))",
             ss:     "SELECT * FROM [users] WHERE ([UserName] LIKE '%' + @p0 + '%') AND ([UserName] LIKE @p1 + '%')");
     }
 

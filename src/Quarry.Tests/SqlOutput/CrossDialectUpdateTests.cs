@@ -90,8 +90,8 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             My.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
             sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = @p1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = @p1)",
-            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = @p1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = $2)",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = ?)",
             ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = @p1)");
     }
 
