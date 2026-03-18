@@ -286,9 +286,9 @@ public partial class TestDbContext : QuarryContext
 
 public static class Queries
 {
-    public static string Test(TestDbContext db, bool active)
+    public static string Test(TestDbContext db, int id)
     {
-        return db.Users().DeleteWhere(u => u.IsActive == active).ToSql();
+        return db.Users().Delete().Where(u => u.UserId == id).ToSql();
     }
 }
 ";
@@ -312,7 +312,10 @@ public static class Queries
         }
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code.Length, Is.GreaterThan(100), "Should have generated interceptor content for Delete ToSql");
+        Assert.That(code, Does.Contain("Chain_"),
+            "Delete ToSql chain should be grouped into a carrier chain");
+        Assert.That(code, Does.Contain("DELETE"),
+            "Delete ToSql chain should contain prebuilt DELETE SQL");
     }
 
     [Test]
@@ -327,9 +330,9 @@ public partial class TestDbContext : QuarryContext
 
 public static class Queries
 {
-    public static string Test(TestDbContext db, bool active)
+    public static string Test(TestDbContext db, int userId, string newName)
     {
-        return db.Users().Set(u => u.IsActive, active).UpdateWhere(u => u.UserId == 1).ToSql();
+        return db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ToSql();
     }
 }
 ";
@@ -353,7 +356,8 @@ public static class Queries
         }
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code.Length, Is.GreaterThan(100), "Should have generated interceptor content for Update ToSql");
+        Assert.That(code, Does.Contain("UPDATE"),
+            "Update ToSql chain should contain prebuilt UPDATE SQL");
     }
 
     [Test]
@@ -377,11 +381,21 @@ public static class Queries
 ";
 
         var compilation = CreateCompilation(source);
-        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
 
         // Should not produce QRY errors — the chain is valid, just not optimizable
         var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
         Assert.That(qryErrors, Is.Empty, "Bare IEntityAccessor ToSql should not produce errors");
+
+        // Verify no carrier class was generated for this trivial chain
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains("Interceptors") && t.FilePath.EndsWith(".g.cs"));
+        if (interceptorsTree != null)
+        {
+            var code = interceptorsTree.GetText().ToString();
+            Assert.That(code, Does.Not.Contain("file sealed class Chain_"),
+                "Bare IEntityAccessor ToSql should not produce carrier class");
+        }
     }
 
     [Test]

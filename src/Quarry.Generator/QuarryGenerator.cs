@@ -1161,8 +1161,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return QueryKind.Delete;
                 if (executionSite.BuilderTypeName.Contains("UpdateBuilder"))
                     return QueryKind.Update;
-                if (executionSite.BuilderTypeName.Contains("QueryBuilder")
-                    || executionSite.BuilderTypeName.Contains("JoinedQueryBuilder"))
+                if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
                     return QueryKind.Select;
                 return null; // IEntityAccessor — trivial db.Users().ToSql(), no clauses to optimize
 
