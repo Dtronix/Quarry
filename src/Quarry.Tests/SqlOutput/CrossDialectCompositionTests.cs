@@ -541,4 +541,32 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region 10. Joined OrderBy carrier diagnostics
+
+    [Test]
+    public void Join_Where_OrderBy_CarrierDiagnostics()
+    {
+        var diag = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > 100 && u.IsActive)
+            .OrderBy((u, o) => o.Total, Direction.Descending)
+            .Limit(10)
+            .Select((u, o) => (u.UserName, o.Total))
+            .ToDiagnostics();
+
+        Assert.That(diag.Sql, Does.Contain("ORDER BY"));
+        Assert.That(diag.Sql, Does.Contain("DESC"));
+        Assert.That(diag.IsCarrierOptimized, Is.True);
+        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
+
+        // Verify Limit parameter is present
+        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo(10));
+
+        // Verify per-clause diagnostics include OrderBy
+        var orderByClause = diag.Clauses.First(c => c.ClauseType == "OrderBy");
+        Assert.That(orderByClause.SqlFragment, Does.Contain("Total"));
+    }
+
+    #endregion
 }
