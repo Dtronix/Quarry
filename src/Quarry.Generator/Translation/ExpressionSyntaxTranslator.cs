@@ -180,11 +180,20 @@ internal static class ExpressionSyntaxTranslator
 
     /// <summary>
     /// Translates a captured variable to a parameter.
+    /// If the expression resolves to a compile-time constant (enum member, const field),
+    /// inlines the value as a SQL literal instead of creating a parameter.
     /// </summary>
     private static string? TranslateCapturedValue(
         ExpressionSyntax expression,
         ExpressionTranslationContext context)
     {
+        // Check if the expression is a compile-time constant (enum member, const field, etc.).
+        // Inlining eliminates the parameter entirely, making chains analyzable even in nested
+        // lambda contexts (subqueries) where ExpressionPath extraction cannot reach.
+        var inlined = TryInlineConstant(expression, context);
+        if (inlined != null)
+            return inlined;
+
         // SemanticModel may be null during deferred enrichment path
         if (context.SemanticModel == null)
         {
@@ -203,6 +212,62 @@ internal static class ExpressionSyntaxTranslator
         var valueExpression = expression.ToFullString().Trim();
 
         return context.AddParameter(clrType, valueExpression, isCaptured: true, typeSymbol: typeInfo.Type);
+    }
+
+    /// <summary>
+    /// Tries to resolve a compile-time constant from the expression using any available
+    /// semantic information (SemanticModel or Compilation).
+    /// </summary>
+    private static string? TryInlineConstant(ExpressionSyntax expression, ExpressionTranslationContext context)
+    {
+        // Try SemanticModel first (available during discovery phase)
+        if (context.SemanticModel != null)
+        {
+            var constantValue = context.SemanticModel.GetConstantValue(expression);
+            if (constantValue.HasValue)
+                return FormatConstantAsSqlLiteral(constantValue.Value, context);
+        }
+
+        // Fall back to Compilation (available during deferred enrichment with entity registry)
+        if (context.Compilation != null)
+        {
+            var tree = expression.SyntaxTree;
+            if (tree != null)
+            {
+                var sm = context.Compilation.GetSemanticModel(tree);
+                var constantValue = sm.GetConstantValue(expression);
+                if (constantValue.HasValue)
+                    return FormatConstantAsSqlLiteral(constantValue.Value, context);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Formats a compile-time constant value as a SQL literal.
+    /// </summary>
+    private static string? FormatConstantAsSqlLiteral(object? value, ExpressionTranslationContext context)
+    {
+        return value switch
+        {
+            null => "NULL",
+            int i => i.ToString(CultureInfo.InvariantCulture),
+            long l => l.ToString(CultureInfo.InvariantCulture),
+            short s => s.ToString(CultureInfo.InvariantCulture),
+            byte b => b.ToString(CultureInfo.InvariantCulture),
+            sbyte sb => sb.ToString(CultureInfo.InvariantCulture),
+            uint ui => ui.ToString(CultureInfo.InvariantCulture),
+            ulong ul => ul.ToString(CultureInfo.InvariantCulture),
+            ushort us => us.ToString(CultureInfo.InvariantCulture),
+            float f => f.ToString(CultureInfo.InvariantCulture),
+            double d => d.ToString(CultureInfo.InvariantCulture),
+            decimal m => m.ToString(CultureInfo.InvariantCulture),
+            bool bv => context.FormatBooleanLiteral(bv),
+            char c => EscapeSqlString(c.ToString()),
+            string str => EscapeSqlString(str),
+            _ => null
+        };
     }
 
     /// <summary>
@@ -714,10 +779,15 @@ internal static class ExpressionSyntaxTranslator
     {
         if (receiver == null) return false;
 
-        // Prefer SemanticModel when available (most accurate)
-        if (context.SemanticModel != null)
+        // Prefer SemanticModel when available (most accurate).
+        // Fall back to Compilation-recovered SemanticModel for the enrichment path.
+        var sm = context.SemanticModel;
+        if (sm == null && context.Compilation != null && receiver.SyntaxTree != null)
+            sm = context.Compilation.GetSemanticModel(receiver.SyntaxTree);
+
+        if (sm != null)
         {
-            var typeInfo = context.SemanticModel.GetTypeInfo(receiver);
+            var typeInfo = sm.GetTypeInfo(receiver);
             if (typeInfo.Type == null) return false;
 
             // Check for array type
@@ -988,15 +1058,31 @@ internal static class ExpressionSyntaxTranslator
             return $"{elementSql} IN ({string.Join(", ", inlineValues)})";
         }
 
-        // Collection is a variable - generate parameter with collection marker
-        if (context.SemanticModel == null) return null;
+        // Collection is a variable - generate parameter with collection marker.
+        // Use SemanticModel directly, or recover one from Compilation for the enrichment path.
+        SemanticModel? sm = context.SemanticModel;
+        if (sm == null && context.Compilation != null && receiver.SyntaxTree != null)
+            sm = context.Compilation.GetSemanticModel(receiver.SyntaxTree);
+        if (sm == null) return null;
 
-        var typeInfo = context.SemanticModel.GetTypeInfo(receiver);
+        var typeInfo = sm.GetTypeInfo(receiver);
         if (typeInfo.Type == null) return null;
 
         var clrType = typeInfo.Type.ToDisplayString();
         var valueExpression = receiver.ToFullString().Trim();
-        var param = context.AddParameter(clrType, valueExpression, isCollection: true, typeSymbol: typeInfo.Type);
+
+        // Collection variables captured from the enclosing scope need isCaptured=true
+        // so the carrier clause interceptor can extract them via expression tree navigation.
+        // The expression path "__CONTAINS_COLLECTION__" is a sentinel recognized by the carrier
+        // code generator to emit MethodCallExpression-based extraction for Contains() receivers.
+        var isCaptured = receiver is IdentifierNameSyntax;
+        var param = context.AddParameter(clrType, valueExpression, isCollection: true, isCaptured: isCaptured, typeSymbol: typeInfo.Type);
+        if (isCaptured)
+        {
+            // Find the ParameterInfo we just added and set the expression path
+            var lastParam = context.Parameters[context.Parameters.Count - 1];
+            lastParam.ExpressionPath = "__CONTAINS_COLLECTION__";
+        }
 
         // The runtime will expand this to individual parameters
         return $"{elementSql} IN ({param})";

@@ -515,7 +515,8 @@ internal static partial class InterceptorCodeGenerator
 
         // Emit trim suppression if we'll use FieldInfo.GetValue inline
         var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
-        if (methodFields.Count > 0)
+        var hasCollectionContainsParams = clauseInfo?.Parameters.Any(p => p.IsCollection && p.ExpressionPath == "__CONTAINS_COLLECTION__") == true;
+        if (methodFields.Count > 0 || hasCollectionContainsParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");

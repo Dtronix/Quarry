@@ -118,13 +118,19 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
     /// Used for generating direct path navigation code.
     /// Example: "Body.Right" for the right operand of a binary expression.
     /// </summary>
-    public string? ExpressionPath { get; }
+    public string? ExpressionPath { get; set; }
 
     /// <summary>
     /// Gets whether direct path navigation code can be generated for this parameter.
     /// True when the parameter is a captured variable with a known expression path.
     /// </summary>
     public bool CanGenerateDirectPath => IsCaptured && ExpressionPath != null;
+
+    /// <summary>
+    /// Gets or sets the element type name for collection parameters (e.g., "string", "int").
+    /// Only meaningful when <see cref="IsCollection"/> is true.
+    /// </summary>
+    public string? CollectionElementType { get; set; }
 
     /// <summary>
     /// Gets or sets the custom type mapping class to apply ToDb() wrapping.

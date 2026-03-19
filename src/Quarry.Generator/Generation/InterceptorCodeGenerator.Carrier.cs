@@ -429,7 +429,11 @@ internal static partial class InterceptorCodeGenerator
         var clauseInfo = site.ClauseInfo;
         if (clauseInfo != null && clauseInfo.Parameters.Count > 0)
         {
-            if (hasResolvableCapturedParams)
+            // Separate collection params (Contains-pattern) from scalar params
+            var scalarParams = clauseInfo.Parameters.Where(p => p.ExpressionPath != "__CONTAINS_COLLECTION__").ToList();
+            var collectionParams = clauseInfo.Parameters.Where(p => p.ExpressionPath == "__CONTAINS_COLLECTION__").ToList();
+
+            if (hasResolvableCapturedParams && scalarParams.Any(p => p.IsCaptured && p.CanGenerateDirectPath))
             {
                 // Remap FieldInfo references from interceptor-class statics to carrier-class statics
                 var carrierFields = new List<CachedExtractorField>();
@@ -447,11 +451,19 @@ internal static partial class InterceptorCodeGenerator
             for (int i = 0; i < allParams.Count; i++)
             {
                 var p = allParams[i];
-                var extractExpr = p.IsCaptured ? $"p{p.Index}" : p.ValueExpression;
                 var globalIdx = globalParamOffset + i;
-                if (globalIdx < chain.ChainParameters.Count)
+                if (globalIdx >= chain.ChainParameters.Count) continue;
+                var carrierParam = chain.ChainParameters[globalIdx];
+
+                if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
                 {
-                    var carrierParam = chain.ChainParameters[globalIdx];
+                    // Collection parameter: extract from MethodCallExpression in the expression tree.
+                    // Contains() compiles as either instance (Object) or extension (Arguments[0]).
+                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam);
+                }
+                else
+                {
+                    var extractExpr = p.IsCaptured ? $"p{p.Index}" : p.ValueExpression;
                     sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){extractExpr}!;");
                 }
             }
@@ -648,6 +660,8 @@ internal static partial class InterceptorCodeGenerator
         for (int i = 0; i < paramCount; i++)
         {
             var param = chain.ChainParameters[i];
+            // Collection parameters are handled by EmitCollectionExpansion via __col* locals
+            if (param.IsCollection) continue;
             sb.AppendLine($"        var __pVal{i} = {GetParameterValueExpression(param, i)};");
         }
 
@@ -886,6 +900,39 @@ internal static partial class InterceptorCodeGenerator
 
     #region Carrier helpers
 
+    /// <summary>
+    /// Emits code to extract a collection parameter from a Contains() expression tree.
+    /// Navigates the MethodCallExpression to find the collection (Object for instance
+    /// methods, Arguments[0] for extension methods), then extracts via FieldInfo or
+    /// Expression.Lambda compilation as fallback.
+    /// </summary>
+    private static void EmitCollectionContainsExtraction(
+        StringBuilder sb, int globalIdx, ChainParameterInfo carrierParam)
+    {
+        var fieldType = carrierParam.ElementTypeName != null
+            ? $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>"
+            : carrierParam.TypeName;
+
+        // Navigate to the collection expression in the Contains() call.
+        // The expression tree may contain layers of wrapping:
+        //   MethodCallExpression(op_Implicit, UnaryExpression(Convert, MemberExpression))
+        // Unwrap all layers to find the underlying MemberExpression (field/property access).
+        sb.AppendLine($"        var __call{globalIdx} = (System.Linq.Expressions.MethodCallExpression)expr.Body;");
+        sb.AppendLine($"        System.Linq.Expressions.Expression __colExpr{globalIdx} = __call{globalIdx}.Object ?? __call{globalIdx}.Arguments[0];");
+        sb.AppendLine($"        while (__colExpr{globalIdx} is not System.Linq.Expressions.MemberExpression)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            if (__colExpr{globalIdx} is System.Linq.Expressions.UnaryExpression __colU{globalIdx})");
+        sb.AppendLine($"                __colExpr{globalIdx} = __colU{globalIdx}.Operand;");
+        sb.AppendLine($"            else if (__colExpr{globalIdx} is System.Linq.Expressions.MethodCallExpression __colM{globalIdx})");
+        sb.AppendLine($"                __colExpr{globalIdx} = __colM{globalIdx}.Arguments.Count > 0 ? __colM{globalIdx}.Arguments[0] : __colM{globalIdx}.Object!;");
+        sb.AppendLine($"            else break;");
+        sb.AppendLine("        }");
+        // Extract via FieldInfo (captured local → closure field, or static field access)
+        sb.AppendLine($"        var __colMember{globalIdx} = (System.Linq.Expressions.MemberExpression)__colExpr{globalIdx};");
+        sb.AppendLine($"        var __colTarget{globalIdx} = __colMember{globalIdx}.Expression is System.Linq.Expressions.ConstantExpression __colConst{globalIdx} ? __colConst{globalIdx}.Value : null;");
+        sb.AppendLine($"        __c.P{globalIdx} = ({fieldType})((System.Reflection.FieldInfo)__colMember{globalIdx}.Member).GetValue(__colTarget{globalIdx})!;");
+    }
+
     private static void EmitCarrierParamBindings(
         StringBuilder sb, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
     {
@@ -898,11 +945,16 @@ internal static partial class InterceptorCodeGenerator
 
     private static void EmitCarrierSqlDispatch(StringBuilder sb, PrebuiltChainInfo chain)
     {
+        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
+
         if (chain.SqlMap.Count == 1)
         {
             foreach (var kvp in chain.SqlMap)
             {
-                sb.AppendLine($"        const string sql = @\"{EscapeStringLiteral(kvp.Value.Sql)}\";");
+                if (hasCollections)
+                    sb.AppendLine($"        var sql = @\"{EscapeStringLiteral(kvp.Value.Sql)}\";");
+                else
+                    sb.AppendLine($"        const string sql = @\"{EscapeStringLiteral(kvp.Value.Sql)}\";");
             }
         }
         else
@@ -915,6 +967,47 @@ internal static partial class InterceptorCodeGenerator
             }
             sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
             sb.AppendLine("        };");
+        }
+
+        // Emit collection parameter expansion code
+        if (hasCollections)
+        {
+            EmitCollectionExpansion(sb, chain);
+        }
+    }
+
+    /// <summary>
+    /// Emits code to expand collection parameter tokens in the SQL template.
+    /// Replaces <c>{__COL_P{n}__}</c> tokens with expanded parameter placeholders
+    /// based on the runtime collection sizes.
+    /// </summary>
+    private static void EmitCollectionExpansion(StringBuilder sb, PrebuiltChainInfo chain)
+    {
+        foreach (var param in chain.ChainParameters)
+        {
+            if (!param.IsCollection) continue;
+
+            sb.AppendLine($"        var __col{param.Index} = __c.P{param.Index};");
+            sb.AppendLine($"        var __col{param.Index}Len = __col{param.Index}.Count;");
+
+            var dialectPrefix = chain.Dialect switch
+            {
+                SqlDialect.PostgreSQL => "$",
+                _ => "@p"
+            };
+            var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
+
+            // Build expanded placeholder string: "@p0, @p1, @p2" or "$1, $2, $3" or "?, ?, ?"
+            var isMySQL = chain.Dialect == SqlDialect.MySQL;
+            sb.AppendLine($"        var __col{param.Index}Parts = new string[__col{param.Index}Len];");
+            sb.AppendLine($"        for (int __i = 0; __i < __col{param.Index}Len; __i++)");
+            if (isMySQL)
+                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"?\";");
+            else if (isPostgres)
+                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"$\" + (__i + 1);");
+            else
+                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"{dialectPrefix}\" + __i;");
+            sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.Index}__}}\", string.Join(\", \", __col{param.Index}Parts));");
         }
     }
 

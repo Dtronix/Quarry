@@ -247,10 +247,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = @p0)) > 2",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = @p0)) > 2",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Priority` = @p0)) > 2",
-            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Priority] = @p0)) > 2");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Priority` = 3)) > 2",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Priority] = 3)) > 2");
     }
 
     #endregion
@@ -489,6 +489,35 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
             mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3`, AVG(\"Total\") AS `Item4`, MIN(\"Total\") AS `Item5`, MAX(\"Total\") AS `Item6` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
             ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3], AVG(\"Total\") AS [Item4], MIN(\"Total\") AS [Item5], MAX(\"Total\") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+    }
+
+    #endregion
+
+    #region 14. Runtime collection parameter (IN clause with non-inlineable collection)
+
+    // Static field — TryResolveVariableCollectionLiterals can't trace field initializers
+    private static readonly string[] _runtimeStatuses = new[] { "pending", "processing", "shipped" };
+
+    [Test]
+    public void Where_ContainsRuntimeCollection()
+    {
+        AssertDialects(
+            Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            Pg.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            My.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            Ss.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN (@p0, @p1, @p2)",
+            pg:     "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ($1, $2, $3)",
+            mysql:  "SELECT `OrderId`, `Status` FROM `orders` WHERE `Status` IN (?, ?, ?)",
+            ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN (@p0, @p1, @p2)");
     }
 
     #endregion

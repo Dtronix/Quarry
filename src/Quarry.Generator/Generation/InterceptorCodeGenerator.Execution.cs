@@ -590,6 +590,57 @@ internal static partial class InterceptorCodeGenerator
         // Hoist mask type outside the loop — same for all conditional clauses in the chain
         var maskType = diagnosticClauses.Any(c => c.IsConditional) ? GetMaskType(chain) : null;
 
+        // Pre-compute runtime clause SQL for clauses with collection parameters.
+        // These need token expansion using __col{n}Parts from EmitCollectionExpansion.
+        for (int clauseIdx = 0; clauseIdx < diagnosticClauses.Count; clauseIdx++)
+        {
+            var clause = diagnosticClauses[clauseIdx];
+            if (carrier == null || clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) != true)
+                continue;
+
+            var sqlFrag = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var offset = clauseParamOffsets[clause.Site.UniqueId];
+            var tokenizedFrag = sqlFrag;
+
+            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            {
+                var globalIdx = offset + p.Index;
+                var token = $"{{__COL_P{globalIdx}__}}";
+                if (chain.Dialect == SqlDialect.MySQL)
+                {
+                    var qCount = 0;
+                    for (int ci = 0; ci < tokenizedFrag.Length; ci++)
+                    {
+                        if (tokenizedFrag[ci] == '?')
+                        {
+                            if (qCount == p.Index)
+                            {
+                                tokenizedFrag = tokenizedFrag.Substring(0, ci) + token + tokenizedFrag.Substring(ci + 1);
+                                break;
+                            }
+                            qCount++;
+                        }
+                    }
+                }
+                else
+                {
+                    var placeholder = chain.Dialect switch
+                    {
+                        SqlDialect.PostgreSQL => $"${globalIdx + 1}",
+                        _ => $"@p{globalIdx}"
+                    };
+                    tokenizedFrag = tokenizedFrag.Replace(placeholder, token);
+                }
+            }
+
+            sb.AppendLine($"        var __clauseSql{clauseIdx} = @\"{EscapeStringLiteral(tokenizedFrag)}\";");
+            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            {
+                var globalIdx = offset + p.Index;
+                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", string.Join(\", \", __col{globalIdx}Parts));");
+            }
+        }
+
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
         foreach (var clause in diagnosticClauses)
@@ -613,7 +664,18 @@ internal static partial class InterceptorCodeGenerator
             var clauseParamCount = clause.Site.ClauseInfo?.Parameters.Count ?? 0;
             string paramsArg;
 
-            if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
+            // Check if this clause has collection parameters (runtime-expanded SQL)
+            var hasCollectionParam = carrier != null && clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) == true;
+            // Use runtime variable for collection clauses, compile-time literal otherwise
+            var clauseSqlExpr = hasCollectionParam
+                ? $"__clauseSql{diagnosticClauses.IndexOf(clause)}"
+                : $"@\"{escapedFragment}\"";
+
+            if (hasCollectionParam)
+            {
+                paramsArg = "";
+            }
+            else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
                 paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL) }}";
             }
@@ -637,7 +699,7 @@ internal static partial class InterceptorCodeGenerator
                 paramsArg = "";
             }
 
-            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
+            sb.AppendLine($"            new(\"{clauseType}\", {clauseSqlExpr}, isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
         }
         sb.AppendLine("        };");
     }

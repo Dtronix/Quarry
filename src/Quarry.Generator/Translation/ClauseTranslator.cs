@@ -53,7 +53,8 @@ internal static class ClauseTranslator
         SemanticModel semanticModel,
         EntityInfo entityInfo,
         SqlDialect dialect,
-        IReadOnlyDictionary<string, EntityInfo>? entityRegistry = null)
+        IReadOnlyDictionary<string, EntityInfo>? entityRegistry = null,
+        Compilation? compilation = null)
     {
         var lambdaInfo = ExtractLambdaExpression(invocation);
         if (!lambdaInfo.HasValue)
@@ -62,7 +63,7 @@ internal static class ClauseTranslator
         }
 
         var (lambdaBody, parameterName) = lambdaInfo.Value;
-        var context = new ExpressionTranslationContext(semanticModel, entityInfo, dialect, parameterName, entityRegistry);
+        var context = new ExpressionTranslationContext(semanticModel, entityInfo, dialect, parameterName, entityRegistry, compilation);
 
         var result = ExpressionSyntaxTranslator.Translate(lambdaBody, context);
         if (!result.IsSuccess)

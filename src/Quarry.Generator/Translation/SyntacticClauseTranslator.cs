@@ -331,9 +331,15 @@ internal sealed class SyntacticClauseTranslator
             }
         }
 
-        // Handle collection Contains (IN clause)
+        // Handle collection Contains (IN clause).
+        // When the target is a captured variable (runtime collection), defer to the
+        // ExpressionSyntaxTranslator path which creates proper collection parameters
+        // with type info and expression-tree extraction support.
         if (methodCall.MethodName == "Contains" && methodCall.Arguments.Count == 1)
         {
+            if (methodCall.Target is SyntacticCapturedVariable)
+                return null; // Defer to ExpressionSyntaxTranslator for runtime collections
+
             var itemExpr = TranslateExpression(methodCall.Arguments[0], lambdaParameterName);
             if (itemExpr != null && target != null)
             {

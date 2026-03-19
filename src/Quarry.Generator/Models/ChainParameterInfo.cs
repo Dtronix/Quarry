@@ -16,7 +16,9 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         bool isSensitive = false,
         bool isEnum = false,
         string? enumUnderlyingType = null,
-        bool needsFieldInfoCache = false)
+        bool needsFieldInfoCache = false,
+        bool isCollection = false,
+        string? elementTypeName = null)
     {
         Index = index;
         TypeName = typeName;
@@ -26,6 +28,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         IsEnum = isEnum;
         EnumUnderlyingType = enumUnderlyingType;
         NeedsFieldInfoCache = needsFieldInfoCache;
+        IsCollection = isCollection;
+        ElementTypeName = elementTypeName;
     }
 
     /// <summary>
@@ -72,6 +76,18 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
     /// </summary>
     public bool NeedsFieldInfoCache { get; }
 
+    /// <summary>
+    /// Gets whether this parameter is a collection (IN clause) that requires
+    /// runtime expansion into multiple DbParameters.
+    /// </summary>
+    public bool IsCollection { get; }
+
+    /// <summary>
+    /// Gets the element type name for collection parameters (e.g., "string", "int").
+    /// Only meaningful when <see cref="IsCollection"/> is true.
+    /// </summary>
+    public string? ElementTypeName { get; }
+
     public bool Equals(ChainParameterInfo? other)
     {
         if (other is null) return false;
@@ -83,7 +99,9 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
             && IsSensitive == other.IsSensitive
             && IsEnum == other.IsEnum
             && EnumUnderlyingType == other.EnumUnderlyingType
-            && NeedsFieldInfoCache == other.NeedsFieldInfoCache;
+            && NeedsFieldInfoCache == other.NeedsFieldInfoCache
+            && IsCollection == other.IsCollection
+            && ElementTypeName == other.ElementTypeName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ChainParameterInfo);
