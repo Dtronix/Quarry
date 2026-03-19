@@ -1052,11 +1052,9 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteScalar
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable
-            or InterceptorKind.ToSql
             or InterceptorKind.ToDiagnostics
             or InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
-            or InterceptorKind.InsertToSql
             or InterceptorKind.InsertToDiagnostics;
     }
 

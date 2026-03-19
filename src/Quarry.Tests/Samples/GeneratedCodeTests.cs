@@ -23,7 +23,7 @@ public class GeneratedCodeTests
         using var db = new TestDbContext(connection);
 
         // Chained call - analyzable by the generator
-        var sql = db.Users().Select(u => (u.UserId, u.UserName)).ToSql();
+        var sql = db.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -43,7 +43,7 @@ public class GeneratedCodeTests
         using var db = new TestDbContext(connection);
 
         // Chained call - analyzable by the generator via syntactic fallback
-        var sql = db.Users().Where(u => u.IsActive).ToSql();
+        var sql = db.Users().Where(u => u.IsActive).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
     }

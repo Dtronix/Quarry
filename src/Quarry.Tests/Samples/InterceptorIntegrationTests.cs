@@ -46,7 +46,7 @@ public class InterceptorIntegrationTests
     public void Where_BooleanProperty_GeneratesWhereClause()
     {
         // This triggers the Where interceptor with a boolean property access
-        var sql = _db.Users().Where(u => u.IsActive).ToSql();
+        var sql = _db.Users().Where(u => u.IsActive).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("IsActive"));
@@ -58,7 +58,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         // Multiple WHERE calls should result in AND-combined conditions
@@ -71,7 +71,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_TwoColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -83,7 +83,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_ThreeColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -93,7 +93,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_WithNullableColumn_GeneratesCorrectSql()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.Email)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.Email)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"Email\""));
@@ -102,7 +102,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_AllColumns_GeneratesCorrectSql()
     {
-        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, u.LastLogin)).ToSql();
+        var sql = _db.Users().Select(u => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, u.LastLogin)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -115,7 +115,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Tuple_OrderEntity_GeneratesCorrectSql()
     {
-        var sql = _db.Orders().Select(o => (o.OrderId, o.Total, o.Status)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total, o.Status)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"OrderId\""));
         Assert.That(sql, Does.Contain("\"Total\""));
@@ -130,7 +130,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Select_Entity_User_GeneratesCorrectSql()
     {
-        var sql = _db.Users().Select(u => u).ToSql();
+        var sql = _db.Users().Select(u => u).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -144,7 +144,7 @@ public class InterceptorIntegrationTests
     public void Select_Entity_Account_WithForeignKey_GeneratesCorrectSql()
     {
         // Account has Ref<User, int> UserId — entity projection must wrap FK columns
-        var sql = _db.Accounts().Select(a => a).ToSql();
+        var sql = _db.Accounts().Select(a => a).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"AccountId\""));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -157,7 +157,7 @@ public class InterceptorIntegrationTests
     public void Select_Entity_Order_WithForeignKey_GeneratesCorrectSql()
     {
         // Order has Ref<User, int> UserId — entity projection must wrap FK columns
-        var sql = _db.Orders().Select(o => o).ToSql();
+        var sql = _db.Orders().Select(o => o).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"OrderId\""));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -179,7 +179,7 @@ public class InterceptorIntegrationTests
             UserId = u.UserId,
             UserName = u.UserName,
             IsActive = u.IsActive
-        }).ToSql();
+        }).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -194,7 +194,7 @@ public class InterceptorIntegrationTests
             UserId = u.UserId,
             UserName = u.UserName,
             Email = u.Email
-        }).ToSql();
+        }).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -209,7 +209,7 @@ public class InterceptorIntegrationTests
             OrderId = o.OrderId,
             Total = o.Total,
             Status = o.Status
-        }).ToSql();
+        }).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"OrderId\""));
         Assert.That(sql, Does.Contain("\"Total\""));
@@ -226,7 +226,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => (u.UserId, u.UserName))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -242,7 +242,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive })
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -259,7 +259,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Select(u => (u.UserId, u.UserName))
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -273,7 +273,7 @@ public class InterceptorIntegrationTests
             .Select(u => (u.UserId, u.UserName))
             .Offset(20)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserId\""));
         Assert.That(sql, Does.Contain("OFFSET 20"));
@@ -292,7 +292,7 @@ public class InterceptorIntegrationTests
             .Select(u => (u.UserId, u.UserName, u.Email))
             .Limit(50)
             .Offset(100)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -310,7 +310,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.UserId >= externalValueParameter)
             .Select(u => (u.UserId, u.UserName, u.Email))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -329,7 +329,7 @@ public class InterceptorIntegrationTests
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .Select(u => (u.UserId, u.UserName))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("\"UserId\""));
@@ -347,7 +347,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("LIMIT 10"));
@@ -360,7 +360,7 @@ public class InterceptorIntegrationTests
             .Where(u => u.IsActive)
             .Offset(20)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("OFFSET 20"));
@@ -377,7 +377,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Where(u => u.IsActive)
             .Distinct()
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT DISTINCT"));
         Assert.That(sql, Does.Contain("WHERE"));
@@ -390,7 +390,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void Orders_TupleSelect_GeneratesSql()
     {
-        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToSql();
+        var sql = _db.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -399,7 +399,7 @@ public class InterceptorIntegrationTests
     [Test]
     public void OrderItems_TupleSelect_GeneratesSql()
     {
-        var sql = _db.OrderItems().Select(oi => (oi.OrderItemId, oi.ProductName)).ToSql();
+        var sql = _db.OrderItems().Select(oi => (oi.OrderItemId, oi.ProductName)).ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -672,7 +672,7 @@ public class InterceptorIntegrationTests
         using var db = new TestDbContext(connection);
 
         // Use the context
-        var sql = db.Users().Where(u => u.IsActive).ToSql();
+        var sql = db.Users().Where(u => u.IsActive).ToDiagnostics().Sql;
         Assert.That(sql, Is.Not.Empty);
 
         // Disposal should not throw
@@ -718,7 +718,7 @@ public class InterceptorIntegrationTests
             .Where(u => u.IsActive)
             .Limit(100)
             .Offset(50)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("LIMIT 100"));
@@ -732,7 +732,7 @@ public class InterceptorIntegrationTests
             .Where(u => u.IsActive)
             .Distinct()
             .Limit(20)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT DISTINCT"));
         Assert.That(sql, Does.Contain("WHERE"));
@@ -796,7 +796,7 @@ public class InterceptorIntegrationTests
         Assert.That(query.State.Parameters[0].Value, Is.EqualTo(10));
         Assert.That(query.State.Parameters[1].Value, Is.EqualTo(100));
 
-        var s = query.ToSql();
+        var s = query.ToDiagnostics().Sql;
     }
 
     [Test]
@@ -1004,7 +1004,7 @@ public class InterceptorIntegrationTests
     {
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("AS \"t1\""));
@@ -1016,7 +1016,7 @@ public class InterceptorIntegrationTests
     {
         var sql = _db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("LEFT JOIN"));
         Assert.That(sql, Does.Contain("AS \"t1\""));
@@ -1028,7 +1028,7 @@ public class InterceptorIntegrationTests
     {
         var sql = _db.Users()
             .RightJoin<Order>((u, o) => u.UserId == o.UserId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("RIGHT JOIN"));
         Assert.That(sql, Does.Contain("AS \"t1\""));
@@ -1041,7 +1041,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("LIMIT 10"));
@@ -1054,7 +1054,7 @@ public class InterceptorIntegrationTests
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Offset(20)
             .Limit(10)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("OFFSET 20"));
@@ -1067,7 +1067,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Distinct()
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT DISTINCT"));
         Assert.That(sql, Does.Contain("INNER JOIN"));
@@ -1078,7 +1078,7 @@ public class InterceptorIntegrationTests
     {
         var sql = _db.Orders()
             .Join<OrderItem>((o, oi) => o.OrderId == oi.OrderId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("AS \"t1\""));
@@ -1090,7 +1090,7 @@ public class InterceptorIntegrationTests
     {
         var sql = _db.Orders()
             .LeftJoin<OrderItem>((o, oi) => o.OrderId == oi.OrderId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("LEFT JOIN"));
         Assert.That(sql, Does.Contain("AS \"t1\""));
@@ -1106,7 +1106,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("AS \"t0\""));
@@ -1121,7 +1121,7 @@ public class InterceptorIntegrationTests
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Where((u, o, oi) => u.IsActive)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("INNER JOIN"));
         Assert.That(sql, Does.Contain("WHERE"));
@@ -1135,7 +1135,7 @@ public class InterceptorIntegrationTests
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Offset(10)
             .Limit(20)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("OFFSET 10"));
         Assert.That(sql, Does.Contain("LIMIT 20"));
@@ -1147,7 +1147,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("LEFT JOIN"));
         Assert.That(sql, Does.Contain("INNER JOIN"));
@@ -1163,7 +1163,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => new UserOrderDto { UserName = u.UserName, Total = o.Total })
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"t0\"."));
         Assert.That(sql, Does.Contain("\"t1\"."));
@@ -1176,7 +1176,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"t0\"."));
         Assert.That(sql, Does.Contain("\"t1\"."));
@@ -1189,7 +1189,7 @@ public class InterceptorIntegrationTests
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => new UserOrderItemDto { UserName = u.UserName, Total = o.Total, ProductName = oi.ProductName })
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"t0\"."));
         Assert.That(sql, Does.Contain("\"t1\"."));
@@ -1202,7 +1202,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users()
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => o.Total)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"t1\"."));
     }
@@ -1302,7 +1302,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(u => u.UserName, "NewName")
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("UPDATE"));
         Assert.That(sql, Does.Contain("\"users\""));
@@ -1319,7 +1319,7 @@ public class InterceptorIntegrationTests
             .Set(u => u.UserName, "NewName")
             .Set(u => u.IsActive, false)
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SET"));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -1333,7 +1333,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(u => u.IsActive, false)
             .All()
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("UPDATE"));
         Assert.That(sql, Does.Contain("SET"));
@@ -1351,7 +1351,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.IsActive)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("\"IsActive\""));
@@ -1364,7 +1364,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(u => u.UserName, "Updated")
             .Where(u => u.UserId == userId)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         Assert.That(sql, Does.Contain("@p"));
@@ -1377,7 +1377,7 @@ public class InterceptorIntegrationTests
             .Set(u => u.UserName, "Updated")
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("WHERE"));
         // Multiple WHERE calls should result in AND-combined conditions
@@ -1391,7 +1391,7 @@ public class InterceptorIntegrationTests
             .Set(u => u.UserName, "First")
             .Where(u => u.UserId == 1)
             .Set(u => u.IsActive, true)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SET"));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -1424,7 +1424,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("UPDATE"));
         Assert.That(sql, Does.Contain("\"users\""));
@@ -1440,7 +1440,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName", IsActive = false })
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SET"));
         Assert.That(sql, Does.Contain("\"UserName\""));
@@ -1454,7 +1454,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Users().Update()
             .Set(new User { IsActive = false })
             .All()
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("UPDATE"));
         Assert.That(sql, Does.Contain("SET"));
@@ -1470,7 +1470,7 @@ public class InterceptorIntegrationTests
             .Set(new User { UserName = "NewName" })
             .Set(u => u.IsActive, true)
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserName\""));
         Assert.That(sql, Does.Contain("\"IsActive\""));
@@ -1484,7 +1484,7 @@ public class InterceptorIntegrationTests
             .Set(u => u.UserName, "First")
             .Where(u => u.UserId == 1)
             .Set(new User { IsActive = true })
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("\"UserName\""));
         Assert.That(sql, Does.Contain("\"IsActive\""));
@@ -1518,7 +1518,7 @@ public class InterceptorIntegrationTests
             .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("AVG("));
@@ -1532,7 +1532,7 @@ public class InterceptorIntegrationTests
             .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Min(o.Total)))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("MIN("));
@@ -1546,7 +1546,7 @@ public class InterceptorIntegrationTests
             .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Max(o.Total)))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("MAX("));
@@ -1560,7 +1560,7 @@ public class InterceptorIntegrationTests
             .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total), Sql.Count()))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("AVG("));
         Assert.That(sql, Does.Contain("MIN("));
@@ -1576,7 +1576,7 @@ public class InterceptorIntegrationTests
             .GroupBy(o => o.Status)
             .Having(o => Sql.Count() > 1)
             .Select(o => (o.Status, Sql.Avg(o.Total)))
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("GROUP BY"));
         Assert.That(sql, Does.Contain("HAVING"));
@@ -1590,7 +1590,7 @@ public class InterceptorIntegrationTests
         var sql = _db.Orders()
             .Select(o => (o.Status, Sql.Count()))
             .GroupBy(o => o.Status)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SELECT"));
         Assert.That(sql, Does.Contain("GROUP BY"));
@@ -1645,11 +1645,11 @@ public class InterceptorIntegrationTests
     }
 
     [Test]
-    public void Delete_WithWhere_ToSql_GeneratesCorrectSql()
+    public void Delete_WithWhere_ToDiagnosticsSql_GeneratesCorrectSql()
     {
         var sql = _db.Users().Delete()
             .Where(u => u.UserId == 1)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("DELETE"));
         Assert.That(sql, Does.Contain("FROM"));
@@ -1659,11 +1659,11 @@ public class InterceptorIntegrationTests
     }
 
     [Test]
-    public void Delete_WithBooleanWhere_ToSql_GeneratesCorrectSql()
+    public void Delete_WithBooleanWhere_ToDiagnosticsSql_GeneratesCorrectSql()
     {
         var sql = _db.Users().Delete()
             .Where(u => u.IsActive)
-            .ToSql();
+            .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("DELETE"));
         Assert.That(sql, Does.Contain("WHERE"));

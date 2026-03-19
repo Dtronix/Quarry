@@ -35,7 +35,7 @@ internal static partial class InterceptorCodeGenerator
             InterceptorKind.ExecuteNonQuery
                 => CanEmitNonQueryTerminal(chain),
             InterceptorKind.InsertExecuteNonQuery or InterceptorKind.InsertExecuteScalar
-                or InterceptorKind.InsertToSql or InterceptorKind.InsertToDiagnostics
+                or InterceptorKind.InsertToDiagnostics
                 => CanEmitInsertTerminal(chain),
             _ => true
         };
@@ -538,7 +538,7 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        var __b = Unsafe.As<{builderTypeName}>(builder);");
         sb.Append($"        var __c = new {carrier.ClassName} {{ ");
 
-        var isReadOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToSql or InterceptorKind.ToDiagnostics;
+        var isReadOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToDiagnostics;
         if (!isReadOnly)
         {
             sb.Append("Ctx = __b.State.ExecutionContext");
@@ -882,34 +882,6 @@ internal static partial class InterceptorCodeGenerator
         }
 
         sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
-    }
-
-    /// <summary>
-    /// Emits a carrier ToSql terminal.
-    /// </summary>
-    private static void EmitCarrierToSqlTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
-    {
-        if (chain.SqlMap.Count == 1)
-        {
-            // Single variant — no carrier access needed
-            foreach (var kvp in chain.SqlMap)
-            {
-                sb.AppendLine($"        return @\"{EscapeStringLiteral(kvp.Value.Sql)}\";");
-            }
-        }
-        else
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            sb.AppendLine("        return __c.Mask switch");
-            sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlMap)
-            {
-                sb.AppendLine($"            {kvp.Key} => @\"{EscapeStringLiteral(kvp.Value.Sql)}\",");
-            }
-            sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
-            sb.AppendLine("        };");
-        }
     }
 
     #region Carrier helpers

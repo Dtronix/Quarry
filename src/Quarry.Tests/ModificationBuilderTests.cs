@@ -17,7 +17,7 @@ public class ModificationBuilderTests
         var builder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
         builder.SetColumns(["\"id\"", "\"name\""]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"users\" (\"id\", \"name\")"));
     }
@@ -28,7 +28,7 @@ public class ModificationBuilderTests
         var builder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", "public");
         builder.SetColumns(["\"id\"", "\"name\""]);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("INSERT INTO \"public\".\"users\" (\"id\", \"name\")"));
     }
@@ -110,7 +110,7 @@ public class ModificationBuilderTests
         var dialect = GetDialect(dialectName);
         var builder = new InsertBuilder<TestEntity>(dialect, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.StartWith(expected));
     }
@@ -125,7 +125,7 @@ public class ModificationBuilderTests
         var builder = new UpdateBuilder<TestEntity>(SqlDialect.SQLite, "users", null);
         builder.AddSetClause("\"name\"", "NewName");
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("UPDATE \"users\" SET \"name\" = @p0"));
     }
@@ -136,7 +136,7 @@ public class ModificationBuilderTests
         var builder = new UpdateBuilder<TestEntity>(SqlDialect.SQLite, "users", "public");
         builder.AddSetClause("\"name\"", "NewName");
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("UPDATE \"public\".\"users\" SET \"name\" = @p0"));
     }
@@ -201,7 +201,7 @@ public class ModificationBuilderTests
         builder.AddSetClause("\"name\"", "NewName");
         builder.AddSetClause("\"id\"", 42);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("UPDATE \"users\" SET \"name\" = @p0, \"id\" = @p1"));
     }
@@ -214,7 +214,7 @@ public class ModificationBuilderTests
 
         var executableBuilder = builder.AddWhereClause("\"id\" = @p1");
 
-        var sql = executableBuilder.ToSql();
+        var sql = executableBuilder.ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("WHERE \"id\" = @p1"));
     }
 
@@ -228,7 +228,7 @@ public class ModificationBuilderTests
         var dialect = GetDialect(dialectName);
         var builder = new UpdateBuilder<TestEntity>(dialect, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Does.StartWith(expected));
     }
@@ -293,7 +293,7 @@ public class ModificationBuilderTests
     {
         var builder = new DeleteBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("DELETE FROM \"users\""));
     }
@@ -303,7 +303,7 @@ public class ModificationBuilderTests
     {
         var builder = new DeleteBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", "public");
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo("DELETE FROM \"public\".\"users\""));
     }
@@ -355,7 +355,7 @@ public class ModificationBuilderTests
 
         var executableBuilder = builder.AddWhereClause("\"id\" = @p0");
 
-        var sql = executableBuilder.ToSql();
+        var sql = executableBuilder.ToDiagnostics().Sql;
         Assert.That(sql, Is.EqualTo("DELETE FROM \"users\" WHERE \"id\" = @p0"));
     }
 
@@ -369,7 +369,7 @@ public class ModificationBuilderTests
         var dialect = GetDialect(dialectName);
         var builder = new DeleteBuilder<TestEntity>(dialect, "users", null);
 
-        var sql = builder.ToSql();
+        var sql = builder.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(expected));
     }
