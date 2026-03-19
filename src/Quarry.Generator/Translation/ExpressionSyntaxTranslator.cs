@@ -1082,6 +1082,11 @@ internal static class ExpressionSyntaxTranslator
             // Find the ParameterInfo we just added and set the expression path
             var lastParam = context.Parameters[context.Parameters.Count - 1];
             lastParam.ExpressionPath = "__CONTAINS_COLLECTION__";
+
+            // Resolve the receiver symbol for direct-access classification in BuildChainParameters.
+            // Public static fields/properties can be accessed directly without expression tree extraction.
+            var symbolInfo = sm.GetSymbolInfo(receiver);
+            lastParam.CollectionReceiverSymbol = symbolInfo.Symbol;
         }
 
         // The runtime will expand this to individual parameters

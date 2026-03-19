@@ -18,7 +18,9 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         string? enumUnderlyingType = null,
         bool needsFieldInfoCache = false,
         bool isCollection = false,
-        string? elementTypeName = null)
+        string? elementTypeName = null,
+        bool isDirectAccessible = false,
+        string? collectionAccessExpression = null)
     {
         Index = index;
         TypeName = typeName;
@@ -30,6 +32,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         NeedsFieldInfoCache = needsFieldInfoCache;
         IsCollection = isCollection;
         ElementTypeName = elementTypeName;
+        IsDirectAccessible = isDirectAccessible;
+        CollectionAccessExpression = collectionAccessExpression;
     }
 
     /// <summary>
@@ -88,6 +92,19 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
     /// </summary>
     public string? ElementTypeName { get; }
 
+    /// <summary>
+    /// Gets whether the collection can be accessed directly in generated code
+    /// (public static field/property). When false, the runtime ExpressionHelper is used.
+    /// Only meaningful when <see cref="IsCollection"/> is true.
+    /// </summary>
+    public bool IsDirectAccessible { get; }
+
+    /// <summary>
+    /// Gets the fully-qualified access expression for direct collection access
+    /// (e.g., "Namespace.ClassName.FieldName"). Only meaningful when <see cref="IsDirectAccessible"/> is true.
+    /// </summary>
+    public string? CollectionAccessExpression { get; }
+
     public bool Equals(ChainParameterInfo? other)
     {
         if (other is null) return false;
@@ -101,7 +118,9 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
             && EnumUnderlyingType == other.EnumUnderlyingType
             && NeedsFieldInfoCache == other.NeedsFieldInfoCache
             && IsCollection == other.IsCollection
-            && ElementTypeName == other.ElementTypeName;
+            && ElementTypeName == other.ElementTypeName
+            && IsDirectAccessible == other.IsDirectAccessible
+            && CollectionAccessExpression == other.CollectionAccessExpression;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ChainParameterInfo);

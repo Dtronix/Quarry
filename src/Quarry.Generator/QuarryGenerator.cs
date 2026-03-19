@@ -1103,12 +1103,30 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     if (string.IsNullOrWhiteSpace(param.CollectionElementType))
                         return null;
 
+                    // Classify the receiver for direct-access vs runtime-helper extraction.
+                    // Public static fields/properties can be accessed directly in generated code.
+                    var isDirectAccessible = false;
+                    string? collectionAccessExpression = null;
+
+                    if (param.CollectionReceiverSymbol is IFieldSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public } publicField)
+                    {
+                        isDirectAccessible = true;
+                        collectionAccessExpression = $"global::{publicField.ContainingType.ToDisplayString()}.{publicField.Name}";
+                    }
+                    else if (param.CollectionReceiverSymbol is IPropertySymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, GetMethod: not null } publicProp)
+                    {
+                        isDirectAccessible = true;
+                        collectionAccessExpression = $"global::{publicProp.ContainingType.ToDisplayString()}.{publicProp.Name}";
+                    }
+
                     chainParams.Add(new ChainParameterInfo(
                         index: globalIndex,
                         typeName: param.ClrType,
                         valueExpression: param.ValueExpression,
                         isCollection: true,
-                        elementTypeName: param.CollectionElementType));
+                        elementTypeName: param.CollectionElementType,
+                        isDirectAccessible: isDirectAccessible,
+                        collectionAccessExpression: collectionAccessExpression));
 
                     globalIndex++;
                     continue;

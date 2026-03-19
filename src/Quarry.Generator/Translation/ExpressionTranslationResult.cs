@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.CodeAnalysis;
 
 namespace Quarry.Generators.Translation;
 
@@ -151,6 +152,14 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
     /// Only meaningful when <see cref="IsEnum"/> is true.
     /// </summary>
     public string? EnumUnderlyingType { get; set; }
+
+    /// <summary>
+    /// Gets or sets the symbol for the collection receiver expression.
+    /// Used by the carrier parameter builder to determine direct-access eligibility
+    /// (public static fields/properties can be accessed without expression tree extraction).
+    /// Only meaningful when <see cref="IsCollection"/> is true.
+    /// </summary>
+    public ISymbol? CollectionReceiverSymbol { get; set; }
 
     public bool Equals(ParameterInfo? other)
     {
