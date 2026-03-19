@@ -241,11 +241,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             var contextSource = ContextCodeGenerator.GenerateContextClass(contextInfo);
             var contextFileName = $"{contextInfo.ClassName}.g.cs";
             context.AddSource(contextFileName, contextSource);
-
-            // Generate metadata file
-            var metadataSource = MetadataCodeGenerator.GenerateMetadata(contextInfo);
-            var metadataFileName = $"{contextInfo.ClassName}.Metadata.g.cs";
-            context.AddSource(metadataFileName, metadataSource);
         }
         catch (Exception ex)
         {
