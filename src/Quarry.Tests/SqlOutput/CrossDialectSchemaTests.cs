@@ -16,7 +16,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_PostgreSQL()
     {
         using var db = new Quarry.Tests.Samples.SchemaPg.SchemaPgDb(Connection);
-        Assert.That(db.Users().ToSql(),
+        Assert.That(db.Users().ToDiagnostics().Sql,
             Is.EqualTo("SELECT * FROM \"public\".\"users\""));
     }
 
@@ -24,7 +24,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_MySQL()
     {
         using var db = new Quarry.Tests.Samples.SchemaMy.SchemaMyDb(Connection);
-        Assert.That(db.Users().ToSql(),
+        Assert.That(db.Users().ToDiagnostics().Sql,
             Is.EqualTo("SELECT * FROM `myapp`.`users`"));
     }
 
@@ -32,7 +32,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     public void Select_SchemaQualified_SqlServer()
     {
         using var db = new Quarry.Tests.Samples.SchemaSs.SchemaSsDb(Connection);
-        Assert.That(db.Users().ToSql(),
+        Assert.That(db.Users().ToDiagnostics().Sql,
             Is.EqualTo("SELECT * FROM [dbo].[users]"));
     }
 
@@ -99,7 +99,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     {
         // DiscountedPrice is Computed() — should be excluded even if set
         Assert.That(
-            Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToSql(),
+            Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics().Sql,
             Is.EqualTo("INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\""));
     }
 
@@ -112,7 +112,7 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
     {
         // WidgetId is ClientGenerated() GUID -- no RETURNING/OUTPUT clause
         Assert.That(
-            Lite.Widgets().Insert(new Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToSql(),
+            Lite.Widgets().Insert(new Widget { WidgetId = Guid.Empty, WidgetName = "x" }).ToDiagnostics().Sql,
             Is.EqualTo("INSERT INTO \"widgets\" (\"WidgetId\", \"WidgetName\") VALUES (@p0, @p1)"));
     }
 

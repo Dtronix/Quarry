@@ -32,10 +32,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     {
         // Boolean values are parameterized in INSERT, so no literal TRUE/1 difference
         AssertDialects(
-            Lite.Users().Insert(new User { UserName = "x", IsActive = true }).ToSql(),
-            Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true }).ToSql(),
-            My.Users().Insert(new My.User { UserName = "x", IsActive = true }).ToSql(),
-            Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true }).ToSql(),
+            Lite.Users().Insert(new User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
+            Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
+            My.Users().Insert(new My.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
+            Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?)",
@@ -50,10 +50,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     public void Insert_WithEnumColumn()
     {
         AssertDialects(
-            Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToSql(),
-            Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToSql(),
-            My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToSql(),
-            Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToSql(),
+            Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
+            Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
+            My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
+            Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"OrderId\"",
             pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES ($1, $2, $3, $4, $5) RETURNING \"OrderId\"",
             mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `Priority`, `OrderDate`) VALUES (?, ?, ?, ?, ?)",

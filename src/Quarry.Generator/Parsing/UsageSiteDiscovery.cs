@@ -59,7 +59,6 @@ internal static class UsageSiteDiscovery
         ["ExecuteScalarAsync"] = InterceptorKind.ExecuteScalar,
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
-        ["ToSql"] = InterceptorKind.ToSql,
         ["ToDiagnostics"] = InterceptorKind.ToDiagnostics,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
@@ -76,7 +75,6 @@ internal static class UsageSiteDiscovery
     {
         "ExecuteNonQueryAsync",
         "ExecuteScalarAsync",
-        "ToSql",
         "ToDiagnostics"
     };
 
@@ -102,7 +100,7 @@ internal static class UsageSiteDiscovery
             return false;
 
         // Check if this is an interceptable method
-        if (InterceptableMethods.ContainsKey(methodName) || methodName == "ToSql"
+        if (InterceptableMethods.ContainsKey(methodName)
             || RawSqlMethods.ContainsKey(methodName))
             return true;
 
@@ -275,9 +273,7 @@ internal static class UsageSiteDiscovery
         // Get the method name and kind
         if (!InterceptableMethods.TryGetValue(methodName, out var kind))
         {
-            if (methodName == "ToSql" && IsInsertBuilderType(containingType.Name))
-                kind = InterceptorKind.InsertToSql;
-            else if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
+            if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
                 kind = InterceptorKind.InsertToDiagnostics;
             else
                 return null;
@@ -290,7 +286,6 @@ internal static class UsageSiteDiscovery
             {
                 "ExecuteNonQueryAsync" => InterceptorKind.InsertExecuteNonQuery,
                 "ExecuteScalarAsync" => InterceptorKind.InsertExecuteScalar,
-                "ToSql" => InterceptorKind.InsertToSql,
                 "ToDiagnostics" => InterceptorKind.InsertToDiagnostics,
                 _ => kind
             };
@@ -300,7 +295,6 @@ internal static class UsageSiteDiscovery
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
-            or InterceptorKind.InsertToSql
             or InterceptorKind.InsertToDiagnostics)
         {
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
@@ -530,7 +524,7 @@ internal static class UsageSiteDiscovery
         }
 
         // Capture constant integer value for Limit/Offset calls.
-        // Used by ToSql prebuilt chains to inline literal pagination values.
+        // Used by ToDiagnostics prebuilt chains to inline literal pagination values.
         int? constantIntValue = null;
         if (kind is InterceptorKind.Limit or InterceptorKind.Offset
             && invocation.ArgumentList.Arguments.Count > 0)
@@ -988,7 +982,7 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Walks the receiver invocation chain to find an Insert/InsertMany call and extracts
     /// the entity type name syntactically from its argument expression.
-    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToSql()</c>, this finds
+    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToDiagnostics()</c>, this finds
     /// <c>Insert(new User{})</c> and returns "User".
     /// </summary>
     private static string? ExtractEntityTypeNameFromChain(ExpressionSyntax receiverExpression)
@@ -1405,8 +1399,8 @@ internal static class UsageSiteDiscovery
 
     /// <summary>
     /// Walks the receiver invocation chain to find a method call with resolved type arguments.
-    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToSql()</c>, this walks from the
-    /// <c>.ToSql()</c> receiver through <c>.Values()</c> to the <c>Insert()</c> call,
+    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToDiagnostics()</c>, this walks from the
+    /// <c>.ToDiagnostics()</c> receiver through <c>.Values()</c> to the <c>Insert()</c> call,
     /// whose TypeArguments[0] is the inferred concrete type (User).
     /// </summary>
     private static ITypeSymbol? ResolveTypeParameterFromReceiverChain(

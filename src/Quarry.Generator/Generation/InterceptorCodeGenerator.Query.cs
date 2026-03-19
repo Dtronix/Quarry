@@ -132,13 +132,6 @@ internal static partial class InterceptorCodeGenerator
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToSql)
-        {
-            if (!chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
-                return;
-            if (toSqlChain.Analysis.UnmatchedMethodNames != null)
-                return;
-        }
         else if (site.Kind is InterceptorKind.ToDiagnostics)
         {
             if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
@@ -268,11 +261,6 @@ internal static partial class InterceptorCodeGenerator
                     GeneratePrebuiltNonQueryExecutionInterceptor(sb, site, methodName, nonQueryChain, carrierInfo);
                 break;
 
-            case InterceptorKind.ToSql:
-                if (chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
-                    GeneratePrebuiltToSqlInterceptor(sb, site, methodName, toSqlChain, carrierInfo);
-                break;
-
             case InterceptorKind.ToDiagnostics:
                 if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
                     GeneratePrebuiltToDiagnosticsInterceptor(sb, site, methodName, toDiagChain, carrierInfo);
@@ -307,13 +295,6 @@ internal static partial class InterceptorCodeGenerator
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertScalarChain);
                     GenerateInsertExecuteScalarInterceptor(sb, site, methodName, insertScalarChain, carrierInfo);
-                }
-                break;
-
-            case InterceptorKind.InsertToSql:
-                {
-                    chainLookup.TryGetValue(site.UniqueId, out var insertToSqlChain);
-                    GenerateInsertToSqlInterceptor(sb, site, methodName, insertToSqlChain, carrierInfo);
                 }
                 break;
 

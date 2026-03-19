@@ -87,7 +87,7 @@ public class Service
     public void Test(TestDbContext db)
     {
         // This is a fluent chain - should be analyzable
-        var sql = db.Users.Select(u => u).ToSql();
+        var sql = db.Users.Select(u => u).ToDiagnostics().Sql;
     }
 }
 ";
@@ -217,7 +217,7 @@ public class Service
     public string Test(TestDbContext db)
     {
         // Fluent chain that should be intercepted
-        return db.Users.Select(u => u).ToSql();
+        return db.Users.Select(u => u).ToDiagnostics().Sql;
     }
 }
 ";
@@ -260,7 +260,7 @@ public class Service
 {
     public string Test(TestDbContext db)
     {
-        return db.Users.Select(u => u).ToSql();
+        return db.Users.Select(u => u).ToDiagnostics().Sql;
     }
 }
 ";
@@ -318,8 +318,8 @@ public class Service
     public void Test(TestDbContext db)
     {
         // Multiple Select calls should be detected
-        var s1 = db.Users.Select(u => u).ToSql();
-        var s2 = db.Users.Select(u => u.UserId).ToSql();  // Use single column instead of anonymous type
+        var s1 = db.Users.Select(u => u).ToDiagnostics().Sql;
+        var s2 = db.Users.Select(u => u.UserId).ToDiagnostics().Sql;  // Use single column instead of anonymous type
     }
 }
 ";
@@ -357,7 +357,7 @@ public class Service
 {
     public void Test(TestDbContext db)
     {
-        var result = db.Users.Select(u => u).Where(u => u.UserId > 0).ToSql();
+        var result = db.Users.Select(u => u).Where(u => u.UserId > 0).ToDiagnostics().Sql;
     }
 }
 ";
@@ -481,7 +481,7 @@ public class Service
     public string Test(TestDbContext db)
     {
         // Direct property access in fluent chain - fully analyzable
-        return db.Users.Select(u => u).Limit(10).ToSql();
+        return db.Users.Select(u => u).Limit(10).ToDiagnostics().Sql;
     }
 }
 ";
@@ -493,7 +493,7 @@ public class Service
         Assert.That(result.Diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), Is.False);
 
         // Direct fluent chain should not emit QRY001 for the chain itself
-        // (though ToSql might depending on implementation)
+        // (though ToDiagnostics might depending on implementation)
     }
 
     #endregion
@@ -661,8 +661,8 @@ public class Service
 {
     public void Test(UserDbContext userDb, ProductDbContext productDb)
     {
-        var users = userDb.Users.Select(u => u).ToSql();
-        var products = productDb.Products.Select(p => p).ToSql();
+        var users = userDb.Users.Select(u => u).ToDiagnostics().Sql;
+        var products = productDb.Products.Select(p => p).ToDiagnostics().Sql;
     }
 }
 ";
