@@ -642,7 +642,84 @@ internal static class ClauseTranslator
             }
         }
 
-        return new OrderByClauseInfo(result.Sql!, isDescending, result.Parameters);
+        var keyTypeName = ResolveKeyTypeFromLambdaBody(lambdaBody, context);
+        return new OrderByClauseInfo(result.Sql!, isDescending, result.Parameters, keyTypeName);
+    }
+
+    /// <summary>
+    /// Translates a GroupBy clause on a joined query using N-parameter lambda.
+    /// </summary>
+    public static ClauseInfo? TranslateJoinedGroupBy(
+        InvocationExpressionSyntax invocation,
+        IReadOnlyList<EntityInfo> entities,
+        SqlDialect dialect)
+    {
+        var lambdaInfo = ExtractMultiParameterLambdaExpression(invocation, entities.Count);
+        if (!lambdaInfo.HasValue)
+            return null;
+
+        var (lambdaBody, paramNames) = lambdaInfo.Value;
+        var context = BuildMultiEntityContext(entities, paramNames, dialect);
+
+        // Handle tuple grouping: (u, o) => (u.Col1, o.Col2)
+        if (lambdaBody is TupleExpressionSyntax tuple)
+        {
+            var columns = new List<string>();
+            foreach (var element in tuple.Arguments)
+            {
+                var elementResult = ExpressionSyntaxTranslator.Translate(element.Expression, context);
+                if (!elementResult.IsSuccess)
+                    return null;
+                columns.Add(elementResult.Sql!);
+            }
+            // Tuple grouping — key type is composite, cannot resolve to a simple type
+            return ClauseInfo.Success(ClauseKind.GroupBy, string.Join(", ", columns), context.Parameters);
+        }
+
+        // Single column grouping
+        var result = ExpressionSyntaxTranslator.Translate(lambdaBody, context);
+        if (!result.IsSuccess)
+            return null;
+
+        var keyTypeName = ResolveKeyTypeFromLambdaBody(lambdaBody, context);
+        return new OrderByClauseInfo(result.Sql!, false, result.Parameters, keyTypeName);
+    }
+
+    /// <summary>
+    /// Resolves the CLR type of the key expression from a lambda body by looking up
+    /// column metadata in the multi-entity translation context.
+    /// Returns null for complex expressions that cannot be resolved from EntityInfo alone.
+    /// </summary>
+    private static string? ResolveKeyTypeFromLambdaBody(
+        ExpressionSyntax lambdaBody,
+        ExpressionTranslationContext context)
+    {
+        // Simple member access: o.Total
+        if (lambdaBody is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression is IdentifierNameSyntax identifier)
+        {
+            var paramName = identifier.Identifier.Text;
+            var memberName = memberAccess.Name.Identifier.Text;
+            var column = context.GetColumnInfo(paramName, memberName);
+            return column?.FullClrType;
+        }
+
+        // Nested member access (EntityRef): o.UserId.Id
+        if (lambdaBody is MemberAccessExpressionSyntax outerMember
+            && outerMember.Expression is MemberAccessExpressionSyntax innerMember
+            && innerMember.Expression is IdentifierNameSyntax innerIdentifier)
+        {
+            var paramName = innerIdentifier.Identifier.Text;
+            var fkPropertyName = innerMember.Name.Identifier.Text;
+            var column = context.GetColumnInfo(paramName, fkPropertyName);
+            if (column != null && column.Kind == ColumnKind.ForeignKey)
+            {
+                // The key type is the FK column's CLR type (e.g., int for EntityRef<User, int>)
+                return column.FullClrType;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

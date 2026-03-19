@@ -1564,7 +1564,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, entityLookup);
         }
 
-        // Enrich joined clause methods (Where/OrderBy on joined builders)
+        // Enrich joined clause methods (Where/OrderBy/GroupBy on joined builders)
         // Note: Joined Select projection is analyzed in Phase 2 (UsageSiteDiscovery) and
         // may be further enriched via EnrichJoinedProjectionWithEntityInfo below
         if (needsJoinedClauseEnrichment && enrichedClauseInfo == null && site.Kind != InterceptorKind.Select)
@@ -1622,7 +1622,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             dialect: entityContext.Context.Dialect,
             initializedPropertyNames: site.InitializedPropertyNames,
             updateInfo: enrichedUpdateInfo,
-            keyTypeName: site.KeyTypeName,
+            keyTypeName: (enrichedClauseInfo is Models.OrderByClauseInfo orderByInfo && orderByInfo.KeyTypeName != null)
+                ? orderByInfo.KeyTypeName : site.KeyTypeName,
             rawSqlTypeInfo: enrichedRawSqlTypeInfo,
             isNavigationJoin: site.IsNavigationJoin);
     }
@@ -1885,6 +1886,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             InterceptorKind.Where => true,
             InterceptorKind.OrderBy => true,
             InterceptorKind.ThenBy => true,
+            InterceptorKind.GroupBy => true,
             InterceptorKind.Select => true,
             _ => false
         };
@@ -1923,6 +1925,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             else if (site.Kind == InterceptorKind.OrderBy || site.Kind == InterceptorKind.ThenBy)
             {
                 return Translation.ClauseTranslator.TranslateJoinedOrderBy(
+                    invocation, entities, dialect);
+            }
+            else if (site.Kind == InterceptorKind.GroupBy)
+            {
+                return Translation.ClauseTranslator.TranslateJoinedGroupBy(
                     invocation, entities, dialect);
             }
         }
