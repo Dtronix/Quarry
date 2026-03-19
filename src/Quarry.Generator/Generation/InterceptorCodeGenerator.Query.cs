@@ -513,10 +513,10 @@ internal static partial class InterceptorCodeGenerator
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
 
-        // Emit trim suppression if we'll use FieldInfo.GetValue inline
+        // Emit trim suppression if we'll use FieldInfo.GetValue inline (scalar captured params only;
+        // collection params now delegate reflection to ExpressionHelper which handles its own suppression)
         var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
-        var hasCollectionContainsParams = clauseInfo?.Parameters.Any(p => p.IsCollection && p.ExpressionPath == "__CONTAINS_COLLECTION__") == true;
-        if (methodFields.Count > 0 || hasCollectionContainsParams)
+        if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");

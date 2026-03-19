@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
 
@@ -18,6 +19,8 @@ public static class ExpressionHelper
     /// <typeparam name="T">The expected collection type (e.g., <c>IReadOnlyList&lt;string&gt;</c>).</typeparam>
     /// <param name="containsCall">The <c>MethodCallExpression</c> for the Contains() call.</param>
     /// <returns>The extracted collection value.</returns>
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Closure fields are preserved by the expression tree that references them.")]
     public static T ExtractContainsCollection<T>(MethodCallExpression containsCall) where T : class
     {
         // Resolve the collection expression: Object for instance method, Arguments[0] for extension
