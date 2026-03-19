@@ -690,6 +690,13 @@ internal static partial class InterceptorCodeGenerator
         if (site.ResultTypeName != null)
         {
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
+            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+
+            // Broken tuple result types cannot use concrete arity-0 signatures;
+            // fall back to full arity-matching with TKey to preserve interceptor arity.
+            if (isBrokenTuple)
+                keyType = null;
+
             if (keyType != null)
             {
                 // Non-generic interceptor (arity 0) — concrete key type
@@ -840,6 +847,13 @@ internal static partial class InterceptorCodeGenerator
         if (site.ResultTypeName != null)
         {
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
+            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+
+            // Broken tuple result types cannot use concrete arity-0 signatures;
+            // fall back to full arity-matching with TKey to preserve interceptor arity.
+            if (isBrokenTuple)
+                keyType = null;
+
             if (keyType != null)
             {
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");

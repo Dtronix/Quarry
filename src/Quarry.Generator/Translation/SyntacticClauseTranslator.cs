@@ -45,9 +45,10 @@ internal sealed class SyntacticClauseTranslator
                 return ClauseInfo.Failure(pending.Kind, "Failed to translate syntactic expression");
             }
 
-            if (pending.Kind == ClauseKind.OrderBy)
+            if (pending.Kind == ClauseKind.OrderBy || pending.Kind == ClauseKind.GroupBy)
             {
-                return new OrderByClauseInfo(sql, pending.IsDescending, _parameters);
+                var keyTypeName = ResolveKeyTypeFromExpression(pending.Expression);
+                return new OrderByClauseInfo(sql, pending.IsDescending, _parameters, keyTypeName);
             }
 
             return ClauseInfo.Success(pending.Kind, sql, _parameters);
@@ -56,6 +57,27 @@ internal sealed class SyntacticClauseTranslator
         {
             return ClauseInfo.Failure(pending.Kind, $"Translation error: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Resolves the CLR type of the key expression from a syntactic expression tree.
+    /// For simple property access (u.UserName), looks up FullClrType from the column metadata.
+    /// Returns null for complex expressions (tuples, arithmetic, method calls).
+    /// </summary>
+    private string? ResolveKeyTypeFromExpression(SyntacticExpression expression)
+    {
+        if (expression is SyntacticPropertyAccess propAccess)
+        {
+            var propertyName = propAccess.PropertyName;
+            // Handle Ref<T,K>.Id access
+            if (propertyName.EndsWith(".Id"))
+                propertyName = propertyName.Substring(0, propertyName.Length - 3);
+
+            if (_columnLookup.TryGetValue(propertyName, out var column))
+                return column.FullClrType;
+        }
+
+        return null;
     }
 
     /// <summary>
