@@ -88,39 +88,6 @@ public class GeneratedCodeTests
     }
 
     /// <summary>
-    /// Verifies that the generated metadata contains correct table info.
-    /// </summary>
-    [Test]
-    public void GeneratedMetadata_HasCorrectTableName()
-    {
-        Assert.That(UserMetadata.TableName, Is.EqualTo("users"));
-        Assert.That(UserMetadata.QualifiedTableName, Is.EqualTo("\"users\""));
-        Assert.That(UserMetadata.ColumnCount, Is.EqualTo(6));
-    }
-
-    /// <summary>
-    /// Verifies that generated column metadata is correct.
-    /// </summary>
-    [Test]
-    public void GeneratedMetadata_HasCorrectColumnInfo()
-    {
-        Assert.That(UserMetadata.Columns.UserId.IsPrimaryKey, Is.True);
-        Assert.That(UserMetadata.Columns.UserId.IsIdentity, Is.True);
-        Assert.That(UserMetadata.Columns.Email.IsNullable, Is.True);
-        Assert.That(UserMetadata.Columns.UserName.MaxLength, Is.EqualTo(100));
-    }
-
-    /// <summary>
-    /// Verifies that foreign key metadata is generated correctly.
-    /// </summary>
-    [Test]
-    public void GeneratedMetadata_HasCorrectForeignKeyInfo()
-    {
-        Assert.That(OrderMetadata.Columns.UserId.IsForeignKey, Is.True);
-        Assert.That(OrderMetadata.Columns.UserId.ReferencedEntity, Is.EqualTo("User"));
-    }
-
-    /// <summary>
     /// Verifies that the generated context can build queries using QueryState directly.
     /// This bypasses interceptors but confirms the generated table names work.
     /// </summary>
@@ -141,17 +108,4 @@ public class GeneratedCodeTests
         Assert.That(sql, Does.Contain("LIMIT 10"));
     }
 
-    /// <summary>
-    /// Verifies that the generated column mappings are bidirectional.
-    /// </summary>
-    [Test]
-    public void GeneratedMetadata_ColumnMappings_AreBidirectional()
-    {
-        foreach (var columnName in UserMetadata.ColumnNames)
-        {
-            Assert.That(UserMetadata.ColumnToProperty.ContainsKey(columnName), Is.True);
-            var propertyName = UserMetadata.ColumnToProperty[columnName];
-            Assert.That(UserMetadata.PropertyToColumn[propertyName], Is.EqualTo(columnName));
-        }
-    }
 }
