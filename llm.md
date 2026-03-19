@@ -109,7 +109,7 @@ public partial class AppDb : QuarryContext
 
 Context properties use interface return types (`IQueryBuilder<T>`). Generator implements with concrete builders. Interceptors cast back via `Unsafe.As<>`.
 
-Generates: entity classes, context impl with `Create()` factory method, metadata, interceptors.
+Generates: entity classes, context impl with `Create()` factory method, interceptors.
 Dialects: `SQLite`, `PostgreSQL`, `MySQL`, `SqlServer`.
 
 **Multi-context:** Multiple contexts with different dialects can coexist. Each generates its own interceptor file with dialect-correct SQL. Generator resolves context from receiver chain at each call site.
@@ -267,7 +267,7 @@ Key files: `Query/IQueryBuilder.cs`, `Query/IJoinedQueryBuilder.cs`, `Query/Modi
 Three incremental pipelines in `QuarryGenerator.cs`:
 
 **Pipeline 1 — Schema/Context discovery:**
-`ClassDeclarationSyntax` → `ContextParser.HasQuarryContextAttribute` (syntactic) → `ContextParser.ParseContext` (semantic) → `SchemaParser.FindAndParseSchema` per entity (+ `[EntityReader]` validation) → generates entity/context/metadata files. Entity files namespaced as `{Context.Namespace}.{Entity}.g.cs`.
+`ClassDeclarationSyntax` → `ContextParser.HasQuarryContextAttribute` (syntactic) → `ContextParser.ParseContext` (semantic) → `SchemaParser.FindAndParseSchema` per entity (+ `[EntityReader]` validation) → generates entity/context files. Entity files namespaced as `{Context.Namespace}.{Entity}.g.cs`.
 
 **Pipeline 2 — Usage site interception:**
 `InvocationExpressionSyntax` → `UsageSiteDiscovery.IsQuarryMethodCandidate` (syntactic) → `UsageSiteDiscovery.DiscoverUsageSite` (semantic, includes RawSql type resolution) → `AnalyzabilityChecker` → clause translation or `PendingClauseInfo` → combine with Pipeline 1 → `EnrichUsageSiteWithEntityInfo` (fixes aggregate CLR types from entity column metadata) → group by `(ContextClassName, Namespace)` → `InterceptorCodeGenerator` (per-context file).
@@ -417,14 +417,13 @@ Enum columns detected via `TypeKind.Enum` in `ColumnInfo.GetTypeMetadata()` (unw
 | Translation | `Translation/ClauseTranslator.cs` (single + joined clause/join-condition translation), `ExpressionSyntaxTranslator.cs` (C# AST→SQL with qualified column names + subquery translation + Count(predicate) support), `ExpressionTranslationContext.cs` (entity metadata + table aliases + parameter tracking + subquery scope stack), `ExpressionTranslationResult.cs`, `SyntacticClauseTranslator.cs` + `SyntacticExpressionParser.cs` (syntax-only fallback), `SqlLikeHelpers.cs` (LIKE parameterization + cross-dialect escaping), `SubqueryScope.cs` (nested subquery state) |
 | Projection | `Projection/ProjectionAnalyzer.cs` (single + joined projection analysis, aggregate type resolution with column lookup fallback, joined aggregate projection), `ReaderCodeGenerator.cs` (column list + reader delegate with table alias support) |
 | Compile-time SQL | `Sql/CompileTimeSqlBuilder.cs` (mirror of runtime SqlBuilder for compile-time SQL generation, batch mask variant building), `Sql/SqlFragmentTemplate.cs` (text/parameter slot separation, dialect-aware rendering) |
-| Code gen | `Generation/ContextCodeGenerator.cs`, `EntityCodeGenerator.cs`, `MetadataCodeGenerator.cs`, `InterceptorCodeGenerator.cs` (clause interceptors + execution interceptors + dispatch tables + pre-allocated params + enum handling + tuple type sanitization) |
+| Code gen | `Generation/ContextCodeGenerator.cs`, `EntityCodeGenerator.cs`, `InterceptorCodeGenerator.cs` (clause interceptors + execution interceptors + dispatch tables + pre-allocated params + enum handling + tuple type sanitization) |
 | Models | `ContextInfo.cs`, `EntityInfo.cs` (+ `CustomEntityReaderClass`), `EntityMapping.cs`, `ColumnInfo.cs` (+ `isEnum`, `GetTypeMetadata()`), `UsageSiteInfo.cs` (dialect + context + joined entities + pending clauses + `InitializedPropertyNames`), `ProjectionInfo.cs` (+ `CustomEntityReaderClass`, `TableAlias`), `ClauseInfo.cs` (+ `JoinClauseInfo`, `OrderByClauseInfo`, `SetClauseInfo`), `PendingClauseInfo.cs`, `InsertInfo.cs`, `ExecutionInfo.cs`, `RawSqlTypeInfo.cs` (+ `RawSqlPropertyInfo`, `RawSqlTypeKind`), `InterceptorMethodInfo.cs`, `SyntacticExpression.cs`, `NavigationInfo.cs`, `NamingStyleKind.cs`, `ChainAnalysisResult.cs` (tier, clauses, masks, conditional clauses), `PrebuiltChainInfo.cs` (SQL map, reader code, MaxParameterCount) |
 
 ### Generated Files (per context)
 
 - `{Namespace}.{Entity}.g.cs` — Entity class with typed properties from schema (FK properties as `EntityRef<TEntity,TKey>`)
 - `{Context}.g.cs` — Context partial: constructors, `Create()` factory, `IQueryBuilder<T>` properties, `Insert`/`Update`/`Delete` methods, `MigrateAsync()` (when migrations exist)
-- `{Context}.Metadata.g.cs` — Static metadata per entity (table/column names, types, dictionaries)
 - `{Context}.Interceptors.g.cs` — `file static` class with `[InterceptsLocation]` methods per call site: clause interceptors (Where/Select/OrderBy/etc.) + execution interceptors (dispatch tables) + cached static fields (one file per context)
 
 ### Migration System Architecture
@@ -506,7 +505,7 @@ QRA101–QRA106 (simplification): count-to-zero, single-value IN, tautology, con
 
 Tests in `Quarry.Tests/`:
 - `Samples/` — 4 context classes (TestDbContext/SQLite, PgDb/PostgreSQL, MyDb/MySQL, SsDb/SqlServer) with interface return types (`IQueryBuilder<T>`), 6 schemas (User/Order/OrderItem/Account/Product/Widget), DTOs, MockDbConnection, SchemaQualifiedContexts
-- `Samples/InterceptorIntegrationTests.cs` — End-to-end tests via generated interceptors: select/where/join/pagination/distinct/insert/update/aggregate/metadata/conditional branching/captured parameters/execution interceptors/EntityRef/NavigationList
+- `Samples/InterceptorIntegrationTests.cs` — End-to-end tests via generated interceptors: select/where/join/pagination/distinct/insert/update/aggregate/conditional branching/captured parameters/execution interceptors/EntityRef/NavigationList
 - `Integration/` — SQLite in-memory execution tests (`SqliteIntegrationTestBase` creates schema + seeds data): Select, Where, Join, Complex, Aggregate, EntityReader, RawSql, TypeMapping, Logging, SetOperation
 - `SqlOutput/` — SQL string assertion tests:
   - `CrossDialect*.cs` — 4-dialect comparison tests using `AssertDialects()` helper (select, where, join, complex, insert, enum, string ops, subquery, aggregate, orderby, schema, misc, composition, update, delete, type mapping)
