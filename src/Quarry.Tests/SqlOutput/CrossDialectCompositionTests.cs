@@ -520,5 +520,25 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN (@p0, @p1, @p2)");
     }
 
+    [Test]
+    public void Where_ContainsRuntimeCollection_DiagnosticParameters()
+    {
+        var diag = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+            .Select(o => (o.OrderId, o.Status))
+            .ToDiagnostics();
+
+        // Verify top-level parameters include expanded collection values
+        Assert.That(diag.Parameters, Has.Count.EqualTo(3));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo("pending"));
+        Assert.That(diag.Parameters[1].Value, Is.EqualTo("processing"));
+        Assert.That(diag.Parameters[2].Value, Is.EqualTo("shipped"));
+
+        // Verify per-clause parameters on the Where clause
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.Parameters, Has.Count.EqualTo(3));
+        Assert.That(whereClause.Parameters[0].Value, Is.EqualTo("pending"));
+        Assert.That(whereClause.SqlFragment, Does.Contain("@p0"));
+    }
+
     #endregion
 }
