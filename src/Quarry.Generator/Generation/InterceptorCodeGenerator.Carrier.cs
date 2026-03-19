@@ -901,10 +901,9 @@ internal static partial class InterceptorCodeGenerator
     #region Carrier helpers
 
     /// <summary>
-    /// Emits code to extract a collection parameter from a Contains() expression tree.
-    /// Navigates the MethodCallExpression to find the collection (Object for instance
-    /// methods, Arguments[0] for extension methods), then extracts via FieldInfo or
-    /// Expression.Lambda compilation as fallback.
+    /// Emits code to extract a collection parameter from a Contains() call.
+    /// For public static fields/properties, emits direct access. Otherwise delegates
+    /// to the runtime <c>ExpressionHelper.ExtractContainsCollection</c> helper.
     /// </summary>
     private static void EmitCollectionContainsExtraction(
         StringBuilder sb, int globalIdx, ChainParameterInfo carrierParam)
@@ -913,24 +912,16 @@ internal static partial class InterceptorCodeGenerator
             ? $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>"
             : carrierParam.TypeName;
 
-        // Navigate to the collection expression in the Contains() call.
-        // The expression tree may contain layers of wrapping:
-        //   MethodCallExpression(op_Implicit, UnaryExpression(Convert, MemberExpression))
-        // Unwrap all layers to find the underlying MemberExpression (field/property access).
-        sb.AppendLine($"        var __call{globalIdx} = (System.Linq.Expressions.MethodCallExpression)expr.Body;");
-        sb.AppendLine($"        System.Linq.Expressions.Expression __colExpr{globalIdx} = __call{globalIdx}.Object ?? __call{globalIdx}.Arguments[0];");
-        sb.AppendLine($"        while (__colExpr{globalIdx} is not System.Linq.Expressions.MemberExpression)");
-        sb.AppendLine("        {");
-        sb.AppendLine($"            if (__colExpr{globalIdx} is System.Linq.Expressions.UnaryExpression __colU{globalIdx})");
-        sb.AppendLine($"                __colExpr{globalIdx} = __colU{globalIdx}.Operand;");
-        sb.AppendLine($"            else if (__colExpr{globalIdx} is System.Linq.Expressions.MethodCallExpression __colM{globalIdx})");
-        sb.AppendLine($"                __colExpr{globalIdx} = __colM{globalIdx}.Arguments.Count > 0 ? __colM{globalIdx}.Arguments[0] : __colM{globalIdx}.Object!;");
-        sb.AppendLine($"            else break;");
-        sb.AppendLine("        }");
-        // Extract via FieldInfo (captured local → closure field, or static field access)
-        sb.AppendLine($"        var __colMember{globalIdx} = (System.Linq.Expressions.MemberExpression)__colExpr{globalIdx};");
-        sb.AppendLine($"        var __colTarget{globalIdx} = __colMember{globalIdx}.Expression is System.Linq.Expressions.ConstantExpression __colConst{globalIdx} ? __colConst{globalIdx}.Value : null;");
-        sb.AppendLine($"        __c.P{globalIdx} = ({fieldType})((System.Reflection.FieldInfo)__colMember{globalIdx}.Member).GetValue(__colTarget{globalIdx})!;");
+        if (carrierParam.IsDirectAccessible && carrierParam.CollectionAccessExpression != null)
+        {
+            // Direct access path: public static field/property — no reflection needed
+            sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierParam.CollectionAccessExpression};");
+        }
+        else
+        {
+            // Runtime helper path: unwrap expression tree and extract via reflection
+            sb.AppendLine($"        __c.P{globalIdx} = Quarry.Internal.ExpressionHelper.ExtractContainsCollection<{fieldType}>((System.Linq.Expressions.MethodCallExpression)expr.Body);");
+        }
     }
 
     private static void EmitCarrierParamBindings(
