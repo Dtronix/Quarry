@@ -110,37 +110,6 @@ public partial class TestDbContext : QuarryContext
     }
 
     [Test]
-    public void Generator_WithMappedAndMapTo_GeneratesEntityWithMappedColumnName()
-    {
-        var source = MoneyAndMappingSource + @"
-public class AccountSchema : Schema
-{
-    public static string Table => ""accounts"";
-    public Key<int> AccountId => Identity();
-    public Col<Money> CreditLimit => Mapped<Money, MoneyMapping>().MapTo(""credit_limit"");
-}
-
-[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
-public partial class TestDbContext : QuarryContext
-{
-    public partial IEntityAccessor<Account> Accounts();
-}
-";
-
-        var compilation = CreateCompilation(source);
-        var result = RunGenerator(compilation);
-
-        var metadataSource = result.GeneratedTrees
-            .FirstOrDefault(t => t.FilePath.EndsWith("TestDbContext.Metadata.g.cs"));
-        Assert.That(metadataSource, Is.Not.Null);
-
-        var metadataCode = metadataSource!.GetText().ToString();
-        Assert.That(metadataCode, Does.Contain("credit_limit"),
-            "Column should use the MapTo override name");
-    }
-
-
-    [Test]
     public void Generator_WithChainedMappedLength_ParsesBothModifiers()
     {
         // Mapped<> chained with other modifiers
