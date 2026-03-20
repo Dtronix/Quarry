@@ -144,12 +144,14 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
         string columnSql,
         int parameterIndex,
         IReadOnlyList<ParameterInfo> parameters,
-        string? customTypeMappingClass = null)
+        string? customTypeMappingClass = null,
+        string? valueTypeName = null)
         : base(ClauseKind.Set, $"{columnSql} = @p{parameterIndex}", parameters)
     {
         ColumnSql = columnSql;
         ParameterIndex = parameterIndex;
         CustomTypeMappingClass = customTypeMappingClass;
+        ValueTypeName = valueTypeName;
     }
 
     /// <summary>
@@ -168,6 +170,13 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
     /// </summary>
     public string? CustomTypeMappingClass { get; }
 
+    /// <summary>
+    /// Gets the resolved CLR type name of the value being set (the TValue parameter).
+    /// For example, "string" from <c>.Set(u => u.UserName, "NewName")</c>.
+    /// Used to emit concrete-typed (non-generic) interceptor signatures for carrier optimization.
+    /// </summary>
+    public string? ValueTypeName { get; }
+
     public bool Equals(SetClauseInfo? other)
     {
         if (other is null) return false;
@@ -175,6 +184,7 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
         return ColumnSql == other.ColumnSql
             && ParameterIndex == other.ParameterIndex
             && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && ValueTypeName == other.ValueTypeName
             && base.Equals(other);
     }
 
@@ -182,7 +192,7 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, ColumnSql, ParameterIndex);
+        return HashCode.Combine(Kind, ColumnSql, ParameterIndex, ValueTypeName);
     }
 }
 

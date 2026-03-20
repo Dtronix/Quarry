@@ -412,7 +412,9 @@ internal static partial class InterceptorCodeGenerator
         {
             if (clause.Site.UniqueId == site.UniqueId)
                 break;
-            if (clause.Site.ClauseInfo != null)
+            if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
+            else if (clause.Site.ClauseInfo != null)
                 globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
         }
 
@@ -471,7 +473,11 @@ internal static partial class InterceptorCodeGenerator
                 }
                 else
                 {
-                    var extractExpr = p.IsCaptured ? $"p{p.Index}" : p.ValueExpression;
+                    // Set clauses: the value comes from the 'value' method parameter,
+                    // not from an inlined literal or captured closure.
+                    var isSetClause = site.ClauseInfo is SetClauseInfo;
+                    var extractExpr = isSetClause ? "value"
+                        : (p.IsCaptured ? $"p{p.Index}" : p.ValueExpression);
                     sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){extractExpr}!;");
                 }
             }
@@ -809,7 +815,12 @@ internal static partial class InterceptorCodeGenerator
             }
             else
             {
-                sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
+                // Entity-sourced params read from Entity field, not P{n}.
+                // Box to object? to handle value types (bool, int, etc.) that can't use ?.ToString().
+                if (param.EntityPropertyExpression != null)
+                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
+                else
+                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
             }
         }
         var nextLogIdx = paramCount;
@@ -831,6 +842,15 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     private static string GetParameterValueExpression(ChainParameterInfo param, int index)
     {
+        // Entity-sourced parameter (SetPoco): read from Entity field, not P{n}
+        if (param.EntityPropertyExpression != null)
+        {
+            // TypeMapping is already baked into the EntityPropertyExpression
+            if (param.TypeMapping != null)
+                return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
+            return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
+        }
+
         // Mapped type: use ToDb() conversion
         if (param.TypeMapping != null)
             return $"(object?){GetMappingFieldName(param.TypeMapping)}.ToDb(__c.P{index}) ?? DBNull.Value";
