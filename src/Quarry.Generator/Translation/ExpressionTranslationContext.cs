@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Utilities;
 using Quarry;
 
 namespace Quarry.Generators.Translation;
@@ -179,7 +180,7 @@ internal sealed class ExpressionTranslationContext
             if (unwrapped.TypeKind == TypeKind.Enum && unwrapped is INamedTypeSymbol enumType)
             {
                 param.IsEnum = true;
-                param.EnumUnderlyingType = enumType.EnumUnderlyingType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "int";
+                param.EnumUnderlyingType = enumType.EnumUnderlyingType?.ToMinimallyQualifiedDisplayString() ?? "int";
             }
         }
 
@@ -189,11 +190,11 @@ internal sealed class ExpressionTranslationContext
         {
             if (typeSymbol is IArrayTypeSymbol arrayType)
             {
-                param.CollectionElementType = arrayType.ElementType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                param.CollectionElementType = arrayType.ElementType.ToMinimallyQualifiedDisplayString();
             }
             else if (typeSymbol is INamedTypeSymbol { TypeArguments.Length: > 0 } namedType)
             {
-                param.CollectionElementType = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                param.CollectionElementType = namedType.TypeArguments[0].ToMinimallyQualifiedDisplayString();
             }
         }
 
@@ -267,25 +268,8 @@ internal sealed class ExpressionTranslationContext
     /// <returns>A new context with the joined entity added.</returns>
     public ExpressionTranslationContext WithJoinedEntity(string parameterName, EntityInfo entityInfo)
     {
-        var newJoinedEntities = new Dictionary<string, EntityInfo>(JoinedEntities)
-        {
-            [parameterName] = entityInfo
-        };
-
-        var ctx = new ExpressionTranslationContext(
-            SemanticModel,
-            EntityInfo,
-            Dialect,
-            LambdaParameterName,
-            ColumnLookup,
-            newJoinedEntities,
-            _parameters,
-            _parameterIndex,
-            EntityRegistry,
-            _subqueryScopes,
-            _subqueryAliasCounter);
-        ctx.TableAliases = TableAliases;
-        return ctx;
+        JoinedEntities[parameterName] = entityInfo;
+        return this;
     }
 
     /// <summary>

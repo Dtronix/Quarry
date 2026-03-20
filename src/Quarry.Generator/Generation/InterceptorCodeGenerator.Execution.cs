@@ -910,12 +910,12 @@ internal static partial class InterceptorCodeGenerator
             thisParamType = $"{thisType}<{entityType}>";
             concreteParamType = $"{concreteType}<{entityType}>";
         }
-        else if (thisType.Contains("DeleteBuilder"))
+        else if (site.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
         {
             thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
             concreteParamType = $"ExecutableDeleteBuilder<{entityType}>";
         }
-        else if (thisType.Contains("UpdateBuilder"))
+        else if (site.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
         {
             thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
             concreteParamType = $"ExecutableUpdateBuilder<{entityType}>";

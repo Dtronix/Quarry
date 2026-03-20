@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Text;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Generation;
 
@@ -232,7 +233,7 @@ internal static partial class InterceptorCodeGenerator
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         // Determine receiver and return types based on builder kind
-        var isDelete = site.BuilderTypeName != null && site.BuilderTypeName.Contains("Delete");
+        var isDelete = site.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete;
         var receiverType = isDelete
             ? $"IDeleteBuilder<{entityType}>"
             : $"IUpdateBuilder<{entityType}>";
@@ -429,9 +430,16 @@ internal static partial class InterceptorCodeGenerator
         var clauseInfo = site.ClauseInfo;
         if (clauseInfo != null && clauseInfo.Parameters.Count > 0)
         {
-            // Separate collection params (Contains-pattern) from scalar params
-            var scalarParams = clauseInfo.Parameters.Where(p => p.ExpressionPath != "__CONTAINS_COLLECTION__").ToList();
-            var collectionParams = clauseInfo.Parameters.Where(p => p.ExpressionPath == "__CONTAINS_COLLECTION__").ToList();
+            // Single-pass partition: scalar vs collection params
+            var scalarParams = new List<ParameterInfo>(clauseInfo.Parameters.Count);
+            var collectionParams = new List<ParameterInfo>();
+            foreach (var p in clauseInfo.Parameters)
+            {
+                if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
+                    collectionParams.Add(p);
+                else
+                    scalarParams.Add(p);
+            }
 
             if (hasResolvableCapturedParams && scalarParams.Any(p => p.IsCaptured && p.CanGenerateDirectPath))
             {

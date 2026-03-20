@@ -19,6 +19,7 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb,
         UsageSiteInfo site,
         List<CachedExtractorField> staticFields,
+        Dictionary<string, List<CachedExtractorField>> staticFieldsByMethod,
         Dictionary<string, PrebuiltChainInfo> chainLookup,
         Dictionary<string, int> clauseBitMap,
         Dictionary<string, PrebuiltChainInfo> chainClauseLookup,
@@ -209,10 +210,13 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.Where:
-                if (isJoinedBuilder)
-                    GenerateJoinedWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
-                else
-                    GenerateWhereInterceptor(sb, site, methodName, staticFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                {
+                    staticFieldsByMethod.TryGetValue(methodName, out var methodFields);
+                    if (isJoinedBuilder)
+                        GenerateJoinedWhereInterceptor(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    else
+                        GenerateWhereInterceptor(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.OrderBy:
@@ -269,7 +273,10 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.DeleteWhere:
-                GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                {
+                    staticFieldsByMethod.TryGetValue(methodName, out var deleteMethodFields);
+                    GenerateModificationWhereInterceptor(sb, site, methodName, deleteMethodFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                }
                 break;
 
             case InterceptorKind.UpdateSet:
@@ -281,7 +288,10 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.UpdateWhere:
-                GenerateModificationWhereInterceptor(sb, site, methodName, staticFields, isDelete: false, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                {
+                    staticFieldsByMethod.TryGetValue(methodName, out var updateMethodFields);
+                    GenerateModificationWhereInterceptor(sb, site, methodName, updateMethodFields, isDelete: false, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                }
                 break;
 
             case InterceptorKind.InsertExecuteNonQuery:
@@ -502,7 +512,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Generates a Where() interceptor with SQL fragment and parameter binder.
     /// </summary>
-    private static void GenerateWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
+    private static void GenerateWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField>? methodFields, int? clauseBit = null,
         PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
@@ -515,7 +525,7 @@ internal static partial class InterceptorCodeGenerator
 
         // Emit trim suppression if we'll use FieldInfo.GetValue inline (scalar captured params only;
         // collection params now delegate reflection to ExpressionHelper which handles its own suppression)
-        var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
+        methodFields ??= new List<CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
