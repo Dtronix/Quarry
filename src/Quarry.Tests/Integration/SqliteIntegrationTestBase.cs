@@ -13,9 +13,7 @@ namespace Quarry.Tests.Integration;
 /// <item>RIGHT JOIN is not supported by SQLite — use CrossDialectJoinTests for SQL verification.</item>
 /// <item>Navigation joins (Join(u => u.Orders)) require compile-time interceptors that resolve FK
 ///   relationships; the runtime path does not resolve navigation properties.</item>
-/// <item>Set operations (Union/Except/Intersect) via QuarryContext require compile-time interceptors;
-///   use SetOperationBuilder directly with raw SQL for integration testing.</item>
-/// <item>Multi-dialect execution testing would require PostgreSQL/MySQL/SQL Server instances.</item>
+///<item>Multi-dialect execution testing would require PostgreSQL/MySQL/SQL Server instances.</item>
 /// </list>
 /// </remarks>
 internal abstract class SqliteIntegrationTestBase
