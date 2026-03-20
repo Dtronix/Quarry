@@ -10,6 +10,7 @@ internal enum FieldRole
 {
     ExecutionContext,
     Parameter,
+    Collection,
     ClauseMask,
     Limit,
     Offset,

@@ -3,7 +3,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Base class for SQLite-backed integration tests.

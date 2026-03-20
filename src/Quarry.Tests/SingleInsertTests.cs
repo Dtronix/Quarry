@@ -1,7 +1,6 @@
 using Quarry.Internal;
 using Quarry.Shared.Sql;
 
-#pragma warning disable QRY001 // Tests construct builders directly without a context chain
 
 namespace Quarry.Tests;
 

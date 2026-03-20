@@ -3,7 +3,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 #pragma warning disable CS0162 // Unreachable code — conditional branching tests use if(true)/if(false) intentionally
 
 /// <summary>

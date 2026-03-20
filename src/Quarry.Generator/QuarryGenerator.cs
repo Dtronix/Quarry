@@ -349,7 +349,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Enrich usage sites with entity metadata from contexts
         var enrichedSites = usageSites
             .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry))
+            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
             .ToList();
 
         // Discover and enrich missing chain members from resolved navigation joins.
@@ -423,7 +423,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Analyze execution chains for pre-built SQL optimization tiers.
         var allSitesForChainAnalysis = usageSites
             .Where(s => !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry))
+            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
             .ToList();
         if (navJoinChainSites.Count > 0)
             allSitesForChainAnalysis.AddRange(navJoinChainSites);
@@ -909,6 +909,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 isCarrierEligible = false;
         }
 
+        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
+        if (isCarrierEligible && chainParams != null)
+            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
+
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
             executionSite.EntityTypeName, executionSite.ResultTypeName,
@@ -1032,8 +1036,19 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Build chain parameter info for carrier optimization
         var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null
-            && executionSite.Kind is not InterceptorKind.ToDiagnostics;
+        var isCarrierEligible = chainParams != null;
+
+        if (isCarrierEligible)
+        {
+            // ToDiagnostics doesn't read rows, so skip the reader check for it.
+            var isToDiag = executionSite.Kind == InterceptorKind.ToDiagnostics;
+            if (readerCode == null && !isToDiag)
+                isCarrierEligible = false;
+        }
+
+        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
+        if (isCarrierEligible && chainParams != null)
+            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
@@ -1082,9 +1097,40 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
             foreach (var param in clause.Site.ClauseInfo.Parameters)
             {
-                // Collection parameters (IN clauses) cannot be represented as typed carrier fields
+                // Collection parameters need a resolved element type for carrier fields
                 if (param.IsCollection)
-                    return null;
+                {
+                    if (string.IsNullOrWhiteSpace(param.CollectionElementType))
+                        return null;
+
+                    // Classify the receiver for direct-access vs runtime-helper extraction.
+                    // Public static fields/properties can be accessed directly in generated code.
+                    var isDirectAccessible = false;
+                    string? collectionAccessExpression = null;
+
+                    if (param.CollectionReceiverSymbol is IFieldSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public } publicField)
+                    {
+                        isDirectAccessible = true;
+                        collectionAccessExpression = $"global::{publicField.ContainingType.ToDisplayString()}.{publicField.Name}";
+                    }
+                    else if (param.CollectionReceiverSymbol is IPropertySymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, GetMethod: not null } publicProp)
+                    {
+                        isDirectAccessible = true;
+                        collectionAccessExpression = $"global::{publicProp.ContainingType.ToDisplayString()}.{publicProp.Name}";
+                    }
+
+                    chainParams.Add(new ChainParameterInfo(
+                        index: globalIndex,
+                        typeName: param.ClrType,
+                        valueExpression: param.ValueExpression,
+                        isCollection: true,
+                        elementTypeName: param.CollectionElementType,
+                        isDirectAccessible: isDirectAccessible,
+                        collectionAccessExpression: collectionAccessExpression));
+
+                    globalIndex++;
+                    continue;
+                }
 
                 // Parameters with unresolved types cannot be carrier fields
                 if (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object?")
@@ -1104,6 +1150,81 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         return chainParams;
+    }
+
+    /// <summary>
+    /// Replaces collection parameter placeholders in pre-built SQL with expansion tokens.
+    /// For example, <c>IN (@p0)</c> becomes <c>IN ({__COL_P0__})</c> when P0 is a collection.
+    /// The carrier terminal expands these tokens at runtime based on the actual collection size.
+    /// </summary>
+    private static void TokenizeCollectionParameters(
+        Dictionary<ulong, Sql.PrebuiltSqlResult> sqlMap,
+        IReadOnlyList<ChainParameterInfo> chainParams,
+        SqlDialect dialect)
+    {
+        // Find collection parameter indices and their tokens
+        var collectionParams = new List<(int Index, string Token)>();
+        foreach (var param in chainParams)
+        {
+            if (!param.IsCollection) continue;
+            collectionParams.Add((param.Index, $"{{__COL_P{param.Index}__}}"));
+        }
+
+        if (collectionParams.Count == 0) return;
+
+        // Replace placeholders with tokens in all SQL variants
+        foreach (var key in sqlMap.Keys.ToList())
+        {
+            var entry = sqlMap[key];
+            var sql = entry.Sql;
+
+            if (dialect == SqlDialect.MySQL)
+            {
+                // MySQL uses positional '?' — replace the Nth '?' by ordinal index.
+                // Walk through '?' occurrences and replace the one at the collection param's position.
+                foreach (var (paramIdx, token) in collectionParams)
+                {
+                    sql = ReplaceNthOccurrence(sql, '?', paramIdx, token);
+                }
+            }
+            else
+            {
+                foreach (var (paramIdx, token) in collectionParams)
+                {
+                    var placeholder = dialect switch
+                    {
+                        SqlDialect.PostgreSQL => $"${paramIdx + 1}",
+                        _ => $"@p{paramIdx}"
+                    };
+                    sql = sql.Replace(placeholder, token);
+                }
+            }
+
+            if (sql != entry.Sql)
+            {
+                sqlMap[key] = new Sql.PrebuiltSqlResult(sql, entry.ParameterCount);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Replaces the Nth occurrence (0-based) of a character in a string with a replacement string.
+    /// </summary>
+    private static string ReplaceNthOccurrence(string input, char target, int n, string replacement)
+    {
+        var count = 0;
+        for (int i = 0; i < input.Length; i++)
+        {
+            if (input[i] == target)
+            {
+                if (count == n)
+                {
+                    return input.Substring(0, i) + replacement + input.Substring(i + 1);
+                }
+                count++;
+            }
+        }
+        return input; // Nth occurrence not found
     }
 
     /// <summary>
@@ -1329,7 +1450,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         UsageSiteInfo site,
         Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
         ImmutableArray<ContextInfo> contexts,
-        Dictionary<string, EntityInfo>? entityRegistry = null)
+        Dictionary<string, EntityInfo>? entityRegistry = null,
+        Compilation? compilation = null)
     {
         // Check if this site needs any enrichment
         var needsProjectionEnrichment = site.Kind == InterceptorKind.Select && site.ProjectionInfo != null;
@@ -1387,7 +1509,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 entityContext.Entity,
                 entityContext.Context.Dialect,
                 site.InvocationSyntax as InvocationExpressionSyntax,
-                entityRegistry);
+                entityRegistry,
+                compilation);
             // Clear pending clause info since it's been translated
             clearedPendingClause = null;
         }
@@ -1441,7 +1564,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, entityLookup);
         }
 
-        // Enrich joined clause methods (Where/OrderBy on joined builders)
+        // Enrich joined clause methods (Where/OrderBy/GroupBy on joined builders)
         // Note: Joined Select projection is analyzed in Phase 2 (UsageSiteDiscovery) and
         // may be further enriched via EnrichJoinedProjectionWithEntityInfo below
         if (needsJoinedClauseEnrichment && enrichedClauseInfo == null && site.Kind != InterceptorKind.Select)
@@ -1499,7 +1622,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             dialect: entityContext.Context.Dialect,
             initializedPropertyNames: site.InitializedPropertyNames,
             updateInfo: enrichedUpdateInfo,
-            keyTypeName: site.KeyTypeName,
+            keyTypeName: (enrichedClauseInfo is Models.OrderByClauseInfo orderByInfo && orderByInfo.KeyTypeName != null)
+                ? orderByInfo.KeyTypeName : site.KeyTypeName,
             rawSqlTypeInfo: enrichedRawSqlTypeInfo,
             isNavigationJoin: site.IsNavigationJoin);
     }
@@ -1678,7 +1802,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         interceptableLocationVersion: interceptableLocationVersion);
 
                     // Enrich the new site
-                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, entityLookup, contexts, entityRegistry);
+                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, entityLookup, contexts, entityRegistry, compilation);
                     result.Add(enriched);
                     discoveredLocations.Add(locationKey);
 
@@ -1762,6 +1886,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             InterceptorKind.Where => true,
             InterceptorKind.OrderBy => true,
             InterceptorKind.ThenBy => true,
+            InterceptorKind.GroupBy => true,
             InterceptorKind.Select => true,
             _ => false
         };
@@ -1800,6 +1925,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             else if (site.Kind == InterceptorKind.OrderBy || site.Kind == InterceptorKind.ThenBy)
             {
                 return Translation.ClauseTranslator.TranslateJoinedOrderBy(
+                    invocation, entities, dialect);
+            }
+            else if (site.Kind == InterceptorKind.GroupBy)
+            {
+                return Translation.ClauseTranslator.TranslateJoinedGroupBy(
                     invocation, entities, dialect);
             }
         }
@@ -1850,7 +1980,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         EntityInfo entity,
         SqlDialect dialect,
         InvocationExpressionSyntax? originalInvocation = null,
-        Dictionary<string, EntityInfo>? entityRegistry = null)
+        Dictionary<string, EntityInfo>? entityRegistry = null,
+        Compilation? compilation = null)
     {
         // Try syntactic translator first (handles most cases)
         var translator = new Translation.SyntacticClauseTranslator(entity, dialect);
@@ -1865,7 +1996,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             try
             {
                 var semanticResult = Translation.ClauseTranslator.TranslateWhereWithEntityInfo(
-                    originalInvocation, null!, entity, dialect, entityRegistry);
+                    originalInvocation, null!, entity, dialect, entityRegistry, compilation);
                 if (semanticResult.IsSuccess)
                     return semanticResult;
             }

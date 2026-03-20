@@ -22,10 +22,19 @@ internal static class CarrierClassBuilder
 
         var fields = new List<CarrierField>();
 
-        // Fields: typed parameters P0, P1, ...
+        // Fields: typed parameters P0, P1, ... (scalar or collection)
         foreach (var param in chain.ChainParameters)
         {
-            fields.Add(new CarrierField($"P{param.Index}", NormalizeFieldType(param.TypeName), FieldRole.Parameter));
+            if (param.IsCollection && param.ElementTypeName != null)
+            {
+                // Collection parameters use IReadOnlyList<T> carrier fields
+                var elementType = NormalizeFieldType(param.ElementTypeName);
+                fields.Add(new CarrierField($"P{param.Index}", $"System.Collections.Generic.IReadOnlyList<{elementType}>", FieldRole.Collection));
+            }
+            else
+            {
+                fields.Add(new CarrierField($"P{param.Index}", NormalizeFieldType(param.TypeName), FieldRole.Parameter));
+            }
         }
 
         // Field: Mask (if chain has conditional clauses)

@@ -375,7 +375,7 @@ internal static partial class InterceptorCodeGenerator
                 continue;
 
             var capturedParams = clauseInfo.Parameters
-                .Where(p => p.IsCaptured && p.CanGenerateDirectPath)
+                .Where(p => p.IsCaptured && p.CanGenerateDirectPath && !p.IsCollection)
                 .ToList();
             foreach (var param in capturedParams)
             {
