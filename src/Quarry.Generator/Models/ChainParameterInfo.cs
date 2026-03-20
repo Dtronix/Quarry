@@ -20,7 +20,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         bool isCollection = false,
         string? elementTypeName = null,
         bool isDirectAccessible = false,
-        string? collectionAccessExpression = null)
+        string? collectionAccessExpression = null,
+        string? entityPropertyExpression = null)
     {
         Index = index;
         TypeName = typeName;
@@ -34,6 +35,7 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
         ElementTypeName = elementTypeName;
         IsDirectAccessible = isDirectAccessible;
         CollectionAccessExpression = collectionAccessExpression;
+        EntityPropertyExpression = entityPropertyExpression;
     }
 
     /// <summary>
@@ -105,6 +107,15 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
     /// </summary>
     public string? CollectionAccessExpression { get; }
 
+    /// <summary>
+    /// Gets the expression to read this parameter's value from the carrier's Entity field
+    /// instead of a dedicated P{n} field. Used by UpdateSetPoco where all column values
+    /// are extracted from a stored entity reference at terminal time.
+    /// For example, "__c.Entity.UserName" or "MappingField.ToDb(__c.Entity.Balance)".
+    /// When non-null, no P{n} carrier field is emitted for this parameter.
+    /// </summary>
+    public string? EntityPropertyExpression { get; }
+
     public bool Equals(ChainParameterInfo? other)
     {
         if (other is null) return false;
@@ -120,7 +131,8 @@ internal sealed class ChainParameterInfo : IEquatable<ChainParameterInfo>
             && IsCollection == other.IsCollection
             && ElementTypeName == other.ElementTypeName
             && IsDirectAccessible == other.IsDirectAccessible
-            && CollectionAccessExpression == other.CollectionAccessExpression;
+            && CollectionAccessExpression == other.CollectionAccessExpression
+            && EntityPropertyExpression == other.EntityPropertyExpression;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ChainParameterInfo);
