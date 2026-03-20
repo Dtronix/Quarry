@@ -283,6 +283,10 @@ internal static partial class InterceptorCodeGenerator
                 GenerateUpdateSetInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
+            case InterceptorKind.UpdateSetAction:
+                GenerateUpdateSetActionInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                break;
+
             case InterceptorKind.UpdateSetPoco:
                 GenerateUpdateSetPocoInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;

@@ -113,4 +113,72 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Set(Action<T>) — Single Assignment
+
+    [Test]
+    public void Update_SetAction_SingleAssignment_Literal()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+    }
+
+    [Test]
+    public void Update_SetAction_SingleAssignment_Boolean()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            My.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"IsActive\" = @p0 WHERE \"IsActive\" = 1",
+            pg:     "UPDATE \"users\" SET \"IsActive\" = $1 WHERE \"IsActive\" = TRUE",
+            mysql:  "UPDATE `users` SET `IsActive` = ? WHERE `IsActive` = 1",
+            ss:     "UPDATE [users] SET [IsActive] = @p0 WHERE [IsActive] = 1");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Multi-Assignment (Statement Lambda)
+
+    [Test]
+    public void Update_SetAction_MultiAssignment()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Chained with existing Set overloads
+
+    [Test]
+    public void Update_SetAction_ChainedWithTwoArgSet()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
 }

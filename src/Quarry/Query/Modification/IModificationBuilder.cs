@@ -1,5 +1,7 @@
 using System.Linq.Expressions;
 
+// ReSharper disable UnusedParameter.Global
+
 namespace Quarry;
 
 /// <summary>
@@ -33,6 +35,7 @@ public interface IUpdateBuilder<T> where T : class
 {
     IUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value);
     IUpdateBuilder<T> Set(T entity);
+    IUpdateBuilder<T> Set(Action<T> assignment);
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableUpdateBuilder<T> All();
     IUpdateBuilder<T> WithTimeout(TimeSpan timeout);
@@ -47,6 +50,7 @@ public interface IExecutableUpdateBuilder<T> where T : class
 {
     IExecutableUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value);
     IExecutableUpdateBuilder<T> Set(T entity);
+    IExecutableUpdateBuilder<T> Set(Action<T> assignment);
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);

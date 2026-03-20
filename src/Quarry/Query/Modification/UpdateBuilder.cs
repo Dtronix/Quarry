@@ -32,6 +32,12 @@ public sealed class UpdateBuilder<T> : IUpdateBuilder<T> where T : class
         return this;
     }
 
+    public IUpdateBuilder<T> Set(Action<T> assignment)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+        return this;
+    }
+
     public IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate)
     {
         ArgumentNullException.ThrowIfNull(predicate);
@@ -149,6 +155,12 @@ public sealed class ExecutableUpdateBuilder<T> : IExecutableUpdateBuilder<T> whe
     public IExecutableUpdateBuilder<T> Set(T entity)
     {
         ArgumentNullException.ThrowIfNull(entity);
+        return this;
+    }
+
+    public IExecutableUpdateBuilder<T> Set(Action<T> assignment)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
         return this;
     }
 

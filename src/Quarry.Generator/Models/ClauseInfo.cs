@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Models;
@@ -193,6 +194,73 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
     public override int GetHashCode()
     {
         return HashCode.Combine(Kind, ColumnSql, ParameterIndex, ValueTypeName);
+    }
+}
+
+/// <summary>
+/// Represents a single assignment extracted from a Set(Action&lt;T&gt;) lambda body.
+/// </summary>
+internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
+{
+    public SetActionAssignment(string columnSql, string? valueTypeName, string? customTypeMappingClass)
+    {
+        ColumnSql = columnSql;
+        ValueTypeName = valueTypeName;
+        CustomTypeMappingClass = customTypeMappingClass;
+    }
+
+    public string ColumnSql { get; }
+    public string? ValueTypeName { get; }
+    public string? CustomTypeMappingClass { get; }
+
+    public bool Equals(SetActionAssignment? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ColumnSql == other.ColumnSql
+            && ValueTypeName == other.ValueTypeName
+            && CustomTypeMappingClass == other.CustomTypeMappingClass;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetActionAssignment);
+    public override int GetHashCode() => HashCode.Combine(ColumnSql, ValueTypeName, CustomTypeMappingClass);
+}
+
+/// <summary>
+/// Represents information about a Set(Action&lt;T&gt;) clause that contains one or more
+/// property assignment expressions (e.g., <c>u =&gt; u.Name = "x"</c> or
+/// <c>u =&gt; { u.Name = "x"; u.Active = true; }</c>).
+/// </summary>
+internal sealed class SetActionClauseInfo : ClauseInfo, IEquatable<SetActionClauseInfo>
+{
+    public SetActionClauseInfo(
+        IReadOnlyList<SetActionAssignment> assignments,
+        IReadOnlyList<ParameterInfo> parameters)
+        : base(ClauseKind.Set,
+            string.Join(", ", assignments.Select((a, i) => $"{a.ColumnSql} = @p{i}")),
+            parameters)
+    {
+        Assignments = assignments;
+    }
+
+    /// <summary>
+    /// Gets the list of property assignments extracted from the Action&lt;T&gt; lambda.
+    /// </summary>
+    public IReadOnlyList<SetActionAssignment> Assignments { get; }
+
+    public bool Equals(SetActionClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return EqualityHelpers.SequenceEqual(Assignments, other.Assignments)
+            && base.Equals(other);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetActionClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, Assignments.Count);
     }
 }
 

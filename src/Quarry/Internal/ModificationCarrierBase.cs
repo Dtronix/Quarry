@@ -130,6 +130,9 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
     IUpdateBuilder<T> IUpdateBuilder<T>.Set(T entity)
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    IUpdateBuilder<T> IUpdateBuilder<T>.Set(Action<T> assignment)
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     IExecutableUpdateBuilder<T> IUpdateBuilder<T>.Where(Expression<Func<T, bool>> predicate)
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -145,6 +148,9 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     IExecutableUpdateBuilder<T> IExecutableUpdateBuilder<T>.Set(T entity)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    IExecutableUpdateBuilder<T> IExecutableUpdateBuilder<T>.Set(Action<T> assignment)
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     IExecutableUpdateBuilder<T> IExecutableUpdateBuilder<T>.Where(Expression<Func<T, bool>> predicate)

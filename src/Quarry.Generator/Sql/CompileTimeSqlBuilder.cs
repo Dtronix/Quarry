@@ -299,6 +299,21 @@ internal static class CompileTimeSqlBuilder
                     continue;
                 }
 
+                // UpdateSetAction: expand assignments from Action<T> lambda
+                if (setClause.Site.ClauseInfo is SetActionClauseInfo actionInfo)
+                {
+                    var baseOffset = clauseBaseOffsets[clauseIdx];
+                    for (int j = 0; j < actionInfo.Assignments.Count; j++)
+                    {
+                        if (setEmitted > 0) sb.Append(", ");
+                        sb.Append(actionInfo.Assignments[j].ColumnSql);
+                        sb.Append(" = ");
+                        sb.Append(FormatParameter(dialect, baseOffset + j));
+                        setEmitted++;
+                    }
+                    continue;
+                }
+
                 // Resolve column SQL from SetClauseInfo or plain ClauseInfo.SqlFragment
                 string? columnSql = null;
                 if (setClause.Site.ClauseInfo is SetClauseInfo setInfo)
@@ -496,6 +511,14 @@ internal static class CompileTimeSqlBuilder
                     && clause.Site.UpdateInfo != null)
                 {
                     var n = clause.Site.UpdateInfo.Columns.Count;
+                    var slots = new int[n];
+                    for (int j = 0; j < n; j++) slots[j] = j;
+                    templates[i] = new SqlFragmentTemplate(new string[n + 1], slots);
+                }
+                else if (clause.Site.Kind == InterceptorKind.UpdateSetAction
+                         && clause.Site.ClauseInfo is SetActionClauseInfo actionClause)
+                {
+                    var n = actionClause.Assignments.Count;
                     var slots = new int[n];
                     for (int j = 0; j < n; j++) slots[j] = j;
                     templates[i] = new SqlFragmentTemplate(new string[n + 1], slots);
