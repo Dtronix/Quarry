@@ -593,8 +593,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Update chains with Set clauses may not be carrier-eligible (Set uses open generic),
-        // but the chain should still be analyzed and produce interceptors
+        // Update chains with scalar Set clauses are carrier-eligible when ValueTypeName is resolved
         Assert.That(code, Does.Contain("UPDATE"));
+        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
     }
 }

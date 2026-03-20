@@ -51,6 +51,22 @@ internal sealed class SyntacticClauseTranslator
                 return new OrderByClauseInfo(sql, pending.IsDescending, _parameters, keyTypeName);
             }
 
+            if (pending.Kind == ClauseKind.Set)
+            {
+                // Set clause: the SQL is the quoted column name, parameter at index 0 is the value.
+                // Create a synthetic ParameterInfo for the value (second argument to Set<TValue>).
+                // On the semantic path this comes from GetTypeInfo(valueArg); here we use the
+                // column's CLR type since Set(u => u.Prop, value) requires matching types.
+                var valueTypeName = ResolveKeyTypeFromExpression(pending.Expression);
+                var valueClrType = valueTypeName ?? "object";
+                var paramIndex = _parameterIndex;
+                var syntheticParams = new List<ParameterInfo>(_parameters)
+                {
+                    new ParameterInfo(paramIndex, $"@p{paramIndex}", valueClrType, "value")
+                };
+                return new SetClauseInfo(sql, paramIndex, syntheticParams, valueTypeName: valueTypeName);
+            }
+
             return ClauseInfo.Success(pending.Kind, sql, _parameters);
         }
         catch (Exception ex)
