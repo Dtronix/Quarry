@@ -181,4 +181,56 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Set(Action<T>) — Captured Variables
+
+    [Test]
+    public void Update_SetAction_CapturedVariable()
+    {
+        var name = "captured";
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+    }
+
+    [Test]
+    public void Update_SetAction_MultiAssignment_WithCapturedVariable()
+    {
+        var name = "captured";
+        AssertDialects(
+            Lite.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Type-Mapped Column
+
+    [Test]
+    public void Update_SetAction_TypeMappedColumn()
+    {
+        AssertDialects(
+            Lite.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Pg.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            My.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Ss.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE (\"AccountId\" = 1)",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE (\"AccountId\" = 1)",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE (`AccountId` = 1)",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE ([AccountId] = 1)");
+    }
+
+    #endregion
 }

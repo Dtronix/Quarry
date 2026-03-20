@@ -1,7 +1,5 @@
 using System.Linq.Expressions;
 
-// ReSharper disable UnusedParameter.Global
-
 namespace Quarry;
 
 /// <summary>

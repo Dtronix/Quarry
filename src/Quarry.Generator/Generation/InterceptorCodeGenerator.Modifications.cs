@@ -353,7 +353,7 @@ internal static partial class InterceptorCodeGenerator
         {
             sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
-            sb.AppendLine($"        global::System.Action<{entityType}> {actionParamName})");
+            sb.AppendLine($"        Action<{entityType}> {actionParamName})");
             sb.AppendLine($"    {{");
 
             // Compute global parameter offset
@@ -419,7 +419,7 @@ internal static partial class InterceptorCodeGenerator
         {
             sb.AppendLine($"    public static {returnInterfaceBaseName}<T> {methodName}<T>(");
             sb.AppendLine($"        this {thisType}<T> builder,");
-            sb.AppendLine($"        global::System.Action<T> {actionParamName}) where T : class");
+            sb.AppendLine($"        Action<T> {actionParamName}) where T : class");
             sb.AppendLine($"    {{");
 
             sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
@@ -451,7 +451,7 @@ internal static partial class InterceptorCodeGenerator
         // Standalone path
         sb.AppendLine($"    public static {returnInterfaceBaseName}<T> {methodName}<T>(");
         sb.AppendLine($"        this {thisType}<T> builder,");
-        sb.AppendLine($"        global::System.Action<T> {actionParamName}) where T : class");
+        sb.AppendLine($"        Action<T> {actionParamName}) where T : class");
         sb.AppendLine($"    {{");
 
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");

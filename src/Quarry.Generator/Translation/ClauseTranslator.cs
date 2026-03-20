@@ -332,6 +332,15 @@ internal static class ClauseTranslator
 
             var paramIndex = existingParameterCount + i;
             var isCaptured = IsCapturedVariable(valueExpr, parameterName);
+
+            // For captured variables in Action<T> lambdas, the ValueExpression is used as the
+            // closure field name for delegate.Target.GetField(). This only works for simple
+            // identifiers (e.g., "name"). Complex expressions (e.g., "obj.Value", "GetName()")
+            // cannot be extracted via closure field lookup — treat them as non-captured and
+            // inline the expression directly.
+            if (isCaptured && valueExpr is not IdentifierNameSyntax)
+                isCaptured = false;
+
             var paramInfo = new ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
                 isCaptured: isCaptured,
                 expressionPath: null); // No expression tree navigation for Action<T>
@@ -360,7 +369,7 @@ internal static class ClauseTranslator
             return false;
 
         // default(T) / default keyword
-        if (expr is DefaultExpressionSyntax or LiteralExpressionSyntax)
+        if (expr is DefaultExpressionSyntax)
             return false;
 
         // typeof(...) is not captured
