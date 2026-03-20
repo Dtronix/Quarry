@@ -12,7 +12,6 @@ using GenJoinClauseKind = Quarry.Generators.Models.JoinClauseKind;
 
 namespace Quarry.Tests;
 
-#pragma warning disable QRY001 // Tests construct builders directly without a context chain
 
 /// <summary>
 /// Tests for Phase 7: Join Operations

@@ -4,7 +4,6 @@ using Quarry.Shared.Sql;
 namespace Quarry.Tests.SqlOutput;
 
 [TestFixture]
-#pragma warning disable QRY001
 public class ParameterFormattingTests
 {
     [TestCase(SqlDialect.SQLite, "@p0")]

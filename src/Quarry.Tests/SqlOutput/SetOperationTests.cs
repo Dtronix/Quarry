@@ -4,7 +4,6 @@ using Quarry.Internal;
 namespace Quarry.Tests.SqlOutput;
 
 [TestFixture]
-#pragma warning disable QRY001
 public class SetOperationTests
 {
     private class TestEntity;

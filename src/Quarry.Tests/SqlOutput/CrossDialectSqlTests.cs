@@ -8,7 +8,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Shared base for cross-dialect tests. Each concrete context type is exposed

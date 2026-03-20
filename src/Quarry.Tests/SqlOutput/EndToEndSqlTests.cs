@@ -7,7 +7,6 @@ namespace Quarry.Tests.SqlOutput;
 /// These verify the full generator pipeline: schema → context → interceptor → exact SQL.
 /// </summary>
 [TestFixture]
-#pragma warning disable QRY001
 public class EndToEndSqlTests
 {
     private MockDbConnection _connection = null!;

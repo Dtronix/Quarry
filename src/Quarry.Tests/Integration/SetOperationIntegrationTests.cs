@@ -5,7 +5,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Integration tests for set operations (UNION, EXCEPT, INTERSECT) executing

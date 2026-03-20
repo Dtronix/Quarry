@@ -3,7 +3,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Integration tests for aggregate functions in tuple projections (Issue #49).

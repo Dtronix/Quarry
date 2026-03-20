@@ -6,7 +6,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Cross-dialect feature composition tests that validate complex, multi-clause

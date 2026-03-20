@@ -2,7 +2,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
 
-#pragma warning disable QRY001
 
 [TestFixture]
 internal class SelectIntegrationTests : SqliteIntegrationTestBase
