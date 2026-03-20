@@ -505,7 +505,18 @@ internal sealed class SyntacticClauseTranslator
     /// </summary>
     private static string EscapeString(string value)
     {
-        return value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("'", "''");
+        var sb = new System.Text.StringBuilder(value.Length + 4);
+        foreach (var c in value)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\'': sb.Append("''"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
     }
 
 }

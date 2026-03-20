@@ -43,13 +43,13 @@ internal static partial class InterceptorCodeGenerator
         if (isChainedJoin && site.JoinedEntityTypeName != null)
         {
             var joinedType = GetShortTypeName(site.JoinedEntityTypeName);
-            var priorTypes = joinedEntityTypeNames!.Select(GetShortTypeName).ToList();
-            var allTypes = priorTypes.Concat(new[] { joinedType }).ToList();
+            var priorTypes = joinedEntityTypeNames!.Select(GetShortTypeName).ToArray();
+            var allTypes = priorTypes.Concat(new[] { joinedType }).ToArray();
 
             // Determine receiver and return builder type names
-            var receiverBuilderName = GetJoinedBuilderTypeName(priorTypes.Count);
+            var receiverBuilderName = GetJoinedBuilderTypeName(priorTypes.Length);
             var concreteReceiverBuilderName = ToConcreteTypeName(receiverBuilderName);
-            var returnBuilderName = GetJoinedBuilderTypeName(allTypes.Count);
+            var returnBuilderName = GetJoinedBuilderTypeName(allTypes.Length);
             var receiverTypeArgs = string.Join(", ", priorTypes);
             var returnTypeArgs = string.Join(", ", allTypes);
             var funcTypeArgs = string.Join(", ", allTypes) + ", bool";
@@ -84,7 +84,7 @@ internal static partial class InterceptorCodeGenerator
                     if (isFirstInChain)
                     {
                         // For chained join first-in-chain, the incoming builder is the pre-join type
-                        var preJoinBuilderType = GetJoinedConcreteBuilderTypeName(priorTypes.Count, priorTypes.ToArray());
+                        var preJoinBuilderType = GetJoinedConcreteBuilderTypeName(priorTypes.Length, priorTypes);
                         EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
                     }
                     else
@@ -279,11 +279,11 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Generates a Where() interceptor for joined query builders.
     /// </summary>
-    private static void GenerateJoinedWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField> staticFields, int? clauseBit = null,
+    private static void GenerateJoinedWhereInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, List<CachedExtractorField>? methodFields, int? clauseBit = null,
         PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
-        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
+        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToArray();
+        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
@@ -295,7 +295,7 @@ internal static partial class InterceptorCodeGenerator
         var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
         var bitSuffix = ClauseBitSuffix(clauseBit);
 
-        var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
+        methodFields ??= new List<CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
@@ -312,8 +312,8 @@ internal static partial class InterceptorCodeGenerator
             {
                 // Tuple element types could not be resolved by the semantic model (generated entity types).
                 // Use arity-matching generic parameters so the compiler infers the concrete TResult.
-                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
-                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Count).Select(i => $"where T{i} : class"));
+                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
+                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
                 sb.AppendLine($"        Expression<Func<{allTypeParams}, bool>> {exprParamName}) {constraints}");
@@ -353,7 +353,7 @@ internal static partial class InterceptorCodeGenerator
                     globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
             }
 
-            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
                 ? $"{builderName}<{typeArgs}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
                 : $"{builderName}<{typeArgs}>";
@@ -381,7 +381,7 @@ internal static partial class InterceptorCodeGenerator
             var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
             if (isBrokenTuple)
             {
-                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
+                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
                 sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{allTypeParams}, TResult>>(builder);");
             }
             else
@@ -481,8 +481,8 @@ internal static partial class InterceptorCodeGenerator
     private static void GenerateJoinedOrderByInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName, int? clauseBit = null,
         PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
-        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
+        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToArray();
+        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
@@ -516,8 +516,8 @@ internal static partial class InterceptorCodeGenerator
             {
                 // Arity-matching: include all type params with class constraints.
                 // Also used when tuple result type has unresolved element types (broken tuple).
-                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
-                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Count).Select(i => $"where T{i} : class"));
+                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
+                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
                 sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
@@ -535,8 +535,8 @@ internal static partial class InterceptorCodeGenerator
             }
             else
             {
-                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
-                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Count).Select(i => $"where T{i} : class"));
+                var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
+                var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}> {methodName}<{allTypeParams}, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}> builder,");
                 sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
@@ -566,7 +566,7 @@ internal static partial class InterceptorCodeGenerator
                     globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
             }
 
-            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+            var joinedBuilderTypeName = GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
                 ? $"{builderName}<{typeArgs}, {SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName))}>"
                 : $"{builderName}<{typeArgs}>";
@@ -595,7 +595,7 @@ internal static partial class InterceptorCodeGenerator
         }
         else if (site.ResultTypeName != null)
         {
-            var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
+            var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
             sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{allTypeParams}, TResult>>(builder);");
         }
         else if (keyType != null)
@@ -604,7 +604,7 @@ internal static partial class InterceptorCodeGenerator
         }
         else
         {
-            var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
+            var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
             sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{allTypeParams}>>(builder);");
         }
         var builderVar = "__b";
@@ -654,8 +654,8 @@ internal static partial class InterceptorCodeGenerator
     private static void GenerateJoinedSelectInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
         PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
-        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToList();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Count);
+        var entityTypes = site.JoinedEntityTypeNames!.Select(GetShortTypeName).ToArray();
+        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
         var concreteBuilderName = ToConcreteTypeName(builderName);
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
@@ -692,7 +692,7 @@ internal static partial class InterceptorCodeGenerator
                         if (clause.Site.ClauseInfo != null)
                             globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
                     }
-                    var joinedBuilderType = GetJoinedConcreteBuilderTypeName(entityTypes.Count, entityTypes.ToArray());
+                    var joinedBuilderType = GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
                     int? clauseBit = null;
                     EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
                 }

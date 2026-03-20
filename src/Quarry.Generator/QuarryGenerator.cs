@@ -490,14 +490,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 fileChainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
             }
 
-            // Include analyzable sites, plus non-analyzable sites that aren't chain clause members.
-            // Non-analyzable non-chain sites carry InvocationSyntax needed for diagnostic location.
-            var fileSites = sites
-                .Where(s => s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
-                .ToList();
-            var fileChainMemberSites = sites
-                .Where(s => !s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
-                .ToList();
+            // Single-pass partition: analyzable/non-chain-member sites vs chain member sites.
+            var fileSites = new List<UsageSiteInfo>();
+            var fileChainMemberSites = new List<UsageSiteInfo>();
+            foreach (var s in sites)
+            {
+                if (s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
+                    fileSites.Add(s);
+                if (!s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
+                    fileChainMemberSites.Add(s);
+            }
 
             // Collect diagnostics for this file
             var fileDiagnostics = diagnostics
@@ -1189,6 +1191,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
             else
             {
+                var sbSql = new System.Text.StringBuilder(sql);
                 foreach (var (paramIdx, token) in collectionParams)
                 {
                     var placeholder = dialect switch
@@ -1196,8 +1199,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         SqlDialect.PostgreSQL => $"${paramIdx + 1}",
                         _ => $"@p{paramIdx}"
                     };
-                    sql = sql.Replace(placeholder, token);
+                    sbSql.Replace(placeholder, token);
                 }
+                sql = sbSql.ToString();
             }
 
             if (sql != entry.Sql)
@@ -1276,22 +1280,22 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 return QueryKind.Select;
 
             case InterceptorKind.ExecuteNonQuery:
-                // Determine by builder type name
-                if (executionSite.BuilderTypeName.Contains("DeleteBuilder"))
+                // Determine by builder kind
+                if (executionSite.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
                     return QueryKind.Delete;
-                if (executionSite.BuilderTypeName.Contains("UpdateBuilder"))
+                if (executionSite.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
                     return QueryKind.Update;
                 // QueryBuilder ExecuteNonQuery is a SELECT-like operation
-                if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
+                if (executionSite.BuilderKind is BuilderKind.Query or BuilderKind.JoinedQuery)
                     return QueryKind.Select;
                 return null;
 
             case InterceptorKind.ToDiagnostics:
-                if (executionSite.BuilderTypeName.Contains("DeleteBuilder"))
+                if (executionSite.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
                     return QueryKind.Delete;
-                if (executionSite.BuilderTypeName.Contains("UpdateBuilder"))
+                if (executionSite.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
                     return QueryKind.Update;
-                if (executionSite.BuilderTypeName.Contains("QueryBuilder"))
+                if (executionSite.BuilderKind is BuilderKind.Query or BuilderKind.JoinedQuery)
                     return QueryKind.Select;
                 return null; // IEntityAccessor — trivial db.Users().ToDiagnostics(), no clauses to optimize
 
@@ -1559,7 +1563,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     isAnalyzable: site.IsAnalyzable, kind: site.Kind,
                     invocationSyntax: site.InvocationSyntax, uniqueId: site.UniqueId,
                     joinedEntityTypeName: resolvedJoinedEntityTypeName,
-                    isNavigationJoin: site.IsNavigationJoin)
+                    isNavigationJoin: site.IsNavigationJoin,
+                    builderKind: site.BuilderKind)
                 : site;
             enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, entityLookup);
         }
@@ -1625,7 +1630,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             keyTypeName: (enrichedClauseInfo is Models.OrderByClauseInfo orderByInfo && orderByInfo.KeyTypeName != null)
                 ? orderByInfo.KeyTypeName : site.KeyTypeName,
             rawSqlTypeInfo: enrichedRawSqlTypeInfo,
-            isNavigationJoin: site.IsNavigationJoin);
+            isNavigationJoin: site.IsNavigationJoin,
+            builderKind: site.BuilderKind);
     }
 
     /// <summary>
@@ -1799,7 +1805,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         joinedEntityTypeNames: joinedEntityTypeNames,
                         dialect: site.Dialect,
                         interceptableLocationData: interceptableLocationData,
-                        interceptableLocationVersion: interceptableLocationVersion);
+                        interceptableLocationVersion: interceptableLocationVersion,
+                        builderKind: BuilderKind.JoinedQuery);
 
                     // Enrich the new site
                     var enriched = EnrichUsageSiteWithEntityInfo(newSite, entityLookup, contexts, entityRegistry, compilation);

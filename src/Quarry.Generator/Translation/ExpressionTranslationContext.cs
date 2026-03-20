@@ -267,25 +267,8 @@ internal sealed class ExpressionTranslationContext
     /// <returns>A new context with the joined entity added.</returns>
     public ExpressionTranslationContext WithJoinedEntity(string parameterName, EntityInfo entityInfo)
     {
-        var newJoinedEntities = new Dictionary<string, EntityInfo>(JoinedEntities)
-        {
-            [parameterName] = entityInfo
-        };
-
-        var ctx = new ExpressionTranslationContext(
-            SemanticModel,
-            EntityInfo,
-            Dialect,
-            LambdaParameterName,
-            ColumnLookup,
-            newJoinedEntities,
-            _parameters,
-            _parameterIndex,
-            EntityRegistry,
-            _subqueryScopes,
-            _subqueryAliasCounter);
-        ctx.TableAliases = TableAliases;
-        return ctx;
+        JoinedEntities[parameterName] = entityInfo;
+        return this;
     }
 
     /// <summary>

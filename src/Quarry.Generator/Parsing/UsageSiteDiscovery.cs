@@ -559,7 +559,8 @@ internal static class UsageSiteDiscovery
             initializedPropertyNames: initializedPropertyNames,
             keyTypeName: keyTypeName,
             isNavigationJoin: isNavigationJoin,
-            constantIntValue: constantIntValue);
+            constantIntValue: constantIntValue,
+            builderKind: ClassifyBuilderKind(containingType.Name));
     }
 
     /// <summary>
@@ -1144,7 +1145,8 @@ internal static class UsageSiteDiscovery
             resultTypeName: null,
             contextClassName: contextClassName,
             interceptableLocationData: interceptableLocationData,
-            interceptableLocationVersion: interceptableLocationVersion ?? 1);
+            interceptableLocationVersion: interceptableLocationVersion ?? 1,
+            builderKind: ClassifyBuilderKind(builderKind));
     }
 
     /// <summary>
@@ -1612,6 +1614,17 @@ internal static class UsageSiteDiscovery
 
     private static bool IsJoinedBuilderName(string name)
         => name is "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4";
+
+    private static BuilderKind ClassifyBuilderKind(string typeName)
+    {
+        if (typeName.Contains("ExecutableDeleteBuilder")) return BuilderKind.ExecutableDelete;
+        if (typeName.Contains("DeleteBuilder")) return BuilderKind.Delete;
+        if (typeName.Contains("ExecutableUpdateBuilder")) return BuilderKind.ExecutableUpdate;
+        if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
+        if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
+        if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
+        return BuilderKind.Query;
+    }
 
     /// <summary>
     /// Extracts all entity type names from a joined builder type's type arguments.

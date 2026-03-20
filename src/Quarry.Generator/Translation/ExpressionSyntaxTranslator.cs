@@ -693,9 +693,9 @@ internal static class ExpressionSyntaxTranslator
         if (sqlArg is LiteralExpressionSyntax literal &&
             literal.Kind() == SyntaxKind.StringLiteralExpression)
         {
-            var rawSql = literal.Token.ValueText;
+            // Process additional parameters if provided, using StringBuilder to avoid repeated string allocations
+            var sbRawSql = new System.Text.StringBuilder(literal.Token.ValueText);
 
-            // Process additional parameters if provided
             for (int i = 1; i < arguments.Arguments.Count; i++)
             {
                 var paramArg = arguments.Arguments[i].Expression;
@@ -711,7 +711,7 @@ internal static class ExpressionSyntaxTranslator
                 var translatedSql = TranslateExpression(paramArg, context);
                 if (translatedSql != null)
                 {
-                    rawSql = rawSql.Replace(placeholder, translatedSql);
+                    sbRawSql.Replace(placeholder, translatedSql);
                 }
                 else
                 {
@@ -720,11 +720,11 @@ internal static class ExpressionSyntaxTranslator
                     var clrType = typeInfo.Type?.ToDisplayString() ?? "object";
                     var valueExpr = paramArg.ToFullString().Trim();
                     var paramPlaceholder = context.AddParameter(clrType, valueExpr, typeSymbol: typeInfo.Type);
-                    rawSql = rawSql.Replace(placeholder, paramPlaceholder);
+                    sbRawSql.Replace(placeholder, paramPlaceholder);
                 }
             }
 
-            return rawSql;
+            return sbRawSql.ToString();
         }
 
         return null;
@@ -853,7 +853,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "%", "%");
             if (escaped != rawValue)
@@ -889,7 +889,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "", "%");
             if (escaped != rawValue)
@@ -924,7 +924,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "%", "");
             if (escaped != rawValue)
@@ -1557,6 +1557,11 @@ internal static class ExpressionSyntaxTranslator
                 return col.PropertyName;
         }
         return null;
+    }
+
+    private static string EscapeForCSharpString(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 }
 
