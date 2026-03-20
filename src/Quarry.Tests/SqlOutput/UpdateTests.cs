@@ -78,4 +78,114 @@ public class UpdateTests
         Assert.That(sql, Does.Contain($"SET {SqlFormatting.QuoteIdentifier(dialect, "Name")} = {setParam}"));
         Assert.That(sql, Does.Contain($"WHERE {SqlFormatting.QuoteIdentifier(dialect, "UserId")} = {whereParam}"));
     }
+
+    #region ClauseMask Bit Masking
+
+    [Test]
+    public void ClauseMask_InitiallyZero()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        Assert.That(state.ClauseMask, Is.EqualTo(0UL));
+    }
+
+    [Test]
+    public void SetClauseBit_SetsSingleBit()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(0);
+        Assert.That(state.ClauseMask, Is.EqualTo(1UL));
+    }
+
+    [Test]
+    public void SetClauseBit_SetsHigherBit()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(3);
+        Assert.That(state.ClauseMask, Is.EqualTo(0b1000UL));
+    }
+
+    [Test]
+    public void SetClauseBit_MultipleBits_AccumulateViaOr()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(0);
+        state.SetClauseBit(2);
+        Assert.That(state.ClauseMask, Is.EqualTo(0b101UL));
+    }
+
+    [Test]
+    public void SetClauseBit_Idempotent_SettingSameBitTwice()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(1);
+        state.SetClauseBit(1);
+        Assert.That(state.ClauseMask, Is.EqualTo(0b10UL));
+    }
+
+    [Test]
+    public void SetClauseBit_AllLowBits_ProducesExpectedMask()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(0);
+        state.SetClauseBit(1);
+        state.SetClauseBit(2);
+        state.SetClauseBit(3);
+        Assert.That(state.ClauseMask, Is.EqualTo(0b1111UL));
+    }
+
+    [Test]
+    public void SetClauseBit_SparseHighBits()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(0);
+        state.SetClauseBit(7);
+        Assert.That(state.ClauseMask, Is.EqualTo((1UL << 0) | (1UL << 7)));
+    }
+
+    [Test]
+    public void SetClauseBit_Bit63_DoesNotOverflow()
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(63);
+        Assert.That(state.ClauseMask, Is.EqualTo(1UL << 63));
+    }
+
+    [TestCase(0, 1UL)]
+    [TestCase(1, 2UL)]
+    [TestCase(4, 16UL)]
+    [TestCase(7, 128UL)]
+    [TestCase(15, 32768UL)]
+    public void SetClauseBit_IndividualBitPositions(int bit, ulong expected)
+    {
+        var state = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        state.SetClauseBit(bit);
+        Assert.That(state.ClauseMask, Is.EqualTo(expected));
+    }
+
+    [Test]
+    public void ClauseMask_CanDistinguishConditionalSetVariants()
+    {
+        // Simulates: unconditional Set(Name), conditional Set(IsActive) at bit 0,
+        // conditional Set(Age) at bit 1 — four possible SQL variants via mask 0..3
+        var stateNeither = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        var stateActiveOnly = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        var stateAgeOnly = new UpdateState(SqlDialect.SQLite, "users", null, null);
+        var stateBoth = new UpdateState(SqlDialect.SQLite, "users", null, null);
+
+        stateActiveOnly.SetClauseBit(0);
+        stateAgeOnly.SetClauseBit(1);
+        stateBoth.SetClauseBit(0);
+        stateBoth.SetClauseBit(1);
+
+        Assert.That(stateNeither.ClauseMask, Is.EqualTo(0b00UL));
+        Assert.That(stateActiveOnly.ClauseMask, Is.EqualTo(0b01UL));
+        Assert.That(stateAgeOnly.ClauseMask, Is.EqualTo(0b10UL));
+        Assert.That(stateBoth.ClauseMask, Is.EqualTo(0b11UL));
+
+        // All four masks are distinct — ensures dispatch can select unique SQL variant
+        var masks = new[] { stateNeither.ClauseMask, stateActiveOnly.ClauseMask, stateAgeOnly.ClauseMask, stateBoth.ClauseMask };
+        Assert.That(masks, Is.Unique);
+    }
+
+    #endregion
 }

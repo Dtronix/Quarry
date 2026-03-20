@@ -597,4 +597,72 @@ public static class Queries
         Assert.That(code, Does.Contain("UPDATE"));
         Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
     }
+
+
+    [Test]
+    public void CarrierGeneration_UpdateSetAction_Literal_IsCarrierOptimized()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        return _db.Users().Update().Set(u => u.UserName = ""lit"").Where(u => u.UserId == 1).ToDiagnostics().Sql;
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("UPDATE"));
+        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+    }
+
+    [Test]
+    public void CarrierGeneration_UpdateSetAction_CapturedVariable_IsCarrierOptimized()
+    {
+        // Uses _db.Users().Update() (non-generic Update) with a captured variable
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test(string name)
+    {
+        return _db.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics().Sql;
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("UPDATE"));
+        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+    }
 }

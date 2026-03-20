@@ -244,6 +244,166 @@ internal static class ClauseTranslator
     }
 
     /// <summary>
+    /// Translates a Set(Action&lt;T&gt;) clause to SQL by extracting assignment expressions
+    /// from the lambda body (single expression or statement block).
+    /// </summary>
+    public static ClauseInfo TranslateSetAction(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        ITypeSymbol entityType,
+        SqlDialect dialect,
+        int existingParameterCount)
+    {
+        // Set(u => u.X = val) or Set(u => { u.X = val; u.Y = val2; })
+        if (invocation.ArgumentList.Arguments.Count < 1)
+            return ClauseInfo.Failure(ClauseKind.Set, "Set(Action<T>) requires a lambda argument");
+
+        var lambdaArg = invocation.ArgumentList.Arguments[0].Expression;
+        if (lambdaArg is not LambdaExpressionSyntax lambda)
+            return ClauseInfo.Failure(ClauseKind.Set, "Set(Action<T>) argument must be a lambda expression");
+
+        // Extract the lambda parameter name
+        string parameterName;
+        if (lambda is SimpleLambdaExpressionSyntax simpleLambda)
+            parameterName = simpleLambda.Parameter.Identifier.Text;
+        else if (lambda is ParenthesizedLambdaExpressionSyntax parenLambda && parenLambda.ParameterList.Parameters.Count > 0)
+            parameterName = parenLambda.ParameterList.Parameters[0].Identifier.Text;
+        else
+            return ClauseInfo.Failure(ClauseKind.Set, "Cannot extract lambda parameter");
+
+        // Collect assignment expressions from the lambda body
+        var assignmentExprs = new List<AssignmentExpressionSyntax>();
+        if (lambda.Body is AssignmentExpressionSyntax singleAssignment)
+        {
+            // Expression lambda: u => u.X = val
+            assignmentExprs.Add(singleAssignment);
+        }
+        else if (lambda.Body is BlockSyntax block)
+        {
+            // Statement lambda: u => { u.X = val; u.Y = val2; }
+            foreach (var statement in block.Statements)
+            {
+                if (statement is ExpressionStatementSyntax exprStmt
+                    && exprStmt.Expression is AssignmentExpressionSyntax assignment)
+                {
+                    assignmentExprs.Add(assignment);
+                }
+                else
+                {
+                    return ClauseInfo.Failure(ClauseKind.Set,
+                        "Set(Action<T>) statement lambda must contain only assignment statements. " +
+                        "Conditionals, loops, and method calls are not supported.");
+                }
+            }
+        }
+        else
+        {
+            return ClauseInfo.Failure(ClauseKind.Set, "Set(Action<T>) lambda body must be an assignment or block of assignments");
+        }
+
+        if (assignmentExprs.Count == 0)
+            return ClauseInfo.Failure(ClauseKind.Set, "Set(Action<T>) lambda must contain at least one assignment");
+
+        var context = CreateTranslationContext(semanticModel, entityType, dialect, parameterName);
+        var assignments = new List<SetActionAssignment>();
+        var parameters = new List<ParameterInfo>();
+
+        for (int i = 0; i < assignmentExprs.Count; i++)
+        {
+            var assignment = assignmentExprs[i];
+
+            // Left side: u.PropertyName → column SQL
+            if (assignment.Left is not MemberAccessExpressionSyntax memberAccess)
+                return ClauseInfo.Failure(ClauseKind.Set, $"Set(Action<T>) assignment target must be a property access (e.g., {parameterName}.PropertyName)");
+
+            // Extract the property name from the member access syntax.
+            // Store the unquoted property name; the correct dialect-specific quoting is applied
+            // later during enrichment (EnrichSetActionClauseWithMapping) or SQL building.
+            // This avoids baking in the wrong quote style when entity types aren't visible
+            // during discovery (generated types from Pipeline 1).
+            var propertyName = memberAccess.Name.Identifier.Text;
+            var columnSql = propertyName; // Unquoted — will be quoted during enrichment
+
+            // Right side: value expression
+            var valueExpr = assignment.Right;
+            var typeInfo = semanticModel.GetTypeInfo(valueExpr);
+            var valueType = typeInfo.Type?.ToDisplayString() ?? "object";
+            var valueExpression = valueExpr.ToFullString().Trim();
+
+            // Resolve the value type from the column property for carrier optimization
+            var valueTypeName = ResolveKeyTypeFromLambdaBody(memberAccess, context);
+
+            // Check if the value is a compile-time constant that can be inlined into SQL
+            var constantValue = semanticModel.GetConstantValue(valueExpr);
+            if (constantValue.HasValue)
+            {
+                var inlinedSql = ExpressionSyntaxTranslator.FormatConstantAsSqlLiteral(constantValue.Value, context);
+                if (inlinedSql != null)
+                {
+                    // Constant value — inline directly, no parameter needed
+                    assignments.Add(new SetActionAssignment(
+                        columnSql, valueTypeName, customTypeMappingClass: null,
+                        inlinedSqlValue: inlinedSql, inlinedCSharpExpression: valueExpression));
+                    continue;
+                }
+            }
+
+            var paramIndex = existingParameterCount + parameters.Count;
+            var isCaptured = IsCapturedVariable(valueExpr, parameterName);
+
+            // For captured variables in Action<T> lambdas, the ValueExpression is used as the
+            // closure field name for delegate.Target.GetField(). This only works for simple
+            // identifiers (e.g., "name"). Complex expressions (e.g., "obj.Value", "GetName()")
+            // cannot be extracted via closure field lookup — treat them as non-captured and
+            // inline the expression directly.
+            if (isCaptured && valueExpr is not IdentifierNameSyntax)
+                isCaptured = false;
+
+            var paramInfo = new ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
+                isCaptured: isCaptured,
+                expressionPath: null); // No expression tree navigation for Action<T>
+
+            parameters.Add(paramInfo);
+
+            assignments.Add(new SetActionAssignment(
+                columnSql, valueTypeName, customTypeMappingClass: null));
+        }
+
+        return new SetActionClauseInfo(assignments, parameters);
+    }
+
+    /// <summary>
+    /// Checks if an expression references a captured variable (not a literal or lambda parameter).
+    /// </summary>
+    private static bool IsCapturedVariable(ExpressionSyntax expr, string lambdaParamName)
+    {
+        // Literals are not captured
+        if (expr is LiteralExpressionSyntax)
+            return false;
+
+        // default(T) / default keyword
+        if (expr is DefaultExpressionSyntax)
+            return false;
+
+        // typeof(...) is not captured
+        if (expr is TypeOfExpressionSyntax)
+            return false;
+
+        // Identifier that matches the lambda param is not captured
+        if (expr is IdentifierNameSyntax id && id.Identifier.Text == lambdaParamName)
+            return false;
+
+        // Member access on the lambda parameter (u.X) is not captured
+        if (expr is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression is IdentifierNameSyntax memberId
+            && memberId.Identifier.Text == lambdaParamName)
+            return false;
+
+        // Everything else (local variables, fields, method calls) is captured
+        return true;
+    }
+
+    /// <summary>
     /// Creates a translation context from an ITypeSymbol.
     /// </summary>
     private static ExpressionTranslationContext CreateTranslationContext(

@@ -139,6 +139,22 @@ internal static class CarrierClassBuilder
     }
 
     /// <summary>
+    /// Checks if the given CLR type name is a non-nullable value type.
+    /// Used by the logging emitter to decide between .ToString() and ?.ToString() ?? "null".
+    /// </summary>
+    internal static bool IsNonNullableValueType(string typeName)
+    {
+        if (typeName.EndsWith("?"))
+            return false;
+        if (ValueTypes.Contains(typeName))
+            return true;
+        // Enum types (PascalCase, no dots/generics) are value types
+        if (!typeName.Contains('<') && !typeName.Contains('[') && !typeName.Contains('.'))
+            return false; // Could be a class name — treat conservatively as reference
+        return false;
+    }
+
+    /// <summary>
     /// Known value types that don't need nullable annotation.
     /// </summary>
     private static readonly HashSet<string> ValueTypes = new(System.StringComparer.Ordinal)

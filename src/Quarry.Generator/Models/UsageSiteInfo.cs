@@ -428,6 +428,12 @@ internal enum InterceptorKind
     UpdateSetPoco,
 
     /// <summary>
+    /// Set(Action&lt;T&gt;) on UpdateBuilder or ExecutableUpdateBuilder - generates SET clauses
+    /// from assignment expressions inside an Action&lt;T&gt; lambda body.
+    /// </summary>
+    UpdateSetAction,
+
+    /// <summary>
     /// RawSqlAsync&lt;T&gt;() - generates a typed reader to replace reflection-based entity materialization.
     /// </summary>
     RawSqlAsync,

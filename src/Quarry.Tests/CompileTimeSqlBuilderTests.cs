@@ -717,6 +717,157 @@ public class CompileTimeSqlBuilderTests
         Assert.That(r1.ParameterCount, Is.EqualTo(2));
     }
 
+    [Test]
+    public void BuildUpdateSql_TwoConditionalSets_FourMaskVariants()
+    {
+        // Two conditional SETs (bit 0 = Name, bit 1 = Age) + unconditional WHERE
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeSetClause("\"Name\"", 0, isConditional: true, bitIndex: 0),
+            MakeSetClause("\"Age\"", 1, isConditional: true, bitIndex: 1),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"Id\" = @p2", new[] { MakeParam(2, "@p2") },
+                isConditional: false)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // mask 0b11: both SETs active
+        var r3 = CompileTimeSqlBuilder.BuildUpdateSql(0b11UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r3.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0, \"Age\" = @p1 WHERE \"Id\" = @p2"));
+        Assert.That(r3.ParameterCount, Is.EqualTo(3));
+
+        // mask 0b01: only Name active
+        var r1 = CompileTimeSqlBuilder.BuildUpdateSql(0b01UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r1.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0 WHERE \"Id\" = @p1"));
+        Assert.That(r1.ParameterCount, Is.EqualTo(2));
+
+        // mask 0b10: only Age active
+        var r2 = CompileTimeSqlBuilder.BuildUpdateSql(0b10UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r2.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Age\" = @p0 WHERE \"Id\" = @p1"));
+        Assert.That(r2.ParameterCount, Is.EqualTo(2));
+
+        // mask 0b00: neither SET active
+        var r0 = CompileTimeSqlBuilder.BuildUpdateSql(0b00UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r0.Sql,
+            Is.EqualTo("UPDATE \"Users\" WHERE \"Id\" = @p0"));
+        Assert.That(r0.ParameterCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BuildUpdateSql_ConditionalSetAndConditionalWhere_MixedBits()
+    {
+        // Conditional SET at bit 0, unconditional SET, conditional WHERE at bit 1
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeSetClause("\"Name\"", 0, isConditional: true, bitIndex: 0),
+            MakeSetClause("\"Email\"", 1, isConditional: false),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"Id\" = @p2", new[] { MakeParam(2, "@p2") },
+                isConditional: false),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"IsActive\" = @p3", new[] { MakeParam(3, "@p3") },
+                isConditional: true, bitIndex: 1)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // mask 0b11: both conditional SET and conditional WHERE active
+        var r3 = CompileTimeSqlBuilder.BuildUpdateSql(0b11UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r3.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0, \"Email\" = @p1 WHERE (\"Id\" = @p2) AND (\"IsActive\" = @p3)"));
+        Assert.That(r3.ParameterCount, Is.EqualTo(4));
+
+        // mask 0b01: only conditional SET active, WHERE inactive
+        var r1 = CompileTimeSqlBuilder.BuildUpdateSql(0b01UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r1.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0, \"Email\" = @p1 WHERE \"Id\" = @p2"));
+        Assert.That(r1.ParameterCount, Is.EqualTo(3));
+
+        // mask 0b10: conditional SET inactive, conditional WHERE active
+        var r2 = CompileTimeSqlBuilder.BuildUpdateSql(0b10UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r2.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Email\" = @p0 WHERE (\"Id\" = @p1) AND (\"IsActive\" = @p2)"));
+        Assert.That(r2.ParameterCount, Is.EqualTo(3));
+
+        // mask 0b00: neither active
+        var r0 = CompileTimeSqlBuilder.BuildUpdateSql(0b00UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r0.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Email\" = @p0 WHERE \"Id\" = @p1"));
+        Assert.That(r0.ParameterCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void BuildUpdateSql_ThreeConditionalSets_EightMaskVariants()
+    {
+        // Three conditional SETs at bits 0, 1, 2 + unconditional WHERE (no param)
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeSetClause("\"Name\"", 0, isConditional: true, bitIndex: 0),
+            MakeSetClause("\"Age\"", 1, isConditional: true, bitIndex: 1),
+            MakeSetClause("\"Email\"", 2, isConditional: true, bitIndex: 2),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"Id\" = 1", Array.Empty<ParameterInfo>(),
+                isConditional: false)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // mask 0b111: all three SETs active
+        var r7 = CompileTimeSqlBuilder.BuildUpdateSql(0b111UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r7.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0, \"Age\" = @p1, \"Email\" = @p2 WHERE \"Id\" = 1"));
+        Assert.That(r7.ParameterCount, Is.EqualTo(3));
+
+        // mask 0b101: Name and Email active, Age skipped — params reindex
+        var r5 = CompileTimeSqlBuilder.BuildUpdateSql(0b101UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r5.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = @p0, \"Email\" = @p1 WHERE \"Id\" = 1"));
+        Assert.That(r5.ParameterCount, Is.EqualTo(2));
+
+        // mask 0b010: only Age active
+        var r2 = CompileTimeSqlBuilder.BuildUpdateSql(0b010UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r2.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Age\" = @p0 WHERE \"Id\" = 1"));
+        Assert.That(r2.ParameterCount, Is.EqualTo(1));
+
+        // mask 0b000: none active
+        var r0 = CompileTimeSqlBuilder.BuildUpdateSql(0b000UL, clauses, templates, GenSqlDialect.SQLite, "Users", null);
+        Assert.That(r0.Sql,
+            Is.EqualTo("UPDATE \"Users\" WHERE \"Id\" = 1"));
+        Assert.That(r0.ParameterCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void BuildUpdateSql_ConditionalSet_PostgreSQL_ParameterReindex()
+    {
+        // Verify PostgreSQL $N parameter renumbering with conditional SET
+        var clauses = new List<ChainedClauseSite>
+        {
+            MakeSetClause("\"Name\"", 0, isConditional: true, bitIndex: 0),
+            MakeSetClause("\"Age\"", 1, isConditional: true, bitIndex: 1),
+            MakeClause(ClauseRole.UpdateWhere,
+                "\"Id\" = @p2", new[] { MakeParam(2, "@p2") },
+                isConditional: false)
+        };
+        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
+
+        // Both active: $1, $2 for SETs, $3 for WHERE
+        var rBoth = CompileTimeSqlBuilder.BuildUpdateSql(0b11UL, clauses, templates, GenSqlDialect.PostgreSQL, "Users", null);
+        Assert.That(rBoth.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Name\" = $1, \"Age\" = $2 WHERE \"Id\" = $3"));
+
+        // Only Age (bit 1): $1 for Age, $2 for WHERE
+        var rAge = CompileTimeSqlBuilder.BuildUpdateSql(0b10UL, clauses, templates, GenSqlDialect.PostgreSQL, "Users", null);
+        Assert.That(rAge.Sql,
+            Is.EqualTo("UPDATE \"Users\" SET \"Age\" = $1 WHERE \"Id\" = $2"));
+
+        // Neither: $1 for WHERE
+        var rNone = CompileTimeSqlBuilder.BuildUpdateSql(0b00UL, clauses, templates, GenSqlDialect.PostgreSQL, "Users", null);
+        Assert.That(rNone.Sql,
+            Is.EqualTo("UPDATE \"Users\" WHERE \"Id\" = $1"));
+    }
+
     // ───────────────────────────────────────────────────────────────
     // SELECT with ORDER BY across all 4 dialects
     // ───────────────────────────────────────────────────────────────

@@ -179,7 +179,24 @@ internal static class UsageSiteDiscovery
                     }
                     else
                     {
-                        return null;
+                        // Non-lambda argument with multiple candidate overloads.
+                        // Disambiguate Set(T entity) from Set(Action<T>) by excluding
+                        // candidates whose first parameter is a delegate type.
+                        matched = null;
+                        matchCount = 0;
+                        foreach (var sym in symbolInfo.CandidateSymbols)
+                        {
+                            if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount
+                                && !IsDelegateParameterType(ms.Parameters[0].Type))
+                            {
+                                matched = ms;
+                                matchCount++;
+                            }
+                        }
+                        if (matchCount == 1 && matched != null)
+                            methodSymbol = matched;
+                        else
+                            return null;
                     }
                 }
                 else
@@ -312,11 +329,21 @@ internal static class UsageSiteDiscovery
         if (methodName == "Set" &&
             (containingType.Name.Contains("UpdateBuilder")))
         {
-            // Distinguish Set(T entity) (1 arg, POCO) from Set<TValue>(lambda, value) (2 args)
+            // Distinguish Set(T entity) (1 arg, POCO) / Set(Action<T>) / Set<TValue>(lambda, value)
             if (invocation.ArgumentList.Arguments.Count == 1 && !methodSymbol.IsGenericMethod)
             {
-                kind = InterceptorKind.UpdateSetPoco;
-                initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+                // 1-arg non-generic: Set(T entity) or Set(Action<T>).
+                // If the argument is a lambda expression, it's Set(Action<T>).
+                var singleArg = invocation.ArgumentList.Arguments[0].Expression;
+                if (singleArg is LambdaExpressionSyntax)
+                {
+                    kind = InterceptorKind.UpdateSetAction;
+                }
+                else
+                {
+                    kind = InterceptorKind.UpdateSetPoco;
+                    initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+                }
             }
             else
             {
@@ -611,7 +638,26 @@ internal static class UsageSiteDiscovery
             return delegateType.TypeArguments.Length - 1;
         }
 
+        // Raw delegate types: Action<T> has 1 type arg = 1 parameter,
+        // Action<T1, T2> has 2 type args = 2 parameters.
+        // This handles Set(Action<T>) disambiguation from Set(T entity).
+        if (paramType is INamedTypeSymbol rawDelegate
+            && rawDelegate.TypeKind == TypeKind.Delegate
+            && rawDelegate.TypeArguments.Length > 0)
+        {
+            return rawDelegate.TypeArguments.Length;
+        }
+
         return 0;
+    }
+
+    /// <summary>
+    /// Checks if a type symbol is a delegate type (Action, Func, etc.).
+    /// Used to disambiguate Set(T entity) from Set(Action&lt;T&gt;) when the argument is not a lambda.
+    /// </summary>
+    private static bool IsDelegateParameterType(ITypeSymbol type)
+    {
+        return type.TypeKind == TypeKind.Delegate;
     }
 
     private static bool IsNavigationJoinLambda(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
@@ -651,6 +697,7 @@ internal static class UsageSiteDiscovery
             InterceptorKind.Set => true,
             InterceptorKind.DeleteWhere => true,
             InterceptorKind.UpdateSet => true,
+            InterceptorKind.UpdateSetAction => true,
             InterceptorKind.UpdateWhere => true,
             _ => false
         };
@@ -675,6 +722,7 @@ internal static class UsageSiteDiscovery
             InterceptorKind.DeleteWhere => ClauseTranslator.TranslateWhere(invocation, semanticModel, entityType, dialect),
             InterceptorKind.UpdateWhere => ClauseTranslator.TranslateWhere(invocation, semanticModel, entityType, dialect),
             InterceptorKind.UpdateSet => ClauseTranslator.TranslateSet(invocation, semanticModel, entityType, dialect, existingParameterCount: 0),
+            InterceptorKind.UpdateSetAction => ClauseTranslator.TranslateSetAction(invocation, semanticModel, entityType, dialect, existingParameterCount: 0),
             InterceptorKind.OrderBy => ClauseTranslator.TranslateOrderBy(invocation, semanticModel, entityType, dialect),
             InterceptorKind.ThenBy => ClauseTranslator.TranslateOrderBy(invocation, semanticModel, entityType, dialect),
             InterceptorKind.GroupBy => ClauseTranslator.TranslateGroupBy(invocation, semanticModel, entityType, dialect),
@@ -750,6 +798,7 @@ internal static class UsageSiteDiscovery
             InterceptorKind.DeleteWhere => ClauseKind.Where,
             InterceptorKind.UpdateWhere => ClauseKind.Where,
             InterceptorKind.UpdateSet => ClauseKind.Set,
+            InterceptorKind.UpdateSetAction => ClauseKind.Set,
             InterceptorKind.OrderBy => ClauseKind.OrderBy,
             InterceptorKind.ThenBy => ClauseKind.OrderBy,
             InterceptorKind.GroupBy => ClauseKind.GroupBy,

@@ -151,6 +151,11 @@ internal static partial class InterceptorCodeGenerator
                     return false;
                 return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
 
+            case InterceptorKind.UpdateSetAction:
+                if (site.ClauseInfo is SetActionClauseInfo actionInfo && actionInfo.IsSuccess)
+                    return false;
+                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+
             case InterceptorKind.UpdateSetPoco:
                 return site.UpdateInfo == null || site.UpdateInfo.Columns.Count == 0;
 

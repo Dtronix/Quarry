@@ -70,7 +70,7 @@ The Roslyn incremental source generator analyzes every query call site and emits
 
 ### Execution Interceptors
 
-All terminal methods — `ExecuteFetchAllAsync`, `ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ToAsyncEnumerable`, and `ToSql` — are intercepted at compile time. The generator emits pre-built SQL, ordinal-based readers, and pre-allocated parameter arrays directly into the interceptor, bypassing the runtime query builder entirely.
+All terminal methods — `ExecuteFetchAllAsync`, `ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ToAsyncEnumerable`, and `ToDiagnostics` — are intercepted at compile time. The generator emits pre-built SQL, ordinal-based readers, and pre-allocated parameter arrays directly into the interceptor, bypassing the runtime query builder entirely.
 
 ### Chain Analysis and Optimization Tiers
 
@@ -85,7 +85,7 @@ The generator performs dataflow analysis on query chains to determine the best o
 Queries built with `if`/`else` branching are fully supported at compile time. The generator assigns each conditional clause a bit index and enumerates all possible clause combinations as a bitmask. Each combination maps to its own pre-built SQL variant, so conditional query construction has zero runtime SQL building cost.
 
 ```csharp
-var query = db.Users.Select(u => u);
+var query = db.Users().Select(u => u);
 
 if (activeOnly)
     query = query.Where(u => u.IsActive);
@@ -160,13 +160,13 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class AppDb : QuarryContext
 {
-    public partial QueryBuilder<User> Users { get; }
+    public partial IEntityAccessor<User> Users();
 }
 
 // 3. Query
 await using var db = new AppDb(connection);
 
-var activeUsers = await db.Users
+var activeUsers = await db.Users()
     .Select(u => new { u.UserName, u.Email })
     .Where(u => u.IsActive)
     .OrderBy(u => u.UserName)
@@ -221,8 +221,8 @@ public class UserSchema : Schema
 [QuarryContext(Dialect = SqlDialect.SQLite, Schema = "public")]
 public partial class AppDb : QuarryContext
 {
-    public partial QueryBuilder<User> Users { get; }
-    public partial QueryBuilder<Order> Orders { get; }
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ```
 
@@ -239,16 +239,16 @@ All query builder methods return interfaces (`IQueryBuilder<T>`, `IJoinedQueryBu
 ### Select
 
 ```csharp
-db.Users.Select(u => u);                                         // entity
-db.Users.Select(u => u.UserName);                                // single column
-db.Users.Select(u => (u.UserId, u.UserName));                    // tuple
-db.Users.Select(u => new UserDto { Name = u.UserName });         // DTO
+db.Users().Select(u => u);                                         // entity
+db.Users().Select(u => u.UserName);                                // single column
+db.Users().Select(u => (u.UserId, u.UserName));                    // tuple
+db.Users().Select(u => new UserDto { Name = u.UserName });         // DTO
 ```
 
 ### Where
 
 ```csharp
-db.Users.Where(u => u.IsActive && u.UserId > minId);
+db.Users().Where(u => u.IsActive && u.UserId > minId);
 
 // Operators: ==, !=, <, >, <=, >=, &&, ||, !
 // Null: u.Email == null, u.Email != null
@@ -260,10 +260,10 @@ db.Users.Where(u => u.IsActive && u.UserId > minId);
 ### OrderBy, GroupBy, Aggregates
 
 ```csharp
-db.Users.OrderBy(u => u.UserName);
-db.Users.OrderBy(u => u.CreatedAt, Direction.Descending);
+db.Users().OrderBy(u => u.UserName);
+db.Users().OrderBy(u => u.CreatedAt, Direction.Descending);
 
-db.Orders.GroupBy(o => o.Status)
+db.Orders().GroupBy(o => o.Status)
     .Having(o => Sql.Count() > 5)
     .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)));
 ```
@@ -273,24 +273,24 @@ Aggregate markers: `Sql.Count()`, `Sql.Sum()`, `Sql.Avg()`, `Sql.Min()`, `Sql.Ma
 ### Pagination and Distinct
 
 ```csharp
-db.Users.Select(u => u).Limit(10).Offset(20);
-db.Users.Select(u => u.UserName).Distinct();
+db.Users().Select(u => u).Limit(10).Offset(20);
+db.Users().Select(u => u.UserName).Distinct();
 ```
 
 ### Joins
 
 ```csharp
 // 2-table join (also LeftJoin, RightJoin)
-db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Where((u, o) => o.Total > 100)
     .Select((u, o) => (u.UserName, o.Total));
 
 // Navigation-based join
-db.Users.Join(u => u.Orders)
+db.Users().Join(u => u.Orders)
     .Select((u, o) => (u.UserName, o.Total));
 
 // 3/4-table chained joins (max 4 tables)
-db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
     .Select((u, o, oi) => (u.UserName, o.Total, oi.ProductName));
 ```
@@ -300,17 +300,11 @@ db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
 On `Many<T>` properties inside `Where`:
 
 ```csharp
-db.Users.Where(u => u.Orders.Any());                         // EXISTS
-db.Users.Where(u => u.Orders.Any(o => o.Total > 100));       // filtered EXISTS
-db.Users.Where(u => u.Orders.All(o => o.Status == "paid"));  // NOT EXISTS + negated
-db.Users.Where(u => u.Orders.Count() > 5);                   // scalar COUNT
-db.Users.Where(u => u.Orders.Count(o => o.Total > 50) > 2); // filtered COUNT
-```
-
-### Set Operations
-
-```csharp
-db.Union(query1, query2);      // also UnionAll, Except, Intersect
+db.Users().Where(u => u.Orders.Any());                         // EXISTS
+db.Users().Where(u => u.Orders.Any(o => o.Total > 100));       // filtered EXISTS
+db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));  // NOT EXISTS + negated
+db.Users().Where(u => u.Orders.Count() > 5);                   // scalar COUNT
+db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2); // filtered COUNT
 ```
 
 ---
@@ -321,24 +315,52 @@ db.Union(query1, query2);      // also UnionAll, Except, Intersect
 
 ```csharp
 // Initializer-aware — only set properties generate columns
-await db.Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
-var id = await db.Insert(user).ExecuteScalarAsync<int>();  // returns generated key
-await db.InsertMany(users).ExecuteNonQueryAsync();
+await db.Users().Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
+var id = await db.Users().Insert(user).ExecuteScalarAsync<int>();  // returns generated key
+await db.Users().InsertMany(users).ExecuteNonQueryAsync();
 ```
 
 ### Update
 
+Requires `Where()` or `All()` before execution. Three `Set` overloads:
+
 ```csharp
-// Requires Where() or All() before execution
-await db.Update<User>().Set(u => u.UserName, "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
-await db.Update<User>().Set(new User { UserName = "New" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+// Column + value form
+await db.Users().Update()
+    .Set(u => u.UserName, "New")
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
+// Assignment syntax — single or multiple columns in one lambda
+await db.Users().Update()
+    .Set(u => u.UserName = "New")
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
+await db.Users().Update()
+    .Set(u => { u.UserName = "New"; u.IsActive = true; })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
+// Captured variables work — extracted at runtime from the delegate closure
+var newName = GetNameFromInput();
+await db.Users().Update()
+    .Set(u => { u.UserName = newName; u.IsActive = true; })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
+// Entity form — sets all initialized properties
+await db.Users().Update()
+    .Set(new User { UserName = "New" })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
 ```
 
 ### Delete
 
 ```csharp
 // Requires Where() or All() before execution
-await db.Delete<User>().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 ```
 
 ### Execution Methods
@@ -352,7 +374,33 @@ await db.Delete<User>().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 | `ExecuteScalarAsync<T>()` | `Task<T>` |
 | `ExecuteNonQueryAsync()` | `Task<int>` |
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
+| `ToDiagnostics()` | `QueryDiagnostics` (SQL, parameters, optimization tier, clause breakdown) |
 | `ToSql()` | `string` (preview SQL) |
+
+### Query Diagnostics
+
+`ToDiagnostics()` returns a `QueryDiagnostics` object with the generated SQL, bound parameters, optimization metadata, and a per-clause breakdown. Available on all builder types.
+
+```csharp
+var diag = db.Users()
+    .Where(u => u.IsActive)
+    .OrderBy(u => u.UserName)
+    .Select(u => u)
+    .ToDiagnostics();
+
+Console.WriteLine(diag.Sql);               // SELECT ... FROM "users" WHERE ...
+Console.WriteLine(diag.Dialect);           // SQLite
+Console.WriteLine(diag.Tier);             // PrebuiltDispatch
+Console.WriteLine(diag.IsCarrierOptimized); // True
+
+foreach (var p in diag.Parameters)
+    Console.WriteLine($"{p.Name} = {p.Value}");
+
+foreach (var clause in diag.Clauses)
+    Console.WriteLine($"{clause.ClauseType}: {clause.SqlFragment} (active={clause.IsActive})");
+```
+
+For conditional chains, each clause reports `IsConditional` and `IsActive` so you can inspect which branches were taken and verify the generated SQL for each path.
 
 ---
 
@@ -446,7 +494,7 @@ quarry scaffold -c "Server=localhost;Database=mydb" -d sqlserver -o Schemas --ni
 ### What It Generates
 
 - One schema class per table with `Key<T>`, `Col<T>`, `Ref<T, TKey>`, and `Many<T>` properties
-- A `QuarryContext` subclass with `QueryBuilder<T>` properties for each table
+- A `QuarryContext` subclass with `IEntityAccessor<T>` methods for each table
 - Automatic detection of junction tables (many-to-many), implicit foreign keys by naming convention, and naming style inference
 
 ---

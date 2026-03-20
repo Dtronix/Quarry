@@ -113,4 +113,124 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Set(Action<T>) — Single Assignment
+
+    [Test]
+    public void Update_SetAction_SingleAssignment_Literal()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE ([UserId] = 1)");
+    }
+
+    [Test]
+    public void Update_SetAction_SingleAssignment_Boolean()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            My.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"IsActive\" = 0 WHERE \"IsActive\" = 1",
+            pg:     "UPDATE \"users\" SET \"IsActive\" = FALSE WHERE \"IsActive\" = TRUE",
+            mysql:  "UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1",
+            ss:     "UPDATE [users] SET [IsActive] = 0 WHERE [IsActive] = 1");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Multi-Assignment (Statement Lambda)
+
+    [Test]
+    public void Update_SetAction_MultiAssignment()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Chained with existing Set overloads
+
+    [Test]
+    public void Update_SetAction_ChainedWithTwoArgSet()
+    {
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = @p0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = $1 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = @p0 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Captured Variables
+
+    [Test]
+    public void Update_SetAction_CapturedVariable()
+    {
+        var name = "captured";
+        AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+    }
+
+    [Test]
+    public void Update_SetAction_MultiAssignment_WithCapturedVariable()
+    {
+        var name = "captured";
+        AssertDialects(
+            Lite.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE ([UserId] = 1)");
+    }
+
+    #endregion
+
+    #region Set(Action<T>) — Type-Mapped Column
+
+    [Test]
+    public void Update_SetAction_TypeMappedColumn()
+    {
+        AssertDialects(
+            Lite.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Pg.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            My.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            Ss.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE (\"AccountId\" = 1)",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE (\"AccountId\" = 1)",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE (`AccountId` = 1)",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE ([AccountId] = 1)");
+    }
+
+    #endregion
 }

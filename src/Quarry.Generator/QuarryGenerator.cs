@@ -832,8 +832,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Bail out if any clause has captured parameters that can't generate direct extraction paths.
         // Without extraction, the BindParam(p0) reference is unresolved, causing compile errors.
+        // Exception: UpdateSetAction captures use delegate.Target + FieldInfo (not expression tree
+        // paths), so they don't need CanGenerateDirectPath.
         foreach (var clause in result.Clauses)
         {
+            if (clause.Site.Kind == InterceptorKind.UpdateSetAction)
+                continue;
+
             if (clause.Site.ClauseInfo?.Parameters is { Count: > 0 } clauseParams)
             {
                 if (clauseParams.Any(p => p.IsCaptured && !p.CanGenerateDirectPath))
@@ -1115,10 +1120,17 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     continue;
                 }
 
+                // UpdateSetAction: multiple assignments from Action<T> lambda.
+                // Fall through to normal parameter processing — each assignment's parameter
+                // is already in ClauseInfo.Parameters with resolved types.
+                if (clause.Site.ClauseInfo is SetActionClauseInfo)
+                {
+                    // Validated — fall through to standard parameter processing
+                }
                 // Scalar Set<TValue>: require SetClauseInfo with resolvable parameter types.
                 // Fall through to normal parameter processing — the standard ClrType checks
                 // will validate that carrier fields can be typed.
-                if (clause.Site.ClauseInfo is not SetClauseInfo)
+                else if (clause.Site.ClauseInfo is not SetClauseInfo)
                     return null;
             }
 
@@ -1179,6 +1191,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 {
                     typeMapping = sci.CustomTypeMappingClass;
                 }
+                // For SetAction assignments, propagate type mapping from the assignment
+                if (typeMapping == null
+                    && clause.Site.Kind == InterceptorKind.UpdateSetAction
+                    && clause.Site.ClauseInfo is SetActionClauseInfo saci)
+                {
+                    var localIdx = param.Index; // Index within this clause's parameters
+                    if (localIdx < saci.Assignments.Count)
+                        typeMapping = saci.Assignments[localIdx].CustomTypeMappingClass;
+                }
+
+                // For Action<T> captured params, needsFieldInfoCache is true because we use
+                // delegate.Target + cached FieldInfo (no expression tree path, but still needs cache).
+                var needsFieldInfoCache = param.IsCaptured
+                    && (param.CanGenerateDirectPath || clause.Site.Kind == InterceptorKind.UpdateSetAction);
 
                 chainParams.Add(new ChainParameterInfo(
                     index: globalIndex,
@@ -1187,7 +1213,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     typeMapping: typeMapping,
                     isEnum: param.IsEnum,
                     enumUnderlyingType: param.EnumUnderlyingType,
-                    needsFieldInfoCache: param.IsCaptured && param.CanGenerateDirectPath));
+                    needsFieldInfoCache: needsFieldInfoCache));
 
                 globalIndex++;
             }
@@ -1526,10 +1552,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Set/UpdateSet: resolve ValueTypeName from enriched entity columns when discovery couldn't
         var needsSetValueTypeEnrichment = site.Kind is InterceptorKind.Set or InterceptorKind.UpdateSet
                                           && site.ClauseInfo is SetClauseInfo sci && sci.ValueTypeName == null;
+        // SetAction: enrich assignments with custom type mappings from EntityInfo
+        var needsSetActionEnrichment = site.Kind is InterceptorKind.UpdateSetAction
+                                       && site.ClauseInfo is SetActionClauseInfo;
 
         if (!needsProjectionEnrichment && !needsClauseEnrichment && !needsInsertEnrichment
             && !needsUpdatePocoEnrichment && !needsJoinEnrichment && !needsJoinedClauseEnrichment
-            && !needsRawSqlEnrichment && !needsSetValueTypeEnrichment)
+            && !needsRawSqlEnrichment && !needsSetValueTypeEnrichment && !needsSetActionEnrichment)
             return site;
 
         // Try to find matching entity, using contextClassName to disambiguate
@@ -1669,6 +1698,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         if (site.Kind == InterceptorKind.UpdateSet && enrichedClauseInfo is SetClauseInfo updateSetClause && updateSetClause.CustomTypeMappingClass == null)
         {
             enrichedClauseInfo = EnrichSetClauseWithMapping(updateSetClause, entityContext.Entity);
+        }
+
+        // Enrich UpdateSetAction: resolve custom type mappings, value types, and proper column quoting
+        if (needsSetActionEnrichment && enrichedClauseInfo is SetActionClauseInfo actionClause)
+        {
+            enrichedClauseInfo = EnrichSetActionClauseWithMapping(actionClause, entityContext.Entity, entityContext.Context.Dialect);
         }
 
         // Enrich RawSql type info when T matches a known entity from Pipeline 1
@@ -2415,6 +2450,101 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// Enriches a SetActionClauseInfo with custom type mappings from entity schema columns,
+    /// resolves value types, and applies correct dialect-specific column quoting.
+    /// </summary>
+    private static ClauseInfo EnrichSetActionClauseWithMapping(SetActionClauseInfo actionClause, EntityInfo entity, SqlDialect dialect)
+    {
+        var enrichedAssignments = new List<SetActionAssignment>(actionClause.Assignments.Count);
+        var enrichedParameters = new List<Translation.ParameterInfo>(actionClause.Parameters.Count);
+        var paramEnrichIdx = 0;
+
+        for (int i = 0; i < actionClause.Assignments.Count; i++)
+        {
+            var assignment = actionClause.Assignments[i];
+
+            // The ColumnSql from discovery is the unquoted property name.
+            // Resolve the actual column name and quote it with the correct dialect.
+            var propertyName = assignment.ColumnSql.Trim('"', '[', ']', '`');
+            string? mapping = null;
+            string? valueType = assignment.ValueTypeName;
+            string? resolvedColumnName = null;
+            string? resolvedClrType = null;
+
+            foreach (var column in entity.Columns)
+            {
+                if (column.PropertyName == propertyName || column.ColumnName == propertyName)
+                {
+                    resolvedColumnName = column.ColumnName;
+                    resolvedClrType = column.FullClrType;
+                    if (column.CustomTypeMappingClass != null)
+                        mapping = column.CustomTypeMappingClass;
+                    if (valueType == null)
+                        valueType = column.FullClrType;
+                    break;
+                }
+            }
+
+            // Quote the column name with the correct dialect
+            var quotedColumn = QuoteIdentifier(resolvedColumnName ?? propertyName, dialect);
+
+            // Re-format boolean literals for the target dialect.
+            // During discovery, inlined SQL values are formatted with DefaultDiscoveryDialect (PostgreSQL).
+            // Boolean formatting is dialect-sensitive, so we must re-format here.
+            var inlinedSqlValue = ReformatInlinedBooleanForDialect(assignment.InlinedSqlValue, dialect);
+
+            enrichedAssignments.Add(new SetActionAssignment(quotedColumn, valueType, mapping,
+                inlinedSqlValue: inlinedSqlValue, inlinedCSharpExpression: assignment.InlinedCSharpExpression));
+
+            // Enrich the corresponding parameter's ClrType from the column metadata.
+            // Inlined assignments have no parameter entry — skip them.
+            if (!assignment.IsInlined && paramEnrichIdx < actionClause.Parameters.Count)
+            {
+                var param = actionClause.Parameters[paramEnrichIdx++];
+                if (resolvedClrType != null
+                    && (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object" || param.ClrType == "object?"))
+                {
+                    enrichedParameters.Add(new Translation.ParameterInfo(
+                        param.Index, param.Name, resolvedClrType, param.ValueExpression,
+                        isCaptured: param.IsCaptured, expressionPath: param.ExpressionPath));
+                }
+                else
+                {
+                    enrichedParameters.Add(param);
+                }
+            }
+        }
+
+        return new SetActionClauseInfo(enrichedAssignments, enrichedParameters);
+    }
+
+    /// <summary>
+    /// Re-formats a boolean SQL literal for the target dialect.
+    /// During discovery, boolean values are formatted as PostgreSQL ("TRUE"/"FALSE").
+    /// Non-PostgreSQL dialects need "1"/"0" instead. Returns the original value unchanged
+    /// for non-boolean tokens.
+    /// </summary>
+    private static string? ReformatInlinedBooleanForDialect(string? sqlValue, SqlDialect dialect)
+    {
+        if (sqlValue == null)
+            return null;
+
+        if (dialect == SqlDialect.PostgreSQL)
+        {
+            // Already in PostgreSQL format from discovery — pass through.
+            return sqlValue;
+        }
+
+        // Discovery uses PostgreSQL format, so we only need to convert TRUE/FALSE → 1/0.
+        return sqlValue switch
+        {
+            "TRUE" => "1",
+            "FALSE" => "0",
+            _ => sqlValue
+        };
+    }
+
+    /// <summary>
     /// Returns the clause kind name if the site has a non-translatable clause that would
     /// have silently dropped the clause in older versions. Returns null if the site is fine.
     /// </summary>
@@ -2450,6 +2580,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             case InterceptorKind.Set:
             case InterceptorKind.UpdateSet:
                 if (site.ClauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
+                    break;
+                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
+                    return "Set";
+                break;
+
+            case InterceptorKind.UpdateSetAction:
+                if (site.ClauseInfo is SetActionClauseInfo actionInfo && actionInfo.IsSuccess)
                     break;
                 if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
                     return "Set";
