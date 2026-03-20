@@ -539,7 +539,84 @@ internal static partial class InterceptorCodeGenerator
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
         EmitCarrierParameterLocals(sb, chain, carrier);
         EmitDiagnosticClauseArray(sb, chain, carrier);
-        sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
+        EmitDiagnosticParameterArray(sb, chain, carrier);
+        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
+    }
+
+    /// <summary>
+    /// Emits a <c>DiagnosticParameter[]</c> array (<c>__params</c>) from carrier state.
+    /// Handles scalar-only, collection-only, and mixed scalar+collection chains.
+    /// </summary>
+    private static void EmitDiagnosticParameterArray(
+        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+    {
+        var hasScalar = chain.ChainParameters.Any(p => !p.IsCollection);
+        var hasCollection = chain.ChainParameters.Any(p => p.IsCollection);
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
+        var paginationBaseIdx = chain.ChainParameters.Count;
+
+        if (!hasScalar && !hasCollection && !hasLimitField && !hasOffsetField)
+        {
+            sb.AppendLine("        var __params = Array.Empty<DiagnosticParameter>();");
+            return;
+        }
+
+        if (!hasCollection)
+        {
+            // Scalar-only (possibly with pagination): compile-time-sized array
+            var entries = new List<string>();
+            foreach (var p in chain.ChainParameters.Where(p => !p.IsCollection))
+                entries.Add($"new(\"@p{p.Index}\", __pVal{p.Index})");
+            if (hasLimitField)
+                entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL)");
+            if (hasOffsetField)
+            {
+                var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
+                entries.Add($"new(\"@p{offsetIdx}\", __pValO)");
+            }
+            sb.Append("        var __params = new DiagnosticParameter[] { ");
+            sb.Append(string.Join(", ", entries));
+            sb.AppendLine(" };");
+            return;
+        }
+
+        // Has collection params: use List<DiagnosticParameter> for runtime sizing
+        var scalarCount = chain.ChainParameters.Count(p => !p.IsCollection)
+            + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
+        var collectionLenExprs = chain.ChainParameters
+            .Where(p => p.IsCollection)
+            .Select(p => $"__col{p.Index}Len");
+        var capacityExpr = scalarCount > 0
+            ? $"{scalarCount} + {string.Join(" + ", collectionLenExprs)}"
+            : string.Join(" + ", collectionLenExprs);
+
+        sb.AppendLine($"        var __paramList = new System.Collections.Generic.List<DiagnosticParameter>({capacityExpr});");
+
+        // Emit entries in global index order (preserves parameter numbering)
+        foreach (var p in chain.ChainParameters.OrderBy(p => p.Index))
+        {
+            if (p.IsCollection)
+            {
+                sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.Index}Len; __pi++)");
+                sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.Index}Parts[__pi], __col{p.Index}[__pi]));");
+            }
+            else
+            {
+                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.Index}\", __pVal{p.Index}));");
+            }
+        }
+
+        // Pagination parameters
+        if (hasLimitField)
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{paginationBaseIdx}\", __pValL));");
+        if (hasOffsetField)
+        {
+            var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{offsetIdx}\", __pValO));");
+        }
+
+        sb.AppendLine("        var __params = __paramList.ToArray();");
     }
 
     /// <summary>
@@ -590,6 +667,106 @@ internal static partial class InterceptorCodeGenerator
         // Hoist mask type outside the loop — same for all conditional clauses in the chain
         var maskType = diagnosticClauses.Any(c => c.IsConditional) ? GetMaskType(chain) : null;
 
+        // Pre-compute runtime clause SQL for clauses with collection parameters.
+        // These need token expansion using __col{n}Parts from EmitCollectionExpansion.
+        for (int clauseIdx = 0; clauseIdx < diagnosticClauses.Count; clauseIdx++)
+        {
+            var clause = diagnosticClauses[clauseIdx];
+            if (carrier == null || clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) != true)
+                continue;
+
+            var sqlFrag = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var offset = clauseParamOffsets[clause.Site.UniqueId];
+            var tokenizedFrag = sqlFrag;
+
+            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            {
+                var globalIdx = offset + p.Index;
+                var token = $"{{__COL_P{globalIdx}__}}";
+                if (chain.Dialect == SqlDialect.MySQL)
+                {
+                    var qCount = 0;
+                    for (int ci = 0; ci < tokenizedFrag.Length; ci++)
+                    {
+                        if (tokenizedFrag[ci] == '?')
+                        {
+                            if (qCount == p.Index)
+                            {
+                                tokenizedFrag = tokenizedFrag.Substring(0, ci) + token + tokenizedFrag.Substring(ci + 1);
+                                break;
+                            }
+                            qCount++;
+                        }
+                    }
+                }
+                else
+                {
+                    var placeholder = chain.Dialect switch
+                    {
+                        SqlDialect.PostgreSQL => $"${globalIdx + 1}",
+                        _ => $"@p{globalIdx}"
+                    };
+                    tokenizedFrag = tokenizedFrag.Replace(placeholder, token);
+                }
+            }
+
+            sb.AppendLine($"        var __clauseSql{clauseIdx} = @\"{EscapeStringLiteral(tokenizedFrag)}\";");
+            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            {
+                var globalIdx = offset + p.Index;
+                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", string.Join(\", \", __col{globalIdx}Parts));");
+            }
+        }
+
+        // Pre-compute per-clause DiagnosticParameter[] for clauses with collection parameters.
+        // These must be built before the __clauses array since they require loops.
+        for (int clauseIdx = 0; clauseIdx < diagnosticClauses.Count; clauseIdx++)
+        {
+            var clause = diagnosticClauses[clauseIdx];
+            if (carrier == null || clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) != true)
+                continue;
+
+            var offset = clauseParamOffsets[clause.Site.UniqueId];
+            var clauseParams = clause.Site.ClauseInfo!.Parameters;
+            var hasScalarInClause = clauseParams.Any(p => !p.IsCollection);
+            var hasCollectionInClause = clauseParams.Any(p => p.IsCollection);
+
+            if (!hasScalarInClause)
+            {
+                // Collection-only clause: fixed-size array from collection elements
+                var collectionParam = clauseParams.First(p => p.IsCollection);
+                var globalIdx = offset + collectionParam.Index;
+                sb.AppendLine($"        var __clauseParams{clauseIdx} = new DiagnosticParameter[__col{globalIdx}Len];");
+                sb.AppendLine($"        for (int __ci = 0; __ci < __col{globalIdx}Len; __ci++)");
+                sb.AppendLine($"            __clauseParams{clauseIdx}[__ci] = new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]);");
+            }
+            else
+            {
+                // Mixed scalar + collection clause: use List for runtime sizing
+                var scalarCount = clauseParams.Count(p => !p.IsCollection);
+                var collectionLens = clauseParams
+                    .Where(p => p.IsCollection)
+                    .Select(p => $"__col{offset + p.Index}Len");
+                var capacityExpr = $"{scalarCount} + {string.Join(" + ", collectionLens)}";
+
+                sb.AppendLine($"        var __cpList{clauseIdx} = new System.Collections.Generic.List<DiagnosticParameter>({capacityExpr});");
+                foreach (var p in clauseParams.OrderBy(p => p.Index))
+                {
+                    var globalIdx = offset + p.Index;
+                    if (p.IsCollection)
+                    {
+                        sb.AppendLine($"        for (int __ci = 0; __ci < __col{globalIdx}Len; __ci++)");
+                        sb.AppendLine($"            __cpList{clauseIdx}.Add(new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]));");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter(\"@p{globalIdx}\", __pVal{globalIdx}));");
+                    }
+                }
+                sb.AppendLine($"        var __clauseParams{clauseIdx} = __cpList{clauseIdx}.ToArray();");
+            }
+        }
+
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
         foreach (var clause in diagnosticClauses)
@@ -613,7 +790,18 @@ internal static partial class InterceptorCodeGenerator
             var clauseParamCount = clause.Site.ClauseInfo?.Parameters.Count ?? 0;
             string paramsArg;
 
-            if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
+            // Check if this clause has collection parameters (runtime-expanded SQL)
+            var hasCollectionParam = carrier != null && clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) == true;
+            // Use runtime variable for collection clauses, compile-time literal otherwise
+            var clauseSqlExpr = hasCollectionParam
+                ? $"__clauseSql{diagnosticClauses.IndexOf(clause)}"
+                : $"@\"{escapedFragment}\"";
+
+            if (hasCollectionParam)
+            {
+                paramsArg = $", parameters: __clauseParams{diagnosticClauses.IndexOf(clause)}";
+            }
+            else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
                 paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL) }}";
             }
@@ -637,7 +825,7 @@ internal static partial class InterceptorCodeGenerator
                 paramsArg = "";
             }
 
-            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
+            sb.AppendLine($"            new(\"{clauseType}\", {clauseSqlExpr}, isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
         }
         sb.AppendLine("        };");
     }

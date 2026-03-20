@@ -4,7 +4,6 @@ using Quarry.Shared.Sql;
 namespace Quarry.Tests.SqlOutput;
 
 [TestFixture]
-#pragma warning disable QRY001
 public class OrderByTests
 {
     private static string Q(SqlDialect d, string id) => SqlFormatting.QuoteIdentifier(d, id);

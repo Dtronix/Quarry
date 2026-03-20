@@ -6,7 +6,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Cross-dialect feature composition tests that validate complex, multi-clause
@@ -247,10 +246,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = @p0)) > 2",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = @p0)) > 2",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Priority` = @p0)) > 2",
-            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Priority] = @p0)) > 2");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Priority` = 3)) > 2",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Priority] = 3)) > 2");
     }
 
     #endregion
@@ -489,6 +488,83 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
             mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3`, AVG(\"Total\") AS `Item4`, MIN(\"Total\") AS `Item5`, MAX(\"Total\") AS `Item6` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
             ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3], AVG(\"Total\") AS [Item4], MIN(\"Total\") AS [Item5], MAX(\"Total\") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+    }
+
+    #endregion
+
+    #region 14. Runtime collection parameter (IN clause with non-inlineable collection)
+
+    // Static field — TryResolveVariableCollectionLiterals can't trace field initializers
+    private static readonly string[] _runtimeStatuses = new[] { "pending", "processing", "shipped" };
+
+    [Test]
+    public void Where_ContainsRuntimeCollection()
+    {
+        AssertDialects(
+            Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            Pg.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            My.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            Ss.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+                .Select(o => (o.OrderId, o.Status))
+                .ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN (@p0, @p1, @p2)",
+            pg:     "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ($1, $2, $3)",
+            mysql:  "SELECT `OrderId`, `Status` FROM `orders` WHERE `Status` IN (?, ?, ?)",
+            ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN (@p0, @p1, @p2)");
+    }
+
+    [Test]
+    public void Where_ContainsRuntimeCollection_DiagnosticParameters()
+    {
+        var diag = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
+            .Select(o => (o.OrderId, o.Status))
+            .ToDiagnostics();
+
+        // Verify top-level parameters include expanded collection values
+        Assert.That(diag.Parameters, Has.Count.EqualTo(3));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo("pending"));
+        Assert.That(diag.Parameters[1].Value, Is.EqualTo("processing"));
+        Assert.That(diag.Parameters[2].Value, Is.EqualTo("shipped"));
+
+        // Verify per-clause parameters on the Where clause
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.Parameters, Has.Count.EqualTo(3));
+        Assert.That(whereClause.Parameters[0].Value, Is.EqualTo("pending"));
+        Assert.That(whereClause.SqlFragment, Does.Contain("@p0"));
+    }
+
+    #endregion
+
+    #region 10. Joined OrderBy carrier diagnostics
+
+    [Test]
+    public void Join_Where_OrderBy_CarrierDiagnostics()
+    {
+        var diag = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > 100 && u.IsActive)
+            .OrderBy((u, o) => o.Total, Direction.Descending)
+            .Limit(10)
+            .Select((u, o) => (u.UserName, o.Total))
+            .ToDiagnostics();
+
+        Assert.That(diag.Sql, Does.Contain("ORDER BY"));
+        Assert.That(diag.Sql, Does.Contain("DESC"));
+        Assert.That(diag.IsCarrierOptimized, Is.True);
+        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
+
+        // Verify Limit parameter is present
+        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo(10));
+
+        // Verify per-clause diagnostics include OrderBy
+        var orderByClause = diag.Clauses.First(c => c.ClauseType == "OrderBy");
+        Assert.That(orderByClause.SqlFragment, Does.Contain("Total"));
     }
 
     #endregion

@@ -500,7 +500,12 @@ internal static partial class InterceptorCodeGenerator
             var resultType = SanitizeTupleResultType(GetShortTypeName(site.ResultTypeName));
             var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
 
-            if (keyType != null && !isBrokenTuple)
+            // Broken tuple result types cannot use concrete arity-0 signatures;
+            // fall back to full arity-matching with TKey to preserve interceptor arity.
+            if (isBrokenTuple)
+                keyType = null;
+
+            if (keyType != null)
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}, {resultType}> builder,");
@@ -513,20 +518,10 @@ internal static partial class InterceptorCodeGenerator
                 // Also used when tuple result type has unresolved element types (broken tuple).
                 var allTypeParams = string.Join(", ", Enumerable.Range(1, entityTypes.Count).Select(i => $"T{i}"));
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Count).Select(i => $"where T{i} : class"));
-                if (keyType != null)
-                {
-                    sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult>(");
-                    sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
-                    sb.AppendLine($"        Expression<Func<{allTypeParams}, {keyType}>> _,");
-                    sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
-                }
-                else
-                {
-                    sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult, TKey>(");
-                    sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
-                    sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
-                    sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
-                }
+                sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult, TKey>(");
+                sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
+                sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
+                sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
             }
         }
         else

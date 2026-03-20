@@ -22,13 +22,15 @@ internal sealed class ExpressionTranslationContext
         EntityInfo entityInfo,
         SqlDialect dialect,
         string lambdaParameterName,
-        IReadOnlyDictionary<string, EntityInfo>? entityRegistry = null)
+        IReadOnlyDictionary<string, EntityInfo>? entityRegistry = null,
+        Compilation? compilation = null)
     {
         SemanticModel = semanticModel;
         EntityInfo = entityInfo;
         Dialect = dialect;
         LambdaParameterName = lambdaParameterName;
         EntityRegistry = entityRegistry;
+        Compilation = compilation;
         JoinedEntities = new Dictionary<string, EntityInfo>();
 
         // Build property-to-column lookup
@@ -121,6 +123,14 @@ internal sealed class ExpressionTranslationContext
     public IReadOnlyDictionary<string, EntityInfo>? EntityRegistry { get; }
 
     /// <summary>
+    /// Gets the compilation for constant resolution during deferred enrichment.
+    /// Used to resolve compile-time constants (enum members, const fields) when SemanticModel
+    /// is not available. Unlike SemanticModel, this is only used for GetConstantValue calls,
+    /// not for type resolution (which would conflict with entity Col&lt;T&gt;/Ref&lt;T,K&gt; types).
+    /// </summary>
+    public Compilation? Compilation { get; }
+
+    /// <summary>
     /// Gets the current subquery nesting depth (0 = no subquery context).
     /// </summary>
     public int SubqueryDepth => _subqueryScopes.Count;
@@ -170,6 +180,20 @@ internal sealed class ExpressionTranslationContext
             {
                 param.IsEnum = true;
                 param.EnumUnderlyingType = enumType.EnumUnderlyingType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "int";
+            }
+        }
+
+        // Extract element type for collection parameters.
+        // This enables typed IReadOnlyList<T> carrier fields for carrier-optimized IN clauses.
+        if (isCollection && typeSymbol != null)
+        {
+            if (typeSymbol is IArrayTypeSymbol arrayType)
+            {
+                param.CollectionElementType = arrayType.ElementType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            }
+            else if (typeSymbol is INamedTypeSymbol { TypeArguments.Length: > 0 } namedType)
+            {
+                param.CollectionElementType = namedType.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
             }
         }
 

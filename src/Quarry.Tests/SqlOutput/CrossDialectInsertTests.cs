@@ -5,7 +5,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 
 [TestFixture]
 internal class CrossDialectInsertTests : CrossDialectTestBase

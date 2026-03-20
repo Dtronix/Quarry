@@ -92,11 +92,13 @@ internal sealed class OrderByClauseInfo : ClauseInfo, IEquatable<OrderByClauseIn
     public OrderByClauseInfo(
         string columnSql,
         bool isDescending,
-        IReadOnlyList<ParameterInfo> parameters)
+        IReadOnlyList<ParameterInfo> parameters,
+        string? keyTypeName = null)
         : base(ClauseKind.OrderBy, columnSql, parameters)
     {
         ColumnSql = columnSql;
         IsDescending = isDescending;
+        KeyTypeName = keyTypeName;
     }
 
     /// <summary>
@@ -109,12 +111,19 @@ internal sealed class OrderByClauseInfo : ClauseInfo, IEquatable<OrderByClauseIn
     /// </summary>
     public bool IsDescending { get; }
 
+    /// <summary>
+    /// Gets the fully-qualified CLR type of the OrderBy key expression, if resolved.
+    /// Used to emit concrete-typed interceptor signatures for carrier optimization.
+    /// </summary>
+    public string? KeyTypeName { get; }
+
     public bool Equals(OrderByClauseInfo? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         return ColumnSql == other.ColumnSql
             && IsDescending == other.IsDescending
+            && KeyTypeName == other.KeyTypeName
             && base.Equals(other);
     }
 
@@ -122,7 +131,7 @@ internal sealed class OrderByClauseInfo : ClauseInfo, IEquatable<OrderByClauseIn
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, ColumnSql, IsDescending);
+        return HashCode.Combine(Kind, ColumnSql, IsDescending, KeyTypeName);
     }
 }
 

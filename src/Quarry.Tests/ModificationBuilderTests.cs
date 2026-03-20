@@ -6,7 +6,6 @@ namespace Quarry.Tests;
 /// so the generator correctly cannot analyze them.
 /// </summary>
 [TestFixture]
-#pragma warning disable QRY001 // Query is not fully analyzable - intentional for unit tests
 public class ModificationBuilderTests
 {
     #region InsertBuilder Tests

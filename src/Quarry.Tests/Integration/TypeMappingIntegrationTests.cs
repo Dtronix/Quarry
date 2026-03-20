@@ -3,7 +3,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Layer 8: End-to-end SQLite integration tests for TypeMapping.

@@ -7,7 +7,6 @@ using Quarry.Tests.Samples;
 
 namespace Quarry.Tests;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Tests for dialect-aware type mapping features:

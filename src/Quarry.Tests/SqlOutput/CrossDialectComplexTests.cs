@@ -5,7 +5,6 @@ using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
-#pragma warning disable QRY001
 
 /// <summary>
 /// Complex multi-clause cross-dialect tests. Each test exercises multiple
