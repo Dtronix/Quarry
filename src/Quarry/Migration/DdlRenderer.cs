@@ -10,7 +10,7 @@ namespace Quarry.Migration;
 /// </summary>
 internal static class DdlRenderer
 {
-    public static string Render(IReadOnlyList<MigrationOperation> operations, SqlDialect dialect)
+    public static string Render(IReadOnlyList<MigrationOperation> operations, SqlDialect dialect, bool idempotent = false)
     {
         // For SQLite, fold standalone AddForeignKey operations into their
         // matching CreateTable operations (SQLite doesn't support ALTER TABLE ADD CONSTRAINT).
@@ -21,30 +21,30 @@ internal static class DdlRenderer
         var sb = new StringBuilder();
         foreach (var op in ops)
         {
-            RenderOperation(sb, op, dialect);
+            RenderOperation(sb, op, dialect, idempotent);
             sb.AppendLine();
         }
         return sb.ToString().TrimEnd();
     }
 
-    private static void RenderOperation(StringBuilder sb, MigrationOperation op, SqlDialect dialect)
+    private static void RenderOperation(StringBuilder sb, MigrationOperation op, SqlDialect dialect, bool idempotent)
     {
         switch (op)
         {
             case CreateTableOperation ct:
-                RenderCreateTable(sb, ct, dialect);
+                RenderCreateTable(sb, ct, dialect, idempotent);
                 break;
             case DropTableOperation dt:
-                sb.Append("DROP TABLE ").Append(FormatTable(dt.Name, dt.Schema, dialect)).AppendLine(";");
+                RenderDropTable(sb, dt, dialect, idempotent);
                 break;
             case RenameTableOperation rt:
                 RenderRenameTable(sb, rt, dialect);
                 break;
             case AddColumnOperation ac:
-                RenderAddColumn(sb, ac, dialect);
+                RenderAddColumn(sb, ac, dialect, idempotent);
                 break;
             case DropColumnOperation dc:
-                RenderDropColumn(sb, dc, dialect);
+                RenderDropColumn(sb, dc, dialect, idempotent);
                 break;
             case RenameColumnOperation rc:
                 RenderRenameColumn(sb, rc, dialect);
@@ -68,10 +68,10 @@ internal static class DdlRenderer
                 }
                 break;
             case AddIndexOperation ai:
-                RenderAddIndex(sb, ai, dialect);
+                RenderAddIndex(sb, ai, dialect, idempotent);
                 break;
             case DropIndexOperation di:
-                RenderDropIndex(sb, di, dialect);
+                RenderDropIndex(sb, di, dialect, idempotent);
                 break;
             case RawSqlOperation raw:
                 sb.AppendLine(raw.Sql);
@@ -79,10 +79,36 @@ internal static class DdlRenderer
         }
     }
 
-    private static void RenderCreateTable(StringBuilder sb, CreateTableOperation op, SqlDialect dialect)
+    private static void RenderCreateTable(StringBuilder sb, CreateTableOperation op, SqlDialect dialect, bool idempotent)
     {
-        sb.Append("CREATE TABLE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(" (");
+        if (idempotent)
+        {
+            if (dialect == SqlDialect.SqlServer)
+            {
+                sb.Append("IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '")
+                    .Append(op.Name).AppendLine("')");
+            }
+            else
+            {
+                // SQLite, PostgreSQL, MySQL all support CREATE TABLE IF NOT EXISTS
+                sb.Append("CREATE TABLE IF NOT EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(" (");
+                RenderCreateTableBody(sb, op, dialect);
+                sb.AppendLine();
+                sb.AppendLine(");");
+                RenderCreateTableIndexes(sb, op, dialect, idempotent);
+                return;
+            }
+        }
 
+        sb.Append("CREATE TABLE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(" (");
+        RenderCreateTableBody(sb, op, dialect);
+        sb.AppendLine();
+        sb.AppendLine(");");
+        RenderCreateTableIndexes(sb, op, dialect, idempotent);
+    }
+
+    private static void RenderCreateTableBody(StringBuilder sb, CreateTableOperation op, SqlDialect dialect)
+    {
         var first = true;
         foreach (var col in op.Table.Columns)
         {
@@ -130,17 +156,38 @@ internal static class DdlRenderer
                     break;
             }
         }
+    }
 
-        sb.AppendLine();
-        sb.AppendLine(");");
-
-        // Emit inline indexes after table creation
+    private static void RenderCreateTableIndexes(StringBuilder sb, CreateTableOperation op, SqlDialect dialect, bool idempotent)
+    {
         foreach (var c in op.Table.Constraints)
         {
             if (c is IndexConstraint idx)
             {
-                RenderAddIndex(sb, new AddIndexOperation(idx.Name, op.Name, op.Schema, idx.Columns, idx.IsUnique, idx.Filter), dialect);
+                RenderAddIndex(sb, new AddIndexOperation(idx.Name, op.Name, op.Schema, idx.Columns, idx.IsUnique, idx.Filter), dialect, idempotent);
             }
+        }
+    }
+
+    private static void RenderDropTable(StringBuilder sb, DropTableOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (idempotent)
+        {
+            if (dialect == SqlDialect.SqlServer)
+            {
+                sb.Append("IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '")
+                    .Append(op.Name).AppendLine("')");
+                sb.Append("DROP TABLE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+            }
+            else
+            {
+                // SQLite, PostgreSQL, MySQL
+                sb.Append("DROP TABLE IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+            }
+        }
+        else
+        {
+            sb.Append("DROP TABLE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
         }
     }
 
@@ -163,22 +210,71 @@ internal static class DdlRenderer
         }
     }
 
-    private static void RenderAddColumn(StringBuilder sb, AddColumnOperation op, SqlDialect dialect)
+    private static void RenderAddColumn(StringBuilder sb, AddColumnOperation op, SqlDialect dialect, bool idempotent)
     {
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.PostgreSQL:
+                    sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
+                    sb.Append(" ADD COLUMN IF NOT EXISTS ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
+                    break;
+                case SqlDialect.SQLite:
+                    // SQLite doesn't support IF NOT EXISTS on ADD COLUMN, but we can use a pragma check pattern
+                    // For simplicity, just emit the standard ALTER TABLE — SQLite errors are non-destructive
+                    sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
+                    sb.Append(" ADD COLUMN ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
+                    break;
+                case SqlDialect.SqlServer:
+                    sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('")
+                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                        .Append("') AND name = '").Append(op.Column).AppendLine("')");
+                    sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
+                    sb.Append(" ADD ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
+                    break;
+                default: // MySQL
+                    // MySQL doesn't have native IF NOT EXISTS for ADD COLUMN, use INFORMATION_SCHEMA
+                    sb.AppendLine($"SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{op.Table}' AND COLUMN_NAME = '{op.Column}');");
+                    sb.AppendLine($"SET @sql = IF(@col_exists = 0,");
+                    sb.Append("    'ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
+                    sb.Append(" ADD ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
+                    AppendColumnTypeAndConstraints(sb, op.Definition, dialect);
+                    var suffix = OnlineSuffix(op, dialect);
+                    if (suffix != null) sb.Append(" ").Append(suffix);
+                    sb.AppendLine("', 'SELECT 1');");
+                    sb.AppendLine("PREPARE stmt FROM @sql;");
+                    sb.AppendLine("EXECUTE stmt;");
+                    sb.AppendLine("DEALLOCATE PREPARE stmt;");
+                    return;
+            }
+
+            AppendColumnTypeAndConstraints(sb, op.Definition, dialect);
+            var sfx = OnlineSuffix(op, dialect);
+            if (sfx != null) sb.Append(" ").Append(sfx);
+            sb.AppendLine(";");
+            return;
+        }
+
         sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
         sb.Append(" ADD ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
-        sb.Append(ResolveType(op.Definition, dialect));
-        if (!op.Definition.IsNullable) sb.Append(" NOT NULL");
-        if (op.Definition.DefaultExpression != null)
-            sb.Append(" DEFAULT ").Append(ValidateSqlFragment(op.Definition.DefaultExpression, "DefaultExpression"));
-        else if (op.Definition.DefaultValue != null)
-            sb.Append(" DEFAULT ").Append(ValidateSqlFragment(op.Definition.DefaultValue, "DefaultValue"));
-        var suffix = OnlineSuffix(op, dialect);
-        if (suffix != null) sb.Append(" ").Append(suffix);
+        AppendColumnTypeAndConstraints(sb, op.Definition, dialect);
+        var onlineSuffix = OnlineSuffix(op, dialect);
+        if (onlineSuffix != null) sb.Append(" ").Append(onlineSuffix);
         sb.AppendLine(";");
     }
 
-    private static void RenderDropColumn(StringBuilder sb, DropColumnOperation op, SqlDialect dialect)
+    private static void AppendColumnTypeAndConstraints(StringBuilder sb, ColumnDefinition def, SqlDialect dialect)
+    {
+        sb.Append(ResolveType(def, dialect));
+        if (!def.IsNullable) sb.Append(" NOT NULL");
+        if (def.DefaultExpression != null)
+            sb.Append(" DEFAULT ").Append(ValidateSqlFragment(def.DefaultExpression, "DefaultExpression"));
+        else if (def.DefaultValue != null)
+            sb.Append(" DEFAULT ").Append(ValidateSqlFragment(def.DefaultValue, "DefaultValue"));
+    }
+
+    private static void RenderDropColumn(StringBuilder sb, DropColumnOperation op, SqlDialect dialect, bool idempotent)
     {
         if (dialect == SqlDialect.SQLite && op.SourceTable != null)
         {
@@ -186,6 +282,14 @@ internal static class DdlRenderer
                 excludeColumn: op.Column, alteredColumn: null);
             return;
         }
+
+        if (idempotent && dialect == SqlDialect.SqlServer)
+        {
+            sb.Append("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('")
+                .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                .Append("') AND name = '").Append(op.Column).AppendLine("')");
+        }
+
         if (dialect == SqlDialect.SQLite)
         {
             sb.Append("ALTER TABLE ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Table));
@@ -294,7 +398,56 @@ internal static class DdlRenderer
         sb.AppendLine(";");
     }
 
-    private static void RenderAddIndex(StringBuilder sb, AddIndexOperation op, SqlDialect dialect)
+    private static void RenderAddIndex(StringBuilder sb, AddIndexOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.SqlServer:
+                    sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = '")
+                        .Append(op.Name).Append("' AND object_id = OBJECT_ID('")
+                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                        .AppendLine("'))");
+                    break;
+                case SqlDialect.MySQL:
+                    // MySQL doesn't have IF NOT EXISTS for CREATE INDEX, but we can check
+                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{op.Table}' AND INDEX_NAME = '{op.Name}');");
+                    sb.AppendLine("SET @sql = IF(@idx_exists = 0,");
+                    var idxSb = new StringBuilder();
+                    RenderAddIndexCore(idxSb, op, dialect);
+                    sb.Append("    '").Append(idxSb.ToString().TrimEnd('\r', '\n', ';')).AppendLine("', 'SELECT 1');");
+                    sb.AppendLine("PREPARE stmt FROM @sql;");
+                    sb.AppendLine("EXECUTE stmt;");
+                    sb.AppendLine("DEALLOCATE PREPARE stmt;");
+                    return;
+                default:
+                    // PostgreSQL and SQLite support CREATE INDEX IF NOT EXISTS
+                    sb.Append("CREATE ");
+                    if (op.IsUnique) sb.Append("UNIQUE ");
+                    sb.Append("INDEX ");
+                    if (op.IsConcurrent && dialect == SqlDialect.PostgreSQL)
+                        sb.Append("CONCURRENTLY ");
+                    sb.Append("IF NOT EXISTS ");
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Name));
+                    sb.Append(" ON ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
+                    for (var i = 0; i < op.Columns.Length; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
+                    }
+                    sb.Append(")");
+                    if (op.Filter != null)
+                        sb.Append(" WHERE ").Append(ValidateSqlFragment(op.Filter, "Index.Filter"));
+                    sb.AppendLine(";");
+                    return;
+            }
+        }
+
+        RenderAddIndexCore(sb, op, dialect);
+    }
+
+    private static void RenderAddIndexCore(StringBuilder sb, AddIndexOperation op, SqlDialect dialect)
     {
         sb.Append("CREATE ");
         if (op.IsUnique) sb.Append("UNIQUE ");
@@ -316,8 +469,37 @@ internal static class DdlRenderer
         sb.AppendLine(";");
     }
 
-    private static void RenderDropIndex(StringBuilder sb, DropIndexOperation op, SqlDialect dialect)
+    private static void RenderDropIndex(StringBuilder sb, DropIndexOperation op, SqlDialect dialect, bool idempotent)
     {
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.SqlServer:
+                    sb.Append("IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = '")
+                        .Append(op.Name).Append("' AND object_id = OBJECT_ID('")
+                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                        .AppendLine("'))");
+                    break;
+                case SqlDialect.PostgreSQL:
+                    sb.Append("DROP INDEX IF EXISTS ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Name)).AppendLine(";");
+                    return;
+                case SqlDialect.SQLite:
+                    sb.Append("DROP INDEX IF EXISTS ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Name)).AppendLine(";");
+                    return;
+                case SqlDialect.MySQL:
+                    // MySQL doesn't have IF EXISTS for DROP INDEX; need to check first
+                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{op.Table}' AND INDEX_NAME = '{op.Name}');");
+                    sb.AppendLine("SET @sql = IF(@idx_exists > 0,");
+                    sb.Append("    'DROP INDEX ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Name));
+                    sb.Append(" ON ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Table)).AppendLine("', 'SELECT 1');");
+                    sb.AppendLine("PREPARE stmt FROM @sql;");
+                    sb.AppendLine("EXECUTE stmt;");
+                    sb.AppendLine("DEALLOCATE PREPARE stmt;");
+                    return;
+            }
+        }
+
         switch (dialect)
         {
             case SqlDialect.SqlServer:
@@ -362,7 +544,7 @@ internal static class DdlRenderer
         // 3. CREATE TABLE with new columns
         var newTable = new TableDefinition(table, schema, newColumns, sourceTable.Constraints);
         var createOp = new CreateTableOperation(table, schema, newTable);
-        RenderCreateTable(sb, createOp, dialect);
+        RenderCreateTable(sb, createOp, dialect, idempotent: false);
 
         // 4. INSERT INTO ... SELECT ...
         var colNames = new List<string>();

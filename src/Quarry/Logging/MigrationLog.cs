@@ -49,4 +49,13 @@ internal static partial class MigrationLog
 
     [LogMessage(LogLevel.Debug, "Emitting lock timeout: {sql}")]
     internal static partial void LockTimeoutEmitted(string sql);
+
+    [LogMessage(LogLevel.Warning, "Migration {version} checksum mismatch: stored={storedChecksum}, current={currentChecksum}")]
+    internal static partial void ChecksumMismatch(int version, string storedChecksum, string currentChecksum);
+
+    [LogMessage(LogLevel.Warning, "Migration {version} has status 'running' — may be incomplete from a previous crash")]
+    internal static partial void IncompleteDetected(int version);
+
+    [LogMessage(LogLevel.Debug, "Migration {version} status updated to '{status}'")]
+    internal static partial void StatusUpdated(int version, string status);
 }
