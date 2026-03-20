@@ -322,20 +322,38 @@ await db.Users().InsertMany(users).ExecuteNonQueryAsync();
 
 ### Update
 
+Requires `Where()` or `All()` before execution. Three `Set` overloads:
+
 ```csharp
-// Requires Where() or All() before execution
 // Column + value form
-await db.Users().Update().Set(u => u.UserName, "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update()
+    .Set(u => u.UserName, "New")
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
 
 // Assignment syntax — single or multiple columns in one lambda
-await db.Users().Update().Set(u => u.UserName = "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update()
+    .Set(u => u.UserName = "New")
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
 await db.Users().Update()
     .Set(u => { u.UserName = "New"; u.IsActive = true; })
     .Where(u => u.UserId == 1)
     .ExecuteNonQueryAsync();
 
+// Captured variables work — extracted at runtime from the delegate closure
+var newName = GetNameFromInput();
+await db.Users().Update()
+    .Set(u => { u.UserName = newName; u.IsActive = true; })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
+
 // Entity form — sets all initialized properties
-await db.Users().Update().Set(new User { UserName = "New" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update()
+    .Set(new User { UserName = "New" })
+    .Where(u => u.UserId == 1)
+    .ExecuteNonQueryAsync();
 ```
 
 ### Delete
@@ -358,6 +376,31 @@ await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
 | `ToDiagnostics()` | `QueryDiagnostics` (SQL, parameters, optimization tier, clause breakdown) |
 | `ToSql()` | `string` (preview SQL) |
+
+### Query Diagnostics
+
+`ToDiagnostics()` returns a `QueryDiagnostics` object with the generated SQL, bound parameters, optimization metadata, and a per-clause breakdown. Available on all builder types.
+
+```csharp
+var diag = db.Users()
+    .Where(u => u.IsActive)
+    .OrderBy(u => u.UserName)
+    .Select(u => u)
+    .ToDiagnostics();
+
+Console.WriteLine(diag.Sql);               // SELECT ... FROM "users" WHERE ...
+Console.WriteLine(diag.Dialect);           // SQLite
+Console.WriteLine(diag.Tier);             // PrebuiltDispatch
+Console.WriteLine(diag.IsCarrierOptimized); // True
+
+foreach (var p in diag.Parameters)
+    Console.WriteLine($"{p.Name} = {p.Value}");
+
+foreach (var clause in diag.Clauses)
+    Console.WriteLine($"{clause.ClauseType}: {clause.SqlFragment} (active={clause.IsActive})");
+```
+
+For conditional chains, each clause reports `IsConditional` and `IsActive` so you can inspect which branches were taken and verify the generated SQL for each path.
 
 ---
 

@@ -303,12 +303,16 @@ internal static class CompileTimeSqlBuilder
                 if (setClause.Site.ClauseInfo is SetActionClauseInfo actionInfo)
                 {
                     var baseOffset = clauseBaseOffsets[clauseIdx];
+                    var paramOffset = 0;
                     for (int j = 0; j < actionInfo.Assignments.Count; j++)
                     {
                         if (setEmitted > 0) sb.Append(", ");
                         sb.Append(actionInfo.Assignments[j].ColumnSql);
                         sb.Append(" = ");
-                        sb.Append(FormatParameter(dialect, baseOffset + j));
+                        if (actionInfo.Assignments[j].IsInlined)
+                            sb.Append(actionInfo.Assignments[j].InlinedSqlValue);
+                        else
+                            sb.Append(FormatParameter(dialect, baseOffset + paramOffset++));
                         setEmitted++;
                     }
                     continue;
@@ -518,10 +522,11 @@ internal static class CompileTimeSqlBuilder
                 else if (clause.Site.Kind == InterceptorKind.UpdateSetAction
                          && clause.Site.ClauseInfo is SetActionClauseInfo actionClause)
                 {
-                    var n = actionClause.Assignments.Count;
-                    var slots = new int[n];
-                    for (int j = 0; j < n; j++) slots[j] = j;
-                    templates[i] = new SqlFragmentTemplate(new string[n + 1], slots);
+                    // Only non-inlined assignments consume parameter slots
+                    var paramCount = actionClause.Assignments.Count(a => !a.IsInlined);
+                    var slots = new int[paramCount];
+                    for (int j = 0; j < paramCount; j++) slots[j] = j;
+                    templates[i] = new SqlFragmentTemplate(new string[paramCount + 1], slots);
                 }
                 else
                 {

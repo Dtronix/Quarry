@@ -330,7 +330,25 @@ internal static class ClauseTranslator
             var valueType = typeInfo.Type?.ToDisplayString() ?? "object";
             var valueExpression = valueExpr.ToFullString().Trim();
 
-            var paramIndex = existingParameterCount + i;
+            // Resolve the value type from the column property for carrier optimization
+            var valueTypeName = ResolveKeyTypeFromLambdaBody(memberAccess, context);
+
+            // Check if the value is a compile-time constant that can be inlined into SQL
+            var constantValue = semanticModel.GetConstantValue(valueExpr);
+            if (constantValue.HasValue)
+            {
+                var inlinedSql = ExpressionSyntaxTranslator.FormatConstantAsSqlLiteral(constantValue.Value, context);
+                if (inlinedSql != null)
+                {
+                    // Constant value — inline directly, no parameter needed
+                    assignments.Add(new SetActionAssignment(
+                        columnSql, valueTypeName, customTypeMappingClass: null,
+                        inlinedSqlValue: inlinedSql, inlinedCSharpExpression: valueExpression));
+                    continue;
+                }
+            }
+
+            var paramIndex = existingParameterCount + parameters.Count;
             var isCaptured = IsCapturedVariable(valueExpr, parameterName);
 
             // For captured variables in Action<T> lambdas, the ValueExpression is used as the
@@ -347,13 +365,8 @@ internal static class ClauseTranslator
 
             parameters.Add(paramInfo);
 
-            // Resolve the value type from the column property for carrier optimization
-            var valueTypeName = ResolveKeyTypeFromLambdaBody(memberAccess, context);
-
             assignments.Add(new SetActionAssignment(
-                columnSql,
-                valueTypeName,
-                customTypeMappingClass: null));
+                columnSql, valueTypeName, customTypeMappingClass: null));
         }
 
         return new SetActionClauseInfo(assignments, parameters);

@@ -124,10 +124,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE ([UserId] = 1)");
     }
 
     [Test]
@@ -138,10 +138,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"IsActive\" = @p0 WHERE \"IsActive\" = 1",
-            pg:     "UPDATE \"users\" SET \"IsActive\" = $1 WHERE \"IsActive\" = TRUE",
-            mysql:  "UPDATE `users` SET `IsActive` = ? WHERE `IsActive` = 1",
-            ss:     "UPDATE [users] SET [IsActive] = @p0 WHERE [IsActive] = 1");
+            sqlite: "UPDATE \"users\" SET \"IsActive\" = 0 WHERE \"IsActive\" = 1",
+            pg:     "UPDATE \"users\" SET \"IsActive\" = FALSE WHERE \"IsActive\" = TRUE",
+            mysql:  "UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1",
+            ss:     "UPDATE [users] SET [IsActive] = 0 WHERE [IsActive] = 1");
     }
 
     #endregion
@@ -156,10 +156,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE ([UserId] = 1)");
     }
 
     #endregion
@@ -174,10 +174,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = @p0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = $1 WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = ? WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = @p0 WHERE ([UserId] = 1)");
     }
 
     #endregion
@@ -208,10 +208,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE (`UserId` = 1)",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE ([UserId] = 1)");
     }
 
     #endregion

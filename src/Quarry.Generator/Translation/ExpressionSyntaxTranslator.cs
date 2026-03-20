@@ -242,7 +242,7 @@ internal static class ExpressionSyntaxTranslator
     /// <summary>
     /// Formats a compile-time constant value as a SQL literal.
     /// </summary>
-    private static string? FormatConstantAsSqlLiteral(object? value, ExpressionTranslationContext context)
+    internal static string? FormatConstantAsSqlLiteral(object? value, ExpressionTranslationContext context)
     {
         return value switch
         {

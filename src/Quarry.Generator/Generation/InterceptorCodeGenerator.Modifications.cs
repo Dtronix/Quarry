@@ -457,12 +457,22 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
         var bitSuffix = ClauseBitSuffix(clauseBit);
 
+        var paramIdx = 0;
         for (int i = 0; i < actionInfo.Assignments.Count; i++)
         {
             var assignment = actionInfo.Assignments[i];
-            var p = actionInfo.Parameters[i];
             var escapedColumnSql = EscapeStringLiteral(assignment.ColumnSql);
 
+            // Inlined constants still bind as parameters in the standalone path
+            // (runtime SqlModificationBuilder always uses parameterized SET clauses).
+            // The carrier path inlines them directly into the SQL string.
+            if (assignment.IsInlined)
+            {
+                sb.AppendLine($"        __b.AddSetClauseBoxed(@\"{escapedColumnSql}\", {assignment.InlinedCSharpExpression});");
+                continue;
+            }
+
+            var p = actionInfo.Parameters[paramIdx++];
             string valueExpr;
             if (p.IsCaptured)
             {
