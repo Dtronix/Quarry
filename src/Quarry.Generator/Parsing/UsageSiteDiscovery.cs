@@ -638,6 +638,16 @@ internal static class UsageSiteDiscovery
             return delegateType.TypeArguments.Length - 1;
         }
 
+        // Raw delegate types: Action<T> has 1 type arg = 1 parameter,
+        // Action<T1, T2> has 2 type args = 2 parameters.
+        // This handles Set(Action<T>) disambiguation from Set(T entity).
+        if (paramType is INamedTypeSymbol rawDelegate
+            && rawDelegate.TypeKind == TypeKind.Delegate
+            && rawDelegate.TypeArguments.Length > 0)
+        {
+            return rawDelegate.TypeArguments.Length;
+        }
+
         return 0;
     }
 

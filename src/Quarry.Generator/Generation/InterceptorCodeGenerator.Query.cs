@@ -165,7 +165,10 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"    /// Intercepts {site.MethodName}() call at {GetRelativePath(site.FilePath)}:{site.Line}:{site.Column}");
         sb.AppendLine($"    /// </summary>");
         if (chainForRemarks != null)
-            sb.AppendLine($"    /// <remarks>Chain: Fully Analyzed ({chainForRemarks.Analysis.Tier})</remarks>");
+        {
+            var carrierLabel = carrierInfo != null ? ", Carrier-Optimized" : "";
+            sb.AppendLine($"    /// <remarks>Chain: Fully Analyzed ({chainForRemarks.Analysis.Tier}{carrierLabel})</remarks>");
+        }
         else
             sb.AppendLine($"    /// <remarks>Chain: Not Analyzed (standalone interceptor)</remarks>");
 

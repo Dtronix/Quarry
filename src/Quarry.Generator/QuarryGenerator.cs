@@ -832,8 +832,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Bail out if any clause has captured parameters that can't generate direct extraction paths.
         // Without extraction, the BindParam(p0) reference is unresolved, causing compile errors.
+        // Exception: UpdateSetAction captures use delegate.Target + FieldInfo (not expression tree
+        // paths), so they don't need CanGenerateDirectPath.
         foreach (var clause in result.Clauses)
         {
+            if (clause.Site.Kind == InterceptorKind.UpdateSetAction)
+                continue;
+
             if (clause.Site.ClauseInfo?.Parameters is { Count: > 0 } clauseParams)
             {
                 if (clauseParams.Any(p => p.IsCaptured && !p.CanGenerateDirectPath))
@@ -2451,21 +2456,26 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static ClauseInfo EnrichSetActionClauseWithMapping(SetActionClauseInfo actionClause, EntityInfo entity, SqlDialect dialect)
     {
         var enrichedAssignments = new List<SetActionAssignment>(actionClause.Assignments.Count);
+        var enrichedParameters = new List<Translation.ParameterInfo>(actionClause.Parameters.Count);
 
-        foreach (var assignment in actionClause.Assignments)
+        for (int i = 0; i < actionClause.Assignments.Count; i++)
         {
+            var assignment = actionClause.Assignments[i];
+
             // The ColumnSql from discovery is the unquoted property name.
             // Resolve the actual column name and quote it with the correct dialect.
             var propertyName = assignment.ColumnSql.Trim('"', '[', ']', '`');
             string? mapping = null;
             string? valueType = assignment.ValueTypeName;
             string? resolvedColumnName = null;
+            string? resolvedClrType = null;
 
             foreach (var column in entity.Columns)
             {
                 if (column.PropertyName == propertyName || column.ColumnName == propertyName)
                 {
                     resolvedColumnName = column.ColumnName;
+                    resolvedClrType = column.FullClrType;
                     if (column.CustomTypeMappingClass != null)
                         mapping = column.CustomTypeMappingClass;
                     if (valueType == null)
@@ -2477,9 +2487,28 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             // Quote the column name with the correct dialect
             var quotedColumn = QuoteIdentifier(resolvedColumnName ?? propertyName, dialect);
             enrichedAssignments.Add(new SetActionAssignment(quotedColumn, valueType, mapping));
+
+            // Enrich the corresponding parameter's ClrType from the column metadata.
+            // During discovery, captured variable types may be unresolved ("object")
+            // because generated entity types aren't visible yet. Resolve them here.
+            if (i < actionClause.Parameters.Count)
+            {
+                var param = actionClause.Parameters[i];
+                if (resolvedClrType != null
+                    && (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object" || param.ClrType == "object?"))
+                {
+                    enrichedParameters.Add(new Translation.ParameterInfo(
+                        param.Index, param.Name, resolvedClrType, param.ValueExpression,
+                        isCaptured: param.IsCaptured, expressionPath: param.ExpressionPath));
+                }
+                else
+                {
+                    enrichedParameters.Add(param);
+                }
+            }
         }
 
-        return new SetActionClauseInfo(enrichedAssignments, actionClause.Parameters);
+        return new SetActionClauseInfo(enrichedAssignments, enrichedParameters);
     }
 
     /// <summary>
