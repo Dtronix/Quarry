@@ -508,7 +508,10 @@ internal static partial class InterceptorCodeGenerator
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)
         {
-            sb.AppendLine($"    internal {field.TypeName} {field.Name};");
+            // Collection fields are non-nullable reference types — use null! to suppress CS8618
+            // since they are always assigned by the clause interceptor before the terminal reads them.
+            var initializer = field.Role == FieldRole.Collection ? " = null!" : "";
+            sb.AppendLine($"    internal {field.TypeName} {field.Name}{initializer};");
         }
 
         // Emit static fields (FieldInfo caches for captured params)
