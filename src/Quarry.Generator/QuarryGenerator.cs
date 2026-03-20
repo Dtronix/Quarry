@@ -2457,6 +2457,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     {
         var enrichedAssignments = new List<SetActionAssignment>(actionClause.Assignments.Count);
         var enrichedParameters = new List<Translation.ParameterInfo>(actionClause.Parameters.Count);
+        var paramEnrichIdx = 0;
 
         for (int i = 0; i < actionClause.Assignments.Count; i++)
         {
@@ -2486,14 +2487,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
             // Quote the column name with the correct dialect
             var quotedColumn = QuoteIdentifier(resolvedColumnName ?? propertyName, dialect);
-            enrichedAssignments.Add(new SetActionAssignment(quotedColumn, valueType, mapping));
+
+            // Re-format boolean literals for the target dialect.
+            // During discovery, inlined SQL values are formatted with DefaultDiscoveryDialect (PostgreSQL).
+            // Boolean formatting is dialect-sensitive, so we must re-format here.
+            var inlinedSqlValue = ReformatInlinedBooleanForDialect(assignment.InlinedSqlValue, dialect);
+
+            enrichedAssignments.Add(new SetActionAssignment(quotedColumn, valueType, mapping,
+                inlinedSqlValue: inlinedSqlValue, inlinedCSharpExpression: assignment.InlinedCSharpExpression));
 
             // Enrich the corresponding parameter's ClrType from the column metadata.
-            // During discovery, captured variable types may be unresolved ("object")
-            // because generated entity types aren't visible yet. Resolve them here.
-            if (i < actionClause.Parameters.Count)
+            // Inlined assignments have no parameter entry — skip them.
+            if (!assignment.IsInlined && paramEnrichIdx < actionClause.Parameters.Count)
             {
-                var param = actionClause.Parameters[i];
+                var param = actionClause.Parameters[paramEnrichIdx++];
                 if (resolvedClrType != null
                     && (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object" || param.ClrType == "object?"))
                 {
@@ -2509,6 +2516,32 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         return new SetActionClauseInfo(enrichedAssignments, enrichedParameters);
+    }
+
+    /// <summary>
+    /// Re-formats a boolean SQL literal for the target dialect.
+    /// During discovery, boolean values are formatted as PostgreSQL ("TRUE"/"FALSE").
+    /// Non-PostgreSQL dialects need "1"/"0" instead. Returns the original value unchanged
+    /// for non-boolean tokens.
+    /// </summary>
+    private static string? ReformatInlinedBooleanForDialect(string? sqlValue, SqlDialect dialect)
+    {
+        if (sqlValue == null)
+            return null;
+
+        if (dialect == SqlDialect.PostgreSQL)
+        {
+            // Already in PostgreSQL format from discovery — pass through.
+            return sqlValue;
+        }
+
+        // Discovery uses PostgreSQL format, so we only need to convert TRUE/FALSE → 1/0.
+        return sqlValue switch
+        {
+            "TRUE" => "1",
+            "FALSE" => "0",
+            _ => sqlValue
+        };
     }
 
     /// <summary>
