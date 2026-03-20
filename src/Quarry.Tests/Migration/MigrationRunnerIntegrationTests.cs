@@ -1529,4 +1529,136 @@ public class MigrationRunnerIntegrationTests
         using var reader = await cmd.ExecuteReaderAsync();
         Assert.That(reader.HasRows, Is.True);
     }
+
+    [Test]
+    public async Task RunAsync_SuppressTransaction_ExecutesNonTransactionalPhase()
+    {
+        // SuppressTransaction operations should execute outside the transaction.
+        // With SQLite we can verify by using raw SQL with SuppressTransaction
+        // and confirming it runs successfully.
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsersWithSuppressedIndex",
+                b =>
+                {
+                    b.CreateTable("users", null, t =>
+                    {
+                        t.Column("id", c => c.ClrType("int").NotNull());
+                        t.Column("email", c => c.ClrType("string").Length(255).NotNull());
+                        t.PrimaryKey("PK_users", "id");
+                    });
+                    b.AddIndex("IX_users_email", "users", new[] { "email" }, unique: true);
+                    b.Sql("CREATE INDEX \"IX_users_email_lower\" ON \"users\" (\"email\");")
+                     .SuppressTransaction();
+                },
+                b =>
+                {
+                    b.Sql("DROP INDEX \"IX_users_email_lower\";").SuppressTransaction();
+                    b.DropTable("users");
+                },
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Verify both indexes exist
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='IX_users_email';";
+        var count1 = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count1, Is.EqualTo(1));
+
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='IX_users_email_lower';";
+        var count2 = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count2, Is.EqualTo(1));
+
+        // Verify history row recorded
+        cmd.CommandText = "SELECT COUNT(*) FROM __quarry_migrations WHERE version = 1;";
+        var historyCount = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(historyCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RunAsync_SuppressTransaction_Rollback_ExecutesNonTransactionalFirst()
+    {
+        // Apply a migration with suppressed ops, then roll back.
+        // The suppressed ops should be rolled back first (outside tx),
+        // then transactional ops inside tx.
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsersWithSuppressedIndex",
+                b =>
+                {
+                    b.CreateTable("users", null, t =>
+                    {
+                        t.Column("id", c => c.ClrType("int").NotNull());
+                        t.Column("email", c => c.ClrType("string").Length(255).NotNull());
+                        t.PrimaryKey("PK_users", "id");
+                    });
+                    b.Sql("CREATE INDEX \"IX_users_email_lower\" ON \"users\" (\"email\");")
+                     .SuppressTransaction();
+                },
+                b =>
+                {
+                    b.Sql("DROP INDEX \"IX_users_email_lower\";").SuppressTransaction();
+                    b.DropTable("users");
+                },
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Rollback
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { Direction = MigrationDirection.Downgrade });
+
+        // Verify table and index are gone
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users';";
+        var tableCount = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(tableCount, Is.EqualTo(0));
+
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='IX_users_email_lower';";
+        var indexCount = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(indexCount, Is.EqualTo(0));
+
+        // Verify history row removed
+        cmd.CommandText = "SELECT COUNT(*) FROM __quarry_migrations WHERE version = 1;";
+        var historyCount = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(historyCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task RunAsync_DryRun_SuppressTransaction_PrintsAllSql()
+    {
+        var loggedSql = new List<string>();
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateWithSuppressed",
+                b =>
+                {
+                    b.CreateTable("users", null, t =>
+                    {
+                        t.Column("id", c => c.ClrType("int").NotNull());
+                        t.PrimaryKey("PK_users", "id");
+                    });
+                    b.Sql("CREATE INDEX CONCURRENTLY \"IX_test\" ON \"users\" (\"id\");")
+                     .SuppressTransaction();
+                },
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { DryRun = true, Logger = s => loggedSql.Add(s) });
+
+        var combined = string.Join("\n", loggedSql);
+        Assert.That(combined, Does.Contain("CREATE TABLE"));
+        Assert.That(combined, Does.Contain("CREATE INDEX CONCURRENTLY"));
+
+        // Verify nothing was actually executed
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='users';";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count, Is.EqualTo(0));
+    }
 }

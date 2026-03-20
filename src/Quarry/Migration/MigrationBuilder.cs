@@ -147,12 +147,58 @@ public sealed class MigrationBuilder
         return this;
     }
 
+    public MigrationBuilder SuppressTransaction()
+    {
+        if (_operations.Count == 0)
+            throw new InvalidOperationException("SuppressTransaction() must be called after an operation has been added to the builder.");
+        _operations[^1].SuppressTransaction = true;
+        return this;
+    }
+
     /// <summary>
     /// Builds the SQL for all operations using the specified dialect.
     /// </summary>
     public string BuildSql(SqlDialect dialect)
     {
         return DdlRenderer.Render(_operations, dialect);
+    }
+
+    /// <summary>
+    /// Partitions operations into transactional and non-transactional groups,
+    /// returning their rendered SQL separately. For PostgreSQL, IsConcurrent operations
+    /// are automatically treated as non-transactional.
+    /// </summary>
+    internal (string TransactionalSql, string NonTransactionalSql) BuildPartitionedSql(SqlDialect dialect)
+    {
+        var transactional = new List<MigrationOperation>();
+        var nonTransactional = new List<MigrationOperation>();
+
+        foreach (var op in _operations)
+        {
+            // Auto-imply SuppressTransaction for PostgreSQL CONCURRENTLY
+            var suppressed = op.SuppressTransaction ||
+                             (op.IsConcurrent && dialect == SqlDialect.PostgreSQL);
+
+            if (suppressed)
+                nonTransactional.Add(op);
+            else
+                transactional.Add(op);
+        }
+
+        var txSql = transactional.Count > 0 ? DdlRenderer.Render(transactional, dialect) : string.Empty;
+        var nonTxSql = nonTransactional.Count > 0 ? DdlRenderer.Render(nonTransactional, dialect) : string.Empty;
+
+        return (txSql, nonTxSql);
+    }
+
+    internal bool HasNonTransactionalOperations(SqlDialect dialect)
+    {
+        foreach (var op in _operations)
+        {
+            if (op.SuppressTransaction || (op.IsConcurrent && dialect == SqlDialect.PostgreSQL))
+                return true;
+        }
+        return false;
     }
 
     internal IReadOnlyList<MigrationOperation> GetOperations() => _operations;

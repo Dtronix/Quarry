@@ -43,6 +43,7 @@ internal abstract class MigrationOperation
     public bool IsOnline { get; set; }
     public int? BatchSize { get; set; }
     public bool IsConcurrent { get; set; }
+    public bool SuppressTransaction { get; set; }
 }
 
 internal sealed class CreateTableOperation(string Name, string? Schema, TableDefinition Table) : MigrationOperation
