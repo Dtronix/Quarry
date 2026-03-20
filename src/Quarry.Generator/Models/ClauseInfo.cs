@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Models;
@@ -193,6 +194,113 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
     public override int GetHashCode()
     {
         return HashCode.Combine(Kind, ColumnSql, ParameterIndex, ValueTypeName);
+    }
+}
+
+/// <summary>
+/// Represents a single assignment extracted from a Set(Action&lt;T&gt;) lambda body.
+/// </summary>
+internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
+{
+    public SetActionAssignment(string columnSql, string? valueTypeName, string? customTypeMappingClass,
+        string? inlinedSqlValue = null, string? inlinedCSharpExpression = null)
+    {
+        ColumnSql = columnSql;
+        ValueTypeName = valueTypeName;
+        CustomTypeMappingClass = customTypeMappingClass;
+        InlinedSqlValue = inlinedSqlValue;
+        InlinedCSharpExpression = inlinedCSharpExpression;
+    }
+
+    public string ColumnSql { get; }
+    public string? ValueTypeName { get; }
+    public string? CustomTypeMappingClass { get; }
+
+    /// <summary>
+    /// When the assignment value is a compile-time constant (literal), this contains the
+    /// SQL literal (e.g., "0", "'hello'") that should be inlined directly instead of using a parameter.
+    /// Null when the value requires a parameter binding.
+    /// </summary>
+    public string? InlinedSqlValue { get; }
+
+    /// <summary>
+    /// The original C# expression for inlined constants (e.g., "false", "\"hello\"").
+    /// Used by the standalone interceptor path to pass the value to AddSetClauseBoxed.
+    /// </summary>
+    public string? InlinedCSharpExpression { get; }
+
+    /// <summary>
+    /// Gets whether this assignment's value is a compile-time constant inlined into the SQL.
+    /// </summary>
+    public bool IsInlined => InlinedSqlValue != null;
+
+    public bool Equals(SetActionAssignment? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ColumnSql == other.ColumnSql
+            && ValueTypeName == other.ValueTypeName
+            && CustomTypeMappingClass == other.CustomTypeMappingClass
+            && InlinedSqlValue == other.InlinedSqlValue
+            && InlinedCSharpExpression == other.InlinedCSharpExpression;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetActionAssignment);
+    public override int GetHashCode() => HashCode.Combine(ColumnSql, ValueTypeName, CustomTypeMappingClass, InlinedSqlValue);
+}
+
+/// <summary>
+/// Represents information about a Set(Action&lt;T&gt;) clause that contains one or more
+/// property assignment expressions (e.g., <c>u =&gt; u.Name = "x"</c> or
+/// <c>u =&gt; { u.Name = "x"; u.Active = true; }</c>).
+/// </summary>
+internal sealed class SetActionClauseInfo : ClauseInfo, IEquatable<SetActionClauseInfo>
+{
+    public SetActionClauseInfo(
+        IReadOnlyList<SetActionAssignment> assignments,
+        IReadOnlyList<ParameterInfo> parameters)
+        : base(ClauseKind.Set,
+            BuildSqlFragment(assignments, parameters),
+            parameters)
+    {
+        Assignments = assignments;
+    }
+
+    private static string BuildSqlFragment(
+        IReadOnlyList<SetActionAssignment> assignments,
+        IReadOnlyList<ParameterInfo> parameters)
+    {
+        var parts = new string[assignments.Count];
+        var paramIdx = 0;
+        for (int i = 0; i < assignments.Count; i++)
+        {
+            var a = assignments[i];
+            if (a.IsInlined)
+                parts[i] = $"{a.ColumnSql} = {a.InlinedSqlValue}";
+            else
+                parts[i] = $"{a.ColumnSql} = @p{(paramIdx < parameters.Count ? parameters[paramIdx++].Index : i)}";
+        }
+        return string.Join(", ", parts);
+    }
+
+    /// <summary>
+    /// Gets the list of property assignments extracted from the Action&lt;T&gt; lambda.
+    /// </summary>
+    public IReadOnlyList<SetActionAssignment> Assignments { get; }
+
+    public bool Equals(SetActionClauseInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return EqualityHelpers.SequenceEqual(Assignments, other.Assignments)
+            && base.Equals(other);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetActionClauseInfo);
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(Kind, Assignments.Count);
     }
 }
 

@@ -326,6 +326,174 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
+    /// Generates a Set(Action&lt;T&gt;) interceptor for UpdateBuilder or ExecutableUpdateBuilder.
+    /// Extracts assignment expressions from the lambda body and generates carrier-optimized code
+    /// that stores values directly in typed carrier fields.
+    /// </summary>
+    private static void GenerateUpdateSetActionInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        int? clauseBit = null, PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
+    {
+        var entityType = GetShortTypeName(site.EntityTypeName);
+        var clauseInfo = site.ClauseInfo;
+
+        var thisType = site.BuilderTypeName;
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
+        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
+        var returnInterfaceBaseName = "I" + concreteBaseName;
+
+        if (clauseInfo is not SetActionClauseInfo actionInfo || !actionInfo.IsSuccess)
+            return;
+
+        // Check if any assignments have captured variables that need runtime extraction
+        var hasCapturedParams = actionInfo.Parameters.Any(p => p.IsCaptured);
+        var actionParamName = hasCapturedParams ? "action" : "_";
+
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
+            sb.AppendLine($"        Action<{entityType}> {actionParamName})");
+            sb.AppendLine($"    {{");
+
+            // Compute global parameter offset
+            var globalParamOffset = 0;
+            foreach (var clause in prebuiltChain.Analysis.Clauses)
+            {
+                if (clause.Site.UniqueId == site.UniqueId)
+                    break;
+                if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+                    globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
+                else if (clause.Site.ClauseInfo != null)
+                    globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+            }
+
+            if (isFirstInChain)
+            {
+                var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilder}>(builder);");
+                sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = __b.State.ExecutionContext }};");
+            }
+            else
+            {
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            }
+
+            // Extract values from each assignment
+            for (int i = 0; i < actionInfo.Parameters.Count; i++)
+            {
+                var p = actionInfo.Parameters[i];
+                var globalIdx = globalParamOffset + i;
+                if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
+                var carrierParam = prebuiltChain.ChainParameters[globalIdx];
+
+                if (p.IsCaptured)
+                {
+                    // Captured variable: extract from delegate.Target using cached FieldInfo.
+                    // The field name is the value expression (the identifier name from the syntax tree).
+                    sb.AppendLine($"        {carrier.ClassName}.F{globalIdx} ??= action.Target!.GetType().GetField(\"{p.ValueExpression}\")!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
+                }
+                else
+                {
+                    // Literal or constant: inline the value
+                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){p.ValueExpression}!;");
+                }
+            }
+
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        __c.Mask |= unchecked(({GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            if (isFirstInChain)
+                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
+            else
+                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+
+            sb.AppendLine($"    }}");
+            return;
+        }
+
+        // Non-carrier prebuilt chain path
+        if (prebuiltChain != null)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<T> {methodName}<T>(");
+            sb.AppendLine($"        this {thisType}<T> builder,");
+            sb.AppendLine($"        Action<T> {actionParamName}) where T : class");
+            sb.AppendLine($"    {{");
+
+            sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
+
+            if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
+                sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
+
+            for (int i = 0; i < actionInfo.Parameters.Count; i++)
+            {
+                var p = actionInfo.Parameters[i];
+                if (p.IsCaptured)
+                {
+                    sb.AppendLine($"        __b.BindParam(action.Target!.GetType().GetField(\"{p.ValueExpression}\")!.GetValue(action.Target));");
+                }
+                else
+                {
+                    sb.AppendLine($"        __b.BindParam({p.ValueExpression});");
+                }
+            }
+
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        return __b.SetClauseBit({clauseBit.Value});");
+            else
+                sb.AppendLine($"        return __b;");
+            sb.AppendLine($"    }}");
+            return;
+        }
+
+        // Standalone path
+        sb.AppendLine($"    public static {returnInterfaceBaseName}<T> {methodName}<T>(");
+        sb.AppendLine($"        this {thisType}<T> builder,");
+        sb.AppendLine($"        Action<T> {actionParamName}) where T : class");
+        sb.AppendLine($"    {{");
+
+        sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
+        var bitSuffix = ClauseBitSuffix(clauseBit);
+
+        var paramIdx = 0;
+        for (int i = 0; i < actionInfo.Assignments.Count; i++)
+        {
+            var assignment = actionInfo.Assignments[i];
+            var escapedColumnSql = EscapeStringLiteral(assignment.ColumnSql);
+
+            // Inlined constants still bind as parameters in the standalone path
+            // (runtime SqlModificationBuilder always uses parameterized SET clauses).
+            // The carrier path inlines them directly into the SQL string.
+            if (assignment.IsInlined)
+            {
+                sb.AppendLine($"        __b.AddSetClauseBoxed(@\"{escapedColumnSql}\", {assignment.InlinedCSharpExpression});");
+                continue;
+            }
+
+            var p = actionInfo.Parameters[paramIdx++];
+            string valueExpr;
+            if (p.IsCaptured)
+            {
+                valueExpr = $"action.Target!.GetType().GetField(\"{p.ValueExpression}\")!.GetValue(action.Target)";
+            }
+            else
+            {
+                valueExpr = p.ValueExpression;
+            }
+
+            if (assignment.CustomTypeMappingClass != null)
+                valueExpr = $"{GetMappingFieldName(assignment.CustomTypeMappingClass)}.ToDb({valueExpr})";
+
+            sb.AppendLine($"        __b.AddSetClauseBoxed(@\"{escapedColumnSql}\", {valueExpr});");
+        }
+
+        sb.AppendLine($"        return __b{bitSuffix};");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Generates a Set(T entity) POCO interceptor for UpdateBuilder or ExecutableUpdateBuilder.
     /// Extracts property values from the entity and calls AddSetClause for each initialized column.
     /// </summary>
