@@ -28,6 +28,7 @@
     <Compile Include="..\Quarry.Generator\Projection\ProjectionAnalyzer.cs" Link="Shared\Projection\ProjectionAnalyzer.cs" />
     <Compile Include="..\Quarry.Generator\DiagnosticDescriptors.cs" Link="Shared\DiagnosticDescriptors.cs" />
     <Compile Include="..\Quarry.Generator\Sql\*.cs" Link="Shared\Sql\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Utilities\*.cs" Link="Shared\Utilities\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Shared project (compiled into this assembly) -->

@@ -1174,11 +1174,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         if (collectionParams.Count == 0) return;
 
-        // Replace placeholders with tokens in all SQL variants
-        foreach (var key in sqlMap.Keys.ToList())
+        // Replace placeholders with tokens in all SQL variants.
+        // Collect updates and apply after iteration to avoid allocating a key list copy.
+        var pendingUpdates = new List<(ulong Key, string Sql, int ParamCount)>();
+        foreach (var kvp in sqlMap)
         {
-            var entry = sqlMap[key];
-            var sql = entry.Sql;
+            var sql = kvp.Value.Sql;
 
             if (dialect == SqlDialect.MySQL)
             {
@@ -1204,10 +1205,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 sql = sbSql.ToString();
             }
 
-            if (sql != entry.Sql)
+            if (sql != kvp.Value.Sql)
             {
-                sqlMap[key] = new Sql.PrebuiltSqlResult(sql, entry.ParameterCount);
+                pendingUpdates.Add((kvp.Key, sql, kvp.Value.ParameterCount));
             }
+        }
+        foreach (var (key, sql, paramCount) in pendingUpdates)
+        {
+            sqlMap[key] = new Sql.PrebuiltSqlResult(sql, paramCount);
         }
     }
 
