@@ -43,4 +43,10 @@ internal static partial class MigrationLog
 
     [LogMessage(LogLevel.Debug, "Migration {version} non-transactional SQL:\n{sql}", AlwaysEmit = true)]
     internal static partial void NonTransactionalSqlGenerated(int version, string sql);
+
+    [LogMessage(LogLevel.Warning, "LockTimeout is not supported for SQLite (single-writer) and will be ignored")]
+    internal static partial void LockTimeoutSkippedSQLite();
+
+    [LogMessage(LogLevel.Debug, "Emitting lock timeout: {sql}")]
+    internal static partial void LockTimeoutEmitted(string sql);
 }

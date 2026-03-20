@@ -1764,4 +1764,139 @@ public class MigrationRunnerIntegrationTests
         // Just verify it was populated — it should be >= 0 (may be 0 on fast machines, but the path is correct)
         Assert.That(executionTime, Is.GreaterThanOrEqualTo(0));
     }
+
+    [Test]
+    public async Task RunAsync_CommandTimeout_AppliedToCommands()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // CommandTimeout should not prevent normal execution — just verify it doesn't throw
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { CommandTimeout = TimeSpan.FromMinutes(5) });
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='users';";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.That(result, Is.EqualTo("users"));
+    }
+
+    [Test]
+    public async Task RunAsync_CommandTimeout_NullUsesDefault()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // Null CommandTimeout (default) should work fine
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { CommandTimeout = null });
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM __quarry_migrations;";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RunAsync_LockTimeout_SQLite_DoesNotThrow()
+    {
+        // LockTimeout on SQLite should be a no-op (with warning log), not throw
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { LockTimeout = TimeSpan.FromSeconds(10) });
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='users';";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.That(result, Is.EqualTo("users"));
+    }
+
+    [Test]
+    public async Task RunAsync_LockTimeout_SQLite_Downgrade_DoesNotThrow()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // Apply first
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Rollback with LockTimeout — should not throw for SQLite
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions
+            {
+                Direction = MigrationDirection.Downgrade,
+                LockTimeout = TimeSpan.FromSeconds(10)
+            });
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM __quarry_migrations;";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count, Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task RunAsync_BothTimeouts_WorkTogether()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions
+            {
+                CommandTimeout = TimeSpan.FromMinutes(10),
+                LockTimeout = TimeSpan.FromSeconds(30)
+            });
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='users';";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.That(result, Is.EqualTo("users"));
+    }
 }

@@ -31,8 +31,8 @@ public static class MigrationRunner
             await connection.OpenAsync();
 
         MigrationLog.EnsureHistoryTable();
-        await EnsureHistoryTableAsync(connection, dialect);
-        var applied = await GetAppliedVersionsAsync(connection, dialect);
+        await EnsureHistoryTableAsync(connection, dialect, options);
+        var applied = await GetAppliedVersionsAsync(connection, dialect, options);
         MigrationLog.AppliedCount(applied.Count);
 
         if (options.Direction == MigrationDirection.Upgrade)
@@ -114,20 +114,24 @@ public static class MigrationRunner
                     using var backupCmd = connection.CreateCommand();
                     backupCmd.Transaction = tx;
                     backupCmd.CommandText = backupSql;
+                    ApplyCommandTimeout(backupCmd, options);
                     await backupCmd.ExecuteNonQueryAsync();
                 }
             }
+
+            await EmitLockTimeoutAsync(connection, tx, dialect, options);
 
             if (!string.IsNullOrEmpty(txSql))
             {
                 using var cmd = connection.CreateCommand();
                 cmd.Transaction = tx;
                 cmd.CommandText = txSql;
+                ApplyCommandTimeout(cmd, options);
                 await cmd.ExecuteNonQueryAsync();
             }
 
             var checksum = ComputeChecksum(allSql);
-            await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, (int)sw.ElapsedMilliseconds);
+            await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, (int)sw.ElapsedMilliseconds, options);
 
             await tx.CommitAsync();
         }
@@ -146,6 +150,7 @@ public static class MigrationRunner
             {
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = nonTxSql;
+                ApplyCommandTimeout(cmd, options);
                 await cmd.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
@@ -195,6 +200,7 @@ public static class MigrationRunner
             {
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = nonTxSql;
+                ApplyCommandTimeout(cmd, options);
                 await cmd.ExecuteNonQueryAsync();
             }
             catch (Exception ex)
@@ -209,15 +215,18 @@ public static class MigrationRunner
         using var tx = await connection.BeginTransactionAsync();
         try
         {
+            await EmitLockTimeoutAsync(connection, tx, dialect, options);
+
             if (!string.IsNullOrEmpty(txSql))
             {
                 using var cmd = connection.CreateCommand();
                 cmd.Transaction = tx;
                 cmd.CommandText = txSql;
+                ApplyCommandTimeout(cmd, options);
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            await DeleteHistoryRowAsync(connection, tx, dialect, migration.Version);
+            await DeleteHistoryRowAsync(connection, tx, dialect, migration.Version, options);
 
             sw.Stop();
             MigrationLog.RolledBack(migration.Version);
@@ -232,7 +241,7 @@ public static class MigrationRunner
         }
     }
 
-    private static async Task EnsureHistoryTableAsync(DbConnection connection, SqlDialect dialect)
+    private static async Task EnsureHistoryTableAsync(DbConnection connection, SqlDialect dialect, MigrationOptions options)
     {
         var sql = dialect == SqlDialect.SQLite
             ? $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
@@ -268,14 +277,16 @@ public static class MigrationRunner
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
+        ApplyCommandTimeout(cmd, options);
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private static async Task<HashSet<int>> GetAppliedVersionsAsync(DbConnection connection, SqlDialect dialect)
+    private static async Task<HashSet<int>> GetAppliedVersionsAsync(DbConnection connection, SqlDialect dialect, MigrationOptions options)
     {
         var versions = new HashSet<int>();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = $"SELECT version FROM {HistoryTable} ORDER BY version;";
+        ApplyCommandTimeout(cmd, options);
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -286,7 +297,7 @@ public static class MigrationRunner
 
     private static async Task InsertHistoryRowAsync(
         DbConnection connection, DbTransaction tx, SqlDialect dialect,
-        int version, string name, string checksum, int executionTimeMs)
+        int version, string name, string checksum, int executionTimeMs, MigrationOptions options)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
@@ -300,16 +311,18 @@ public static class MigrationRunner
         AddParameter(cmd, dialect, 4, executionTimeMs);
         AddParameter(cmd, dialect, 5, $"{Environment.MachineName}/{Environment.UserName}");
 
+        ApplyCommandTimeout(cmd, options);
         await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task DeleteHistoryRowAsync(
-        DbConnection connection, DbTransaction tx, SqlDialect dialect, int version)
+        DbConnection connection, DbTransaction tx, SqlDialect dialect, int version, MigrationOptions options)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = $"DELETE FROM {HistoryTable} WHERE version = {SqlFormatting.FormatParameter(dialect, 0)};";
         AddParameter(cmd, dialect, 0, version);
+        ApplyCommandTimeout(cmd, options);
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -319,6 +332,41 @@ public static class MigrationRunner
         p.ParameterName = SqlFormatting.GetParameterName(dialect, index);
         p.Value = value;
         cmd.Parameters.Add(p);
+    }
+
+    private static void ApplyCommandTimeout(DbCommand cmd, MigrationOptions options)
+    {
+        if (options.CommandTimeout.HasValue)
+            cmd.CommandTimeout = (int)options.CommandTimeout.Value.TotalSeconds;
+    }
+
+    private static async Task EmitLockTimeoutAsync(
+        DbConnection connection, DbTransaction tx, SqlDialect dialect, MigrationOptions options)
+    {
+        if (!options.LockTimeout.HasValue)
+            return;
+
+        if (dialect == SqlDialect.SQLite)
+        {
+            MigrationLog.LockTimeoutSkippedSQLite();
+            return;
+        }
+
+        var timeout = options.LockTimeout.Value;
+        var sql = dialect switch
+        {
+            SqlDialect.SqlServer => $"SET LOCK_TIMEOUT {(int)timeout.TotalMilliseconds};",
+            SqlDialect.PostgreSQL => $"SET statement_timeout = '{(int)timeout.TotalMilliseconds}ms';",
+            SqlDialect.MySQL => $"SET innodb_lock_wait_timeout = {(int)timeout.TotalSeconds};",
+            _ => throw new NotSupportedException($"LockTimeout is not supported for dialect {dialect}.")
+        };
+
+        MigrationLog.LockTimeoutEmitted(sql);
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        ApplyCommandTimeout(cmd, options);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     private static string ComputeChecksum(string sql)
