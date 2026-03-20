@@ -236,7 +236,11 @@ internal static class ClauseTranslator
             new ParameterInfo(parameterIndex, $"@p{parameterIndex}", valueType, valueExpression)
         };
 
-        return new SetClauseInfo(columnResult.Sql!, parameterIndex, parameters);
+        // Resolve the value type from the column property (same pattern as OrderBy KeyTypeName).
+        // This gives us the concrete TValue for carrier-eligible interceptor signatures.
+        var valueTypeName = ResolveKeyTypeFromLambdaBody(lambdaBody, context);
+
+        return new SetClauseInfo(columnResult.Sql!, parameterIndex, parameters, valueTypeName: valueTypeName);
     }
 
     /// <summary>

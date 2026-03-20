@@ -23,8 +23,13 @@ internal static class CarrierClassBuilder
         var fields = new List<CarrierField>();
 
         // Fields: typed parameters P0, P1, ... (scalar or collection)
+        // Entity-sourced parameters (SetPoco) don't get their own P{n} fields — they
+        // are read from the Entity field at terminal time.
         foreach (var param in chain.ChainParameters)
         {
+            if (param.EntityPropertyExpression != null)
+                continue;
+
             if (param.IsCollection && param.ElementTypeName != null)
             {
                 // Collection parameters use IReadOnlyList<T> carrier fields
@@ -58,8 +63,11 @@ internal static class CarrierClassBuilder
         if (chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.WithTimeout))
             fields.Add(new CarrierField("Timeout", "TimeSpan?", FieldRole.Timeout));
 
-        // Field: Entity (for insert chains — stores the entity passed to .Insert())
-        if (chain.QueryKind == QueryKind.Insert)
+        // Field: Entity (for insert chains — stores the entity passed to .Insert(),
+        // or for update chains with SetPoco — stores the entity passed to .Set(entity))
+        if (chain.QueryKind == QueryKind.Insert
+            || (chain.QueryKind == QueryKind.Update
+                && chain.Analysis.Clauses.Any(c => c.Site.Kind == InterceptorKind.UpdateSetPoco)))
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
             fields.Add(new CarrierField("Entity", entityType + "?", FieldRole.Entity));

@@ -1085,10 +1085,42 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     return null;
             }
 
-            // Set/UpdateSet use open generic signatures incompatible with carrier clause body.
-            // UpdateSetPoco similarly can't use carrier. Exclude these.
+            // Set/UpdateSet: carrier eligibility depends on parameter type resolution.
+            // ValueTypeName (needed for concrete interceptor signatures) is resolved during
+            // enrichment — here we only check that parameter types are available.
             if (clause.Role is ClauseRole.Set or ClauseRole.UpdateSet)
-                return null;
+            {
+                // UpdateSetPoco: entity-sourced parameters — one per column from UpdateInfo
+                if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+                {
+                    foreach (var col in clause.Site.UpdateInfo.Columns)
+                    {
+                        // Build the entity property access expression for terminal parameter extraction
+                        var propExpr = col.IsForeignKey
+                            ? $"__c.Entity.{col.PropertyName}.Id"
+                            : $"__c.Entity.{col.PropertyName}";
+                        if (col.CustomTypeMappingClass != null)
+                            propExpr = $"{InterceptorCodeGenerator.GetMappingFieldName(col.CustomTypeMappingClass)}.ToDb({propExpr})";
+
+                        chainParams.Add(new ChainParameterInfo(
+                            index: globalIndex,
+                            typeName: col.FullClrType,
+                            valueExpression: propExpr,
+                            typeMapping: col.CustomTypeMappingClass,
+                            isSensitive: col.IsSensitive,
+                            entityPropertyExpression: propExpr));
+
+                        globalIndex++;
+                    }
+                    continue;
+                }
+
+                // Scalar Set<TValue>: require SetClauseInfo with resolvable parameter types.
+                // Fall through to normal parameter processing — the standard ClrType checks
+                // will validate that carrier fields can be typed.
+                if (clause.Site.ClauseInfo is not SetClauseInfo)
+                    return null;
+            }
 
             // InsertTransition has no expression parameters — skip parameter extraction
             if (clause.Role is ClauseRole.InsertTransition)
@@ -1138,11 +1170,21 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 if (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object?")
                     return null;
 
+                // For Set clauses, the CustomTypeMappingClass lives on SetClauseInfo
+                // rather than on the individual ParameterInfo — propagate it.
+                var typeMapping = param.CustomTypeMappingClass;
+                if (typeMapping == null
+                    && clause.Role is ClauseRole.Set or ClauseRole.UpdateSet
+                    && clause.Site.ClauseInfo is SetClauseInfo sci)
+                {
+                    typeMapping = sci.CustomTypeMappingClass;
+                }
+
                 chainParams.Add(new ChainParameterInfo(
                     index: globalIndex,
                     typeName: param.ClrType,
                     valueExpression: param.ValueExpression,
-                    typeMapping: param.CustomTypeMappingClass,
+                    typeMapping: typeMapping,
                     isEnum: param.IsEnum,
                     enumUnderlyingType: param.EnumUnderlyingType,
                     needsFieldInfoCache: param.IsCaptured && param.CanGenerateDirectPath));
@@ -1481,10 +1523,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var needsRawSqlEnrichment = site.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync
                                     && site.RawSqlTypeInfo != null
                                     && site.RawSqlTypeInfo.TypeKind == Models.RawSqlTypeKind.Dto;
+        // Set/UpdateSet: resolve ValueTypeName from enriched entity columns when discovery couldn't
+        var needsSetValueTypeEnrichment = site.Kind is InterceptorKind.Set or InterceptorKind.UpdateSet
+                                          && site.ClauseInfo is SetClauseInfo sci && sci.ValueTypeName == null;
 
         if (!needsProjectionEnrichment && !needsClauseEnrichment && !needsInsertEnrichment
             && !needsUpdatePocoEnrichment && !needsJoinEnrichment && !needsJoinedClauseEnrichment
-            && !needsRawSqlEnrichment)
+            && !needsRawSqlEnrichment && !needsSetValueTypeEnrichment)
             return site;
 
         // Try to find matching entity, using contextClassName to disambiguate
@@ -1598,6 +1643,34 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             enrichedClauseInfo = EnrichSetClauseWithMapping(setClause, entityContext.Entity);
         }
 
+        // Enrich Set/UpdateSet with resolved ValueTypeName from entity column metadata.
+        // During discovery, the entity's generated properties may not be available yet
+        // (same generator pipeline), so ValueTypeName can be null. Resolve it here using
+        // the enriched EntityInfo from Pipeline 1.
+        if (needsSetValueTypeEnrichment)
+        {
+            var setClauseToEnrich = (enrichedClauseInfo ?? site.ClauseInfo) as SetClauseInfo;
+            if (setClauseToEnrich != null && setClauseToEnrich.ValueTypeName == null)
+            {
+                var resolvedValueType = ResolveSetValueTypeFromEntity(setClauseToEnrich, entityContext.Entity);
+                if (resolvedValueType != null)
+                {
+                    enrichedClauseInfo = new SetClauseInfo(
+                        setClauseToEnrich.ColumnSql,
+                        setClauseToEnrich.ParameterIndex,
+                        setClauseToEnrich.Parameters,
+                        setClauseToEnrich.CustomTypeMappingClass,
+                        resolvedValueType);
+                }
+            }
+        }
+
+        // Also enrich UpdateSet mapping (same as InterceptorKind.Set above)
+        if (site.Kind == InterceptorKind.UpdateSet && enrichedClauseInfo is SetClauseInfo updateSetClause && updateSetClause.CustomTypeMappingClass == null)
+        {
+            enrichedClauseInfo = EnrichSetClauseWithMapping(updateSetClause, entityContext.Entity);
+        }
+
         // Enrich RawSql type info when T matches a known entity from Pipeline 1
         var enrichedRawSqlTypeInfo = site.RawSqlTypeInfo;
         if (needsRawSqlEnrichment && site.RawSqlTypeInfo != null)
@@ -1636,7 +1709,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 ? orderByInfo.KeyTypeName : site.KeyTypeName,
             rawSqlTypeInfo: enrichedRawSqlTypeInfo,
             isNavigationJoin: site.IsNavigationJoin,
-            builderKind: site.BuilderKind);
+            builderKind: site.BuilderKind,
+            valueTypeName: (enrichedClauseInfo is SetClauseInfo setClauseForValue && setClauseForValue.ValueTypeName != null)
+                ? setClauseForValue.ValueTypeName
+                : (site.ClauseInfo is SetClauseInfo origSetClause && origSetClause.ValueTypeName != null)
+                    ? origSetClause.ValueTypeName
+                    : site.ValueTypeName);
     }
 
     /// <summary>
@@ -2293,6 +2371,23 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// Resolves the CLR value type from the SET column SQL by matching against entity column metadata.
+    /// Returns the column's FullClrType, or null if the column cannot be matched.
+    /// </summary>
+    private static string? ResolveSetValueTypeFromEntity(SetClauseInfo setClause, EntityInfo entity)
+    {
+        var rawColumnName = setClause.ColumnSql.Trim('"', '[', ']', '`');
+
+        foreach (var column in entity.Columns)
+        {
+            if (column.ColumnName == rawColumnName)
+                return column.FullClrType;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Enriches a SetClauseInfo with custom type mapping info by matching the column SQL
     /// back to a column in the entity schema.
     /// </summary>
@@ -2311,7 +2406,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     setClause.ColumnSql,
                     setClause.ParameterIndex,
                     setClause.Parameters,
-                    column.CustomTypeMappingClass);
+                    column.CustomTypeMappingClass,
+                    setClause.ValueTypeName);
             }
         }
 

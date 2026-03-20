@@ -168,15 +168,30 @@ internal static partial class InterceptorCodeGenerator
         var returnType = ToReturnTypeName(thisType);
         var concreteType = ToConcreteTypeName(returnType);
 
+        // Carrier-optimized path: emit concrete-typed signature (no generics)
+        var resolvedValueType = site.ValueTypeName
+            ?? (site.ClauseInfo is SetClauseInfo setClauseA ? setClauseA.ValueTypeName : null);
+        if (carrier != null && prebuiltChain != null && resolvedValueType != null)
+        {
+            sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnType}<{entityType}> builder,");
+            sb.AppendLine($"        Expression<Func<{entityType}, {resolvedValueType}>> _,");
+            sb.AppendLine($"        {resolvedValueType} value)");
+            sb.AppendLine($"    {{");
+
+            var concreteBuilder = $"{concreteType}<{entityType}>";
+            var returnInterface = $"{returnType}<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
+            return;
+        }
+
         sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}<TValue>(");
         sb.AppendLine($"        this {thisType}<{entityType}> builder,");
         sb.AppendLine($"        Expression<Func<{entityType}, TValue>> _,");
         sb.AppendLine($"        TValue value)");
         sb.AppendLine($"    {{");
-
-        // Note: Set interceptor uses open generic <T, TValue> signature — carrier path
-        // cannot use EmitCarrierClauseBody because the return type is IUpdateBuilder<T> not
-        // IUpdateBuilder<{entityType}>. Skip carrier for Set; the prebuilt BindParam path works.
 
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}>>(builder);");
@@ -241,6 +256,26 @@ internal static partial class InterceptorCodeGenerator
         var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
+
+        // Carrier-optimized path: emit concrete-typed signature (no generics)
+        var resolvedValueType = site.ValueTypeName
+            ?? (site.ClauseInfo is SetClauseInfo setClauseB ? setClauseB.ValueTypeName : null);
+        if (carrier != null && prebuiltChain != null && resolvedValueType != null)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
+            sb.AppendLine($"        Expression<Func<{entityType}, {resolvedValueType}>> _,");
+            sb.AppendLine($"        {resolvedValueType} value)");
+            sb.AppendLine($"    {{");
+
+            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, false, new List<CachedExtractorField>());
+            sb.AppendLine($"    }}");
+            return;
+        }
+
         // Interceptors for generic methods on generic types need arity = type params + method params.
         // UpdateBuilder<T>.Set<TValue>() has total arity 2 (T + TValue).
         // We emit the interceptor with <T, TValue> and where T : class constraint.
@@ -249,17 +284,6 @@ internal static partial class InterceptorCodeGenerator
         sb.AppendLine($"        Expression<Func<T, TValue>> _,");
         sb.AppendLine($"        TValue value) where T : class");
         sb.AppendLine($"    {{");
-
-        // Carrier-optimized path
-        if (carrier != null && prebuiltChain != null)
-        {
-            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
-            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<CachedExtractorField>());
-            sb.AppendLine($"    }}");
-            return;
-        }
 
         // Cast to concrete type (receiver is always an interface)
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
@@ -305,7 +329,8 @@ internal static partial class InterceptorCodeGenerator
     /// Generates a Set(T entity) POCO interceptor for UpdateBuilder or ExecutableUpdateBuilder.
     /// Extracts property values from the entity and calls AddSetClause for each initialized column.
     /// </summary>
-    private static void GenerateUpdateSetPocoInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    private static void GenerateUpdateSetPocoInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName,
+        int? clauseBit = null, PrebuiltChainInfo? prebuiltChain = null, bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
         var updateInfo = site.UpdateInfo;
@@ -315,6 +340,41 @@ internal static partial class InterceptorCodeGenerator
         var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
+
+        // Carrier-optimized path: concrete-typed, stores entity reference on carrier
+        if (carrier != null && prebuiltChain != null && updateInfo != null && updateInfo.Columns.Count > 0)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
+            sb.AppendLine($"        {entityType} entity)");
+            sb.AppendLine($"    {{");
+
+            if (isFirstInChain)
+            {
+                var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+                sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilder}>(builder);");
+                sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = __b.State.ExecutionContext }};");
+            }
+            else
+            {
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            }
+
+            sb.AppendLine($"        __c.Entity = entity;");
+
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        __c.Mask |= unchecked(({GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            if (isFirstInChain)
+                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
+            else
+                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+
+            sb.AppendLine($"    }}");
+            return;
+        }
+
         // Set(T entity) has no method-level type params, only class-level T.
         // Interceptor arity = 1 (T from the class).
         sb.AppendLine($"    public static {returnInterfaceBaseName}<T> {methodName}<T>(");
@@ -327,6 +387,28 @@ internal static partial class InterceptorCodeGenerator
             // Cast to concrete type (receiver is always an interface)
             sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
             var builderVar = "__b";
+
+            // Simplified prebuilt chain path: BindParam for each column value
+            if (prebuiltChain != null)
+            {
+                if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
+                    sb.AppendLine($"        {builderVar}.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
+
+                sb.AppendLine($"        var e = Unsafe.As<{entityType}>(entity);");
+
+                foreach (var column in updateInfo.Columns)
+                {
+                    var valueExpr = GetColumnValueExpression("e", column.PropertyName, column.IsForeignKey, column.CustomTypeMappingClass);
+                    sb.AppendLine($"        {builderVar}.BindParam({valueExpr});");
+                }
+
+                if (clauseBit.HasValue)
+                    sb.AppendLine($"        return {builderVar}.SetClauseBit({clauseBit.Value});");
+                else
+                    sb.AppendLine($"        return {builderVar};");
+                sb.AppendLine($"    }}");
+                return;
+            }
 
             // Cast to concrete entity type for property access
             sb.AppendLine($"        var e = Unsafe.As<{entityType}>(entity);");

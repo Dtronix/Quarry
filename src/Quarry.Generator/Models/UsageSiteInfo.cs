@@ -41,7 +41,8 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         RawSqlTypeInfo? rawSqlTypeInfo = null,
         bool isNavigationJoin = false,
         int? constantIntValue = null,
-        BuilderKind builderKind = BuilderKind.Query)
+        BuilderKind builderKind = BuilderKind.Query,
+        string? valueTypeName = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -73,6 +74,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         RawSqlTypeInfo = rawSqlTypeInfo;
         IsNavigationJoin = isNavigationJoin;
         ConstantIntValue = constantIntValue;
+        ValueTypeName = valueTypeName;
     }
 
     /// <summary>
@@ -245,6 +247,13 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// </summary>
     public int? ConstantIntValue { get; }
 
+    /// <summary>
+    /// Gets the resolved CLR type name of the Set value parameter (TValue).
+    /// For example, "string" from <c>.Set(u => u.UserName, "NewName")</c>.
+    /// Used to emit concrete-typed (non-generic) Set interceptor signatures for carrier optimization.
+    /// </summary>
+    public string? ValueTypeName { get; }
+
     public bool Equals(UsageSiteInfo? other)
     {
         if (other is null) return false;
@@ -276,7 +285,8 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
             && KeyTypeName == other.KeyTypeName
             && (RawSqlTypeInfo is null ? other.RawSqlTypeInfo is null : RawSqlTypeInfo.Equals(other.RawSqlTypeInfo))
             && IsNavigationJoin == other.IsNavigationJoin
-            && ConstantIntValue == other.ConstantIntValue;
+            && ConstantIntValue == other.ConstantIntValue
+            && ValueTypeName == other.ValueTypeName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as UsageSiteInfo);

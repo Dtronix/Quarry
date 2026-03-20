@@ -284,7 +284,7 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.UpdateSetPoco:
-                GenerateUpdateSetPocoInterceptor(sb, site, methodName);
+                GenerateUpdateSetPocoInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
                 break;
 
             case InterceptorKind.UpdateWhere:
