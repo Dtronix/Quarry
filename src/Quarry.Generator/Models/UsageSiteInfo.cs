@@ -40,13 +40,15 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         string? keyTypeName = null,
         RawSqlTypeInfo? rawSqlTypeInfo = null,
         bool isNavigationJoin = false,
-        int? constantIntValue = null)
+        int? constantIntValue = null,
+        BuilderKind builderKind = BuilderKind.Query)
     {
         MethodName = methodName;
         FilePath = filePath;
         Line = line;
         Column = column;
         BuilderTypeName = builderTypeName;
+        BuilderKind = builderKind;
         EntityTypeName = entityTypeName;
         ResultTypeName = resultTypeName;
         IsAnalyzable = isAnalyzable;
@@ -97,6 +99,11 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// Gets the fully qualified name of the builder type (e.g., "Quarry.QueryBuilder`1").
     /// </summary>
     public string BuilderTypeName { get; }
+
+    /// <summary>
+    /// Gets the classified builder kind for fast enum-based branching.
+    /// </summary>
+    public BuilderKind BuilderKind { get; }
 
     /// <summary>
     /// Gets the entity type name from the builder generic parameter.
@@ -247,6 +254,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
             && Line == other.Line
             && Column == other.Column
             && BuilderTypeName == other.BuilderTypeName
+            && BuilderKind == other.BuilderKind
             && EntityTypeName == other.EntityTypeName
             && ResultTypeName == other.ResultTypeName
             && IsAnalyzable == other.IsAnalyzable
@@ -478,4 +486,18 @@ internal enum InterceptorKind
     /// Unknown or unsupported method.
     /// </summary>
     Unknown
+}
+
+/// <summary>
+/// Classifies the builder type for fast enum-based branching instead of string.Contains() checks.
+/// </summary>
+internal enum BuilderKind
+{
+    Query,
+    Delete,
+    ExecutableDelete,
+    Update,
+    ExecutableUpdate,
+    JoinedQuery,
+    EntityAccessor,
 }

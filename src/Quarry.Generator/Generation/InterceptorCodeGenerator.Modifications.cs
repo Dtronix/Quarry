@@ -20,7 +20,7 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     private static void GenerateModificationWhereInterceptor(
         StringBuilder sb, UsageSiteInfo site, string methodName,
-        List<CachedExtractorField> staticFields, bool isDelete,
+        List<CachedExtractorField>? methodFields, bool isDelete,
         int? clauseBit = null, PrebuiltChainInfo? prebuiltChain = null,
         bool isFirstInChain = false, CarrierClassInfo? carrier = null)
     {
@@ -34,7 +34,7 @@ internal static partial class InterceptorCodeGenerator
         var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
 
         // Emit trim suppression if we'll use FieldInfo.GetValue inline
-        var methodFields = staticFields.Where(f => f.MethodName == methodName).ToList();
+        methodFields ??= new List<CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
@@ -43,7 +43,7 @@ internal static partial class InterceptorCodeGenerator
 
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
-        var isExecutable = thisType.Contains($"Executable{modKind}Builder");
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableDelete or BuilderKind.ExecutableUpdate;
         var concreteType = ToConcreteTypeName(returnType);
         var receiverType = $"{thisType}<{entityType}>";
 
@@ -238,7 +238,7 @@ internal static partial class InterceptorCodeGenerator
         // Determine the receiver type: UpdateBuilder<T> or ExecutableUpdateBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
         var returnType = ToReturnTypeName(thisType);
-        var isExecutable = thisType.Contains("ExecutableUpdateBuilder");
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
         // Interceptors for generic methods on generic types need arity = type params + method params.
@@ -312,7 +312,7 @@ internal static partial class InterceptorCodeGenerator
 
         // Determine the receiver type: UpdateBuilder<T> or ExecutableUpdateBuilder<T> (or interface variants)
         var thisType = site.BuilderTypeName;
-        var isExecutable = thisType.Contains("ExecutableUpdateBuilder");
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
         // Set(T entity) has no method-level type params, only class-level T.

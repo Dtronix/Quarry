@@ -7,6 +7,7 @@ using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Generators.Projection;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 using System.Security.Cryptography;
 using System.Text;
 // InterceptableLocation extension method is in Microsoft.CodeAnalysis.CSharp namespace
@@ -216,7 +217,7 @@ internal static class UsageSiteDiscovery
             && returnType.Name is "IQueryBuilder" or "EntityAccessor" or "IEntityAccessor")
         {
             var rootEntityType = returnType.TypeArguments[0];
-            var rootEntityTypeName = rootEntityType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            var rootEntityTypeName = rootEntityType.ToFullyQualifiedDisplayString();
 
             // Get interceptable location data
             string? rootLocationData = null;
@@ -473,7 +474,7 @@ internal static class UsageSiteDiscovery
             && methodSymbol.TypeArguments.Length > 0)
         {
             var joinedType = methodSymbol.TypeArguments[0];
-            joinedEntityTypeName = joinedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            joinedEntityTypeName = joinedType.ToFullyQualifiedDisplayString();
 
             // Detect navigation overload: single-parameter lambda like u => u.Orders
             isNavigationJoin = IsNavigationJoinLambda(invocation, semanticModel);
@@ -519,7 +520,7 @@ internal static class UsageSiteDiscovery
             var keyType = methodSymbol.TypeArguments[0];
             if (keyType.TypeKind != TypeKind.TypeParameter && keyType.TypeKind != TypeKind.Error)
             {
-                keyTypeName = keyType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                keyTypeName = keyType.ToFullyQualifiedDisplayString();
             }
         }
 
@@ -559,7 +560,8 @@ internal static class UsageSiteDiscovery
             initializedPropertyNames: initializedPropertyNames,
             keyTypeName: keyTypeName,
             isNavigationJoin: isNavigationJoin,
-            constantIntValue: constantIntValue);
+            constantIntValue: constantIntValue,
+            builderKind: ClassifyBuilderKind(containingType.Name));
     }
 
     /// <summary>
@@ -1144,7 +1146,8 @@ internal static class UsageSiteDiscovery
             resultTypeName: null,
             contextClassName: contextClassName,
             interceptableLocationData: interceptableLocationData,
-            interceptableLocationVersion: interceptableLocationVersion ?? 1);
+            interceptableLocationVersion: interceptableLocationVersion ?? 1,
+            builderKind: ClassifyBuilderKind(builderKind));
     }
 
     /// <summary>
@@ -1580,7 +1583,7 @@ internal static class UsageSiteDiscovery
             return (null, null);
 
         var entityType = builderType.TypeArguments[0];
-        var entityTypeName = entityType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var entityTypeName = entityType.ToFullyQualifiedDisplayString();
 
         string? resultTypeName = null;
         var name = builderType.Name;
@@ -1589,22 +1592,22 @@ internal static class UsageSiteDiscovery
         if (name == "IJoinedQueryBuilder" && builderType.TypeArguments.Length > 2)
         {
             // IJoinedQueryBuilder<T1,T2,TResult> — TResult is index 2
-            resultTypeName = builderType.TypeArguments[2].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            resultTypeName = builderType.TypeArguments[2].ToFullyQualifiedDisplayString();
         }
         else if (name == "IJoinedQueryBuilder3" && builderType.TypeArguments.Length > 3)
         {
             // IJoinedQueryBuilder3<T1,T2,T3,TResult> — TResult is index 3
-            resultTypeName = builderType.TypeArguments[3].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            resultTypeName = builderType.TypeArguments[3].ToFullyQualifiedDisplayString();
         }
         else if (name == "IJoinedQueryBuilder4" && builderType.TypeArguments.Length > 4)
         {
             // IJoinedQueryBuilder4<T1,T2,T3,T4,TResult> — TResult is index 4
-            resultTypeName = builderType.TypeArguments[4].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            resultTypeName = builderType.TypeArguments[4].ToFullyQualifiedDisplayString();
         }
         else if (!IsJoinedBuilderName(name) && builderType.TypeArguments.Length > 1)
         {
             // QueryBuilder<T, TResult> — TResult is index 1
-            resultTypeName = builderType.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            resultTypeName = builderType.TypeArguments[1].ToFullyQualifiedDisplayString();
         }
 
         return (entityTypeName, resultTypeName);
@@ -1612,6 +1615,17 @@ internal static class UsageSiteDiscovery
 
     private static bool IsJoinedBuilderName(string name)
         => name is "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4";
+
+    private static BuilderKind ClassifyBuilderKind(string typeName)
+    {
+        if (typeName.Contains("ExecutableDeleteBuilder")) return BuilderKind.ExecutableDelete;
+        if (typeName.Contains("DeleteBuilder")) return BuilderKind.Delete;
+        if (typeName.Contains("ExecutableUpdateBuilder")) return BuilderKind.ExecutableUpdate;
+        if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
+        if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
+        if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
+        return BuilderKind.Query;
+    }
 
     /// <summary>
     /// Extracts all entity type names from a joined builder type's type arguments.
@@ -1657,7 +1671,7 @@ internal static class UsageSiteDiscovery
         var result = new List<string>(entityCount);
         for (int i = 0; i < entityCount; i++)
         {
-            result.Add(builderType.TypeArguments[i].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat));
+            result.Add(builderType.TypeArguments[i].ToFullyQualifiedDisplayString());
         }
         return result;
     }
@@ -1853,7 +1867,7 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        var resultTypeName = typeArgSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var resultTypeName = typeArgSymbol.ToFullyQualifiedDisplayString();
 
         return new UsageSiteInfo(
             methodName: methodName,
@@ -1878,8 +1892,8 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static RawSqlTypeInfo ResolveRawSqlTypeInfo(ITypeSymbol typeSymbol, bool hasCancellationToken)
     {
-        var typeName = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-        var shortName = typeSymbol.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        var typeName = typeSymbol.ToFullyQualifiedDisplayString();
+        var shortName = typeSymbol.ToMinimallyQualifiedDisplayString();
 
         // Check if T is a scalar type
         if (IsScalarType(typeSymbol))
@@ -1907,7 +1921,7 @@ internal static class UsageSiteDiscovery
                 continue;
 
             var propType = prop.Type;
-            var propTypeName = propType.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+            var propTypeName = propType.ToMinimallyQualifiedDisplayString();
             var isNullable = propType.NullableAnnotation == NullableAnnotation.Annotated
                              || (propType is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" });
             var isEnum = propType.TypeKind == TypeKind.Enum
@@ -1924,8 +1938,8 @@ internal static class UsageSiteDiscovery
                 && namedProp.TypeArguments.Length == 2)
             {
                 isForeignKey = true;
-                referencedEntityName = namedProp.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                effectiveClrType = namedProp.TypeArguments[1].ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                referencedEntityName = namedProp.TypeArguments[0].ToMinimallyQualifiedDisplayString();
+                effectiveClrType = namedProp.TypeArguments[1].ToMinimallyQualifiedDisplayString();
             }
 
             var readerMethod = GetReaderMethodForType(isEnum ? GetEnumUnderlyingType(propType) : effectiveClrType);
@@ -1936,7 +1950,7 @@ internal static class UsageSiteDiscovery
                 readerMethodName: readerMethod,
                 isNullable: isNullable,
                 isEnum: isEnum,
-                fullClrType: propType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat),
+                fullClrType: propType.ToFullyQualifiedDisplayString(),
                 isForeignKey: isForeignKey,
                 referencedEntityName: referencedEntityName));
         }
@@ -1973,7 +1987,7 @@ internal static class UsageSiteDiscovery
             SpecialType.System_String => true,
             SpecialType.System_Char => true,
             SpecialType.System_DateTime => true,
-            _ => type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) switch
+            _ => type.ToMinimallyQualifiedDisplayString() switch
             {
                 "Guid" or "System.Guid" => true,
                 "DateTimeOffset" or "System.DateTimeOffset" => true,
@@ -1999,10 +2013,10 @@ internal static class UsageSiteDiscovery
 
         if (type.TypeKind == TypeKind.Enum && type is INamedTypeSymbol enumType)
         {
-            return enumType.EnumUnderlyingType?.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat) ?? "int";
+            return enumType.EnumUnderlyingType?.ToMinimallyQualifiedDisplayString() ?? "int";
         }
 
-        return type.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat);
+        return type.ToMinimallyQualifiedDisplayString();
     }
 
     /// <summary>

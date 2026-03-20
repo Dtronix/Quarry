@@ -187,23 +187,27 @@ internal static class ExpressionSyntaxTranslator
         ExpressionSyntax expression,
         ExpressionTranslationContext context)
     {
-        // Check if the expression is a compile-time constant (enum member, const field, etc.).
-        // Inlining eliminates the parameter entirely, making chains analyzable even in nested
-        // lambda contexts (subqueries) where ExpressionPath extraction cannot reach.
-        var inlined = TryInlineConstant(expression, context);
-        if (inlined != null)
-            return inlined;
-
         // SemanticModel may be null during deferred enrichment path
         if (context.SemanticModel == null)
         {
+            // Try compilation fallback for constants (available during deferred enrichment)
+            var inlined = TryInlineConstantFromCompilation(expression, context);
+            if (inlined != null)
+                return inlined;
+
             // Fallback: use "object" type and mark as captured, matching
             // the pattern in SyntacticClauseTranslator.AddCapturedParameter
             var valueExpr = expression.ToFullString().Trim();
             return context.AddParameter("object", valueExpr, isCaptured: true);
         }
 
-        // Get the type of the expression
+        // Single semantic model query: check for constant first, then use TypeInfo.
+        // This avoids separate GetConstantValue + GetTypeInfo calls on the same node.
+        var constantValue = context.SemanticModel.GetConstantValue(expression);
+        if (constantValue.HasValue)
+            return FormatConstantAsSqlLiteral(constantValue.Value, context);
+
+        // Get the type of the expression (only needed for the non-constant parameter path)
         var typeInfo = context.SemanticModel.GetTypeInfo(expression);
         if (typeInfo.Type == null)
             return null;
@@ -215,20 +219,11 @@ internal static class ExpressionSyntaxTranslator
     }
 
     /// <summary>
-    /// Tries to resolve a compile-time constant from the expression using any available
-    /// semantic information (SemanticModel or Compilation).
+    /// Tries to resolve a compile-time constant using the Compilation fallback
+    /// (available during deferred enrichment when SemanticModel is null).
     /// </summary>
-    private static string? TryInlineConstant(ExpressionSyntax expression, ExpressionTranslationContext context)
+    private static string? TryInlineConstantFromCompilation(ExpressionSyntax expression, ExpressionTranslationContext context)
     {
-        // Try SemanticModel first (available during discovery phase)
-        if (context.SemanticModel != null)
-        {
-            var constantValue = context.SemanticModel.GetConstantValue(expression);
-            if (constantValue.HasValue)
-                return FormatConstantAsSqlLiteral(constantValue.Value, context);
-        }
-
-        // Fall back to Compilation (available during deferred enrichment with entity registry)
         if (context.Compilation != null)
         {
             var tree = expression.SyntaxTree;
@@ -693,9 +688,9 @@ internal static class ExpressionSyntaxTranslator
         if (sqlArg is LiteralExpressionSyntax literal &&
             literal.Kind() == SyntaxKind.StringLiteralExpression)
         {
-            var rawSql = literal.Token.ValueText;
+            // Process additional parameters if provided, using StringBuilder to avoid repeated string allocations
+            var sbRawSql = new System.Text.StringBuilder(literal.Token.ValueText);
 
-            // Process additional parameters if provided
             for (int i = 1; i < arguments.Arguments.Count; i++)
             {
                 var paramArg = arguments.Arguments[i].Expression;
@@ -711,7 +706,7 @@ internal static class ExpressionSyntaxTranslator
                 var translatedSql = TranslateExpression(paramArg, context);
                 if (translatedSql != null)
                 {
-                    rawSql = rawSql.Replace(placeholder, translatedSql);
+                    sbRawSql.Replace(placeholder, translatedSql);
                 }
                 else
                 {
@@ -720,11 +715,11 @@ internal static class ExpressionSyntaxTranslator
                     var clrType = typeInfo.Type?.ToDisplayString() ?? "object";
                     var valueExpr = paramArg.ToFullString().Trim();
                     var paramPlaceholder = context.AddParameter(clrType, valueExpr, typeSymbol: typeInfo.Type);
-                    rawSql = rawSql.Replace(placeholder, paramPlaceholder);
+                    sbRawSql.Replace(placeholder, paramPlaceholder);
                 }
             }
 
-            return rawSql;
+            return sbRawSql.ToString();
         }
 
         return null;
@@ -853,7 +848,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "%", "%");
             if (escaped != rawValue)
@@ -889,7 +884,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "", "%");
             if (escaped != rawValue)
@@ -924,7 +919,7 @@ internal static class ExpressionSyntaxTranslator
         {
             var rawValue = literal.Token.ValueText;
             var escaped = SqlLikeHelpers.EscapeLikeMetaChars(rawValue);
-            var csharpEscaped = escaped.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            var csharpEscaped = EscapeForCSharpString(escaped);
             var param = context.AddParameter("string", $"\"{csharpEscaped}\"");
             var sql = SqlLikeHelpers.FormatLikeWithParameter(context.Dialect, columnSql, param, "%", "");
             if (escaped != rawValue)
@@ -1557,6 +1552,11 @@ internal static class ExpressionSyntaxTranslator
                 return col.PropertyName;
         }
         return null;
+    }
+
+    private static string EscapeForCSharpString(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("\"", "\\\"");
     }
 }
 

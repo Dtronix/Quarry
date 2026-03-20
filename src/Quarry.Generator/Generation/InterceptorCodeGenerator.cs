@@ -308,6 +308,18 @@ internal static partial class InterceptorCodeGenerator
             chainGroups.Add(("Standalone Interceptors", standaloneSites));
         }
 
+        // Pre-group static fields by method name to avoid repeated linear scans
+        var staticFieldsByMethod = new Dictionary<string, List<CachedExtractorField>>();
+        foreach (var f in staticFields)
+        {
+            if (!staticFieldsByMethod.TryGetValue(f.MethodName, out var list))
+            {
+                list = new List<CachedExtractorField>();
+                staticFieldsByMethod[f.MethodName] = list;
+            }
+            list.Add(f);
+        }
+
         // Generate grouped output
         foreach (var (label, sites) in chainGroups)
         {
@@ -315,7 +327,7 @@ internal static partial class InterceptorCodeGenerator
             sb.AppendLine();
             foreach (var site in sites)
             {
-                GenerateInterceptorMethod(sb, site, staticFields, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds);
+                GenerateInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
