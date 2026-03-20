@@ -815,10 +815,13 @@ internal static partial class InterceptorCodeGenerator
             }
             else
             {
-                // Entity-sourced params read from Entity field, not P{n}.
-                // Box to object? to handle value types (bool, int, etc.) that can't use ?.ToString().
+                // Non-nullable value types use .ToString() directly.
+                // Nullable/reference types use ?.ToString() ?? "null" since carrier fields
+                // are declared as T? by NormalizeFieldType.
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
+                else if (CarrierClassBuilder.IsNonNullableValueType(param.TypeName))
+                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
             }
