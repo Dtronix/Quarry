@@ -109,68 +109,6 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
     // Update/Delete/Insert operations are now accessed via EntityAccessor:
     // db.Users().Update(), db.Users().Delete(), db.Users().Insert(entity)
 
-    #region Set Operations
-
-    /// <summary>
-    /// Combines multiple queries using UNION (removes duplicates).
-    /// </summary>
-    /// <typeparam name="T">The result type of the queries.</typeparam>
-    /// <param name="queries">The queries to combine.</param>
-    /// <returns>A set operation builder for the combined query.</returns>
-    /// <remarks>
-    /// <para>All queries must have the same projection structure.</para>
-    /// <para>Example:</para>
-    /// <code>
-    /// var results = await db.Union(
-    ///     db.Users().Select(u => new { u.UserId, u.UserName }).Where(u => u.IsActive),
-    ///     db.Users().Select(u => new { u.UserId, u.UserName }).Where(u => u.CreatedAt > recentDate)
-    /// ).ExecuteFetchAllAsync();
-    /// </code>
-    /// </remarks>
-    public SetOperationBuilder<T> Union<T>(params QueryBuilder<object, T>[] queries)
-    {
-        throw new NotImplementedException(
-            "Union() requires compile-time analysis. Ensure queries are built in a fluent chain.");
-    }
-
-    /// <summary>
-    /// Combines multiple queries using UNION ALL (keeps duplicates).
-    /// </summary>
-    /// <typeparam name="T">The result type of the queries.</typeparam>
-    /// <param name="queries">The queries to combine.</param>
-    /// <returns>A set operation builder for the combined query.</returns>
-    public SetOperationBuilder<T> UnionAll<T>(params QueryBuilder<object, T>[] queries)
-    {
-        throw new NotImplementedException(
-            "UnionAll() requires compile-time analysis. Ensure queries are built in a fluent chain.");
-    }
-
-    /// <summary>
-    /// Returns rows from the first query that are not in any subsequent queries.
-    /// </summary>
-    /// <typeparam name="T">The result type of the queries.</typeparam>
-    /// <param name="queries">The queries to process.</param>
-    /// <returns>A set operation builder for the difference query.</returns>
-    public SetOperationBuilder<T> Except<T>(params QueryBuilder<object, T>[] queries)
-    {
-        throw new NotImplementedException(
-            "Except() requires compile-time analysis. Ensure queries are built in a fluent chain.");
-    }
-
-    /// <summary>
-    /// Returns only rows that appear in all queries.
-    /// </summary>
-    /// <typeparam name="T">The result type of the queries.</typeparam>
-    /// <param name="queries">The queries to intersect.</param>
-    /// <returns>A set operation builder for the intersection query.</returns>
-    public SetOperationBuilder<T> Intersect<T>(params QueryBuilder<object, T>[] queries)
-    {
-        throw new NotImplementedException(
-            "Intersect() requires compile-time analysis. Ensure queries are built in a fluent chain.");
-    }
-
-    #endregion
-
     #region Raw SQL
 
     /// <summary>
