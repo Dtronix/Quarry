@@ -76,11 +76,15 @@ internal static class CallSiteTranslator
             return new TranslatedCallSite(bound);
         }
 
-        // Determine lambda parameter name from the expression tree
+        // Determine lambda parameter name from the expression tree.
+        // If the expression has no column references (e.g., u => true), use a placeholder
+        // since the binder won't need to resolve any columns.
         var lambdaParamName = ExtractLambdaParameterName(expression);
         if (lambdaParamName == null)
         {
-            return new TranslatedCallSite(bound);
+            // Expressions without column references (literals, constants) don't need
+            // column resolution. Use a placeholder name for the binder.
+            lambdaParamName = "_";
         }
 
         var boundExpr = SqlExprBinder.Bind(

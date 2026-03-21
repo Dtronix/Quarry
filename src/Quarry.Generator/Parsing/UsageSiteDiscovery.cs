@@ -707,7 +707,9 @@ internal static class UsageSiteDiscovery
             isCapturedInLambda: isCapturedInLambda,
             conditionalInfo: conditionalInfo,
             chainId: chainId,
-            builderTypeName: usageSite.BuilderTypeName);
+            builderTypeName: usageSite.BuilderTypeName,
+            joinedEntityTypeNames: usageSite.JoinedEntityTypeNames,
+            rawSqlTypeInfo: usageSite.RawSqlTypeInfo);
     }
 
     /// <summary>

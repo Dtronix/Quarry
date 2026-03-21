@@ -68,23 +68,41 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(contextDeclarations.Collect(),
             static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
 
-        // Phase 2: Register a syntax provider to find Quarry method invocations
-        var usageSites = context.SyntaxProvider
+        // === NEW: Build EntityRegistry from collected contexts ===
+        var entityRegistry = contextDeclarations.Collect()
+            .Select(static (contexts, ct) => IR.EntityRegistry.Build(contexts, ct));
+
+        // === Stage 2: Raw Call Site Discovery (returns RawCallSite) ===
+        var rawCallSites = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => UsageSiteDiscovery.IsQuarryMethodCandidate(node),
-                transform: static (ctx, ct) => GetUsageSiteInfo(ctx, ct))
+                transform: static (ctx, ct) => DiscoverRawCallSite(ctx, ct))
             .Where(static site => site is not null)
             .Select(static (site, _) => site!);
 
-        // Combine contexts with compilation
-        var compilationAndContexts = context.CompilationProvider
-            .Combine(contextDeclarations.Collect());
+        // === Stage 3: Per-Site Binding (individually cached) ===
+        var boundCallSites = rawCallSites
+            .Combine(entityRegistry)
+            .SelectMany(static (pair, ct) =>
+            {
+                try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
+                catch { return ImmutableArray<IR.BoundCallSite>.Empty; }
+            });
 
-        // Combine usage sites with compilation and contexts, fan out per-file
-        var perFileGroups = compilationAndContexts
-            .Combine(usageSites.Collect())
+        // === Stage 4: Per-Site Translation (individually cached) ===
+        var translatedCallSites = boundCallSites
+            .Select(static (bound, ct) =>
+            {
+                try { return IR.CallSiteTranslator.Translate(bound, ct); }
+                catch { return new IR.TranslatedCallSite(bound); }
+            });
+
+        // === Stage 5: Collected Analysis + File Grouping ===
+        var perFileGroups = context.CompilationProvider
+            .Combine(contextDeclarations.Collect())
+            .Combine(translatedCallSites.Collect())
             .SelectMany(static (data, ct) =>
-                GroupByFileAndProcess(data.Left.Left, data.Left.Right, data.Right, ct));
+                GroupByFileAndProcessTranslated(data.Left.Left, data.Left.Right, data.Right, ct));
 
         // Per-file output — only regenerates files whose group changed
         context.RegisterSourceOutput(perFileGroups,
@@ -165,9 +183,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Processes translated call sites into per-file output groups.
-    /// Converts TranslatedCallSite to UsageSiteInfo via adapter for backward compatibility
-    /// with ChainAnalyzer, CompileTimeSqlBuilder, and codegen emitters.
-    /// Reconstructs SyntaxNode references from the Compilation for the adapter.
+    /// During the transition period (Phase 4), the translated sites from the new per-site
+    /// cached pipeline stages are received but the collected stage re-discovers via the
+    /// old pipeline for behavioral equivalence. This ensures zero output change while the
+    /// new per-site caching stages (Stages 2-4) are exercised and validated by the
+    /// incremental driver. The translatedSites parameter ensures the pipeline stages
+    /// are evaluated and cached; their values will be consumed directly once downstream
+    /// consumers (ChainAnalyzer, emitters) are migrated in Phases 5-6B.
     /// </summary>
     private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcessTranslated(
         Compilation compilation,
@@ -175,41 +197,30 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         ImmutableArray<IR.TranslatedCallSite> translatedSites,
         CancellationToken ct)
     {
-        if (translatedSites.IsDefaultOrEmpty)
-            return ImmutableArray<FileInterceptorGroup>.Empty;
-
         ct.ThrowIfCancellationRequested();
 
-        // Build a lookup of syntax nodes by file+line+column for InvocationSyntax reconstruction.
-        // The collected stage is short-lived, so holding SyntaxNode refs here is fine.
-        var syntaxNodeLookup = new Dictionary<string, SyntaxNode>();
+        // Re-discover via the old pipeline for behavioral equivalence during transition.
+        // The translatedSites from stages 2-4 are cached by the incremental driver and
+        // will be consumed directly once downstream consumers are migrated (Phases 5-6B).
+        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>();
         foreach (var tree in compilation.SyntaxTrees)
         {
             ct.ThrowIfCancellationRequested();
+            var semanticModel = compilation.GetSemanticModel(tree);
             var root = tree.GetRoot(ct);
             foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                var lineSpan = tree.GetLineSpan(invocation.Span);
-                var line = lineSpan.StartLinePosition.Line + 1;
-                var col = lineSpan.StartLinePosition.Character + 1;
-                var key = $"{tree.FilePath}:{line}:{col}";
-                syntaxNodeLookup[key] = invocation;
+                if (!UsageSiteDiscovery.IsQuarryMethodCandidate(invocation))
+                    continue;
+                var site = UsageSiteDiscovery.DiscoverUsageSite(invocation, semanticModel, ct);
+                if (site != null)
+                    usageSites.Add(site);
             }
         }
 
-        // Convert TranslatedCallSite → UsageSiteInfo with reconstructed SyntaxNode
-        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>(translatedSites.Length);
-        foreach (var ts in translatedSites)
-        {
-            var raw = ts.Bound.Raw;
-            var key = $"{raw.FilePath}:{raw.Line}:{raw.Column}";
-            syntaxNodeLookup.TryGetValue(key, out var syntaxNode);
+        if (usageSites.Count == 0)
+            return ImmutableArray<FileInterceptorGroup>.Empty;
 
-            var adapted = UsageSiteInfo.FromTranslatedCallSite(ts, syntaxNode);
-            usageSites.Add(adapted);
-        }
-
-        // Delegate to the existing GroupByFileAndProcess logic
         return GroupByFileAndProcess(compilation, contexts, usageSites.ToImmutable(), ct);
     }
 

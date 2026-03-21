@@ -42,7 +42,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isCapturedInLambda = false,
         ConditionalInfo? conditionalInfo = null,
         string? chainId = null,
-        string? builderTypeName = null)
+        string? builderTypeName = null,
+        IReadOnlyList<string>? joinedEntityTypeNames = null,
+        RawSqlTypeInfo? rawSqlTypeInfo = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -74,6 +76,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         ConditionalInfo = conditionalInfo;
         ChainId = chainId;
         BuilderTypeName = builderTypeName;
+        JoinedEntityTypeNames = joinedEntityTypeNames;
+        RawSqlTypeInfo = rawSqlTypeInfo;
     }
 
     // Identity and location
@@ -124,6 +128,12 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Builder type name for codegen
     public string? BuilderTypeName { get; }
 
+    // Joined entity type names for multi-entity joins (from semantic model during discovery)
+    public IReadOnlyList<string>? JoinedEntityTypeNames { get; }
+
+    // RawSql type info (from discovery)
+    public RawSqlTypeInfo? RawSqlTypeInfo { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -156,7 +166,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && Equals(Expression, other.Expression)
             && Equals(ProjectionInfo, other.ProjectionInfo)
             && Equals(ConditionalInfo, other.ConditionalInfo)
-            && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames);
+            && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo)
+            && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames)
+            && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

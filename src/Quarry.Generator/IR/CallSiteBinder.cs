@@ -111,24 +111,14 @@ internal static class CallSiteBinder
             }
         }
 
-        // Build joined entity type names list (for multi-entity joins)
-        // This mirrors the existing ExtractJoinedEntityTypeNames logic
-        if (raw.BuilderKind is BuilderKind.JoinedQuery)
+        // Pass through joined entity type names from discovery
+        if (raw.JoinedEntityTypeNames != null)
         {
-            // For joined builders, the entity type names are embedded in the builder type
-            // These are already extracted during discovery but not stored on RawCallSite
-            // For now, reconstruct from the raw site's context
-            // The actual joined entity type names will be resolved during pipeline rewiring
+            joinedEntityTypeNames = raw.JoinedEntityTypeNames;
         }
 
-        // Enrich RawSql type info if applicable
-        RawSqlTypeInfo? rawSqlTypeInfo = null;
-        if (raw.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync && entry != null)
-        {
-            // RawSqlTypeInfo is populated during discovery on UsageSiteInfo
-            // For now, it will be passed through from the discovery-time UsageSiteInfo
-            // In the full pipeline, RawSql sites carry their type info from discovery
-        }
+        // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
+        RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;
 
         var bound = new BoundCallSite(
             raw: raw,
