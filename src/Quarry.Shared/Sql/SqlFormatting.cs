@@ -254,6 +254,53 @@ internal static partial class SqlFormatting
     }
 
     /// <summary>
+    /// Formats a CLR value as a dialect-specific SQL literal for embedding in migration SQL.
+    /// </summary>
+    public static string FormatLiteral(SqlDialect dialect, object? value)
+    {
+        if (value is null || value is DBNull)
+            return "NULL";
+
+        return value switch
+        {
+            bool b => FormatBoolean(dialect, b),
+            byte n => n.ToString(),
+            short n => n.ToString(),
+            int n => n.ToString(),
+            long n => n.ToString(),
+            float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            decimal m => m.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            string s => $"'{EscapeStringLiteral(s)}'",
+            DateTime dt => $"'{dt.ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture)}'",
+            DateTimeOffset dto => $"'{dto.ToString("yyyy-MM-dd HH:mm:ss.fffffffzzz", System.Globalization.CultureInfo.InvariantCulture)}'",
+            Guid g => $"'{g}'",
+            byte[] bytes => FormatBinaryLiteral(dialect, bytes),
+            Enum e => Convert.ToInt64(e, System.Globalization.CultureInfo.InvariantCulture).ToString(),
+            _ => $"'{EscapeStringLiteral(value.ToString()!)}'"
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static string EscapeStringLiteral(string value)
+    {
+        return value.Replace("'", "''");
+    }
+
+    private static string FormatBinaryLiteral(SqlDialect dialect, byte[] bytes)
+    {
+        var hex = new StringBuilder(bytes.Length * 2);
+        foreach (var b in bytes)
+            hex.Append(b.ToString("X2"));
+
+        return dialect switch
+        {
+            SqlDialect.PostgreSQL => $"'\\x{hex}'",
+            _ => $"X'{hex}'" // SQLite, MySQL, SqlServer
+        };
+    }
+
+    /// <summary>
     /// Gets the dialect-specific SQL type name for a CLR type.
     /// Dispatches to per-dialect partial file implementations.
     /// </summary>

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 
 namespace Quarry.Migration;
 
@@ -85,10 +86,64 @@ public sealed class MigrationBuilder
         return this;
     }
 
+    public MigrationBuilder InsertData(string table, object row, string? schema = null)
+    {
+        return InsertData(table, new[] { row }, schema);
+    }
+
+    public MigrationBuilder InsertData(string table, object[] rows, string? schema = null)
+    {
+        if (rows.Length == 0)
+            throw new ArgumentException("At least one row must be provided.", nameof(rows));
+
+        var (columns, firstValues) = ExtractProperties(rows[0]);
+        var allRows = new object?[rows.Length][];
+        allRows[0] = firstValues;
+
+        for (var i = 1; i < rows.Length; i++)
+        {
+            var (cols, vals) = ExtractProperties(rows[i]);
+            if (cols.Length != columns.Length)
+                throw new InvalidOperationException($"Row {i} has {cols.Length} columns but expected {columns.Length}.");
+            allRows[i] = vals;
+        }
+
+        _operations.Add(new InsertDataOperation(table, schema, columns, allRows));
+        return this;
+    }
+
+    public MigrationBuilder UpdateData(string table, object set, object where, string? schema = null)
+    {
+        var (setCols, setVals) = ExtractProperties(set);
+        var (whereCols, whereVals) = ExtractProperties(where);
+        _operations.Add(new UpdateDataOperation(table, schema, setCols, setVals, whereCols, whereVals));
+        return this;
+    }
+
+    public MigrationBuilder DeleteData(string table, object where, string? schema = null)
+    {
+        var (whereCols, whereVals) = ExtractProperties(where);
+        _operations.Add(new DeleteDataOperation(table, schema, whereCols, whereVals));
+        return this;
+    }
+
     public MigrationBuilder Sql(string sql)
     {
         _operations.Add(new RawSqlOperation(sql));
         return this;
+    }
+
+    private static (string[] Columns, object?[] Values) ExtractProperties(object obj)
+    {
+        var properties = obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var columns = new string[properties.Length];
+        var values = new object?[properties.Length];
+        for (var i = 0; i < properties.Length; i++)
+        {
+            columns[i] = properties[i].Name;
+            values[i] = properties[i].GetValue(obj);
+        }
+        return (columns, values);
     }
 
     public MigrationBuilder Online()
