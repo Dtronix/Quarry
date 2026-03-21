@@ -149,6 +149,12 @@ internal sealed class SqlExprClauseTranslator
     /// String and char literals are parameterized to match the old SyntacticClauseTranslator
     /// behavior (which always passes string/char values as parameters, not inline SQL).
     /// </summary>
+    /// <summary>
+    /// Public entry point for parameter extraction, used by CallSiteTranslator.
+    /// </summary>
+    internal static SqlExpr ExtractParametersPublic(SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex)
+        => ExtractParameters(expr, parameters, ref paramIndex);
+
     private static SqlExpr ExtractParameters(SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex)
     {
         switch (expr)
