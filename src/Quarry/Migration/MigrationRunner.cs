@@ -32,8 +32,38 @@ public static class MigrationRunner
 
         MigrationLog.EnsureHistoryTable();
         await EnsureHistoryTableAsync(connection, dialect, options);
-        var applied = await GetAppliedVersionsAsync(connection, dialect, options);
-        MigrationLog.AppliedCount(applied.Count);
+
+        // Check for incomplete migrations from previous crashes
+        var incomplete = await GetIncompleteMigrationsAsync(connection, dialect);
+        if (incomplete.Count > 0)
+        {
+            foreach (var version in incomplete)
+                MigrationLog.IncompleteDetected(version);
+
+            if (!options.IgnoreIncomplete)
+            {
+                throw new InvalidOperationException(
+                    $"Incomplete migration(s) detected with 'running' status: {string.Join(", ", incomplete)}. " +
+                    "This indicates a previous crash mid-migration. Inspect the database state and set " +
+                    "MigrationOptions.IgnoreIncomplete = true to proceed.");
+            }
+        }
+
+        var appliedMap = await GetAppliedVersionsWithChecksumsAsync(connection, dialect, options);
+
+        // When ignoring incomplete migrations, add them to appliedMap so they get skipped
+        if (options.IgnoreIncomplete)
+        {
+            foreach (var version in incomplete)
+            {
+                if (!appliedMap.ContainsKey(version))
+                    appliedMap[version] = "";
+            }
+        }
+        MigrationLog.AppliedCount(appliedMap.Count);
+
+        // Validate checksums for applied migrations
+        ValidateChecksums(migrations, appliedMap, dialect, options, log);
 
         if (options.LockTimeout.HasValue && dialect == SqlDialect.SQLite)
             MigrationLog.LockTimeoutSkippedSQLite();
@@ -44,7 +74,7 @@ public static class MigrationRunner
             foreach (var m in migrations)
             {
                 if (m.Version > target) break;
-                if (applied.Contains(m.Version))
+                if (appliedMap.ContainsKey(m.Version))
                 {
                     MigrationLog.Skipped(m.Version);
                     continue;
@@ -63,13 +93,50 @@ public static class MigrationRunner
             {
                 var m = migrations[i];
                 if (m.Version <= target) break;
-                if (!applied.Contains(m.Version)) continue;
+                if (!appliedMap.ContainsKey(m.Version)) continue;
 
                 MigrationLog.RollingBack(m.Version, m.Name);
                 log($"Rolling back migration {m.Version}: {m.Name}...");
                 await RollbackMigrationAsync(connection, dialect, m, options, log);
                 log($"Migration {m.Version} rolled back.");
             }
+        }
+    }
+
+    private static void ValidateChecksums(
+        (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup)[] migrations,
+        Dictionary<int, string> appliedMap,
+        SqlDialect dialect,
+        MigrationOptions options,
+        Action<string> log)
+    {
+        foreach (var m in migrations)
+        {
+            if (!appliedMap.TryGetValue(m.Version, out var storedChecksum))
+                continue;
+
+            // Skip entries with empty checksums (e.g., incomplete migrations added via IgnoreIncomplete)
+            if (string.IsNullOrEmpty(storedChecksum))
+                continue;
+
+            var builder = new MigrationBuilder();
+            m.Upgrade(builder);
+            var currentChecksum = ComputeChecksum(builder.BuildSql(dialect));
+
+            if (currentChecksum == storedChecksum)
+                continue;
+
+            MigrationLog.ChecksumMismatch(m.Version, storedChecksum, currentChecksum);
+
+            if (options.StrictChecksums)
+            {
+                throw new InvalidOperationException(
+                    $"Migration {m.Version} ({m.Name}) checksum mismatch. " +
+                    $"Stored: {storedChecksum}, Current: {currentChecksum}. " +
+                    "The migration code has been modified after it was applied.");
+            }
+
+            log($"WARNING: Migration {m.Version} ({m.Name}) checksum mismatch — stored: {storedChecksum}, current: {currentChecksum}");
         }
     }
 
@@ -84,7 +151,7 @@ public static class MigrationRunner
         migration.Upgrade(builder);
 
         var hasNonTx = builder.HasNonTransactionalOperations(dialect);
-        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect);
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect, options.Idempotent);
         MigrationLog.SqlGenerated(migration.Version, allSql);
 
         if (hasNonTx)
@@ -102,6 +169,12 @@ public static class MigrationRunner
 
         if (options.BeforeEach != null)
             await options.BeforeEach(migration.Version, migration.Name, connection);
+
+        // Insert 'running' status before executing DDL
+        // Checksum always computed from non-idempotent SQL for stability across mode changes
+        var checksum = ComputeChecksum(builder.BuildSql(dialect));
+        await InsertHistoryRowAsync(connection, null, dialect, migration.Version, migration.Name, checksum, 0, "running", options);
+        MigrationLog.StatusUpdated(migration.Version, "running");
 
         var sw = Stopwatch.StartNew();
 
@@ -136,8 +209,9 @@ public static class MigrationRunner
                 await cmd.ExecuteNonQueryAsync();
             }
 
-            var checksum = ComputeChecksum(allSql);
-            await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, (int)sw.ElapsedMilliseconds, options);
+            // Update status to 'applied'
+            await UpdateHistoryStatusAsync(connection, tx, dialect, migration.Version, "applied", (int)sw.ElapsedMilliseconds, options);
+            MigrationLog.StatusUpdated(migration.Version, "applied");
 
             await tx.CommitAsync();
 
@@ -158,6 +232,12 @@ public static class MigrationRunner
             }
 
             await tx.RollbackAsync();
+            // Clean up the 'running' row since the transaction failed
+            try { await DeleteHistoryRowAsync(connection, null, dialect, migration.Version, options); }
+            catch (Exception cleanupEx)
+            {
+                MigrationLog.Failed(migration.Version, migration.Name, "cleanup", cleanupEx);
+            }
             throw new InvalidOperationException(
                 $"Migration {migration.Version} ({migration.Name}) failed during upgrade (transactional phase). SQL: {txSql}", ex);
         }
@@ -196,7 +276,7 @@ public static class MigrationRunner
         migration.Downgrade(builder);
 
         var hasNonTx = builder.HasNonTransactionalOperations(dialect);
-        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect);
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect, options.Idempotent);
         MigrationLog.SqlGenerated(migration.Version, allSql);
 
         if (hasNonTx)
@@ -278,37 +358,40 @@ public static class MigrationRunner
 
     private static async Task EnsureHistoryTableAsync(DbConnection connection, SqlDialect dialect, MigrationOptions options)
     {
-        var sql = dialect == SqlDialect.SQLite
-            ? $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
+        var sql = dialect switch
+        {
+            SqlDialect.SQLite => $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
                 version INTEGER NOT NULL PRIMARY KEY,
                 name TEXT NOT NULL,
                 applied_at TEXT NOT NULL,
                 checksum TEXT NOT NULL,
                 execution_time_ms INTEGER NOT NULL,
-                applied_by TEXT NOT NULL
-            );"
-            : $@"IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{HistoryTable}')
+                applied_by TEXT NOT NULL,
+                started_at TEXT,
+                status TEXT NOT NULL DEFAULT 'applied'
+            );",
+            SqlDialect.PostgreSQL or SqlDialect.MySQL => $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
+                version INT NOT NULL PRIMARY KEY,
+                name VARCHAR(256) NOT NULL,
+                applied_at TIMESTAMP NOT NULL,
+                checksum VARCHAR(64) NOT NULL,
+                execution_time_ms INT NOT NULL,
+                applied_by VARCHAR(256) NOT NULL,
+                started_at TIMESTAMP,
+                status VARCHAR(20) NOT NULL DEFAULT 'applied'
+            );",
+            _ => $@"IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{HistoryTable}')
             CREATE TABLE {HistoryTable} (
                 version INT NOT NULL PRIMARY KEY,
                 name VARCHAR(256) NOT NULL,
                 applied_at DATETIME NOT NULL,
                 checksum VARCHAR(64) NOT NULL,
                 execution_time_ms INT NOT NULL,
-                applied_by VARCHAR(256) NOT NULL
-            );";
-
-        // For PostgreSQL/MySQL, adjust the IF NOT EXISTS syntax
-        if (dialect == SqlDialect.PostgreSQL || dialect == SqlDialect.MySQL)
-        {
-            sql = $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
-                version INT NOT NULL PRIMARY KEY,
-                name VARCHAR(256) NOT NULL,
-                applied_at TIMESTAMP NOT NULL,
-                checksum VARCHAR(64) NOT NULL,
-                execution_time_ms INT NOT NULL,
-                applied_by VARCHAR(256) NOT NULL
-            );";
-        }
+                applied_by VARCHAR(256) NOT NULL,
+                started_at DATETIME,
+                status VARCHAR(20) NOT NULL DEFAULT 'applied'
+            );"
+        };
 
         using var cmd = connection.CreateCommand();
         cmd.CommandText = sql;
@@ -316,12 +399,11 @@ public static class MigrationRunner
         await cmd.ExecuteNonQueryAsync();
     }
 
-    private static async Task<HashSet<int>> GetAppliedVersionsAsync(DbConnection connection, SqlDialect dialect, MigrationOptions options)
+    private static async Task<List<int>> GetIncompleteMigrationsAsync(DbConnection connection, SqlDialect dialect)
     {
-        var versions = new HashSet<int>();
+        var versions = new List<int>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"SELECT version FROM {HistoryTable} ORDER BY version;";
-        ApplyCommandTimeout(cmd, options);
+        cmd.CommandText = $"SELECT version FROM {HistoryTable} WHERE status = 'running' ORDER BY version;";
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
@@ -330,14 +412,28 @@ public static class MigrationRunner
         return versions;
     }
 
+    private static async Task<Dictionary<int, string>> GetAppliedVersionsWithChecksumsAsync(DbConnection connection, SqlDialect dialect, MigrationOptions options)
+    {
+        var map = new Dictionary<int, string>();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = $"SELECT version, checksum FROM {HistoryTable} WHERE status = 'applied' ORDER BY version;";
+        ApplyCommandTimeout(cmd, options);
+        using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            map[reader.GetInt32(0)] = reader.GetString(1);
+        }
+        return map;
+    }
+
     private static async Task InsertHistoryRowAsync(
-        DbConnection connection, DbTransaction tx, SqlDialect dialect,
-        int version, string name, string checksum, int executionTimeMs, MigrationOptions options)
+        DbConnection connection, DbTransaction? tx, SqlDialect dialect,
+        int version, string name, string checksum, int executionTimeMs, string status, MigrationOptions options)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
-        cmd.CommandText = $@"INSERT INTO {HistoryTable} (version, name, applied_at, checksum, execution_time_ms, applied_by)
-            VALUES ({SqlFormatting.FormatParameter(dialect, 0)}, {SqlFormatting.FormatParameter(dialect, 1)}, {SqlFormatting.FormatParameter(dialect, 2)}, {SqlFormatting.FormatParameter(dialect, 3)}, {SqlFormatting.FormatParameter(dialect, 4)}, {SqlFormatting.FormatParameter(dialect, 5)});";
+        cmd.CommandText = $@"INSERT INTO {HistoryTable} (version, name, applied_at, checksum, execution_time_ms, applied_by, started_at, status)
+            VALUES ({SqlFormatting.FormatParameter(dialect, 0)}, {SqlFormatting.FormatParameter(dialect, 1)}, {SqlFormatting.FormatParameter(dialect, 2)}, {SqlFormatting.FormatParameter(dialect, 3)}, {SqlFormatting.FormatParameter(dialect, 4)}, {SqlFormatting.FormatParameter(dialect, 5)}, {SqlFormatting.FormatParameter(dialect, 6)}, {SqlFormatting.FormatParameter(dialect, 7)});";
 
         AddParameter(cmd, dialect, 0, version);
         AddParameter(cmd, dialect, 1, name);
@@ -345,13 +441,34 @@ public static class MigrationRunner
         AddParameter(cmd, dialect, 3, checksum);
         AddParameter(cmd, dialect, 4, executionTimeMs);
         AddParameter(cmd, dialect, 5, $"{Environment.MachineName}/{Environment.UserName}");
+        AddParameter(cmd, dialect, 6, DateTime.UtcNow.ToString("o"));
+        AddParameter(cmd, dialect, 7, status);
+
+        ApplyCommandTimeout(cmd, options);
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task UpdateHistoryStatusAsync(
+        DbConnection connection, DbTransaction? tx, SqlDialect dialect,
+        int version, string status, int executionTimeMs, MigrationOptions options)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = $@"UPDATE {HistoryTable}
+            SET status = {SqlFormatting.FormatParameter(dialect, 0)},
+                execution_time_ms = {SqlFormatting.FormatParameter(dialect, 1)}
+            WHERE version = {SqlFormatting.FormatParameter(dialect, 2)};";
+
+        AddParameter(cmd, dialect, 0, status);
+        AddParameter(cmd, dialect, 1, executionTimeMs);
+        AddParameter(cmd, dialect, 2, version);
 
         ApplyCommandTimeout(cmd, options);
         await cmd.ExecuteNonQueryAsync();
     }
 
     private static async Task DeleteHistoryRowAsync(
-        DbConnection connection, DbTransaction tx, SqlDialect dialect, int version, MigrationOptions options)
+        DbConnection connection, DbTransaction? tx, SqlDialect dialect, int version, MigrationOptions options)
     {
         using var cmd = connection.CreateCommand();
         cmd.Transaction = tx;
@@ -408,7 +525,7 @@ public static class MigrationRunner
         };
     }
 
-    private static string ComputeChecksum(string sql)
+    internal static string ComputeChecksum(string sql)
     {
         // FNV-1a 64-bit hash for a lightweight checksum
         const ulong fnvOffset = 14695981039346656037UL;

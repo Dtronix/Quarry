@@ -268,4 +268,165 @@ public class DdlRendererDialectTests
     }
 
     #endregion
+
+    #region Idempotent DDL
+
+    [Test]
+    public void Idempotent_CreateTable_SQLite_EmitsIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        var sql = builder.BuildIdempotentSql(SqlDialect.SQLite);
+        Assert.That(sql, Does.Contain("CREATE TABLE IF NOT EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_CreateTable_PostgreSQL_EmitsIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        var sql = builder.BuildIdempotentSql(SqlDialect.PostgreSQL);
+        Assert.That(sql, Does.Contain("CREATE TABLE IF NOT EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_CreateTable_SqlServer_EmitsInformationSchemaCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
+        Assert.That(sql, Does.Contain("INFORMATION_SCHEMA.TABLES"));
+    }
+
+    [Test]
+    public void Idempotent_DropTable_SQLite_EmitsIfExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropTable("users");
+        var sql = builder.BuildIdempotentSql(SqlDialect.SQLite);
+        Assert.That(sql, Does.Contain("DROP TABLE IF EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_DropTable_SqlServer_EmitsInformationSchemaCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropTable("users");
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF EXISTS"));
+        Assert.That(sql, Does.Contain("INFORMATION_SCHEMA.TABLES"));
+    }
+
+    [Test]
+    public void Idempotent_AddColumn_PostgreSQL_EmitsIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddColumn("users", "email", c => c.ClrType("string").Length(200).Nullable());
+        var sql = builder.BuildIdempotentSql(SqlDialect.PostgreSQL);
+        Assert.That(sql, Does.Contain("ADD COLUMN IF NOT EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_AddColumn_SqlServer_EmitsSysColumnsCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddColumn("users", "email", c => c.ClrType("string").Length(200).Nullable());
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
+        Assert.That(sql, Does.Contain("sys.columns"));
+    }
+
+    [Test]
+    public void Idempotent_CreateIndex_SQLite_EmitsIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" });
+        var sql = builder.BuildIdempotentSql(SqlDialect.SQLite);
+        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_CreateIndex_PostgreSQL_EmitsIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" });
+        var sql = builder.BuildIdempotentSql(SqlDialect.PostgreSQL);
+        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_CreateIndex_SqlServer_EmitsSysIndexesCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" });
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
+        Assert.That(sql, Does.Contain("sys.indexes"));
+    }
+
+    [Test]
+    public void Idempotent_DropIndex_SQLite_EmitsIfExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropIndex("IX_users_email", "users");
+        var sql = builder.BuildIdempotentSql(SqlDialect.SQLite);
+        Assert.That(sql, Does.Contain("DROP INDEX IF EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_DropIndex_PostgreSQL_EmitsIfExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropIndex("IX_users_email", "users");
+        var sql = builder.BuildIdempotentSql(SqlDialect.PostgreSQL);
+        Assert.That(sql, Does.Contain("DROP INDEX IF EXISTS"));
+    }
+
+    [Test]
+    public void Idempotent_DropIndex_SqlServer_EmitsSysIndexesCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropIndex("IX_users_email", "users");
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF EXISTS"));
+        Assert.That(sql, Does.Contain("sys.indexes"));
+    }
+
+    [Test]
+    public void Idempotent_DropColumn_SqlServer_EmitsSysColumnsCheck()
+    {
+        var builder = new MigrationBuilder();
+        builder.DropColumn("users", "email");
+        var sql = builder.BuildIdempotentSql(SqlDialect.SqlServer);
+        Assert.That(sql, Does.Contain("IF EXISTS"));
+        Assert.That(sql, Does.Contain("sys.columns"));
+    }
+
+    [Test]
+    public void NonIdempotent_CreateTable_DoesNotEmitIfNotExists()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        var sql = builder.BuildSql(SqlDialect.SQLite);
+        Assert.That(sql, Does.Not.Contain("IF NOT EXISTS"));
+    }
+
+    #endregion
 }

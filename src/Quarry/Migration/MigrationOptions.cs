@@ -21,6 +21,23 @@ public sealed class MigrationOptions
     /// <summary>Print SQL without executing.</summary>
     public bool DryRun { get; set; }
 
+    /// <summary>
+    /// When true, throws on checksum mismatches between applied and current migration SQL.
+    /// When false (default), logs a warning.
+    /// </summary>
+    public bool StrictChecksums { get; set; }
+
+    /// <summary>
+    /// When true, wraps DDL with IF NOT EXISTS / IF EXISTS guards for safe re-runs.
+    /// </summary>
+    public bool Idempotent { get; set; }
+
+    /// <summary>
+    /// When true, allows execution to proceed past migrations with 'running' status
+    /// (from a previous crash). When false (default), throws an exception.
+    /// </summary>
+    public bool IgnoreIncomplete { get; set; }
+
     /// <summary>Optional logger for migration output.</summary>
     public Action<string>? Logger { get; set; }
 

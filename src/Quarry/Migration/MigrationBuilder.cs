@@ -164,11 +164,19 @@ public sealed class MigrationBuilder
     }
 
     /// <summary>
+    /// Builds idempotent SQL with IF NOT EXISTS / IF EXISTS guards.
+    /// </summary>
+    public string BuildIdempotentSql(SqlDialect dialect)
+    {
+        return DdlRenderer.Render(_operations, dialect, idempotent: true);
+    }
+
+    /// <summary>
     /// Partitions operations into transactional and non-transactional groups,
     /// returning their rendered SQL separately plus combined SQL for logging/checksums.
     /// For PostgreSQL, IsConcurrent operations are automatically treated as non-transactional.
     /// </summary>
-    internal (string TransactionalSql, string NonTransactionalSql, string AllSql) BuildPartitionedSql(SqlDialect dialect)
+    internal (string TransactionalSql, string NonTransactionalSql, string AllSql) BuildPartitionedSql(SqlDialect dialect, bool idempotent = false)
     {
         var transactional = new List<MigrationOperation>();
         var nonTransactional = new List<MigrationOperation>();
@@ -185,8 +193,8 @@ public sealed class MigrationBuilder
                 transactional.Add(op);
         }
 
-        var txSql = transactional.Count > 0 ? DdlRenderer.Render(transactional, dialect) : string.Empty;
-        var nonTxSql = nonTransactional.Count > 0 ? DdlRenderer.Render(nonTransactional, dialect) : string.Empty;
+        var txSql = transactional.Count > 0 ? DdlRenderer.Render(transactional, dialect, idempotent) : string.Empty;
+        var nonTxSql = nonTransactional.Count > 0 ? DdlRenderer.Render(nonTransactional, dialect, idempotent) : string.Empty;
 
         // Derive combined SQL from partitioned results to avoid re-rendering
         string allSql;
