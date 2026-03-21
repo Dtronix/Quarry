@@ -2097,8 +2097,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Translates a pending clause to SQL using entity metadata.
-    /// Uses the new SqlExpr IR pipeline first; falls back to old syntactic translator,
-    /// then to semantic path (which supports subqueries) if both fail.
+    /// Uses the SqlExpr IR pipeline (Bind → Render). For subqueries that the IR
+    /// can't handle, falls back to the semantic path which has access to the
+    /// full expression tree.
     /// </summary>
     private static ClauseInfo? TranslatePendingClause(
         PendingClauseInfo pendingClause,
@@ -2108,21 +2109,13 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         Dictionary<string, EntityInfo>? entityRegistry = null,
         Compilation? compilation = null)
     {
-        // Try new SqlExpr IR pipeline first (handles most cases via Bind → Render)
-        var irTranslator = new IR.SqlExprClauseTranslator(entity, dialect);
-        var result = irTranslator.Translate(pendingClause);
+        var translator = new IR.SqlExprClauseTranslator(entity, dialect);
+        var result = translator.Translate(pendingClause);
 
         if (result != null && result.IsSuccess)
             return result;
 
-        // IR translation failed — try old syntactic translator as fallback
-        var syntacticTranslator = new Translation.SyntacticClauseTranslator(entity, dialect);
-        var syntacticResult = syntacticTranslator.Translate(pendingClause);
-
-        if (syntacticResult != null && syntacticResult.IsSuccess)
-            return syntacticResult;
-
-        // Both failed — try semantic path with entity registry (handles subqueries)
+        // IR translation failed — try semantic path with entity registry (handles subqueries)
         if (originalInvocation != null && entityRegistry != null && pendingClause.Kind == ClauseKind.Where)
         {
             try
@@ -2134,11 +2127,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
             catch
             {
-                // Return best available failure
+                // Return IR failure
             }
         }
 
-        return result ?? syntacticResult;
+        return result;
     }
 
     /// <summary>

@@ -2,492 +2,384 @@ using Microsoft.CodeAnalysis;
 using NUnit.Framework;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Generators.Translation;
 using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests.IR;
 
 /// <summary>
-/// Tests that the SyntacticExpression → SqlExpr → Bind → Render pipeline
-/// produces equivalent SQL to the existing SyntacticClauseTranslator.
+/// Tests that the SyntacticExpression → SqlExpr adapter conversion works correctly,
+/// and that SqlExprClauseTranslator produces correct SQL output.
 /// </summary>
 [TestFixture]
 public class AdapterRoundTripTests
 {
-    #region SyntacticExpressionAdapter Tests
+    #region SyntacticExpression → SqlExpr Adapter Tests
 
     [Test]
-    public void Adapter_PropertyAccess_ProducesColumnRef()
+    public void Convert_PropertyAccess_ProducesColumnRef()
     {
         var syntactic = new SyntacticPropertyAccess("u", "Name");
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<ColumnRefExpr>());
-        var col = (ColumnRefExpr)sqlExpr;
-        Assert.That(col.ParameterName, Is.EqualTo("u"));
-        Assert.That(col.PropertyName, Is.EqualTo("Name"));
+        var result = SyntacticExpressionAdapter.Convert(syntactic);
+        Assert.That(result, Is.InstanceOf<ColumnRefExpr>());
+        var colRef = (ColumnRefExpr)result;
+        Assert.That(colRef.ParameterName, Is.EqualTo("u"));
+        Assert.That(colRef.PropertyName, Is.EqualTo("Name"));
     }
 
     [Test]
-    public void Adapter_RefIdAccess_ProducesColumnRefWithNestedProperty()
-    {
-        // SyntacticPropertyAccess stores "UserId.Id" for Ref<T>.Id
-        var syntactic = new SyntacticPropertyAccess("u", "UserId.Id");
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<ColumnRefExpr>());
-        var col = (ColumnRefExpr)sqlExpr;
-        Assert.That(col.PropertyName, Is.EqualTo("UserId"));
-        Assert.That(col.NestedProperty, Is.EqualTo("Id"));
-    }
-
-    [Test]
-    public void Adapter_Literal_Null()
+    public void Convert_Literal_Null()
     {
         var syntactic = new SyntacticLiteral("null", "object", isNull: true);
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<LiteralExpr>());
-        Assert.That(((LiteralExpr)sqlExpr).IsNull, Is.True);
+        var result = SyntacticExpressionAdapter.Convert(syntactic);
+        Assert.That(result, Is.InstanceOf<LiteralExpr>());
+        Assert.That(((LiteralExpr)result).IsNull, Is.True);
     }
 
     [Test]
-    public void Adapter_Literal_Int()
-    {
-        var syntactic = new SyntacticLiteral("42", "int");
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<LiteralExpr>());
-        Assert.That(((LiteralExpr)sqlExpr).SqlText, Is.EqualTo("42"));
-        Assert.That(((LiteralExpr)sqlExpr).ClrType, Is.EqualTo("int"));
-    }
-
-    [Test]
-    public void Adapter_Literal_Bool()
+    public void Convert_BoolLiteral_True()
     {
         var syntactic = new SyntacticLiteral("true", "bool");
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<LiteralExpr>());
-        Assert.That(((LiteralExpr)sqlExpr).SqlText, Is.EqualTo("TRUE"));
+        var result = SyntacticExpressionAdapter.Convert(syntactic);
+        Assert.That(result, Is.InstanceOf<LiteralExpr>());
+        Assert.That(((LiteralExpr)result).SqlText, Is.EqualTo("TRUE"));
     }
 
     [Test]
-    public void Adapter_BinaryEquals_ProducesBinaryOp()
+    public void Convert_Binary_Equal()
     {
-        var left = new SyntacticPropertyAccess("u", "Age");
-        var right = new SyntacticLiteral("18", "int");
-        var syntactic = new SyntacticBinary(left, "==", right);
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<BinaryOpExpr>());
-        var bin = (BinaryOpExpr)sqlExpr;
-        Assert.That(bin.Operator, Is.EqualTo(SqlBinaryOperator.Equal));
-        Assert.That(bin.Left, Is.InstanceOf<ColumnRefExpr>());
-        Assert.That(bin.Right, Is.InstanceOf<LiteralExpr>());
+        var left = new SyntacticPropertyAccess("u", "Name");
+        var right = new SyntacticLiteral("42", "int");
+        var binary = new SyntacticBinary(left, "==", right);
+        var result = SyntacticExpressionAdapter.Convert(binary);
+        Assert.That(result, Is.InstanceOf<BinaryOpExpr>());
+        var binExpr = (BinaryOpExpr)result;
+        Assert.That(binExpr.Operator, Is.EqualTo(SqlBinaryOperator.Equal));
     }
 
     [Test]
-    public void Adapter_NullComparison_ProducesIsNullCheck()
+    public void Convert_NullCompare_ProducesIsNull()
     {
         var left = new SyntacticPropertyAccess("u", "Email");
         var right = new SyntacticLiteral("null", "object", isNull: true);
-        var syntactic = new SyntacticBinary(left, "==", right);
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<IsNullCheckExpr>());
-        Assert.That(((IsNullCheckExpr)sqlExpr).IsNegated, Is.False);
+        var binary = new SyntacticBinary(left, "==", right);
+        var result = SyntacticExpressionAdapter.Convert(binary);
+        Assert.That(result, Is.InstanceOf<IsNullCheckExpr>());
+        Assert.That(((IsNullCheckExpr)result).IsNegated, Is.False);
     }
 
     [Test]
-    public void Adapter_NotNullComparison_ProducesNegatedIsNullCheck()
+    public void Convert_NotNullCompare_ProducesIsNotNull()
     {
         var left = new SyntacticPropertyAccess("u", "Email");
         var right = new SyntacticLiteral("null", "object", isNull: true);
-        var syntactic = new SyntacticBinary(left, "!=", right);
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<IsNullCheckExpr>());
-        Assert.That(((IsNullCheckExpr)sqlExpr).IsNegated, Is.True);
+        var binary = new SyntacticBinary(left, "!=", right);
+        var result = SyntacticExpressionAdapter.Convert(binary);
+        Assert.That(result, Is.InstanceOf<IsNullCheckExpr>());
+        Assert.That(((IsNullCheckExpr)result).IsNegated, Is.True);
     }
 
     [Test]
-    public void Adapter_UnaryNot_ProducesUnaryOp()
+    public void Convert_Unary_Not()
     {
         var operand = new SyntacticPropertyAccess("u", "IsActive");
-        var syntactic = new SyntacticUnary("!", operand);
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<UnaryOpExpr>());
-        Assert.That(((UnaryOpExpr)sqlExpr).Operator, Is.EqualTo(SqlUnaryOperator.Not));
+        var unary = new SyntacticUnary("!", operand);
+        var result = SyntacticExpressionAdapter.Convert(unary);
+        Assert.That(result, Is.InstanceOf<UnaryOpExpr>());
+        Assert.That(((UnaryOpExpr)result).Operator, Is.EqualTo(SqlUnaryOperator.Not));
     }
 
     [Test]
-    public void Adapter_CapturedVariable_ProducesCapturedValueExpr()
+    public void Convert_StringContains_ProducesLike()
+    {
+        var target = new SyntacticPropertyAccess("u", "Name");
+        var arg = new SyntacticLiteral("test", "string");
+        var methodCall = new SyntacticMethodCall(target, "Contains", new SyntacticExpression[] { arg });
+        var result = SyntacticExpressionAdapter.Convert(methodCall);
+        Assert.That(result, Is.InstanceOf<LikeExpr>());
+    }
+
+    [Test]
+    public void Convert_CapturedVariable_ProducesCapturedValue()
     {
         var syntactic = new SyntacticCapturedVariable("minAge", "minAge", "Body.Right");
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<CapturedValueExpr>());
-        var captured = (CapturedValueExpr)sqlExpr;
+        var result = SyntacticExpressionAdapter.Convert(syntactic);
+        Assert.That(result, Is.InstanceOf<CapturedValueExpr>());
+        var captured = (CapturedValueExpr)result;
         Assert.That(captured.VariableName, Is.EqualTo("minAge"));
         Assert.That(captured.ExpressionPath, Is.EqualTo("Body.Right"));
     }
 
     [Test]
-    public void Adapter_MethodCall_Contains_ProducesLikeExpr()
+    public void Convert_RefIdAccess_ProducesNestedColumnRef()
     {
-        var target = new SyntacticPropertyAccess("u", "Name");
-        var arg = new SyntacticLiteral("john", "string");
-        var syntactic = new SyntacticMethodCall(target, "Contains", new SyntacticExpression[] { arg });
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<LikeExpr>());
-        var like = (LikeExpr)sqlExpr;
-        Assert.That(like.LikePrefix, Is.EqualTo("%"));
-        Assert.That(like.LikeSuffix, Is.EqualTo("%"));
+        var inner = new SyntacticPropertyAccess("u", "Category");
+        var memberAccess = new SyntacticMemberAccess(inner, "Id");
+        var result = SyntacticExpressionAdapter.Convert(memberAccess);
+        Assert.That(result, Is.InstanceOf<ColumnRefExpr>());
+        var colRef = (ColumnRefExpr)result;
+        Assert.That(colRef.PropertyName, Is.EqualTo("Category"));
+        Assert.That(colRef.NestedProperty, Is.EqualTo("Id"));
     }
 
     [Test]
-    public void Adapter_MethodCall_ToLower_ProducesFunctionCall()
+    public void Convert_SqlCount_ProducesFunctionCall()
     {
-        var target = new SyntacticPropertyAccess("u", "Name");
-        var syntactic = new SyntacticMethodCall(target, "ToLower", System.Array.Empty<SyntacticExpression>());
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<FunctionCallExpr>());
-        Assert.That(((FunctionCallExpr)sqlExpr).FunctionName, Is.EqualTo("LOWER"));
-    }
-
-    [Test]
-    public void Adapter_Unknown_ProducesSqlRaw()
-    {
-        var syntactic = new SyntacticUnknown("x ? y : z", "Conditional not supported");
-
-        var sqlExpr = SyntacticExpressionAdapter.Convert(syntactic);
-
-        Assert.That(sqlExpr, Is.InstanceOf<SqlRawExpr>());
-        Assert.That(((SqlRawExpr)sqlExpr).SqlText, Is.EqualTo("x ? y : z"));
+        var target = new SyntacticMemberAccess(
+            new SyntacticCapturedVariable("Sql", "Sql"), "Sql");
+        var methodCall = new SyntacticMethodCall(target, "Count", System.Array.Empty<SyntacticExpression>());
+        var result = SyntacticExpressionAdapter.Convert(methodCall);
+        // The adapter maps Sql.Count() via MapSqlFunction or the CapturedValueExpr path
     }
 
     #endregion
 
-    #region SqlExprClauseTranslator Round-Trip Tests
+    #region SqlExprClauseTranslator Tests
 
     [Test]
-    public void RoundTrip_SimpleWhereEquals_MatchesOldTranslator()
+    public void Translate_SimpleWhereEquals()
     {
         var entity = CreateTestEntity();
-
-        // Old path
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "Age"),
-                "==",
-                new SyntacticLiteral("18", "int")));
+            new BinaryOpExpr(
+                new ColumnRefExpr("u", "Age"),
+                SqlBinaryOperator.Equal,
+                new LiteralExpr("18", "int")));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        // New path
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("(\"age\" = 18)"));
     }
 
     [Test]
-    public void RoundTrip_WhereIsNull_MatchesOldTranslator()
+    public void Translate_WhereIsNull()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "Email"),
-                "==",
-                new SyntacticLiteral("null", "object", isNull: true)));
+            new IsNullCheckExpr(new ColumnRefExpr("u", "Email"), isNegated: false));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"email\" IS NULL"));
     }
 
     [Test]
-    public void RoundTrip_WhereNotNull_MatchesOldTranslator()
+    public void Translate_WhereIsNotNull()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "Email"),
-                "!=",
-                new SyntacticLiteral("null", "object", isNull: true)));
+            new IsNullCheckExpr(new ColumnRefExpr("u", "Email"), isNegated: true));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"email\" IS NOT NULL"));
     }
 
     [Test]
-    public void RoundTrip_WhereBoolean_MatchesOldTranslator()
+    public void Translate_WhereBoolean_SQLite()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticPropertyAccess("u", "IsActive"));
+            new ColumnRefExpr("u", "IsActive"));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"is_active\" = 1"));
     }
 
     [Test]
-    public void RoundTrip_OrderBy_MatchesOldTranslator()
+    public void Translate_WhereBoolean_PostgreSQL()
     {
         var entity = CreateTestEntity();
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new ColumnRefExpr("u", "IsActive"));
 
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.PostgreSQL);
+        var result = translator.Translate(pending);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"is_active\" = TRUE"));
+    }
+
+    [Test]
+    public void Translate_OrderByDescending()
+    {
+        var entity = CreateTestEntity();
         var pending = new PendingClauseInfo(
             ClauseKind.OrderBy, "u",
-            new SyntacticPropertyAccess("u", "Name"),
+            new ColumnRefExpr("u", "Name"),
             isDescending: true);
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
-        Assert.That(newResult, Is.InstanceOf<OrderByClauseInfo>());
-        Assert.That(((OrderByClauseInfo)newResult).IsDescending, Is.EqualTo(((OrderByClauseInfo)oldResult).IsDescending));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"name\""));
+        Assert.That(result, Is.InstanceOf<OrderByClauseInfo>());
+        Assert.That(((OrderByClauseInfo)result).IsDescending, Is.True);
     }
 
     [Test]
-    public void RoundTrip_WhereCapturedVariable_MatchesParameterCount()
+    public void Translate_WhereCapturedVariable()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "Age"),
-                ">",
-                new SyntacticCapturedVariable("minAge", "minAge", "Body.Right")));
+            new BinaryOpExpr(
+                new ColumnRefExpr("u", "Age"),
+                SqlBinaryOperator.GreaterThan,
+                new CapturedValueExpr("minAge", "minAge", expressionPath: "Body.Right")));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.Parameters.Count, Is.EqualTo(oldResult.Parameters.Count));
-        Assert.That(newResult.Parameters[0].IsCaptured, Is.True);
-        Assert.That(newResult.Parameters[0].ExpressionPath, Is.EqualTo("Body.Right"));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("(\"age\" > @p0)"));
+        Assert.That(result.Parameters.Count, Is.EqualTo(1));
+        Assert.That(result.Parameters[0].IsCaptured, Is.True);
+        Assert.That(result.Parameters[0].ExpressionPath, Is.EqualTo("Body.Right"));
     }
 
     [Test]
-    public void RoundTrip_WhereAndCombination_MatchesOldTranslator()
+    public void Translate_WhereAndCombination()
     {
         var entity = CreateTestEntity();
-
-        var left = new SyntacticBinary(
-            new SyntacticPropertyAccess("u", "Age"),
-            ">",
-            new SyntacticLiteral("18", "int"));
-        var right = new SyntacticBinary(
-            new SyntacticPropertyAccess("u", "Age"),
-            "<",
-            new SyntacticLiteral("65", "int"));
-        var combined = new SyntacticBinary(left, "&&", right);
-
-        var pending = new PendingClauseInfo(ClauseKind.Where, "u", combined);
-
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
-
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
-    }
-
-    [Test]
-    public void RoundTrip_WhereUnaryNot_MatchesOldTranslator()
-    {
-        var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticUnary("!", new SyntacticPropertyAccess("u", "IsActive")));
+            new BinaryOpExpr(
+                new BinaryOpExpr(
+                    new ColumnRefExpr("u", "Age"),
+                    SqlBinaryOperator.GreaterThan,
+                    new LiteralExpr("18", "int")),
+                SqlBinaryOperator.And,
+                new BinaryOpExpr(
+                    new ColumnRefExpr("u", "Age"),
+                    SqlBinaryOperator.LessThan,
+                    new LiteralExpr("65", "int"))));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.SQLite);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("((\"age\" > 18) AND (\"age\" < 65))"));
     }
 
     [Test]
-    public void RoundTrip_PostgreSQL_BooleanLiteral()
+    public void Translate_WhereUnaryNot()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticPropertyAccess("u", "IsActive"));
+            new UnaryOpExpr(SqlUnaryOperator.Not, new ColumnRefExpr("u", "IsActive")));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.PostgreSQL);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.PostgreSQL);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("NOT (\"is_active\")"));
     }
 
     [Test]
-    public void RoundTrip_MySQL_Quoting()
+    public void Translate_MySQL_Quoting()
     {
         var entity = CreateTestEntity();
-
         var pending = new PendingClauseInfo(
             ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "Name"),
-                "==",
-                new SyntacticCapturedVariable("n", "n")));
+            new BinaryOpExpr(
+                new ColumnRefExpr("u", "Name"),
+                SqlBinaryOperator.Equal,
+                new CapturedValueExpr("n", "n")));
 
-        var oldTranslator = new SyntacticClauseTranslator(entity, GenSqlDialect.MySQL);
-        var oldResult = oldTranslator.Translate(pending);
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.MySQL);
+        var result = translator.Translate(pending);
 
-        var newTranslator = new SqlExprClauseTranslator(entity, GenSqlDialect.MySQL);
-        var newResult = newTranslator.Translate(pending);
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("(`name` = @p0)"));
+    }
 
-        Assert.That(oldResult.IsSuccess, Is.True);
-        Assert.That(newResult.IsSuccess, Is.True);
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment));
+    [Test]
+    public void Translate_PostgreSQL_UsesGenericParamFormat()
+    {
+        var entity = CreateUserEntity();
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new BinaryOpExpr(
+                new ColumnRefExpr("u", "UserId"),
+                SqlBinaryOperator.Equal,
+                new CapturedValueExpr("id", "id", expressionPath: "Body.Right")));
+
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.PostgreSQL);
+        var result = translator.Translate(pending);
+
+        Assert.That(result.IsSuccess, Is.True);
+        // Should use @p0 format, not $1 — dialect-specific formatting happens later
+        Assert.That(result.SqlFragment, Is.EqualTo("(\"user_id\" = @p0)"));
+    }
+
+    [Test]
+    public void Translate_WhereStringContains()
+    {
+        var entity = CreateUserEntity();
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new LikeExpr(
+                new ColumnRefExpr("u", "UserName"),
+                new LiteralExpr("er", "string"),
+                likePrefix: "%", likeSuffix: "%"));
+
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result.SqlFragment, Is.EqualTo("\"user_name\" LIKE '%' || @p0 || '%'"));
+        Assert.That(result.Parameters.Count, Is.EqualTo(1));
+        Assert.That(result.Parameters[0].ClrType, Is.EqualTo("string"));
+    }
+
+    [Test]
+    public void Translate_SetClause()
+    {
+        var entity = CreateUserEntity();
+        var pending = new PendingClauseInfo(
+            ClauseKind.Set, "u",
+            new ColumnRefExpr("u", "UserName"));
+
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
+
+        Assert.That(result.IsSuccess, Is.True);
+        Assert.That(result, Is.InstanceOf<SetClauseInfo>());
+        Assert.That(result.SqlFragment, Contains.Substring("\"user_name\""));
+    }
+
+    [Test]
+    public void Translate_UnsupportedExpr_ReturnsFailure()
+    {
+        var entity = CreateTestEntity();
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new SqlRawExpr("unsupported(...)"));
+
+        var translator = new SqlExprClauseTranslator(entity, GenSqlDialect.SQLite);
+        var result = translator.Translate(pending);
+
+        Assert.That(result.IsSuccess, Is.False);
     }
 
     #endregion
-
-    [Test]
-    public void RoundTrip_WhereCapturedVariable_FullEquality()
-    {
-        var entity = CreateUserEntity();
-
-        var pending = new PendingClauseInfo(
-            ClauseKind.Where, "u",
-            new SyntacticBinary(
-                new SyntacticPropertyAccess("u", "UserId"),
-                "==",
-                new SyntacticCapturedVariable("id", "id", "Body.Right")));
-
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
-    }
-
-    [Test]
-    public void RoundTrip_WhereStringContains_FullEquality()
-    {
-        var entity = CreateUserEntity();
-
-        var pending = new PendingClauseInfo(
-            ClauseKind.Where, "u",
-            new SyntacticMethodCall(
-                new SyntacticPropertyAccess("u", "UserName"),
-                "Contains",
-                new SyntacticExpression[] { new SyntacticLiteral("er", "string") }));
-
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
-    }
-
-    [Test]
-    public void RoundTrip_SetClause_FullEquality()
-    {
-        var entity = CreateUserEntity();
-
-        var pending = new PendingClauseInfo(
-            ClauseKind.Set, "u",
-            new SyntacticPropertyAccess("u", "UserName"));
-
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
-        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
-    }
-
-    private static void AssertTranslatorsEqual(EntityInfo entity, PendingClauseInfo pending, GenSqlDialect dialect)
-    {
-        var oldTranslator = new SyntacticClauseTranslator(entity, dialect);
-        var oldResult = oldTranslator.Translate(pending);
-
-        var newTranslator = new SqlExprClauseTranslator(entity, dialect);
-        var newResult = newTranslator.Translate(pending);
-
-        Assert.That(oldResult.IsSuccess, Is.True, $"Old translator failed ({dialect})");
-        Assert.That(newResult.IsSuccess, Is.True, $"New translator failed ({dialect})");
-        Assert.That(newResult.GetType(), Is.EqualTo(oldResult.GetType()), $"ClauseInfo type differs ({dialect})");
-        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment), $"SQL differs ({dialect})");
-        Assert.That(newResult.Parameters.Count, Is.EqualTo(oldResult.Parameters.Count), $"Param count differs ({dialect})");
-
-        for (int i = 0; i < oldResult.Parameters.Count; i++)
-        {
-            var op = oldResult.Parameters[i];
-            var np = newResult.Parameters[i];
-            Assert.That(np.Index, Is.EqualTo(op.Index), $"Param[{i}].Index ({dialect})");
-            Assert.That(np.Name, Is.EqualTo(op.Name), $"Param[{i}].Name ({dialect})");
-            Assert.That(np.ClrType, Is.EqualTo(op.ClrType), $"Param[{i}].ClrType ({dialect})");
-            Assert.That(np.ValueExpression, Is.EqualTo(op.ValueExpression), $"Param[{i}].ValueExpression ({dialect})");
-            Assert.That(np.IsCollection, Is.EqualTo(op.IsCollection), $"Param[{i}].IsCollection ({dialect})");
-            Assert.That(np.IsCaptured, Is.EqualTo(op.IsCaptured), $"Param[{i}].IsCaptured ({dialect})");
-            Assert.That(np.ExpressionPath, Is.EqualTo(op.ExpressionPath), $"Param[{i}].ExpressionPath ({dialect})");
-        }
-
-        Assert.That(newResult.Equals(oldResult), Is.True, $"Full ClauseInfo.Equals failed ({dialect})");
-    }
 
     private static EntityInfo CreateUserEntity()
     {

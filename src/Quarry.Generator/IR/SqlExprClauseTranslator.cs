@@ -27,23 +27,21 @@ internal sealed class SqlExprClauseTranslator
 
     /// <summary>
     /// Translates a PendingClauseInfo (which contains a SyntacticExpression) to ClauseInfo
-    /// by converting to SqlExpr, binding, and rendering.
+    /// by binding and rendering the SqlExpr tree.
     /// </summary>
     public ClauseInfo Translate(PendingClauseInfo pending)
     {
         try
         {
-            // Step 1: Get SqlExpr tree (direct from parser if available, else convert from SyntacticExpression)
-            var sqlExpr = pending.ParsedSqlExpr ?? SyntacticExpressionAdapter.Convert(pending.Expression);
+            var sqlExpr = pending.Expression;
 
             // Bail out if the tree contains SqlRawExpr nodes from unsupported expressions.
-            // These indicate method calls, member accesses, or unknown syntax that couldn't be
-            // converted to proper IR nodes (e.g., subqueries, runtime collections).
-            // The old syntactic or semantic translators may handle these.
+            // These indicate method calls, member accesses, or unknown syntax that the parser
+            // couldn't convert to proper IR nodes (e.g., subqueries, runtime collections).
             if (ContainsUnsupportedRawExpr(sqlExpr))
                 return ClauseInfo.Failure(pending.Kind, "Expression contains unsupported nodes for SqlExpr IR");
 
-            // Step 2: Bind column references
+            // Step 1: Bind column references
             var inBooleanContext = pending.Kind == ClauseKind.Where || pending.Kind == ClauseKind.Having;
             var bound = SqlExprBinder.Bind(
                 sqlExpr,
@@ -52,16 +50,16 @@ internal sealed class SqlExprClauseTranslator
                 pending.LambdaParameterName,
                 inBooleanContext: inBooleanContext);
 
-            // Step 3: Extract parameters from CapturedValueExpr and string/char literals
+            // Step 2: Extract parameters from CapturedValueExpr and string/char literals
             int paramIndex = 0;
             var parameters = new List<ParameterInfo>();
             bound = ExtractParameters(bound, parameters, ref paramIndex);
 
-            // Step 4: Render to SQL
+            // Step 3: Render to SQL
             // Use generic parameter format (@p{n}) because dialect-specific parameter
             // formatting ($1 for PostgreSQL, ? for MySQL) is applied later during
             // SQL assembly by SqlFragmentTemplate. Column quoting and boolean formatting
-            // still use the actual dialect (already applied by SqlExprBinder in step 2).
+            // still use the actual dialect (already applied by SqlExprBinder in step 1).
             var sql = SqlExprRenderer.Render(bound, _dialect, useGenericParamFormat: true);
 
             if (string.IsNullOrEmpty(sql))
@@ -70,13 +68,13 @@ internal sealed class SqlExprClauseTranslator
             // Handle clause-specific types
             if (pending.Kind == ClauseKind.OrderBy || pending.Kind == ClauseKind.GroupBy)
             {
-                var keyTypeName = ResolveKeyTypeFromExpr(sqlExpr) ?? ResolveKeyType(pending.Expression);
+                var keyTypeName = ResolveKeyTypeFromExpr(sqlExpr);
                 return new OrderByClauseInfo(sql, pending.IsDescending, parameters, keyTypeName);
             }
 
             if (pending.Kind == ClauseKind.Set)
             {
-                var valueTypeName = ResolveKeyTypeFromExpr(sqlExpr) ?? ResolveKeyType(pending.Expression);
+                var valueTypeName = ResolveKeyTypeFromExpr(sqlExpr);
                 var valueClrType = valueTypeName ?? "object";
                 var pIdx = paramIndex;
                 var setParams = new List<ParameterInfo>(parameters)
@@ -263,22 +261,8 @@ internal sealed class SqlExprClauseTranslator
         return null;
     }
 
-    private string? ResolveKeyType(SyntacticExpression expression)
-    {
-        if (expression is SyntacticPropertyAccess propAccess)
-        {
-            var propertyName = propAccess.PropertyName;
-            if (propertyName.EndsWith(".Id"))
-                propertyName = propertyName.Substring(0, propertyName.Length - 3);
-            if (_columnLookup.TryGetValue(propertyName, out var column))
-                return column.FullClrType;
-        }
-        return null;
-    }
-
     /// <summary>
     /// Escapes a string for use as a C# string literal value expression.
-    /// Matches the behavior of SyntacticClauseTranslator.EscapeString.
     /// </summary>
     private static string EscapeString(string value)
     {

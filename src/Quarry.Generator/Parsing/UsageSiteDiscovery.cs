@@ -765,26 +765,17 @@ internal static class UsageSiteDiscovery
         if (argument is not LambdaExpressionSyntax lambda)
             return null;
 
-        // Get lambda body
-        var body = SyntacticExpressionParser.GetLambdaBody(lambda);
+        // Get lambda body and parameter names
+        var body = IR.SqlExprParser.GetLambdaBody(lambda);
         if (body == null)
             return null;
 
-        // Get lambda parameter names
-        var parameterNames = SyntacticExpressionParser.GetLambdaParameterNames(lambda);
+        var parameterNames = IR.SqlExprParser.GetLambdaParameterNames(lambda);
         if (parameterNames.Count == 0)
             return null;
 
-        // Parse the expression syntactically with path tracking for captured variables
-        var syntacticExpr = SyntacticExpressionParser.ParseWithPathTracking(body, parameterNames);
-
-        // If the result is an unknown expression, we can't proceed
-        if (syntacticExpr is SyntacticUnknown)
-            return null;
-
-        // Also parse via SqlExprParser directly from syntax (avoids adapter conversion later)
-        var sqlExprParamNames = IR.SqlExprParser.GetLambdaParameterNames(lambda);
-        var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, sqlExprParamNames);
+        // Parse the expression directly to SqlExpr with path tracking for captured variables
+        var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, parameterNames);
 
         // Determine if this is descending order (for OrderBy/ThenBy)
         var isDescending = false;
@@ -814,7 +805,7 @@ internal static class UsageSiteDiscovery
         // Get the first parameter name
         var parameterName = parameterNames.First();
 
-        return new PendingClauseInfo(clauseKind, parameterName, syntacticExpr, isDescending, parsedSqlExpr: sqlExpr);
+        return new PendingClauseInfo(clauseKind, parameterName, sqlExpr, isDescending);
     }
 
     /// <summary>

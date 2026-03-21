@@ -21,15 +21,9 @@ internal sealed class PendingClauseInfo : IEquatable<PendingClauseInfo>
     public string LambdaParameterName { get; }
 
     /// <summary>
-    /// The syntactically parsed expression tree (legacy path).
+    /// The parsed SqlExpr tree from SqlExprParser.
     /// </summary>
-    public SyntacticExpression Expression { get; }
-
-    /// <summary>
-    /// The parsed SqlExpr tree (new IR path). When set, SqlExprClauseTranslator
-    /// uses this directly instead of converting via SyntacticExpressionAdapter.
-    /// </summary>
-    public SqlExpr? ParsedSqlExpr { get; }
+    public SqlExpr Expression { get; }
 
     /// <summary>
     /// For OrderBy clauses, whether the direction is descending.
@@ -39,31 +33,23 @@ internal sealed class PendingClauseInfo : IEquatable<PendingClauseInfo>
     public PendingClauseInfo(
         ClauseKind kind,
         string lambdaParameterName,
-        SyntacticExpression expression,
-        bool isDescending = false,
-        SqlExpr? parsedSqlExpr = null)
+        SqlExpr expression,
+        bool isDescending = false)
     {
         Kind = kind;
         LambdaParameterName = lambdaParameterName;
         Expression = expression;
         IsDescending = isDescending;
-        ParsedSqlExpr = parsedSqlExpr;
     }
 
     public bool Equals(PendingClauseInfo? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
-        if (Kind != other.Kind
-            || LambdaParameterName != other.LambdaParameterName
-            || IsDescending != other.IsDescending)
-            return false;
-
-        // Prefer SqlExpr equality when both sides have it
-        if (ParsedSqlExpr != null && other.ParsedSqlExpr != null)
-            return ParsedSqlExpr.Equals(other.ParsedSqlExpr);
-
-        return SyntacticExpression.DeepEquals(Expression, other.Expression);
+        return Kind == other.Kind
+            && LambdaParameterName == other.LambdaParameterName
+            && IsDescending == other.IsDescending
+            && Expression.Equals(other.Expression);
     }
 
     public override bool Equals(object? obj) => Equals(obj as PendingClauseInfo);

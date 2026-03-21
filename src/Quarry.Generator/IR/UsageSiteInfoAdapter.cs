@@ -26,7 +26,7 @@ internal static class UsageSiteInfoAdapter
 
         if (site.PendingClauseInfo != null)
         {
-            expression = SyntacticExpressionAdapter.Convert(site.PendingClauseInfo.Expression);
+            expression = site.PendingClauseInfo.Expression;
             clauseKind = site.PendingClauseInfo.Kind;
             isDescending = site.PendingClauseInfo.IsDescending;
         }
