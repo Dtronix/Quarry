@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Quarry.Generators.CodeGen;
+using Quarry.Generators.IR;
 
 namespace Quarry.Generators.Models;
 
@@ -10,6 +12,9 @@ namespace Quarry.Generators.Models;
 /// </summary>
 internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
 {
+    /// <summary>
+    /// Legacy constructor for old pipeline (UsageSiteInfo + PrebuiltChainInfo).
+    /// </summary>
     public FileInterceptorGroup(
         string contextClassName,
         string? contextNamespace,
@@ -28,48 +33,64 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
         Chains = chains;
         ChainMemberSites = chainMemberSites;
         Diagnostics = diagnostics;
+        // New pipeline fields default to empty
+        TranslatedSites = Array.Empty<TranslatedCallSite>();
+        AssembledPlans = Array.Empty<AssembledPlan>();
+        TranslatedChainMemberSites = Array.Empty<TranslatedCallSite>();
+        CarrierPlans = Array.Empty<CarrierPlan>();
     }
 
     /// <summary>
-    /// Gets the context class name.
+    /// New pipeline constructor (TranslatedCallSite + AssembledPlan + CarrierPlan).
     /// </summary>
+    public FileInterceptorGroup(
+        string contextClassName,
+        string? contextNamespace,
+        string sourceFilePath,
+        string fileTag,
+        IReadOnlyList<TranslatedCallSite> translatedSites,
+        IReadOnlyList<AssembledPlan> assembledPlans,
+        IReadOnlyList<TranslatedCallSite> translatedChainMemberSites,
+        IReadOnlyList<DiagnosticInfo> diagnostics,
+        IReadOnlyList<CarrierPlan> carrierPlans)
+    {
+        ContextClassName = contextClassName;
+        ContextNamespace = contextNamespace;
+        SourceFilePath = sourceFilePath;
+        FileTag = fileTag;
+        TranslatedSites = translatedSites;
+        AssembledPlans = assembledPlans;
+        TranslatedChainMemberSites = translatedChainMemberSites;
+        Diagnostics = diagnostics;
+        CarrierPlans = carrierPlans;
+        // Legacy fields default to empty
+        Sites = Array.Empty<UsageSiteInfo>();
+        Chains = Array.Empty<PrebuiltChainInfo>();
+        ChainMemberSites = Array.Empty<UsageSiteInfo>();
+    }
+
     public string ContextClassName { get; }
-
-    /// <summary>
-    /// Gets the context namespace.
-    /// </summary>
     public string? ContextNamespace { get; }
-
-    /// <summary>
-    /// Gets the source file path that all sites in this group originate from.
-    /// </summary>
     public string SourceFilePath { get; }
-
-    /// <summary>
-    /// Gets the sanitized file tag derived from the source path, used in output filename and class name.
-    /// </summary>
     public string FileTag { get; }
 
-    /// <summary>
-    /// Gets all analyzable usage sites from this file for this context.
-    /// </summary>
+    // Legacy pipeline types
     public IReadOnlyList<UsageSiteInfo> Sites { get; }
-
-    /// <summary>
-    /// Gets pre-built chains whose execution terminal is in this file.
-    /// </summary>
     public IReadOnlyList<PrebuiltChainInfo> Chains { get; }
-
-    /// <summary>
-    /// Gets non-analyzable clause sites pulled in by chain analysis
-    /// (conditional clause sites that would otherwise be excluded).
-    /// </summary>
     public IReadOnlyList<UsageSiteInfo> ChainMemberSites { get; }
 
-    /// <summary>
-    /// Gets diagnostics discovered during grouping/analysis for deferred reporting.
-    /// </summary>
+    // New pipeline types
+    public IReadOnlyList<TranslatedCallSite> TranslatedSites { get; }
+    public IReadOnlyList<AssembledPlan> AssembledPlans { get; }
+    public IReadOnlyList<TranslatedCallSite> TranslatedChainMemberSites { get; }
+    public IReadOnlyList<CarrierPlan> CarrierPlans { get; }
+
     public IReadOnlyList<DiagnosticInfo> Diagnostics { get; }
+
+    /// <summary>
+    /// Returns true if this group was created by the new pipeline.
+    /// </summary>
+    public bool IsNewPipeline => TranslatedSites.Count > 0 || AssembledPlans.Count > 0;
 
     public bool Equals(FileInterceptorGroup? other)
     {
@@ -82,11 +103,15 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
             && EqualityHelpers.SequenceEqual(Sites, other.Sites)
             && EqualityHelpers.SequenceEqual(Chains, other.Chains)
             && EqualityHelpers.SequenceEqual(ChainMemberSites, other.ChainMemberSites)
+            && EqualityHelpers.SequenceEqual(TranslatedSites, other.TranslatedSites)
+            && EqualityHelpers.SequenceEqual(AssembledPlans, other.AssembledPlans)
+            && EqualityHelpers.SequenceEqual(TranslatedChainMemberSites, other.TranslatedChainMemberSites)
+            && EqualityHelpers.SequenceEqual(CarrierPlans, other.CarrierPlans)
             && EqualityHelpers.SequenceEqual(Diagnostics, other.Diagnostics);
     }
 
     public override bool Equals(object? obj) => Equals(obj as FileInterceptorGroup);
 
     public override int GetHashCode()
-        => HashCode.Combine(ContextClassName, SourceFilePath, FileTag, Sites.Count);
+        => HashCode.Combine(ContextClassName, SourceFilePath, FileTag, Sites.Count, TranslatedSites.Count);
 }
