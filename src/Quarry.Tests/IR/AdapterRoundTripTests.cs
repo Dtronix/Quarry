@@ -414,6 +414,104 @@ public class AdapterRoundTripTests
 
     #endregion
 
+    [Test]
+    public void RoundTrip_WhereCapturedVariable_FullEquality()
+    {
+        var entity = CreateUserEntity();
+
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new SyntacticBinary(
+                new SyntacticPropertyAccess("u", "UserId"),
+                "==",
+                new SyntacticCapturedVariable("id", "id", "Body.Right")));
+
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
+    }
+
+    [Test]
+    public void RoundTrip_WhereStringContains_FullEquality()
+    {
+        var entity = CreateUserEntity();
+
+        var pending = new PendingClauseInfo(
+            ClauseKind.Where, "u",
+            new SyntacticMethodCall(
+                new SyntacticPropertyAccess("u", "UserName"),
+                "Contains",
+                new SyntacticExpression[] { new SyntacticLiteral("er", "string") }));
+
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
+    }
+
+    [Test]
+    public void RoundTrip_SetClause_FullEquality()
+    {
+        var entity = CreateUserEntity();
+
+        var pending = new PendingClauseInfo(
+            ClauseKind.Set, "u",
+            new SyntacticPropertyAccess("u", "UserName"));
+
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.SQLite);
+        AssertTranslatorsEqual(entity, pending, GenSqlDialect.PostgreSQL);
+    }
+
+    private static void AssertTranslatorsEqual(EntityInfo entity, PendingClauseInfo pending, GenSqlDialect dialect)
+    {
+        var oldTranslator = new SyntacticClauseTranslator(entity, dialect);
+        var oldResult = oldTranslator.Translate(pending);
+
+        var newTranslator = new SqlExprClauseTranslator(entity, dialect);
+        var newResult = newTranslator.Translate(pending);
+
+        Assert.That(oldResult.IsSuccess, Is.True, $"Old translator failed ({dialect})");
+        Assert.That(newResult.IsSuccess, Is.True, $"New translator failed ({dialect})");
+        Assert.That(newResult.GetType(), Is.EqualTo(oldResult.GetType()), $"ClauseInfo type differs ({dialect})");
+        Assert.That(newResult.SqlFragment, Is.EqualTo(oldResult.SqlFragment), $"SQL differs ({dialect})");
+        Assert.That(newResult.Parameters.Count, Is.EqualTo(oldResult.Parameters.Count), $"Param count differs ({dialect})");
+
+        for (int i = 0; i < oldResult.Parameters.Count; i++)
+        {
+            var op = oldResult.Parameters[i];
+            var np = newResult.Parameters[i];
+            Assert.That(np.Index, Is.EqualTo(op.Index), $"Param[{i}].Index ({dialect})");
+            Assert.That(np.Name, Is.EqualTo(op.Name), $"Param[{i}].Name ({dialect})");
+            Assert.That(np.ClrType, Is.EqualTo(op.ClrType), $"Param[{i}].ClrType ({dialect})");
+            Assert.That(np.ValueExpression, Is.EqualTo(op.ValueExpression), $"Param[{i}].ValueExpression ({dialect})");
+            Assert.That(np.IsCollection, Is.EqualTo(op.IsCollection), $"Param[{i}].IsCollection ({dialect})");
+            Assert.That(np.IsCaptured, Is.EqualTo(op.IsCaptured), $"Param[{i}].IsCaptured ({dialect})");
+            Assert.That(np.ExpressionPath, Is.EqualTo(op.ExpressionPath), $"Param[{i}].ExpressionPath ({dialect})");
+        }
+
+        Assert.That(newResult.Equals(oldResult), Is.True, $"Full ClauseInfo.Equals failed ({dialect})");
+    }
+
+    private static EntityInfo CreateUserEntity()
+    {
+        var mods = new ColumnModifiers();
+        return new EntityInfo(
+            entityName: "User",
+            schemaClassName: "UserSchema",
+            schemaNamespace: "Quarry.Tests.Samples",
+            tableName: "users",
+            namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[]
+            {
+                new ColumnInfo("UserId", "user_id", "int", "int", false, ColumnKind.PrimaryKey, null, mods, isValueType: true),
+                new ColumnInfo("UserName", "user_name", "string", "string", false, ColumnKind.Standard, null, mods),
+                new ColumnInfo("Email", "email", "string?", "string?", true, ColumnKind.Standard, null, mods),
+                new ColumnInfo("IsActive", "is_active", "bool", "bool", false, ColumnKind.Standard, null, mods, isValueType: true),
+                new ColumnInfo("CreatedAt", "created_at", "DateTime", "DateTime", false, ColumnKind.Standard, null, mods, isValueType: true),
+                new ColumnInfo("LastLogin", "last_login", "DateTime?", "DateTime?", true, ColumnKind.Standard, null, mods),
+            },
+            navigations: System.Array.Empty<NavigationInfo>(),
+            indexes: System.Array.Empty<IndexInfo>(),
+            location: Location.None);
+    }
+
     private static EntityInfo CreateTestEntity()
     {
         var mods = new ColumnModifiers();

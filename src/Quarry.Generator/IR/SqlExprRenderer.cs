@@ -16,11 +16,14 @@ internal static class SqlExprRenderer
     /// <param name="expr">The bound expression to render.</param>
     /// <param name="dialect">SQL dialect for formatting.</param>
     /// <param name="parameterBaseIndex">Base index for parameter placeholders.</param>
+    /// <param name="useGenericParamFormat">When true, always uses @p{n} format for parameters
+    /// regardless of dialect. Used by SqlExprClauseTranslator where dialect-specific parameter
+    /// formatting is deferred to the SQL assembly stage.</param>
     /// <returns>The rendered SQL string.</returns>
-    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0)
+    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false)
     {
         var sb = new StringBuilder();
-        RenderExpr(expr, dialect, parameterBaseIndex, sb);
+        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat);
         return sb.ToString();
     }
 
@@ -78,7 +81,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         switch (expr)
         {
@@ -92,7 +95,7 @@ internal static class SqlExprRenderer
                 break;
 
             case ParamSlotExpr param:
-                AppendParameterPlaceholder(param, dialect, paramBase, sb);
+                AppendParameterPlaceholder(param, dialect, paramBase, sb, genericParams);
                 break;
 
             case LiteralExpr literal:
@@ -100,27 +103,27 @@ internal static class SqlExprRenderer
                 break;
 
             case BinaryOpExpr bin:
-                RenderBinary(bin, dialect, paramBase, sb);
+                RenderBinary(bin, dialect, paramBase, sb, genericParams);
                 break;
 
             case UnaryOpExpr unary:
-                RenderUnary(unary, dialect, paramBase, sb);
+                RenderUnary(unary, dialect, paramBase, sb, genericParams);
                 break;
 
             case FunctionCallExpr func:
-                RenderFunction(func, dialect, paramBase, sb);
+                RenderFunction(func, dialect, paramBase, sb, genericParams);
                 break;
 
             case InExpr inExpr:
-                RenderIn(inExpr, dialect, paramBase, sb);
+                RenderIn(inExpr, dialect, paramBase, sb, genericParams);
                 break;
 
             case IsNullCheckExpr isNull:
-                RenderIsNull(isNull, dialect, paramBase, sb);
+                RenderIsNull(isNull, dialect, paramBase, sb, genericParams);
                 break;
 
             case LikeExpr like:
-                RenderLike(like, dialect, paramBase, sb);
+                RenderLike(like, dialect, paramBase, sb, genericParams);
                 break;
 
             case CapturedValueExpr:
@@ -136,24 +139,23 @@ internal static class SqlExprRenderer
                 for (int i = 0; i < list.Expressions.Count; i++)
                 {
                     if (i > 0) sb.Append(", ");
-                    RenderExpr(list.Expressions[i], dialect, paramBase, sb);
+                    RenderExpr(list.Expressions[i], dialect, paramBase, sb, genericParams);
                 }
                 break;
 
         }
     }
 
-    private static void AppendParameterPlaceholder(ParamSlotExpr param, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void AppendParameterPlaceholder(ParamSlotExpr param, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         var idx = paramBase + param.LocalIndex;
-        switch (dialect)
+        if (!genericParams && dialect == SqlDialect.PostgreSQL)
         {
-            case SqlDialect.PostgreSQL:
-                sb.Append('$').Append(idx + 1); // PostgreSQL uses 1-based $1, $2, ...
-                break;
-            default:
-                sb.Append("@p").Append(idx);
-                break;
+            sb.Append('$').Append(idx + 1); // PostgreSQL uses 1-based $1, $2, ...
+        }
+        else
+        {
+            sb.Append("@p").Append(idx);
         }
     }
 
@@ -191,7 +193,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         // Handle string concatenation for different dialects
         if (bin.Operator == SqlBinaryOperator.Add)
@@ -202,64 +204,64 @@ internal static class SqlExprRenderer
         }
 
         sb.Append('(');
-        RenderExpr(bin.Left, dialect, paramBase, sb);
+        RenderExpr(bin.Left, dialect, paramBase, sb, genericParams);
         sb.Append(' ');
         sb.Append(GetSqlOperator(bin.Operator));
         sb.Append(' ');
-        RenderExpr(bin.Right, dialect, paramBase, sb);
+        RenderExpr(bin.Right, dialect, paramBase, sb, genericParams);
         sb.Append(')');
     }
 
-    private static void RenderUnary(UnaryOpExpr unary, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderUnary(UnaryOpExpr unary, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         switch (unary.Operator)
         {
             case SqlUnaryOperator.Not:
                 sb.Append("NOT (");
-                RenderExpr(unary.Operand, dialect, paramBase, sb);
+                RenderExpr(unary.Operand, dialect, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
 
             case SqlUnaryOperator.Negate:
                 sb.Append('-');
-                RenderExpr(unary.Operand, dialect, paramBase, sb);
+                RenderExpr(unary.Operand, dialect, paramBase, sb, genericParams);
                 break;
         }
     }
 
-    private static void RenderFunction(FunctionCallExpr func, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderFunction(FunctionCallExpr func, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         sb.Append(func.FunctionName);
         sb.Append('(');
         for (int i = 0; i < func.Arguments.Count; i++)
         {
             if (i > 0) sb.Append(", ");
-            RenderExpr(func.Arguments[i], dialect, paramBase, sb);
+            RenderExpr(func.Arguments[i], dialect, paramBase, sb, genericParams);
         }
         sb.Append(')');
     }
 
-    private static void RenderIn(InExpr inExpr, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderIn(InExpr inExpr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(inExpr.Operand, dialect, paramBase, sb);
+        RenderExpr(inExpr.Operand, dialect, paramBase, sb, genericParams);
         sb.Append(inExpr.IsNegated ? " NOT IN (" : " IN (");
         for (int i = 0; i < inExpr.Values.Count; i++)
         {
             if (i > 0) sb.Append(", ");
-            RenderExpr(inExpr.Values[i], dialect, paramBase, sb);
+            RenderExpr(inExpr.Values[i], dialect, paramBase, sb, genericParams);
         }
         sb.Append(')');
     }
 
-    private static void RenderIsNull(IsNullCheckExpr isNull, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderIsNull(IsNullCheckExpr isNull, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(isNull.Operand, dialect, paramBase, sb);
+        RenderExpr(isNull.Operand, dialect, paramBase, sb, genericParams);
         sb.Append(isNull.IsNegated ? " IS NOT NULL" : " IS NULL");
     }
 
-    private static void RenderLike(LikeExpr like, SqlDialect dialect, int paramBase, StringBuilder sb)
+    private static void RenderLike(LikeExpr like, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(like.Operand, dialect, paramBase, sb);
+        RenderExpr(like.Operand, dialect, paramBase, sb, genericParams);
         sb.Append(like.IsNegated ? " NOT LIKE " : " LIKE ");
 
         // Build the pattern with prefix/suffix using dialect-appropriate concatenation
@@ -268,7 +270,7 @@ internal static class SqlExprRenderer
 
         if (!hasPrefix && !hasSuffix)
         {
-            RenderExpr(like.Pattern, dialect, paramBase, sb);
+            RenderExpr(like.Pattern, dialect, paramBase, sb, genericParams);
         }
         else
         {
@@ -276,7 +278,7 @@ internal static class SqlExprRenderer
             if (hasPrefix) parts.Add($"'{like.LikePrefix}'");
 
             var patternSb = new StringBuilder();
-            RenderExpr(like.Pattern, dialect, paramBase, patternSb);
+            RenderExpr(like.Pattern, dialect, paramBase, patternSb, genericParams);
             parts.Add(patternSb.ToString());
 
             if (hasSuffix) parts.Add($"'{like.LikeSuffix}'");

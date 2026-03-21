@@ -2097,8 +2097,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Translates a pending clause to SQL using entity metadata.
-    /// Uses syntactic translator first; if it fails and an entity registry with navigations
-    /// is available, falls back to semantic path (which supports subqueries).
+    /// Uses the new SqlExpr IR pipeline first; falls back to old syntactic translator,
+    /// then to semantic path (which supports subqueries) if both fail.
     /// </summary>
     private static ClauseInfo? TranslatePendingClause(
         PendingClauseInfo pendingClause,
@@ -2108,14 +2108,21 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         Dictionary<string, EntityInfo>? entityRegistry = null,
         Compilation? compilation = null)
     {
-        // Try syntactic translator first (handles most cases)
-        var translator = new Translation.SyntacticClauseTranslator(entity, dialect);
-        var result = translator.Translate(pendingClause);
+        // Try new SqlExpr IR pipeline first (handles most cases via Bind → Render)
+        var irTranslator = new IR.SqlExprClauseTranslator(entity, dialect);
+        var result = irTranslator.Translate(pendingClause);
 
         if (result != null && result.IsSuccess)
             return result;
 
-        // Syntactic translation failed — try semantic path with entity registry (handles subqueries)
+        // IR translation failed — try old syntactic translator as fallback
+        var syntacticTranslator = new Translation.SyntacticClauseTranslator(entity, dialect);
+        var syntacticResult = syntacticTranslator.Translate(pendingClause);
+
+        if (syntacticResult != null && syntacticResult.IsSuccess)
+            return syntacticResult;
+
+        // Both failed — try semantic path with entity registry (handles subqueries)
         if (originalInvocation != null && entityRegistry != null && pendingClause.Kind == ClauseKind.Where)
         {
             try
@@ -2127,11 +2134,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
             catch
             {
-                // Return original syntactic failure
+                // Return best available failure
             }
         }
 
-        return result;
+        return result ?? syntacticResult;
     }
 
     /// <summary>
