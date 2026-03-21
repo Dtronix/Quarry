@@ -355,10 +355,13 @@ internal sealed class PipelineOrchestrator
                 chainMemberIds.Add(cs.Bound.Raw.UniqueId);
         }
 
+        // Filter out sites without a valid context (e.g., direct QueryBuilder usage not from a QuarryContext)
+        var contextSites = allSites.Where(s => !string.IsNullOrEmpty(s.Bound.ContextClassName)).ToImmutableArray();
+
         // Group by (context, filePath)
-        var fileGroups = allSites
+        var fileGroups = contextSites
             .GroupBy(s => (
-                ContextClassName: s.Bound.ContextClassName ?? "Quarry",
+                ContextClassName: s.Bound.ContextClassName!,
                 FilePath: s.Bound.Raw.FilePath))
             .ToList();
 

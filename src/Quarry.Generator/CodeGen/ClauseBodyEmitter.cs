@@ -66,7 +66,12 @@ internal static class ClauseBodyEmitter
         sb.AppendLine($"    {{");
 
         if (clauseInfo == null || !clauseInfo.IsSuccess)
+        {
+            // Fallback: return the builder unchanged with closing brace
+            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"    }}");
             return;
+        }
 
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
@@ -509,7 +514,12 @@ internal static class ClauseBodyEmitter
         sb.AppendLine($"    {{");
 
         if (clauseInfo == null || !clauseInfo.IsSuccess)
+        {
+            // Fallback: return the builder unchanged with closing brace
+            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"    }}");
             return;
+        }
 
         // Carrier-optimized path (only with concrete key type)
         if (carrier != null && prebuiltChain != null && keyType != null)
@@ -613,7 +623,12 @@ internal static class ClauseBodyEmitter
         sb.AppendLine($"    {{");
 
         if (clauseInfo == null || !clauseInfo.IsSuccess)
+        {
+            // Fallback: return the builder unchanged with closing brace
+            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"    }}");
             return;
+        }
 
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
@@ -795,7 +810,12 @@ internal static class ClauseBodyEmitter
         sb.AppendLine($"    {{");
 
         if (clauseInfo == null || !clauseInfo.IsSuccess)
+        {
+            // Fallback: return the builder unchanged with closing brace
+            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"    }}");
             return;
+        }
 
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
