@@ -6,17 +6,6 @@ using Quarry.Generators.Sql;
 namespace Quarry.Generators.Models;
 
 /// <summary>
-/// The kind of query for execution interceptor routing.
-/// </summary>
-internal enum QueryKind
-{
-    Select,
-    Delete,
-    Update,
-    Insert
-}
-
-/// <summary>
 /// Bundles a <see cref="ChainAnalysisResult"/> with the pre-built SQL map and metadata
 /// needed by <see cref="Quarry.Generators.Generation.InterceptorCodeGenerator"/> to emit
 /// an execution interceptor.

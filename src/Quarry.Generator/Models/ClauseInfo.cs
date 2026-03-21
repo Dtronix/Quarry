@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Models;
@@ -198,58 +197,6 @@ internal sealed class SetClauseInfo : ClauseInfo, IEquatable<SetClauseInfo>
 }
 
 /// <summary>
-/// Represents a single assignment extracted from a Set(Action&lt;T&gt;) lambda body.
-/// </summary>
-internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
-{
-    public SetActionAssignment(string columnSql, string? valueTypeName, string? customTypeMappingClass,
-        string? inlinedSqlValue = null, string? inlinedCSharpExpression = null)
-    {
-        ColumnSql = columnSql;
-        ValueTypeName = valueTypeName;
-        CustomTypeMappingClass = customTypeMappingClass;
-        InlinedSqlValue = inlinedSqlValue;
-        InlinedCSharpExpression = inlinedCSharpExpression;
-    }
-
-    public string ColumnSql { get; }
-    public string? ValueTypeName { get; }
-    public string? CustomTypeMappingClass { get; }
-
-    /// <summary>
-    /// When the assignment value is a compile-time constant (literal), this contains the
-    /// SQL literal (e.g., "0", "'hello'") that should be inlined directly instead of using a parameter.
-    /// Null when the value requires a parameter binding.
-    /// </summary>
-    public string? InlinedSqlValue { get; }
-
-    /// <summary>
-    /// The original C# expression for inlined constants (e.g., "false", "\"hello\"").
-    /// Used by the standalone interceptor path to pass the value to AddSetClauseBoxed.
-    /// </summary>
-    public string? InlinedCSharpExpression { get; }
-
-    /// <summary>
-    /// Gets whether this assignment's value is a compile-time constant inlined into the SQL.
-    /// </summary>
-    public bool IsInlined => InlinedSqlValue != null;
-
-    public bool Equals(SetActionAssignment? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return ColumnSql == other.ColumnSql
-            && ValueTypeName == other.ValueTypeName
-            && CustomTypeMappingClass == other.CustomTypeMappingClass
-            && InlinedSqlValue == other.InlinedSqlValue
-            && InlinedCSharpExpression == other.InlinedCSharpExpression;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SetActionAssignment);
-    public override int GetHashCode() => HashCode.Combine(ColumnSql, ValueTypeName, CustomTypeMappingClass, InlinedSqlValue);
-}
-
-/// <summary>
 /// Represents information about a Set(Action&lt;T&gt;) clause that contains one or more
 /// property assignment expressions (e.g., <c>u =&gt; u.Name = "x"</c> or
 /// <c>u =&gt; { u.Name = "x"; u.Active = true; }</c>).
@@ -376,50 +323,4 @@ internal sealed class JoinClauseInfo : ClauseInfo, IEquatable<JoinClauseInfo>
     {
         return HashCode.Combine(Kind, JoinKind, JoinedEntityName, JoinedTableName);
     }
-}
-
-/// <summary>
-/// The kind of join operation for clause translation.
-/// </summary>
-internal enum JoinClauseKind
-{
-    Inner,
-    Left,
-    Right
-}
-
-/// <summary>
-/// Specifies the kind of clause.
-/// </summary>
-internal enum ClauseKind
-{
-    /// <summary>
-    /// WHERE clause for filtering.
-    /// </summary>
-    Where,
-
-    /// <summary>
-    /// ORDER BY clause for sorting.
-    /// </summary>
-    OrderBy,
-
-    /// <summary>
-    /// GROUP BY clause for grouping.
-    /// </summary>
-    GroupBy,
-
-    /// <summary>
-    /// HAVING clause for filtering groups.
-    /// </summary>
-    Having,
-
-    /// <summary>
-    /// SET clause for Update operations.
-    /// </summary>
-    Set,
-
-    /// <summary>
-    /// JOIN clause for joining tables.
-    /// </summary>
-    Join
 }
