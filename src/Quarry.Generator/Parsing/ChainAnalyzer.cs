@@ -441,13 +441,42 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Rebuild result type name from enriched columns for tuple projections
+        // Rebuild result type name from enriched columns
         var resultTypeName = projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName;
         if (projInfo.Kind == ProjectionKind.Tuple && columns.Count > 0)
         {
             var rebuilt = BuildTupleResultTypeName(columns);
             if (!string.IsNullOrEmpty(rebuilt))
                 resultTypeName = rebuilt;
+        }
+        else if (projInfo.Kind == ProjectionKind.SingleColumn && columns.Count == 1)
+        {
+            // For single-column projections, derive the result type from the enriched column
+            var col = columns[0];
+            var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
+            if (!string.IsNullOrWhiteSpace(colType) && colType != "?" && colType != "object")
+            {
+                if (col.IsNullable && !colType.EndsWith("?"))
+                    colType += "?";
+                resultTypeName = colType;
+            }
+        }
+        // Fix unresolved "?" result type by checking enriched columns
+        if (resultTypeName == "?" && columns.Count > 0)
+        {
+            if (columns.Count == 1)
+            {
+                var col = columns[0];
+                var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
+                if (!string.IsNullOrWhiteSpace(colType) && colType != "?")
+                    resultTypeName = col.IsNullable && !colType.EndsWith("?") ? colType + "?" : colType;
+            }
+            else
+            {
+                var rebuilt = BuildTupleResultTypeName(columns);
+                if (!string.IsNullOrEmpty(rebuilt))
+                    resultTypeName = rebuilt;
+            }
         }
 
         return new SelectProjection(

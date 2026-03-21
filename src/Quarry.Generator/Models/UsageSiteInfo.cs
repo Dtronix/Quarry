@@ -259,7 +259,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// This is a temporary adapter used during Phase 4 pipeline transition.
     /// The InvocationSyntax will be null since the new pipeline doesn't store SyntaxNode references.
     /// </summary>
-    public static UsageSiteInfo FromTranslatedCallSite(IR.TranslatedCallSite translated, SyntaxNode? syntaxNode = null)
+    public static UsageSiteInfo FromTranslatedCallSite(IR.TranslatedCallSite translated, SyntaxNode? syntaxNode = null, ProjectionInfo? projectionOverride = null)
     {
         var bound = translated.Bound;
         var raw = bound.Raw;
@@ -322,11 +322,11 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
             kind: raw.Kind,
             invocationSyntax: syntaxNode, // Reconstructed from Compilation in the collected stage
             uniqueId: raw.UniqueId,
-            resultTypeName: raw.ResultTypeName,
+            resultTypeName: projectionOverride != null ? projectionOverride.ResultTypeName : raw.ResultTypeName,
             nonAnalyzableReason: raw.NonAnalyzableReason,
             contextClassName: bound.ContextClassName,
             contextNamespace: bound.ContextNamespace,
-            projectionInfo: raw.ProjectionInfo,
+            projectionInfo: projectionOverride ?? raw.ProjectionInfo,
             clauseInfo: clauseInfo,
             interceptableLocationData: raw.InterceptableLocationData,
             interceptableLocationVersion: raw.InterceptableLocationVersion,
