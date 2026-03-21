@@ -423,6 +423,46 @@ public class SnapshotTrackingTests
         Assert.That(sql, Does.Contain("-- SQLite does not support schema namespaces"));
     }
 
+    [Test]
+    public void DdlRenderer_SchemaTransferAndRename_EmitsBothStatements()
+    {
+        var builder = new global::Quarry.Migration.MigrationBuilder();
+        builder.RenameTable("users", "accounts", "dbo", "audit");
+        var sql = builder.BuildSql(global::Quarry.SqlDialect.SqlServer);
+        // Should emit schema transfer first, then rename
+        Assert.That(sql, Does.Contain("ALTER SCHEMA"));
+        Assert.That(sql, Does.Contain("TRANSFER"));
+        Assert.That(sql, Does.Contain("sp_rename"));
+    }
+
+    #endregion
+
+    #region Code gen — plain rename with schema (regression)
+
+    [Test]
+    public void MigrationCodeGen_PlainRenameWithSchema_EmitsThreeArgOverload()
+    {
+        // A plain rename (no schema transfer) that has a SchemaName should use
+        // the 3-arg RenameTable overload, not the 4-arg schema transfer overload.
+        var steps = new List<MigrationStep>
+        {
+            new MigrationStep(
+                MigrationStepType.RenameTable,
+                StepClassification.Cautious,
+                "old_name", "dbo", null,
+                "old_name", "new_name",
+                "Rename table 'old_name' to 'new_name'")
+        };
+
+        var snapshot = new SchemaSnapshot(1, "test", DateTimeOffset.UtcNow, null, Array.Empty<TableDef>());
+        var code = MigrationCodeGenerator.GenerateMigrationClass(1, "test", steps, null, snapshot, "TestNs");
+        // Should emit 3-arg overload with schema positional parameter
+        Assert.That(code, Does.Contain("builder.RenameTable(\"old_name\", \"new_name\", \"dbo\");"));
+        // Should NOT emit named oldSchema/newSchema parameters
+        Assert.That(code, Does.Not.Contain("oldSchema:"));
+        Assert.That(code, Does.Not.Contain("newSchema:"));
+    }
+
     #endregion
 
     #region DDL Rendering — Descending Columns

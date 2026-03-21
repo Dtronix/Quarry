@@ -168,10 +168,14 @@ static class MigrationCodeGenerator
             case MigrationStepType.RenameTable:
                 sb.Append("        builder.RenameTable(\"").Append(EscapeString((string)step.OldValue!));
                 sb.Append("\", \"").Append(EscapeString((string)step.NewValue!)).Append("\"");
-                if (step.OldSchemaName != null || step.SchemaName != null)
+                if (step.OldSchemaName != null)
                 {
-                    sb.Append(", oldSchema: ").Append(step.OldSchemaName != null ? $"\"{EscapeString(step.OldSchemaName)}\"" : "null");
+                    sb.Append(", oldSchema: ").Append($"\"{EscapeString(step.OldSchemaName)}\"");
                     sb.Append(", newSchema: ").Append(step.SchemaName != null ? $"\"{EscapeString(step.SchemaName)}\"" : "null");
+                }
+                else if (step.SchemaName != null)
+                {
+                    sb.Append(", \"").Append(EscapeString(step.SchemaName)).Append("\"");
                 }
                 sb.AppendLine(");");
                 break;
@@ -332,11 +336,15 @@ static class MigrationCodeGenerator
             case MigrationStepType.RenameTable:
                 sb.Append("        builder.RenameTable(\"").Append(EscapeString((string)step.NewValue!));
                 sb.Append("\", \"").Append(EscapeString((string)step.OldValue!)).Append("\"");
-                if (step.OldSchemaName != null || step.SchemaName != null)
+                if (step.OldSchemaName != null)
                 {
                     // Reverse: old schema becomes new, new becomes old
                     sb.Append(", oldSchema: ").Append(step.SchemaName != null ? $"\"{EscapeString(step.SchemaName)}\"" : "null");
-                    sb.Append(", newSchema: ").Append(step.OldSchemaName != null ? $"\"{EscapeString(step.OldSchemaName)}\"" : "null");
+                    sb.Append(", newSchema: ").Append($"\"{EscapeString(step.OldSchemaName)}\"");
+                }
+                else if (step.SchemaName != null)
+                {
+                    sb.Append(", \"").Append(EscapeString(step.SchemaName)).Append("\"");
                 }
                 sb.AppendLine(");");
                 break;
