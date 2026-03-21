@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Xml.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Tool.Schema;
 
@@ -24,7 +23,7 @@ internal static class BundleCommand
         bool selfContained,
         string? runtime)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
 
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
@@ -35,7 +34,7 @@ internal static class BundleCommand
         }
 
         // Discover migrations
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         if (migrations.Count == 0)
         {
             Console.Error.WriteLine("No migrations found. Nothing to bundle.");
@@ -104,9 +103,11 @@ internal static class BundleCommand
                 return 1;
             }
 
-            var stdout = await process.StandardOutput.ReadToEndAsync();
-            var stderr = await process.StandardError.ReadToEndAsync();
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
             await process.WaitForExitAsync();
+            var stdout = await stdoutTask;
+            var stderr = await stderrTask;
 
             if (process.ExitCode != 0)
             {
@@ -118,40 +119,16 @@ internal static class BundleCommand
                 return 1;
             }
 
-            // Copy output to requested location
+            // Copy all published files to the output directory
             var publishDir = Path.Combine(tempDir, "publish");
             var outputDir = Path.GetFullPath(output);
-            Directory.CreateDirectory(Path.GetDirectoryName(outputDir)!);
+            Directory.CreateDirectory(outputDir);
 
             if (Directory.Exists(publishDir))
             {
-                var exeFiles = Directory.GetFiles(publishDir);
-                foreach (var file in exeFiles)
+                foreach (var file in Directory.GetFiles(publishDir))
                 {
-                    var destPath = outputDir;
-                    var fileName = Path.GetFileName(file);
-
-                    // If output looks like a directory (ends with separator or no extension), use it as dir
-                    if (output.EndsWith(Path.DirectorySeparatorChar) || output.EndsWith(Path.AltDirectorySeparatorChar) || !Path.HasExtension(output))
-                    {
-                        Directory.CreateDirectory(outputDir);
-                        destPath = Path.Combine(outputDir, fileName);
-                    }
-                    else if (fileName.StartsWith("QuarryBundle", StringComparison.OrdinalIgnoreCase) &&
-                             (fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
-                              fileName.EndsWith(".dll", StringComparison.OrdinalIgnoreCase) ||
-                              !Path.HasExtension(fileName)))
-                    {
-                        // Rename the main executable to the requested output name
-                        destPath = outputDir;
-                    }
-                    else
-                    {
-                        // Copy supporting files alongside the output
-                        Directory.CreateDirectory(Path.GetDirectoryName(outputDir)!);
-                        destPath = Path.Combine(Path.GetDirectoryName(outputDir)!, fileName);
-                    }
-
+                    var destPath = Path.Combine(outputDir, Path.GetFileName(file));
                     File.Copy(file, destPath, overwrite: true);
                 }
             }
@@ -162,9 +139,9 @@ internal static class BundleCommand
                 Console.WriteLine($"  Default dialect: {defaultDialect}");
             Console.WriteLine();
             Console.WriteLine("Usage:");
-            Console.WriteLine($"  {Path.GetFileName(outputDir)} --connection \"<connection-string>\" --dialect <dialect>");
-            Console.WriteLine($"  {Path.GetFileName(outputDir)} --connection \"...\" --target 5");
-            Console.WriteLine($"  {Path.GetFileName(outputDir)} --connection \"...\" --dry-run");
+            Console.WriteLine($"  ./{Path.GetFileName(outputDir)}/QuarryBundle --connection \"<connection-string>\" --dialect <dialect>");
+            Console.WriteLine($"  ./{Path.GetFileName(outputDir)}/QuarryBundle --connection \"...\" --target 5");
+            Console.WriteLine($"  ./{Path.GetFileName(outputDir)}/QuarryBundle --connection \"...\" --dry-run");
 
             return 0;
         }
@@ -177,52 +154,11 @@ internal static class BundleCommand
     }
 
     /// <summary>
-    /// Finds all migration classes and their metadata from the compilation.
-    /// </summary>
-    internal static List<MigrationEntry> FindMigrations(Compilation compilation)
-    {
-        var migrations = new List<MigrationEntry>();
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            var model = compilation.GetSemanticModel(tree);
-            foreach (var classDecl in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
-            {
-                var symbol = Microsoft.CodeAnalysis.CSharp.CSharpExtensions.GetDeclaredSymbol(model, classDecl);
-                if (symbol == null) continue;
-
-                foreach (var attr in symbol.GetAttributes())
-                {
-                    if (attr.AttributeClass?.Name != "MigrationAttribute") continue;
-
-                    int? ver = null;
-                    string? migName = null;
-                    foreach (var arg in attr.NamedArguments)
-                    {
-                        if (arg.Key == "Version" && arg.Value.Value is int v) ver = v;
-                        if (arg.Key == "Name" && arg.Value.Value is string n) migName = n;
-                    }
-
-                    if (ver.HasValue)
-                    {
-                        migrations.Add(new MigrationEntry(
-                            ver.Value,
-                            migName ?? "",
-                            symbol.Name,
-                            symbol.ContainingNamespace.ToDisplayString()));
-                    }
-                }
-            }
-        }
-
-        return migrations.OrderBy(m => m.Version).ToList();
-    }
-
-    /// <summary>
     /// Discovers all source files on disk that belong to migration classes.
     /// </summary>
     internal static List<MigrationSourceFile> DiscoverMigrationSourceFiles(
         Compilation compilation,
-        List<MigrationEntry> migrations)
+        List<CommandHelpers.MigrationInfo> migrations)
     {
         var migrationClassNames = new HashSet<string>(migrations.Select(m => m.ClassName));
         var files = new List<MigrationSourceFile>();
@@ -272,7 +208,7 @@ internal static class BundleCommand
     /// Generates the bundle's entry-point Program.cs.
     /// </summary>
     internal static string GenerateBundleProgram(
-        List<MigrationEntry> migrations,
+        List<CommandHelpers.MigrationInfo> migrations,
         string? defaultDialect)
     {
         var sb = new System.Text.StringBuilder();
@@ -586,27 +522,8 @@ internal static class BundleCommand
         return null;
     }
 
-    private static string ResolveCsproj(string project)
-    {
-        if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            return Path.GetFullPath(project);
-
-        var csprojs = Directory.GetFiles(project, "*.csproj");
-        if (csprojs.Length == 1) return Path.GetFullPath(csprojs[0]);
-        if (csprojs.Length == 0) throw new InvalidOperationException($"No .csproj found in '{project}'");
-        throw new InvalidOperationException($"Multiple .csproj files found in '{project}'. Specify one with -p.");
-    }
-
     private static string EscapeCSharpString(string value) =>
         value.Replace("\\", "\\\\").Replace("\"", "\\\"");
-
-    internal sealed class MigrationEntry(int version, string name, string className, string @namespace)
-    {
-        public int Version { get; } = version;
-        public string Name { get; } = name;
-        public string ClassName { get; } = className;
-        public string Namespace { get; } = @namespace;
-    }
 
     internal sealed class MigrationSourceFile(string className, string filePath)
     {

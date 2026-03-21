@@ -9,7 +9,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_SingleMigration_EmitsCorrectStructure()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "InitialCreate", "M0001_InitialCreate", "MyApp.Migrations")
         };
@@ -26,7 +26,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_MultipleMigrations_SortedByVersion()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "InitialCreate", "M0001_InitialCreate", "MyApp.Migrations"),
             new(2, "AddUsers", "M0002_AddUsers", "MyApp.Migrations"),
@@ -46,7 +46,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_WithDefaultDialect_EmbedsDefault()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -61,7 +61,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_WithoutDefaultDialect_RequiresDialect()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -74,7 +74,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsAllDbProviderUsings()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -90,7 +90,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsConnectionStringFromEnvVar()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -103,7 +103,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsCLIOptionsSupport()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -120,7 +120,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsExitCodeHandling()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -134,7 +134,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsDialectParserWithAllDialects()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -152,7 +152,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsHelpFlag()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
@@ -166,7 +166,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_MultipleNamespaces_EmitsAllUsings()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations"),
             new(2, "Seed", "M0002_Seed", "MyApp.Seeds"),
@@ -181,7 +181,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_MigrationNameWithSpecialChars_Escaped()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Add \"Users\" Table", "M0001_AddUsersTable", "MyApp.Migrations")
         };
@@ -195,7 +195,7 @@ public class BundleCommandTests
     [Test]
     public void GenerateBundleProgram_EmitsDbConnectionCreationForAllDialects()
     {
-        var migrations = new List<BundleCommand.MigrationEntry>
+        var migrations = new List<CommandHelpers.MigrationInfo>
         {
             new(1, "Init", "M0001_Init", "MyApp.Migrations")
         };
