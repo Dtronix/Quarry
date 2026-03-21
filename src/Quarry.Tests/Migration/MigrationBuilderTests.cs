@@ -204,4 +204,98 @@ public class MigrationBuilderTests
         Assert.That(sql, Does.Contain("email"));
         Assert.That(sql, Does.Contain("INDEX"));
     }
+
+    [Test]
+    public void SuppressTransaction_SetsFlagOnLastOperation()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" })
+               .SuppressTransaction();
+
+        var ops = builder.GetOperations();
+        Assert.That(ops[0].SuppressTransaction, Is.True);
+    }
+
+    [Test]
+    public void SuppressTransaction_ThrowsWhenNoOperation()
+    {
+        var builder = new MigrationBuilder();
+        Assert.Throws<InvalidOperationException>(() => builder.SuppressTransaction());
+    }
+
+    [Test]
+    public void SuppressTransaction_ChainsWithConcurrentIndex()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" })
+               .ConcurrentIndex()
+               .SuppressTransaction();
+
+        var ops = builder.GetOperations();
+        Assert.That(ops[0].IsConcurrent, Is.True);
+        Assert.That(ops[0].SuppressTransaction, Is.True);
+    }
+
+    [Test]
+    public void BuildPartitionedSql_PostgreSQL_ConcurrentIndex_AutoSuppressed()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.Column("email", c => c.ClrType("string").Length(255).NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        builder.AddIndex("IX_users_email", "users", new[] { "email" })
+               .ConcurrentIndex();
+
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(SqlDialect.PostgreSQL);
+
+        Assert.That(txSql, Does.Contain("CREATE TABLE"));
+        Assert.That(txSql, Does.Not.Contain("CONCURRENTLY"));
+        Assert.That(nonTxSql, Does.Contain("CONCURRENTLY"));
+        Assert.That(allSql, Does.Contain("CREATE TABLE"));
+        Assert.That(allSql, Does.Contain("CONCURRENTLY"));
+    }
+
+    [Test]
+    public void BuildPartitionedSql_SqlServer_ConcurrentIndex_NotAutoSuppressed()
+    {
+        var builder = new MigrationBuilder();
+        builder.CreateTable("users", null, t =>
+        {
+            t.Column("id", c => c.ClrType("int").NotNull());
+            t.Column("email", c => c.ClrType("string").Length(255).NotNull());
+            t.PrimaryKey("PK_users", "id");
+        });
+        builder.AddIndex("IX_users_email", "users", new[] { "email" })
+               .ConcurrentIndex();
+
+        var (txSql, nonTxSql, _) = builder.BuildPartitionedSql(SqlDialect.SqlServer);
+
+        // SQL Server ONLINE=ON can run inside a transaction
+        Assert.That(txSql, Does.Contain("CREATE TABLE"));
+        Assert.That(txSql, Does.Contain("ONLINE = ON"));
+        Assert.That(nonTxSql, Is.Empty);
+    }
+
+    [Test]
+    public void HasNonTransactionalOperations_PostgreSQL_ConcurrentIndex_ReturnsTrue()
+    {
+        var builder = new MigrationBuilder();
+        builder.AddIndex("IX_users_email", "users", new[] { "email" })
+               .ConcurrentIndex();
+
+        Assert.That(builder.HasNonTransactionalOperations(SqlDialect.PostgreSQL), Is.True);
+        Assert.That(builder.HasNonTransactionalOperations(SqlDialect.SqlServer), Is.False);
+    }
+
+    [Test]
+    public void HasNonTransactionalOperations_ExplicitSuppress_ReturnsTrue()
+    {
+        var builder = new MigrationBuilder();
+        builder.Sql("SOME SQL").SuppressTransaction();
+
+        Assert.That(builder.HasNonTransactionalOperations(SqlDialect.SQLite), Is.True);
+    }
 }

@@ -37,4 +37,10 @@ internal static partial class MigrationLog
 
     [LogMessage(LogLevel.Error, "Migration {version} ({name}) failed during {direction}")]
     internal static partial void Failed(int version, string name, string direction, Exception ex);
+
+    [LogMessage(LogLevel.Warning, "Migration {version} contains non-transactional operations that cannot be rolled back if they fail")]
+    internal static partial void NonTransactionalWarning(int version);
+
+    [LogMessage(LogLevel.Debug, "Migration {version} non-transactional SQL:\n{sql}", AlwaysEmit = true)]
+    internal static partial void NonTransactionalSqlGenerated(int version, string sql);
 }
