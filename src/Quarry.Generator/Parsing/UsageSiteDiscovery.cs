@@ -907,20 +907,28 @@ internal static class UsageSiteDiscovery
         // The root receiver identifies the chain (e.g., "db" in db.Users().Where(...))
         var rootText = receiver.ToString();
 
-        // Scope it by the containing method to avoid cross-method chain ID collisions
+        // Find the containing statement to distinguish separate chains within the same method.
+        // Without this, two chains like `db.Users().Select(u => u.Name).Execute()` and
+        // `db.Users().Select(u => u.Id).Execute()` in the same method get the same ChainId.
+        int statementStart = -1;
         foreach (var ancestor in invocation.Ancestors())
         {
+            if (ancestor is StatementSyntax stmt && !(ancestor is BlockSyntax))
+            {
+                statementStart = stmt.SpanStart;
+                continue; // Keep walking to find the containing method too
+            }
             if (ancestor is MethodDeclarationSyntax method)
             {
                 var filePath = invocation.SyntaxTree.FilePath;
-                var methodSpan = method.Span;
-                return $"{filePath}:{methodSpan.Start}:{rootText}";
+                var scopeKey = statementStart >= 0 ? statementStart : method.Span.Start;
+                return $"{filePath}:{scopeKey}:{rootText}";
             }
             if (ancestor is LocalFunctionStatementSyntax localFunc)
             {
                 var filePath = invocation.SyntaxTree.FilePath;
-                var funcSpan = localFunc.Span;
-                return $"{filePath}:{funcSpan.Start}:{rootText}";
+                var scopeKey = statementStart >= 0 ? statementStart : localFunc.Span.Start;
+                return $"{filePath}:{scopeKey}:{rootText}";
             }
         }
 

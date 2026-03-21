@@ -290,6 +290,39 @@ internal static class ChainAnalyzer
                         break;
                 }
             }
+            else if (kind == InterceptorKind.UpdateSetAction && raw.SetActionAssignments != null)
+            {
+                // SetAction (Action<T> lambda): parameters and assignments stored on RawCallSite
+                // because Action<T> can't be parsed to SqlExpr.
+                if (raw.SetActionParameters != null)
+                {
+                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex);
+                    parameters.AddRange(clauseParams);
+                }
+
+                // Build set terms from assignments. Non-inlined assignments consume parameters
+                // in order — track which parameter index each non-inlined assignment gets.
+                var paramBaseIndex = raw.SetActionParameters != null
+                    ? paramGlobalIndex - raw.SetActionParameters.Count
+                    : paramGlobalIndex;
+                var nextParamIdx = paramBaseIndex;
+
+                foreach (var assignment in raw.SetActionAssignments)
+                {
+                    var col = new ResolvedColumnExpr(assignment.ColumnSql);
+                    SqlExpr valueExpr;
+                    if (assignment.IsInlined && assignment.InlinedSqlValue != null)
+                    {
+                        valueExpr = new LiteralExpr(assignment.InlinedSqlValue, "object");
+                    }
+                    else
+                    {
+                        valueExpr = new ParamSlotExpr(nextParamIdx, "object", "@p" + nextParamIdx);
+                        nextParamIdx++;
+                    }
+                    setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
+                }
+            }
             else if (kind == InterceptorKind.Limit)
             {
                 hasLimit = true;

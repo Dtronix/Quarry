@@ -263,12 +263,26 @@ internal sealed class PipelineOrchestrator
     /// New pipeline entry point: takes TranslatedCallSites and orchestrates
     /// ChainAnalyzer → SqlAssembler → CarrierAnalyzer → file grouping.
     /// </summary>
+    // Trace log buffer — flushed into a generated .g.cs file per group
+    [ThreadStatic]
+    internal static System.Text.StringBuilder? TraceLog;
+
     public static ImmutableArray<FileInterceptorGroup> AnalyzeAndGroupTranslated(
         ImmutableArray<TranslatedCallSite> translatedSites,
         EntityRegistry registry,
         CancellationToken ct)
     {
+        TraceLog = new System.Text.StringBuilder();
+        TraceLog.AppendLine($"// === AnalyzeAndGroupTranslated: {translatedSites.Length} sites ===");
+
         ct.ThrowIfCancellationRequested();
+
+        // Log all incoming sites
+        foreach (var s in translatedSites)
+        {
+            var raw = s.Bound.Raw;
+            TraceLog.AppendLine($"//   Site: Kind={raw.Kind} Method={raw.MethodName} UniqueId={raw.UniqueId} IsAnalyzable={raw.IsAnalyzable} ChainId={raw.ChainId} ContextClass={s.Bound.ContextClassName ?? "(null)"} File={System.IO.Path.GetFileName(raw.FilePath)}:{raw.Line}");
+        }
 
         // Collect diagnostics from TranslatedCallSite properties
         var diagnostics = new List<DiagnosticInfo>();
@@ -279,6 +293,14 @@ internal sealed class PipelineOrchestrator
         // Chain analysis: TranslatedCallSite[] → AnalyzedChain[]
         var analyzedChains = ChainAnalyzer.Analyze(translatedSites, registry, ct);
 
+        TraceLog.AppendLine($"// === ChainAnalyzer produced {analyzedChains.Count} chains ===");
+        foreach (var chain in analyzedChains)
+        {
+            TraceLog.AppendLine($"//   Chain: Tier={chain.Plan.Tier} Kind={chain.Plan.Kind} ExecUniqueId={chain.ExecutionSite.Bound.Raw.UniqueId} ExecMethod={chain.ExecutionSite.Bound.Raw.MethodName} ClauseSites={chain.ClauseSites.Count}");
+            foreach (var cs in chain.ClauseSites)
+                TraceLog.AppendLine($"//     Clause: Kind={cs.Bound.Raw.Kind} UniqueId={cs.Bound.Raw.UniqueId}");
+        }
+
         ct.ThrowIfCancellationRequested();
 
         // SQL assembly: AnalyzedChain → AssembledPlan
@@ -287,6 +309,9 @@ internal sealed class PipelineOrchestrator
         {
             var assembled = SqlAssembler.Assemble(chain, registry);
             assembledPlans.Add(assembled);
+            TraceLog.AppendLine($"//   Assembled: Tier={assembled.Plan.Tier} ExecUniqueId={assembled.ExecutionSite.Bound.Raw.UniqueId} SqlVariants={assembled.SqlVariants.Count} Params={assembled.Plan.Parameters.Count} ResultType={assembled.ResultTypeName ?? "(null)"} EntityType={assembled.EntityTypeName}");
+            foreach (var p in assembled.Plan.Parameters)
+                TraceLog.AppendLine($"//     Param: Idx={p.GlobalIndex} Type={p.ClrType} NeedsFieldInfo={p.NeedsFieldInfoCache} IsCaptured={p.ValueExpression}");
         }
 
         ct.ThrowIfCancellationRequested();
@@ -356,6 +381,13 @@ internal sealed class PipelineOrchestrator
         }
 
         // Filter out sites without a valid context (e.g., direct QueryBuilder usage not from a QuarryContext)
+        var droppedSites = allSites.Where(s => string.IsNullOrEmpty(s.Bound.ContextClassName)).ToList();
+        if (TraceLog != null && droppedSites.Count > 0)
+        {
+            TraceLog.AppendLine($"// === GroupTranslatedIntoFiles: DROPPED {droppedSites.Count} sites with empty ContextClassName ===");
+            foreach (var ds in droppedSites)
+                TraceLog.AppendLine($"//   Dropped: Kind={ds.Bound.Raw.Kind} UniqueId={ds.Bound.Raw.UniqueId} Entity={ds.Bound.Raw.EntityTypeName}");
+        }
         var contextSites = allSites.Where(s => !string.IsNullOrEmpty(s.Bound.ContextClassName)).ToImmutableArray();
 
         // Group by (context, filePath)
@@ -408,6 +440,18 @@ internal sealed class PipelineOrchestrator
             var fileDiagnostics = diagnostics
                 .Where(d => d.Location.FilePath == filePath)
                 .ToList();
+
+            if (TraceLog != null)
+            {
+                TraceLog.AppendLine($"// === FileGroup: {contextClassName} / {System.IO.Path.GetFileName(filePath)} ===");
+                TraceLog.AppendLine($"//   fileSites={fileSites.Count} fileChainMemberSites={fileChainMemberSites.Count} fileAssembledPlans={fileAssembledPlans.Count} fileCarrierPlans={fileCarrierPlans.Count}");
+                foreach (var s in fileSites)
+                    TraceLog.AppendLine($"//   FileSite: Kind={s.Bound.Raw.Kind} UniqueId={s.Bound.Raw.UniqueId} IsAnalyzable={s.Bound.Raw.IsAnalyzable} Method={s.Bound.Raw.MethodName}");
+                foreach (var s in fileChainMemberSites)
+                    TraceLog.AppendLine($"//   ChainMemberSite: Kind={s.Bound.Raw.Kind} UniqueId={s.Bound.Raw.UniqueId} IsAnalyzable={s.Bound.Raw.IsAnalyzable} Method={s.Bound.Raw.MethodName}");
+                foreach (var p in fileAssembledPlans)
+                    TraceLog.AppendLine($"//   AssembledPlan: Tier={p.Plan.Tier} ExecUniqueId={p.ExecutionSite.Bound.Raw.UniqueId} ExecMethod={p.ExecutionSite.Bound.Raw.MethodName}");
+            }
 
             result.Add(new FileInterceptorGroup(
                 contextClassName,

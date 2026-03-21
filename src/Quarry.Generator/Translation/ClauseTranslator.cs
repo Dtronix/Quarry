@@ -361,7 +361,7 @@ internal static class ClauseTranslator
 
             var paramInfo = new ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
                 isCaptured: isCaptured,
-                expressionPath: null); // No expression tree navigation for Action<T>
+                expressionPath: isCaptured ? valueExpression : null); // For Action<T>, expressionPath = closure field name
 
             parameters.Add(paramInfo);
 

@@ -341,7 +341,9 @@ internal static class CarrierAnalyzer
         }
 
         // Entity field for insert/setPoco chains
-        if (plan.Kind == QueryKind.Insert || plan.SetTerms.Count > 0)
+        var hasSetPoco = assembled.ClauseSites.Any(cs =>
+            cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPoco);
+        if (plan.Kind == QueryKind.Insert || plan.SetTerms.Count > 0 || hasSetPoco)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
             fields.Add(new CarrierField("Entity", entityType + "?"));

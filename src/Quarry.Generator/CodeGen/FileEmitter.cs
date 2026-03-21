@@ -269,6 +269,26 @@ internal sealed class FileEmitter
             .Where(s => s.IsAnalyzable || chainMemberIds.Contains(s.UniqueId))
             .ToList();
 
+        // TRACE: Log filtering results
+        sb.AppendLine($"    // TRACE: _sites.Count={_sites.Count} chainMemberIds.Count={chainMemberIds.Count} allSitesForGeneration.Count={allSitesForGeneration.Count}");
+        foreach (var s in _sites)
+        {
+            var inChain = chainMemberIds.Contains(s.UniqueId);
+            var included = s.IsAnalyzable || inChain;
+            if (!included)
+                sb.AppendLine($"    // TRACE FILTERED OUT: Kind={s.Kind} UniqueId={s.UniqueId} IsAnalyzable={s.IsAnalyzable} InChain={inChain} Method={s.MethodName}");
+        }
+        foreach (var s in allSitesForGeneration)
+            sb.AppendLine($"    // TRACE INCLUDED: Kind={s.Kind} UniqueId={s.UniqueId} IsAnalyzable={s.IsAnalyzable} Method={s.MethodName}");
+        if (_chains != null)
+        {
+            sb.AppendLine($"    // TRACE: _chains.Count={_chains.Count}");
+            foreach (var ch in _chains)
+            {
+                sb.AppendLine($"    // TRACE CHAIN: ExecUniqueId={ch.Analysis.ExecutionSite.UniqueId} ExecMethod={ch.Analysis.ExecutionSite.MethodName} Tier={ch.Analysis.Tier}");
+            }
+        }
+
         // Group interceptors by chain
         var processedSiteIds = new HashSet<string>();
         var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites)>();
@@ -412,26 +432,46 @@ internal sealed class FileEmitter
             or InterceptorKind.ToAsyncEnumerable)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var chain))
+            {
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} Method={site.MethodName} — NOT in chainLookup (chainLookup has {chainLookup.Count} entries)");
                 return;
+            }
             if (chain.Analysis.UnmatchedMethodNames != null)
+            {
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — UnmatchedMethodNames={string.Join(",", chain.Analysis.UnmatchedMethodNames)}");
                 return;
+            }
             var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
             if (string.IsNullOrEmpty(rawResult))
+            {
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — empty result type. site.ResultTypeName={site.ResultTypeName ?? "(null)"} chain.ResultTypeName={chain.ResultTypeName ?? "(null)"} projInfo={chain.ProjectionInfo?.ResultTypeName ?? "(null)"}");
                 return;
+            }
             if (chain.ReaderDelegateCode == null)
+            {
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — ReaderDelegateCode is null. QueryKind={chain.QueryKind} ProjInfo={chain.ProjectionInfo != null} ProjCols={chain.ProjectionInfo?.Columns.Count ?? 0}");
                 return;
+            }
             if (chain.ProjectionInfo != null)
             {
                 var hasAmbiguousColumns = chain.ProjectionInfo.Columns.Any(c =>
                     c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName));
                 if (hasAmbiguousColumns)
+                {
+                    sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — ambiguous columns. ProjKind={chain.ProjectionInfo.Kind}");
+                    foreach (var col in chain.ProjectionInfo.Columns)
+                        sb.AppendLine($"    //   Col: Name={col.PropertyName ?? "(null)"} ColumnName={col.ColumnName ?? "(null)"} SqlExpr={col.SqlExpression ?? "(null)"} ClrType={col.ClrType ?? "(null)"}");
                     return;
+                }
             }
         }
         else if (site.Kind is InterceptorKind.ExecuteScalar)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var scalarChain))
+            {
+                sb.AppendLine($"    // TRACE SKIPPED SCALAR: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
                 return;
+            }
             if (scalarChain.Analysis.UnmatchedMethodNames != null)
                 return;
             var rawScalarResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, scalarChain.ResultTypeName, scalarChain.ProjectionInfo);
@@ -441,7 +481,10 @@ internal sealed class FileEmitter
         else if (site.Kind is InterceptorKind.ExecuteNonQuery)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var nqChain))
+            {
+                sb.AppendLine($"    // TRACE SKIPPED NONQUERY: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
                 return;
+            }
             if (nqChain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
