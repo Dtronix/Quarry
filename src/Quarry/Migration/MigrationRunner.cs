@@ -18,10 +18,29 @@ public static class MigrationRunner
     /// <summary>
     /// Runs migrations against the database.
     /// </summary>
-    public static async Task RunAsync(
+    public static Task RunAsync(
         DbConnection connection,
         SqlDialect dialect,
         (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup)[] migrations,
+        MigrationOptions? options = null)
+    {
+        // Wrap legacy tuple format into extended format with SquashedFrom = 0
+        var extended = new (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup, int SquashedFrom)[migrations.Length];
+        for (var i = 0; i < migrations.Length; i++)
+        {
+            var m = migrations[i];
+            extended[i] = (m.Version, m.Name, m.Upgrade, m.Downgrade, m.Backup, 0);
+        }
+        return RunAsync(connection, dialect, extended, options);
+    }
+
+    /// <summary>
+    /// Runs migrations against the database, with squash support.
+    /// </summary>
+    public static async Task RunAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup, int SquashedFrom)[] migrations,
         MigrationOptions? options = null)
     {
         options ??= new MigrationOptions();
@@ -62,8 +81,8 @@ public static class MigrationRunner
         }
         MigrationLog.AppliedCount(appliedMap.Count);
 
-        // Validate checksums for applied migrations
-        ValidateChecksums(migrations, appliedMap, dialect, options, log);
+        // Validate checksums for applied migrations (skip squash baselines that aren't applied)
+        ValidateChecksumsExtended(migrations, appliedMap, dialect, options, log);
 
         if (options.LockTimeout.HasValue && dialect == SqlDialect.SQLite)
             MigrationLog.LockTimeoutSkippedSQLite();
@@ -80,9 +99,31 @@ public static class MigrationRunner
                     continue;
                 }
 
+                // Squash-aware skip: if this is a squash baseline, and the DB already has
+                // any version in the squashed range applied, skip the baseline
+                if (m.SquashedFrom > 0)
+                {
+                    var hasSquashedVersions = false;
+                    foreach (var appliedVersion in appliedMap.Keys)
+                    {
+                        if (appliedVersion >= m.Version && appliedVersion <= m.SquashedFrom)
+                        {
+                            hasSquashedVersions = true;
+                            break;
+                        }
+                    }
+
+                    if (hasSquashedVersions)
+                    {
+                        MigrationLog.Skipped(m.Version);
+                        log($"Skipping squash baseline {m.Version} — database already has migrations from the squashed range.");
+                        continue;
+                    }
+                }
+
                 MigrationLog.Applying(m.Version, m.Name);
                 log($"Applying migration {m.Version}: {m.Name}...");
-                await ApplyMigrationAsync(connection, dialect, m, options, log);
+                await ApplyMigrationExtendedAsync(connection, dialect, m, options, log);
                 log($"Migration {m.Version} applied.");
             }
         }
@@ -97,10 +138,50 @@ public static class MigrationRunner
 
                 MigrationLog.RollingBack(m.Version, m.Name);
                 log($"Rolling back migration {m.Version}: {m.Name}...");
-                await RollbackMigrationAsync(connection, dialect, m, options, log);
+                await RollbackMigrationExtendedAsync(connection, dialect, m, options, log);
                 log($"Migration {m.Version} rolled back.");
             }
         }
+    }
+
+    private static void ValidateChecksumsExtended(
+        (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup, int SquashedFrom)[] migrations,
+        Dictionary<int, string> appliedMap,
+        SqlDialect dialect,
+        MigrationOptions options,
+        Action<string> log)
+    {
+        var legacy = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[migrations.Length];
+        for (var i = 0; i < migrations.Length; i++)
+        {
+            var m = migrations[i];
+            legacy[i] = (m.Version, m.Name, m.Upgrade, m.Downgrade, m.Backup);
+        }
+        ValidateChecksums(legacy, appliedMap, dialect, options, log);
+    }
+
+    private static Task ApplyMigrationExtendedAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup, int SquashedFrom) migration,
+        MigrationOptions options,
+        Action<string> log)
+    {
+        return ApplyMigrationAsync(connection, dialect,
+            (migration.Version, migration.Name, migration.Upgrade, migration.Downgrade, migration.Backup),
+            options, log);
+    }
+
+    private static Task RollbackMigrationExtendedAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        (int Version, string Name, Action<MigrationBuilder> Upgrade, Action<MigrationBuilder> Downgrade, Action<MigrationBuilder> Backup, int SquashedFrom) migration,
+        MigrationOptions options,
+        Action<string> log)
+    {
+        return RollbackMigrationAsync(connection, dialect,
+            (migration.Version, migration.Name, migration.Upgrade, migration.Downgrade, migration.Backup),
+            options, log);
     }
 
     private static void ValidateChecksums(
@@ -370,7 +451,8 @@ public static class MigrationRunner
                 execution_time_ms INTEGER NOT NULL,
                 applied_by TEXT NOT NULL,
                 started_at TEXT,
-                status TEXT NOT NULL DEFAULT 'applied'
+                status TEXT NOT NULL DEFAULT 'applied',
+                squash_from INTEGER
             );",
             SqlDialect.PostgreSQL or SqlDialect.MySQL => $@"CREATE TABLE IF NOT EXISTS {HistoryTable} (
                 version INT NOT NULL PRIMARY KEY,
@@ -380,7 +462,8 @@ public static class MigrationRunner
                 execution_time_ms INT NOT NULL,
                 applied_by VARCHAR(256) NOT NULL,
                 started_at TIMESTAMP,
-                status VARCHAR(20) NOT NULL DEFAULT 'applied'
+                status VARCHAR(20) NOT NULL DEFAULT 'applied',
+                squash_from INT
             );",
             _ => $@"IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{HistoryTable}')
             CREATE TABLE {HistoryTable} (
@@ -391,7 +474,8 @@ public static class MigrationRunner
                 execution_time_ms INT NOT NULL,
                 applied_by VARCHAR(256) NOT NULL,
                 started_at DATETIME,
-                status VARCHAR(20) NOT NULL DEFAULT 'applied'
+                status VARCHAR(20) NOT NULL DEFAULT 'applied',
+                squash_from INT
             );"
         };
 

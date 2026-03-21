@@ -58,6 +58,43 @@ async Task<int> DispatchAsync(string command, string[] args)
                 GetOpt(opts, "p", "project", "."));
             return 0;
 
+        case "migrate diff":
+            await MigrateCommands.MigrateDiff(
+                GetOpt(opts, "p", "project", "."),
+                HasFlag(opts, "ni", "non-interactive"));
+            return 0;
+
+        case "migrate script":
+            await MigrateCommands.MigrateScript(
+                GetOpt(opts, "p", "project", "."),
+                GetOptOrNull(opts, "d", "dialect"),
+                GetOptOrNull(opts, "o", "output"),
+                GetOptOrNull(opts, null, "from") is string fromStr ? int.Parse(fromStr) : null,
+                GetOptOrNull(opts, null, "to") is string toStr ? int.Parse(toStr) : null);
+            return 0;
+
+        case "migrate status":
+            var statusConnection = GetOptOrNull(opts, "c", "connection");
+            if (statusConnection == null)
+            {
+                Console.Error.WriteLine("--connection / -c is required for migrate status.");
+                return 1;
+            }
+            await MigrateCommands.MigrateStatus(
+                GetOpt(opts, "p", "project", "."),
+                GetOptOrNull(opts, "d", "dialect"),
+                statusConnection);
+            return 0;
+
+        case "migrate squash":
+            await MigrateCommands.MigrateSquash(
+                GetOpt(opts, "p", "project", "."),
+                GetOpt(opts, "o", "output", "Migrations"),
+                HasFlag(opts, "ni", "non-interactive"),
+                GetOptOrNull(opts, "d", "dialect"),
+                GetOptOrNull(opts, "c", "connection"));
+            return 0;
+
         case "create-scripts":
             await MigrateCommands.CreateScripts(
                 GetOpt(opts, "p", "project", "."),
@@ -160,6 +197,10 @@ void PrintUsage()
     Console.WriteLine("  migrate list             List all migrations");
     Console.WriteLine("  migrate validate         Validate migration integrity");
     Console.WriteLine("  migrate remove           Remove the latest unapplied migration");
+    Console.WriteLine("  migrate diff             Preview schema changes without generating files");
+    Console.WriteLine("  migrate script           Generate incremental migration SQL for a version range");
+    Console.WriteLine("  migrate status           Show applied vs pending migration status (requires --connection)");
+    Console.WriteLine("  migrate squash           Collapse all migrations into a single baseline");
     Console.WriteLine("  create-scripts           Generate full CREATE TABLE DDL from current schema");
     Console.WriteLine("  scaffold                 Reverse-engineer an existing database to schema files");
 }

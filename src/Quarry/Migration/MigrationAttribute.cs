@@ -13,4 +13,12 @@ public sealed class MigrationAttribute : Attribute
 
     /// <summary>The migration name.</summary>
     public string Name { get; set; } = "";
+
+    /// <summary>
+    /// When set, indicates this migration is a squashed baseline that replaces
+    /// all original migrations up to and including this version number.
+    /// The runner will skip this baseline on databases that already have
+    /// any migration in the squashed range applied.
+    /// </summary>
+    public int SquashedFrom { get; set; }
 }
