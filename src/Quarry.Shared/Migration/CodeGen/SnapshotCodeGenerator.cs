@@ -125,6 +125,12 @@ static class SnapshotCodeGenerator
             sb.AppendLine();
         }
 
+        if (table.CharacterSet != null)
+        {
+            sb.Append("            .CharacterSet(\"").Append(EscapeString(table.CharacterSet)).Append("\")");
+            sb.AppendLine();
+        }
+
         for (var i = 0; i < table.Columns.Count; i++)
         {
             GenerateColumn(sb, table.Columns[i]);
@@ -170,7 +176,9 @@ static class SnapshotCodeGenerator
             sb.Append(".Identity()");
         if (col.IsClientGenerated)
             sb.Append(".ClientGenerated()");
-        if (col.IsComputed)
+        if (col.IsComputed && col.ComputedExpression != null)
+            sb.Append(".Computed(\"").Append(EscapeString(col.ComputedExpression)).Append("\")");
+        else if (col.IsComputed)
             sb.Append(".Computed()");
         if (col.MaxLength.HasValue)
             sb.Append(".Length(").Append(col.MaxLength.Value).Append(")");
@@ -184,6 +192,8 @@ static class SnapshotCodeGenerator
             sb.Append(".MapTo(\"").Append(EscapeString(col.MappedName)).Append("\")");
         if (col.CustomTypeMapping != null)
             sb.Append(".CustomTypeMapping(\"").Append(EscapeString(col.CustomTypeMapping)).Append("\")");
+        if (col.Collation != null)
+            sb.Append(".Collation(\"").Append(EscapeString(col.Collation)).Append("\")");
 
         sb.AppendLine(")");
     }
@@ -217,6 +227,16 @@ static class SnapshotCodeGenerator
             sb.Append(", filter: \"").Append(EscapeString(idx.Filter)).Append("\"");
         if (idx.Method != null)
             sb.Append(", method: \"").Append(EscapeString(idx.Method)).Append("\"");
+        if (idx.DescendingColumns is { Length: > 0 })
+        {
+            sb.Append(", descendingColumns: new[] { ");
+            for (var i = 0; i < idx.DescendingColumns.Length; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(idx.DescendingColumns[i] ? "true" : "false");
+            }
+            sb.Append(" }");
+        }
         sb.AppendLine(")");
     }
 

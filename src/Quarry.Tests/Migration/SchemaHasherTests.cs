@@ -86,13 +86,13 @@ public class SchemaHasherTests
         };
 
         var tableNames = new List<string> { "users" };
-        // Format: name\0clrType\0isNullable\0kind\0isIdentity\0isComputed\0maxLength\0precision\0scale\0hasDefault\0mappedName
+        // Format: name\0clrType\0isNullable\0kind\0isIdentity\0isComputed\0maxLength\0precision\0scale\0hasDefault\0mappedName\0computedExpression\0collation
         var colSigs = new List<IReadOnlyList<string>>
         {
             new List<string>
             {
-                "id\0int\00\01\00\00\0\0\0\00\0",
-                "name\0string\01\00\00\00\0\0\0\00\0"
+                "id\0int\00\01\00\00\0\0\0\00\0\0\0",
+                "name\0string\01\00\00\00\0\0\0\00\0\0\0"
             }
         };
 

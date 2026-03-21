@@ -14,7 +14,8 @@ internal record ColumnDefinition(
     bool IsNullable,
     string? DefaultValue,
     string? DefaultExpression,
-    bool IsIdentity);
+    bool IsIdentity,
+    string? Collation = null);
 
 internal record TableDefinition(
     string Name,
@@ -59,11 +60,30 @@ internal sealed class DropTableOperation(string Name, string? Schema) : Migratio
     public string? Schema { get; } = Schema;
 }
 
-internal sealed class RenameTableOperation(string OldName, string NewName, string? Schema) : MigrationOperation
+internal sealed class RenameTableOperation : MigrationOperation
 {
-    public string OldName { get; } = OldName;
-    public string NewName { get; } = NewName;
-    public string? Schema { get; } = Schema;
+    public string OldName { get; }
+    public string NewName { get; }
+    public string? Schema { get; }
+    public string? OldSchema { get; }
+    public string? NewSchema { get; }
+    public bool IsSchemaTransfer => OldSchema != null || NewSchema != null;
+
+    public RenameTableOperation(string oldName, string newName, string? schema)
+    {
+        OldName = oldName;
+        NewName = newName;
+        Schema = schema;
+    }
+
+    public RenameTableOperation(string oldName, string newName, string? oldSchema, string? newSchema)
+    {
+        OldName = oldName;
+        NewName = newName;
+        OldSchema = oldSchema;
+        NewSchema = newSchema;
+        Schema = oldSchema; // Fallback for compat
+    }
 }
 
 internal sealed class AddColumnOperation(string Table, string? Schema, string Column, ColumnDefinition Definition) : MigrationOperation
@@ -124,7 +144,7 @@ internal sealed class DropForeignKeyOperation(string Name, string Table, string?
 
 internal sealed class AddIndexOperation(
     string Name, string Table, string? Schema, string[] Columns,
-    bool IsUnique, string? Filter) : MigrationOperation
+    bool IsUnique, string? Filter, bool[]? DescendingColumns = null) : MigrationOperation
 {
     public string Name { get; } = Name;
     public string Table { get; } = Table;
@@ -132,6 +152,7 @@ internal sealed class AddIndexOperation(
     public string[] Columns { get; } = Columns;
     public bool IsUnique { get; } = IsUnique;
     public string? Filter { get; } = Filter;
+    public bool[]? DescendingColumns { get; } = DescendingColumns;
 }
 
 internal sealed class DropIndexOperation(string Name, string Table, string? Schema) : MigrationOperation

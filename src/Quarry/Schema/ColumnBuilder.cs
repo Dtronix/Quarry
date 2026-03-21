@@ -26,6 +26,18 @@ public readonly struct ColumnBuilder<T>
     public ColumnBuilder<T> Computed() => default;
 
     /// <summary>
+    /// Marks this column as a computed column with the specified SQL expression.
+    /// </summary>
+    /// <param name="expression">The SQL expression for the computed column.</param>
+    public ColumnBuilder<T> Computed(string expression) => default;
+
+    /// <summary>
+    /// Specifies the collation for this column.
+    /// </summary>
+    /// <param name="collation">The collation name (e.g., "Latin1_General_CI_AS", "en_US.utf8").</param>
+    public ColumnBuilder<T> Collation(string collation) => default;
+
+    /// <summary>
     /// Specifies the maximum length for string columns.
     /// </summary>
     /// <param name="maxLength">The maximum length.</param>

@@ -15,6 +15,7 @@ public sealed class ColumnBuilder
     private string? _defaultExpression;
     private bool _identity;
     private bool _notNull;
+    private string? _collation;
 
     public ColumnBuilder Type(string sqlType) { _sqlType = sqlType; return this; }
     public ColumnBuilder ClrType(string clrType) { _clrType = clrType; return this; }
@@ -25,6 +26,7 @@ public sealed class ColumnBuilder
     public ColumnBuilder DefaultExpression(string sql) { _defaultExpression = sql; return this; }
     public ColumnBuilder Identity() { _identity = true; return this; }
     public ColumnBuilder NotNull() { _notNull = true; return this; }
+    public ColumnBuilder Collation(string collation) { _collation = collation; return this; }
 
     internal ColumnDefinition Build()
     {
@@ -38,6 +40,7 @@ public sealed class ColumnBuilder
             IsNullable: _nullable && !_notNull,
             DefaultValue: _defaultValue,
             DefaultExpression: _defaultExpression,
-            IsIdentity: _identity);
+            IsIdentity: _identity,
+            Collation: _collation);
     }
 }

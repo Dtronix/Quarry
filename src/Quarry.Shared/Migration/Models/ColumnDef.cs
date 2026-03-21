@@ -27,6 +27,8 @@ sealed class ColumnDef : IEquatable<ColumnDef>
     public string? MappedName { get; }
     public string? ReferencedEntityName { get; }
     public string? CustomTypeMapping { get; }
+    public string? ComputedExpression { get; }
+    public string? Collation { get; }
 
     public ColumnDef(
         string name,
@@ -43,7 +45,9 @@ sealed class ColumnDef : IEquatable<ColumnDef>
         string? defaultExpression = null,
         string? mappedName = null,
         string? referencedEntityName = null,
-        string? customTypeMapping = null)
+        string? customTypeMapping = null,
+        string? computedExpression = null,
+        string? collation = null)
     {
         Name = name;
         ClrType = clrType;
@@ -60,6 +64,8 @@ sealed class ColumnDef : IEquatable<ColumnDef>
         MappedName = mappedName;
         ReferencedEntityName = referencedEntityName;
         CustomTypeMapping = customTypeMapping;
+        ComputedExpression = computedExpression;
+        Collation = collation;
     }
 
     public bool Equals(ColumnDef? other)
@@ -80,7 +86,9 @@ sealed class ColumnDef : IEquatable<ColumnDef>
             && DefaultExpression == other.DefaultExpression
             && MappedName == other.MappedName
             && ReferencedEntityName == other.ReferencedEntityName
-            && CustomTypeMapping == other.CustomTypeMapping;
+            && CustomTypeMapping == other.CustomTypeMapping
+            && ComputedExpression == other.ComputedExpression
+            && Collation == other.Collation;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ColumnDef);
@@ -105,6 +113,8 @@ sealed class ColumnDef : IEquatable<ColumnDef>
             hash = hash * 31 + (MappedName?.GetHashCode() ?? 0);
             hash = hash * 31 + (ReferencedEntityName?.GetHashCode() ?? 0);
             hash = hash * 31 + (CustomTypeMapping?.GetHashCode() ?? 0);
+            hash = hash * 31 + (ComputedExpression?.GetHashCode() ?? 0);
+            hash = hash * 31 + (Collation?.GetHashCode() ?? 0);
             return hash;
         }
     }

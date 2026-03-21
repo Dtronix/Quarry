@@ -34,7 +34,8 @@ static class SchemaHasher
                     + "\0" + (c.IsIdentity ? "1" : "0") + "\0" + (c.IsComputed ? "1" : "0")
                     + "\0" + (c.MaxLength?.ToString() ?? "") + "\0" + (c.Precision?.ToString() ?? "")
                     + "\0" + (c.Scale?.ToString() ?? "") + "\0" + (c.HasDefault ? "1" : "0")
-                    + "\0" + (c.MappedName ?? ""));
+                    + "\0" + (c.MappedName ?? "") + "\0" + (c.ComputedExpression ?? "")
+                    + "\0" + (c.Collation ?? ""));
             }
             cols.Sort(System.StringComparer.Ordinal);
             entries.Add(table.TableName + "\0" + string.Join("\0", cols));

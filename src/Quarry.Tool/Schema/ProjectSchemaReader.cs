@@ -79,6 +79,7 @@ internal sealed class ProjectSchemaReader
     {
         // Look for Table property
         string? tableName = null;
+        string? characterSet = null;
         var namingStyle = NamingStyleKind.Exact;
 
         foreach (var member in schemaClass.GetMembers())
@@ -97,6 +98,16 @@ internal sealed class ProjectSchemaReader
                         {
                             tableName = literal.Token.ValueText;
                         }
+                    }
+                }
+                else if (prop.Name == "CharacterSet" && prop.Type.SpecialType == SpecialType.System_String)
+                {
+                    var syntax2 = prop.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+                    if (syntax2 is PropertyDeclarationSyntax propSyntax2)
+                    {
+                        var initializer2 = propSyntax2.Initializer?.Value ?? propSyntax2.ExpressionBody?.Expression;
+                        if (initializer2 is LiteralExpressionSyntax literal2)
+                            characterSet = literal2.Token.ValueText;
                     }
                 }
                 else if (prop.Name == "Naming")
@@ -176,7 +187,7 @@ internal sealed class ProjectSchemaReader
             }
         }
 
-        return new TableDef(tableName, null, namingStyle, columns, foreignKeys, indexes, compositeKeyColumns);
+        return new TableDef(tableName, null, namingStyle, columns, foreignKeys, indexes, compositeKeyColumns, characterSet);
     }
 
     private static string ResolvePrimaryKeyColumn(INamedTypeSymbol? entityType, NamingStyleKind namingStyle)
@@ -253,12 +264,59 @@ internal sealed class ProjectSchemaReader
 
         var columnName = NamingConventions.ToColumnName(prop.Name, namingStyle);
 
+        // Walk fluent chain for additional modifiers
+        string? computedExpression = null;
+        string? collation = null;
+
+        var syntax = prop.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+        if (syntax is PropertyDeclarationSyntax propSyntax)
+        {
+            ExpressionSyntax? expression = propSyntax.ExpressionBody?.Expression;
+            if (expression == null && propSyntax.AccessorList != null)
+            {
+                var getter = propSyntax.AccessorList.Accessors
+                    .FirstOrDefault(a => a.IsKind(SyntaxKind.GetAccessorDeclaration));
+                expression = getter?.ExpressionBody?.Expression;
+            }
+
+            var current = expression;
+            while (current is InvocationExpressionSyntax invocation)
+            {
+                var methodName = invocation.Expression switch
+                {
+                    MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
+                    IdentifierNameSyntax id => id.Identifier.Text,
+                    _ => null
+                };
+
+                if (methodName == "Computed" && invocation.ArgumentList.Arguments.Count > 0)
+                {
+                    var arg = invocation.ArgumentList.Arguments[0].Expression;
+                    if (arg is LiteralExpressionSyntax literal)
+                        computedExpression = literal.Token.ValueText;
+                }
+                else if (methodName == "Collation" && invocation.ArgumentList.Arguments.Count > 0)
+                {
+                    var arg = invocation.ArgumentList.Arguments[0].Expression;
+                    if (arg is LiteralExpressionSyntax literal)
+                        collation = literal.Token.ValueText;
+                }
+
+                if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+                    current = memberAccess.Expression;
+                else
+                    current = null;
+            }
+        }
+
         return new ColumnDef(
             name: columnName,
             clrType: clrType,
             isNullable: isNullable,
             kind: kind,
-            referencedEntityName: referencedEntity);
+            referencedEntityName: referencedEntity,
+            computedExpression: computedExpression,
+            collation: collation);
     }
 
     private static List<string>? ExtractCompositeKeyColumns(IPropertySymbol prop, NamingStyleKind namingStyle)
@@ -372,17 +430,19 @@ internal sealed class ProjectSchemaReader
                 current = null;
         }
 
-        // Parse the Index() arguments for columns
+        // Parse the Index() arguments for columns and sort directions
+        var descendingFlags = new List<bool>();
         if (indexInvocation != null)
         {
             foreach (var arg in indexInvocation.ArgumentList.Arguments)
             {
                 var argExpr = arg.Expression;
 
-                // Direct property reference: Index(Email)
+                // Direct property reference: Index(Email) — ascending by default
                 if (argExpr is IdentifierNameSyntax colId)
                 {
                     columnNames.Add(NamingConventions.ToColumnName(colId.Identifier.Text, namingStyle));
+                    descendingFlags.Add(false);
                 }
                 // Property with direction: Index(Email.Desc()) or Index(Email.Asc())
                 else if (argExpr is InvocationExpressionSyntax dirInvocation &&
@@ -390,6 +450,8 @@ internal sealed class ProjectSchemaReader
                          dirAccess.Expression is IdentifierNameSyntax colRef)
                 {
                     columnNames.Add(NamingConventions.ToColumnName(colRef.Identifier.Text, namingStyle));
+                    var dirMethodName = dirAccess.Name.Identifier.Text;
+                    descendingFlags.Add(dirMethodName == "Desc");
                 }
             }
         }
@@ -397,6 +459,9 @@ internal sealed class ProjectSchemaReader
         if (columnNames.Count == 0)
             return null;
 
-        return new IndexDef(indexName, columnNames, isUnique, filter, method);
+        // Only include descending flags if any column is descending
+        bool[]? descArray = descendingFlags.Any(d => d) ? descendingFlags.ToArray() : null;
+
+        return new IndexDef(indexName, columnNames, isUnique, filter, method, descArray);
     }
 }

@@ -22,6 +22,8 @@ public sealed class ColumnDef : IEquatable<ColumnDef>
     public string? MappedName { get; }
     public string? ReferencedEntityName { get; }
     public string? CustomTypeMapping { get; }
+    public string? ComputedExpression { get; }
+    public string? Collation { get; }
 
     public ColumnDef(
         string name,
@@ -38,7 +40,9 @@ public sealed class ColumnDef : IEquatable<ColumnDef>
         string? defaultExpression = null,
         string? mappedName = null,
         string? referencedEntityName = null,
-        string? customTypeMapping = null)
+        string? customTypeMapping = null,
+        string? computedExpression = null,
+        string? collation = null)
     {
         Name = name;
         ClrType = clrType;
@@ -55,6 +59,8 @@ public sealed class ColumnDef : IEquatable<ColumnDef>
         MappedName = mappedName;
         ReferencedEntityName = referencedEntityName;
         CustomTypeMapping = customTypeMapping;
+        ComputedExpression = computedExpression;
+        Collation = collation;
     }
 
     public bool Equals(ColumnDef? other)
@@ -75,7 +81,9 @@ public sealed class ColumnDef : IEquatable<ColumnDef>
             && DefaultExpression == other.DefaultExpression
             && MappedName == other.MappedName
             && ReferencedEntityName == other.ReferencedEntityName
-            && CustomTypeMapping == other.CustomTypeMapping;
+            && CustomTypeMapping == other.CustomTypeMapping
+            && ComputedExpression == other.ComputedExpression
+            && Collation == other.Collation;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ColumnDef);
@@ -84,6 +92,6 @@ public sealed class ColumnDef : IEquatable<ColumnDef>
     {
         var h1 = HashCode.Combine(Name, ClrType, IsNullable, Kind, IsIdentity, IsClientGenerated, IsComputed, MaxLength);
         var h2 = HashCode.Combine(Precision, Scale, HasDefault, DefaultExpression, MappedName, ReferencedEntityName, CustomTypeMapping);
-        return HashCode.Combine(h1, h2);
+        return HashCode.Combine(h1, h2, ComputedExpression, Collation);
     }
 }
