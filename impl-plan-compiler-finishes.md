@@ -34,7 +34,7 @@ Scope: approximately 13,100 lines of old pipeline code to be replaced or deleted
 
 1. **Phase 4: Pipeline Restructure** -- Rewires `QuarryGenerator.Initialize()` to perform per-site binding (`CallSiteBinder`) and translation (`CallSiteTranslator`) before `.Collect()`, using `EntityRegistry` as the shared metadata source. No prior phase dependency beyond the already-completed IR types and codegen emitters.
 
-2. **Phase 5: Chain Analysis + SQL Assembly + Carrier Redesign** -- Replaces `ChainAnalyzer`'s `UsageSiteInfo` input with `TranslatedCallSite`, introduces `SqlAssembler` to produce `AssembledPlan` from `QueryPlan`, and updates `CarrierAnalyzer` to consume `AssembledPlan`. Depends on Phase 4 (translated call sites must be flowing through the pipeline).
+2. **Phase 5: Chain Analysis + SQL Assembly + Carrier Redesign** -- Replaces `ChainAnalyzer`'s `UsageSiteInfo` input with `TranslatedCallSite`, introduces `SqlAssembler` to produce `AssembledPlan` from `QueryPlan`, and updates `CarrierAnalyzer` to consume `AssembledPlan`. Depends on Phase 4 (translated call sites must be flowing through the pipeline). **Highest-risk phase**: rewrites three major subsystems (ChainAnalyzer, CompileTimeSqlBuilder, CarrierClassBuilder) with no adapter fallback. Consider splitting into sub-phases (5A: ChainAnalyzer, 5B: SqlAssembler, 5C: CarrierPlan) with adapters between each if risk is too high during implementation.
 
 3. **Phase 6B: Codegen Completion** -- Updates all body emitters to consume `TranslatedCallSite` and `AssembledPlan` directly, removes all adapter code, and deletes the old types (`UsageSiteInfo`, `PrebuiltChainInfo`, `ClauseInfo`, `CarrierClassInfo`). Depends on Phase 5 (assembled plans must be available for emitter consumption).
 
@@ -53,7 +53,7 @@ Scope: approximately 13,100 lines of old pipeline code to be replaced or deleted
 ## 5. Test Strategy
 
 - **All 2,929 existing tests must pass after each phase.** No phase is allowed to break any existing test, even transiently between commits within that phase. Every commit is green.
-- **Generated output must be byte-identical** for non-subquery cases (behavioral equivalence). The existing test suite validates end-to-end correctness by comparing generated interceptor source against approved baselines. Any change to generated output requires explicit baseline update with justification.
+- **Generated output must be byte-identical** for non-subquery cases (behavioral equivalence). The existing test suite validates end-to-end correctness by comparing generated interceptor source against approved baselines. Any change to generated output requires explicit baseline update with justification. Subquery cases excluded from the byte-identical constraint: subquery expressions inside WHERE clauses (e.g., `.Where(u => db.Orders.Any(...))`), correlated subqueries, and EXISTS/NOT EXISTS patterns. These are tested for behavioral correctness but may produce different SQL formatting under `SqlExprRenderer`. Specific exclusions: tests in `SubqueryTests.cs` or tagged `[Trait("Category", "Subquery")]`.
 - **New unit tests for new pipeline components.** `CallSiteBinder`, `CallSiteTranslator` (the pipeline wiring around `SqlExprClauseTranslator`), `SqlAssembler`, and `CarrierPlan` each get dedicated unit tests verifying their transform logic in isolation. The 40 IR pipeline stress tests already committed cover `SqlExpr` round-tripping and raw SQL string verification.
 - **Each commit within a phase must leave tests green.** Adapter patterns are used at phase boundaries: when wiring new types upstream, temporary adapters convert back to old types for downstream consumers that have not yet been migrated. Adapters are removed only after their downstream consumers are updated. No commit introduces a half-wired state.
 
@@ -109,6 +109,36 @@ The restructured pipeline has five incremental stages. Each stage produces an ou
 - Re-executes when: Any translated site changes or the compilation reference changes.
 - This stage replaces `GroupByFileAndProcess` but does significantly less work. It no longer calls `EnrichUsageSiteWithEntityInfo`, `TranslatePendingClause`, or `DiscoverNavigationJoinChainMembers`. It retains chain analysis (`ChainAnalyzer`), diagnostic reporting (QRY005, QRY006, QRY015, QRY016, QRY019), and file grouping into `FileInterceptorGroup` values.
 
+### Step 4.0: Fix IR Type Equality and Add Missing Fields (Prerequisite)
+
+Before wiring any IR types into the incremental pipeline, their `Equals`/`GetHashCode` implementations must be correct and complete. The incremental driver relies on equality to detect cache hits; any omitted field causes stale cached results that are extremely difficult to diagnose.
+
+**RawCallSite equality fixes:**
+
+- Add `JoinedEntityTypeName` to `Equals` and `GetHashCode`. Without this, two join sites targeting different entities would be treated as identical by the cache. *(PE-4)*
+- Add `NonAnalyzableReason` to `Equals`. Sites with different non-analyzable reasons must not share cached downstream results. *(PE-3)*
+- Convert `InitializedPropertyNames` from `HashSet<string>` to `ImmutableArray<string>` (sorted at construction). `HashSet<string>` does not support value equality and is incompatible with the incremental pipeline's deterministic equality requirement. Add a sequence comparison in `Equals`. *(PE-5)*
+
+**RawCallSite new fields for chain analysis support:**
+
+Phase 5's ChainAnalyzer rewrite requires per-site flags that can only be detected during discovery (Stage 2) where the `SemanticModel` and syntax tree context are available. These fields must be added to `RawCallSite` now and included in `Equals`/`GetHashCode`:
+
+- `IsInsideLoop` (bool) — detected by walking parent syntax nodes for `ForStatementSyntax`, `WhileStatementSyntax`, `ForEachStatementSyntax`, `DoStatementSyntax`.
+- `IsInsideTryCatch` (bool) — detected by checking for ancestor `TryCatchClauseSyntax`.
+- `IsCapturedInLambda` (bool) — detected by checking if the invocation is inside a lambda/delegate beyond the immediate query lambda.
+- `ConditionalInfo` (nullable) — populated when the invocation is inside an `IfStatementSyntax` or ternary expression. Records the condition expression text and nesting depth.
+- `ChainId` (string) — a stable identifier linking all call sites in the same fluent chain (derived from the receiver expression's root variable name and scope). Used by ChainAnalyzer to group sites into chains without re-walking syntax trees.
+
+**QueryPlan equality fixes:**
+
+- Add `GroupByExprs`, `HavingExprs`, `PossibleMasks`, and `UnmatchedMethodNames` to `Equals` and `GetHashCode`. Without these, two plans differing only in GROUP BY, HAVING, mask enumeration, or unmatched methods would be treated as equal, causing incorrect SQL assembly. *(PE-6)*
+
+**AssembledPlan equality fixes:**
+
+- Add `SqlVariants` dictionary equality comparison (key-by-key, SQL string comparison). While `Plan.Equals` covers most cases, if `SqlAssembler` ever produces different SQL for structurally equal plans, the missing comparison causes emitters to use stale SQL. Also add `EntitySchemaNamespace`. *(PE-7)*
+
+**Validation:** After these fixes, write targeted unit tests that construct two IR values differing only in the previously-omitted field and assert `Equals` returns `false`.
+
 ### Step 4.1: Convert Discovery to RawCallSite
 
 `UsageSiteDiscovery.DiscoverUsageSite` currently returns `UsageSiteInfo` with up to 25 populated fields, including translated `ClauseInfo` from semantic analysis and `PendingClauseInfo` from the syntactic fallback. This step changes its return type to `RawCallSite` and strips out all enrichment and translation logic that occurs during discovery.
@@ -149,6 +179,16 @@ The `AnalyzeClause` method currently returns `(ClauseInfo?, PendingClauseInfo?)`
 ```
 
 `SqlExprParser.ParseWithPathTracking()` is already called in the current `TrySyntacticAnalysis` fallback path (line 778). The change is that this becomes the only parsing path, not a fallback. It is called unconditionally for all clause-bearing sites (Where, OrderBy, GroupBy, Having, Set, Join conditions).
+
+**Disqualifier detection during discovery:**
+
+Discovery is the only stage with access to the `SemanticModel` and full syntax tree context. The following checks must happen here (not in binding or translation) because they require walking parent syntax nodes:
+
+- **Loop detection**: Walk `invocation.Ancestors()` looking for `ForStatementSyntax`, `WhileStatementSyntax`, `ForEachStatementSyntax`, `DoStatementSyntax`. If found, set `RawCallSite.IsInsideLoop = true`.
+- **Try/catch detection**: Walk ancestors for `TryCatchClauseSyntax`. If found, set `RawCallSite.IsInsideTryCatch = true`.
+- **Lambda capture detection**: Check if the invocation is inside a lambda/delegate expression beyond the immediate query lambda parameter. If found, set `RawCallSite.IsCapturedInLambda = true`.
+- **Conditional detection**: Check for ancestor `IfStatementSyntax`. If found, populate `RawCallSite.ConditionalInfo` with condition text and nesting depth.
+- **Chain ID computation**: Derive `RawCallSite.ChainId` from the receiver expression's root variable name and enclosing method scope, providing a stable identifier for chain grouping in Phase 5's ChainAnalyzer.
 
 **What remains in discovery unchanged:**
 
@@ -279,7 +319,7 @@ internal static class CallSiteTranslator
 
 When translation fails (unsupported `SqlRawExpr` nodes in the tree, `SqlExprBinder` failure, `SqlExprRenderer` producing empty output), `CallSiteTranslator` produces a `TranslatedCallSite` with `Clause = null`. It does NOT attempt a fallback to the old semantic `ClauseTranslator` path -- those translators are deleted in Step 4.5.
 
-The collected analysis stage (Stage 5) detects untranslated clause sites by checking whether `Clause` is null for sites whose `InterceptorKind` is a clause-bearing method. For each such site, a QRY019 diagnostic is reported with the clause kind name (e.g., "Where", "OrderBy"). The generated interceptor for that site delegates to the runtime method implementation, which evaluates the expression dynamically. The user sees the diagnostic in their IDE, indicating that compile-time SQL optimization was not applied for that particular expression, but the generated code is still functionally correct.
+The collected analysis stage (Stage 5) detects untranslated clause sites by checking whether `Clause` is null for sites whose `InterceptorKind` is a clause-bearing method. For each such site, a QRY019 diagnostic is reported with actionable guidance including: (a) the clause kind (e.g., "Where", "OrderBy"), (b) the unsupported expression pattern that caused the failure (e.g., "null-conditional access", "unsupported method call"), and (c) a note that the runtime fallback is used with no correctness loss. Example message: `QRY019: Could not translate Where expression 'x.Foo.Bar?.Baz' at compile time (unsupported null-conditional access). The runtime SQL builder will handle this expression correctly.` The generated interceptor for that site delegates to the runtime method implementation. The user sees the diagnostic in their IDE with enough information to understand what happened and whether any action is needed.
 
 **What moves here from `EnrichUsageSiteWithEntityInfo` and `TranslatePendingClause`:**
 
@@ -442,7 +482,9 @@ With the SqlExpr pipeline handling 100% of expression translation and `CallSiteT
 
 3. The `PendingClauseInfo` model class (`Models/PendingClauseInfo.cs`) can also be deleted after verifying no code creates or consumes it. The `UsageSiteInfo.PendingClauseInfo` property becomes unused once `UsageSiteInfo` is no longer produced by discovery, but `UsageSiteInfo` itself may remain temporarily as an adapter type for `ChainAnalyzer` compatibility (see Step 4.4). If the adapter constructs `UsageSiteInfo` without populating `PendingClauseInfo`, the property can be removed and the model slimmed down.
 
-4. Run the full test suite. All 2,929 tests must pass. Pay particular attention to `ClauseTranslationTests` (31 tests) and `ExpressionTranslationTests` (48 tests) which may have directly tested the deleted translators and need migration to the new pipeline entry points.
+4. **Pre-deletion comparison (rollback safety):** Before the deletion commit, run a diagnostic pass that executes both old (`ClauseTranslator`) and new (`CallSiteTranslator` via SqlExpr) translation paths on the full test suite and confirms zero divergence in SQL output. Log any divergences with the expression pattern that differs. This provides confidence that the SqlExpr pipeline covers all patterns the old translators handled. The deleted files remain in git history and can be restored for A/B debugging if Phase 5 reveals issues with the new translation output.
+
+5. Run the full test suite. All 2,929 tests must pass. Pay particular attention to `ClauseTranslationTests` (31 tests) and `ExpressionTranslationTests` (48 tests) which may have directly tested the deleted translators and need migration to the new pipeline entry points.
 
 ### Step 4.6: Navigation Join Resolution
 
@@ -489,7 +531,7 @@ This keeps each raw site individually cached after the `SelectMany` flattening.
 - `UsageSiteInfo` construction for discovered members (lines 1602--1619): becomes `RawCallSite` construction in discovery
 - Interceptable location resolution for chain members (lines 1586--1600): stays in discovery where the semantic model is available
 - Enrichment of discovered chain members (line 1622): becomes binding in `CallSiteBinder`, happening naturally in Stage 3
-- The `discoveredLocations` hash set deduplication logic (lines 1551, 1565): becomes unnecessary because the `CreateSyntaxProvider` already deduplicates by invocation syntax node -- each `InvocationExpressionSyntax` is visited exactly once. The chain member `RawCallSite` entries are emitted from the join site's discovery call, so they are associated with that specific syntax node and will not be re-emitted if the join site has not changed.
+- The `discoveredLocations` hash set deduplication logic (lines 1551, 1565): partially handled by `CreateSyntaxProvider` per-node deduplication, but **additional deduplication is required** when two navigation join sites in the same fluent chain both walk upward and discover the same parent call (e.g., a shared `.Select()` after two joins). The discovery method must maintain a `HashSet<(string FilePath, int Line, int Column)>` across the chain member emission loop and skip any site whose location has already been emitted. This prevents duplicate `RawCallSite` entries from reaching downstream stages.
 
 ### Validation
 
@@ -516,6 +558,16 @@ To verify byte-identical output, rely on the snapshot comparison tests (`Compile
 - Confirm that Stage 5 (collected analysis) re-executes but processes pre-translated sites without redundant enrichment or translation work.
 
 **Memory validation:** Verify that no `SyntaxNode` references persist in cached pipeline values. `RawCallSite`, `BoundCallSite`, and `TranslatedCallSite` must not hold `SyntaxNode` or `SyntaxTree` references. After running the generator, force a GC collection and confirm that syntax trees from previous compilation snapshots are eligible for collection.
+
+**Quantitative performance targets:**
+
+- Incremental re-generation after a single-site edit in a 500-site project should complete in under 200ms (excluding Roslyn compilation overhead).
+- Peak pipeline memory usage should not exceed 50MB for a 1000-site project.
+- Per-site binding (`CallSiteBinder.Bind`) should complete in under 1ms per site.
+- Per-site translation (`CallSiteTranslator.Translate`) should complete in under 2ms per site.
+- These targets should be validated with a benchmark test using the project's own test suite as the corpus.
+
+**Subquery cases excluded from byte-identical constraint:** The following patterns may produce different SQL formatting under the new pipeline and are excluded from the byte-identical guarantee: subquery expressions inside WHERE clauses (e.g., `.Where(u => db.Orders.Any(...))`), correlated subqueries, and EXISTS/NOT EXISTS patterns. These patterns are tested for behavioral correctness but not character-identical output. Specific test files excluded: any test in `SubqueryTests.cs` or tests tagged with `[Trait("Category", "Subquery")]`.
 
 ### Files Changed
 
@@ -646,7 +698,9 @@ internal static class SqlAssembler
 
    - **Insert:** Emit `INSERT INTO {table}` with column list from `QueryPlan.InsertColumns`. Emit `VALUES` with parameter placeholders formatted via `SqlFormatting.FormatParameter(dialect, index)`. Emit the `RETURNING` clause (PostgreSQL, SQLite) or note the need for a separate `SELECT LAST_INSERT_ID()` query (MySQL) via `SqlFormatting.FormatReturningClause`.
 
-4. **Record the variant.** Store the rendered SQL string and its parameter count in an `AssembledSqlVariant`, keyed by the mask value in the `AssembledPlan.SqlVariants` dictionary.
+4. **Cache unconditional fragments.** Before the per-mask loop, pre-render all unconditional SQL fragments (JOINs without BitIndex, GROUP BY, HAVING, projection columns, pagination) once and store the rendered strings. These fragments are identical across all mask variants and do not need re-rendering. Inside the per-mask loop, only conditional terms (WHERE/ORDER/SET terms with a BitIndex) are rendered via `SqlExprRenderer`. The pre-rendered unconditional fragments are concatenated directly. This reduces per-mask rendering cost from O(all_terms) to O(conditional_terms) and avoids O(masks * unconditional_terms) redundant `SqlExprRenderer.Render` calls for chains with many unconditional clauses.
+
+5. **Record the variant.** Store the rendered SQL string and its parameter count in an `AssembledSqlVariant`, keyed by the mask value in the `AssembledPlan.SqlVariants` dictionary.
 
 **Expression rendering via SqlExprRenderer.** All SQL fragment rendering goes through `SqlExprRenderer.Render(SqlExpr, SqlDialect, parameterBaseIndex)`. This replaces the `SqlFragmentTemplate.RenderTo()` mechanism. `SqlExprRenderer` walks the `SqlExpr` tree recursively: `ResolvedColumnExpr` emits the pre-quoted column name, `ParamSlotExpr` emits a dialect-formatted parameter placeholder (`@p{base + slot}` for SqlServer, `$N` for PostgreSQL, `?` for SQLite/MySQL), `BinaryOpExpr` emits `({left} {op} {right})`, `FunctionCallExpr` emits `{funcName}({args})`, `InExpr` emits `{operand} IN ({values})`, `LikeExpr` emits `{operand} LIKE {pattern}`, `LiteralExpr` emits the literal value, and `IsNullCheckExpr` emits `{operand} IS [NOT] NULL`. For collection parameters (where the `ParamSlotExpr` corresponds to a `QueryParameter` with `IsCollection == true`), the renderer emits the expansion token `{__COL_P{index}__}` instead of a standard placeholder, enabling runtime expansion into multiple parameters.
 
@@ -922,6 +976,29 @@ Specific validation points:
 
 Phase 6B rewrites the six body emitters and the `FileEmitter` orchestrator to consume the new IR types (`TranslatedCallSite`, `AssembledPlan`, `CarrierPlan`) directly, eliminating the conversion layer that currently maps new types back to `UsageSiteInfo`, `PrebuiltChainInfo`, and `CarrierClassInfo` at the pipeline boundary. Once all emitters consume the new types, the old types are deleted entirely, completing the compiler architecture migration. This is the final phase -- after 6B, no old god-object types remain in the codebase.
 
+### 8.1a Convenience Accessors on TranslatedCallSite
+
+Before migrating emitters, add forwarding properties on `TranslatedCallSite` for the most frequently accessed inner fields. The layered composition pattern (`site.Bound.Raw.EntityTypeName`) is correct but verbose — emitter code accesses these properties dozens of times. Adding convenience properties reduces noise without breaking the composition:
+
+```csharp
+// On TranslatedCallSite:
+public string UniqueId => Bound.Raw.UniqueId;
+public string MethodName => Bound.Raw.MethodName;
+public InterceptorKind Kind => Bound.Raw.Kind;
+public string EntityTypeName => Bound.Raw.EntityTypeName;
+public string? ResultTypeName => Bound.Raw.ResultTypeName;
+public string FilePath => Bound.Raw.FilePath;
+public int Line => Bound.Raw.Line;
+public int Column => Bound.Raw.Column;
+public SqlDialect Dialect => Bound.Dialect;
+public ProjectionInfo? ProjectionInfo => Bound.Raw.ProjectionInfo;
+public InsertInfo? InsertInfo => Bound.InsertInfo;
+public IReadOnlyList<string>? JoinedEntityTypeNames => Bound.JoinedEntityTypeNames;
+// ... ~5 more for the highest-frequency fields
+```
+
+These do NOT affect equality (they are computed from the underlying layers) and are purely for readability.
+
 ### 8.2 Migration Order and Rationale
 
 The emitters are migrated one at a time, smallest first, so that each step is a self-contained green commit with minimal blast radius.
@@ -1148,6 +1225,28 @@ internal sealed class TestPlanBuilder
     public AssembledPlan Build()
 }
 ```
+
+**TestCarrierPlanBuilder:**
+
+```csharp
+internal sealed class TestCarrierPlanBuilder
+{
+    public static TestCarrierPlanBuilder ForChain(string entityTypeName)
+    public TestCarrierPlanBuilder WithClassName(string className)
+    public TestCarrierPlanBuilder WithBaseClass(string baseClassName)
+    public TestCarrierPlanBuilder AddParameterField(string name, string typeName)
+    public TestCarrierPlanBuilder AddCollectionField(string name, string elementType)
+    public TestCarrierPlanBuilder WithClauseMask(int bitCount)
+    public TestCarrierPlanBuilder WithLimit()
+    public TestCarrierPlanBuilder WithOffset()
+    public TestCarrierPlanBuilder WithTimeout()
+    public TestCarrierPlanBuilder WithEntity(string entityTypeName)
+    public TestCarrierPlanBuilder WithMaskType(string maskType)
+    public CarrierPlan Build()
+}
+```
+
+Carrier-path emitter tests (TransitionBodyEmitter, ClauseBodyEmitter, TerminalBodyEmitter) need `CarrierPlan` instances. This builder provides sensible defaults (eligible, `Chain_0` class name, `CarrierBase<T>` base class) with chainable configuration.
 
 **Migration example (Where clause).** Old: `new UsageSiteInfo(..., clauseInfo: ClauseInfo.Success(ClauseKind.Where, "\"Name\" = @p0", params))`. New: `TestCallSiteBuilder.WhereClause("User").WithClause(new TranslatedClause(ClauseKind.Where, new BinaryOpExpr(Equal, new ResolvedColumnExpr("\"Name\""), new ParamSlotExpr(0)), params)).WithBuilderTypeName("IQueryBuilder").Build()`. SQL is now an `SqlExpr` tree; `SqlExprRenderer.Render()` produces the same string. Assertions unchanged.
 
