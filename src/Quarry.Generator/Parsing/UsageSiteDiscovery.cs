@@ -1,10 +1,12 @@
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
+using Quarry.Generators.IR;
 using Quarry.Generators.Projection;
 using Quarry.Generators.Translation;
 using Quarry.Generators.Utilities;
@@ -589,6 +591,321 @@ internal static class UsageSiteDiscovery
             isNavigationJoin: isNavigationJoin,
             constantIntValue: constantIntValue,
             builderKind: ClassifyBuilderKind(containingType.Name));
+    }
+
+    /// <summary>
+    /// Discovers a raw call site from an invocation expression, returning a RawCallSite
+    /// suitable for the incremental pipeline. Unlike DiscoverUsageSite, this method:
+    /// - Does NOT perform semantic clause translation (no ClauseTranslator calls)
+    /// - Parses clause expressions to SqlExpr via SqlExprParser.ParseWithPathTracking()
+    /// - Detects disqualifying patterns (loop, try/catch, lambda capture, conditional)
+    /// - Computes a ChainId for chain grouping without syntax tree re-walking
+    /// </summary>
+    public static RawCallSite? DiscoverRawCallSite(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        // Reuse the existing discovery for method resolution, type extraction, analyzability.
+        // This delegates all the complex symbol resolution and type parameter inference.
+        var usageSite = DiscoverUsageSite(invocation, semanticModel, cancellationToken);
+        if (usageSite == null)
+            return null;
+
+        // Parse clause expression to SqlExpr (replacing ClauseTranslator semantic translation)
+        SqlExpr? expression = null;
+        ClauseKind? clauseKind = null;
+        bool isDescending = false;
+
+        // If the existing discovery produced a PendingClauseInfo, use its already-parsed SqlExpr
+        if (usageSite.PendingClauseInfo != null)
+        {
+            expression = usageSite.PendingClauseInfo.Expression;
+            clauseKind = usageSite.PendingClauseInfo.Kind;
+            isDescending = usageSite.PendingClauseInfo.IsDescending;
+        }
+        else if (usageSite.ClauseInfo != null && usageSite.ClauseInfo.IsSuccess)
+        {
+            // Semantic analysis succeeded — we still need the SqlExpr for the new pipeline.
+            // Re-parse the lambda to get the SqlExpr tree.
+            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
+            if (parsed != null)
+            {
+                expression = parsed.Value.Expression;
+                clauseKind = parsed.Value.ClauseKind;
+                isDescending = parsed.Value.IsDescending;
+            }
+        }
+        else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
+        {
+            // Neither ClauseInfo nor PendingClauseInfo — try direct SqlExpr parsing
+            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
+            if (parsed != null)
+            {
+                expression = parsed.Value.Expression;
+                clauseKind = parsed.Value.ClauseKind;
+                isDescending = parsed.Value.IsDescending;
+            }
+        }
+
+        // For join sites without a clause (navigation joins), try parsing the join lambda
+        if (usageSite.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+            && expression == null && !usageSite.IsNavigationJoin)
+        {
+            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
+            if (parsed != null)
+            {
+                expression = parsed.Value.Expression;
+                clauseKind = parsed.Value.ClauseKind;
+                isDescending = parsed.Value.IsDescending;
+            }
+        }
+
+        // Detect disqualifying patterns from syntax tree context
+        var isInsideLoop = DetectLoopAncestor(invocation);
+        var isInsideTryCatch = DetectTryCatchAncestor(invocation);
+        var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
+        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+
+        // Convert InitializedPropertyNames from HashSet to sorted ImmutableArray
+        ImmutableArray<string>? sortedPropertyNames = null;
+        if (usageSite.InitializedPropertyNames != null && usageSite.InitializedPropertyNames.Count > 0)
+        {
+            var sorted = new List<string>(usageSite.InitializedPropertyNames);
+            sorted.Sort(StringComparer.Ordinal);
+            sortedPropertyNames = ImmutableArray.CreateRange(sorted);
+        }
+
+        return new RawCallSite(
+            methodName: usageSite.MethodName,
+            filePath: usageSite.FilePath,
+            line: usageSite.Line,
+            column: usageSite.Column,
+            uniqueId: usageSite.UniqueId,
+            kind: usageSite.Kind,
+            builderKind: usageSite.BuilderKind,
+            entityTypeName: usageSite.EntityTypeName,
+            resultTypeName: usageSite.ResultTypeName,
+            isAnalyzable: usageSite.IsAnalyzable,
+            nonAnalyzableReason: usageSite.NonAnalyzableReason,
+            interceptableLocationData: usageSite.InterceptableLocationData,
+            interceptableLocationVersion: usageSite.InterceptableLocationVersion,
+            location: new DiagnosticLocation(usageSite.FilePath, usageSite.Line, usageSite.Column, invocation.Span),
+            expression: expression,
+            clauseKind: clauseKind,
+            isDescending: isDescending,
+            projectionInfo: usageSite.ProjectionInfo,
+            joinedEntityTypeName: usageSite.JoinedEntityTypeName,
+            initializedPropertyNames: sortedPropertyNames,
+            constantIntValue: usageSite.ConstantIntValue,
+            isNavigationJoin: usageSite.IsNavigationJoin,
+            contextClassName: usageSite.ContextClassName,
+            contextNamespace: usageSite.ContextNamespace,
+            isInsideLoop: isInsideLoop,
+            isInsideTryCatch: isInsideTryCatch,
+            isCapturedInLambda: isCapturedInLambda,
+            conditionalInfo: conditionalInfo,
+            chainId: chainId,
+            builderTypeName: usageSite.BuilderTypeName);
+    }
+
+    /// <summary>
+    /// Parses a lambda argument to SqlExpr without semantic translation.
+    /// </summary>
+    private static (SqlExpr Expression, ClauseKind ClauseKind, bool IsDescending)?
+        TryParseLambdaToSqlExpr(
+            InterceptorKind kind,
+            InvocationExpressionSyntax invocation,
+            SemanticModel semanticModel)
+    {
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return null;
+
+        var argument = invocation.ArgumentList.Arguments[0].Expression;
+        if (argument is not LambdaExpressionSyntax lambda)
+            return null;
+
+        var body = IR.SqlExprParser.GetLambdaBody(lambda);
+        if (body == null)
+            return null;
+
+        var parameterNames = IR.SqlExprParser.GetLambdaParameterNames(lambda);
+        if (parameterNames.Count == 0)
+            return null;
+
+        var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, parameterNames);
+
+        var isDescending = false;
+        if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
+            invocation.ArgumentList.Arguments.Count >= 2)
+        {
+            var directionArg = invocation.ArgumentList.Arguments[1].Expression;
+            isDescending = IsDescendingDirection(directionArg, semanticModel);
+        }
+
+        var clauseKind = kind switch
+        {
+            InterceptorKind.Where => ClauseKind.Where,
+            InterceptorKind.DeleteWhere => ClauseKind.Where,
+            InterceptorKind.UpdateWhere => ClauseKind.Where,
+            InterceptorKind.UpdateSet => ClauseKind.Set,
+            InterceptorKind.UpdateSetAction => ClauseKind.Set,
+            InterceptorKind.UpdateSetPoco => ClauseKind.Set,
+            InterceptorKind.OrderBy => ClauseKind.OrderBy,
+            InterceptorKind.ThenBy => ClauseKind.OrderBy,
+            InterceptorKind.GroupBy => ClauseKind.GroupBy,
+            InterceptorKind.Having => ClauseKind.Having,
+            InterceptorKind.Set => ClauseKind.Set,
+            InterceptorKind.Join => ClauseKind.Join,
+            InterceptorKind.LeftJoin => ClauseKind.Join,
+            InterceptorKind.RightJoin => ClauseKind.Join,
+            _ => ClauseKind.Where
+        };
+
+        return (sqlExpr, clauseKind, isDescending);
+    }
+
+    /// <summary>
+    /// Detects if the invocation is inside a for/while/foreach/do loop.
+    /// </summary>
+    private static bool DetectLoopAncestor(SyntaxNode node)
+    {
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is ForStatementSyntax
+                || ancestor is WhileStatementSyntax
+                || ancestor is ForEachStatementSyntax
+                || ancestor is DoStatementSyntax)
+                return true;
+            // Stop at method boundary
+            if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
+                break;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Detects if the invocation is inside a try/catch block.
+    /// </summary>
+    private static bool DetectTryCatchAncestor(SyntaxNode node)
+    {
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is TryStatementSyntax)
+                return true;
+            if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
+                break;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Detects if the invocation is inside a lambda or delegate expression
+    /// beyond the immediate query lambda parameter.
+    /// </summary>
+    private static bool DetectLambdaCaptureAncestor(SyntaxNode node)
+    {
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is LambdaExpressionSyntax || ancestor is AnonymousMethodExpressionSyntax)
+            {
+                // Check if this lambda is a direct argument to the Quarry method invocation
+                // (e.g., .Where(u => ...)) — that's expected, not a capture.
+                if (ancestor.Parent is ArgumentSyntax arg
+                    && arg.Parent is ArgumentListSyntax argList
+                    && argList.Parent is InvocationExpressionSyntax)
+                    continue;
+                return true;
+            }
+            if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
+                break;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Detects if the invocation is inside an if statement or ternary expression.
+    /// Returns ConditionalInfo with the condition text and nesting depth.
+    /// </summary>
+    private static ConditionalInfo? DetectConditionalAncestor(SyntaxNode node)
+    {
+        int depth = 0;
+        foreach (var ancestor in node.Ancestors())
+        {
+            if (ancestor is IfStatementSyntax ifStatement)
+            {
+                var conditionText = ifStatement.Condition.ToString();
+                // Determine branch kind: if we're in an else branch, it's mutually exclusive
+                var branchKind = BranchKind.Independent;
+                if (ifStatement.Parent is ElseClauseSyntax)
+                    branchKind = BranchKind.MutuallyExclusive;
+                else if (ifStatement.Else != null)
+                {
+                    // This if has an else — check if we're in the if-true or else branch
+                    // For now, mark as Independent; the ChainAnalyzer can refine
+                    branchKind = BranchKind.Independent;
+                }
+                return new ConditionalInfo(conditionText, depth, branchKind);
+            }
+            if (ancestor is ConditionalExpressionSyntax ternary)
+            {
+                return new ConditionalInfo(ternary.Condition.ToString(), depth, BranchKind.MutuallyExclusive);
+            }
+            if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
+                break;
+            depth++;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Computes a stable chain ID linking all call sites in the same fluent chain.
+    /// Derived from the receiver expression's root variable name and enclosing method scope.
+    /// </summary>
+    private static string? ComputeChainId(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken ct)
+    {
+        // Walk the fluent chain to find the root receiver
+        ExpressionSyntax? receiver = null;
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
+            receiver = memberAccess.Expression;
+
+        if (receiver == null)
+            return null;
+
+        // Walk up through fluent chain
+        while (receiver is InvocationExpressionSyntax chainedInvoc)
+        {
+            if (chainedInvoc.Expression is MemberAccessExpressionSyntax chainedMember)
+                receiver = chainedMember.Expression;
+            else
+                break;
+        }
+
+        // The root receiver identifies the chain (e.g., "db" in db.Users().Where(...))
+        var rootText = receiver.ToString();
+
+        // Scope it by the containing method to avoid cross-method chain ID collisions
+        foreach (var ancestor in invocation.Ancestors())
+        {
+            if (ancestor is MethodDeclarationSyntax method)
+            {
+                var filePath = invocation.SyntaxTree.FilePath;
+                var methodSpan = method.Span;
+                return $"{filePath}:{methodSpan.Start}:{rootText}";
+            }
+            if (ancestor is LocalFunctionStatementSyntax localFunc)
+            {
+                var filePath = invocation.SyntaxTree.FilePath;
+                var funcSpan = localFunc.Span;
+                return $"{filePath}:{funcSpan.Start}:{rootText}";
+            }
+        }
+
+        return rootText;
     }
 
     /// <summary>
