@@ -168,6 +168,21 @@ static class SchemaDiffer
         List<MigrationStep> steps,
         Func<RenameMatcher.RenameCandidate, bool>? acceptRename)
     {
+        // Detect schema (namespace) move
+        if (!string.Equals(from.SchemaName, to.SchemaName, StringComparison.OrdinalIgnoreCase))
+        {
+            steps.Add(new MigrationStep(
+                MigrationStepType.RenameTable,
+                StepClassification.Cautious,
+                to.TableName,
+                to.SchemaName,
+                null,
+                to.TableName,
+                to.TableName,
+                $"Transfer table '{to.TableName}' from schema '{from.SchemaName ?? "dbo"}' to '{to.SchemaName ?? "dbo"}'",
+                oldSchemaName: from.SchemaName));
+        }
+
         DiffColumns(from, to, to.TableName, to.SchemaName, steps, acceptRename);
         DiffForeignKeys(from, to, to.TableName, to.SchemaName, steps);
         DiffIndexes(from, to, to.TableName, to.SchemaName, steps);
@@ -246,35 +261,36 @@ static class SchemaDiffer
     }
 
     /// <summary>
-    /// Greedy bipartite matching for table renames: score all pairs, accept best matches first.
+    /// Optimal bipartite matching for table renames using the Hungarian algorithm.
+    /// Falls back to greedy matching for user-confirmed renames.
     /// </summary>
     private static void DetectTableRenames(
         List<TableDef> addedTables, List<TableDef> droppedTables,
         List<MigrationStep> steps,
         Func<RenameMatcher.RenameCandidate, bool>? acceptRename)
     {
-        // Score all candidate pairs
-        var candidates = new List<(int AddIdx, int DropIdx, RenameMatcher.RenameCandidate Candidate)>();
-        for (var a = 0; a < addedTables.Count; a++)
+        // Build score matrix: rows = dropped, cols = added
+        var scores = new double[droppedTables.Count, addedTables.Count];
+        for (var d = 0; d < droppedTables.Count; d++)
         {
-            for (var d = 0; d < droppedTables.Count; d++)
+            for (var a = 0; a < addedTables.Count; a++)
             {
                 var candidate = RenameMatcher.MatchTable(addedTables[a], droppedTables[d]);
-                if (candidate != null)
-                    candidates.Add((a, d, candidate));
+                scores[d, a] = candidate?.Score ?? 0.0;
             }
         }
 
-        // Sort by score descending — greedily pick best matches
-        candidates.Sort((x, y) => y.Candidate.Score.CompareTo(x.Candidate.Score));
+        // Solve optimal assignment via Hungarian algorithm
+        var assignments = HungarianAlgorithm.Solve(scores, 0.6);
 
         var usedAdded = new HashSet<int>();
         var usedDropped = new HashSet<int>();
 
-        foreach (var (addIdx, dropIdx, candidate) in candidates)
+        foreach (var (dropIdx, addIdx, score) in assignments)
         {
-            if (usedAdded.Contains(addIdx) || usedDropped.Contains(dropIdx))
-                continue;
+            var dropped = droppedTables[dropIdx];
+            var added = addedTables[addIdx];
+            var candidate = new RenameMatcher.RenameCandidate(dropped.TableName, added.TableName, score);
 
             var accepted = acceptRename != null
                 ? acceptRename(candidate)
@@ -284,9 +300,6 @@ static class SchemaDiffer
 
             usedAdded.Add(addIdx);
             usedDropped.Add(dropIdx);
-
-            var dropped = droppedTables[dropIdx];
-            var added = addedTables[addIdx];
 
             steps.Add(new MigrationStep(
                 MigrationStepType.RenameTable,
@@ -311,7 +324,7 @@ static class SchemaDiffer
     }
 
     /// <summary>
-    /// Greedy bipartite matching for column renames within a table.
+    /// Optimal bipartite matching for column renames within a table using the Hungarian algorithm.
     /// </summary>
     private static void DetectColumnRenames(
         List<ColumnDef> addedCols, List<ColumnDef> droppedCols,
@@ -319,26 +332,28 @@ static class SchemaDiffer
         List<MigrationStep> steps,
         Func<RenameMatcher.RenameCandidate, bool>? acceptRename)
     {
-        var candidates = new List<(int AddIdx, int DropIdx, RenameMatcher.RenameCandidate Candidate)>();
-        for (var a = 0; a < addedCols.Count; a++)
+        // Build score matrix: rows = dropped, cols = added
+        var scores = new double[droppedCols.Count, addedCols.Count];
+        for (var d = 0; d < droppedCols.Count; d++)
         {
-            for (var d = 0; d < droppedCols.Count; d++)
+            for (var a = 0; a < addedCols.Count; a++)
             {
                 var candidate = RenameMatcher.MatchColumn(addedCols[a], droppedCols[d]);
-                if (candidate != null)
-                    candidates.Add((a, d, candidate));
+                scores[d, a] = candidate?.Score ?? 0.0;
             }
         }
 
-        candidates.Sort((x, y) => y.Candidate.Score.CompareTo(x.Candidate.Score));
+        // Solve optimal assignment via Hungarian algorithm
+        var assignments = HungarianAlgorithm.Solve(scores, 0.6);
 
         var usedAdded = new HashSet<int>();
         var usedDropped = new HashSet<int>();
 
-        foreach (var (addIdx, dropIdx, candidate) in candidates)
+        foreach (var (dropIdx, addIdx, score) in assignments)
         {
-            if (usedAdded.Contains(addIdx) || usedDropped.Contains(dropIdx))
-                continue;
+            var dropped = droppedCols[dropIdx];
+            var added = addedCols[addIdx];
+            var candidate = new RenameMatcher.RenameCandidate(dropped.Name, added.Name, score);
 
             var accepted = acceptRename != null
                 ? acceptRename(candidate)
@@ -348,9 +363,6 @@ static class SchemaDiffer
 
             usedAdded.Add(addIdx);
             usedDropped.Add(dropIdx);
-
-            var added = addedCols[addIdx];
-            var dropped = droppedCols[dropIdx];
 
             steps.Add(new MigrationStep(
                 MigrationStepType.RenameColumn,
@@ -367,7 +379,8 @@ static class SchemaDiffer
                     dropped.IsIdentity, dropped.IsClientGenerated, dropped.IsComputed,
                     dropped.MaxLength, dropped.Precision, dropped.Scale,
                     dropped.HasDefault, dropped.DefaultExpression, dropped.MappedName,
-                    dropped.ReferencedEntityName, dropped.CustomTypeMapping);
+                    dropped.ReferencedEntityName, dropped.CustomTypeMapping,
+                    dropped.ComputedExpression, dropped.Collation);
 
                 if (!oldWithNewName.Equals(added))
                 {

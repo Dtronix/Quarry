@@ -168,7 +168,15 @@ static class MigrationCodeGenerator
             case MigrationStepType.RenameTable:
                 sb.Append("        builder.RenameTable(\"").Append(EscapeString((string)step.OldValue!));
                 sb.Append("\", \"").Append(EscapeString((string)step.NewValue!)).Append("\"");
-                if (step.SchemaName != null) sb.Append(", \"").Append(EscapeString(step.SchemaName)).Append("\"");
+                if (step.OldSchemaName != null)
+                {
+                    sb.Append(", oldSchema: ").Append($"\"{EscapeString(step.OldSchemaName)}\"");
+                    sb.Append(", newSchema: ").Append(step.SchemaName != null ? $"\"{EscapeString(step.SchemaName)}\"" : "null");
+                }
+                else if (step.SchemaName != null)
+                {
+                    sb.Append(", \"").Append(EscapeString(step.SchemaName)).Append("\"");
+                }
                 sb.AppendLine(");");
                 break;
 
@@ -199,6 +207,10 @@ static class MigrationCodeGenerator
                 sb.Append(".ClrType(\"").Append(EscapeString(altCol.ClrType)).Append("\")");
                 if (!altCol.IsNullable) sb.Append(".NotNull()");
                 if (altCol.IsNullable) sb.Append(".Nullable()");
+                if (altCol.Collation != null)
+                    sb.Append(".Collation(\"").Append(EscapeString(altCol.Collation)).Append("\")");
+                if (altCol.DefaultExpression != null)
+                    sb.Append(".DefaultExpression(\"").Append(EscapeString(altCol.DefaultExpression)).Append("\")");
                 sb.AppendLine(");");
                 break;
 
@@ -230,6 +242,17 @@ static class MigrationCodeGenerator
                 }
                 sb.Append(" }");
                 if (idx.IsUnique) sb.Append(", unique: true");
+                if (idx.Filter != null) sb.Append(", filter: \"").Append(EscapeString(idx.Filter)).Append("\"");
+                if (idx.DescendingColumns is { Length: > 0 })
+                {
+                    sb.Append(", descending: new[] { ");
+                    for (var i = 0; i < idx.DescendingColumns.Length; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        sb.Append(idx.DescendingColumns[i] ? "true" : "false");
+                    }
+                    sb.Append(" }");
+                }
                 sb.AppendLine(");");
                 break;
 
@@ -312,7 +335,18 @@ static class MigrationCodeGenerator
 
             case MigrationStepType.RenameTable:
                 sb.Append("        builder.RenameTable(\"").Append(EscapeString((string)step.NewValue!));
-                sb.Append("\", \"").Append(EscapeString((string)step.OldValue!)).AppendLine("\");");
+                sb.Append("\", \"").Append(EscapeString((string)step.OldValue!)).Append("\"");
+                if (step.OldSchemaName != null)
+                {
+                    // Reverse: old schema becomes new, new becomes old
+                    sb.Append(", oldSchema: ").Append(step.SchemaName != null ? $"\"{EscapeString(step.SchemaName)}\"" : "null");
+                    sb.Append(", newSchema: ").Append($"\"{EscapeString(step.OldSchemaName)}\"");
+                }
+                else if (step.SchemaName != null)
+                {
+                    sb.Append(", \"").Append(EscapeString(step.SchemaName)).Append("\"");
+                }
+                sb.AppendLine(");");
                 break;
 
             case MigrationStepType.RenameColumn:
@@ -358,6 +392,17 @@ static class MigrationCodeGenerator
                 }
                 sb.Append(" }");
                 if (idx.IsUnique) sb.Append(", unique: true");
+                if (idx.Filter != null) sb.Append(", filter: \"").Append(EscapeString(idx.Filter)).Append("\"");
+                if (idx.DescendingColumns is { Length: > 0 })
+                {
+                    sb.Append(", descending: new[] { ");
+                    for (var i = 0; i < idx.DescendingColumns.Length; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        sb.Append(idx.DescendingColumns[i] ? "true" : "false");
+                    }
+                    sb.Append(" }");
+                }
                 sb.AppendLine(");");
                 break;
         }

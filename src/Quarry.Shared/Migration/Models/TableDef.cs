@@ -25,6 +25,11 @@ sealed class TableDef : IEquatable<TableDef>
     /// </summary>
     public IReadOnlyList<string>? CompositeKeyColumns { get; }
 
+    /// <summary>
+    /// Table-level character set (primarily for MySQL). Null means server default.
+    /// </summary>
+    public string? CharacterSet { get; }
+
     public TableDef(
         string tableName,
         string? schemaName,
@@ -32,7 +37,8 @@ sealed class TableDef : IEquatable<TableDef>
         IReadOnlyList<ColumnDef> columns,
         IReadOnlyList<ForeignKeyDef> foreignKeys,
         IReadOnlyList<IndexDef> indexes,
-        IReadOnlyList<string>? compositeKeyColumns = null)
+        IReadOnlyList<string>? compositeKeyColumns = null,
+        string? characterSet = null)
     {
         TableName = tableName;
         SchemaName = schemaName;
@@ -41,6 +47,7 @@ sealed class TableDef : IEquatable<TableDef>
         ForeignKeys = foreignKeys;
         Indexes = indexes;
         CompositeKeyColumns = compositeKeyColumns;
+        CharacterSet = characterSet;
     }
 
     public bool Equals(TableDef? other)
@@ -49,6 +56,7 @@ sealed class TableDef : IEquatable<TableDef>
         if (ReferenceEquals(this, other)) return true;
         if (TableName != other.TableName || SchemaName != other.SchemaName
             || NamingStyle != other.NamingStyle
+            || CharacterSet != other.CharacterSet
             || Columns.Count != other.Columns.Count
             || ForeignKeys.Count != other.ForeignKeys.Count
             || Indexes.Count != other.Indexes.Count)
@@ -92,6 +100,7 @@ sealed class TableDef : IEquatable<TableDef>
             hash = hash * 31 + ForeignKeys.Count;
             hash = hash * 31 + Indexes.Count;
             hash = hash * 31 + (CompositeKeyColumns?.Count ?? 0);
+            hash = hash * 31 + (CharacterSet?.GetHashCode() ?? 0);
             return hash;
         }
     }
