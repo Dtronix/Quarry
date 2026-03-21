@@ -35,6 +35,9 @@ public static class MigrationRunner
         var applied = await GetAppliedVersionsAsync(connection, dialect, options);
         MigrationLog.AppliedCount(applied.Count);
 
+        if (options.LockTimeout.HasValue && dialect == SqlDialect.SQLite)
+            MigrationLog.LockTimeoutSkippedSQLite();
+
         if (options.Direction == MigrationDirection.Upgrade)
         {
             var target = options.TargetVersion ?? int.MaxValue;
@@ -343,23 +346,9 @@ public static class MigrationRunner
     private static async Task EmitLockTimeoutAsync(
         DbConnection connection, DbTransaction tx, SqlDialect dialect, MigrationOptions options)
     {
-        if (!options.LockTimeout.HasValue)
+        var sql = GetLockTimeoutSql(dialect, options);
+        if (sql == null)
             return;
-
-        if (dialect == SqlDialect.SQLite)
-        {
-            MigrationLog.LockTimeoutSkippedSQLite();
-            return;
-        }
-
-        var timeout = options.LockTimeout.Value;
-        var sql = dialect switch
-        {
-            SqlDialect.SqlServer => $"SET LOCK_TIMEOUT {(int)timeout.TotalMilliseconds};",
-            SqlDialect.PostgreSQL => $"SET statement_timeout = '{(int)timeout.TotalMilliseconds}ms';",
-            SqlDialect.MySQL => $"SET innodb_lock_wait_timeout = {(int)timeout.TotalSeconds};",
-            _ => throw new NotSupportedException($"LockTimeout is not supported for dialect {dialect}.")
-        };
 
         MigrationLog.LockTimeoutEmitted(sql);
         using var cmd = connection.CreateCommand();
@@ -367,6 +356,24 @@ public static class MigrationRunner
         cmd.CommandText = sql;
         ApplyCommandTimeout(cmd, options);
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Returns the dialect-specific SET command for lock timeout, or null if not applicable.
+    /// </summary>
+    internal static string? GetLockTimeoutSql(SqlDialect dialect, MigrationOptions options)
+    {
+        if (!options.LockTimeout.HasValue || dialect == SqlDialect.SQLite)
+            return null;
+
+        var timeout = options.LockTimeout.Value;
+        return dialect switch
+        {
+            SqlDialect.SqlServer => $"SET LOCK_TIMEOUT {(int)timeout.TotalMilliseconds};",
+            SqlDialect.PostgreSQL => $"SET statement_timeout = '{(int)timeout.TotalMilliseconds}ms';",
+            SqlDialect.MySQL => $"SET innodb_lock_wait_timeout = {(int)timeout.TotalSeconds};",
+            _ => throw new NotSupportedException($"LockTimeout is not supported for dialect {dialect}.")
+        };
     }
 
     private static string ComputeChecksum(string sql)
