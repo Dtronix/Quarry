@@ -110,7 +110,7 @@ internal static class TransitionBodyEmitter
         CarrierClassInfo carrier, PrebuiltChainInfo chain)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var receiverType = InterceptorCodeGenerator.ResolveCarrierReceiverType(site, entityType, chain);
+        var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
 
         sb.AppendLine($"    public static {receiverType} {methodName}(");
         sb.AppendLine($"        this {receiverType} builder, int count)");
@@ -118,7 +118,7 @@ internal static class TransitionBodyEmitter
 
         var fieldName = site.Kind == InterceptorKind.Limit ? "Limit" : "Offset";
 
-        if (InterceptorCodeGenerator.HasCarrierField(carrier, site.Kind == InterceptorKind.Limit ? FieldRole.Limit : FieldRole.Offset))
+        if (CarrierEmitter.HasCarrierField(carrier, site.Kind == InterceptorKind.Limit ? FieldRole.Limit : FieldRole.Offset))
         {
             sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).{fieldName} = count;");
         }
@@ -135,7 +135,7 @@ internal static class TransitionBodyEmitter
         CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var receiverType = InterceptorCodeGenerator.ResolveCarrierReceiverType(site, entityType, chain);
+        var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
         var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
             ? $"IQueryBuilder<{entityType}>" : receiverType;
 
@@ -158,13 +158,13 @@ internal static class TransitionBodyEmitter
         CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var receiverType = InterceptorCodeGenerator.ResolveCarrierReceiverType(site, entityType, chain);
+        var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
 
         sb.AppendLine($"    public static {receiverType} {methodName}(");
         sb.AppendLine($"        this {receiverType} builder, TimeSpan timeout)");
         sb.AppendLine($"    {{");
 
-        if (InterceptorCodeGenerator.HasCarrierField(carrier, FieldRole.Timeout))
+        if (CarrierEmitter.HasCarrierField(carrier, FieldRole.Timeout))
         {
             sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).Timeout = timeout;");
         }

@@ -103,8 +103,8 @@ internal static class TerminalBodyEmitter
         if (carrier != null)
         {
             var canEmit = site.Kind == InterceptorKind.ExecuteScalar
-                ? InterceptorCodeGenerator.CanEmitScalarTerminal(chain)
-                : InterceptorCodeGenerator.CanEmitReaderTerminal(chain);
+                ? CarrierEmitter.CanEmitScalarTerminal(chain)
+                : CarrierEmitter.CanEmitReaderTerminal(chain);
 
             if (canEmit)
             {
@@ -119,7 +119,7 @@ internal static class TerminalBodyEmitter
                     _ => ""
                 };
                 var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
-                InterceptorCodeGenerator.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
+                CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
                 sb.AppendLine($"    }}");
                 return;
             }
@@ -234,7 +234,7 @@ internal static class TerminalBodyEmitter
 
         sb.AppendLine($"    {{");
 
-        if (carrier != null && InterceptorCodeGenerator.CanEmitReaderTerminal(chain))
+        if (carrier != null && CarrierEmitter.CanEmitReaderTerminal(chain))
         {
             var carrierExecutorMethod = site.Kind switch
             {
@@ -245,7 +245,7 @@ internal static class TerminalBodyEmitter
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
-            InterceptorCodeGenerator.EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+            CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
             sb.AppendLine($"    }}");
             return;
         }
@@ -317,9 +317,9 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
-        if (carrier != null && InterceptorCodeGenerator.CanEmitNonQueryTerminal(chain))
+        if (carrier != null && CarrierEmitter.CanEmitNonQueryTerminal(chain))
         {
-            InterceptorCodeGenerator.EmitCarrierNonQueryTerminal(sb, carrier, chain);
+            CarrierEmitter.EmitCarrierNonQueryTerminal(sb, carrier, chain);
             sb.AppendLine($"    }}");
             return;
         }
@@ -420,7 +420,7 @@ internal static class TerminalBodyEmitter
 
         if (carrier != null)
         {
-            InterceptorCodeGenerator.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
+            CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
             sb.AppendLine($"    }}");
             return;
         }
@@ -534,7 +534,7 @@ internal static class TerminalBodyEmitter
             // Carrier-optimized path
             if (carrier != null && prebuiltChain != null)
             {
-                InterceptorCodeGenerator.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
                     "ExecuteCarrierNonQueryWithCommandAsync");
                 sb.AppendLine($"    }}");
                 return;
@@ -584,7 +584,7 @@ internal static class TerminalBodyEmitter
             // Carrier-optimized path
             if (carrier != null && prebuiltChain != null)
             {
-                InterceptorCodeGenerator.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
                     "ExecuteCarrierScalarWithCommandAsync<TKey>", isScalar: true);
                 sb.AppendLine($"    }}");
                 return;
@@ -645,7 +645,7 @@ internal static class TerminalBodyEmitter
 
         if (chain != null && chain.SqlMap.Count > 0 && carrier != null)
         {
-            InterceptorCodeGenerator.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
+            CarrierEmitter.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
         }
         else if (chain != null && chain.SqlMap.Count > 0)
         {

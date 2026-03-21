@@ -75,7 +75,7 @@ internal static class ClauseBodyEmitter
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"IQueryBuilder<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields);
             sb.AppendLine($"    }}");
             return;
@@ -251,7 +251,7 @@ internal static class ClauseBodyEmitter
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"IQueryBuilder<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
             sb.AppendLine($"    }}");
             return;
@@ -373,11 +373,11 @@ internal static class ClauseBodyEmitter
                             globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
                     }
                     int? clauseBit = null;
-                    InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
                 }
                 else
                 {
-                    InterceptorCodeGenerator.EmitCarrierSelect(sb, targetInterface);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface);
                 }
                 sb.AppendLine($"    }}");
                 return;
@@ -518,7 +518,7 @@ internal static class ClauseBodyEmitter
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"IQueryBuilder<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
             sb.AppendLine($"    }}");
             return;
@@ -622,7 +622,7 @@ internal static class ClauseBodyEmitter
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"IQueryBuilder<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
             sb.AppendLine($"    }}");
             return;
@@ -699,7 +699,7 @@ internal static class ClauseBodyEmitter
 
             var concreteBuilder = $"{concreteType}<{entityType}>";
             var returnInterface = $"{returnType}<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
             sb.AppendLine($"    }}");
             return;
@@ -802,7 +802,7 @@ internal static class ClauseBodyEmitter
         {
             var concreteBuilder = $"{concreteType}<{entityType}>";
             var returnInterface = $"IExecutable{modKind}Builder<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
             sb.AppendLine($"    }}");
             return;
@@ -925,7 +925,7 @@ internal static class ClauseBodyEmitter
 
             var concreteBuilder = $"{concreteBaseName}<{entityType}>";
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            InterceptorCodeGenerator.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
             sb.AppendLine($"    }}");
             return;
@@ -1048,7 +1048,7 @@ internal static class ClauseBodyEmitter
             }
 
             if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({InterceptorCodeGenerator.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
 
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             if (isFirstInChain)
@@ -1178,7 +1178,7 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        __c.Entity = entity;");
 
             if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({InterceptorCodeGenerator.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
 
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             if (isFirstInChain)

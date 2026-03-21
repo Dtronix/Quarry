@@ -106,8 +106,8 @@ internal static class JoinBodyEmitter
                     if (isFirstInChain)
                     {
                         // For chained join first-in-chain, the incoming builder is the pre-join type
-                        var preJoinBuilderType = InterceptorCodeGenerator.GetJoinedConcreteBuilderTypeName(priorTypes.Length, priorTypes);
-                        InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
+                        var preJoinBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(priorTypes.Length, priorTypes);
+                        CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
                     }
                     else
                     {
@@ -197,7 +197,7 @@ internal static class JoinBodyEmitter
                 if (isFirstInChain)
                 {
                     // For first join, the incoming builder is QueryBuilder<T>
-                    InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
                 }
                 else
                 {
@@ -368,22 +368,22 @@ internal static class JoinBodyEmitter
                     globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
             }
 
-            var joinedBuilderTypeName = InterceptorCodeGenerator.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
+            var joinedBuilderTypeName = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
                 ? $"{builderName}<{typeArgs}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"{builderName}<{typeArgs}>";
 
             if (isFirstInChain)
             {
-                InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
             }
             else if (siteParams.Count > 0)
             {
-                InterceptorCodeGenerator.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
             }
             else
             {
-                InterceptorCodeGenerator.EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
+                CarrierEmitter.EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
             }
             sb.AppendLine($"    }}");
             return;
@@ -587,22 +587,22 @@ internal static class JoinBodyEmitter
                     globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
             }
 
-            var joinedBuilderTypeName = InterceptorCodeGenerator.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
+            var joinedBuilderTypeName = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
                 ? $"{builderName}<{typeArgs}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
                 : $"{builderName}<{typeArgs}>";
 
             if (isFirstInChain)
             {
-                InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
             }
             else if (siteParams.Count > 0)
             {
-                InterceptorCodeGenerator.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
             }
             else
             {
-                InterceptorCodeGenerator.EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
+                CarrierEmitter.EmitCarrierNoop(sb, carrier, prebuiltChain, clauseBit);
             }
             sb.AppendLine($"    }}");
             return;
@@ -718,13 +718,13 @@ internal static class JoinBodyEmitter
                         if (clause.Site.ClauseInfo != null)
                             globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
                     }
-                    var joinedBuilderType = InterceptorCodeGenerator.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
+                    var joinedBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
                     int? clauseBit = null;
-                    InterceptorCodeGenerator.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
                 }
                 else
                 {
-                    InterceptorCodeGenerator.EmitCarrierSelect(sb, targetInterface);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface);
                 }
                 sb.AppendLine($"    }}");
                 return;

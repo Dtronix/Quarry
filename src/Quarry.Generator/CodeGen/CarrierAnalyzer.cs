@@ -196,7 +196,7 @@ internal static class CarrierAnalyzer
             fields.Add(new CarrierField("Entity", entityType + "?"));
         }
 
-        var baseClassName = InterceptorCodeGenerator.ResolveCarrierBaseClass(chain);
+        var baseClassName = CarrierEmitter.ResolveCarrierBaseClass(chain);
 
         return new CarrierStrategy(
             isEligible: true,

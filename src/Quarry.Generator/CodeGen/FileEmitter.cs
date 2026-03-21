@@ -145,10 +145,10 @@ internal sealed class FileEmitter
                 if (!hasChainRoot && chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
                     continue;
 
-                if (!InterceptorCodeGenerator.WouldExecutionTerminalBeEmitted(chain))
+                if (!CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
-                var resolvedBase = InterceptorCodeGenerator.ResolveCarrierBaseClass(chain);
+                var resolvedBase = CarrierEmitter.ResolveCarrierBaseClass(chain);
                 var carrier = CarrierClassBuilder.Build(chain, carrierIndex, resolvedBase);
                 if (carrier == null)
                     continue;
@@ -170,7 +170,7 @@ internal sealed class FileEmitter
                     carrierFirstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
                 }
 
-                InterceptorCodeGenerator.EmitCarrierClass(sb, carrier);
+                CarrierEmitter.EmitCarrierClass(sb, carrier);
                 carrierIndex++;
             }
         }
