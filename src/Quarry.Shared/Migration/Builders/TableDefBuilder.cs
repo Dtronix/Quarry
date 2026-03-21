@@ -20,10 +20,12 @@ sealed class TableDefBuilder
     private readonly List<ForeignKeyDef> _foreignKeys = new List<ForeignKeyDef>();
     private readonly List<IndexDef> _indexes = new List<IndexDef>();
     private List<string>? _compositeKeyColumns;
+    private string? _characterSet;
 
     public TableDefBuilder Name(string tableName) { _tableName = tableName; return this; }
     public TableDefBuilder Schema(string? schemaName) { _schemaName = schemaName; return this; }
     public TableDefBuilder NamingStyle(NamingStyleKind style) { _namingStyle = style; return this; }
+    public TableDefBuilder CharacterSet(string characterSet) { _characterSet = characterSet; return this; }
 
     public TableDefBuilder AddColumn(Action<ColumnDefBuilder> configure)
     {
@@ -43,9 +45,9 @@ sealed class TableDefBuilder
         return this;
     }
 
-    public TableDefBuilder AddIndex(string name, IReadOnlyList<string> columns, bool isUnique = false, string? filter = null, string? method = null)
+    public TableDefBuilder AddIndex(string name, IReadOnlyList<string> columns, bool isUnique = false, string? filter = null, string? method = null, bool[]? descendingColumns = null)
     {
-        _indexes.Add(new IndexDef(name, columns, isUnique, filter, method));
+        _indexes.Add(new IndexDef(name, columns, isUnique, filter, method, descendingColumns));
         return this;
     }
 
@@ -57,6 +59,6 @@ sealed class TableDefBuilder
 
     public TableDef Build()
     {
-        return new TableDef(_tableName, _schemaName, _namingStyle, _columns, _foreignKeys, _indexes, _compositeKeyColumns);
+        return new TableDef(_tableName, _schemaName, _namingStyle, _columns, _foreignKeys, _indexes, _compositeKeyColumns, _characterSet);
     }
 }

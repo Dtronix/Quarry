@@ -31,6 +31,12 @@ public sealed class MigrationBuilder
         return this;
     }
 
+    public MigrationBuilder RenameTable(string oldName, string newName, string? oldSchema, string? newSchema)
+    {
+        _operations.Add(new RenameTableOperation(oldName, newName, oldSchema, newSchema));
+        return this;
+    }
+
     public MigrationBuilder AddColumn(string table, string column, Action<ColumnBuilder> configure)
     {
         var cb = new ColumnBuilder();
@@ -74,9 +80,9 @@ public sealed class MigrationBuilder
         return this;
     }
 
-    public MigrationBuilder AddIndex(string name, string table, string[] columns, bool unique = false, string? filter = null)
+    public MigrationBuilder AddIndex(string name, string table, string[] columns, bool unique = false, string? filter = null, bool[]? descending = null)
     {
-        _operations.Add(new AddIndexOperation(name, table, null, columns, unique, filter));
+        _operations.Add(new AddIndexOperation(name, table, null, columns, unique, filter, descending));
         return this;
     }
 

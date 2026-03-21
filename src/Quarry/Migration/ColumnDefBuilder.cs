@@ -20,6 +20,8 @@ public sealed class ColumnDefBuilder
     private string? _mappedName;
     private string? _referencedEntityName;
     private string? _customTypeMapping;
+    private string? _computedExpression;
+    private string? _collation;
 
     public ColumnDefBuilder Name(string name) { _name = name; return this; }
     public ColumnDefBuilder ClrType(string clrType) { _clrType = clrType; return this; }
@@ -34,6 +36,8 @@ public sealed class ColumnDefBuilder
     public ColumnDefBuilder Identity() { _isIdentity = true; return this; }
     public ColumnDefBuilder ClientGenerated() { _isClientGenerated = true; return this; }
     public ColumnDefBuilder Computed() { _isComputed = true; return this; }
+    public ColumnDefBuilder Computed(string expression) { _isComputed = true; _computedExpression = expression; return this; }
+    public ColumnDefBuilder Collation(string collation) { _collation = collation; return this; }
     public ColumnDefBuilder Length(int maxLength) { _maxLength = maxLength; return this; }
     public ColumnDefBuilder Precision(int precision, int scale) { _precision = precision; _scale = scale; return this; }
     public ColumnDefBuilder Default(string expression) { _hasDefault = true; _defaultExpression = expression; return this; }
@@ -49,6 +53,7 @@ public sealed class ColumnDefBuilder
             _isIdentity, _isClientGenerated, _isComputed,
             _maxLength, _precision, _scale,
             _hasDefault, _defaultExpression, _mappedName,
-            _referencedEntityName, _customTypeMapping);
+            _referencedEntityName, _customTypeMapping,
+            _computedExpression, _collation);
     }
 }

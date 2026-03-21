@@ -14,6 +14,7 @@ sealed class MigrationStep
     public StepClassification Classification { get; }
     public string TableName { get; }
     public string? SchemaName { get; }
+    public string? OldSchemaName { get; }
     public string? ColumnName { get; }
     public object? OldValue { get; }
     public object? NewValue { get; }
@@ -27,12 +28,14 @@ sealed class MigrationStep
         string? columnName,
         object? oldValue,
         object? newValue,
-        string description)
+        string description,
+        string? oldSchemaName = null)
     {
         StepType = stepType;
         Classification = classification;
         TableName = tableName;
         SchemaName = schemaName;
+        OldSchemaName = oldSchemaName;
         ColumnName = columnName;
         OldValue = oldValue;
         NewValue = newValue;

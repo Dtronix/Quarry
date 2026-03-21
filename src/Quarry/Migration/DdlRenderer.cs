@@ -132,6 +132,8 @@ internal static class DdlRenderer
                 else
                     sb.Append(" ").Append(SqlFormatting.GetIdentitySyntax(dialect));
             }
+            if (col.Collation != null)
+                sb.Append(" COLLATE ").Append(ValidateSqlFragment(col.Collation, "Collation"));
             if (!col.IsNullable)
                 sb.Append(" NOT NULL");
             if (col.DefaultExpression != null)
@@ -202,6 +204,23 @@ internal static class DdlRenderer
 
     private static void RenderRenameTable(StringBuilder sb, RenameTableOperation op, SqlDialect dialect)
     {
+        if (op.IsSchemaTransfer && !string.Equals(op.OldSchema, op.NewSchema, StringComparison.OrdinalIgnoreCase))
+        {
+            RenderSchemaTransfer(sb, op, dialect);
+            // If the name also changed, emit a separate rename
+            if (!string.Equals(op.OldName, op.NewName, StringComparison.OrdinalIgnoreCase))
+            {
+                var renamed = new RenameTableOperation(op.OldName, op.NewName, op.NewSchema);
+                RenderTableRename(sb, renamed, dialect);
+            }
+            return;
+        }
+
+        RenderTableRename(sb, op, dialect);
+    }
+
+    private static void RenderTableRename(StringBuilder sb, RenameTableOperation op, SqlDialect dialect)
+    {
         switch (dialect)
         {
             case SqlDialect.SqlServer:
@@ -215,6 +234,35 @@ internal static class DdlRenderer
             default:
                 sb.Append("ALTER TABLE ").Append(FormatTable(op.OldName, op.Schema, dialect));
                 sb.Append(" RENAME TO ").Append(SqlFormatting.QuoteIdentifier(dialect, op.NewName)).AppendLine(";");
+                break;
+        }
+    }
+
+    private static void RenderSchemaTransfer(StringBuilder sb, RenameTableOperation op, SqlDialect dialect)
+    {
+        var oldSchema = op.OldSchema ?? "dbo";
+        var newSchema = op.NewSchema ?? "dbo";
+        var tableName = op.OldName;
+
+        switch (dialect)
+        {
+            case SqlDialect.SqlServer:
+                sb.Append("ALTER SCHEMA ").Append(SqlFormatting.QuoteIdentifier(dialect, newSchema));
+                sb.Append(" TRANSFER ").Append(SqlFormatting.QuoteIdentifier(dialect, oldSchema))
+                    .Append(".").Append(SqlFormatting.QuoteIdentifier(dialect, tableName)).AppendLine(";");
+                break;
+            case SqlDialect.PostgreSQL:
+                sb.Append("ALTER TABLE ").Append(FormatTable(tableName, oldSchema, dialect));
+                sb.Append(" SET SCHEMA ").Append(SqlFormatting.QuoteIdentifier(dialect, newSchema)).AppendLine(";");
+                break;
+            case SqlDialect.MySQL:
+                sb.Append("RENAME TABLE ").Append(SqlFormatting.QuoteIdentifier(dialect, oldSchema))
+                    .Append(".").Append(SqlFormatting.QuoteIdentifier(dialect, tableName));
+                sb.Append(" TO ").Append(SqlFormatting.QuoteIdentifier(dialect, newSchema))
+                    .Append(".").Append(SqlFormatting.QuoteIdentifier(dialect, tableName)).AppendLine(";");
+                break;
+            default: // SQLite — no schema namespaces
+                sb.AppendLine($"-- SQLite does not support schema namespaces. Transfer from '{oldSchema}' to '{newSchema}' is not applicable.");
                 break;
         }
     }
@@ -276,6 +324,8 @@ internal static class DdlRenderer
     private static void AppendColumnTypeAndConstraints(StringBuilder sb, ColumnDefinition def, SqlDialect dialect)
     {
         sb.Append(ResolveType(def, dialect));
+        if (def.Collation != null)
+            sb.Append(" COLLATE ").Append(ValidateSqlFragment(def.Collation, "Collation"));
         if (!def.IsNullable) sb.Append(" NOT NULL");
         if (def.DefaultExpression != null)
             sb.Append(" DEFAULT ").Append(ValidateSqlFragment(def.DefaultExpression, "DefaultExpression"));
@@ -341,7 +391,10 @@ internal static class DdlRenderer
             case SqlDialect.PostgreSQL:
                 sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
                 sb.Append(" ALTER COLUMN ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column));
-                sb.Append(" TYPE ").Append(typeSql).AppendLine(";");
+                sb.Append(" TYPE ").Append(typeSql);
+                if (op.Definition.Collation != null)
+                    sb.Append(" COLLATE ").Append(ValidateSqlFragment(op.Definition.Collation, "Collation"));
+                sb.AppendLine(";");
                 if (!op.Definition.IsNullable)
                 {
                     sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
@@ -358,6 +411,8 @@ internal static class DdlRenderer
             case SqlDialect.MySQL:
                 sb.Append("ALTER TABLE ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Table));
                 sb.Append(" MODIFY COLUMN ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ").Append(typeSql);
+                if (op.Definition.Collation != null)
+                    sb.Append(" COLLATE ").Append(ValidateSqlFragment(op.Definition.Collation, "Collation"));
                 if (!op.Definition.IsNullable) sb.Append(" NOT NULL");
                 var mySuffix = OnlineSuffix(op, dialect);
                 if (mySuffix != null) sb.Append(", ").Append(mySuffix);
@@ -366,6 +421,8 @@ internal static class DdlRenderer
             case SqlDialect.SqlServer:
                 sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
                 sb.Append(" ALTER COLUMN ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ").Append(typeSql);
+                if (op.Definition.Collation != null)
+                    sb.Append(" COLLATE ").Append(ValidateSqlFragment(op.Definition.Collation, "Collation"));
                 if (!op.Definition.IsNullable) sb.Append(" NOT NULL");
                 var ssSuffix = OnlineSuffix(op, dialect);
                 if (ssSuffix != null) sb.Append(" ").Append(ssSuffix);
@@ -440,11 +497,7 @@ internal static class DdlRenderer
                     sb.Append("IF NOT EXISTS ");
                     sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Name));
                     sb.Append(" ON ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
-                    for (var i = 0; i < op.Columns.Length; i++)
-                    {
-                        if (i > 0) sb.Append(", ");
-                        sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
-                    }
+                    AppendIndexColumns(sb, op, dialect);
                     sb.Append(")");
                     if (op.Filter != null)
                         sb.Append(" WHERE ").Append(ValidateSqlFragment(op.Filter, "Index.Filter"));
@@ -465,17 +518,24 @@ internal static class DdlRenderer
             sb.Append("CONCURRENTLY ");
         sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Name));
         sb.Append(" ON ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
-        for (var i = 0; i < op.Columns.Length; i++)
-        {
-            if (i > 0) sb.Append(", ");
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
-        }
+        AppendIndexColumns(sb, op, dialect);
         sb.Append(")");
         if (op.Filter != null)
             sb.Append(" WHERE ").Append(ValidateSqlFragment(op.Filter, "Index.Filter"));
         if (op.IsConcurrent && dialect == SqlDialect.SqlServer)
             sb.Append(" WITH (ONLINE = ON)");
         sb.AppendLine(";");
+    }
+
+    private static void AppendIndexColumns(StringBuilder sb, AddIndexOperation op, SqlDialect dialect)
+    {
+        for (var i = 0; i < op.Columns.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
+            if (op.DescendingColumns != null && i < op.DescendingColumns.Length && op.DescendingColumns[i])
+                sb.Append(" DESC");
+        }
     }
 
     private static void RenderDropIndex(StringBuilder sb, DropIndexOperation op, SqlDialect dialect, bool idempotent)
