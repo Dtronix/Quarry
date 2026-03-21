@@ -342,7 +342,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Represents a static field for caching a FieldInfo used for parameter extraction.
     /// </summary>
-    private sealed class CachedExtractorField
+    internal sealed class CachedExtractorField
     {
         public CachedExtractorField(
             string fieldName,
@@ -498,7 +498,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Wraps a parameter value expression with ToDb() if the parameter has a custom type mapping.
     /// </summary>
-    private static string WrapWithToDb(string valueExpr, ParameterInfo param)
+    internal static string WrapWithToDb(string valueExpr, ParameterInfo param)
     {
         if (param.CustomTypeMappingClass != null)
             return $"{GetMappingFieldName(param.CustomTypeMappingClass)}.ToDb({valueExpr})";

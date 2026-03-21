@@ -231,7 +231,7 @@ internal static partial class InterceptorCodeGenerator
     /// <param name="returnInterface">Return interface type (first-in-chain only)</param>
     /// <param name="hasResolvableCapturedParams">Whether the clause has captured params needing FieldInfo extraction</param>
     /// <param name="methodFields">Cached static fields for this method's parameter extraction</param>
-    private static void EmitCarrierClauseBody(
+    internal static void EmitCarrierClauseBody(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         UsageSiteInfo site, int? clauseBit, bool isFirstInChain,
         string concreteBuilderType, string returnInterface,
@@ -389,7 +389,7 @@ internal static partial class InterceptorCodeGenerator
     /// Emits the carrier chain entry interceptor (first clause in chain).
     /// Creates the carrier and extracts ExecutionContext from the incoming builder.
     /// </summary>
-    private static void EmitCarrierChainEntry(
+    internal static void EmitCarrierChainEntry(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         UsageSiteInfo site, string builderTypeName, string returnInterface,
         int? bitIndex, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
@@ -421,7 +421,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Emits a carrier parameter-binding interceptor (Where, Having with params).
     /// </summary>
-    private static void EmitCarrierParamBind(
+    internal static void EmitCarrierParamBind(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         int? bitIndex, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
     {
@@ -440,7 +440,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Emits a carrier noop interceptor (Join, unconditional OrderBy/ThenBy/GroupBy, Distinct).
     /// </summary>
-    private static void EmitCarrierNoop(
+    internal static void EmitCarrierNoop(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         int? bitIndex)
     {
@@ -455,7 +455,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Emits a carrier Select interceptor (interface crossing via Unsafe.As).
     /// </summary>
-    private static void EmitCarrierSelect(StringBuilder sb, string targetInterface)
+    internal static void EmitCarrierSelect(StringBuilder sb, string targetInterface)
     {
         sb.AppendLine($"        return Unsafe.As<{targetInterface}>(builder);");
     }
@@ -877,7 +877,7 @@ internal static partial class InterceptorCodeGenerator
         return false;
     }
 
-    private static string GetMaskType(PrebuiltChainInfo chain)
+    internal static string GetMaskType(PrebuiltChainInfo chain)
     {
         var bitCount = chain.Analysis.ConditionalClauses.Count;
         return bitCount <= 8 ? "byte" : bitCount <= 16 ? "ushort" : "uint";
