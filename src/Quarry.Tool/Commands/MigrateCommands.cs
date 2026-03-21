@@ -669,12 +669,7 @@ internal static class MigrateCommands
         Directory.CreateDirectory(migrationDir);
 
         var combinedCode = GenerateCombinedMigrationFile(
-            1, "Baseline", baselineSteps, null, baselineSnapshot, ns);
-
-        // Add squash marker attribute to the generated code
-        combinedCode = combinedCode.Replace(
-            "[Migration(Version = 1, Name = \"Baseline\")]",
-            $"[Migration(Version = 1, Name = \"Baseline\", SquashedFrom = {squashedFromVersion})]");
+            1, "Baseline", baselineSteps, null, baselineSnapshot, ns, squashedFromVersion);
 
         await File.WriteAllTextAsync(Path.Combine(migrationDir, names.GeneratedFileName), combinedCode);
         Console.WriteLine($"Created: {Path.Combine(output, names.SubdirName, names.GeneratedFileName)}");
@@ -871,11 +866,12 @@ internal static class MigrateCommands
         IReadOnlyList<MigrationStep> steps,
         SchemaSnapshot? previousSnapshot,
         SchemaSnapshot currentSnapshot,
-        string namespaceName)
+        string namespaceName,
+        int squashedFrom = 0)
     {
         // Generate migration code (full file with class)
         var migrationCode = MigrationCodeGenerator.GenerateMigrationClass(
-            version, name, steps, previousSnapshot, currentSnapshot, namespaceName);
+            version, name, steps, previousSnapshot, currentSnapshot, namespaceName, squashedFrom);
 
         // Generate snapshot attribute + Build() method to insert into the same class
         var snapshotAttr = SnapshotCodeGenerator.GenerateSnapshotAttribute(currentSnapshot);
