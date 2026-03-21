@@ -108,7 +108,8 @@ public class MigrationRunnerIntegrationTests
         await MigrationRunner.RunAsync(_connection, _dialect, migrations);
         await MigrationRunner.RunAsync(_connection, _dialect, migrations);
 
-        Assert.That(callCount, Is.EqualTo(1));
+        // callCount=2: once for the initial apply, once for checksum validation on second run
+        Assert.That(callCount, Is.EqualTo(2));
     }
 
     [Test]
@@ -348,7 +349,8 @@ public class MigrationRunnerIntegrationTests
         await MigrationRunner.RunAsync(_connection, _dialect, migrations);
         await MigrationRunner.RunAsync(_connection, _dialect, migrations);
 
-        Assert.That(callCount, Is.EqualTo(1));
+        // callCount=2: once for the initial apply, once for checksum validation on second run
+        Assert.That(callCount, Is.EqualTo(2));
     }
 
     [Test]
@@ -2101,5 +2103,298 @@ public class MigrationRunnerIntegrationTests
         cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='users';";
         var result = await cmd.ExecuteScalarAsync();
         Assert.That(result, Is.EqualTo("users"));
+    }
+
+    // --- Partial failure recovery tests ---
+
+    [Test]
+    public async Task RunAsync_HistoryRow_HasStatusColumn()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT status FROM __quarry_migrations WHERE version = 1;";
+        var result = (string)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(result, Is.EqualTo("applied"));
+    }
+
+    [Test]
+    public async Task RunAsync_HistoryRow_HasStartedAtColumn()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT started_at FROM __quarry_migrations WHERE version = 1;";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.That(result, Is.Not.Null.And.Not.EqualTo(DBNull.Value));
+    }
+
+    [Test]
+    public async Task RunAsync_IncompleteMigration_ThrowsByDefault()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // Ensure history table exists
+        await MigrationRunner.RunAsync(_connection, _dialect,
+            Array.Empty<(int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)>());
+
+        // Manually insert a 'running' status row to simulate a crash
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"INSERT INTO __quarry_migrations (version, name, applied_at, checksum, execution_time_ms, applied_by, started_at, status)
+            VALUES (1, 'CreateUsers', '2024-01-01T00:00:00Z', 'abc123', 0, 'test', '2024-01-01T00:00:00Z', 'running');";
+        await cmd.ExecuteNonQueryAsync();
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations));
+
+        Assert.That(ex!.Message, Does.Contain("Incomplete migration"));
+        Assert.That(ex.Message, Does.Contain("running"));
+    }
+
+    [Test]
+    public async Task RunAsync_IncompleteMigration_IgnoreIncomplete_Proceeds()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // Ensure history table exists
+        await MigrationRunner.RunAsync(_connection, _dialect,
+            Array.Empty<(int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)>());
+
+        // Manually insert a 'running' status row
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = @"INSERT INTO __quarry_migrations (version, name, applied_at, checksum, execution_time_ms, applied_by, started_at, status)
+            VALUES (1, 'CreateUsers', '2024-01-01T00:00:00Z', 'abc123', 0, 'test', '2024-01-01T00:00:00Z', 'running');";
+        await cmd.ExecuteNonQueryAsync();
+
+        // Should not throw with IgnoreIncomplete
+        Assert.DoesNotThrowAsync(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+                new MigrationOptions { IgnoreIncomplete = true }));
+    }
+
+    [Test]
+    public async Task RunAsync_FailedMigration_CleansUpRunningStatus()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "BadMigration",
+                b => b.Sql("INVALID SQL THAT WILL FAIL"),
+                b => { },
+                _ => { })
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations));
+
+        // Verify no 'running' row remains
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM __quarry_migrations WHERE status = 'running';";
+        var count = (long)(await cmd.ExecuteScalarAsync())!;
+        Assert.That(count, Is.EqualTo(0));
+    }
+
+    // --- Checksum validation tests ---
+
+    [Test]
+    public async Task RunAsync_ChecksumMismatch_WarnsButContinues()
+    {
+        var logs = new List<string>();
+        var migrations1 = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations1);
+
+        // Now run with a different migration body for the same version
+        var migrations2 = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.Column("extra", c => c.ClrType("string").Length(50).Nullable());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // Should warn but not throw (StrictChecksums defaults to false)
+        Assert.DoesNotThrowAsync(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations2,
+                new MigrationOptions { Logger = s => logs.Add(s) }));
+
+        Assert.That(logs, Has.Some.Contains("checksum mismatch"));
+    }
+
+    [Test]
+    public async Task RunAsync_ChecksumMismatch_StrictMode_Throws()
+    {
+        var migrations1 = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations1);
+
+        // Modified migration body
+        var migrations2 = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.Column("extra", c => c.ClrType("string").Length(50).Nullable());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        var ex = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations2,
+                new MigrationOptions { StrictChecksums = true }));
+
+        Assert.That(ex!.Message, Does.Contain("checksum mismatch"));
+    }
+
+    [Test]
+    public async Task RunAsync_ChecksumMatch_DoesNotWarn()
+    {
+        var logs = new List<string>();
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+            new MigrationOptions { Logger = s => logs.Add(s) });
+
+        Assert.That(logs, Has.None.Contains("checksum mismatch"));
+    }
+
+    // --- Idempotent DDL integration tests ---
+
+    [Test]
+    public async Task RunAsync_Idempotent_CreateTable_DoesNotFailOnReRun()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Delete history so runner tries to re-apply
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM __quarry_migrations;";
+        await cmd.ExecuteNonQueryAsync();
+
+        // Re-run with idempotent mode — should not fail even though table exists
+        Assert.DoesNotThrowAsync(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+                new MigrationOptions { Idempotent = true }));
+    }
+
+    [Test]
+    public async Task RunAsync_Idempotent_DropTable_DoesNotFailOnMissingTable()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Manually drop the table so the downgrade migration would fail without idempotent
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "DROP TABLE users;";
+        await cmd.ExecuteNonQueryAsync();
+
+        // Re-run downgrade with idempotent mode — should not fail
+        Assert.DoesNotThrowAsync(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations,
+                new MigrationOptions { Direction = MigrationDirection.Downgrade, TargetVersion = 0, Idempotent = true }));
     }
 }
