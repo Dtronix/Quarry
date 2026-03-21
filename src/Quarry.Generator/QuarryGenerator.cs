@@ -517,39 +517,160 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group)
     {
         // Report all deferred diagnostics
-        SyntaxTree? syntaxTree = null;
-        foreach (var site in group.Sites)
-        {
-            if (site.InvocationSyntax?.SyntaxTree != null)
-            {
-                syntaxTree = site.InvocationSyntax.SyntaxTree;
-                break;
-            }
-        }
-        if (syntaxTree == null)
-        {
-            foreach (var site in group.ChainMemberSites)
-            {
-                if (site.InvocationSyntax?.SyntaxTree != null)
-                {
-                    syntaxTree = site.InvocationSyntax.SyntaxTree;
-                    break;
-                }
-            }
-        }
-
         foreach (var diag in group.Diagnostics)
         {
             var descriptor = GetDescriptorById(diag.DiagnosticId);
             if (descriptor == null) continue;
 
-            var location = syntaxTree != null
-                ? diag.Location.ToLocation(syntaxTree)
+            var location = diag.Location.FilePath != null
+                ? Location.Create(diag.Location.FilePath,
+                    default,
+                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1),
+                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)))
                 : Location.None;
 
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
         }
 
+        if (group.IsNewPipeline)
+        {
+            EmitFileInterceptorsNewPipeline(spc, group);
+        }
+        else
+        {
+            EmitFileInterceptorsLegacy(spc, group);
+        }
+    }
+
+    private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group)
+    {
+        // Convert TranslatedCallSite → UsageSiteInfo for emitter compatibility (temporary bridge)
+        var mergedSites = new List<UsageSiteInfo>(
+            group.TranslatedSites.Count + group.TranslatedChainMemberSites.Count);
+        foreach (var ts in group.TranslatedSites)
+            mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts));
+        foreach (var ts in group.TranslatedChainMemberSites)
+            mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts));
+
+        if (mergedSites.Count == 0) return;
+
+        // Convert AssembledPlan → PrebuiltChainInfo for emitter compatibility (temporary bridge)
+        var chains = new List<PrebuiltChainInfo>();
+        foreach (var assembled in group.AssembledPlans)
+        {
+            if (assembled.Plan.Tier == OptimizationTier.RuntimeBuild) continue;
+
+            // Convert AssembledSqlVariant → PrebuiltSqlResult
+            var sqlMap = new Dictionary<ulong, Sql.PrebuiltSqlResult>();
+            foreach (var kvp in assembled.SqlVariants)
+                sqlMap[kvp.Key] = new Sql.PrebuiltSqlResult(kvp.Value.Sql, kvp.Value.ParameterCount);
+
+            // Build ChainAnalysisResult from QueryPlan
+            var executionUsageSite = UsageSiteInfo.FromTranslatedCallSite(assembled.ExecutionSite);
+            var clauseChainedSites = new List<ChainedClauseSite>();
+            foreach (var cs in assembled.ClauseSites)
+            {
+                var role = ChainAnalyzer.MapInterceptorKindToClauseRole(cs.Bound.Raw.Kind);
+                if (role != null)
+                {
+                    clauseChainedSites.Add(new ChainedClauseSite(
+                        UsageSiteInfo.FromTranslatedCallSite(cs),
+                        isConditional: cs.Bound.Raw.ConditionalInfo != null,
+                        bitIndex: null,
+                        role: role.Value));
+                }
+            }
+
+            var conditionalClauses = new List<ConditionalClause>();
+            foreach (var ct in assembled.Plan.ConditionalTerms)
+            {
+                // Find the matching site for this conditional term
+                var matchingSite = clauseChainedSites.Count > ct.BitIndex
+                    ? clauseChainedSites[ct.BitIndex].Site
+                    : executionUsageSite;
+                conditionalClauses.Add(new ConditionalClause(ct.BitIndex, matchingSite, BranchKind.Independent));
+            }
+
+            var analysis = new ChainAnalysisResult(
+                assembled.Plan.Tier,
+                clauseChainedSites,
+                executionUsageSite,
+                conditionalClauses,
+                assembled.Plan.PossibleMasks);
+
+            // Build chain parameters from QueryPlan.Parameters
+            var chainParams = new List<ChainParameterInfo>();
+            foreach (var p in assembled.Plan.Parameters)
+            {
+                chainParams.Add(new ChainParameterInfo(
+                    index: p.GlobalIndex,
+                    typeName: p.ClrType,
+                    valueExpression: p.ValueExpression,
+                    typeMapping: p.TypeMappingClass,
+                    isSensitive: p.IsSensitive,
+                    isEnum: p.IsEnum,
+                    enumUnderlyingType: p.EnumUnderlyingType,
+                    needsFieldInfoCache: p.NeedsFieldInfoCache,
+                    isCollection: p.IsCollection,
+                    elementTypeName: p.ElementTypeName,
+                    isDirectAccessible: p.IsDirectAccessible,
+                    collectionAccessExpression: p.CollectionAccessExpression,
+                    entityPropertyExpression: p.EntityPropertyExpression));
+            }
+
+            // Resolve joined table infos
+            List<(string, string?)>? joinedTableInfos = null;
+            if (assembled.ExecutionSite.JoinedEntityTypeNames != null)
+            {
+                joinedTableInfos = new List<(string, string?)>();
+                foreach (var join in assembled.Plan.Joins)
+                    joinedTableInfos.Add((join.Table.TableName, join.Table.SchemaName));
+            }
+
+            var chain = new PrebuiltChainInfo(
+                analysis: analysis,
+                sqlMap: sqlMap,
+                readerDelegateCode: assembled.ReaderDelegateCode,
+                entityTypeName: assembled.EntityTypeName,
+                resultTypeName: assembled.ResultTypeName,
+                dialect: assembled.Dialect,
+                tableName: assembled.ExecutionSite.TableName,
+                schemaName: assembled.ExecutionSite.SchemaName,
+                queryKind: assembled.Plan.Kind,
+                projectionInfo: assembled.ExecutionSite.ProjectionInfo,
+                joinedEntityTypeNames: assembled.ExecutionSite.JoinedEntityTypeNames,
+                joinedTableInfos: joinedTableInfos,
+                chainParameters: chainParams,
+                isCarrierEligible: group.CarrierPlans.Count > 0 && group.CarrierPlans.Any(cp => cp.IsEligible),
+                entitySchemaNamespace: assembled.EntitySchemaNamespace);
+
+            chains.Add(chain);
+        }
+
+        try
+        {
+            var emitter = new CodeGen.FileEmitter(
+                group.ContextClassName,
+                group.ContextNamespace,
+                group.FileTag,
+                mergedSites,
+                chains);
+            var interceptorsSource = emitter.Emit();
+            var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
+            spc.AddSource(fileName, interceptorsSource);
+        }
+        catch (Exception ex)
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                Location.None,
+                $"Failed to generate interceptors: {ex.Message}"));
+        }
+    }
+
+    private static void EmitFileInterceptorsLegacy(SourceProductionContext spc, FileInterceptorGroup group)
+    {
         // Merge sites and chain member sites
         var mergedSites = new List<UsageSiteInfo>(group.Sites.Count + group.ChainMemberSites.Count);
         mergedSites.AddRange(group.Sites);
@@ -560,7 +681,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         try
         {
-            // Generate interceptors file via FileEmitter
             var emitter = new CodeGen.FileEmitter(
                 group.ContextClassName,
                 group.ContextNamespace,
@@ -574,13 +694,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
         catch (Exception ex)
         {
-            // Report diagnostic for interceptor generation failure
-            var diagnostic = Diagnostic.Create(
+            spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.InternalError,
                 Location.None,
-                $"Failed to generate interceptors: {ex.Message}");
-
-            spc.ReportDiagnostic(diagnostic);
+                $"Failed to generate interceptors: {ex.Message}"));
         }
     }
 
