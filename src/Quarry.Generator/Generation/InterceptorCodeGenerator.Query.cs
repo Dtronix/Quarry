@@ -257,22 +257,22 @@ internal static partial class InterceptorCodeGenerator
                 if (chainLookup.TryGetValue(site.UniqueId, out var selectChain))
                 {
                     if (selectChain.IsJoinChain)
-                        GeneratePrebuiltJoinExecutionInterceptor(sb, site, methodName, selectChain, carrierInfo);
+                        CodeGen.TerminalBodyEmitter.EmitJoinReaderTerminal(sb, site, methodName, selectChain, carrierInfo);
                     else
-                        GeneratePrebuiltSelectExecutionInterceptor(sb, site, methodName, selectChain, carrierInfo);
+                        CodeGen.TerminalBodyEmitter.EmitReaderTerminal(sb, site, methodName, selectChain, carrierInfo);
                 }
                 break;
 
             case InterceptorKind.ExecuteNonQuery:
                 if (chainLookup.TryGetValue(site.UniqueId, out var nonQueryChain))
-                    GeneratePrebuiltNonQueryExecutionInterceptor(sb, site, methodName, nonQueryChain, carrierInfo);
+                    CodeGen.TerminalBodyEmitter.EmitNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
                 break;
 
             case InterceptorKind.ToDiagnostics:
                 if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
-                    GeneratePrebuiltToDiagnosticsInterceptor(sb, site, methodName, toDiagChain, carrierInfo);
+                    CodeGen.TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
                 else
-                    GenerateRuntimeToDiagnosticsInterceptor(sb, site, methodName);
+                    CodeGen.TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
                 break;
 
             case InterceptorKind.DeleteWhere:
@@ -304,21 +304,21 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.InsertExecuteNonQuery:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertChain);
-                    GenerateInsertExecuteNonQueryInterceptor(sb, site, methodName, insertChain, carrierInfo);
+                    CodeGen.TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, insertChain, carrierInfo);
                 }
                 break;
 
             case InterceptorKind.InsertExecuteScalar:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertScalarChain);
-                    GenerateInsertExecuteScalarInterceptor(sb, site, methodName, insertScalarChain, carrierInfo);
+                    CodeGen.TerminalBodyEmitter.EmitInsertScalarTerminal(sb, site, methodName, insertScalarChain, carrierInfo);
                 }
                 break;
 
             case InterceptorKind.InsertToDiagnostics:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertDiagChain);
-                    GenerateInsertToDiagnosticsInterceptor(sb, site, methodName, insertDiagChain, carrierInfo);
+                    CodeGen.TerminalBodyEmitter.EmitInsertDiagnosticsTerminal(sb, site, methodName, insertDiagChain, carrierInfo);
                 }
                 break;
 

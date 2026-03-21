@@ -46,7 +46,7 @@ internal static partial class InterceptorCodeGenerator
     /// Returns true if a reader-based terminal (FetchAll, FetchFirst, etc.) can be emitted.
     /// Used by both carrier eligibility gating and the terminal generators.
     /// </summary>
-    private static bool CanEmitReaderTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitReaderTerminal(PrebuiltChainInfo chain)
     {
         var rawResult = ResolveExecutionResultType(
             chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
@@ -64,7 +64,7 @@ internal static partial class InterceptorCodeGenerator
     /// Returns true if a scalar terminal (ExecuteScalar) can be emitted.
     /// Used by both carrier eligibility gating and the terminal generators.
     /// </summary>
-    private static bool CanEmitScalarTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitScalarTerminal(PrebuiltChainInfo chain)
     {
         var rawResult = ResolveExecutionResultType(
             chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
@@ -75,7 +75,7 @@ internal static partial class InterceptorCodeGenerator
     /// Returns true if a non-query terminal (DELETE/UPDATE ExecuteNonQuery) can be emitted.
     /// Used by both carrier eligibility gating and the terminal generators.
     /// </summary>
-    private static bool CanEmitNonQueryTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitNonQueryTerminal(PrebuiltChainInfo chain)
     {
         return !chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
             || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  ")));
@@ -575,7 +575,7 @@ internal static partial class InterceptorCodeGenerator
     /// Terminal owns: OpId, SQL/param logging, command creation, param binding.
     /// Executor owns: connection open, execution, materialization, completion logging.
     /// </summary>
-    private static void EmitCarrierExecutionTerminal(
+    internal static void EmitCarrierExecutionTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         string? readerExpression, string executorMethod)
     {
@@ -603,7 +603,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Emits a carrier non-query execution terminal (DELETE/UPDATE) with inline binding.
     /// </summary>
-    private static void EmitCarrierNonQueryTerminal(
+    internal static void EmitCarrierNonQueryTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
     {
         EmitCarrierPreamble(sb, carrier, chain);
@@ -708,7 +708,7 @@ internal static partial class InterceptorCodeGenerator
     /// Emits a carrier insert execution terminal with inline per-parameter DbCommand binding.
     /// Extracts entity properties directly from the carrier's Entity field.
     /// </summary>
-    private static void EmitCarrierInsertTerminal(
+    internal static void EmitCarrierInsertTerminal(
         StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
         string executorMethod, bool isScalar = false)
     {
