@@ -100,6 +100,9 @@ public static class MigrationRunner
             return;
         }
 
+        if (options.BeforeEach != null)
+            await options.BeforeEach(migration.Version, migration.Name, connection);
+
         var sw = Stopwatch.StartNew();
 
         // Phase 1: Transactional operations (including backups and history row)
@@ -137,10 +140,23 @@ public static class MigrationRunner
             await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, (int)sw.ElapsedMilliseconds, options);
 
             await tx.CommitAsync();
+
+            if (options.AfterEach != null)
+                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection);
         }
         catch (Exception ex)
         {
             MigrationLog.Failed(migration.Version, migration.Name, "upgrade", ex);
+
+            if (options.OnError != null)
+            {
+                try { await options.OnError(migration.Version, migration.Name, ex, connection); }
+                catch (Exception hookEx)
+                {
+                    MigrationLog.Failed(migration.Version, migration.Name, "OnError hook", hookEx);
+                }
+            }
+
             await tx.RollbackAsync();
             throw new InvalidOperationException(
                 $"Migration {migration.Version} ({migration.Name}) failed during upgrade (transactional phase). SQL: {txSql}", ex);
@@ -193,6 +209,9 @@ public static class MigrationRunner
             return;
         }
 
+        if (options.BeforeEach != null)
+            await options.BeforeEach(migration.Version, migration.Name, connection);
+
         var sw = Stopwatch.StartNew();
 
         // Phase 1: Non-transactional operations first during rollback
@@ -234,10 +253,23 @@ public static class MigrationRunner
             sw.Stop();
             MigrationLog.RolledBack(migration.Version);
             await tx.CommitAsync();
+
+            if (options.AfterEach != null)
+                await options.AfterEach(migration.Version, migration.Name, sw.Elapsed, connection);
         }
         catch (Exception ex)
         {
             MigrationLog.Failed(migration.Version, migration.Name, "rollback", ex);
+
+            if (options.OnError != null)
+            {
+                try { await options.OnError(migration.Version, migration.Name, ex, connection); }
+                catch (Exception hookEx)
+                {
+                    MigrationLog.Failed(migration.Version, migration.Name, "OnError hook", hookEx);
+                }
+            }
+
             await tx.RollbackAsync();
             throw new InvalidOperationException(
                 $"Migration {migration.Version} ({migration.Name}) failed during rollback. SQL: {txSql}", ex);
