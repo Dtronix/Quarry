@@ -146,6 +146,74 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
+    /// Discovers a raw call site from an invocation expression for the new pipeline.
+    /// </summary>
+    private static IR.RawCallSite? DiscoverRawCallSite(GeneratorSyntaxContext context, CancellationToken ct)
+    {
+        if (context.Node is not InvocationExpressionSyntax invocation)
+            return null;
+
+        try
+        {
+            return UsageSiteDiscovery.DiscoverRawCallSite(invocation, context.SemanticModel, ct);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Processes translated call sites into per-file output groups.
+    /// Converts TranslatedCallSite to UsageSiteInfo via adapter for backward compatibility
+    /// with ChainAnalyzer, CompileTimeSqlBuilder, and codegen emitters.
+    /// Reconstructs SyntaxNode references from the Compilation for the adapter.
+    /// </summary>
+    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcessTranslated(
+        Compilation compilation,
+        ImmutableArray<ContextInfo> contexts,
+        ImmutableArray<IR.TranslatedCallSite> translatedSites,
+        CancellationToken ct)
+    {
+        if (translatedSites.IsDefaultOrEmpty)
+            return ImmutableArray<FileInterceptorGroup>.Empty;
+
+        ct.ThrowIfCancellationRequested();
+
+        // Build a lookup of syntax nodes by file+line+column for InvocationSyntax reconstruction.
+        // The collected stage is short-lived, so holding SyntaxNode refs here is fine.
+        var syntaxNodeLookup = new Dictionary<string, SyntaxNode>();
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            ct.ThrowIfCancellationRequested();
+            var root = tree.GetRoot(ct);
+            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                var lineSpan = tree.GetLineSpan(invocation.Span);
+                var line = lineSpan.StartLinePosition.Line + 1;
+                var col = lineSpan.StartLinePosition.Character + 1;
+                var key = $"{tree.FilePath}:{line}:{col}";
+                syntaxNodeLookup[key] = invocation;
+            }
+        }
+
+        // Convert TranslatedCallSite → UsageSiteInfo with reconstructed SyntaxNode
+        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>(translatedSites.Length);
+        foreach (var ts in translatedSites)
+        {
+            var raw = ts.Bound.Raw;
+            var key = $"{raw.FilePath}:{raw.Line}:{raw.Column}";
+            syntaxNodeLookup.TryGetValue(key, out var syntaxNode);
+
+            var adapted = UsageSiteInfo.FromTranslatedCallSite(ts, syntaxNode);
+            usageSites.Add(adapted);
+        }
+
+        // Delegate to the existing GroupByFileAndProcess logic
+        return GroupByFileAndProcess(compilation, contexts, usageSites.ToImmutable(), ct);
+    }
+
+    /// <summary>
     /// Generates entity classes, context class, and metadata for a single context.
     /// Registered per-context (no Collect) so that changing one context doesn't regenerate others.
     /// </summary>
@@ -483,15 +551,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Group all sites by syntax tree for efficient lookup
         var sitesByTree = enrichedSites
-            .Where(s => s.InvocationSyntax.SyntaxTree != null)
-            .GroupBy(s => s.InvocationSyntax.SyntaxTree)
+            .Where(s => s.InvocationSyntax?.SyntaxTree != null)
+            .GroupBy(s => s.InvocationSyntax!.SyntaxTree!)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<UsageSiteInfo>)g.ToList());
 
         foreach (var executionSite in executionSites)
         {
             ct.ThrowIfCancellationRequested();
 
-            var tree = executionSite.InvocationSyntax.SyntaxTree;
+            var tree = executionSite.InvocationSyntax?.SyntaxTree;
             if (tree == null)
                 continue;
 
@@ -517,7 +585,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
 
             // Collect diagnostic based on tier
-            var diagLocation = DiagnosticLocation.FromSyntaxNode(executionSite.InvocationSyntax);
+            var diagLocation = executionSite.InvocationSyntax != null
+                ? DiagnosticLocation.FromSyntaxNode(executionSite.InvocationSyntax)
+                : new DiagnosticLocation(executionSite.FilePath, executionSite.Line, executionSite.Column, default);
             var locationDisplay = $"{GetRelativePath(executionSite.FilePath)}:{executionSite.Line}";
 
             switch (result.Tier)
@@ -1540,6 +1610,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
             // Walk up the syntax tree from the Join invocation to find parent method calls
             var joinInvocation = site.InvocationSyntax;
+            if (joinInvocation == null)
+                continue;
             var current = joinInvocation.Parent;
 
             // The join invocation is part of a fluent chain: .Join(...).Select(...).Execute(...)

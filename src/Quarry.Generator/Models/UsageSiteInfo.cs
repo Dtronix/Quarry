@@ -20,7 +20,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         string entityTypeName,
         bool isAnalyzable,
         InterceptorKind kind,
-        SyntaxNode invocationSyntax,
+        SyntaxNode? invocationSyntax,
         string uniqueId,
         string? resultTypeName = null,
         string? nonAnalyzableReason = null,
@@ -136,7 +136,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// Gets the syntax node for the invocation expression.
     /// Used for semantic analysis during code generation.
     /// </summary>
-    public SyntaxNode InvocationSyntax { get; }
+    public SyntaxNode? InvocationSyntax { get; }
 
     /// <summary>
     /// Gets the context class name associated with this usage site.
@@ -253,6 +253,94 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
     /// Used to emit concrete-typed (non-generic) Set interceptor signatures for carrier optimization.
     /// </summary>
     public string? ValueTypeName { get; }
+
+    /// <summary>
+    /// Creates a UsageSiteInfo from a TranslatedCallSite for backward compatibility.
+    /// This is a temporary adapter used during Phase 4 pipeline transition.
+    /// The InvocationSyntax will be null since the new pipeline doesn't store SyntaxNode references.
+    /// </summary>
+    public static UsageSiteInfo FromTranslatedCallSite(IR.TranslatedCallSite translated, SyntaxNode? syntaxNode = null)
+    {
+        var bound = translated.Bound;
+        var raw = bound.Raw;
+
+        // Convert TranslatedClause back to ClauseInfo for the old pipeline
+        ClauseInfo? clauseInfo = null;
+        if (translated.Clause != null && translated.Clause.IsSuccess)
+        {
+            var sql = IR.SqlExprRenderer.Render(translated.Clause.ResolvedExpression, bound.Dialect, useGenericParamFormat: true);
+            if (!string.IsNullOrEmpty(sql))
+            {
+                if (translated.Clause.Kind == ClauseKind.OrderBy || translated.Clause.Kind == ClauseKind.GroupBy)
+                {
+                    clauseInfo = new OrderByClauseInfo(sql, translated.Clause.IsDescending, translated.Clause.Parameters, translated.KeyTypeName);
+                }
+                else if (translated.Clause.Kind == ClauseKind.Set)
+                {
+                    var setParams = translated.Clause.Parameters;
+                    clauseInfo = new SetClauseInfo(sql, setParams.Count > 0 ? setParams[setParams.Count - 1].Index : 0, setParams,
+                        translated.Clause.CustomTypeMappingClass, translated.ValueTypeName);
+                }
+                else if (translated.Clause.Kind == ClauseKind.Join)
+                {
+                    clauseInfo = new JoinClauseInfo(
+                        translated.Clause.JoinKind ?? JoinClauseKind.Inner,
+                        raw.JoinedEntityTypeName ?? "",
+                        translated.Clause.JoinedTableName ?? "",
+                        sql,
+                        translated.Clause.Parameters,
+                        translated.Clause.JoinedSchemaName,
+                        translated.Clause.TableAlias);
+                }
+                else
+                {
+                    clauseInfo = ClauseInfo.Success(translated.Clause.Kind, sql, translated.Clause.Parameters);
+                }
+            }
+        }
+
+        // Convert ImmutableArray<string> back to HashSet<string>
+        System.Collections.Generic.HashSet<string>? initializedPropertyNames = null;
+        if (raw.InitializedPropertyNames.HasValue)
+        {
+            initializedPropertyNames = new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal);
+            foreach (var name in raw.InitializedPropertyNames.Value)
+                initializedPropertyNames.Add(name);
+        }
+
+        return new UsageSiteInfo(
+            methodName: raw.MethodName,
+            filePath: raw.FilePath,
+            line: raw.Line,
+            column: raw.Column,
+            builderTypeName: raw.BuilderTypeName ?? bound.Entity.EntityName,
+            entityTypeName: raw.EntityTypeName,
+            isAnalyzable: raw.IsAnalyzable,
+            kind: raw.Kind,
+            invocationSyntax: syntaxNode, // Reconstructed from Compilation in the collected stage
+            uniqueId: raw.UniqueId,
+            resultTypeName: raw.ResultTypeName,
+            nonAnalyzableReason: raw.NonAnalyzableReason,
+            contextClassName: bound.ContextClassName,
+            contextNamespace: bound.ContextNamespace,
+            projectionInfo: raw.ProjectionInfo,
+            clauseInfo: clauseInfo,
+            interceptableLocationData: raw.InterceptableLocationData,
+            interceptableLocationVersion: raw.InterceptableLocationVersion,
+            pendingClauseInfo: null, // Pending clauses are resolved during translation
+            insertInfo: bound.InsertInfo,
+            joinedEntityTypeName: raw.JoinedEntityTypeName,
+            joinedEntityTypeNames: bound.JoinedEntityTypeNames,
+            dialect: bound.Dialect,
+            initializedPropertyNames: initializedPropertyNames,
+            updateInfo: bound.UpdateInfo,
+            keyTypeName: translated.KeyTypeName,
+            rawSqlTypeInfo: bound.RawSqlTypeInfo,
+            isNavigationJoin: raw.IsNavigationJoin,
+            constantIntValue: raw.ConstantIntValue,
+            builderKind: raw.BuilderKind,
+            valueTypeName: translated.ValueTypeName);
+    }
 
     public bool Equals(UsageSiteInfo? other)
     {
