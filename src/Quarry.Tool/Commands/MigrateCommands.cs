@@ -20,7 +20,7 @@ internal static class MigrateCommands
     /// <param name="nonInteractive">--ni, Non-interactive mode for CI</param>
     public static async Task MigrateAdd(string name, string project = ".", string output = "Migrations", bool nonInteractive = false)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
 
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
@@ -126,7 +126,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task MigrateAddEmpty(string name, string project = ".", string output = "Migrations")
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -165,7 +165,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task MigrateList(string project = ".")
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -173,7 +173,7 @@ internal static class MigrateCommands
             return;
         }
 
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         if (migrations.Count == 0)
         {
             Console.WriteLine("No migrations found.");
@@ -181,9 +181,9 @@ internal static class MigrateCommands
         }
 
         Console.WriteLine("Migrations:");
-        foreach (var (version, migName) in migrations)
+        foreach (var m in migrations)
         {
-            Console.WriteLine($"  {version:D4}  {migName}");
+            Console.WriteLine($"  {m.Version:D4}  {m.Name}");
         }
     }
 
@@ -192,7 +192,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task MigrateValidate(string project = ".")
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -200,16 +200,16 @@ internal static class MigrateCommands
             return;
         }
 
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         var errors = 0;
 
         // Check for version gaps and duplicates
         var seen = new HashSet<int>();
-        foreach (var (version, _) in migrations)
+        foreach (var m in migrations)
         {
-            if (!seen.Add(version))
+            if (!seen.Add(m.Version))
             {
-                Console.Error.WriteLine($"ERROR: Duplicate migration version {version}");
+                Console.Error.WriteLine($"ERROR: Duplicate migration version {m.Version}");
                 errors++;
             }
         }
@@ -237,7 +237,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task MigrateRemove(string project = ".", string output = "Migrations")
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -245,7 +245,7 @@ internal static class MigrateCommands
             return;
         }
 
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         if (migrations.Count == 0)
         {
             Console.WriteLine("No migrations to remove.");
@@ -300,7 +300,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task CreateScripts(string project = ".", string? dialect = null, string? output = null)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -368,7 +368,7 @@ internal static class MigrateCommands
     /// </summary>
     public static async Task MigrateDiff(string project = ".", bool nonInteractive = false)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
 
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
@@ -430,7 +430,7 @@ internal static class MigrateCommands
         string project = ".", string? dialect = null, string? output = null,
         int? from = null, int? to = null)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -446,7 +446,7 @@ internal static class MigrateCommands
         }
 
         var sqlDialect = ParseDialect(resolvedDialect);
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         if (migrations.Count == 0)
         {
             Console.WriteLine("No migrations found.");
@@ -473,15 +473,15 @@ internal static class MigrateCommands
         sb.AppendLine($"-- Range: {filtered[0].Version} to {filtered[^1].Version}");
         sb.AppendLine();
 
-        foreach (var (version, migName) in filtered)
+        foreach (var m in filtered)
         {
-            sb.AppendLine($"-- Migration {version}: {migName}");
+            sb.AppendLine($"-- Migration {m.Version}: {m.Name}");
 
-            var sql = MigrationCompiler.CompileAndBuildSql(compilation, version, sqlDialect);
+            var sql = MigrationCompiler.CompileAndBuildSql(compilation, m.Version, sqlDialect);
             if (sql == null)
             {
-                sb.AppendLine($"-- ERROR: Could not compile migration {version}");
-                Console.Error.WriteLine($"WARNING: Could not compile migration {version}: {migName}");
+                sb.AppendLine($"-- ERROR: Could not compile migration {m.Version}");
+                Console.Error.WriteLine($"WARNING: Could not compile migration {m.Version}: {m.Name}");
             }
             else if (!string.IsNullOrWhiteSpace(sql))
             {
@@ -514,7 +514,7 @@ internal static class MigrateCommands
     public static async Task MigrateStatus(
         string project, string? dialect, string connectionString)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
         if (compilation == null)
         {
@@ -530,7 +530,7 @@ internal static class MigrateCommands
         }
 
         var sqlDialect = ParseDialect(resolvedDialect);
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
 
         // Connect to database
         using var connection = CreateConnection(resolvedDialect, connectionString);
@@ -546,12 +546,12 @@ internal static class MigrateCommands
         }
 
         Console.WriteLine("Migrations:");
-        foreach (var (version, migName) in migrations)
+        foreach (var m in migrations)
         {
-            if (applied.TryGetValue(version, out var appliedAt))
-                Console.WriteLine($"  {version:D3}  {migName,-30} [applied {appliedAt:yyyy-MM-dd}]");
+            if (applied.TryGetValue(m.Version, out var appliedAt))
+                Console.WriteLine($"  {m.Version:D3}  {m.Name,-30} [applied {appliedAt:yyyy-MM-dd}]");
             else
-                Console.WriteLine($"  {version:D3}  {migName,-30} [pending]");
+                Console.WriteLine($"  {m.Version:D3}  {m.Name,-30} [pending]");
         }
 
         // Warn about applied migrations not found in code
@@ -570,7 +570,7 @@ internal static class MigrateCommands
         bool nonInteractive = false, string? dialect = null,
         string? connectionString = null)
     {
-        var csprojPath = ResolveCsproj(project);
+        var csprojPath = CommandHelpers.ResolveCsproj(project);
         Console.WriteLine($"Loading project: {csprojPath}");
 
         var compilation = await ProjectSchemaReader.OpenProjectAsync(csprojPath);
@@ -580,7 +580,7 @@ internal static class MigrateCommands
             return;
         }
 
-        var migrations = FindMigrations(compilation);
+        var migrations = CommandHelpers.FindMigrations(compilation);
         if (migrations.Count <= 1)
         {
             Console.WriteLine("Nothing to squash — only 0 or 1 migration exists.");
@@ -744,17 +744,6 @@ internal static class MigrateCommands
 
     // --- Helpers ---
 
-    private static string ResolveCsproj(string project)
-    {
-        if (project.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            return Path.GetFullPath(project);
-
-        var csprojs = Directory.GetFiles(project, "*.csproj");
-        if (csprojs.Length == 1) return Path.GetFullPath(csprojs[0]);
-        if (csprojs.Length == 0) throw new InvalidOperationException($"No .csproj found in '{project}'");
-        throw new InvalidOperationException($"Multiple .csproj files found in '{project}'. Specify one with -p.");
-    }
-
     private static int FindLatestSnapshotVersion(Microsoft.CodeAnalysis.Compilation compilation)
     {
         var maxVersion = 0;
@@ -784,36 +773,6 @@ internal static class MigrateCommands
     private static SchemaSnapshot? FindAndBuildSnapshot(Microsoft.CodeAnalysis.Compilation compilation, int version)
     {
         return SnapshotCompiler.CompileAndBuild(compilation, version);
-    }
-
-    private static List<(int Version, string Name)> FindMigrations(Microsoft.CodeAnalysis.Compilation compilation)
-    {
-        var migrations = new List<(int Version, string Name)>();
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            var model = compilation.GetSemanticModel(tree);
-            foreach (var classDecl in tree.GetRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
-            {
-                var symbol = Microsoft.CodeAnalysis.CSharp.CSharpExtensions.GetDeclaredSymbol(model, classDecl);
-                if (symbol == null) continue;
-                foreach (var attr in symbol.GetAttributes())
-                {
-                    if (attr.AttributeClass?.Name == "MigrationAttribute")
-                    {
-                        int? ver = null;
-                        string? migName = null;
-                        foreach (var arg in attr.NamedArguments)
-                        {
-                            if (arg.Key == "Version" && arg.Value.Value is int v) ver = v;
-                            if (arg.Key == "Name" && arg.Value.Value is string n) migName = n;
-                        }
-                        if (ver.HasValue)
-                            migrations.Add((ver.Value, migName ?? ""));
-                    }
-                }
-            }
-        }
-        return migrations.OrderBy(m => m.Version).ToList();
     }
 
     private static string GuessNamespace(string csprojPath, string outputDir)
