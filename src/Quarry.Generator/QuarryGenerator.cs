@@ -316,12 +316,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Build EntityRegistry from all contexts — single source of entity metadata
         var registry = IR.EntityRegistry.Build(contexts, ct);
 
-        // Collect diagnostics for non-analyzable queries and anonymous type projections
+        // Collect pre-enrichment diagnostics and identify sites to skip
         var diagnostics = new List<DiagnosticInfo>();
         var sitesToSkip = new HashSet<UsageSiteInfo>();
         foreach (var site in usageSites)
         {
-            // Check for anonymous type projection failure (QRY014 - Error)
             if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
             {
                 diagnostics.Add(new DiagnosticInfo(
@@ -331,7 +330,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
             }
 
-            // Collect QRY001 warnings for non-analyzable queries
             if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
             {
                 diagnostics.Add(new DiagnosticInfo(
@@ -343,204 +341,30 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         ct.ThrowIfCancellationRequested();
 
-        // Enrich usage sites with entity metadata from contexts
+        // Enrich usage sites with entity metadata
         var enrichedSites = usageSites
             .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, contexts, compilation))
+            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, compilation))
             .ToList();
 
-        // Discover and enrich missing chain members from resolved navigation joins.
+        // Discover and enrich missing chain members from resolved navigation joins
         var discoveredLocationKeys = new HashSet<string>(
             usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
         var navJoinChainSites = DiscoverNavigationJoinChainMembers(
-            enrichedSites, discoveredLocationKeys, registry, contexts, compilation);
+            enrichedSites, discoveredLocationKeys, registry, compilation);
         if (navJoinChainSites.Count > 0)
-        {
             enrichedSites.AddRange(navJoinChainSites);
-        }
 
-        ct.ThrowIfCancellationRequested();
-
-        // Collect QRY015 for ambiguous context resolution
-        foreach (var site in enrichedSites)
-        {
-            if (site.ContextClassName == null && registry.GetEntryCount(site.EntityTypeName) > 1)
-            {
-                var chosen = registry.GetFirstEntry(site.EntityTypeName);
-                if (chosen != null)
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.AmbiguousContextResolution.Id,
-                        DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                        site.EntityTypeName,
-                        chosen.Context.ClassName,
-                        chosen.Context.Dialect.ToString()));
-                }
-            }
-        }
-
-        // Collect QRY016 for unbound parameter placeholders in generated SQL
-        foreach (var site in enrichedSites)
-        {
-            if (site.ClauseInfo is { IsSuccess: true } clause)
-            {
-                var boundIndices = new HashSet<int>(
-                    clause.Parameters.Select(p => p.Index));
-
-                foreach (Match match in ParameterPlaceholderRegex.Matches(clause.SqlFragment))
-                {
-                    var index = int.Parse(match.Groups[1].Value);
-                    if (!boundIndices.Contains(index))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.UnboundParameterPlaceholder.Id,
-                            DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                            match.Value));
-                    }
-                }
-            }
-        }
-
-        // Collect QRY019 for clause interceptors that could not be translated
-        foreach (var site in enrichedSites)
-        {
-            var clauseKind = GetNonTranslatableClauseKind(site);
-            if (clauseKind != null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.ClauseNotTranslatable.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                    clauseKind));
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Analyze execution chains for pre-built SQL optimization tiers.
-        var allSitesForChainAnalysis = usageSites
-            .Where(s => !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, contexts, compilation))
-            .ToList();
-        if (navJoinChainSites.Count > 0)
-            allSitesForChainAnalysis.AddRange(navJoinChainSites);
-        var (prebuiltChains, chainDiagnostics) = AnalyzeExecutionChainsWithDiagnostics(
-            compilation, allSitesForChainAnalysis, registry, ct);
-        diagnostics.AddRange(chainDiagnostics);
-
-        // Build a set of chain member UniqueIds so we can include non-analyzable clause
-        // and execution sites that are part of analyzed chains.
-        var chainMemberUniqueIds = new HashSet<string>();
-        foreach (var chain in prebuiltChains)
-        {
-            foreach (var clause in chain.Analysis.Clauses)
-                chainMemberUniqueIds.Add(clause.Site.UniqueId);
-            chainMemberUniqueIds.Add(chain.Analysis.ExecutionSite.UniqueId);
-        }
-
-        // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
-        var enrichedSiteIds = new HashSet<string>(enrichedSites.Select(s => s.UniqueId));
-        var additionalChainSites = allSitesForChainAnalysis
-            .Where(s => chainMemberUniqueIds.Contains(s.UniqueId) && !enrichedSiteIds.Contains(s.UniqueId))
-            .ToList();
-
-        var allSitesForGeneration = enrichedSites.Concat(additionalChainSites).ToList();
-
-        ct.ThrowIfCancellationRequested();
-
-        // Group by (contextClassName, filePath) for per-file output
-        var fileGroups = allSitesForGeneration
-            .GroupBy(s => (ContextClassName: s.ContextClassName ?? "Quarry", FilePath: s.FilePath))
-            .ToList();
-
-        var result = ImmutableArray.CreateBuilder<FileInterceptorGroup>(fileGroups.Count);
-
-        foreach (var group in fileGroups)
-        {
-            var sites = group.ToList();
-            if (sites.Count == 0)
-                continue;
-
-            var contextClassName = group.Key.ContextClassName;
-            var filePath = group.Key.FilePath;
-
-            // Compute human-readable file tag for output filename
-            var fileTag = FileHasher.ComputeFileTag(filePath);
-
-            // Derive namespace
-            var namespaceName = sites.Select(s => s.ContextNamespace)
-                                    .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
-                                ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
-
-            // Filter pre-built chains for this context AND this file
-            var fileChains = prebuiltChains
-                .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName
-                         && c.Analysis.ExecutionSite.FilePath == filePath)
-                .ToList();
-
-            // Separate chain member sites for this file
-            var fileChainMemberIds = new HashSet<string>();
-            foreach (var chain in fileChains)
-            {
-                foreach (var clause in chain.Analysis.Clauses)
-                    fileChainMemberIds.Add(clause.Site.UniqueId);
-                fileChainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
-            }
-
-            // Single-pass partition: analyzable/non-chain-member sites vs chain member sites.
-            var fileSites = new List<UsageSiteInfo>();
-            var fileChainMemberSites = new List<UsageSiteInfo>();
-            foreach (var s in sites)
-            {
-                if (s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
-                    fileSites.Add(s);
-                if (!s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
-                    fileChainMemberSites.Add(s);
-            }
-
-            // Collect diagnostics for this file
-            var fileDiagnostics = diagnostics
-                .Where(d => d.Location.FilePath == filePath)
-                .ToList();
-
-            result.Add(new FileInterceptorGroup(
-                contextClassName,
-                namespaceName,
-                filePath,
-                fileTag,
-                fileSites,
-                fileChains,
-                fileChainMemberSites,
-                fileDiagnostics));
-        }
-
-        // Create diagnostic-only groups for files that have diagnostics but no sites in any group.
-        // This happens when a file has only non-analyzable sites (QRY001/QRY014).
-        var coveredFilePaths = new HashSet<string>(fileGroups.Select(g => g.Key.FilePath));
-        var orphanedDiagnostics = diagnostics
-            .Where(d => !coveredFilePaths.Contains(d.Location.FilePath))
-            .GroupBy(d => d.Location.FilePath)
-            .ToList();
-
-        foreach (var orphanGroup in orphanedDiagnostics)
-        {
-            var filePath = orphanGroup.Key;
-            var fileTag = FileHasher.ComputeFileTag(filePath);
-
-            // Find the original non-analyzable site to get the SyntaxTree for location reconstruction
-            var originalSite = usageSites.FirstOrDefault(s => s.FilePath == filePath);
-
-            result.Add(new FileInterceptorGroup(
-                "Quarry",
-                null,
-                filePath,
-                fileTag,
-                Array.Empty<UsageSiteInfo>(),
-                Array.Empty<PrebuiltChainInfo>(),
-                Array.Empty<UsageSiteInfo>(),
-                orphanGroup.ToList()));
-        }
-
-        return result.ToImmutable();
+        // Delegate chain analysis, diagnostic collection, and file grouping to PipelineOrchestrator
+        var orchestrator = new IR.PipelineOrchestrator(compilation, registry, usageSites, ct);
+        return orchestrator.AnalyzeAndGroup(
+            enrichedSites,
+            navJoinChainSites,
+            sitesToSkip,
+            diagnostics,
+            enrichSite: s => EnrichUsageSiteWithEntityInfo(s, registry, compilation),
+            getNonTranslatableClauseKind: GetNonTranslatableClauseKind,
+            analyzeChains: AnalyzeExecutionChainsWithDiagnostics);
     }
 
     /// <summary>
@@ -1397,7 +1221,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static UsageSiteInfo EnrichUsageSiteWithEntityInfo(
         UsageSiteInfo site,
         IR.EntityRegistry registry,
-        ImmutableArray<ContextInfo> contexts,
         Compilation? compilation = null)
     {
         // Check if this site needs any enrichment
@@ -1701,7 +1524,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         List<UsageSiteInfo> enrichedSites,
         HashSet<string> discoveredLocations,
         IR.EntityRegistry registry,
-        ImmutableArray<ContextInfo> contexts,
         Compilation compilation)
     {
         var result = new List<UsageSiteInfo>();
@@ -1796,7 +1618,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         builderKind: BuilderKind.JoinedQuery);
 
                     // Enrich the new site
-                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, registry, contexts, compilation);
+                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, registry, compilation);
                     result.Add(enriched);
                     discoveredLocations.Add(locationKey);
 
