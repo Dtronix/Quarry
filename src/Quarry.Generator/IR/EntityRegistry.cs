@@ -26,6 +26,11 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     }
 
     /// <summary>
+    /// Entity name → EntityInfo lookup for subquery resolution in the semantic translation path.
+    /// </summary>
+    public IReadOnlyDictionary<string, EntityInfo> ByEntityName => _byEntityName;
+
+    /// <summary>
     /// Builds an EntityRegistry from all discovered contexts.
     /// </summary>
     public static EntityRegistry Build(ImmutableArray<ContextInfo> contexts, CancellationToken ct)
@@ -41,7 +46,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             {
                 var entry = new EntityRegistryEntry(entity, context);
 
-                // Build name variants matching QuarryGenerator.BuildEntityLookup:
+                // Build name variants for multi-key indexing:
                 // shortName, contextNamespace-qualified, schemaNamespace-qualified, global::
                 var shortName = entity.EntityName;
                 var schemaQualified = $"{entity.SchemaNamespace}.{shortName}";
@@ -60,9 +65,9 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
                 // Index by global:: name
                 AddToIndex(byEntityType, globalName, entry);
 
-                // Index by short name (first-writer-wins for collision)
-                if (!byEntityType.ContainsKey(shortName))
-                    byEntityType[shortName] = byEntityType[schemaQualified];
+                // Index by short name (accumulates all entities with same short name)
+                if (shortName != schemaQualified && shortName != contextQualified)
+                    AddToIndex(byEntityType, shortName, entry);
 
                 // Index by entity name for subquery resolution (first-writer-wins)
                 if (!byEntityName.ContainsKey(shortName))
@@ -83,15 +88,23 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             list = new List<EntityRegistryEntry>();
             index[key] = list;
         }
+        // Avoid duplicate entries for the same context
+        foreach (var existing in list)
+        {
+            if (existing.Context.ClassName == entry.Context.ClassName)
+                return;
+        }
         list.Add(entry);
     }
 
     /// <summary>
     /// Resolves entity metadata by entity type name, optionally scoped to a context.
+    /// Uses fallback resolution: direct lookup → strip global:: → short name after last dot.
     /// </summary>
     public EntityRegistryEntry? Resolve(string entityTypeName, string? contextClassName = null)
     {
-        if (!_byEntityType.TryGetValue(entityTypeName, out var entries) || entries.Count == 0)
+        var entries = GetEntries(entityTypeName);
+        if (entries == null || entries.Count == 0)
             return null;
 
         if (contextClassName != null)
@@ -104,6 +117,62 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
         }
 
         return entries[0];
+    }
+
+    /// <summary>
+    /// Resolves entity metadata with ambiguity detection.
+    /// </summary>
+    public EntityRegistryEntry? Resolve(string entityTypeName, string? contextClassName, out bool isAmbiguous)
+    {
+        isAmbiguous = false;
+        var entries = GetEntries(entityTypeName);
+        if (entries == null || entries.Count == 0)
+            return null;
+
+        if (entries.Count == 1)
+            return entries[0];
+
+        // Multiple contexts — use contextClassName to disambiguate
+        if (contextClassName != null)
+        {
+            foreach (var entry in entries)
+            {
+                if (entry.Context.ClassName == contextClassName)
+                    return entry;
+            }
+        }
+
+        // Fallback: first-writer-wins — flag as ambiguous
+        isAmbiguous = contextClassName == null;
+        return entries[0];
+    }
+
+    /// <summary>
+    /// Returns true if the registry contains any entries for the given type name.
+    /// Uses fallback resolution (global:: stripping, short name).
+    /// </summary>
+    public bool Contains(string typeName)
+    {
+        var entries = GetEntries(typeName);
+        return entries != null && entries.Count > 0;
+    }
+
+    /// <summary>
+    /// Gets the count of distinct context entries for a type name (for ambiguity diagnostics).
+    /// </summary>
+    public int GetEntryCount(string typeName)
+    {
+        var entries = GetEntries(typeName);
+        return entries?.Count ?? 0;
+    }
+
+    /// <summary>
+    /// Gets the first entry for a type name (for QRY015 diagnostics).
+    /// </summary>
+    public EntityRegistryEntry? GetFirstEntry(string typeName)
+    {
+        var entries = GetEntries(typeName);
+        return entries != null && entries.Count > 0 ? entries[0] : null;
     }
 
     /// <summary>
@@ -126,6 +195,26 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             result[kvp.Key] = kvp.Value;
         }
         return result;
+    }
+
+    /// <summary>
+    /// Looks up entries with fallback resolution: direct → strip global:: → short name.
+    /// </summary>
+    private List<EntityRegistryEntry>? GetEntries(string typeName)
+    {
+        if (_byEntityType.TryGetValue(typeName, out var list))
+            return list;
+
+        var name = typeName.StartsWith("global::") ? typeName.Substring(8) : typeName;
+        if (name != typeName && _byEntityType.TryGetValue(name, out list))
+            return list;
+
+        var lastDot = name.LastIndexOf('.');
+        var shortName = lastDot > 0 ? name.Substring(lastDot + 1) : name;
+        if (shortName != name && _byEntityType.TryGetValue(shortName, out list))
+            return list;
+
+        return null;
     }
 
     public bool Equals(EntityRegistry? other)

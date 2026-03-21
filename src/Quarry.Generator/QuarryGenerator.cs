@@ -316,10 +316,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Build EntityRegistry from all contexts — single source of entity metadata
         var registry = IR.EntityRegistry.Build(contexts, ct);
 
-        // Derive old-style lookups from registry for backward compatibility
-        var entityLookup = BuildEntityLookup(contexts);
-        var entityRegistry = registry.ToEntityLookup();
-
         // Collect diagnostics for non-analyzable queries and anonymous type projections
         var diagnostics = new List<DiagnosticInfo>();
         var sitesToSkip = new HashSet<UsageSiteInfo>();
@@ -350,14 +346,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Enrich usage sites with entity metadata from contexts
         var enrichedSites = usageSites
             .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
+            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, contexts, compilation))
             .ToList();
 
         // Discover and enrich missing chain members from resolved navigation joins.
         var discoveredLocationKeys = new HashSet<string>(
             usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
         var navJoinChainSites = DiscoverNavigationJoinChainMembers(
-            enrichedSites, discoveredLocationKeys, entityLookup, contexts, entityRegistry, compilation);
+            enrichedSites, discoveredLocationKeys, registry, contexts, compilation);
         if (navJoinChainSites.Count > 0)
         {
             enrichedSites.AddRange(navJoinChainSites);
@@ -368,12 +364,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Collect QRY015 for ambiguous context resolution
         foreach (var site in enrichedSites)
         {
-            if (site.ContextClassName == null)
+            if (site.ContextClassName == null && registry.GetEntryCount(site.EntityTypeName) > 1)
             {
-                var list = LookupEntityList(site.EntityTypeName, entityLookup);
-                if (list != null && list.Count > 1)
+                var chosen = registry.GetFirstEntry(site.EntityTypeName);
+                if (chosen != null)
                 {
-                    var chosen = list[0];
                     diagnostics.Add(new DiagnosticInfo(
                         DiagnosticDescriptors.AmbiguousContextResolution.Id,
                         DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
@@ -424,12 +419,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Analyze execution chains for pre-built SQL optimization tiers.
         var allSitesForChainAnalysis = usageSites
             .Where(s => !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
+            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, contexts, compilation))
             .ToList();
         if (navJoinChainSites.Count > 0)
             allSitesForChainAnalysis.AddRange(navJoinChainSites);
         var (prebuiltChains, chainDiagnostics) = AnalyzeExecutionChainsWithDiagnostics(
-            compilation, allSitesForChainAnalysis, entityLookup, ct);
+            compilation, allSitesForChainAnalysis, registry, ct);
         diagnostics.AddRange(chainDiagnostics);
 
         // Build a set of chain member UniqueIds so we can include non-analyzable clause
@@ -647,7 +642,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static (IReadOnlyList<PrebuiltChainInfo> Chains, List<DiagnosticInfo> Diagnostics) AnalyzeExecutionChainsWithDiagnostics(
         Compilation compilation,
         List<UsageSiteInfo> enrichedSites,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        IR.EntityRegistry registry,
         CancellationToken ct)
     {
         var prebuiltChains = new List<PrebuiltChainInfo>();
@@ -743,9 +738,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 PrebuiltChainInfo? chainInfo;
                 if (executionSite.JoinedEntityTypeNames != null && executionSite.JoinedEntityTypeNames.Count >= 2)
-                    chainInfo = BuildPrebuiltChainInfoForJoin(result, executionSite, entityLookup);
+                    chainInfo = BuildPrebuiltChainInfoForJoin(result, executionSite, registry);
                 else
-                    chainInfo = BuildPrebuiltChainInfo(result, executionSite, entityLookup);
+                    chainInfo = BuildPrebuiltChainInfo(result, executionSite, registry);
                 if (chainInfo != null)
                     prebuiltChains.Add(chainInfo);
             }
@@ -761,14 +756,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static PrebuiltChainInfo? BuildPrebuiltChainInfo(
         ChainAnalysisResult result,
         UsageSiteInfo executionSite,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        IR.EntityRegistry registry)
     {
-        var resolved = TryResolveEntityContext(
-            executionSite.EntityTypeName, executionSite.ContextClassName, entityLookup, out _);
+        var resolved = registry.Resolve(executionSite.EntityTypeName, executionSite.ContextClassName);
         if (resolved == null)
             return null;
 
-        var (entity, ctx) = resolved.Value;
+        var entity = resolved.Entity;
+        var ctx = resolved.Context;
         var dialect = ctx.Dialect;
         var tableName = entity.TableName;
         var schemaName = ctx.Schema;
@@ -970,7 +965,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static PrebuiltChainInfo? BuildPrebuiltChainInfoForJoin(
         ChainAnalysisResult result,
         UsageSiteInfo executionSite,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        IR.EntityRegistry registry)
     {
         var joinedNames = executionSite.JoinedEntityTypeNames!;
         var resolvedEntities = new List<EntityInfo>(joinedNames.Count);
@@ -978,11 +973,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         foreach (var name in joinedNames)
         {
-            var resolved = TryResolveEntityContext(name, executionSite.ContextClassName, entityLookup, out _);
+            var resolved = registry.Resolve(name, executionSite.ContextClassName);
             if (resolved == null)
                 return null;
 
-            var (entity, ctx) = resolved.Value;
+            var entity = resolved.Entity;
+            var ctx = resolved.Context;
 
             // All entities must share the same context (same dialect, schema)
             if (sharedContext == null)
@@ -1394,141 +1390,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds a lookup from entity type names to EntityInfo.
-    /// Supports multiple contexts registering the same entity type.
-    /// </summary>
-    private static Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> BuildEntityLookup(
-        ImmutableArray<ContextInfo> contexts)
-    {
-        var lookup = new Dictionary<string, List<(EntityInfo, ContextInfo)>>(StringComparer.Ordinal);
-
-        if (contexts.IsDefaultOrEmpty)
-            return lookup;
-
-        foreach (var contextInfo in contexts)
-        {
-            foreach (var entity in contextInfo.Entities)
-            {
-                // Build possible type name variants
-                var shortName = entity.EntityName;
-                var qualifiedName = string.IsNullOrEmpty(contextInfo.Namespace)
-                    ? shortName
-                    : $"{contextInfo.Namespace}.{shortName}";
-                var globalName = $"global::{qualifiedName}";
-
-                AddToLookup(lookup, shortName, entity, contextInfo);
-                AddToLookup(lookup, qualifiedName, entity, contextInfo);
-                AddToLookup(lookup, globalName, entity, contextInfo);
-            }
-        }
-
-        return lookup;
-    }
-
-    /// <summary>
-    /// Builds a flat entity registry keyed by entity name for subquery resolution.
-    /// </summary>
-    private static Dictionary<string, EntityInfo> BuildEntityRegistry(
-        ImmutableArray<ContextInfo> contexts)
-    {
-        var registry = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-
-        if (contexts.IsDefaultOrEmpty)
-            return registry;
-
-        foreach (var contextInfo in contexts)
-        {
-            foreach (var entity in contextInfo.Entities)
-            {
-                // First-writer-wins for entities with same name across contexts
-                if (!registry.ContainsKey(entity.EntityName))
-                    registry[entity.EntityName] = entity;
-            }
-        }
-
-        return registry;
-    }
-
-    private static void AddToLookup(
-        Dictionary<string, List<(EntityInfo, ContextInfo)>> lookup,
-        string key,
-        EntityInfo entity,
-        ContextInfo context)
-    {
-        if (!lookup.TryGetValue(key, out var list))
-        {
-            list = new List<(EntityInfo, ContextInfo)>();
-            lookup[key] = list;
-        }
-        // Avoid duplicate entries for the same context
-        if (!list.Any(e => e.Item2.ClassName == context.ClassName))
-            list.Add((entity, context));
-    }
-
-    /// <summary>
-    /// Resolves entity context from the multi-value lookup, using contextClassName to disambiguate.
-    /// </summary>
-    private static (EntityInfo Entity, ContextInfo Context)? TryResolveEntityContext(
-        string entityTypeName,
-        string? contextClassName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        out bool isAmbiguous)
-    {
-        isAmbiguous = false;
-        var list = LookupEntityList(entityTypeName, entityLookup);
-        if (list == null || list.Count == 0)
-            return null;
-
-        if (list.Count == 1)
-            return list[0];
-
-        // Multiple contexts — use contextClassName to disambiguate
-        if (contextClassName != null)
-        {
-            foreach (var entry in list)
-            {
-                if (entry.Context.ClassName == contextClassName)
-                    return entry;
-            }
-        }
-
-        // Fallback: first-writer-wins — flag as ambiguous
-        isAmbiguous = contextClassName == null;
-        return list[0];
-    }
-
-    /// <summary>
-    /// Looks up the list of entity contexts for a type name with fallback resolution.
-    /// </summary>
-    private static List<(EntityInfo Entity, ContextInfo Context)>? LookupEntityList(
-        string typeName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        if (entityLookup.TryGetValue(typeName, out var list))
-            return list;
-
-        var name = typeName.StartsWith("global::") ? typeName.Substring(8) : typeName;
-        if (entityLookup.TryGetValue(name, out list))
-            return list;
-
-        var lastDot = name.LastIndexOf('.');
-        var shortName = lastDot > 0 ? name.Substring(lastDot + 1) : name;
-        if (entityLookup.TryGetValue(shortName, out list))
-            return list;
-
-        return null;
-    }
-
-    /// <summary>
     /// Enriches a usage site with entity metadata if available.
     /// This fixes the empty column name issue by using schema-derived column info,
     /// and translates pending clauses when entity metadata becomes available.
     /// </summary>
     private static UsageSiteInfo EnrichUsageSiteWithEntityInfo(
         UsageSiteInfo site,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        IR.EntityRegistry registry,
         ImmutableArray<ContextInfo> contexts,
-        Dictionary<string, EntityInfo>? entityRegistry = null,
         Compilation? compilation = null)
     {
         // Check if this site needs any enrichment
@@ -1563,11 +1432,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             return site;
 
         // Try to find matching entity, using contextClassName to disambiguate
-        var resolved = TryResolveEntityContext(site.EntityTypeName, site.ContextClassName, entityLookup, out _);
+        var resolved = registry.Resolve(site.EntityTypeName, site.ContextClassName);
         if (resolved == null)
             return site;
 
-        var entityContext = resolved.Value;
+        var entityContext = (resolved.Entity, resolved.Context);
 
         // Enrich projection if needed
         var enrichedProjection = site.ProjectionInfo;
@@ -1593,7 +1462,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 entityContext.Entity,
                 entityContext.Context.Dialect,
                 site.InvocationSyntax as InvocationExpressionSyntax,
-                entityRegistry,
+                registry,
                 compilation);
             // Clear pending clause info since it's been translated
             clearedPendingClause = null;
@@ -1629,10 +1498,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         {
             // For navigation joins with unresolved type parameters, resolve from navigation metadata
             if (site.IsNavigationJoin && site.JoinedEntityTypeName != null
-                && !entityLookup.ContainsKey(site.JoinedEntityTypeName))
+                && !registry.Contains(site.JoinedEntityTypeName))
             {
                 resolvedJoinedEntityTypeName = ResolveNavigationJoinEntityType(
-                    site, entityContext.Entity, entityLookup);
+                    site, entityContext.Entity, registry);
             }
 
             var siteForJoin = resolvedJoinedEntityTypeName != null
@@ -1646,7 +1515,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     isNavigationJoin: site.IsNavigationJoin,
                     builderKind: site.BuilderKind)
                 : site;
-            enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, entityLookup);
+            enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, registry);
         }
 
         // Enrich joined clause methods (Where/OrderBy/GroupBy on joined builders)
@@ -1654,7 +1523,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // may be further enriched via EnrichJoinedProjectionWithEntityInfo below
         if (needsJoinedClauseEnrichment && enrichedClauseInfo == null && site.Kind != InterceptorKind.Select)
         {
-            enrichedClauseInfo = TryTranslateJoinedClause(site, entityContext, entityLookup);
+            enrichedClauseInfo = TryTranslateJoinedClause(site, entityContext, registry);
             if (enrichedClauseInfo != null)
                 clearedPendingClause = null; // Clear pending clause — joined translation succeeded
         }
@@ -1664,7 +1533,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             && site.InvocationSyntax is InvocationExpressionSyntax selectInvocation)
         {
             enrichedProjection = TryAnalyzeJoinedProjection(
-                selectInvocation, site.JoinedEntityTypeNames!, entityLookup, entityContext.Context.Dialect);
+                selectInvocation, site.JoinedEntityTypeNames!, registry, entityContext.Context.Dialect);
         }
 
         // Enrich Set clause with custom type mapping info from schema
@@ -1759,14 +1628,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static ClauseInfo? TryTranslateJoinClause(
         UsageSiteInfo site,
         (EntityInfo Entity, ContextInfo Context) leftEntityContext,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        IR.EntityRegistry registry)
     {
         if (site.JoinedEntityTypeName == null || site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
             return null;
 
         // Find the right (newly joined) entity info
-        var rightEntityContext = LookupEntityContext(site.JoinedEntityTypeName, entityLookup);
-        if (rightEntityContext == null)
+        var rightEntry = registry.Resolve(site.JoinedEntityTypeName);
+        if (rightEntry == null)
             return null;
 
         var joinKind = site.Kind switch
@@ -1784,7 +1653,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 return Translation.ClauseTranslator.TranslateNavigationJoin(
                     invocation,
                     leftEntityContext.Entity,
-                    rightEntityContext.Value.Entity,
+                    rightEntry.Entity,
                     leftEntityContext.Context.Dialect,
                     joinKind);
             }
@@ -1796,16 +1665,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 var priorEntities = new List<(string TypeName, EntityInfo Entity)>();
                 foreach (var typeName in site.JoinedEntityTypeNames)
                 {
-                    var ctx = LookupEntityContext(typeName, entityLookup);
-                    if (ctx == null)
+                    var entry = registry.Resolve(typeName);
+                    if (entry == null)
                         return null;
-                    priorEntities.Add((typeName, ctx.Value.Entity));
+                    priorEntities.Add((typeName, entry.Entity));
                 }
 
                 return Translation.ClauseTranslator.TranslateChainedJoinFromEntityInfo(
                     invocation,
                     priorEntities.Select(e => e.Entity).ToList(),
-                    rightEntityContext.Value.Entity,
+                    rightEntry.Entity,
                     leftEntityContext.Context.Dialect,
                     joinKind);
             }
@@ -1813,7 +1682,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             return Translation.ClauseTranslator.TranslateJoinFromEntityInfo(
                 invocation,
                 leftEntityContext.Entity,
-                rightEntityContext.Value.Entity,
+                rightEntry.Entity,
                 leftEntityContext.Context.Dialect,
                 joinKind);
         }
@@ -1831,9 +1700,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static List<UsageSiteInfo> DiscoverNavigationJoinChainMembers(
         List<UsageSiteInfo> enrichedSites,
         HashSet<string> discoveredLocations,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        IR.EntityRegistry registry,
         ImmutableArray<ContextInfo> contexts,
-        Dictionary<string, EntityInfo>? entityRegistry,
         Compilation compilation)
     {
         var result = new List<UsageSiteInfo>();
@@ -1844,7 +1712,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
 
             // Skip if the enrichment didn't resolve the entity type (still unresolved)
-            if (!entityLookup.ContainsKey(site.JoinedEntityTypeName))
+            if (!registry.Contains(site.JoinedEntityTypeName))
                 continue;
 
             // Walk up the syntax tree from the Join invocation to find parent method calls
@@ -1928,7 +1796,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         builderKind: BuilderKind.JoinedQuery);
 
                     // Enrich the new site
-                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, entityLookup, contexts, entityRegistry, compilation);
+                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, registry, contexts, compilation);
                     result.Add(enriched);
                     discoveredLocations.Add(locationKey);
 
@@ -1952,7 +1820,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static string? ResolveNavigationJoinEntityType(
         UsageSiteInfo site,
         EntityInfo leftEntity,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        IR.EntityRegistry registry)
     {
         // Extract navigation property name from the lambda: u => u.Orders → "Orders"
         if (site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
@@ -1983,23 +1851,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         if (nav == null)
             return null;
 
-        // Verify the related entity exists in the lookup
-        if (entityLookup.ContainsKey(nav.RelatedEntityName))
+        // Verify the related entity exists in the registry
+        if (registry.Contains(nav.RelatedEntityName))
             return nav.RelatedEntityName;
 
         return null;
-    }
-
-    /// <summary>
-    /// Looks up entity context by type name with fallback resolution (first match).
-    /// Used for join entity resolution where context disambiguation is not needed.
-    /// </summary>
-    private static (EntityInfo Entity, ContextInfo Context)? LookupEntityContext(
-        string typeName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        var list = LookupEntityList(typeName, entityLookup);
-        return list != null && list.Count > 0 ? list[0] : ((EntityInfo, ContextInfo)?)null;
     }
 
     /// <summary>
@@ -2024,7 +1880,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static ClauseInfo? TryTranslateJoinedClause(
         UsageSiteInfo site,
         (EntityInfo Entity, ContextInfo Context) primaryEntityContext,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
+        IR.EntityRegistry registry)
     {
         if (site.JoinedEntityTypeNames == null || site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
             return null;
@@ -2033,10 +1889,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var entities = new List<EntityInfo>();
         foreach (var typeName in site.JoinedEntityTypeNames)
         {
-            var ctx = LookupEntityContext(typeName, entityLookup);
-            if (ctx == null)
+            var entry = registry.Resolve(typeName);
+            if (entry == null)
                 return null;
-            entities.Add(ctx.Value.Entity);
+            entities.Add(entry.Entity);
         }
 
         var dialect = primaryEntityContext.Context.Dialect;
@@ -2074,16 +1930,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static ProjectionInfo? TryAnalyzeJoinedProjection(
         InvocationExpressionSyntax invocation,
         IReadOnlyList<string> entityTypeNames,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
+        IR.EntityRegistry registry,
         SqlDialect dialect)
     {
         var entities = new List<EntityInfo>();
         foreach (var typeName in entityTypeNames)
         {
-            var ctx = LookupEntityContext(typeName, entityLookup);
-            if (ctx == null)
+            var entry = registry.Resolve(typeName);
+            if (entry == null)
                 return null;
-            entities.Add(ctx.Value.Entity);
+            entities.Add(entry.Entity);
         }
 
         try
@@ -2107,7 +1963,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         EntityInfo entity,
         SqlDialect dialect,
         InvocationExpressionSyntax? originalInvocation = null,
-        Dictionary<string, EntityInfo>? entityRegistry = null,
+        IR.EntityRegistry? registry = null,
         Compilation? compilation = null)
     {
         var translator = new IR.SqlExprClauseTranslator(entity, dialect);
@@ -2117,12 +1973,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             return result;
 
         // IR translation failed — try semantic path with entity registry (handles subqueries)
-        if (originalInvocation != null && entityRegistry != null && pendingClause.Kind == ClauseKind.Where)
+        if (originalInvocation != null && registry != null && pendingClause.Kind == ClauseKind.Where)
         {
             try
             {
                 var semanticResult = Translation.ClauseTranslator.TranslateWhereWithEntityInfo(
-                    originalInvocation, null!, entity, dialect, entityRegistry, compilation);
+                    originalInvocation, null!, entity, dialect, registry.ByEntityName, compilation);
                 if (semanticResult.IsSuccess)
                     return semanticResult;
             }
