@@ -85,6 +85,24 @@ internal static class DdlRenderer
             case RawSqlOperation raw:
                 sb.AppendLine(raw.Sql);
                 break;
+            case CreateViewOperation cv:
+                RenderCreateView(sb, cv, dialect, idempotent);
+                break;
+            case DropViewOperation dv:
+                RenderDropView(sb, dv, dialect, idempotent);
+                break;
+            case AlterViewOperation av:
+                RenderAlterView(sb, av, dialect);
+                break;
+            case CreateProcedureOperation cp:
+                RenderCreateProcedure(sb, cp, dialect, idempotent);
+                break;
+            case DropProcedureOperation dp:
+                RenderDropProcedure(sb, dp, dialect, idempotent);
+                break;
+            case AlterProcedureOperation ap:
+                RenderAlterProcedure(sb, ap, dialect);
+                break;
         }
     }
 
@@ -644,6 +662,165 @@ internal static class DdlRenderer
                 sb.Append(" IS NULL");
             else
                 sb.Append(" = ").Append(SqlFormatting.FormatLiteral(dialect, values[i]));
+        }
+    }
+
+    // --- Views ---
+
+    private static void RenderCreateView(StringBuilder sb, CreateViewOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.PostgreSQL:
+                case SqlDialect.MySQL:
+                case SqlDialect.SQLite:
+                    sb.Append("CREATE VIEW IF NOT EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine(" AS");
+                    sb.AppendLine(op.Sql + ";");
+                    return;
+                case SqlDialect.SqlServer:
+                    sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = '")
+                        .Append(op.Name).AppendLine("')");
+                    sb.Append("EXEC('CREATE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine(" AS");
+                    sb.AppendLine(op.Sql.Replace("'", "''") + "');");
+                    return;
+            }
+        }
+
+        sb.Append("CREATE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+        sb.AppendLine(" AS");
+        sb.AppendLine(op.Sql + ";");
+    }
+
+    private static void RenderDropView(StringBuilder sb, DropViewOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.SqlServer:
+                    sb.Append("IF EXISTS (SELECT 1 FROM sys.views WHERE name = '")
+                        .Append(op.Name).AppendLine("')");
+                    sb.Append("DROP VIEW ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                    return;
+                default:
+                    sb.Append("DROP VIEW IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                    return;
+            }
+        }
+
+        sb.Append("DROP VIEW ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+    }
+
+    private static void RenderAlterView(StringBuilder sb, AlterViewOperation op, SqlDialect dialect)
+    {
+        switch (dialect)
+        {
+            case SqlDialect.PostgreSQL:
+            case SqlDialect.MySQL:
+            case SqlDialect.SQLite:
+                // These dialects support CREATE OR REPLACE VIEW
+                sb.Append("CREATE OR REPLACE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine(" AS");
+                sb.AppendLine(op.Sql + ";");
+                break;
+            case SqlDialect.SqlServer:
+                sb.Append("ALTER VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine(" AS");
+                sb.AppendLine(op.Sql + ";");
+                break;
+        }
+    }
+
+    // --- Stored Procedures ---
+
+    private static void RenderCreateProcedure(StringBuilder sb, CreateProcedureOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (dialect == SqlDialect.SQLite)
+            throw new NotSupportedException("SQLite does not support stored procedures.");
+
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.PostgreSQL:
+                    // PostgreSQL supports CREATE OR REPLACE FUNCTION/PROCEDURE
+                    sb.Append("CREATE OR REPLACE PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine();
+                    sb.AppendLine(op.Sql + ";");
+                    return;
+                case SqlDialect.SqlServer:
+                    // SQL Server 2016+ supports CREATE OR ALTER
+                    sb.Append("CREATE OR ALTER PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine();
+                    sb.AppendLine(op.Sql + ";");
+                    return;
+                case SqlDialect.MySQL:
+                    // MySQL: DROP IF EXISTS + CREATE
+                    sb.Append("DROP PROCEDURE IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                    sb.Append("CREATE PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine();
+                    sb.AppendLine(op.Sql + ";");
+                    return;
+            }
+        }
+
+        sb.Append("CREATE PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+        sb.AppendLine();
+        sb.AppendLine(op.Sql + ";");
+    }
+
+    private static void RenderDropProcedure(StringBuilder sb, DropProcedureOperation op, SqlDialect dialect, bool idempotent)
+    {
+        if (dialect == SqlDialect.SQLite)
+            throw new NotSupportedException("SQLite does not support stored procedures.");
+
+        if (idempotent)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.SqlServer:
+                    sb.Append("IF EXISTS (SELECT 1 FROM sys.procedures WHERE name = '")
+                        .Append(op.Name).AppendLine("')");
+                    sb.Append("DROP PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                    return;
+                default:
+                    sb.Append("DROP PROCEDURE IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                    return;
+            }
+        }
+
+        sb.Append("DROP PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+    }
+
+    private static void RenderAlterProcedure(StringBuilder sb, AlterProcedureOperation op, SqlDialect dialect)
+    {
+        if (dialect == SqlDialect.SQLite)
+            throw new NotSupportedException("SQLite does not support stored procedures.");
+
+        switch (dialect)
+        {
+            case SqlDialect.PostgreSQL:
+                // PostgreSQL supports CREATE OR REPLACE
+                sb.Append("CREATE OR REPLACE PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine();
+                sb.AppendLine(op.Sql + ";");
+                break;
+            case SqlDialect.MySQL:
+                // MySQL requires DROP + CREATE
+                sb.Append("DROP PROCEDURE IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                sb.Append("CREATE PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine();
+                sb.AppendLine(op.Sql + ";");
+                break;
+            case SqlDialect.SqlServer:
+                sb.Append("ALTER PROCEDURE ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine();
+                sb.AppendLine(op.Sql + ";");
+                break;
         }
     }
 

@@ -192,3 +192,43 @@ internal sealed class RawSqlOperation(string Sql) : MigrationOperation
 {
     public string Sql { get; } = Sql;
 }
+
+internal sealed class CreateViewOperation(string Name, string? Schema, string Sql) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+    public string Sql { get; } = Sql;
+}
+
+internal sealed class DropViewOperation(string Name, string? Schema) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+}
+
+internal sealed class AlterViewOperation(string Name, string? Schema, string Sql) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+    public string Sql { get; } = Sql;
+}
+
+internal sealed class CreateProcedureOperation(string Name, string? Schema, string Sql) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+    public string Sql { get; } = Sql;
+}
+
+internal sealed class DropProcedureOperation(string Name, string? Schema) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+}
+
+internal sealed class AlterProcedureOperation(string Name, string? Schema, string Sql) : MigrationOperation
+{
+    public string Name { get; } = Name;
+    public string? Schema { get; } = Schema;
+    public string Sql { get; } = Sql;
+}
