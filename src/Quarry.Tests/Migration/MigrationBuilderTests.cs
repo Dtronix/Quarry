@@ -249,11 +249,13 @@ public class MigrationBuilderTests
         builder.AddIndex("IX_users_email", "users", new[] { "email" })
                .ConcurrentIndex();
 
-        var (txSql, nonTxSql) = builder.BuildPartitionedSql(SqlDialect.PostgreSQL);
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(SqlDialect.PostgreSQL);
 
         Assert.That(txSql, Does.Contain("CREATE TABLE"));
         Assert.That(txSql, Does.Not.Contain("CONCURRENTLY"));
         Assert.That(nonTxSql, Does.Contain("CONCURRENTLY"));
+        Assert.That(allSql, Does.Contain("CREATE TABLE"));
+        Assert.That(allSql, Does.Contain("CONCURRENTLY"));
     }
 
     [Test]
@@ -269,7 +271,7 @@ public class MigrationBuilderTests
         builder.AddIndex("IX_users_email", "users", new[] { "email" })
                .ConcurrentIndex();
 
-        var (txSql, nonTxSql) = builder.BuildPartitionedSql(SqlDialect.SqlServer);
+        var (txSql, nonTxSql, _) = builder.BuildPartitionedSql(SqlDialect.SqlServer);
 
         // SQL Server ONLINE=ON can run inside a transaction
         Assert.That(txSql, Does.Contain("CREATE TABLE"));

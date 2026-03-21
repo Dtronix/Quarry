@@ -81,8 +81,7 @@ public static class MigrationRunner
         migration.Upgrade(builder);
 
         var hasNonTx = builder.HasNonTransactionalOperations(dialect);
-        var (txSql, nonTxSql) = builder.BuildPartitionedSql(dialect);
-        var allSql = builder.BuildSql(dialect);
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect);
         MigrationLog.SqlGenerated(migration.Version, allSql);
 
         if (hasNonTx)
@@ -101,64 +100,43 @@ public static class MigrationRunner
         var sw = Stopwatch.StartNew();
 
         // Phase 1: Transactional operations (including backups and history row)
-        if (!string.IsNullOrEmpty(txSql) || options.RunBackups)
+        using var tx = await connection.BeginTransactionAsync();
+        try
         {
-            using var tx = await connection.BeginTransactionAsync();
-            try
+            if (options.RunBackups)
             {
-                if (options.RunBackups)
+                var backupBuilder = new MigrationBuilder();
+                migration.Backup(backupBuilder);
+                var backupSql = backupBuilder.BuildSql(dialect);
+                if (!string.IsNullOrWhiteSpace(backupSql))
                 {
-                    var backupBuilder = new MigrationBuilder();
-                    migration.Backup(backupBuilder);
-                    var backupSql = backupBuilder.BuildSql(dialect);
-                    if (!string.IsNullOrWhiteSpace(backupSql))
-                    {
-                        MigrationLog.BackupSqlGenerated(migration.Version, backupSql);
-                        using var backupCmd = connection.CreateCommand();
-                        backupCmd.Transaction = tx;
-                        backupCmd.CommandText = backupSql;
-                        await backupCmd.ExecuteNonQueryAsync();
-                    }
+                    MigrationLog.BackupSqlGenerated(migration.Version, backupSql);
+                    using var backupCmd = connection.CreateCommand();
+                    backupCmd.Transaction = tx;
+                    backupCmd.CommandText = backupSql;
+                    await backupCmd.ExecuteNonQueryAsync();
                 }
-
-                if (!string.IsNullOrEmpty(txSql))
-                {
-                    using var cmd = connection.CreateCommand();
-                    cmd.Transaction = tx;
-                    cmd.CommandText = txSql;
-                    await cmd.ExecuteNonQueryAsync();
-                }
-
-                var checksum = ComputeChecksum(allSql);
-                await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, 0);
-
-                await tx.CommitAsync();
             }
-            catch (Exception ex)
+
+            if (!string.IsNullOrEmpty(txSql))
             {
-                MigrationLog.Failed(migration.Version, migration.Name, "upgrade", ex);
-                await tx.RollbackAsync();
-                throw new InvalidOperationException(
-                    $"Migration {migration.Version} ({migration.Name}) failed during upgrade (transactional phase). SQL: {txSql}", ex);
+                using var cmd = connection.CreateCommand();
+                cmd.Transaction = tx;
+                cmd.CommandText = txSql;
+                await cmd.ExecuteNonQueryAsync();
             }
+
+            var checksum = ComputeChecksum(allSql);
+            await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, (int)sw.ElapsedMilliseconds);
+
+            await tx.CommitAsync();
         }
-        else
+        catch (Exception ex)
         {
-            // No transactional SQL but we still need a history row
-            using var tx = await connection.BeginTransactionAsync();
-            try
-            {
-                var checksum = ComputeChecksum(allSql);
-                await InsertHistoryRowAsync(connection, tx, dialect, migration.Version, migration.Name, checksum, 0);
-                await tx.CommitAsync();
-            }
-            catch (Exception ex)
-            {
-                MigrationLog.Failed(migration.Version, migration.Name, "upgrade", ex);
-                await tx.RollbackAsync();
-                throw new InvalidOperationException(
-                    $"Migration {migration.Version} ({migration.Name}) failed recording history.", ex);
-            }
+            MigrationLog.Failed(migration.Version, migration.Name, "upgrade", ex);
+            await tx.RollbackAsync();
+            throw new InvalidOperationException(
+                $"Migration {migration.Version} ({migration.Name}) failed during upgrade (transactional phase). SQL: {txSql}", ex);
         }
 
         // Phase 2: Non-transactional operations (executed outside any transaction)
@@ -194,8 +172,7 @@ public static class MigrationRunner
         migration.Downgrade(builder);
 
         var hasNonTx = builder.HasNonTransactionalOperations(dialect);
-        var (txSql, nonTxSql) = builder.BuildPartitionedSql(dialect);
-        var allSql = builder.BuildSql(dialect);
+        var (txSql, nonTxSql, allSql) = builder.BuildPartitionedSql(dialect);
         MigrationLog.SqlGenerated(migration.Version, allSql);
 
         if (hasNonTx)

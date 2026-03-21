@@ -165,10 +165,10 @@ public sealed class MigrationBuilder
 
     /// <summary>
     /// Partitions operations into transactional and non-transactional groups,
-    /// returning their rendered SQL separately. For PostgreSQL, IsConcurrent operations
-    /// are automatically treated as non-transactional.
+    /// returning their rendered SQL separately plus combined SQL for logging/checksums.
+    /// For PostgreSQL, IsConcurrent operations are automatically treated as non-transactional.
     /// </summary>
-    internal (string TransactionalSql, string NonTransactionalSql) BuildPartitionedSql(SqlDialect dialect)
+    internal (string TransactionalSql, string NonTransactionalSql, string AllSql) BuildPartitionedSql(SqlDialect dialect)
     {
         var transactional = new List<MigrationOperation>();
         var nonTransactional = new List<MigrationOperation>();
@@ -188,7 +188,16 @@ public sealed class MigrationBuilder
         var txSql = transactional.Count > 0 ? DdlRenderer.Render(transactional, dialect) : string.Empty;
         var nonTxSql = nonTransactional.Count > 0 ? DdlRenderer.Render(nonTransactional, dialect) : string.Empty;
 
-        return (txSql, nonTxSql);
+        // Derive combined SQL from partitioned results to avoid re-rendering
+        string allSql;
+        if (txSql.Length > 0 && nonTxSql.Length > 0)
+            allSql = txSql + "\n" + nonTxSql;
+        else if (txSql.Length > 0)
+            allSql = txSql;
+        else
+            allSql = nonTxSql;
+
+        return (txSql, nonTxSql, allSql);
     }
 
     internal bool HasNonTransactionalOperations(SqlDialect dialect)
