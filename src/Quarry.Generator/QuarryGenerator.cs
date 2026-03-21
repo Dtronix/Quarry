@@ -573,12 +573,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             group.TranslatedSites.Count + group.TranslatedChainMemberSites.Count);
         foreach (var ts in group.TranslatedSites)
         {
-            enrichedProjections.TryGetValue(ts.Bound.Raw.UniqueId, out var enrichedProj);
+            var enrichedProj = ResolveEnrichedProjection(ts, enrichedProjections);
             mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj));
         }
         foreach (var ts in group.TranslatedChainMemberSites)
         {
-            enrichedProjections.TryGetValue(ts.Bound.Raw.UniqueId, out var enrichedProj);
+            var enrichedProj = ResolveEnrichedProjection(ts, enrichedProjections);
             mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj));
         }
 
@@ -1123,6 +1123,101 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         return new ProjectionInfo(ProjectionKind.Entity, entity.EntityName, columns,
             customEntityReaderClass: entity.CustomEntityReaderClass);
+    }
+
+    /// <summary>
+    /// Builds an entity projection from an EntityRef for identity projections in the new pipeline bridge.
+    /// Resolves an enriched ProjectionInfo for a translated call site.
+    /// First checks the chain-level enrichment lookup, then enriches standalone Select sites
+    /// using EntityRef column metadata.
+    /// </summary>
+    private static ProjectionInfo? ResolveEnrichedProjection(
+        IR.TranslatedCallSite ts,
+        Dictionary<string, ProjectionInfo> enrichedProjections)
+    {
+        // Check chain-level enrichment first
+        if (enrichedProjections.TryGetValue(ts.Bound.Raw.UniqueId, out var enrichedProj))
+            return enrichedProj;
+
+        // For standalone Select sites, enrich the raw ProjectionInfo using entity column metadata
+        if (ts.Bound.Raw.Kind == InterceptorKind.Select && ts.Bound.Raw.ProjectionInfo != null)
+        {
+            var rawProj = ts.Bound.Raw.ProjectionInfo;
+            var entityRef = ts.Bound.Entity;
+            if (entityRef != null && entityRef.Columns.Count > 0 && rawProj.Columns.Count > 0)
+            {
+                // Build column lookup
+                var colLookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+                foreach (var ec in entityRef.Columns)
+                    colLookup[ec.PropertyName] = ec;
+
+                var enrichedColumns = new List<ProjectedColumn>();
+                bool anyEnriched = false;
+                foreach (var col in rawProj.Columns)
+                {
+                    // Only enrich columns with truly broken/missing types — not aggregate/computed columns
+                    if (string.IsNullOrWhiteSpace(col.ClrType) &&
+                        colLookup.TryGetValue(col.PropertyName, out var entityCol))
+                    {
+                        enrichedColumns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: entityCol.ColumnName,
+                            clrType: string.IsNullOrWhiteSpace(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            fullClrType: string.IsNullOrWhiteSpace(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            isNullable: entityCol.IsNullable,
+                            ordinal: col.Ordinal,
+                            alias: col.Alias,
+                            sqlExpression: col.SqlExpression,
+                            isAggregateFunction: col.IsAggregateFunction,
+                            customTypeMapping: entityCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
+                            isValueType: entityCol.IsValueType,
+                            readerMethodName: entityCol.DbReaderMethodName ?? entityCol.ReaderMethodName,
+                            tableAlias: col.TableAlias,
+                            isForeignKey: entityCol.Kind == Quarry.Shared.Migration.ColumnKind.ForeignKey,
+                            foreignKeyEntityName: entityCol.ReferencedEntityName,
+                            isEnum: entityCol.IsEnum));
+                        anyEnriched = true;
+                    }
+                    else
+                    {
+                        enrichedColumns.Add(col);
+                    }
+                }
+
+                if (anyEnriched)
+                {
+                    // Rebuild result type name
+                    var resultTypeName = rawProj.ResultTypeName;
+                    if (enrichedColumns.Count == 1)
+                    {
+                        var col = enrichedColumns[0];
+                        var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
+                        if (!string.IsNullOrWhiteSpace(colType) && colType != "?")
+                            resultTypeName = col.IsNullable && !colType.EndsWith("?") ? colType + "?" : colType;
+                    }
+                    else if (rawProj.Kind == ProjectionKind.Tuple)
+                    {
+                        var parts = new List<string>();
+                        foreach (var c in enrichedColumns)
+                        {
+                            var t = !string.IsNullOrWhiteSpace(c.ClrType) ? c.ClrType : c.FullClrType;
+                            if (string.IsNullOrWhiteSpace(t)) t = "object";
+                            if (c.IsNullable && !t.EndsWith("?")) t += "?";
+                            var isDefault = c.PropertyName.StartsWith("Item") &&
+                                int.TryParse(c.PropertyName.Substring(4), out var idx) && idx == c.Ordinal + 1;
+                            parts.Add(isDefault ? t : $"{t} {c.PropertyName}");
+                        }
+                        resultTypeName = $"({string.Join(", ", parts)})";
+                    }
+
+                    return new ProjectionInfo(rawProj.Kind, resultTypeName, enrichedColumns,
+                        rawProj.IsOptimalPath, rawProj.NonOptimalReason, rawProj.FailureReason,
+                        entityRef.CustomEntityReaderClass);
+                }
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

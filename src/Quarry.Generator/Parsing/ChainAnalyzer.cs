@@ -492,9 +492,10 @@ internal static class ChainAnalyzer
     /// </summary>
     private static bool NeedsEnrichment(ProjectedColumn col)
     {
+        // Only enrich columns with truly broken/missing type or column name info.
+        // Don't enrich computed/aggregate columns that correctly use GetValue.
         return string.IsNullOrWhiteSpace(col.ClrType)
-            || string.IsNullOrWhiteSpace(col.ColumnName)
-            || col.ReaderMethodName == "GetValue";
+            || string.IsNullOrWhiteSpace(col.ColumnName);
     }
 
     /// <summary>
