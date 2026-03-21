@@ -648,9 +648,11 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // For join sites without a clause (navigation joins), try parsing the join lambda
+        // For join sites without a clause, parse the join lambda to SqlExpr.
+        // Navigation joins need this so CallSiteBinder can extract the navigation property name.
+        // Non-navigation joins need this for join condition translation.
         if (usageSite.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
-            && expression == null && !usageSite.IsNavigationJoin)
+            && expression == null)
         {
             var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
             if (parsed != null)

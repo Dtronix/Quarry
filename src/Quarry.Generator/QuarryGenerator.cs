@@ -183,13 +183,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Processes translated call sites into per-file output groups.
-    /// During the transition period (Phase 4), the translated sites from the new per-site
-    /// cached pipeline stages are received but the collected stage re-discovers via the
-    /// old pipeline for behavioral equivalence. This ensures zero output change while the
-    /// new per-site caching stages (Stages 2-4) are exercised and validated by the
-    /// incremental driver. The translatedSites parameter ensures the pipeline stages
-    /// are evaluated and cached; their values will be consumed directly once downstream
-    /// consumers (ChainAnalyzer, emitters) are migrated in Phases 5-6B.
+    /// The new pipeline (Stages 2-4) has already performed discovery, binding, and
+    /// translation. This method converts TranslatedCallSite to UsageSiteInfo at the
+    /// boundary for ChainAnalyzer and emitter compatibility, then delegates to
+    /// PipelineOrchestrator for chain analysis and file grouping.
+    /// No re-enrichment occurs — the data is already fully enriched.
     /// </summary>
     private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcessTranslated(
         Compilation compilation,
@@ -197,31 +195,99 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         ImmutableArray<IR.TranslatedCallSite> translatedSites,
         CancellationToken ct)
     {
+        if (translatedSites.IsDefaultOrEmpty)
+            return ImmutableArray<FileInterceptorGroup>.Empty;
+
         ct.ThrowIfCancellationRequested();
 
-        // Re-discover via the old pipeline for behavioral equivalence during transition.
-        // The translatedSites from stages 2-4 are cached by the incremental driver and
-        // will be consumed directly once downstream consumers are migrated (Phases 5-6B).
-        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>();
+        // Build EntityRegistry (needed by PipelineOrchestrator for chain analysis)
+        var registry = IR.EntityRegistry.Build(contexts, ct);
+
+        // Build a lookup of syntax nodes by method-name location for InvocationSyntax
+        // reconstruction. ChainAnalyzer needs InvocationSyntax to walk the syntax tree
+        // for dataflow analysis. The collected stage is short-lived, so SyntaxNode refs are ok.
+        var syntaxNodeLookup = new Dictionary<string, SyntaxNode>();
         foreach (var tree in compilation.SyntaxTrees)
         {
             ct.ThrowIfCancellationRequested();
-            var semanticModel = compilation.GetSemanticModel(tree);
             var root = tree.GetRoot(ct);
             foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
             {
-                if (!UsageSiteDiscovery.IsQuarryMethodCandidate(invocation))
-                    continue;
-                var site = UsageSiteDiscovery.DiscoverUsageSite(invocation, semanticModel, ct);
-                if (site != null)
-                    usageSites.Add(site);
+                var methodLocation = Parsing.UsageSiteDiscovery.GetMethodLocation(invocation);
+                if (methodLocation == null) continue;
+                var (filePath, line, col) = methodLocation.Value;
+                var key = $"{filePath}:{line}:{col}";
+                syntaxNodeLookup[key] = invocation;
             }
         }
 
-        if (usageSites.Count == 0)
-            return ImmutableArray<FileInterceptorGroup>.Empty;
+        // Convert TranslatedCallSite → UsageSiteInfo with reconstructed SyntaxNode.
+        // This is a thin boundary conversion — all enrichment was done in Stages 3-4.
+        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>(translatedSites.Length);
+        foreach (var ts in translatedSites)
+        {
+            var raw = ts.Bound.Raw;
+            var key = $"{raw.FilePath}:{raw.Line}:{raw.Column}";
+            syntaxNodeLookup.TryGetValue(key, out var syntaxNode);
 
-        return GroupByFileAndProcess(compilation, contexts, usageSites.ToImmutable(), ct);
+            var adapted = UsageSiteInfo.FromTranslatedCallSite(ts, syntaxNode);
+            usageSites.Add(adapted);
+        }
+
+        var allUsageSites = usageSites.ToImmutable();
+
+        // Collect pre-analysis diagnostics
+        var diagnostics = new List<DiagnosticInfo>();
+        var sitesToSkip = new HashSet<UsageSiteInfo>();
+        foreach (var site in allUsageSites)
+        {
+            if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
+                    site.InvocationSyntax != null
+                        ? DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)
+                        : new DiagnosticLocation(site.FilePath, site.Line, site.Column, default)));
+                sitesToSkip.Add(site);
+                continue;
+            }
+
+            if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
+                    site.InvocationSyntax != null
+                        ? DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)
+                        : new DiagnosticLocation(site.FilePath, site.Line, site.Column, default),
+                    site.NonAnalyzableReason));
+            }
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        // Sites are already enriched by the new pipeline — no re-enrichment needed.
+        var enrichedSites = allUsageSites
+            .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
+            .ToList();
+
+        // Discover navigation join chain members (still needs syntax tree walk)
+        var discoveredLocationKeys = new HashSet<string>(
+            allUsageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
+        var navJoinChainSites = DiscoverNavigationJoinChainMembers(
+            enrichedSites, discoveredLocationKeys, registry, compilation);
+        if (navJoinChainSites.Count > 0)
+            enrichedSites.AddRange(navJoinChainSites);
+
+        // Delegate to PipelineOrchestrator — enrichSite is identity (already enriched)
+        var orchestrator = new IR.PipelineOrchestrator(compilation, registry, allUsageSites, ct);
+        return orchestrator.AnalyzeAndGroup(
+            enrichedSites,
+            navJoinChainSites,
+            sitesToSkip,
+            diagnostics,
+            enrichSite: s => s, // Already enriched by new pipeline
+            getNonTranslatableClauseKind: GetNonTranslatableClauseKind,
+            analyzeChains: AnalyzeExecutionChainsWithDiagnostics);
     }
 
     /// <summary>

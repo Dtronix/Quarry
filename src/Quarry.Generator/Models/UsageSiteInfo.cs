@@ -264,6 +264,9 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         var bound = translated.Bound;
         var raw = bound.Raw;
 
+        // Use the resolved joined entity type name from binding (not the raw unresolved one)
+        var resolvedJoinedEntityTypeName = bound.JoinedEntity?.EntityName ?? raw.JoinedEntityTypeName;
+
         // Convert TranslatedClause back to ClauseInfo for the old pipeline
         ClauseInfo? clauseInfo = null;
         if (translated.Clause != null && translated.Clause.IsSuccess)
@@ -285,7 +288,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
                 {
                     clauseInfo = new JoinClauseInfo(
                         translated.Clause.JoinKind ?? JoinClauseKind.Inner,
-                        raw.JoinedEntityTypeName ?? "",
+                        resolvedJoinedEntityTypeName ?? "",
                         translated.Clause.JoinedTableName ?? "",
                         sql,
                         translated.Clause.Parameters,
@@ -329,7 +332,7 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
             interceptableLocationVersion: raw.InterceptableLocationVersion,
             pendingClauseInfo: null, // Pending clauses are resolved during translation
             insertInfo: bound.InsertInfo,
-            joinedEntityTypeName: raw.JoinedEntityTypeName,
+            joinedEntityTypeName: resolvedJoinedEntityTypeName,
             joinedEntityTypeNames: bound.JoinedEntityTypeNames,
             dialect: bound.Dialect,
             initializedPropertyNames: initializedPropertyNames,
