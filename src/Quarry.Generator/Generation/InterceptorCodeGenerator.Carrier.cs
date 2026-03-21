@@ -19,7 +19,7 @@ internal static partial class InterceptorCodeGenerator
     /// <see cref="CanEmitInsertTerminal"/>) that are also used as guards in the terminal
     /// generators themselves, ensuring the eligibility logic stays in sync.
     /// </remarks>
-    private static bool WouldExecutionTerminalBeEmitted(PrebuiltChainInfo chain)
+    internal static bool WouldExecutionTerminalBeEmitted(PrebuiltChainInfo chain)
     {
         if (chain.Analysis.UnmatchedMethodNames != null)
             return false;
@@ -332,7 +332,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
     /// </summary>
-    private static void EmitCarrierClass(StringBuilder sb, CarrierClassInfo info)
+    internal static void EmitCarrierClass(StringBuilder sb, CarrierClassInfo info)
     {
         sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");

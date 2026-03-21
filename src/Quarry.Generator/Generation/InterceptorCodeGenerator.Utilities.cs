@@ -15,7 +15,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Extracts the namespace from a syntax node's containing file.
     /// </summary>
-    private static string? GetNamespaceFromFilePath(Microsoft.CodeAnalysis.SyntaxNode? syntaxNode)
+    internal static string? GetNamespaceFromFilePath(Microsoft.CodeAnalysis.SyntaxNode? syntaxNode)
     {
         if (syntaxNode?.SyntaxTree == null)
             return null;
@@ -56,7 +56,7 @@ internal static partial class InterceptorCodeGenerator
     /// Converts an absolute file path to a shorter relative-style path for display in comments.
     /// Returns a path starting from a recognized project marker, or the last few path segments.
     /// </summary>
-    private static string GetRelativePath(string filePath)
+    internal static string GetRelativePath(string filePath)
     {
         if (string.IsNullOrEmpty(filePath))
             return filePath;
@@ -90,7 +90,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Extracts the namespace from a fully qualified type name.
     /// </summary>
-    private static string? GetNamespaceFromTypeName(string typeName)
+    internal static string? GetNamespaceFromTypeName(string typeName)
     {
         // Handle global:: prefix
         if (typeName.StartsWith("global::"))
@@ -126,7 +126,7 @@ internal static partial class InterceptorCodeGenerator
     /// Checks if a clause interceptor should be skipped because the clause could not be translated.
     /// When skipped, the original runtime method runs instead of a silent no-op fallback.
     /// </summary>
-    private static bool ShouldSkipNonTranslatableClause(UsageSiteInfo site)
+    internal static bool ShouldSkipNonTranslatableClause(UsageSiteInfo site)
     {
         switch (site.Kind)
         {
@@ -430,7 +430,7 @@ internal static partial class InterceptorCodeGenerator
         }
     }
 
-    private static void GeneratePlaceholderInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    internal static void GeneratePlaceholderInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
 

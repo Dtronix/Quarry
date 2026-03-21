@@ -416,13 +416,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         try
         {
-            // Generate interceptors file
-            var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            // Generate interceptors file via FileEmitter
+            var emitter = new CodeGen.FileEmitter(
                 group.ContextClassName,
                 group.ContextNamespace,
                 group.FileTag,
                 mergedSites,
                 group.Chains as IReadOnlyList<PrebuiltChainInfo>);
+            var interceptorsSource = emitter.Emit();
 
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
