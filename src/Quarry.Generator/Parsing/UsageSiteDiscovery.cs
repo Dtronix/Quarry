@@ -435,19 +435,32 @@ internal static class UsageSiteDiscovery
         // Generate unique ID
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
-        // For Select() calls, analyze the projection (skip for joined builders — analyzed during enrichment)
+        // For Select() calls, analyze the projection
         ProjectionInfo? projectionInfo = null;
-        if (kind == InterceptorKind.Select && isAnalyzable && !containingType.Name.Contains("JoinedQueryBuilder"))
+        if (kind == InterceptorKind.Select && isAnalyzable)
         {
+            var isOnJoinedBuilderForSelect = containingType.Name.Contains("JoinedQueryBuilder");
             try
             {
-                var entityType = containingType.TypeArguments[0];
-                // Use default dialect for now - will be refined later when context info is available
-                projectionInfo = ProjectionAnalyzer.AnalyzeFromTypeSymbol(
-                    invocation,
-                    semanticModel,
-                    entityType,
-                    DefaultDiscoveryDialect);
+                if (isOnJoinedBuilderForSelect)
+                {
+                    // Syntax-only analysis for joined builders — types enriched later with EntityRef columns
+                    var entityCount = containingType.TypeArguments.Length;
+                    projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
+                        invocation,
+                        entityCount,
+                        DefaultDiscoveryDialect);
+                }
+                else
+                {
+                    var entityType = containingType.TypeArguments[0];
+                    // Use default dialect for now - will be refined later when context info is available
+                    projectionInfo = ProjectionAnalyzer.AnalyzeFromTypeSymbol(
+                        invocation,
+                        semanticModel,
+                        entityType,
+                        DefaultDiscoveryDialect);
+                }
             }
             catch
             {
@@ -711,7 +724,9 @@ internal static class UsageSiteDiscovery
             chainId: chainId,
             builderTypeName: usageSite.BuilderTypeName,
             joinedEntityTypeNames: usageSite.JoinedEntityTypeNames,
-            rawSqlTypeInfo: usageSite.RawSqlTypeInfo);
+            rawSqlTypeInfo: usageSite.RawSqlTypeInfo,
+            setActionAssignments: usageSite.ClauseInfo is SetActionClauseInfo setAction ? setAction.Assignments : null,
+            setActionParameters: usageSite.ClauseInfo is SetActionClauseInfo setAction2 ? setAction2.Parameters : null);
     }
 
     /// <summary>

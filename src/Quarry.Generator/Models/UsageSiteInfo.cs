@@ -278,6 +278,11 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
                 {
                     clauseInfo = new OrderByClauseInfo(sql, translated.Clause.IsDescending, translated.Clause.Parameters, translated.KeyTypeName);
                 }
+                else if (translated.Clause.Kind == ClauseKind.Set && translated.Clause.SetAssignments != null)
+                {
+                    // SetAction: multiple assignments (Set(Action<T>) overload)
+                    clauseInfo = new SetActionClauseInfo(translated.Clause.SetAssignments, translated.Clause.Parameters);
+                }
                 else if (translated.Clause.Kind == ClauseKind.Set)
                 {
                     var setParams = translated.Clause.Parameters;
@@ -300,6 +305,12 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
                     clauseInfo = ClauseInfo.Success(translated.Clause.Kind, sql, translated.Clause.Parameters);
                 }
             }
+        }
+
+        // Fallback for UpdateSetAction: clause data stored on RawCallSite (Action<T> can't be parsed to SqlExpr)
+        if (clauseInfo == null && raw.SetActionAssignments != null && raw.SetActionParameters != null)
+        {
+            clauseInfo = new SetActionClauseInfo(raw.SetActionAssignments, raw.SetActionParameters);
         }
 
         // Convert ImmutableArray<string> back to HashSet<string>

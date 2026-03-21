@@ -44,7 +44,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         string? chainId = null,
         string? builderTypeName = null,
         IReadOnlyList<string>? joinedEntityTypeNames = null,
-        RawSqlTypeInfo? rawSqlTypeInfo = null)
+        RawSqlTypeInfo? rawSqlTypeInfo = null,
+        IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
+        IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -78,6 +80,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         BuilderTypeName = builderTypeName;
         JoinedEntityTypeNames = joinedEntityTypeNames;
         RawSqlTypeInfo = rawSqlTypeInfo;
+        SetActionAssignments = setActionAssignments;
+        SetActionParameters = setActionParameters;
     }
 
     // Identity and location
@@ -134,6 +138,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // RawSql type info (from discovery)
     public RawSqlTypeInfo? RawSqlTypeInfo { get; }
 
+    // SetAction data (from discovery — Action<T> lambdas can't be parsed into SqlExpr)
+    public IReadOnlyList<Models.SetActionAssignment>? SetActionAssignments { get; }
+    public IReadOnlyList<Translation.ParameterInfo>? SetActionParameters { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -168,7 +176,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && Equals(ConditionalInfo, other.ConditionalInfo)
             && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo)
             && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames)
-            && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames);
+            && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
+            && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
+            && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters);
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

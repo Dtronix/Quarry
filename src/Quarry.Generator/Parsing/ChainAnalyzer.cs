@@ -117,7 +117,7 @@ internal static class ChainAnalyzer
         var disqualifyReason = CheckDisqualifiers(chainSites);
         if (disqualifyReason != null)
         {
-            return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason);
+            return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason, registry);
         }
 
         ct.ThrowIfCancellationRequested();
@@ -136,7 +136,7 @@ internal static class ChainAnalyzer
             // Check nesting depth
             if (condInfo.NestingDepth > MaxIfNestingDepth)
             {
-                return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum");
+                return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry);
             }
 
             var role = MapInterceptorKindToClauseRole(site.Bound.Raw.Kind);
@@ -306,7 +306,7 @@ internal static class ChainAnalyzer
             }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
-                projection = BuildProjection(raw.ProjectionInfo, executionSite);
+                projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
             }
         }
 
@@ -396,15 +396,40 @@ internal static class ChainAnalyzer
     /// During discovery, the source generator can't see its own generated entity types, so
     /// ProjectionInfo columns may have empty ClrType/ColumnName. We fix these by cross-referencing
     /// with EntityRef.Columns which has the authoritative column metadata from schema analysis.
+    /// For multi-entity (joined) projections, resolves all joined entities from the registry.
     /// </summary>
-    private static SelectProjection BuildProjection(ProjectionInfo projInfo, TranslatedCallSite executionSite)
+    private static SelectProjection BuildProjection(ProjectionInfo projInfo, TranslatedCallSite executionSite, EntityRegistry registry)
     {
-        // Build a lookup from entity columns by property name for enrichment
+        // Build column lookups for enrichment
+        // For joined queries, build per-tableAlias lookups from all joined entities
+        var joinedEntityTypeNames = executionSite.Bound.JoinedEntityTypeNames;
+        var isJoined = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
+
+        Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup = null;
         Dictionary<string, ColumnInfo>? entityColumnLookup = null;
         var entityRef = executionSite.Bound.Entity;
-        if (entityRef != null && entityRef.Columns.Count > 0)
+
+        if (isJoined)
         {
-            entityColumnLookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+            // Multi-entity: build per-tableAlias column lookups
+            perAliasLookup = new Dictionary<string, Dictionary<string, ColumnInfo>>(StringComparer.Ordinal);
+            for (int i = 0; i < joinedEntityTypeNames!.Count; i++)
+            {
+                var alias = $"t{i}";
+                var entry = registry.Resolve(joinedEntityTypeNames[i]);
+                if (entry != null)
+                {
+                    var lookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
+                    foreach (var ec in EntityRef.FromEntityInfo(entry.Entity).Columns)
+                        lookup[ec.PropertyName] = ec;
+                    perAliasLookup[alias] = lookup;
+                }
+            }
+        }
+        else if (entityRef != null && entityRef.Columns.Count > 0)
+        {
+            // Single-entity: flat lookup
+            entityColumnLookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
             foreach (var ec in entityRef.Columns)
                 entityColumnLookup[ec.PropertyName] = ec;
         }
@@ -414,11 +439,48 @@ internal static class ChainAnalyzer
         {
             foreach (var col in projInfo.Columns)
             {
-                // Enrich columns that have missing/broken type or column name info
-                if (entityColumnLookup != null && NeedsEnrichment(col))
+                // Aggregate columns with unresolved type ("object"): resolve from the
+                // referenced entity column. During discovery, Min/Max default to "object"
+                // because the semantic model can't resolve generated entity property types.
+                if (col.IsAggregateFunction && IsUnresolvedAggregateType(col.ClrType) && col.SqlExpression != null)
                 {
-                    // Try matching by PropertyName (most common for tuple projections like (u.UserId, u.UserName))
-                    if (entityColumnLookup.TryGetValue(col.PropertyName, out var entityCol))
+                    var resolvedType = TryResolveAggregateTypeFromSql(col.SqlExpression, entityColumnLookup, perAliasLookup, col.TableAlias);
+                    if (resolvedType != null)
+                    {
+                        columns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: col.ColumnName,
+                            clrType: resolvedType,
+                            fullClrType: resolvedType,
+                            isNullable: col.IsNullable,
+                            ordinal: col.Ordinal,
+                            alias: col.Alias,
+                            sqlExpression: col.SqlExpression,
+                            isAggregateFunction: true,
+                            isValueType: true,
+                            readerMethodName: GetReaderMethodForType(resolvedType),
+                            tableAlias: col.TableAlias));
+                        continue;
+                    }
+                }
+
+                if (NeedsEnrichment(col))
+                {
+                    ColumnInfo? entityCol = null;
+
+                    if (isJoined && perAliasLookup != null && col.TableAlias != null)
+                    {
+                        // Multi-entity: match by TableAlias + PropertyName
+                        if (perAliasLookup.TryGetValue(col.TableAlias, out var aliasLookup))
+                            aliasLookup.TryGetValue(col.PropertyName, out entityCol);
+                    }
+                    else if (entityColumnLookup != null)
+                    {
+                        // Single-entity: match by PropertyName
+                        entityColumnLookup.TryGetValue(col.PropertyName, out entityCol);
+                    }
+
+                    if (entityCol != null)
                     {
                         columns.Add(new ProjectedColumn(
                             propertyName: col.PropertyName,
@@ -454,7 +516,6 @@ internal static class ChainAnalyzer
         }
         else if (projInfo.Kind == ProjectionKind.SingleColumn && columns.Count == 1)
         {
-            // For single-column projections, derive the result type from the enriched column
             var col = columns[0];
             var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
             if (!string.IsNullOrWhiteSpace(colType) && colType != "?" && colType != "object")
@@ -495,10 +556,130 @@ internal static class ChainAnalyzer
     /// </summary>
     private static bool NeedsEnrichment(ProjectedColumn col)
     {
-        // Only enrich columns with truly broken/missing type or column name info.
-        // Don't enrich computed/aggregate columns that correctly use GetValue.
+        // Aggregates have empty ColumnName by design — don't trigger enrichment for them
+        if (col.IsAggregateFunction)
+            return string.IsNullOrWhiteSpace(col.ClrType);
         return string.IsNullOrWhiteSpace(col.ClrType)
             || string.IsNullOrWhiteSpace(col.ColumnName);
+    }
+
+    /// <summary>
+    /// Checks if an aggregate's CLR type is unresolved and needs enrichment.
+    /// </summary>
+    private static bool IsUnresolvedAggregateType(string clrType)
+    {
+        return clrType == "object" || clrType == "?" || string.IsNullOrWhiteSpace(clrType);
+    }
+
+    /// <summary>
+    /// Public entry point for resolving aggregate type from SQL (used by bridge enrichment).
+    /// </summary>
+    internal static string? TryResolveAggregateTypeFromSqlPublic(
+        string sqlExpression,
+        Dictionary<string, ColumnInfo> entityColumnLookup)
+    {
+        return TryResolveAggregateTypeFromSql(sqlExpression, entityColumnLookup, null, null);
+    }
+
+    /// <summary>
+    /// Public entry point for getting reader method (used by bridge enrichment).
+    /// </summary>
+    internal static string GetReaderMethodForTypePublic(string clrType)
+    {
+        return GetReaderMethodForType(clrType);
+    }
+
+    /// <summary>
+    /// Tries to resolve the CLR type for an aggregate column by extracting the referenced
+    /// column name from the SQL expression and looking it up in entity column metadata.
+    /// E.g., SUM("Total") → extract "Total" → look up Total column → type is "decimal".
+    /// </summary>
+    private static string? TryResolveAggregateTypeFromSql(
+        string sqlExpression,
+        Dictionary<string, ColumnInfo>? entityColumnLookup,
+        Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup,
+        string? tableAlias)
+    {
+        // Extract the column name from expressions like: SUM("Total"), MIN(t0."Total"),
+        // SUM(`Total`), MIN([Total])
+        var propName = ExtractColumnNameFromAggregateSql(sqlExpression);
+        if (propName == null)
+            return null;
+
+        ColumnInfo? col = null;
+        if (tableAlias != null && perAliasLookup != null)
+        {
+            if (perAliasLookup.TryGetValue(tableAlias, out var aliasLookup))
+                aliasLookup.TryGetValue(propName, out col);
+        }
+        else if (entityColumnLookup != null)
+        {
+            entityColumnLookup.TryGetValue(propName, out col);
+        }
+
+        if (col != null && !string.IsNullOrWhiteSpace(col.ClrType) && col.ClrType != "object")
+            return col.ClrType;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts a column/property name from an aggregate SQL expression.
+    /// Handles: SUM("Total"), MIN(t0."Total"), AVG(`Total`), MAX([Total]).
+    /// For COUNT(*), returns null.
+    /// </summary>
+    private static string? ExtractColumnNameFromAggregateSql(string sql)
+    {
+        // Skip COUNT(*)
+        if (sql.Contains("*"))
+            return null;
+
+        // Find the innermost quoted identifier
+        int start = -1, end = -1;
+        for (int i = sql.Length - 1; i >= 0; i--)
+        {
+            if (end < 0 && (sql[i] == '"' || sql[i] == '`' || sql[i] == ']'))
+            {
+                end = i;
+                var closeChar = sql[i] == ']' ? '[' : sql[i];
+                for (int j = i - 1; j >= 0; j--)
+                {
+                    if (sql[j] == closeChar)
+                    {
+                        start = j + 1;
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+
+        if (start >= 0 && end > start)
+            return sql.Substring(start, end - start);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets the DbDataReader method for a CLR type.
+    /// </summary>
+    private static string GetReaderMethodForType(string clrType)
+    {
+        return clrType switch
+        {
+            "int" or "Int32" => "GetInt32",
+            "long" or "Int64" => "GetInt64",
+            "decimal" or "Decimal" => "GetDecimal",
+            "double" or "Double" => "GetDouble",
+            "float" or "Single" => "GetFloat",
+            "string" or "String" => "GetString",
+            "bool" or "Boolean" => "GetBoolean",
+            "DateTime" => "GetDateTime",
+            "Guid" => "GetGuid",
+            "byte" or "Byte" => "GetByte",
+            "short" or "Int16" => "GetInt16",
+            _ => "GetValue"
+        };
     }
 
     /// <summary>
@@ -633,12 +814,36 @@ internal static class ChainAnalyzer
     private static AnalyzedChain MakeRuntimeBuildChain(
         TranslatedCallSite executionSite,
         List<TranslatedCallSite> clauseSites,
-        string reason)
+        string reason,
+        EntityRegistry? registry = null)
     {
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
         var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
+
+        // Even for runtime chains, enrich the Select projection so emitters can produce
+        // concrete-typed interceptors (required for C# interceptor signature matching)
+        SelectProjection? projection = null;
+        if (registry != null)
+        {
+            foreach (var site in clauseSites)
+            {
+                if (site.Bound.Raw.Kind == InterceptorKind.Select && site.Bound.Raw.ProjectionInfo != null)
+                {
+                    projection = BuildProjection(site.Bound.Raw.ProjectionInfo, executionSite, registry);
+                    break;
+                }
+            }
+        }
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+        }
 
         var plan = new QueryPlan(
             kind: queryKind,
@@ -648,11 +853,7 @@ internal static class ChainAnalyzer
             orderTerms: Array.Empty<OrderTerm>(),
             groupByExprs: Array.Empty<SqlExpr>(),
             havingExprs: Array.Empty<SqlExpr>(),
-            projection: new SelectProjection(
-                ProjectionKind.Entity,
-                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
-                Array.Empty<ProjectedColumn>(),
-                isIdentity: true),
+            projection: projection,
             pagination: null,
             isDistinct: false,
             setTerms: Array.Empty<SetTerm>(),

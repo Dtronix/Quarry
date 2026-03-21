@@ -1155,7 +1155,33 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 bool anyEnriched = false;
                 foreach (var col in rawProj.Columns)
                 {
-                    // Only enrich columns with truly broken/missing types — not aggregate/computed columns
+                    // Aggregate columns with unresolved type: resolve from referenced entity column
+                    if (col.IsAggregateFunction && (col.ClrType == "object" || string.IsNullOrWhiteSpace(col.ClrType))
+                        && col.SqlExpression != null)
+                    {
+                        var resolvedType = Parsing.ChainAnalyzer.TryResolveAggregateTypeFromSqlPublic(
+                            col.SqlExpression, colLookup);
+                        if (resolvedType != null)
+                        {
+                            enrichedColumns.Add(new ProjectedColumn(
+                                propertyName: col.PropertyName,
+                                columnName: col.ColumnName,
+                                clrType: resolvedType,
+                                fullClrType: resolvedType,
+                                isNullable: col.IsNullable,
+                                ordinal: col.Ordinal,
+                                alias: col.Alias,
+                                sqlExpression: col.SqlExpression,
+                                isAggregateFunction: true,
+                                isValueType: true,
+                                readerMethodName: Parsing.ChainAnalyzer.GetReaderMethodForTypePublic(resolvedType),
+                                tableAlias: col.TableAlias));
+                            anyEnriched = true;
+                            continue;
+                        }
+                    }
+
+                    // Regular columns with missing types
                     if (string.IsNullOrWhiteSpace(col.ClrType) &&
                         colLookup.TryGetValue(col.PropertyName, out var entityCol))
                     {
