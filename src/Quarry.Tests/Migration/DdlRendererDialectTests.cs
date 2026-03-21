@@ -268,6 +268,22 @@ public class DdlRendererDialectTests
     }
 
     [Test]
+    public void Batched_ZeroBatchSize_Throws()
+    {
+        var builder = new MigrationBuilder();
+        builder.Sql("SELECT 1");
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Batched(0));
+    }
+
+    [Test]
+    public void Batched_NegativeBatchSize_Throws()
+    {
+        var builder = new MigrationBuilder();
+        builder.Sql("SELECT 1");
+        Assert.Throws<ArgumentOutOfRangeException>(() => builder.Batched(-5));
+    }
+
+    [Test]
     public void BatchedRawSql_SqlServer_EmitsWhileLoop()
     {
         var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
@@ -299,17 +315,21 @@ public class DdlRendererDialectTests
     }
 
     [Test]
-    public void BatchedRawSql_MySQL_EmitsLoop()
+    public void BatchedRawSql_MySQL_EmitsStoredProcedureLoop()
     {
         var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
         var builder = new MigrationBuilder();
         builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL LIMIT 5000");
         builder.Batched(5000);
         var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("DROP PROCEDURE IF EXISTS _quarry_batch;"));
+        Assert.That(sql, Does.Contain("CREATE PROCEDURE _quarry_batch()"));
         Assert.That(sql, Does.Contain("repeat_loop: LOOP"));
         Assert.That(sql, Does.Contain("UPDATE users"));
         Assert.That(sql, Does.Contain("IF ROW_COUNT() = 0 THEN LEAVE repeat_loop; END IF;"));
         Assert.That(sql, Does.Contain("END LOOP;"));
+        Assert.That(sql, Does.Contain("CALL _quarry_batch();"));
+        Assert.That(sql, Does.Contain("DROP PROCEDURE _quarry_batch;"));
     }
 
     [Test]
@@ -322,6 +342,40 @@ public class DdlRendererDialectTests
         var sql = builder.BuildSql(dialect);
         Assert.That(sql, Does.Contain("-- Batched execution is not supported for SQLite"));
         Assert.That(sql, Does.Contain("UPDATE users SET status = 'active'"));
+    }
+
+    [Test]
+    public void BatchedRawSql_WithoutBatchSize_RendersNormally()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL");
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Not.Contain("WHILE"));
+        Assert.That(sql, Does.Contain("UPDATE users"));
+    }
+
+    [Test]
+    public void BatchedRawSql_TrailingSemicolon_NotDuplicated()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE TOP (100) users SET status = 'active' WHERE status IS NULL;");
+        builder.Batched(100);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Not.Contain(";;"));
+        Assert.That(sql, Does.Contain("WHERE status IS NULL;"));
+    }
+
+    [Test]
+    public void BatchedRawSql_NoTrailingSemicolon_AddsSemicolon()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.PostgreSQL);
+        var builder = new MigrationBuilder();
+        builder.Sql("DELETE FROM logs WHERE id < 100");
+        builder.Batched(100);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("WHERE id < 100;"));
     }
 
     [Test]
@@ -361,14 +415,120 @@ public class DdlRendererDialectTests
     }
 
     [Test]
-    public void BatchedRawSql_WithoutBatchSize_RendersNormally()
+    public void BatchedInsertData_ExactBatchSize_ProducesOneBatch()
     {
         var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
         var builder = new MigrationBuilder();
-        builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL");
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = "a" },
+            new { id = 2, name = "b" },
+            new { id = 3, name = "c" },
+            new { id = 4, name = "d" },
+        });
+        builder.Batched(4);
         var sql = builder.BuildSql(dialect);
-        Assert.That(sql, Does.Not.Contain("WHILE"));
-        Assert.That(sql, Does.Contain("UPDATE users"));
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(sql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BatchedInsertData_SingleRow_ProducesOneBatch()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new { id = 1, name = "only" });
+        builder.Batched(5);
+        var sql = builder.BuildSql(dialect);
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(sql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BatchedInsertData_SchemaQualified_IncludesSchemaPerBatch()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = "a" },
+            new { id = 2, name = "b" },
+            new { id = 3, name = "c" },
+        }, schema: "dbo");
+        builder.Batched(2);
+        var sql = builder.BuildSql(dialect);
+        // 2 INSERT statements, each must reference the schema
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(sql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(2));
+        var schemaCount = System.Text.RegularExpressions.Regex.Matches(sql, @"\[dbo\]\.\[users\]").Count;
+        Assert.That(schemaCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void BatchedInsertData_MySQL_UsesBacktickQuoting()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = "a" },
+            new { id = 2, name = "b" },
+            new { id = 3, name = "c" },
+        });
+        builder.Batched(2);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("`users`"));
+        Assert.That(sql, Does.Contain("`id`"));
+        Assert.That(sql, Does.Contain("`name`"));
+    }
+
+    [Test]
+    public void BatchedInsertData_NullValues_FormattedCorrectly()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = (string?)null },
+            new { id = 2, name = "b" },
+            new { id = 3, name = (string?)null },
+        });
+        builder.Batched(2);
+        var sql = builder.BuildSql(dialect);
+        var nullCount = System.Text.RegularExpressions.Regex.Matches(sql, @"\bNULL\b").Count;
+        Assert.That(nullCount, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void BatchedRawSql_WithSuppressTransaction_RendersInNonTxPartition()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE TOP (1000) users SET status = 'active' WHERE status IS NULL");
+        builder.Batched(1000);
+        builder.SuppressTransaction();
+        var (txSql, nonTxSql, _) = builder.BuildPartitionedSql(dialect);
+        Assert.That(txSql, Is.Empty);
+        Assert.That(nonTxSql, Does.Contain("WHILE 1 = 1"));
+    }
+
+    [Test]
+    public void BatchedInsertData_WithSuppressTransaction_RendersInNonTxPartition()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.PostgreSQL);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = "a" },
+            new { id = 2, name = "b" },
+            new { id = 3, name = "c" },
+        });
+        builder.Batched(2);
+        builder.SuppressTransaction();
+        var (txSql, nonTxSql, _) = builder.BuildPartitionedSql(dialect);
+        Assert.That(txSql, Is.Empty);
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(nonTxSql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(2));
     }
 
     #endregion

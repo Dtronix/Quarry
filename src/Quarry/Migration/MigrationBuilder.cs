@@ -200,6 +200,8 @@ public sealed class MigrationBuilder
     {
         if (_operations.Count == 0)
             throw new InvalidOperationException("Batched() must be called after an operation has been added to the builder.");
+        if (batchSize <= 0)
+            throw new ArgumentOutOfRangeException(nameof(batchSize), batchSize, "Batch size must be greater than zero.");
         _operations[^1].BatchSize = batchSize;
         return this;
     }

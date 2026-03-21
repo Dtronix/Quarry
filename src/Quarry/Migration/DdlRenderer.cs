@@ -613,28 +613,7 @@ internal static class DdlRenderer
 
     private static void RenderInsertData(StringBuilder sb, InsertDataOperation op, SqlDialect dialect)
     {
-        sb.Append("INSERT INTO ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
-        for (var i = 0; i < op.Columns.Length; i++)
-        {
-            if (i > 0) sb.Append(", ");
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
-        }
-        sb.Append(") VALUES");
-
-        for (var r = 0; r < op.Rows.Length; r++)
-        {
-            if (r > 0) sb.Append(",");
-            sb.AppendLine();
-            sb.Append("    (");
-            var row = op.Rows[r];
-            for (var c = 0; c < row.Length; c++)
-            {
-                if (c > 0) sb.Append(", ");
-                sb.Append(SqlFormatting.FormatLiteral(dialect, row[c]));
-            }
-            sb.Append(")");
-        }
-        sb.AppendLine(";");
+        RenderInsertRows(sb, op, dialect, 0, op.Rows.Length);
     }
 
     private static void RenderUpdateData(StringBuilder sb, UpdateDataOperation op, SqlDialect dialect)
@@ -657,6 +636,32 @@ internal static class DdlRenderer
         sb.AppendLine(";");
     }
 
+    private static void RenderInsertRows(StringBuilder sb, InsertDataOperation op, SqlDialect dialect, int startRow, int endRow)
+    {
+        sb.Append("INSERT INTO ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
+        for (var i = 0; i < op.Columns.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
+        }
+        sb.Append(") VALUES");
+
+        for (var r = startRow; r < endRow; r++)
+        {
+            if (r > startRow) sb.Append(",");
+            sb.AppendLine();
+            sb.Append("    (");
+            var row = op.Rows[r];
+            for (var c = 0; c < row.Length; c++)
+            {
+                if (c > 0) sb.Append(", ");
+                sb.Append(SqlFormatting.FormatLiteral(dialect, row[c]));
+            }
+            sb.Append(")");
+        }
+        sb.AppendLine(";");
+    }
+
     // --- Batched operations ---
 
     private static void RenderBatchedInsertData(StringBuilder sb, InsertDataOperation op, SqlDialect dialect)
@@ -665,28 +670,7 @@ internal static class DdlRenderer
         for (var offset = 0; offset < op.Rows.Length; offset += batchSize)
         {
             var end = Math.Min(offset + batchSize, op.Rows.Length);
-            sb.Append("INSERT INTO ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
-            for (var i = 0; i < op.Columns.Length; i++)
-            {
-                if (i > 0) sb.Append(", ");
-                sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
-            }
-            sb.Append(") VALUES");
-
-            for (var r = offset; r < end; r++)
-            {
-                if (r > offset) sb.Append(",");
-                sb.AppendLine();
-                sb.Append("    (");
-                var row = op.Rows[r];
-                for (var c = 0; c < row.Length; c++)
-                {
-                    if (c > 0) sb.Append(", ");
-                    sb.Append(SqlFormatting.FormatLiteral(dialect, row[c]));
-                }
-                sb.Append(")");
-            }
-            sb.AppendLine(";");
+            RenderInsertRows(sb, op, dialect, offset, end);
         }
     }
 
@@ -712,10 +696,16 @@ internal static class DdlRenderer
                 break;
 
             case SqlDialect.MySQL:
-                sb.AppendLine("repeat_loop: LOOP");
-                sb.Append("    ").AppendLine(op.Sql.TrimEnd().TrimEnd(';') + ";");
-                sb.AppendLine("    IF ROW_COUNT() = 0 THEN LEAVE repeat_loop; END IF;");
-                sb.AppendLine("END LOOP;");
+                sb.AppendLine("DROP PROCEDURE IF EXISTS _quarry_batch;");
+                sb.AppendLine("CREATE PROCEDURE _quarry_batch()");
+                sb.AppendLine("BEGIN");
+                sb.AppendLine("    repeat_loop: LOOP");
+                sb.Append("        ").AppendLine(op.Sql.TrimEnd().TrimEnd(';') + ";");
+                sb.AppendLine("        IF ROW_COUNT() = 0 THEN LEAVE repeat_loop; END IF;");
+                sb.AppendLine("    END LOOP;");
+                sb.AppendLine("END;");
+                sb.AppendLine("CALL _quarry_batch();");
+                sb.AppendLine("DROP PROCEDURE _quarry_batch;");
                 break;
 
             case SqlDialect.SQLite:
