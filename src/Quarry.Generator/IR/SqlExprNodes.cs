@@ -480,31 +480,3 @@ internal sealed class ExprListExpr : SqlExpr
         return true;
     }
 }
-
-/// <summary>
-/// Boolean column access in WHERE context — maps to "column = TRUE/1".
-/// </summary>
-internal sealed class BooleanColumnExpr : SqlExpr
-{
-    public override SqlExprKind Kind => SqlExprKind.ColumnRef;
-
-    /// <summary>The underlying column reference.</summary>
-    public ColumnRefExpr Column { get; }
-
-    /// <summary>Whether this is in a boolean context (WHERE clause).</summary>
-    public bool InBooleanContext { get; }
-
-    public BooleanColumnExpr(ColumnRefExpr column, bool inBooleanContext)
-        : base(HashCode.Combine(SqlExprKind.ColumnRef, column.GetHashCode(), inBooleanContext, "bool"))
-    {
-        Column = column;
-        InBooleanContext = inBooleanContext;
-    }
-
-    protected override bool DeepEquals(SqlExpr other)
-    {
-        if (other is BooleanColumnExpr o)
-            return InBooleanContext == o.InBooleanContext && Column.Equals(o.Column);
-        return false;
-    }
-}

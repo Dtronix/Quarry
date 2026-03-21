@@ -55,9 +55,6 @@ internal enum SqlExprKind
     InExpr,
     IsNullCheck,
     LikeExpr,
-    BetweenExpr,
-    CaseExpr,
-    SubQuery,
     CapturedValue,
     SqlRaw,
     ExprList

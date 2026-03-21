@@ -140,10 +140,6 @@ internal static class SqlExprRenderer
                 }
                 break;
 
-            case BooleanColumnExpr boolCol:
-                // Should have been resolved during binding, but handle anyway
-                RenderExpr(boolCol.Column, dialect, paramBase, sb);
-                break;
         }
     }
 

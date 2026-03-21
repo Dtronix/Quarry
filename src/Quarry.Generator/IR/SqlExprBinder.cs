@@ -47,6 +47,9 @@ internal static class SqlExprBinder
         public bool HasJoins => JoinedEntities != null && JoinedEntities.Count > 0;
         public bool HasAliases => TableAliases != null && TableAliases.Count > 0;
 
+        // Cached column lookups for joined entities to avoid rebuilding per column ref
+        private Dictionary<string, Dictionary<string, ColumnInfo>>? _joinedColumnLookups;
+
         public BindContext(
             EntityInfo primaryEntity,
             SqlDialect dialect,
@@ -62,6 +65,20 @@ internal static class SqlExprBinder
             JoinedEntities = joinedEntities;
             TableAliases = tableAliases;
         }
+
+        /// <summary>
+        /// Gets a cached column lookup for a joined entity.
+        /// </summary>
+        public Dictionary<string, ColumnInfo> GetJoinedColumnLookup(string paramName, EntityInfo joinedEntity)
+        {
+            _joinedColumnLookups ??= new Dictionary<string, Dictionary<string, ColumnInfo>>(StringComparer.Ordinal);
+            if (!_joinedColumnLookups.TryGetValue(paramName, out var lookup))
+            {
+                lookup = BuildColumnLookup(joinedEntity);
+                _joinedColumnLookups[paramName] = lookup;
+            }
+            return lookup;
+        }
     }
 
     private static SqlExpr BindExpr(SqlExpr expr, BindContext ctx, bool inBooleanContext)
@@ -70,9 +87,6 @@ internal static class SqlExprBinder
         {
             case ColumnRefExpr colRef:
                 return BindColumnRef(colRef, ctx, inBooleanContext);
-
-            case BooleanColumnExpr boolCol:
-                return BindColumnRef(boolCol.Column, ctx, boolCol.InBooleanContext);
 
             case BinaryOpExpr bin:
             {
@@ -174,11 +188,9 @@ internal static class SqlExprBinder
         var paramName = colRef.ParameterName;
         var propertyName = colRef.PropertyName;
 
-        // Handle Ref<T,K>.Id → strip the nested property, resolve FK column
-        if (colRef.NestedProperty == "Id")
-        {
-            // propertyName is the FK property name
-        }
+        // For Ref<T,K>.Id access, the PropertyName already refers to the FK column
+        // (e.g., "UserId"). The NestedProperty flag is informational only — no stripping needed
+        // because both SqlExprParser and SyntacticExpressionAdapter store the base property name.
 
         // Determine which entity this column belongs to
         ColumnInfo? column = null;
@@ -199,8 +211,8 @@ internal static class SqlExprBinder
         }
         else if (ctx.JoinedEntities != null && ctx.JoinedEntities.TryGetValue(paramName, out var joinedEntity))
         {
-            // Joined entity
-            var joinLookup = BuildColumnLookup(joinedEntity);
+            // Joined entity — use cached column lookup
+            var joinLookup = ctx.GetJoinedColumnLookup(paramName, joinedEntity);
             joinLookup.TryGetValue(propertyName, out column);
 
             if (ctx.TableAliases != null && ctx.TableAliases.TryGetValue(paramName, out var alias))
@@ -217,14 +229,14 @@ internal static class SqlExprBinder
 
         var quotedColumn = QuoteIdentifier(column.ColumnName, ctx.Dialect);
 
-        // Boolean column in WHERE context → column = TRUE/1
+        // Boolean column in WHERE context → "column" = TRUE/1
+        // Emitted as SqlRawExpr to match the old SyntacticClauseTranslator output format
+        // (no extra parentheses around the comparison).
         if (inBooleanContext && (column.ClrType == "bool" || column.ClrType == "Boolean"))
         {
             var boolLiteral = FormatBoolean(true, ctx.Dialect);
-            var resolvedCol = tableQualifier != null
-                ? new ResolvedColumnExpr($"{tableQualifier}.{quotedColumn}", tableQualifier)
-                : new ResolvedColumnExpr(quotedColumn);
-            return new BinaryOpExpr(resolvedCol, SqlBinaryOperator.Equal, new LiteralExpr(boolLiteral, "bool"));
+            var colSql = tableQualifier != null ? $"{tableQualifier}.{quotedColumn}" : quotedColumn;
+            return new SqlRawExpr($"{colSql} = {boolLiteral}");
         }
 
         if (tableQualifier != null)

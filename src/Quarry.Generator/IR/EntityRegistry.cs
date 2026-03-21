@@ -41,27 +41,49 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             {
                 var entry = new EntityRegistryEntry(entity, context);
 
-                // Index by fully qualified entity type name
-                var fullTypeName = $"{entity.SchemaNamespace}.{entity.EntityName}";
-                if (!byEntityType.TryGetValue(fullTypeName, out var entries))
-                {
-                    entries = new List<EntityRegistryEntry>();
-                    byEntityType[fullTypeName] = entries;
-                }
-                entries.Add(entry);
+                // Build name variants matching QuarryGenerator.BuildEntityLookup:
+                // shortName, contextNamespace-qualified, schemaNamespace-qualified, global::
+                var shortName = entity.EntityName;
+                var schemaQualified = $"{entity.SchemaNamespace}.{shortName}";
+                var contextQualified = string.IsNullOrEmpty(context.Namespace)
+                    ? shortName
+                    : $"{context.Namespace}.{shortName}";
+                var globalName = $"global::{contextQualified}";
 
-                // Also index by short name
-                if (!byEntityType.ContainsKey(entity.EntityName))
-                {
-                    byEntityType[entity.EntityName] = entries;
-                }
+                // Index by schema-qualified name (always unique per entity)
+                AddToIndex(byEntityType, schemaQualified, entry);
 
-                // Index by entity name for subquery resolution
-                byEntityName[entity.EntityName] = entity;
+                // Index by context-qualified name (may differ from schema-qualified)
+                if (contextQualified != schemaQualified)
+                    AddToIndex(byEntityType, contextQualified, entry);
+
+                // Index by global:: name
+                AddToIndex(byEntityType, globalName, entry);
+
+                // Index by short name (first-writer-wins for collision)
+                if (!byEntityType.ContainsKey(shortName))
+                    byEntityType[shortName] = byEntityType[schemaQualified];
+
+                // Index by entity name for subquery resolution (first-writer-wins)
+                if (!byEntityName.ContainsKey(shortName))
+                    byEntityName[shortName] = entity;
             }
         }
 
         return new EntityRegistry(byEntityType, byEntityName);
+    }
+
+    private static void AddToIndex(
+        Dictionary<string, List<EntityRegistryEntry>> index,
+        string key,
+        EntityRegistryEntry entry)
+    {
+        if (!index.TryGetValue(key, out var list))
+        {
+            list = new List<EntityRegistryEntry>();
+            index[key] = list;
+        }
+        list.Add(entry);
     }
 
     /// <summary>

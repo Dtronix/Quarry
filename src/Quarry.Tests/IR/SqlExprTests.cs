@@ -292,9 +292,9 @@ public class SqlExprTests
 
         var bound = SqlExprBinder.Bind(expr, entity, GenSqlDialect.SQLite, "u", inBooleanContext: true);
 
-        Assert.That(bound, Is.InstanceOf<BinaryOpExpr>());
+        Assert.That(bound, Is.InstanceOf<SqlRawExpr>());
         var sql = SqlExprRenderer.Render(bound, GenSqlDialect.SQLite);
-        Assert.That(sql, Is.EqualTo("(\"is_active\" = 1)"));
+        Assert.That(sql, Is.EqualTo("\"is_active\" = 1"));
     }
 
     [Test]
