@@ -139,6 +139,42 @@ public sealed class MigrationBuilder
         return this;
     }
 
+    public MigrationBuilder CreateView(string name, string sql, string? schema = null)
+    {
+        _operations.Add(new CreateViewOperation(name, schema, sql));
+        return this;
+    }
+
+    public MigrationBuilder DropView(string name, string? schema = null)
+    {
+        _operations.Add(new DropViewOperation(name, schema));
+        return this;
+    }
+
+    public MigrationBuilder AlterView(string name, string sql, string? schema = null)
+    {
+        _operations.Add(new AlterViewOperation(name, schema, sql));
+        return this;
+    }
+
+    public MigrationBuilder CreateProcedure(string name, string sql, string? schema = null)
+    {
+        _operations.Add(new CreateProcedureOperation(name, schema, sql));
+        return this;
+    }
+
+    public MigrationBuilder DropProcedure(string name, string? schema = null)
+    {
+        _operations.Add(new DropProcedureOperation(name, schema));
+        return this;
+    }
+
+    public MigrationBuilder AlterProcedure(string name, string sql, string? schema = null)
+    {
+        _operations.Add(new AlterProcedureOperation(name, schema, sql));
+        return this;
+    }
+
     private static (string[] Columns, object?[] Values) ExtractProperties(object obj)
     {
         var properties = obj.GetType().GetProperties(BindingFlags.Public | BindingFlags.Instance);
