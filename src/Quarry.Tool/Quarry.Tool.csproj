@@ -40,6 +40,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="Quarry.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="../Quarry/Quarry.csproj" />
   </ItemGroup>
 

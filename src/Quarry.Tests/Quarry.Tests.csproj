@@ -63,6 +63,8 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../Quarry.Tool/Schema/ProjectSchemaReader.cs" LinkBase="Shared" />
+    <Compile Include="../Quarry.Tool/Schema/DialectResolver.cs" LinkBase="Shared" />
+    <Compile Include="../Quarry.Tool/Commands/BundleCommand.cs" LinkBase="Shared" />
   </ItemGroup>
 
 </Project>
