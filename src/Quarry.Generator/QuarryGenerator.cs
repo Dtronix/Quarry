@@ -604,6 +604,19 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 continue;
             }
 
+            // Skip chains with incomplete tuple result types (e.g., "( Name,  Total)" instead of
+            // "(string Name, decimal Total)"). This happens when a joined query with Select projection
+            // is stored in a variable and executed on a separate statement — the chain can't see the
+            // Select clause, and the semantic model can't resolve generated entity types in tuple elements.
+            if (assembled.ResultTypeName != null
+                && assembled.ResultTypeName.StartsWith("(")
+                && assembled.ResultTypeName.Contains(",")
+                && System.Text.RegularExpressions.Regex.IsMatch(assembled.ResultTypeName, @"\(\s\w"))
+            {
+                trace.AppendLine($"//   SKIPPED incomplete tuple result: ExecUniqueId={assembled.ExecutionSite.Bound.Raw.UniqueId} ResultType={assembled.ResultTypeName}");
+                continue;
+            }
+
             // Convert AssembledSqlVariant → PrebuiltSqlResult
             var sqlMap = new Dictionary<ulong, Sql.PrebuiltSqlResult>();
             foreach (var kvp in assembled.SqlVariants)
