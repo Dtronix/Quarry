@@ -21,6 +21,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         EntityRef entity,
         EntityRef? joinedEntity = null,
         IReadOnlyList<string>? joinedEntityTypeNames = null,
+        IReadOnlyList<EntityRef>? joinedEntities = null,
         InsertInfo? insertInfo = null,
         InsertInfo? updateInfo = null,
         RawSqlTypeInfo? rawSqlTypeInfo = null)
@@ -34,6 +35,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         Entity = entity;
         JoinedEntity = joinedEntity;
         JoinedEntityTypeNames = joinedEntityTypeNames;
+        JoinedEntities = joinedEntities;
         InsertInfo = insertInfo;
         UpdateInfo = updateInfo;
         RawSqlTypeInfo = rawSqlTypeInfo;
@@ -55,6 +57,9 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
     /// <summary>Resolved joined entity metadata (for Join sites).</summary>
     public EntityRef? JoinedEntity { get; }
     public IReadOnlyList<string>? JoinedEntityTypeNames { get; }
+
+    /// <summary>Resolved EntityRef for all entities in a multi-entity join (for enrichment).</summary>
+    public IReadOnlyList<EntityRef>? JoinedEntities { get; }
 
     /// <summary>Insert column metadata.</summary>
     public InsertInfo? InsertInfo { get; }
@@ -78,6 +83,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             && Entity.Equals(other.Entity)
             && Equals(JoinedEntity, other.JoinedEntity)
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
+            && EqualityHelpers.NullableSequenceEqual(JoinedEntities, other.JoinedEntities)
             && Equals(InsertInfo, other.InsertInfo)
             && Equals(UpdateInfo, other.UpdateInfo)
             && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo);

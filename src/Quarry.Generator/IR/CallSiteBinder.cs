@@ -112,9 +112,18 @@ internal static class CallSiteBinder
         }
 
         // Pass through joined entity type names from discovery
+        IReadOnlyList<EntityRef>? joinedEntities = null;
         if (raw.JoinedEntityTypeNames != null)
         {
             joinedEntityTypeNames = raw.JoinedEntityTypeNames;
+            // Resolve EntityRef for all joined entities (for projection enrichment)
+            var resolved = new List<EntityRef>(raw.JoinedEntityTypeNames.Count);
+            foreach (var name in raw.JoinedEntityTypeNames)
+            {
+                var je = registry.Resolve(name);
+                resolved.Add(je != null ? EntityRef.FromEntityInfo(je.Entity) : EntityRef.Empty(name));
+            }
+            joinedEntities = resolved;
         }
 
         // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
@@ -130,6 +139,7 @@ internal static class CallSiteBinder
             entity: entity,
             joinedEntity: joinedEntity,
             joinedEntityTypeNames: joinedEntityTypeNames,
+            joinedEntities: joinedEntities,
             insertInfo: insertInfo,
             updateInfo: updateInfo,
             rawSqlTypeInfo: rawSqlTypeInfo);

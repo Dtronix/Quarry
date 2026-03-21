@@ -1144,12 +1144,36 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         {
             var rawProj = ts.Bound.Raw.ProjectionInfo;
             var entityRef = ts.Bound.Entity;
-            if (entityRef != null && entityRef.Columns.Count > 0 && rawProj.Columns.Count > 0)
+            var isJoined = ts.Bound.JoinedEntities != null && ts.Bound.JoinedEntities.Count >= 2;
+
+            // Build per-alias lookups for joined queries, flat lookup for single-entity
+            Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup = null;
+            var colLookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+
+            if (isJoined)
             {
-                // Build column lookup
-                var colLookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+                perAliasLookup = new Dictionary<string, Dictionary<string, ColumnInfo>>(System.StringComparer.Ordinal);
+                for (int i = 0; i < ts.Bound.JoinedEntities!.Count; i++)
+                {
+                    var je = ts.Bound.JoinedEntities[i];
+                    var alias = $"t{i}";
+                    var lookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+                    foreach (var ec in je.Columns)
+                        lookup[ec.PropertyName] = ec;
+                    perAliasLookup[alias] = lookup;
+                    // Also add to flat lookup for aggregate resolution
+                    foreach (var ec in je.Columns)
+                        colLookup[ec.PropertyName] = ec;
+                }
+            }
+            else if (entityRef != null && entityRef.Columns.Count > 0)
+            {
                 foreach (var ec in entityRef.Columns)
                     colLookup[ec.PropertyName] = ec;
+            }
+
+            if ((colLookup.Count > 0 || perAliasLookup != null) && rawProj.Columns.Count > 0)
+            {
 
                 var enrichedColumns = new List<ProjectedColumn>();
                 bool anyEnriched = false;
@@ -1182,8 +1206,21 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
 
                     // Regular columns with missing types
-                    if (string.IsNullOrWhiteSpace(col.ClrType) &&
-                        colLookup.TryGetValue(col.PropertyName, out var entityCol))
+                    ColumnInfo? entityCol = null;
+                    if (string.IsNullOrWhiteSpace(col.ClrType))
+                    {
+                        // Multi-entity: match by TableAlias + PropertyName
+                        if (isJoined && perAliasLookup != null && col.TableAlias != null)
+                        {
+                            if (perAliasLookup.TryGetValue(col.TableAlias, out var aliasLookup))
+                                aliasLookup.TryGetValue(col.PropertyName, out entityCol);
+                        }
+                        else
+                        {
+                            colLookup.TryGetValue(col.PropertyName, out entityCol);
+                        }
+                    }
+                    if (entityCol != null)
                     {
                         enrichedColumns.Add(new ProjectedColumn(
                             propertyName: col.PropertyName,
