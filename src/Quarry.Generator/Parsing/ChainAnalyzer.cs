@@ -341,6 +341,16 @@ internal static class ChainAnalyzer
             }
         }
 
+        // Default to identity projection (whole entity) when no Select clause was found
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+        }
+
         var plan = new QueryPlan(
             kind: queryKind,
             primaryTable: primaryTable,
