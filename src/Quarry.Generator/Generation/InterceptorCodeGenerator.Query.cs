@@ -323,11 +323,11 @@ internal static partial class InterceptorCodeGenerator
                 break;
 
             case InterceptorKind.RawSqlAsync:
-                GenerateRawSqlAsyncInterceptor(sb, site, methodName);
+                CodeGen.RawSqlBodyEmitter.EmitRawSqlAsync(sb, site, methodName);
                 break;
 
             case InterceptorKind.RawSqlScalarAsync:
-                GenerateRawSqlScalarAsyncInterceptor(sb, site, methodName);
+                CodeGen.RawSqlBodyEmitter.EmitRawSqlScalarAsync(sb, site, methodName);
                 break;
 
             case InterceptorKind.Limit:
