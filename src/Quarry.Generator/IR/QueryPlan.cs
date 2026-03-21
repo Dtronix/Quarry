@@ -91,7 +91,11 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SequenceEqual(SetTerms, other.SetTerms)
             && EqualityHelpers.SequenceEqual(InsertColumns, other.InsertColumns)
             && EqualityHelpers.SequenceEqual(ConditionalTerms, other.ConditionalTerms)
-            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters);
+            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
+            && EqualityHelpers.SqlExprSequenceEqual(GroupByExprs, other.GroupByExprs)
+            && EqualityHelpers.SqlExprSequenceEqual(HavingExprs, other.HavingExprs)
+            && EqualityHelpers.UlongSequenceEqual(PossibleMasks, other.PossibleMasks)
+            && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryPlan);

@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using NUnit.Framework;
 using Quarry.Generators.IR;
@@ -39,6 +40,87 @@ public class CallSiteTests
         var b = CreateRawCallSite("Where", "file.cs", 11, 5, "id1");
 
         Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentJoinedEntityTypeName_NotEqual()
+    {
+        var a = CreateRawCallSite("Join", "file.cs", 10, 5, "id1", joinedEntityTypeName: "Order");
+        var b = CreateRawCallSite("Join", "file.cs", 10, 5, "id1", joinedEntityTypeName: "Product");
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentNonAnalyzableReason_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", nonAnalyzableReason: "stored in variable");
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", nonAnalyzableReason: "inside loop");
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentInitializedPropertyNames_NotEqual()
+    {
+        var a = CreateRawCallSite("Insert", "file.cs", 10, 5, "id1",
+            initializedPropertyNames: ImmutableArray.Create("Name", "Age"));
+        var b = CreateRawCallSite("Insert", "file.cs", 10, 5, "id1",
+            initializedPropertyNames: ImmutableArray.Create("Name", "Email"));
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_SameInitializedPropertyNames_Equal()
+    {
+        var a = CreateRawCallSite("Insert", "file.cs", 10, 5, "id1",
+            initializedPropertyNames: ImmutableArray.Create("Age", "Name"));
+        var b = CreateRawCallSite("Insert", "file.cs", 10, 5, "id1",
+            initializedPropertyNames: ImmutableArray.Create("Age", "Name"));
+
+        Assert.That(a.Equals(b), Is.True);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentIsInsideLoop_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isInsideLoop: false);
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isInsideLoop: true);
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentChainId_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", chainId: "chain_0");
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", chainId: "chain_1");
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentConditionalInfo_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1",
+            conditionalInfo: new ConditionalInfo("x > 0", 1));
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1",
+            conditionalInfo: new ConditionalInfo("x < 0", 1));
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void ConditionalInfo_Equality()
+    {
+        var a = new ConditionalInfo("x > 0", 1, BranchKind.Independent);
+        var b = new ConditionalInfo("x > 0", 1, BranchKind.Independent);
+        var c = new ConditionalInfo("x > 0", 1, BranchKind.MutuallyExclusive);
+
+        Assert.That(a.Equals(b), Is.True);
+        Assert.That(a.GetHashCode(), Is.EqualTo(b.GetHashCode()));
+        Assert.That(a.Equals(c), Is.False);
     }
 
     #endregion
@@ -150,7 +232,16 @@ public class CallSiteTests
 
     #region Helpers
 
-    private static RawCallSite CreateRawCallSite(string methodName, string filePath, int line, int column, string uniqueId)
+    private static RawCallSite CreateRawCallSite(
+        string methodName, string filePath, int line, int column, string uniqueId,
+        string? joinedEntityTypeName = null,
+        string? nonAnalyzableReason = null,
+        ImmutableArray<string>? initializedPropertyNames = null,
+        bool isInsideLoop = false,
+        bool isInsideTryCatch = false,
+        bool isCapturedInLambda = false,
+        ConditionalInfo? conditionalInfo = null,
+        string? chainId = null)
     {
         return new RawCallSite(
             methodName: methodName,
@@ -162,11 +253,18 @@ public class CallSiteTests
             builderKind: BuilderKind.Query,
             entityTypeName: "TestApp.User",
             resultTypeName: null,
-            isAnalyzable: true,
-            nonAnalyzableReason: null,
+            isAnalyzable: nonAnalyzableReason == null,
+            nonAnalyzableReason: nonAnalyzableReason,
             interceptableLocationData: null,
             interceptableLocationVersion: 1,
-            location: default);
+            location: default,
+            joinedEntityTypeName: joinedEntityTypeName,
+            initializedPropertyNames: initializedPropertyNames,
+            isInsideLoop: isInsideLoop,
+            isInsideTryCatch: isInsideTryCatch,
+            isCapturedInLambda: isCapturedInLambda,
+            conditionalInfo: conditionalInfo,
+            chainId: chainId);
     }
 
     private static EntityInfo CreateTestEntity()

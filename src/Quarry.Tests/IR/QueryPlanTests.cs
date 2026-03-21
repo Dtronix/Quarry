@@ -1,6 +1,9 @@
+using System.Collections.Generic;
+using Microsoft.CodeAnalysis;
 using NUnit.Framework;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests.IR;
@@ -127,6 +130,89 @@ public class QueryPlanTests
         Assert.That(plan1.Equals(plan2), Is.False);
     }
 
+    [Test]
+    public void QueryPlan_DifferentGroupByExprs_NotEqual()
+    {
+        var plan1 = CreateSimpleSelectPlan(groupByExprs: new SqlExpr[] { new ResolvedColumnExpr("\"name\"") });
+        var plan2 = CreateSimpleSelectPlan(groupByExprs: new SqlExpr[] { new ResolvedColumnExpr("\"age\"") });
+
+        Assert.That(plan1.Equals(plan2), Is.False);
+    }
+
+    [Test]
+    public void QueryPlan_DifferentHavingExprs_NotEqual()
+    {
+        var having1 = new BinaryOpExpr(new ResolvedColumnExpr("\"count\""), SqlBinaryOperator.GreaterThan, new LiteralExpr("5", "int"));
+        var having2 = new BinaryOpExpr(new ResolvedColumnExpr("\"count\""), SqlBinaryOperator.GreaterThan, new LiteralExpr("10", "int"));
+
+        var plan1 = CreateSimpleSelectPlan(havingExprs: new SqlExpr[] { having1 });
+        var plan2 = CreateSimpleSelectPlan(havingExprs: new SqlExpr[] { having2 });
+
+        Assert.That(plan1.Equals(plan2), Is.False);
+    }
+
+    [Test]
+    public void QueryPlan_DifferentPossibleMasks_NotEqual()
+    {
+        var plan1 = CreateSimpleSelectPlan(possibleMasks: new ulong[] { 0, 1 });
+        var plan2 = CreateSimpleSelectPlan(possibleMasks: new ulong[] { 0, 1, 2, 3 });
+
+        Assert.That(plan1.Equals(plan2), Is.False);
+    }
+
+    [Test]
+    public void QueryPlan_DifferentUnmatchedMethodNames_NotEqual()
+    {
+        var plan1 = CreateSimpleSelectPlan(unmatchedMethodNames: new[] { "AddWhereClause" });
+        var plan2 = CreateSimpleSelectPlan(unmatchedMethodNames: null);
+
+        Assert.That(plan1.Equals(plan2), Is.False);
+    }
+
+    #endregion
+
+    #region AssembledPlan Equality Tests
+
+    [Test]
+    public void AssembledPlan_DifferentSqlVariants_NotEqual()
+    {
+        var plan = CreateSimpleSelectPlan();
+        var raw = CreateMinimalRaw();
+        var entity = Generators.IR.EntityRef.FromEntityInfo(CreateTestEntity());
+        var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
+        var site = new TranslatedCallSite(bound);
+
+        var variants1 = new Dictionary<ulong, AssembledSqlVariant>
+        {
+            { 0, new AssembledSqlVariant("SELECT * FROM users", 0) }
+        };
+        var variants2 = new Dictionary<ulong, AssembledSqlVariant>
+        {
+            { 0, new AssembledSqlVariant("SELECT * FROM users WHERE age > 18", 1) }
+        };
+
+        var a = new AssembledPlan(plan, variants1, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL);
+        var b = new AssembledPlan(plan, variants2, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL);
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void AssembledPlan_DifferentEntitySchemaNamespace_NotEqual()
+    {
+        var plan = CreateSimpleSelectPlan();
+        var raw = CreateMinimalRaw();
+        var entity = Generators.IR.EntityRef.FromEntityInfo(CreateTestEntity());
+        var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
+        var site = new TranslatedCallSite(bound);
+        var variants = new Dictionary<ulong, AssembledSqlVariant>();
+
+        var a = new AssembledPlan(plan, variants, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL, entitySchemaNamespace: "App.Schema");
+        var b = new AssembledPlan(plan, variants, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL, entitySchemaNamespace: "App.Models");
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
     #endregion
 
     #region AssembledSqlVariant Tests
@@ -174,7 +260,12 @@ public class QueryPlanTests
 
     #endregion
 
-    private static Quarry.Generators.IR.QueryPlan CreateSimpleSelectPlan(string whereColumn = "age")
+    private static Quarry.Generators.IR.QueryPlan CreateSimpleSelectPlan(
+        string whereColumn = "age",
+        IReadOnlyList<SqlExpr>? groupByExprs = null,
+        IReadOnlyList<SqlExpr>? havingExprs = null,
+        IReadOnlyList<ulong>? possibleMasks = null,
+        IReadOnlyList<string>? unmatchedMethodNames = null)
     {
         var table = new TableRef("users");
         var whereExpr = new BinaryOpExpr(
@@ -188,8 +279,8 @@ public class QueryPlanTests
             joins: System.Array.Empty<JoinPlan>(),
             whereTerms: new[] { new WhereTerm(whereExpr) },
             orderTerms: System.Array.Empty<OrderTerm>(),
-            groupByExprs: System.Array.Empty<SqlExpr>(),
-            havingExprs: System.Array.Empty<SqlExpr>(),
+            groupByExprs: groupByExprs ?? System.Array.Empty<SqlExpr>(),
+            havingExprs: havingExprs ?? System.Array.Empty<SqlExpr>(),
             projection: new SelectProjection(ProjectionKind.Entity, "User",
                 System.Array.Empty<ProjectedColumn>(), isIdentity: true),
             pagination: null,
@@ -197,8 +288,47 @@ public class QueryPlanTests
             setTerms: System.Array.Empty<SetTerm>(),
             insertColumns: System.Array.Empty<InsertColumn>(),
             conditionalTerms: System.Array.Empty<ConditionalTerm>(),
-            possibleMasks: System.Array.Empty<ulong>(),
+            possibleMasks: possibleMasks ?? System.Array.Empty<ulong>(),
             parameters: System.Array.Empty<QueryParameter>(),
-            tier: Quarry.Generators.Models.OptimizationTier.PrebuiltDispatch);
+            tier: Quarry.Generators.Models.OptimizationTier.PrebuiltDispatch,
+            unmatchedMethodNames: unmatchedMethodNames);
+    }
+
+    private static RawCallSite CreateMinimalRaw()
+    {
+        return new RawCallSite(
+            methodName: "ExecuteFetchAllAsync",
+            filePath: "test.cs",
+            line: 1,
+            column: 1,
+            uniqueId: "test_id",
+            kind: InterceptorKind.ExecuteFetchAll,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: default);
+    }
+
+    private static EntityInfo CreateTestEntity()
+    {
+        var mods = new ColumnModifiers();
+        return new EntityInfo(
+            entityName: "User",
+            schemaClassName: "UserSchema",
+            schemaNamespace: "TestApp.Schema",
+            tableName: "users",
+            namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[]
+            {
+                new ColumnInfo("Name", "name", "string", "string", false, ColumnKind.Standard, null, mods),
+                new ColumnInfo("Age", "age", "int", "int", false, ColumnKind.Standard, null, mods, isValueType: true),
+            },
+            navigations: System.Array.Empty<NavigationInfo>(),
+            indexes: System.Array.Empty<IndexInfo>(),
+            location: Microsoft.CodeAnalysis.Location.None);
     }
 }

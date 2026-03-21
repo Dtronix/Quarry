@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.IR;
@@ -31,11 +32,17 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isDescending = false,
         ProjectionInfo? projectionInfo = null,
         string? joinedEntityTypeName = null,
-        HashSet<string>? initializedPropertyNames = null,
+        ImmutableArray<string>? initializedPropertyNames = null,
         int? constantIntValue = null,
         bool isNavigationJoin = false,
         string? contextClassName = null,
-        string? contextNamespace = null)
+        string? contextNamespace = null,
+        bool isInsideLoop = false,
+        bool isInsideTryCatch = false,
+        bool isCapturedInLambda = false,
+        ConditionalInfo? conditionalInfo = null,
+        string? chainId = null,
+        string? builderTypeName = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -61,6 +68,12 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsNavigationJoin = isNavigationJoin;
         ContextClassName = contextClassName;
         ContextNamespace = contextNamespace;
+        IsInsideLoop = isInsideLoop;
+        IsInsideTryCatch = isInsideTryCatch;
+        IsCapturedInLambda = isCapturedInLambda;
+        ConditionalInfo = conditionalInfo;
+        ChainId = chainId;
+        BuilderTypeName = builderTypeName;
     }
 
     // Identity and location
@@ -88,8 +101,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Join-specific
     public string? JoinedEntityTypeName { get; }
 
-    // Insert-specific
-    public HashSet<string>? InitializedPropertyNames { get; }
+    // Insert-specific (sorted at construction for deterministic equality)
+    public ImmutableArray<string>? InitializedPropertyNames { get; }
 
     // Pagination
     public int? ConstantIntValue { get; }
@@ -100,6 +113,16 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Context info (resolved during discovery for chain root sites)
     public string? ContextClassName { get; }
     public string? ContextNamespace { get; }
+
+    // Chain analysis support (detected during discovery where SemanticModel is available)
+    public bool IsInsideLoop { get; }
+    public bool IsInsideTryCatch { get; }
+    public bool IsCapturedInLambda { get; }
+    public ConditionalInfo? ConditionalInfo { get; }
+    public string? ChainId { get; }
+
+    // Builder type name for codegen
+    public string? BuilderTypeName { get; }
 
     public bool Equals(RawCallSite? other)
     {
@@ -115,6 +138,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EntityTypeName == other.EntityTypeName
             && ResultTypeName == other.ResultTypeName
             && IsAnalyzable == other.IsAnalyzable
+            && NonAnalyzableReason == other.NonAnalyzableReason
             && InterceptableLocationData == other.InterceptableLocationData
             && InterceptableLocationVersion == other.InterceptableLocationVersion
             && IsDescending == other.IsDescending
@@ -122,8 +146,17 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && IsNavigationJoin == other.IsNavigationJoin
             && ContextClassName == other.ContextClassName
             && ContextNamespace == other.ContextNamespace
+            && JoinedEntityTypeName == other.JoinedEntityTypeName
+            && ClauseKind == other.ClauseKind
+            && IsInsideLoop == other.IsInsideLoop
+            && IsInsideTryCatch == other.IsInsideTryCatch
+            && IsCapturedInLambda == other.IsCapturedInLambda
+            && ChainId == other.ChainId
+            && BuilderTypeName == other.BuilderTypeName
             && Equals(Expression, other.Expression)
-            && Equals(ProjectionInfo, other.ProjectionInfo);
+            && Equals(ProjectionInfo, other.ProjectionInfo)
+            && Equals(ConditionalInfo, other.ConditionalInfo)
+            && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);
@@ -132,4 +165,48 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     {
         return HashCode.Combine(UniqueId, MethodName, FilePath, Line, Column);
     }
+
+    private static bool ImmutableArrayEqual(ImmutableArray<string>? a, ImmutableArray<string>? b)
+    {
+        if (!a.HasValue && !b.HasValue) return true;
+        if (!a.HasValue || !b.HasValue) return false;
+        var arrA = a.Value;
+        var arrB = b.Value;
+        if (arrA.Length != arrB.Length) return false;
+        for (int i = 0; i < arrA.Length; i++)
+        {
+            if (arrA[i] != arrB[i]) return false;
+        }
+        return true;
+    }
+}
+
+/// <summary>
+/// Records whether a call site is inside a conditional branch (if/else or ternary).
+/// Used by ChainAnalyzer to assign bitmask indices for conditional clause dispatch.
+/// </summary>
+internal sealed class ConditionalInfo : IEquatable<ConditionalInfo>
+{
+    public ConditionalInfo(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent)
+    {
+        ConditionText = conditionText;
+        NestingDepth = nestingDepth;
+        BranchKind = branchKind;
+    }
+
+    public string ConditionText { get; }
+    public int NestingDepth { get; }
+    public BranchKind BranchKind { get; }
+
+    public bool Equals(ConditionalInfo? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return ConditionText == other.ConditionText
+            && NestingDepth == other.NestingDepth
+            && BranchKind == other.BranchKind;
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as ConditionalInfo);
+    public override int GetHashCode() => HashCode.Combine(ConditionText, NestingDepth, BranchKind);
 }

@@ -56,7 +56,9 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             && ResultTypeName == other.ResultTypeName
             && Dialect == other.Dialect
             && MaxParameterCount == other.MaxParameterCount
-            && ReaderDelegateCode == other.ReaderDelegateCode;
+            && ReaderDelegateCode == other.ReaderDelegateCode
+            && EntitySchemaNamespace == other.EntitySchemaNamespace
+            && EqualityHelpers.DictionaryEqual(SqlVariants, other.SqlVariants);
     }
 
     public override bool Equals(object? obj) => Equals(obj as AssembledPlan);
