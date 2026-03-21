@@ -1899,4 +1899,207 @@ public class MigrationRunnerIntegrationTests
         var result = await cmd.ExecuteScalarAsync();
         Assert.That(result, Is.EqualTo("users"));
     }
+
+    [Test]
+    public async Task RunAsync_BeforeEachAndAfterEach_CalledDuringUpgrade()
+    {
+        var beforeCalls = new List<(int Version, string Name)>();
+        var afterCalls = new List<(int Version, string Name, TimeSpan Elapsed)>();
+
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { }),
+            (2, "CreatePosts",
+                b => b.CreateTable("posts", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_posts", "id");
+                }),
+                b => b.DropTable("posts"),
+                _ => { })
+        };
+
+        var options = new MigrationOptions
+        {
+            BeforeEach = (version, name, conn) =>
+            {
+                beforeCalls.Add((version, name));
+                return Task.CompletedTask;
+            },
+            AfterEach = (version, name, elapsed, conn) =>
+            {
+                afterCalls.Add((version, name, elapsed));
+                return Task.CompletedTask;
+            }
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations, options);
+
+        Assert.That(beforeCalls, Has.Count.EqualTo(2));
+        Assert.That(beforeCalls[0].Version, Is.EqualTo(1));
+        Assert.That(beforeCalls[1].Version, Is.EqualTo(2));
+        Assert.That(afterCalls, Has.Count.EqualTo(2));
+        Assert.That(afterCalls[0].Version, Is.EqualTo(1));
+        Assert.That(afterCalls[1].Version, Is.EqualTo(2));
+        Assert.That(afterCalls[0].Elapsed, Is.GreaterThan(TimeSpan.Zero));
+    }
+
+    [Test]
+    public async Task RunAsync_BeforeEachAndAfterEach_CalledDuringRollback()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        // First apply the migration
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations);
+
+        // Now rollback with hooks
+        var beforeCalls = new List<(int Version, string Name)>();
+        var afterCalls = new List<(int Version, string Name, TimeSpan Elapsed)>();
+
+        var options = new MigrationOptions
+        {
+            Direction = MigrationDirection.Downgrade,
+            BeforeEach = (version, name, conn) =>
+            {
+                beforeCalls.Add((version, name));
+                return Task.CompletedTask;
+            },
+            AfterEach = (version, name, elapsed, conn) =>
+            {
+                afterCalls.Add((version, name, elapsed));
+                return Task.CompletedTask;
+            }
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations, options);
+
+        Assert.That(beforeCalls, Has.Count.EqualTo(1));
+        Assert.That(beforeCalls[0].Version, Is.EqualTo(1));
+        Assert.That(beforeCalls[0].Name, Is.EqualTo("CreateUsers"));
+        Assert.That(afterCalls, Has.Count.EqualTo(1));
+        Assert.That(afterCalls[0].Version, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task RunAsync_OnError_CalledOnFailure()
+    {
+        var errorCalls = new List<(int Version, string Name, Exception Ex)>();
+
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "BadMigration",
+                b => b.Sql("INVALID SQL STATEMENT THAT WILL FAIL"),
+                b => { },
+                _ => { })
+        };
+
+        var options = new MigrationOptions
+        {
+            OnError = (version, name, ex, conn) =>
+            {
+                errorCalls.Add((version, name, ex));
+                return Task.CompletedTask;
+            }
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations, options));
+
+        Assert.That(errorCalls, Has.Count.EqualTo(1));
+        Assert.That(errorCalls[0].Version, Is.EqualTo(1));
+        Assert.That(errorCalls[0].Name, Is.EqualTo("BadMigration"));
+    }
+
+    [Test]
+    public async Task RunAsync_DryRun_SkipsHooks()
+    {
+        var hookCalled = false;
+
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { })
+        };
+
+        var options = new MigrationOptions
+        {
+            DryRun = true,
+            BeforeEach = (version, name, conn) =>
+            {
+                hookCalled = true;
+                return Task.CompletedTask;
+            },
+            AfterEach = (version, name, elapsed, conn) =>
+            {
+                hookCalled = true;
+                return Task.CompletedTask;
+            }
+        };
+
+        await MigrationRunner.RunAsync(_connection, _dialect, migrations, options);
+
+        Assert.That(hookCalled, Is.False);
+    }
+
+    [Test]
+    public async Task RunAsync_OnErrorThrows_RollbackStillHappensAndOriginalExceptionPropagates()
+    {
+        var migrations = new (int, string, Action<MigrationBuilder>, Action<MigrationBuilder>, Action<MigrationBuilder>)[]
+        {
+            (1, "CreateUsers",
+                b => b.CreateTable("users", null, t =>
+                {
+                    t.Column("id", c => c.ClrType("int").NotNull());
+                    t.PrimaryKey("PK_users", "id");
+                }),
+                b => b.DropTable("users"),
+                _ => { }),
+            (2, "BadMigration",
+                b => b.Sql("INVALID SQL STATEMENT THAT WILL FAIL"),
+                b => { },
+                _ => { })
+        };
+
+        var options = new MigrationOptions
+        {
+            OnError = (version, name, ex, conn) =>
+                throw new InvalidOperationException("Hook exploded")
+        };
+
+        var thrown = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await MigrationRunner.RunAsync(_connection, _dialect, migrations, options));
+
+        // Original migration exception propagates, not the hook exception
+        Assert.That(thrown!.Message, Does.Contain("BadMigration"));
+        Assert.That(thrown.Message, Does.Contain("failed during upgrade"));
+
+        // Migration 1 was committed before the failure, so users table should exist
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name='users';";
+        var result = await cmd.ExecuteScalarAsync();
+        Assert.That(result, Is.EqualTo("users"));
+    }
 }

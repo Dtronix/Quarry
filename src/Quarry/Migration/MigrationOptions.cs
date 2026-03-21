@@ -1,4 +1,6 @@
 using System;
+using System.Data.Common;
+using System.Threading.Tasks;
 
 namespace Quarry.Migration;
 
@@ -27,4 +29,13 @@ public sealed class MigrationOptions
 
     /// <summary>Lock acquisition timeout. Emits SET LOCK_TIMEOUT / SET statement_timeout before DDL.</summary>
     public TimeSpan? LockTimeout { get; set; }
+
+    /// <summary>Called before each migration is applied or rolled back. Parameters: version, name, connection.</summary>
+    public Func<int, string, DbConnection, Task>? BeforeEach { get; set; }
+
+    /// <summary>Called after each migration is successfully applied or rolled back. Parameters: version, name, elapsed time, connection.</summary>
+    public Func<int, string, TimeSpan, DbConnection, Task>? AfterEach { get; set; }
+
+    /// <summary>Called when a migration fails, before rollback. Parameters: version, name, exception, connection.</summary>
+    public Func<int, string, Exception, DbConnection, Task>? OnError { get; set; }
 }
