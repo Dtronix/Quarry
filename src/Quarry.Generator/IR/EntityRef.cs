@@ -37,6 +37,20 @@ internal sealed class EntityRef : IEquatable<EntityRef>
     public string? CustomEntityReaderClass { get; }
 
     /// <summary>
+    /// Creates a minimal empty EntityRef for unresolved entities.
+    /// </summary>
+    public static EntityRef Empty(string entityTypeName)
+    {
+        return new EntityRef(
+            entityTypeName,
+            "",
+            schemaName: null,
+            "",
+            System.Array.Empty<ColumnInfo>(),
+            System.Array.Empty<NavigationInfo>());
+    }
+
+    /// <summary>
     /// Creates an EntityRef from an EntityInfo.
     /// </summary>
     public static EntityRef FromEntityInfo(EntityInfo entity)
