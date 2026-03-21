@@ -313,11 +313,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         ct.ThrowIfCancellationRequested();
 
-        // Build a lookup from entity type name to EntityInfo
-        var entityLookup = BuildEntityLookup(contexts);
+        // Build EntityRegistry from all contexts — single source of entity metadata
+        var registry = IR.EntityRegistry.Build(contexts, ct);
 
-        // Build entity registry (entityName → EntityInfo) for subquery resolution
-        var entityRegistry = BuildEntityRegistry(contexts);
+        // Derive old-style lookups from registry for backward compatibility
+        var entityLookup = BuildEntityLookup(contexts);
+        var entityRegistry = registry.ToEntityLookup();
 
         // Collect diagnostics for non-analyzable queries and anonymous type projections
         var diagnostics = new List<DiagnosticInfo>();
