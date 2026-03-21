@@ -65,14 +65,30 @@ public class MigrationBuilderViewProcedureTests
         Assert.That(sql, Does.Contain("active_users").IgnoreCase);
     }
 
+    [TestCase(SqlDialect.SQLite)]
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void DropView_WithSchema_IncludesSchema(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var builder = new MigrationBuilder();
+
+        builder.DropView("active_users", schema: "reporting");
+
+        var sql = builder.BuildSql(dialect);
+
+        Assert.That(sql, Does.Contain("DROP VIEW"));
+        Assert.That(sql, Does.Contain("reporting").IgnoreCase);
+    }
+
     #endregion
 
     #region AlterView
 
     [TestCase(SqlDialect.PostgreSQL)]
     [TestCase(SqlDialect.MySQL)]
-    [TestCase(SqlDialect.SQLite)]
-    public void AlterView_PostgreSQL_MySQL_SQLite_EmitsCreateOrReplace(SqlDialect dialectType)
+    public void AlterView_PostgreSQL_MySQL_EmitsCreateOrReplace(SqlDialect dialectType)
     {
         var dialect = SqlDialectFactory.GetDialect(dialectType);
         var builder = new MigrationBuilder();
@@ -84,6 +100,22 @@ public class MigrationBuilderViewProcedureTests
 
         Assert.That(sql, Does.Contain("CREATE OR REPLACE VIEW"));
         Assert.That(sql, Does.Contain("active_users").IgnoreCase);
+    }
+
+    [Test]
+    public void AlterView_SQLite_EmitsDropAndCreate()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SQLite);
+        var builder = new MigrationBuilder();
+
+        builder.AlterView("active_users",
+            "SELECT user_id, user_name FROM users WHERE is_active = 1 AND verified = 1");
+
+        var sql = builder.BuildSql(dialect);
+
+        Assert.That(sql, Does.Contain("DROP VIEW IF EXISTS"));
+        Assert.That(sql, Does.Contain("CREATE VIEW"));
+        Assert.That(sql, Does.Not.Contain("CREATE OR REPLACE"));
     }
 
     [Test]
@@ -99,6 +131,23 @@ public class MigrationBuilderViewProcedureTests
 
         Assert.That(sql, Does.Contain("ALTER VIEW"));
         Assert.That(sql, Does.Not.Contain("CREATE OR REPLACE"));
+    }
+
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void AlterView_WithSchema_IncludesSchema(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var builder = new MigrationBuilder();
+
+        builder.AlterView("active_users",
+            "SELECT user_id FROM users",
+            schema: "reporting");
+
+        var sql = builder.BuildSql(dialect);
+
+        Assert.That(sql, Does.Contain("reporting").IgnoreCase);
     }
 
     #endregion
@@ -241,16 +290,47 @@ public class MigrationBuilderViewProcedureTests
         Assert.Throws<NotSupportedException>(() => builder.BuildSql(dialect));
     }
 
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void AlterProcedure_WithSchema_IncludesSchema(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var builder = new MigrationBuilder();
+
+        builder.AlterProcedure("deactivate_user",
+            "AS BEGIN UPDATE users SET is_active = 0 END",
+            schema: "admin");
+
+        var sql = builder.BuildSql(dialect);
+
+        Assert.That(sql, Does.Contain("admin").IgnoreCase);
+    }
+
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void DropProcedure_WithSchema_IncludesSchema(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var builder = new MigrationBuilder();
+
+        builder.DropProcedure("deactivate_user", schema: "admin");
+
+        var sql = builder.BuildSql(dialect);
+
+        Assert.That(sql, Does.Contain("DROP PROCEDURE"));
+        Assert.That(sql, Does.Contain("admin").IgnoreCase);
+    }
+
     #endregion
 
     #region Idempotent Views
 
-    [TestCase(SqlDialect.SQLite)]
-    [TestCase(SqlDialect.PostgreSQL)]
-    [TestCase(SqlDialect.MySQL)]
-    public void Idempotent_CreateView_NonSqlServer_EmitsIfNotExists(SqlDialect dialectType)
+    [Test]
+    public void Idempotent_CreateView_SQLite_EmitsIfNotExists()
     {
-        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SQLite);
         var builder = new MigrationBuilder();
 
         builder.CreateView("active_users", "SELECT 1 FROM users");
@@ -260,8 +340,22 @@ public class MigrationBuilderViewProcedureTests
         Assert.That(sql, Does.Contain("CREATE VIEW IF NOT EXISTS"));
     }
 
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    public void Idempotent_CreateView_PostgreSQL_MySQL_EmitsCreateOrReplace(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var builder = new MigrationBuilder();
+
+        builder.CreateView("active_users", "SELECT 1 FROM users");
+
+        var sql = builder.BuildIdempotentSql(dialect);
+
+        Assert.That(sql, Does.Contain("CREATE OR REPLACE VIEW"));
+    }
+
     [Test]
-    public void Idempotent_CreateView_SqlServer_EmitsSysViewsCheck()
+    public void Idempotent_CreateView_SqlServer_EmitsCreateOrAlter()
     {
         var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
         var builder = new MigrationBuilder();
@@ -270,8 +364,7 @@ public class MigrationBuilderViewProcedureTests
 
         var sql = builder.BuildIdempotentSql(dialect);
 
-        Assert.That(sql, Does.Contain("IF NOT EXISTS"));
-        Assert.That(sql, Does.Contain("sys.views"));
+        Assert.That(sql, Does.Contain("CREATE OR ALTER VIEW"));
     }
 
     [TestCase(SqlDialect.SQLite)]

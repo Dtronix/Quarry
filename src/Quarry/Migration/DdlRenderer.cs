@@ -675,17 +675,22 @@ internal static class DdlRenderer
             {
                 case SqlDialect.PostgreSQL:
                 case SqlDialect.MySQL:
+                    // PostgreSQL and MySQL support CREATE OR REPLACE VIEW (not IF NOT EXISTS)
+                    sb.Append("CREATE OR REPLACE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    sb.AppendLine(" AS");
+                    sb.AppendLine(op.Sql + ";");
+                    return;
                 case SqlDialect.SQLite:
+                    // SQLite supports CREATE VIEW IF NOT EXISTS (but not CREATE OR REPLACE VIEW)
                     sb.Append("CREATE VIEW IF NOT EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect));
                     sb.AppendLine(" AS");
                     sb.AppendLine(op.Sql + ";");
                     return;
                 case SqlDialect.SqlServer:
-                    sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = '")
-                        .Append(op.Name).AppendLine("')");
-                    sb.Append("EXEC('CREATE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                    // SQL Server 2016 SP1+ supports CREATE OR ALTER VIEW
+                    sb.Append("CREATE OR ALTER VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
                     sb.AppendLine(" AS");
-                    sb.AppendLine(op.Sql.Replace("'", "''") + "');");
+                    sb.AppendLine(op.Sql + ";");
                     return;
             }
         }
@@ -721,9 +726,15 @@ internal static class DdlRenderer
         {
             case SqlDialect.PostgreSQL:
             case SqlDialect.MySQL:
-            case SqlDialect.SQLite:
-                // These dialects support CREATE OR REPLACE VIEW
+                // PostgreSQL and MySQL support CREATE OR REPLACE VIEW
                 sb.Append("CREATE OR REPLACE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
+                sb.AppendLine(" AS");
+                sb.AppendLine(op.Sql + ";");
+                break;
+            case SqlDialect.SQLite:
+                // SQLite does not support CREATE OR REPLACE VIEW; use DROP + CREATE
+                sb.Append("DROP VIEW IF EXISTS ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
+                sb.Append("CREATE VIEW ").Append(FormatTable(op.Name, op.Schema, dialect));
                 sb.AppendLine(" AS");
                 sb.AppendLine(op.Sql + ";");
                 break;
