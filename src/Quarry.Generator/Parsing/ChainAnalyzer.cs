@@ -383,7 +383,10 @@ internal static class ChainAnalyzer
                 elementTypeName: p.CollectionElementType,
                 typeMappingClass: p.CustomTypeMappingClass,
                 isEnum: p.IsEnum,
-                enumUnderlyingType: p.EnumUnderlyingType));
+                enumUnderlyingType: p.EnumUnderlyingType,
+                needsFieldInfoCache: p.IsCaptured && p.CanGenerateDirectPath,
+                isDirectAccessible: false, // Computed during carrier analysis
+                collectionAccessExpression: null)); // Computed during carrier analysis
         }
         return result;
     }
