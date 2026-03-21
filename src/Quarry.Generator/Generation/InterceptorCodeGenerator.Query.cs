@@ -333,37 +333,37 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.Limit:
             case InterceptorKind.Offset:
                 if (carrierInfo != null && carrierChain != null)
-                    GenerateCarrierPaginationInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                    CodeGen.TransitionBodyEmitter.EmitPagination(sb, site, methodName, carrierInfo, carrierChain);
                 break;
 
             case InterceptorKind.Distinct:
                 if (carrierInfo != null && carrierChain != null)
-                    GenerateCarrierDistinctInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                    CodeGen.TransitionBodyEmitter.EmitDistinct(sb, site, methodName, carrierInfo, carrierChain);
                 break;
 
             case InterceptorKind.WithTimeout:
                 if (carrierInfo != null && carrierChain != null)
-                    GenerateCarrierWithTimeoutInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                    CodeGen.TransitionBodyEmitter.EmitWithTimeout(sb, site, methodName, carrierInfo, carrierChain);
                 break;
 
             case InterceptorKind.ChainRoot:
                 if (carrierInfo != null && carrierChain != null)
-                    GenerateCarrierChainRootInterceptor(sb, site, methodName, carrierInfo, carrierChain);
+                    CodeGen.TransitionBodyEmitter.EmitChainRoot(sb, site, methodName, carrierInfo);
                 break;
 
             case InterceptorKind.DeleteTransition:
             case InterceptorKind.UpdateTransition:
                 if (carrierInfo != null)
-                    GenerateCarrierTransitionInterceptor(sb, site, methodName);
+                    CodeGen.TransitionBodyEmitter.EmitDeleteUpdateTransition(sb, site, methodName);
                 break;
 
             case InterceptorKind.InsertTransition:
                 if (carrierInfo != null)
-                    GenerateCarrierInsertTransitionInterceptor(sb, site, methodName, carrierInfo);
+                    CodeGen.TransitionBodyEmitter.EmitInsertTransition(sb, site, methodName, carrierInfo);
                 break;
 
             case InterceptorKind.AllTransition:
-                GenerateAllTransitionInterceptor(sb, site, methodName, carrierInfo);
+                CodeGen.TransitionBodyEmitter.EmitAllTransition(sb, site, methodName, carrierInfo);
                 break;
 
             default:

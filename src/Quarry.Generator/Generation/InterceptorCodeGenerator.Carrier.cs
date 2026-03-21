@@ -162,184 +162,15 @@ internal static partial class InterceptorCodeGenerator
         };
     }
 
-    /// <summary>
-    /// Generates a carrier ChainRoot interceptor (e.g., db.Users()).
-    /// Creates the carrier directly from the context — zero QueryBuilder allocation.
-    /// </summary>
-    private static void GenerateCarrierChainRootInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo chain)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var contextClass = site.ContextClassName ?? "QuarryContext";
 
-        // Return type matches the context method: IEntityAccessor<T>
-        sb.AppendLine($"    public static IEntityAccessor<{entityType}> {methodName}(");
-        sb.AppendLine($"        this {contextClass} @this)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = (IQueryExecutionContext)@this }};");
-        sb.AppendLine($"    }}");
-    }
 
-    /// <summary>
-    /// Generates a carrier Delete/Update transition interceptor.
-    /// .Delete()/.Update() on IEntityAccessor is a noop on the carrier path —
-    /// the carrier already implements both IEntityAccessor and IDeleteBuilder/IUpdateBuilder.
-    /// </summary>
-    private static void GenerateCarrierTransitionInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var returnType = site.Kind == InterceptorKind.DeleteTransition
-            ? $"IDeleteBuilder<{entityType}>"
-            : $"IUpdateBuilder<{entityType}>";
-
-        sb.AppendLine($"    public static {returnType} {methodName}(");
-        sb.AppendLine($"        this IEntityAccessor<{entityType}> builder)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Generates a carrier Insert transition interceptor.
-    /// .Insert(entity) on IEntityAccessor stores the entity on the carrier and
-    /// returns it as IInsertBuilder.
-    /// </summary>
-    private static void GenerateCarrierInsertTransitionInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName, CarrierClassInfo carrier)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-
-        sb.AppendLine($"    public static IInsertBuilder<{entityType}> {methodName}(");
-        sb.AppendLine($"        this IEntityAccessor<{entityType}> builder,");
-        sb.AppendLine($"        {entityType} entity)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-        sb.AppendLine($"        __c.Entity = entity;");
-        sb.AppendLine($"        return Unsafe.As<IInsertBuilder<{entityType}>>(__c);");
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Generates an All() transition interceptor.
-    /// .All() on IDeleteBuilder/IUpdateBuilder transitions to IExecutableDeleteBuilder/IExecutableUpdateBuilder.
-    /// On the carrier path: noop cast (carrier implements both interfaces).
-    /// On the non-carrier path: delegates to the real All() method.
-    /// </summary>
-    private static void GenerateAllTransitionInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo? carrier)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        // Determine receiver and return types based on builder kind
-        var isDelete = site.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete;
-        var receiverType = isDelete
-            ? $"IDeleteBuilder<{entityType}>"
-            : $"IUpdateBuilder<{entityType}>";
-        var returnType = isDelete
-            ? $"IExecutableDeleteBuilder<{entityType}>"
-            : $"IExecutableUpdateBuilder<{entityType}>";
-        var concreteType = isDelete
-            ? $"DeleteBuilder<{entityType}>"
-            : $"UpdateBuilder<{entityType}>";
-
-        sb.AppendLine($"    public static {returnType} {methodName}(");
-        sb.AppendLine($"        this {receiverType} builder)");
-        sb.AppendLine($"    {{");
-
-        if (carrier != null)
-        {
-            // Carrier path: noop cast
-            sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
-        }
-        else
-        {
-            // Non-carrier path: delegate to the real All() method
-            sb.AppendLine($"        return Unsafe.As<{concreteType}>(builder).All();");
-        }
-
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Generates a carrier Limit/Offset interceptor method.
-    /// </summary>
-    private static void GenerateCarrierPaginationInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo chain)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
-
-        sb.AppendLine($"    public static {receiverType} {methodName}(");
-        sb.AppendLine($"        this {receiverType} builder, int count)");
-        sb.AppendLine($"    {{");
-
-        var fieldName = site.Kind == InterceptorKind.Limit ? "Limit" : "Offset";
-
-        // Check if this is a runtime value (carrier has the field) or constant (noop)
-        if (HasCarrierField(carrier, site.Kind == InterceptorKind.Limit ? FieldRole.Limit : FieldRole.Offset))
-        {
-            sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).{fieldName} = count;");
-        }
-
-        sb.AppendLine($"        return builder;");
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Generates a carrier Distinct interceptor method (always noop — Distinct is baked into SQL).
-    /// </summary>
-    private static void GenerateCarrierDistinctInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
-        // IEntityAccessor<T>.Distinct() returns IQueryBuilder<T>, not IEntityAccessor<T>
-        var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
-            ? $"IQueryBuilder<{entityType}>" : receiverType;
-
-        sb.AppendLine($"    public static {returnTypeName} {methodName}(");
-        sb.AppendLine($"        this {receiverType} builder)");
-        sb.AppendLine($"    {{");
-        if (returnTypeName != receiverType)
-            sb.AppendLine($"        return Unsafe.As<{returnTypeName}>(builder);");
-        else
-            sb.AppendLine($"        return builder;");
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Generates a carrier WithTimeout interceptor method.
-    /// </summary>
-    private static void GenerateCarrierWithTimeoutInterceptor(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
-    {
-        var entityType = GetShortTypeName(site.EntityTypeName);
-        var receiverType = ResolveCarrierReceiverType(site, entityType, chain);
-
-        sb.AppendLine($"    public static {receiverType} {methodName}(");
-        sb.AppendLine($"        this {receiverType} builder, TimeSpan timeout)");
-        sb.AppendLine($"    {{");
-
-        if (HasCarrierField(carrier, FieldRole.Timeout))
-        {
-            sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).Timeout = timeout;");
-        }
-
-        sb.AppendLine($"        return builder;");
-        sb.AppendLine($"    }}");
-    }
 
     /// <summary>
     /// Resolves the receiver interface type for a carrier interceptor method.
     /// Uses the chain's resolved result type (via ProjectionInfo) to avoid broken tuple types
     /// from the semantic model on non-clause sites like Limit/Offset.
     /// </summary>
-    private static string ResolveCarrierReceiverType(UsageSiteInfo site, string entityType, PrebuiltChainInfo? chain = null)
+    internal static string ResolveCarrierReceiverType(UsageSiteInfo site, string entityType, PrebuiltChainInfo? chain = null)
     {
         // If the site's receiver is IEntityAccessor, use that as the receiver type
         if (site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor")
@@ -1036,7 +867,7 @@ internal static partial class InterceptorCodeGenerator
         }
     }
 
-    private static bool HasCarrierField(CarrierClassInfo carrier, FieldRole role)
+    internal static bool HasCarrierField(CarrierClassInfo carrier, FieldRole role)
     {
         foreach (var field in carrier.Fields)
         {
