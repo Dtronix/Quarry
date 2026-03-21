@@ -141,6 +141,32 @@ internal sealed class DropIndexOperation(string Name, string Table, string? Sche
     public string? Schema { get; } = Schema;
 }
 
+internal sealed class InsertDataOperation(string Table, string? Schema, string[] Columns, object?[][] Rows) : MigrationOperation
+{
+    public string Table { get; } = Table;
+    public string? Schema { get; } = Schema;
+    public string[] Columns { get; } = Columns;
+    public object?[][] Rows { get; } = Rows;
+}
+
+internal sealed class UpdateDataOperation(string Table, string? Schema, string[] SetColumns, object?[] SetValues, string[] WhereColumns, object?[] WhereValues) : MigrationOperation
+{
+    public string Table { get; } = Table;
+    public string? Schema { get; } = Schema;
+    public string[] SetColumns { get; } = SetColumns;
+    public object?[] SetValues { get; } = SetValues;
+    public string[] WhereColumns { get; } = WhereColumns;
+    public object?[] WhereValues { get; } = WhereValues;
+}
+
+internal sealed class DeleteDataOperation(string Table, string? Schema, string[] WhereColumns, object?[] WhereValues) : MigrationOperation
+{
+    public string Table { get; } = Table;
+    public string? Schema { get; } = Schema;
+    public string[] WhereColumns { get; } = WhereColumns;
+    public object?[] WhereValues { get; } = WhereValues;
+}
+
 internal sealed class RawSqlOperation(string Sql) : MigrationOperation
 {
     public string Sql { get; } = Sql;

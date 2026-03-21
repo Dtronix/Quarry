@@ -73,6 +73,15 @@ internal static class DdlRenderer
             case DropIndexOperation di:
                 RenderDropIndex(sb, di, dialect, idempotent);
                 break;
+            case InsertDataOperation ins:
+                RenderInsertData(sb, ins, dialect);
+                break;
+            case UpdateDataOperation upd:
+                RenderUpdateData(sb, upd, dialect);
+                break;
+            case DeleteDataOperation del:
+                RenderDeleteData(sb, del, dialect);
+                break;
             case RawSqlOperation raw:
                 sb.AppendLine(raw.Sql);
                 break;
@@ -513,6 +522,68 @@ internal static class DdlRenderer
             default:
                 sb.Append("DROP INDEX ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Name)).AppendLine(";");
                 break;
+        }
+    }
+
+    // --- Data operations ---
+
+    private static void RenderInsertData(StringBuilder sb, InsertDataOperation op, SqlDialect dialect)
+    {
+        sb.Append("INSERT INTO ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
+        for (var i = 0; i < op.Columns.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
+        }
+        sb.Append(") VALUES");
+
+        for (var r = 0; r < op.Rows.Length; r++)
+        {
+            if (r > 0) sb.Append(",");
+            sb.AppendLine();
+            sb.Append("    (");
+            var row = op.Rows[r];
+            for (var c = 0; c < row.Length; c++)
+            {
+                if (c > 0) sb.Append(", ");
+                sb.Append(SqlFormatting.FormatLiteral(dialect, row[c]));
+            }
+            sb.Append(")");
+        }
+        sb.AppendLine(";");
+    }
+
+    private static void RenderUpdateData(StringBuilder sb, UpdateDataOperation op, SqlDialect dialect)
+    {
+        sb.Append("UPDATE ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" SET ");
+        for (var i = 0; i < op.SetColumns.Length; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.SetColumns[i]));
+            sb.Append(" = ").Append(SqlFormatting.FormatLiteral(dialect, op.SetValues[i]));
+        }
+        AppendWhereClause(sb, op.WhereColumns, op.WhereValues, dialect);
+        sb.AppendLine(";");
+    }
+
+    private static void RenderDeleteData(StringBuilder sb, DeleteDataOperation op, SqlDialect dialect)
+    {
+        sb.Append("DELETE FROM ").Append(FormatTable(op.Table, op.Schema, dialect));
+        AppendWhereClause(sb, op.WhereColumns, op.WhereValues, dialect);
+        sb.AppendLine(";");
+    }
+
+    private static void AppendWhereClause(StringBuilder sb, string[] columns, object?[] values, SqlDialect dialect)
+    {
+        sb.Append(" WHERE ");
+        for (var i = 0; i < columns.Length; i++)
+        {
+            if (i > 0) sb.Append(" AND ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, columns[i]));
+            if (values[i] is null || values[i] is DBNull)
+                sb.Append(" IS NULL");
+            else
+                sb.Append(" = ").Append(SqlFormatting.FormatLiteral(dialect, values[i]));
         }
     }
 
