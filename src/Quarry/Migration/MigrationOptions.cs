@@ -21,4 +21,10 @@ public sealed class MigrationOptions
 
     /// <summary>Optional logger for migration output.</summary>
     public Action<string>? Logger { get; set; }
+
+    /// <summary>Timeout for each migration command. Null = ADO.NET default (30s).</summary>
+    public TimeSpan? CommandTimeout { get; set; }
+
+    /// <summary>Lock acquisition timeout. Emits SET LOCK_TIMEOUT / SET statement_timeout before DDL.</summary>
+    public TimeSpan? LockTimeout { get; set; }
 }
