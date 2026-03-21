@@ -267,6 +267,110 @@ public class DdlRendererDialectTests
         Assert.That(ops[^1].BatchSize, Is.EqualTo(1000));
     }
 
+    [Test]
+    public void BatchedRawSql_SqlServer_EmitsWhileLoop()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE TOP (5000) users SET status = 'active' WHERE status IS NULL");
+        builder.Batched(5000);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("WHILE 1 = 1"));
+        Assert.That(sql, Does.Contain("BEGIN"));
+        Assert.That(sql, Does.Contain("UPDATE TOP (5000)"));
+        Assert.That(sql, Does.Contain("IF @@ROWCOUNT = 0 BREAK;"));
+        Assert.That(sql, Does.Contain("END"));
+    }
+
+    [Test]
+    public void BatchedRawSql_PostgreSQL_EmitsDoBlock()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.PostgreSQL);
+        var builder = new MigrationBuilder();
+        builder.Sql("DELETE FROM logs WHERE created_at < '2020-01-01' LIMIT 10000");
+        builder.Batched(10000);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("DO $$ DECLARE rows_affected INT;"));
+        Assert.That(sql, Does.Contain("BEGIN LOOP"));
+        Assert.That(sql, Does.Contain("DELETE FROM logs"));
+        Assert.That(sql, Does.Contain("GET DIAGNOSTICS rows_affected = ROW_COUNT;"));
+        Assert.That(sql, Does.Contain("EXIT WHEN rows_affected = 0;"));
+        Assert.That(sql, Does.Contain("END LOOP; END $$;"));
+    }
+
+    [Test]
+    public void BatchedRawSql_MySQL_EmitsLoop()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL LIMIT 5000");
+        builder.Batched(5000);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("repeat_loop: LOOP"));
+        Assert.That(sql, Does.Contain("UPDATE users"));
+        Assert.That(sql, Does.Contain("IF ROW_COUNT() = 0 THEN LEAVE repeat_loop; END IF;"));
+        Assert.That(sql, Does.Contain("END LOOP;"));
+    }
+
+    [Test]
+    public void BatchedRawSql_SQLite_EmitsWarningComment()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SQLite);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL");
+        builder.Batched(5000);
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Contain("-- Batched execution is not supported for SQLite"));
+        Assert.That(sql, Does.Contain("UPDATE users SET status = 'active'"));
+    }
+
+    [Test]
+    public void BatchedInsertData_SplitsRowsIntoBatches()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 0, name = "user0" },
+            new { id = 1, name = "user1" },
+            new { id = 2, name = "user2" },
+            new { id = 3, name = "user3" },
+            new { id = 4, name = "user4" },
+        });
+        builder.Batched(2);
+        var sql = builder.BuildSql(dialect);
+        // Should produce 3 INSERT statements: 2 rows, 2 rows, 1 row
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(sql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(3));
+    }
+
+    [Test]
+    public void BatchedInsertData_SingleBatch_WhenRowsLessThanBatchSize()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.PostgreSQL);
+        var builder = new MigrationBuilder();
+        builder.InsertData("users", new object[]
+        {
+            new { id = 1, name = "a" },
+            new { id = 2, name = "b" },
+        });
+        builder.Batched(10);
+        var sql = builder.BuildSql(dialect);
+        var insertCount = System.Text.RegularExpressions.Regex.Matches(sql, "INSERT INTO").Count;
+        Assert.That(insertCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void BatchedRawSql_WithoutBatchSize_RendersNormally()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.SqlServer);
+        var builder = new MigrationBuilder();
+        builder.Sql("UPDATE users SET status = 'active' WHERE status IS NULL");
+        var sql = builder.BuildSql(dialect);
+        Assert.That(sql, Does.Not.Contain("WHILE"));
+        Assert.That(sql, Does.Contain("UPDATE users"));
+    }
+
     #endregion
 
     #region Idempotent DDL
