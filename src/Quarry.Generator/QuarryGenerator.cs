@@ -97,12 +97,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 catch { return new IR.TranslatedCallSite(bound); }
             });
 
-        // === Stage 5: Collected Analysis + File Grouping ===
-        var perFileGroups = context.CompilationProvider
-            .Combine(contextDeclarations.Collect())
+        // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===
+        var perFileGroups = entityRegistry
             .Combine(translatedCallSites.Collect())
             .SelectMany(static (data, ct) =>
-                GroupByFileAndProcessTranslated(data.Left.Left, data.Left.Right, data.Right, ct));
+                IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct));
 
         // Per-file output — only regenerates files whose group changed
         context.RegisterSourceOutput(perFileGroups,
