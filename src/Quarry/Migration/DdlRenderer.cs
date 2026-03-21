@@ -74,7 +74,10 @@ internal static class DdlRenderer
                 RenderDropIndex(sb, di, dialect, idempotent);
                 break;
             case InsertDataOperation ins:
-                RenderInsertData(sb, ins, dialect);
+                if (ins.BatchSize is > 0)
+                    RenderBatchedInsertData(sb, ins, dialect);
+                else
+                    RenderInsertData(sb, ins, dialect);
                 break;
             case UpdateDataOperation upd:
                 RenderUpdateData(sb, upd, dialect);
@@ -83,7 +86,10 @@ internal static class DdlRenderer
                 RenderDeleteData(sb, del, dialect);
                 break;
             case RawSqlOperation raw:
-                sb.AppendLine(raw.Sql);
+                if (raw.BatchSize is > 0)
+                    RenderBatchedRawSql(sb, raw, dialect);
+                else
+                    sb.AppendLine(raw.Sql);
                 break;
             case CreateViewOperation cv:
                 RenderCreateView(sb, cv, dialect, idempotent);
@@ -649,6 +655,74 @@ internal static class DdlRenderer
         sb.Append("DELETE FROM ").Append(FormatTable(op.Table, op.Schema, dialect));
         AppendWhereClause(sb, op.WhereColumns, op.WhereValues, dialect);
         sb.AppendLine(";");
+    }
+
+    // --- Batched operations ---
+
+    private static void RenderBatchedInsertData(StringBuilder sb, InsertDataOperation op, SqlDialect dialect)
+    {
+        var batchSize = op.BatchSize!.Value;
+        for (var offset = 0; offset < op.Rows.Length; offset += batchSize)
+        {
+            var end = Math.Min(offset + batchSize, op.Rows.Length);
+            sb.Append("INSERT INTO ").Append(FormatTable(op.Table, op.Schema, dialect)).Append(" (");
+            for (var i = 0; i < op.Columns.Length; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, op.Columns[i]));
+            }
+            sb.Append(") VALUES");
+
+            for (var r = offset; r < end; r++)
+            {
+                if (r > offset) sb.Append(",");
+                sb.AppendLine();
+                sb.Append("    (");
+                var row = op.Rows[r];
+                for (var c = 0; c < row.Length; c++)
+                {
+                    if (c > 0) sb.Append(", ");
+                    sb.Append(SqlFormatting.FormatLiteral(dialect, row[c]));
+                }
+                sb.Append(")");
+            }
+            sb.AppendLine(";");
+        }
+    }
+
+    private static void RenderBatchedRawSql(StringBuilder sb, RawSqlOperation op, SqlDialect dialect)
+    {
+        switch (dialect)
+        {
+            case SqlDialect.SqlServer:
+                sb.AppendLine("WHILE 1 = 1");
+                sb.AppendLine("BEGIN");
+                sb.Append("    ").AppendLine(op.Sql.TrimEnd().TrimEnd(';') + ";");
+                sb.AppendLine("    IF @@ROWCOUNT = 0 BREAK;");
+                sb.AppendLine("END");
+                break;
+
+            case SqlDialect.PostgreSQL:
+                sb.AppendLine("DO $$ DECLARE rows_affected INT;");
+                sb.AppendLine("BEGIN LOOP");
+                sb.Append("    ").AppendLine(op.Sql.TrimEnd().TrimEnd(';') + ";");
+                sb.AppendLine("    GET DIAGNOSTICS rows_affected = ROW_COUNT;");
+                sb.AppendLine("    EXIT WHEN rows_affected = 0;");
+                sb.AppendLine("END LOOP; END $$;");
+                break;
+
+            case SqlDialect.MySQL:
+                sb.AppendLine("repeat_loop: LOOP");
+                sb.Append("    ").AppendLine(op.Sql.TrimEnd().TrimEnd(';') + ";");
+                sb.AppendLine("    IF ROW_COUNT() = 0 THEN LEAVE repeat_loop; END IF;");
+                sb.AppendLine("END LOOP;");
+                break;
+
+            case SqlDialect.SQLite:
+                sb.AppendLine("-- Batched execution is not supported for SQLite; executing without batching.");
+                sb.AppendLine(op.Sql);
+                break;
+        }
     }
 
     private static void AppendWhereClause(StringBuilder sb, string[] columns, object?[] values, SqlDialect dialect)
