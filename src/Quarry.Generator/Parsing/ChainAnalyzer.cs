@@ -7,6 +7,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Parsing;
@@ -388,25 +389,110 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Builds a SelectProjection from ProjectionInfo.
+    /// Builds a SelectProjection from ProjectionInfo, enriching columns with entity metadata.
+    /// During discovery, the source generator can't see its own generated entity types, so
+    /// ProjectionInfo columns may have empty ClrType/ColumnName. We fix these by cross-referencing
+    /// with EntityRef.Columns which has the authoritative column metadata from schema analysis.
     /// </summary>
     private static SelectProjection BuildProjection(ProjectionInfo projInfo, TranslatedCallSite executionSite)
     {
+        // Build a lookup from entity columns by property name for enrichment
+        Dictionary<string, ColumnInfo>? entityColumnLookup = null;
+        var entityRef = executionSite.Bound.Entity;
+        if (entityRef != null && entityRef.Columns.Count > 0)
+        {
+            entityColumnLookup = new Dictionary<string, ColumnInfo>(System.StringComparer.Ordinal);
+            foreach (var ec in entityRef.Columns)
+                entityColumnLookup[ec.PropertyName] = ec;
+        }
+
         var columns = new List<ProjectedColumn>();
         if (projInfo.Columns != null)
         {
             foreach (var col in projInfo.Columns)
             {
+                // Enrich columns that have missing/broken type or column name info
+                if (entityColumnLookup != null && NeedsEnrichment(col))
+                {
+                    // Try matching by PropertyName (most common for tuple projections like (u.UserId, u.UserName))
+                    if (entityColumnLookup.TryGetValue(col.PropertyName, out var entityCol))
+                    {
+                        columns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: entityCol.ColumnName,
+                            clrType: string.IsNullOrWhiteSpace(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            fullClrType: string.IsNullOrWhiteSpace(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            isNullable: entityCol.IsNullable,
+                            ordinal: col.Ordinal,
+                            alias: col.Alias,
+                            sqlExpression: col.SqlExpression,
+                            isAggregateFunction: col.IsAggregateFunction,
+                            customTypeMapping: entityCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
+                            isValueType: entityCol.IsValueType,
+                            readerMethodName: entityCol.DbReaderMethodName ?? entityCol.ReaderMethodName,
+                            tableAlias: col.TableAlias,
+                            isForeignKey: entityCol.Kind == ColumnKind.ForeignKey,
+                            foreignKeyEntityName: entityCol.ReferencedEntityName,
+                            isEnum: entityCol.IsEnum));
+                        continue;
+                    }
+                }
                 columns.Add(col);
             }
         }
 
+        // Rebuild result type name from enriched columns for tuple projections
+        var resultTypeName = projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName;
+        if (projInfo.Kind == ProjectionKind.Tuple && columns.Count > 0)
+        {
+            var rebuilt = BuildTupleResultTypeName(columns);
+            if (!string.IsNullOrEmpty(rebuilt))
+                resultTypeName = rebuilt;
+        }
+
         return new SelectProjection(
             kind: projInfo.Kind,
-            resultTypeName: projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+            resultTypeName: resultTypeName,
             columns: columns,
-            customEntityReaderClass: projInfo.CustomEntityReaderClass,
+            customEntityReaderClass: projInfo.CustomEntityReaderClass ?? entityRef?.CustomEntityReaderClass,
             isIdentity: projInfo.Kind == ProjectionKind.Entity);
+    }
+
+    /// <summary>
+    /// Checks if a projected column needs enrichment (has missing type or column name info).
+    /// </summary>
+    private static bool NeedsEnrichment(ProjectedColumn col)
+    {
+        return string.IsNullOrWhiteSpace(col.ClrType)
+            || string.IsNullOrWhiteSpace(col.ColumnName)
+            || col.ReaderMethodName == "GetValue";
+    }
+
+    /// <summary>
+    /// Builds a tuple result type name from enriched columns.
+    /// </summary>
+    private static string BuildTupleResultTypeName(List<ProjectedColumn> columns)
+    {
+        var parts = new List<string>();
+        foreach (var col in columns)
+        {
+            var typeName = col.ClrType;
+            if (string.IsNullOrWhiteSpace(typeName))
+                typeName = col.FullClrType;
+            if (string.IsNullOrWhiteSpace(typeName))
+                return ""; // Can't build a valid type name
+
+            if (col.IsNullable && !typeName.EndsWith("?"))
+                typeName += "?";
+
+            // Omit default ItemN names
+            var isDefaultName = col.PropertyName.StartsWith("Item") &&
+                int.TryParse(col.PropertyName.Substring(4), out var idx) &&
+                idx == col.Ordinal + 1;
+
+            parts.Add(isDefaultName ? typeName : $"{typeName} {col.PropertyName}");
+        }
+        return $"({string.Join(", ", parts)})";
     }
 
     /// <summary>

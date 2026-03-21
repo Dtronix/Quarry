@@ -628,17 +628,67 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     joinedTableInfos.Add((join.Table.TableName, join.Table.SchemaName));
             }
 
+            // Resolve ProjectionInfo: prefer QueryPlan.Projection (enriched by ChainAnalyzer with entity
+            // metadata), then fall back to Select clause site's raw ProjectionInfo or execution site's.
+            // The discovery-time ProjectionInfo has broken columns because the source generator can't see
+            // its own generated entity types. ChainAnalyzer enriches these using EntityRef.Columns.
+            ProjectionInfo? projInfo = null;
+            // First try: QueryPlan.Projection (enriched by ChainAnalyzer with entity column metadata)
+            if (assembled.Plan.Projection != null)
+            {
+                if (assembled.Plan.Projection.Columns.Count > 0)
+                {
+                    projInfo = new ProjectionInfo(
+                        assembled.Plan.Projection.Kind,
+                        assembled.Plan.Projection.ResultTypeName,
+                        assembled.Plan.Projection.Columns,
+                        customEntityReaderClass: assembled.Plan.Projection.CustomEntityReaderClass);
+                }
+                else if (assembled.Plan.Projection.IsIdentity)
+                {
+                    // Identity projection (no Select clause) — build from entity columns
+                    var entityRef = assembled.ExecutionSite.Bound.Entity;
+                    if (entityRef != null && entityRef.Columns.Count > 0)
+                    {
+                        projInfo = BuildEntityProjectionFromEntityRef(entityRef);
+                    }
+                }
+            }
+            // Second try: Select clause site's raw ProjectionInfo
+            if (projInfo == null)
+            {
+                foreach (var cs in assembled.ClauseSites)
+                {
+                    if (cs.Bound.Raw.Kind == InterceptorKind.Select && cs.Bound.Raw.ProjectionInfo != null)
+                    {
+                        projInfo = cs.Bound.Raw.ProjectionInfo;
+                        break;
+                    }
+                }
+            }
+            // Third try: execution site's ProjectionInfo
+            if (projInfo == null)
+                projInfo = assembled.ExecutionSite.ProjectionInfo;
+
+            // Generate reader delegate code for SELECT queries (the old pipeline did this via ReaderCodeGenerator)
+            string? readerCode = assembled.ReaderDelegateCode;
+            if (readerCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
+            {
+                var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
+                readerCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
+            }
+
             var chain = new PrebuiltChainInfo(
                 analysis: analysis,
                 sqlMap: sqlMap,
-                readerDelegateCode: assembled.ReaderDelegateCode,
+                readerDelegateCode: readerCode,
                 entityTypeName: assembled.EntityTypeName,
                 resultTypeName: assembled.ResultTypeName,
                 dialect: assembled.Dialect,
                 tableName: assembled.ExecutionSite.TableName,
                 schemaName: assembled.ExecutionSite.SchemaName,
                 queryKind: assembled.Plan.Kind,
-                projectionInfo: assembled.ExecutionSite.ProjectionInfo,
+                projectionInfo: projInfo,
                 joinedEntityTypeNames: assembled.ExecutionSite.JoinedEntityTypeNames,
                 joinedTableInfos: joinedTableInfos,
                 chainParameters: chainParams,
@@ -1044,6 +1094,38 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         return new ProjectionInfo(ProjectionKind.Entity, entity.EntityName, columns,
             customEntityReaderClass: entity.CustomEntityReaderClass);
+    }
+
+    /// <summary>
+    /// Builds an entity projection from an EntityRef for identity projections in the new pipeline bridge.
+    /// Similar to <see cref="BuildEntityProjectionFromEntityInfo"/> but uses the lightweight EntityRef.
+    /// </summary>
+    private static ProjectionInfo? BuildEntityProjectionFromEntityRef(IR.EntityRef entityRef)
+    {
+        if (entityRef.Columns.Count == 0)
+            return null;
+
+        var columns = new List<ProjectedColumn>();
+        var ordinal = 0;
+        foreach (var col in entityRef.Columns)
+        {
+            columns.Add(new ProjectedColumn(
+                propertyName: col.PropertyName,
+                columnName: col.ColumnName,
+                clrType: col.ClrType,
+                fullClrType: col.FullClrType,
+                isNullable: col.IsNullable,
+                ordinal: ordinal++,
+                customTypeMapping: col.CustomTypeMappingClass,
+                isValueType: col.IsValueType,
+                readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
+                isForeignKey: col.Kind == ColumnKind.ForeignKey,
+                foreignKeyEntityName: col.ReferencedEntityName,
+                isEnum: col.IsEnum));
+        }
+
+        return new ProjectionInfo(ProjectionKind.Entity, entityRef.EntityName, columns,
+            customEntityReaderClass: entityRef.CustomEntityReaderClass);
     }
 
     /// <summary>
