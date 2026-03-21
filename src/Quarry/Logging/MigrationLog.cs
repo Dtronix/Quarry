@@ -58,4 +58,10 @@ internal static partial class MigrationLog
 
     [LogMessage(LogLevel.Debug, "Migration {version} status updated to '{status}'")]
     internal static partial void StatusUpdated(int version, string status);
+
+    [LogMessage(LogLevel.Warning, "Table '{table}' has ~{estimatedRows} rows. ALTER TABLE may take a long time and acquire locks.")]
+    internal static partial void LargeTableWarning(string table, long estimatedRows);
+
+    [LogMessage(LogLevel.Warning, "WarnOnLargeTable is not supported for SQLite (no catalog statistics) and will be ignored")]
+    internal static partial void LargeTableSkippedSQLite();
 }
