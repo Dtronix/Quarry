@@ -782,6 +782,10 @@ internal static class UsageSiteDiscovery
         if (syntacticExpr is SyntacticUnknown)
             return null;
 
+        // Also parse via SqlExprParser directly from syntax (avoids adapter conversion later)
+        var sqlExprParamNames = IR.SqlExprParser.GetLambdaParameterNames(lambda);
+        var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, sqlExprParamNames);
+
         // Determine if this is descending order (for OrderBy/ThenBy)
         var isDescending = false;
         if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
@@ -810,7 +814,7 @@ internal static class UsageSiteDiscovery
         // Get the first parameter name
         var parameterName = parameterNames.First();
 
-        return new PendingClauseInfo(clauseKind, parameterName, syntacticExpr, isDescending);
+        return new PendingClauseInfo(clauseKind, parameterName, syntacticExpr, isDescending, parsedSqlExpr: sqlExpr);
     }
 
     /// <summary>

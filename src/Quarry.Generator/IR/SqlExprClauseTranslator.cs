@@ -33,12 +33,12 @@ internal sealed class SqlExprClauseTranslator
     {
         try
         {
-            // Step 1: Convert SyntacticExpression → SqlExpr
-            var sqlExpr = SyntacticExpressionAdapter.Convert(pending.Expression);
+            // Step 1: Get SqlExpr tree (direct from parser if available, else convert from SyntacticExpression)
+            var sqlExpr = pending.ParsedSqlExpr ?? SyntacticExpressionAdapter.Convert(pending.Expression);
 
-            // Bail out if the converted tree contains SqlRawExpr nodes from unsupported expressions.
-            // These indicate method calls, member accesses, or unknown syntax that the adapter
-            // couldn't convert to proper IR nodes (e.g., subqueries, runtime collections).
+            // Bail out if the tree contains SqlRawExpr nodes from unsupported expressions.
+            // These indicate method calls, member accesses, or unknown syntax that couldn't be
+            // converted to proper IR nodes (e.g., subqueries, runtime collections).
             // The old syntactic or semantic translators may handle these.
             if (ContainsUnsupportedRawExpr(sqlExpr))
                 return ClauseInfo.Failure(pending.Kind, "Expression contains unsupported nodes for SqlExpr IR");
@@ -70,13 +70,13 @@ internal sealed class SqlExprClauseTranslator
             // Handle clause-specific types
             if (pending.Kind == ClauseKind.OrderBy || pending.Kind == ClauseKind.GroupBy)
             {
-                var keyTypeName = ResolveKeyType(pending.Expression);
+                var keyTypeName = ResolveKeyTypeFromExpr(sqlExpr) ?? ResolveKeyType(pending.Expression);
                 return new OrderByClauseInfo(sql, pending.IsDescending, parameters, keyTypeName);
             }
 
             if (pending.Kind == ClauseKind.Set)
             {
-                var valueTypeName = ResolveKeyType(pending.Expression);
+                var valueTypeName = ResolveKeyTypeFromExpr(sqlExpr) ?? ResolveKeyType(pending.Expression);
                 var valueClrType = valueTypeName ?? "object";
                 var pIdx = paramIndex;
                 var setParams = new List<ParameterInfo>(parameters)
@@ -247,6 +247,20 @@ internal sealed class SqlExprClauseTranslator
             default:
                 return expr;
         }
+    }
+
+    /// <summary>
+    /// Resolves the CLR type of a key expression directly from SqlExpr.
+    /// </summary>
+    private string? ResolveKeyTypeFromExpr(SqlExpr expr)
+    {
+        if (expr is ColumnRefExpr colRef)
+        {
+            var propertyName = colRef.PropertyName;
+            if (_columnLookup.TryGetValue(propertyName, out var column))
+                return column.FullClrType;
+        }
+        return null;
     }
 
     private string? ResolveKeyType(SyntacticExpression expression)
