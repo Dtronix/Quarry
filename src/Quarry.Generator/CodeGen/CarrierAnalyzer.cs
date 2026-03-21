@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 
@@ -240,4 +241,122 @@ internal static class CarrierAnalyzer
         "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
         "Single", "Double", "Decimal", "Boolean", "Char"
     };
+
+    #region New pipeline (AssembledPlan → CarrierPlan)
+
+    /// <summary>
+    /// Analyzes an AssembledPlan to produce a CarrierPlan for the new pipeline.
+    /// </summary>
+    public static CarrierPlan AnalyzeNew(AssembledPlan assembled)
+    {
+        var plan = assembled.Plan;
+
+        // Gate: RuntimeBuild is never eligible
+        if (plan.Tier == OptimizationTier.RuntimeBuild)
+            return CarrierPlan.Ineligible(plan.NotAnalyzableReason ?? "runtime build tier");
+
+        // Gate: Unmatched methods
+        if (plan.UnmatchedMethodNames != null && plan.UnmatchedMethodNames.Count > 0)
+            return CarrierPlan.Ineligible("chain has unmatched methods");
+
+        // Gate: Empty SQL variants
+        if (assembled.SqlVariants.Count == 0)
+            return CarrierPlan.Ineligible("no SQL variants");
+
+        // Gate: Malformed SQL
+        foreach (var kvp in assembled.SqlVariants)
+        {
+            if (string.IsNullOrWhiteSpace(kvp.Value.Sql))
+                return CarrierPlan.Ineligible("empty SQL variant");
+        }
+
+        // Build fields and parameters from QueryPlan.Parameters
+        var fields = new List<CarrierField>();
+        var staticFields = new List<CarrierStaticField>();
+        var parameters = new List<CarrierParameter>();
+
+        foreach (var param in plan.Parameters)
+        {
+            // Entity-sourced parameters (SetPoco) don't get carrier fields
+            if (param.EntityPropertyExpression != null)
+            {
+                parameters.Add(new CarrierParameter(
+                    globalIndex: param.GlobalIndex,
+                    fieldName: $"P{param.GlobalIndex}",
+                    fieldType: param.ClrType,
+                    extractionCode: null,
+                    bindingCode: null,
+                    typeMappingClass: param.TypeMappingClass,
+                    isEntitySourced: true));
+                continue;
+            }
+
+            if (param.IsCollection && param.ElementTypeName != null)
+            {
+                var elementType = NormalizeFieldType(param.ElementTypeName);
+                var fieldType = $"System.Collections.Generic.IReadOnlyList<{elementType}>";
+                fields.Add(new CarrierField($"P{param.GlobalIndex}", fieldType));
+                parameters.Add(new CarrierParameter(
+                    globalIndex: param.GlobalIndex,
+                    fieldName: $"P{param.GlobalIndex}",
+                    fieldType: fieldType,
+                    extractionCode: param.ValueExpression,
+                    bindingCode: null,
+                    isCollection: true));
+            }
+            else
+            {
+                var fieldType = NormalizeFieldType(param.ClrType);
+                fields.Add(new CarrierField($"P{param.GlobalIndex}", fieldType));
+                parameters.Add(new CarrierParameter(
+                    globalIndex: param.GlobalIndex,
+                    fieldName: $"P{param.GlobalIndex}",
+                    fieldType: fieldType,
+                    extractionCode: param.ValueExpression,
+                    bindingCode: null,
+                    typeMappingClass: param.TypeMappingClass,
+                    isSensitive: param.IsSensitive));
+            }
+
+            if (param.NeedsFieldInfoCache)
+                staticFields.Add(new CarrierStaticField($"F{param.GlobalIndex}", "FieldInfo?", null));
+        }
+
+        // Mask field for conditional clauses
+        string? maskType = null;
+        var maskBitCount = plan.ConditionalTerms.Count;
+        if (maskBitCount > 0)
+        {
+            maskType = maskBitCount <= 8 ? "byte" : maskBitCount <= 16 ? "ushort" : "uint";
+            fields.Add(new CarrierField("Mask", maskType));
+        }
+
+        // Pagination fields
+        if (plan.Pagination != null)
+        {
+            if (plan.Pagination.LimitParamIndex != null || plan.Pagination.LiteralLimit == null)
+                fields.Add(new CarrierField("Limit", "int"));
+            if (plan.Pagination.OffsetParamIndex != null || plan.Pagination.LiteralOffset == null)
+                fields.Add(new CarrierField("Offset", "int"));
+        }
+
+        // Entity field for insert/setPoco chains
+        if (plan.Kind == QueryKind.Insert || plan.SetTerms.Count > 0)
+        {
+            var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
+            fields.Add(new CarrierField("Entity", entityType + "?"));
+        }
+
+        return new CarrierPlan(
+            isEligible: true,
+            className: null, // Assigned during file grouping
+            baseClassName: "", // Resolved by emitter
+            fields: fields,
+            staticFields: staticFields,
+            parameters: parameters,
+            maskType: maskType,
+            maskBitCount: maskBitCount);
+    }
+
+    #endregion
 }
