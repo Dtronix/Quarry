@@ -207,7 +207,7 @@ internal static partial class InterceptorCodeGenerator
         {
             case InterceptorKind.Select:
                 if (isJoinedBuilder)
-                    GenerateJoinedSelectInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    CodeGen.JoinBodyEmitter.EmitJoinedSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 else
                     CodeGen.ClauseBodyEmitter.EmitSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
@@ -216,7 +216,7 @@ internal static partial class InterceptorCodeGenerator
                 {
                     staticFieldsByMethod.TryGetValue(methodName, out var methodFields);
                     if (isJoinedBuilder)
-                        GenerateJoinedWhereInterceptor(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                        CodeGen.JoinBodyEmitter.EmitJoinedWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                     else
                         CodeGen.ClauseBodyEmitter.EmitWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 }
@@ -225,7 +225,7 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.OrderBy:
             case InterceptorKind.ThenBy:
                 if (isJoinedBuilder)
-                    GenerateJoinedOrderByInterceptor(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    CodeGen.JoinBodyEmitter.EmitJoinedOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 else
                     CodeGen.ClauseBodyEmitter.EmitOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
@@ -245,7 +245,7 @@ internal static partial class InterceptorCodeGenerator
             case InterceptorKind.Join:
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
-                GenerateJoinInterceptor(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                CodeGen.JoinBodyEmitter.EmitJoin(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 
             case InterceptorKind.ExecuteFetchAll:

@@ -151,7 +151,7 @@ internal static partial class InterceptorCodeGenerator
         };
     }
 
-    private static string GetJoinedConcreteBuilderTypeName(int entityCount, string[] entityTypes)
+    internal static string GetJoinedConcreteBuilderTypeName(int entityCount, string[] entityTypes)
     {
         return entityCount switch
         {
