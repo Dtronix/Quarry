@@ -160,6 +160,8 @@ public static class MigrationRunner
             MigrationLog.NonTransactionalSqlGenerated(migration.Version, nonTxSql);
         }
 
+        await WarnLargeTablesAsync(connection, dialect, builder.GetOperations(), options, log);
+
         if (options.DryRun)
         {
             MigrationLog.DryRun(migration.Version);
@@ -523,6 +525,105 @@ public static class MigrationRunner
             SqlDialect.MySQL => $"SET innodb_lock_wait_timeout = {(int)timeout.TotalSeconds};",
             _ => throw new NotSupportedException($"LockTimeout is not supported for dialect {dialect}.")
         };
+    }
+
+    /// <summary>
+    /// Extracts unique table names from operations that perform DDL on existing tables.
+    /// CreateTable and RawSql are excluded since they don't touch existing data.
+    /// </summary>
+    internal static HashSet<string> GetAffectedTableNames(IReadOnlyList<MigrationOperation> operations)
+    {
+        var tables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var op in operations)
+        {
+            var name = op switch
+            {
+                DropTableOperation o => o.Name,
+                RenameTableOperation o => o.OldName,
+                AddColumnOperation o => o.Table,
+                DropColumnOperation o => o.Table,
+                RenameColumnOperation o => o.Table,
+                AlterColumnOperation o => o.Table,
+                AddForeignKeyOperation o => o.Table,
+                DropForeignKeyOperation o => o.Table,
+                AddIndexOperation o => o.Table,
+                DropIndexOperation o => o.Table,
+                _ => null
+            };
+            if (name != null)
+                tables.Add(name);
+        }
+        return tables;
+    }
+
+    /// <summary>
+    /// Returns the dialect-specific catalog query for estimated row count.
+    /// The query must accept a single parameter (table name) at index 0.
+    /// Returns null for SQLite (no catalog statistics).
+    /// </summary>
+    internal static string? GetEstimatedRowCountSql(SqlDialect dialect)
+    {
+        return dialect switch
+        {
+            SqlDialect.SqlServer =>
+                "SELECT SUM(p.rows) FROM sys.partitions p " +
+                "JOIN sys.tables t ON p.object_id = t.object_id " +
+                $"WHERE t.name = {SqlFormatting.FormatParameter(SqlDialect.SqlServer, 0)} AND p.index_id IN (0, 1);",
+            SqlDialect.PostgreSQL =>
+                $"SELECT reltuples::bigint FROM pg_class WHERE relname = {SqlFormatting.FormatParameter(SqlDialect.PostgreSQL, 0)};",
+            SqlDialect.MySQL =>
+                $"SELECT table_rows FROM information_schema.tables WHERE table_name = {SqlFormatting.FormatParameter(SqlDialect.MySQL, 0)} AND table_schema = DATABASE();",
+            _ => null
+        };
+    }
+
+    private static async Task WarnLargeTablesAsync(
+        DbConnection connection,
+        SqlDialect dialect,
+        IReadOnlyList<MigrationOperation> operations,
+        MigrationOptions options,
+        Action<string> log)
+    {
+        if (!options.WarnOnLargeTable)
+            return;
+
+        if (dialect == SqlDialect.SQLite)
+        {
+            MigrationLog.LargeTableSkippedSQLite();
+            return;
+        }
+
+        var tables = GetAffectedTableNames(operations);
+        if (tables.Count == 0)
+            return;
+
+        var querySql = GetEstimatedRowCountSql(dialect)!;
+
+        foreach (var table in tables)
+        {
+            try
+            {
+                using var cmd = connection.CreateCommand();
+                cmd.CommandText = querySql;
+                AddParameter(cmd, dialect, 0, table);
+                ApplyCommandTimeout(cmd, options);
+
+                var result = await cmd.ExecuteScalarAsync();
+                if (result is null or DBNull)
+                    continue;
+
+                var estimatedRows = Convert.ToInt64(result);
+                if (estimatedRows > options.LargeTableThreshold)
+                {
+                    MigrationLog.LargeTableWarning(table, estimatedRows);
+                    log($"WARNING: Table '{table}' has ~{estimatedRows} rows. ALTER TABLE may take a long time and acquire locks.");
+                }
+            }
+            catch
+            {
+                // Catalog query failed — swallow and continue (best-effort warning)
+            }
+        }
     }
 
     internal static string ComputeChecksum(string sql)

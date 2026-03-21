@@ -47,6 +47,16 @@ public sealed class MigrationOptions
     /// <summary>Lock acquisition timeout. Emits SET LOCK_TIMEOUT / SET statement_timeout before DDL.</summary>
     public TimeSpan? LockTimeout { get; set; }
 
+    /// <summary>
+    /// When true, queries database catalog statistics before DDL on existing tables
+    /// and logs a warning if the estimated row count exceeds <see cref="LargeTableThreshold"/>.
+    /// Not supported for SQLite (no catalog statistics).
+    /// </summary>
+    public bool WarnOnLargeTable { get; set; }
+
+    /// <summary>Estimated row count above which a warning is logged. Default: 1,000,000.</summary>
+    public long LargeTableThreshold { get; set; } = 1_000_000;
+
     /// <summary>Called before each migration is applied or rolled back. Parameters: version, name, connection.</summary>
     public Func<int, string, DbConnection, Task>? BeforeEach { get; set; }
 
