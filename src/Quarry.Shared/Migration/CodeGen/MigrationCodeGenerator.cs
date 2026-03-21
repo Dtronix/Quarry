@@ -20,7 +20,8 @@ static class MigrationCodeGenerator
         IReadOnlyList<MigrationStep> steps,
         SchemaSnapshot? oldSnapshot,
         SchemaSnapshot newSnapshot,
-        string namespaceName)
+        string namespaceName,
+        int squashedFrom = 0)
     {
         var sb = new StringBuilder();
         sb.AppendLine("using System;");
@@ -34,6 +35,8 @@ static class MigrationCodeGenerator
 
         sb.Append("[Migration(Version = ").Append(version);
         sb.Append(", Name = \"").Append(EscapeString(name)).Append("\"");
+        if (squashedFrom > 0)
+            sb.Append(", SquashedFrom = ").Append(squashedFrom);
         sb.AppendLine(")]");
         sb.Append("internal static partial class ").AppendLine(className);
         sb.AppendLine("{");
