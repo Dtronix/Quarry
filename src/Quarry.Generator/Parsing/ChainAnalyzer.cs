@@ -302,14 +302,17 @@ internal static class ChainAnalyzer
 
                 // Build set terms from assignments. Non-inlined assignments consume parameters
                 // in order — track which parameter index each non-inlined assignment gets.
-                var paramBaseIndex = raw.SetActionParameters != null
-                    ? paramGlobalIndex - raw.SetActionParameters.Count
-                    : paramGlobalIndex;
-                var nextParamIdx = paramBaseIndex;
+                // After RemapParameters, paramGlobalIndex was incremented by SetActionParameters.Count.
+                // So the first SetAction parameter's global index = paramGlobalIndex - SetActionParameters.Count.
+                var setParamCount = raw.SetActionParameters?.Count ?? 0;
+                var nextParamIdx = paramGlobalIndex - setParamCount;
 
                 foreach (var assignment in raw.SetActionAssignments)
                 {
-                    var col = new ResolvedColumnExpr(assignment.ColumnSql);
+                    // Quote the column name using the dialect — SetActionAssignment.ColumnSql
+                    // stores the unquoted property name from discovery
+                    var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
+                    var col = new ResolvedColumnExpr(quotedCol);
                     SqlExpr valueExpr;
                     if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                     {
