@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Quarry.Generators.Models;
+using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.IR;
@@ -37,6 +38,35 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
 
     /// <summary>Resolved value type for Set.</summary>
     public string? ValueTypeName { get; }
+
+    // Convenience accessors to reduce verbosity in emitters
+    public string UniqueId => Bound.Raw.UniqueId;
+    public InterceptorKind Kind => Bound.Raw.Kind;
+    public BuilderKind BuilderKind => Bound.Raw.BuilderKind;
+    public string EntityTypeName => Bound.Raw.EntityTypeName;
+    public string? ResultTypeName => Bound.Raw.ResultTypeName;
+    public string MethodName => Bound.Raw.MethodName;
+    public string FilePath => Bound.Raw.FilePath;
+    public int Line => Bound.Raw.Line;
+    public int Column => Bound.Raw.Column;
+    public bool IsAnalyzable => Bound.Raw.IsAnalyzable;
+    public string? NonAnalyzableReason => Bound.Raw.NonAnalyzableReason;
+    public string? InterceptableLocationData => Bound.Raw.InterceptableLocationData;
+    public int InterceptableLocationVersion => Bound.Raw.InterceptableLocationVersion;
+    public SqlDialect Dialect => Bound.Dialect;
+    public string? ContextClassName => Bound.ContextClassName;
+    public string? ContextNamespace => Bound.ContextNamespace;
+    public string TableName => Bound.TableName;
+    public string? SchemaName => Bound.SchemaName;
+    public ProjectionInfo? ProjectionInfo => Bound.Raw.ProjectionInfo;
+    public InsertInfo? InsertInfo => Bound.InsertInfo;
+    public InsertInfo? UpdateInfo => Bound.UpdateInfo;
+    public string? JoinedEntityTypeName => Bound.JoinedEntity?.EntityName ?? Bound.Raw.JoinedEntityTypeName;
+    public System.Collections.Generic.IReadOnlyList<string>? JoinedEntityTypeNames => Bound.JoinedEntityTypeNames;
+    public bool IsNavigationJoin => Bound.Raw.IsNavigationJoin;
+    public int? ConstantIntValue => Bound.Raw.ConstantIntValue;
+    public RawSqlTypeInfo? RawSqlTypeInfo => Bound.RawSqlTypeInfo;
+    public DiagnosticLocation Location => Bound.Raw.Location;
 
     public bool Equals(TranslatedCallSite? other)
     {
