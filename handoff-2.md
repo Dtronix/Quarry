@@ -2,7 +2,7 @@
 
 ## Key Components
 
-- **TraceCapture** (`IR/TraceCapture.cs`): New `[ThreadStatic]` side-channel dictionary accumulating trace messages keyed by site UniqueId. Methods: `Log`, `LogFormat`, `Get`, `Clear`. Cleared at start of each analysis pass in `PipelineOrchestrator.AnalyzeAndGroupTranslated`.
+- **TraceCapture** (`IR/TraceCapture.cs`): `[ThreadStatic]` side-channel dictionary accumulating trace messages keyed by chain execution site UniqueId. Only written for traced chains (gated at Stage 5+). Methods: `Log`, `LogFormat`, `Get`, `Clear`. Cleared at start of each analysis pass.
 - **InterceptorKind.Trace**: New enum value for `.Trace()` method calls. Detected in discovery, excluded from clause processing in ChainAnalyzer, does not generate an interceptor.
 - **IsTraced flag**: Flows through `AnalyzedChain.IsTraced` → `AssembledPlan.IsTraced`. Set when any chain member has `Kind == InterceptorKind.Trace`.
 - **QUARRY_TRACE gating**: `QuarryGenerator.HasQuarryTrace(Compilation)` checks consumer project preprocessor symbols. When defined + chain is traced → inline `// [Trace]` comments emitted. When `.Trace()` present but symbol missing → QRY034 warning.
@@ -20,6 +20,7 @@
 6. 68bef58: Propagate IsTraced through pipeline, read QUARRY_TRACE, emit trace comments, add QRY034.
 7. e2fa37a: Add .Trace() extension methods to runtime library.
 8. 4605fd7: Remove old PipelineOrchestrator.TraceLog and __Trace file emission.
+9. c052211: Fix trace to only fire for traced chains and emit per-chain (Option C).
 
 ## Previous Session Completions
 
@@ -49,7 +50,6 @@
 ## Known Issues / Bugs
 
 - FileEmitter still contains inline TRACE comments in generated .g.cs output (lines 272-290). These are debug-era traces baked into the emitter output, separate from the new `// [Trace]` system. Should be cleaned up but are harmless.
-- The trace comment emission in FileEmitter uses a chain index counter (`chainIdx`) that assumes chain groups and `_chains` are aligned 1:1. If standalone sites are interleaved, trace data may attach to wrong chains. Low risk since standalone sites are appended last.
 
 ## Dependencies / Blockers
 
@@ -57,14 +57,15 @@ None for the trace system. Remaining test failures are independent of trace work
 
 ## Architecture Decisions
 
-- **Side-channel over pipeline types**: Trace data is stored in `TraceCapture` (ThreadStatic dictionary) rather than on `RawCallSite`/`BoundCallSite`/`TranslatedCallSite`. This avoids breaking IEquatable caching in the incremental pipeline. The side-channel is always written (cheap dictionary puts) and only read at emission time for traced chains.
+- **Side-channel over pipeline types**: Trace data is stored in `TraceCapture` (ThreadStatic dictionary) rather than on `RawCallSite`/`BoundCallSite`/`TranslatedCallSite`. This avoids breaking IEquatable caching in the incremental pipeline.
 - **QRY034 instead of QRY030**: The plan specified QRY030, but that ID was already in use for `ChainOptimizedTier1`. Used QRY034 instead.
-- **Always-capture, gate-at-emission**: TraceCapture.Log runs for ALL sites regardless of .Trace() presence. The filtering happens at Stage 6 (emission) where IsTraced and QUARRY_TRACE are checked. This keeps Stages 2-4 simple and avoids threading trace flags through the incremental pipeline.
+- **Gate-at-Stage-5, reconstruct earlier stages**: Stages 2-4 (discovery, binding, translation) run per-site before chain grouping, so IsTraced isn't known. Instead of always-capture, we removed trace logging from these stages. ChainAnalyzer (Stage 5) retroactively reconstructs per-site trace from TranslatedCallSite data when `IsTraced=true`. SqlAssembler and CarrierAnalyzer gate their logging behind `IsTraced`/`TraceLines != null`.
+- **TraceLines on PrebuiltChainInfo (Option C)**: Trace data travels as `chain.TraceLines` on the bridge type, structurally bound to its chain. FileEmitter reads it directly via the chain group tuple — no separate dictionary, no index alignment issues. TraceLines is excluded from IEquatable.
 - **Old trace system fully removed**: `PipelineOrchestrator.TraceLog` and `__Trace.*.g.cs` files are gone. Debug visibility now comes from the new TraceCapture system (opt-in per chain) rather than global trace files.
 
 ## Open Questions
 
-- Should the TraceCapture side-channel be gated behind a static boolean to avoid dictionary allocations when no chains use .Trace()? Currently it writes for every site. For 500-site projects this is ~500 small lists — probably fine, but could be optimized.
+- TraceCapture is now only written for traced chains, but the dictionary is still created/cleared every pass. Could skip Clear() entirely if no chains are traced.
 - The FileEmitter's debug TRACE comments (lines 272-290) should be removed in a cleanup pass — they were useful during migration but now the new trace system supersedes them.
 
 ## Next Work (Priority Order)
