@@ -107,15 +107,21 @@ internal static class ChainAnalyzer
     {
         var trace = IR.PipelineOrchestrator.TraceLog;
 
-        // Find the execution terminal
+        // Find the execution terminal, detect .Trace(), and collect clause sites
         TranslatedCallSite? executionSite = null;
         var clauseSites = new List<TranslatedCallSite>();
+        bool isTraced = false;
 
         foreach (var site in chainSites)
         {
             if (IsExecutionKind(site.Bound.Raw.Kind))
             {
                 executionSite = site;
+            }
+            else if (site.Bound.Raw.Kind == InterceptorKind.Trace)
+            {
+                isTraced = true;
+                // Trace sites are excluded from clause processing
             }
             else
             {
@@ -146,7 +152,7 @@ internal static class ChainAnalyzer
         if (disqualifyReason != null)
         {
             trace?.AppendLine($"//   [ChainAnalyzer] DISQUALIFIED: {disqualifyReason}");
-            return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason, registry);
+            return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason, registry, isTraced);
         }
 
         ct.ThrowIfCancellationRequested();
@@ -167,7 +173,7 @@ internal static class ChainAnalyzer
             if (condInfo.NestingDepth > MaxIfNestingDepth)
             {
                 trace?.AppendLine($"//   [ChainAnalyzer] NESTING_DISQUALIFIED: depth={condInfo.NestingDepth} > max={MaxIfNestingDepth}");
-                return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry);
+                return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry, isTraced);
             }
 
             var role = MapInterceptorKindToClauseRole(site.Bound.Raw.Kind);
@@ -516,7 +522,16 @@ internal static class ChainAnalyzer
 
         trace?.AppendLine($"//   [ChainAnalyzer] RESULT: kind={queryKind} tier={tier} where={whereTerms.Count} order={orderTerms.Count} set={setTerms.Count} join={joinPlans.Count} params={parameters.Count} masks={possibleMasks.Count} proj={projection?.Kind.ToString() ?? "null"} projCols={projection?.Columns.Count ?? 0}");
 
-        return new AnalyzedChain(plan, executionSite, clauseSites);
+        // Trace logging: chain-level analysis
+        var chainUid = executionSite.Bound.Raw.UniqueId;
+        IR.TraceCapture.Log(chainUid, "[Trace] ChainAnalysis:");
+        IR.TraceCapture.Log(chainUid, $"  tier={tier}, queryKind={queryKind}");
+        IR.TraceCapture.Log(chainUid, $"  whereTerms={whereTerms.Count}, orderTerms={orderTerms.Count}, setTerms={setTerms.Count}");
+        IR.TraceCapture.Log(chainUid, $"  joinPlans={joinPlans.Count}, params={parameters.Count}");
+        IR.TraceCapture.Log(chainUid, $"  possibleMasks=[{string.Join(", ", possibleMasks)}]");
+        IR.TraceCapture.Log(chainUid, $"  isTraced={isTraced}");
+
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
     }
 
     /// <summary>
@@ -975,7 +990,8 @@ internal static class ChainAnalyzer
         TranslatedCallSite executionSite,
         List<TranslatedCallSite> clauseSites,
         string reason,
-        EntityRegistry? registry = null)
+        EntityRegistry? registry = null,
+        bool isTraced = false)
     {
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
@@ -1024,7 +1040,7 @@ internal static class ChainAnalyzer
             tier: OptimizationTier.RuntimeBuild,
             notAnalyzableReason: reason);
 
-        return new AnalyzedChain(plan, executionSite, clauseSites);
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
     }
 
     /// <summary>
@@ -1117,11 +1133,13 @@ internal sealed class AnalyzedChain
     public AnalyzedChain(
         QueryPlan plan,
         TranslatedCallSite executionSite,
-        IReadOnlyList<TranslatedCallSite> clauseSites)
+        IReadOnlyList<TranslatedCallSite> clauseSites,
+        bool isTraced = false)
     {
         Plan = plan;
         ExecutionSite = executionSite;
         ClauseSites = clauseSites;
+        IsTraced = isTraced;
     }
 
     /// <summary>The logical query plan.</summary>
@@ -1132,4 +1150,7 @@ internal sealed class AnalyzedChain
 
     /// <summary>All clause sites in the chain (in source order).</summary>
     public IReadOnlyList<TranslatedCallSite> ClauseSites { get; }
+
+    /// <summary>Whether this chain has a .Trace() call and should emit trace comments.</summary>
+    public bool IsTraced { get; }
 }
