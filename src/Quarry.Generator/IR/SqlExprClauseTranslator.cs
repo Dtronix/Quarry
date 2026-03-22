@@ -255,6 +255,18 @@ internal sealed class SqlExprClauseTranslator
             case SubqueryExpr sub:
                 return ExtractSubqueryParameters(sub, parameters, ref paramIndex);
 
+            case RawCallExpr rawCall:
+            {
+                var changed = false;
+                var newArgs = new SqlExpr[rawCall.Arguments.Count];
+                for (int i = 0; i < rawCall.Arguments.Count; i++)
+                {
+                    newArgs[i] = ExtractParameters(rawCall.Arguments[i], parameters, ref paramIndex);
+                    if (!ReferenceEquals(newArgs[i], rawCall.Arguments[i])) changed = true;
+                }
+                return changed ? new RawCallExpr(rawCall.Template, newArgs) : rawCall;
+            }
+
             // Terminal nodes that don't need parameter extraction
             default:
                 return expr;

@@ -458,6 +458,24 @@ internal static class SqlExprParser
             case "Max" when arguments.Count >= 1:
                 return new FunctionCallExpr("MAX", new SqlExpr[] { arguments[0] }, isAggregate: true);
 
+            case "Raw" when arguments.Count >= 1 && arguments[0] is LiteralExpr templateLiteral && templateLiteral.ClrType == "string":
+                // Sql.Raw<T>("template {0} {1}", arg0, arg1) -> RawCallExpr
+                // Fix expression paths: params object[] packs args into Arguments[1].Expressions[i]
+                var rawArgs = new List<SqlExpr>(arguments.Count - 1);
+                for (int i = 1; i < arguments.Count; i++)
+                {
+                    var arg = arguments[i];
+                    if (arg is CapturedValueExpr captured && captured.ExpressionPath != null)
+                    {
+                        // Remap: Body.Arguments[N] -> Body.Arguments[1].Expressions[N-1]
+                        var fixedPath = captured.ExpressionPath.Replace(
+                            $"Arguments[{i}]", $"Arguments[1].Expressions[{i - 1}]");
+                        arg = new CapturedValueExpr(captured.VariableName, captured.SyntaxText, captured.ClrType, fixedPath);
+                    }
+                    rawArgs.Add(arg);
+                }
+                return new RawCallExpr(templateLiteral.SqlText, rawArgs);
+
             default:
                 return new SqlRawExpr($"Sql.{methodName}(...)");
         }

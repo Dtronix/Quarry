@@ -366,7 +366,15 @@ internal static partial class InterceptorCodeGenerator
         // Handle Arguments[N] format
         if (segment.StartsWith("Arguments["))
         {
-            return $"Unsafe.As<MethodCallExpression>({prevExpr}).Arguments[{segment.Substring("Arguments[".Length, 1)}]";
+            var idx = segment.Substring("Arguments[".Length, segment.IndexOf(']') - "Arguments[".Length);
+            return $"Unsafe.As<MethodCallExpression>({prevExpr}).Arguments[{idx}]";
+        }
+
+        // Handle Expressions[N] format (NewArrayExpression for params arrays)
+        if (segment.StartsWith("Expressions["))
+        {
+            var idx = segment.Substring("Expressions[".Length, segment.IndexOf(']') - "Expressions[".Length);
+            return $"Unsafe.As<NewArrayExpression>({prevExpr}).Expressions[{idx}]";
         }
 
         return segment switch

@@ -57,6 +57,7 @@ internal enum SqlExprKind
     LikeExpr,
     CapturedValue,
     SqlRaw,
+    RawCall,
     ExprList,
     Subquery
 }

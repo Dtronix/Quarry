@@ -189,7 +189,7 @@ public static class Sql
     /// Injects a raw SQL fragment into the query.
     /// </summary>
     /// <typeparam name="T">The expected return type.</typeparam>
-    /// <param name="sql">The SQL fragment. Use @p0, @p1, etc. for parameter placeholders.</param>
+    /// <param name="sql">The SQL fragment. Use {0}, {1}, etc. for argument placeholders.</param>
     /// <param name="parameters">Optional parameter values.</param>
     /// <returns>A value of type T (the actual SQL is evaluated by the database).</returns>
     /// <exception cref="InvalidOperationException">Always throws - this method is translated at compile-time.</exception>
@@ -202,7 +202,7 @@ public static class Sql
     /// Example:
     /// <code>
     /// var users = await db.Users()
-    ///     .Where(u => Sql.Raw&lt;bool&gt;("CONTAINS(user_name, @p0)", searchTerm))
+    ///     .Where(u => Sql.Raw&lt;bool&gt;("CONTAINS(user_name, {0})", searchTerm))
     ///     .Select(u => u)
     ///     .ExecuteFetchAllAsync();
     /// </code>

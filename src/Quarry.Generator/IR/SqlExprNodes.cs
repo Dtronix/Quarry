@@ -447,6 +447,47 @@ internal sealed class SqlRawExpr : SqlExpr
 }
 
 /// <summary>
+/// Sql.Raw&lt;T&gt;(template, args...) call. Template contains {0}/{1} placeholders
+/// that are substituted with the argument expressions during rendering.
+/// </summary>
+internal sealed class RawCallExpr : SqlExpr
+{
+    public override SqlExprKind Kind => SqlExprKind.RawCall;
+
+    /// <summary>SQL template string with @p0, @p1 placeholders.</summary>
+    public string Template { get; }
+
+    /// <summary>Argument expressions to substitute for @p0, @p1, etc.</summary>
+    public IReadOnlyList<SqlExpr> Arguments { get; }
+
+    public RawCallExpr(string template, IReadOnlyList<SqlExpr> arguments)
+        : base(ComputeHash(template, arguments))
+    {
+        Template = template;
+        Arguments = arguments;
+    }
+
+    private static int ComputeHash(string template, IReadOnlyList<SqlExpr> arguments)
+    {
+        var hash = HashCode.Combine(SqlExprKind.RawCall, template);
+        for (int i = 0; i < arguments.Count; i++)
+            hash = HashCode.Combine(hash, arguments[i]);
+        return hash;
+    }
+
+    protected override bool DeepEquals(SqlExpr other)
+    {
+        var o = (RawCallExpr)other;
+        if (Template != o.Template || Arguments.Count != o.Arguments.Count)
+            return false;
+        for (int i = 0; i < Arguments.Count; i++)
+            if (!Arguments[i].Equals(o.Arguments[i]))
+                return false;
+        return true;
+    }
+}
+
+/// <summary>
 /// Comma-separated expression list (used in function arguments, etc.).
 /// </summary>
 internal sealed class ExprListExpr : SqlExpr

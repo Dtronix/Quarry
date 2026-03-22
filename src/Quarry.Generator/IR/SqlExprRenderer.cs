@@ -161,6 +161,45 @@ internal static class SqlExprRenderer
                 sb.Append(raw.SqlText);
                 break;
 
+            case RawCallExpr rawCall:
+            {
+                // Render each argument and substitute {0}, {1} placeholders in the template.
+                // Uses C#-style format placeholders to avoid confusion with SQL parameter syntax.
+                var renderedArgs = new string[rawCall.Arguments.Count];
+                for (int i = 0; i < rawCall.Arguments.Count; i++)
+                {
+                    var argSb = new StringBuilder();
+                    RenderExpr(rawCall.Arguments[i], dialect, paramBase, argSb, genericParams);
+                    renderedArgs[i] = argSb.ToString();
+                }
+
+                var template = rawCall.Template;
+                var result = new StringBuilder(template.Length + 32);
+                int pos = 0;
+                while (pos < template.Length)
+                {
+                    if (template[pos] == '{')
+                    {
+                        int numStart = pos + 1;
+                        int numEnd = numStart;
+                        while (numEnd < template.Length && template[numEnd] >= '0' && template[numEnd] <= '9')
+                            numEnd++;
+                        if (numEnd > numStart && numEnd < template.Length && template[numEnd] == '}'
+                            && int.TryParse(template.Substring(numStart, numEnd - numStart), out int argIdx)
+                            && argIdx >= 0 && argIdx < renderedArgs.Length)
+                        {
+                            result.Append(renderedArgs[argIdx]);
+                            pos = numEnd + 1; // skip past closing '}'
+                            continue;
+                        }
+                    }
+                    result.Append(template[pos]);
+                    pos++;
+                }
+                sb.Append(result);
+                break;
+            }
+
             case ExprListExpr list:
                 for (int i = 0; i < list.Expressions.Count; i++)
                 {

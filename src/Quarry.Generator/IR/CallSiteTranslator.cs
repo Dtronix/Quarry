@@ -232,6 +232,13 @@ internal static class CallSiteTranslator
                 return ExtractLambdaParameterName(like.Operand);
             case SubqueryExpr sub:
                 return sub.OuterParameterName;
+            case RawCallExpr rawCall:
+                foreach (var arg in rawCall.Arguments)
+                {
+                    var name = ExtractLambdaParameterName(arg);
+                    if (name != null) return name;
+                }
+                return null;
             default:
                 return null;
         }

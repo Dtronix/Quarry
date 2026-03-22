@@ -154,6 +154,14 @@ internal static class SqlExprBinder
             case SubqueryExpr sub:
                 return BindSubquery(sub, ctx);
 
+            case RawCallExpr rawCall:
+            {
+                var boundArgs = BindList(rawCall.Arguments, ctx);
+                if (boundArgs == null)
+                    return rawCall;
+                return new RawCallExpr(rawCall.Template, boundArgs);
+            }
+
             // Terminal nodes that don't need binding
             case ResolvedColumnExpr:
             case ParamSlotExpr:

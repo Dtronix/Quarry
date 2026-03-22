@@ -69,10 +69,10 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     public void Where_SqlRaw_WithColumnReference()
     {
         AssertDialects(
-            Lite.Users().Where(u => Sql.Raw<bool>("custom_func(@p0)", u.UserId)).ToDiagnostics(),
-            Pg.Users().Where(u => Sql.Raw<bool>("custom_func(@p0)", u.UserId)).ToDiagnostics(),
-            My.Users().Where(u => Sql.Raw<bool>("custom_func(@p0)", u.UserId)).ToDiagnostics(),
-            Ss.Users().Where(u => Sql.Raw<bool>("custom_func(@p0)", u.UserId)).ToDiagnostics(),
+            Lite.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
+            Pg.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
+            My.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
+            Ss.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE custom_func(\"UserId\")",
             pg:     "SELECT * FROM \"users\" WHERE custom_func(\"UserId\")",
             mysql:  "SELECT * FROM `users` WHERE custom_func(`UserId`)",
@@ -83,10 +83,10 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     public void Where_SqlRaw_WithMultipleColumnReferences()
     {
         AssertDialects(
-            Lite.Users().Where(u => Sql.Raw<bool>("check_cols(@p0, @p1)", u.UserId, u.IsActive)).ToDiagnostics(),
-            Pg.Users().Where(u => Sql.Raw<bool>("check_cols(@p0, @p1)", u.UserId, u.IsActive)).ToDiagnostics(),
-            My.Users().Where(u => Sql.Raw<bool>("check_cols(@p0, @p1)", u.UserId, u.IsActive)).ToDiagnostics(),
-            Ss.Users().Where(u => Sql.Raw<bool>("check_cols(@p0, @p1)", u.UserId, u.IsActive)).ToDiagnostics(),
+            Lite.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
+            Pg.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
+            My.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
+            Ss.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
             pg:     "SELECT * FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
             mysql:  "SELECT * FROM `users` WHERE check_cols(`UserId`, `IsActive`)",
@@ -98,13 +98,13 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     {
         var searchTerm = "john";
         AssertDialects(
-            Lite.Users().Where(u => Sql.Raw<bool>("CONTAINS(@p0, @p1)", u.UserName, searchTerm)).ToDiagnostics(),
-            Pg.Users().Where(u => Sql.Raw<bool>("CONTAINS(@p0, @p1)", u.UserName, searchTerm)).ToDiagnostics(),
-            My.Users().Where(u => Sql.Raw<bool>("CONTAINS(@p0, @p1)", u.UserName, searchTerm)).ToDiagnostics(),
-            Ss.Users().Where(u => Sql.Raw<bool>("CONTAINS(@p0, @p1)", u.UserName, searchTerm)).ToDiagnostics(),
+            Lite.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
+            Pg.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
+            My.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
+            Ss.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE CONTAINS(\"UserName\", @p0)",
-            pg:     "SELECT * FROM \"users\" WHERE CONTAINS(\"UserName\", @p0)",
-            mysql:  "SELECT * FROM `users` WHERE CONTAINS(`UserName`, @p0)",
+            pg:     "SELECT * FROM \"users\" WHERE CONTAINS(\"UserName\", $1)",
+            mysql:  "SELECT * FROM `users` WHERE CONTAINS(`UserName`, ?)",
             ss:     "SELECT * FROM [users] WHERE CONTAINS([UserName], @p0)");
     }
 
@@ -112,10 +112,10 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     public void Where_SqlRaw_WithLiteralParameter()
     {
         AssertDialects(
-            Lite.Users().Where(u => Sql.Raw<bool>("status_check(@p0, @p1)", u.UserName, 42)).ToDiagnostics(),
-            Pg.Users().Where(u => Sql.Raw<bool>("status_check(@p0, @p1)", u.UserName, 42)).ToDiagnostics(),
-            My.Users().Where(u => Sql.Raw<bool>("status_check(@p0, @p1)", u.UserName, 42)).ToDiagnostics(),
-            Ss.Users().Where(u => Sql.Raw<bool>("status_check(@p0, @p1)", u.UserName, 42)).ToDiagnostics(),
+            Lite.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
+            Pg.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
+            My.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
+            Ss.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE status_check(\"UserName\", 42)",
             pg:     "SELECT * FROM \"users\" WHERE status_check(\"UserName\", 42)",
             mysql:  "SELECT * FROM `users` WHERE status_check(`UserName`, 42)",
