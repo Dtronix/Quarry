@@ -177,7 +177,7 @@ internal static class SqlAssembler
             {
                 if (i > 0) sb.Append(" AND ");
                 var paramsBefore = CountParameters(plan.HavingExprs[i]);
-                sb.Append(SqlExprRenderer.Render(plan.HavingExprs[i], dialect, paramIndex));
+                sb.Append(RenderWhereCondition(plan.HavingExprs[i], dialect, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -341,12 +341,25 @@ internal static class SqlAssembler
         {
             if (i > 0) sb.Append(", ");
             var col = columns[i];
-            if (col.TableAlias != null)
+            if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
             {
-                sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias));
-                sb.Append('.');
+                // Aggregate function: render the SQL expression with an alias
+                sb.Append(col.SqlExpression);
+                if (!string.IsNullOrEmpty(col.Alias))
+                {
+                    sb.Append(" AS ");
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.Alias));
+                }
             }
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.ColumnName));
+            else
+            {
+                if (col.TableAlias != null)
+                {
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias));
+                    sb.Append('.');
+                }
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.ColumnName));
+            }
         }
     }
 
