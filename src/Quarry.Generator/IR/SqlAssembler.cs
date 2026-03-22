@@ -486,12 +486,39 @@ internal static class SqlAssembler
     /// </summary>
     private static string RenderWhereCondition(SqlExpr condition, SqlDialect dialect, int paramIndex)
     {
-        // Strip redundant outer parens from any top-level binary expression in WHERE context.
-        // The renderer wraps all BinaryOpExpr in parens, but a top-level WHERE condition
-        // doesn't need them (e.g., WHERE col > 50 not WHERE (col > 50)).
+        // For AND/OR at the WHERE top level, recursively flatten and strip inner comparison parens.
+        // RenderBinary wraps ALL BinaryOpExpr in parens, but WHERE context doesn't need them
+        // around comparisons (e.g., WHERE col > 50 AND col2 = 1, not WHERE (col > 50) AND (col2 = 1)).
+        if (condition is BinaryOpExpr bin && (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or))
+        {
+            var left = RenderWhereChild(bin.Left, dialect, paramIndex, bin.Operator);
+            var leftParams = CountParameters(bin.Left);
+            var right = RenderWhereChild(bin.Right, dialect, paramIndex + leftParams, bin.Operator);
+            var op = bin.Operator == SqlBinaryOperator.And ? " AND " : " OR ";
+            return left + op + right;
+        }
         if (condition is BinaryOpExpr)
             return SqlExprRenderer.Render(condition, dialect, paramIndex, stripOuterParens: true);
         return SqlExprRenderer.Render(condition, dialect, paramIndex);
+    }
+
+    private static string RenderWhereChild(SqlExpr child, SqlDialect dialect, int paramIndex, SqlBinaryOperator parentOp)
+    {
+        if (child is BinaryOpExpr bin)
+        {
+            if (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or)
+            {
+                // Recursively flatten same or compatible logical ops
+                var inner = RenderWhereCondition(child, dialect, paramIndex);
+                // Wrap OR inside AND for correct precedence
+                if (parentOp == SqlBinaryOperator.And && bin.Operator == SqlBinaryOperator.Or)
+                    return "(" + inner + ")";
+                return inner;
+            }
+            // Comparison operator: strip outer parens
+            return SqlExprRenderer.Render(child, dialect, paramIndex, stripOuterParens: true);
+        }
+        return SqlExprRenderer.Render(child, dialect, paramIndex);
     }
 
     /// <summary>
