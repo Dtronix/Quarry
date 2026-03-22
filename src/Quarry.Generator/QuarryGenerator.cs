@@ -624,16 +624,34 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
             // Build ChainAnalysisResult from QueryPlan
             var executionUsageSite = UsageSiteInfo.FromTranslatedCallSite(assembled.ExecutionSite);
+
+            // Build a lookup from clause site UniqueId → conditional bit index
+            // ConditionalTerms are ordered matching the conditional clause sites
+            var conditionalBitLookup = new Dictionary<string, int>(StringComparer.Ordinal);
+            {
+                int condIdx = 0;
+                foreach (var cs in assembled.ClauseSites)
+                {
+                    if (cs.Bound.Raw.ConditionalInfo != null && condIdx < assembled.Plan.ConditionalTerms.Count)
+                    {
+                        conditionalBitLookup[cs.Bound.Raw.UniqueId] = assembled.Plan.ConditionalTerms[condIdx].BitIndex;
+                        condIdx++;
+                    }
+                }
+            }
+
             var clauseChainedSites = new List<ChainedClauseSite>();
             foreach (var cs in assembled.ClauseSites)
             {
                 var role = ChainAnalyzer.MapInterceptorKindToClauseRole(cs.Bound.Raw.Kind);
                 if (role != null)
                 {
+                    conditionalBitLookup.TryGetValue(cs.Bound.Raw.UniqueId, out var bitIdx);
+                    var hasBit = conditionalBitLookup.ContainsKey(cs.Bound.Raw.UniqueId);
                     clauseChainedSites.Add(new ChainedClauseSite(
                         UsageSiteInfo.FromTranslatedCallSite(cs),
                         isConditional: cs.Bound.Raw.ConditionalInfo != null,
-                        bitIndex: null,
+                        bitIndex: hasBit ? (int?)bitIdx : null,
                         role: role.Value));
                 }
             }
@@ -642,10 +660,16 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             foreach (var ct in assembled.Plan.ConditionalTerms)
             {
                 // Find the matching site for this conditional term
-                var matchingSite = clauseChainedSites.Count > ct.BitIndex
-                    ? clauseChainedSites[ct.BitIndex].Site
-                    : executionUsageSite;
-                conditionalClauses.Add(new ConditionalClause(ct.BitIndex, matchingSite, BranchKind.Independent));
+                UsageSiteInfo? matchingSite = null;
+                foreach (var ccs in clauseChainedSites)
+                {
+                    if (ccs.BitIndex == ct.BitIndex)
+                    {
+                        matchingSite = ccs.Site;
+                        break;
+                    }
+                }
+                conditionalClauses.Add(new ConditionalClause(ct.BitIndex, matchingSite ?? executionUsageSite, BranchKind.Independent));
             }
 
             var analysis = new ChainAnalysisResult(
@@ -798,6 +822,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
         catch (Exception ex)
         {
+            // Include stack trace in trace log for diagnosis
+            trace.AppendLine($"// EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            trace.AppendLine($"// StackTrace: {ex.StackTrace?.Replace("\r\n", " | ").Replace("\n", " | ")}");
+            try { spc.AddSource($"__Trace.{group.ContextClassName}.{group.FileTag}.g.cs", trace.ToString()); } catch { }
+
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.InternalError,
                 Location.None,

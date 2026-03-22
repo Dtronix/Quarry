@@ -849,7 +849,7 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static ConditionalInfo? DetectConditionalAncestor(SyntaxNode node)
     {
-        int depth = 0;
+        int ifDepth = 0; // Count only nested if-statement levels, not all syntax nodes
         foreach (var ancestor in node.Ancestors())
         {
             if (ancestor is IfStatementSyntax ifStatement)
@@ -865,15 +865,16 @@ internal static class UsageSiteDiscovery
                     // For now, mark as Independent; the ChainAnalyzer can refine
                     branchKind = BranchKind.Independent;
                 }
-                return new ConditionalInfo(conditionText, depth, branchKind);
+                return new ConditionalInfo(conditionText, ifDepth, branchKind);
             }
             if (ancestor is ConditionalExpressionSyntax ternary)
             {
-                return new ConditionalInfo(ternary.Condition.ToString(), depth, BranchKind.MutuallyExclusive);
+                return new ConditionalInfo(ternary.Condition.ToString(), ifDepth, BranchKind.MutuallyExclusive);
             }
             if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
                 break;
-            depth++;
+            // Only count nesting of if-blocks, not arbitrary syntax nodes
+            // (e.g., ExpressionStatement, Block, AssignmentExpression are not nesting levels)
         }
         return null;
     }
@@ -907,9 +908,34 @@ internal static class UsageSiteDiscovery
         // The root receiver identifies the chain (e.g., "db" in db.Users().Where(...))
         var rootText = receiver.ToString();
 
-        // Find the containing statement to distinguish separate chains within the same method.
-        // Without this, two chains like `db.Users().Select(u => u.Name).Execute()` and
-        // `db.Users().Select(u => u.Id).Execute()` in the same method get the same ChainId.
+        // Check if root receiver is a local variable whose type is a Quarry builder
+        // (IQueryBuilder, IEntityAccessor, etc.). All uses of such a variable within the
+        // same method belong to the same chain (variable-based chains).
+        // Non-builder locals (like DbContext variables) still use statement scope to
+        // distinguish separate chains: db.Users().Execute(); db.Users().Execute();
+        bool rootIsBuilderLocal = false;
+        if (receiver is IdentifierNameSyntax rootIdent)
+        {
+            var symbol = semanticModel.GetSymbolInfo(rootIdent, ct).Symbol;
+            if (symbol is ILocalSymbol localSymbol)
+            {
+                var typeName = localSymbol.Type.ToDisplayString();
+                if (typeName.Contains("IQueryBuilder") || typeName.Contains("IEntityAccessor")
+                    || typeName.Contains("QueryBuilder<") || typeName.Contains("EntityAccessor<"))
+                    rootIsBuilderLocal = true;
+            }
+        }
+
+        // For non-local roots (fields/properties like _db), check if the containing statement
+        // assigns to a local variable. If so, use that variable's name to link the initial
+        // fluent chain with subsequent variable-based operations.
+        string? assignedVarName = null;
+        if (!rootIsBuilderLocal)
+        {
+            assignedVarName = GetAssignedVariableName(invocation);
+        }
+
+        // Find the containing method scope
         int statementStart = -1;
         foreach (var ancestor in invocation.Ancestors())
         {
@@ -921,18 +947,59 @@ internal static class UsageSiteDiscovery
             if (ancestor is MethodDeclarationSyntax method)
             {
                 var filePath = invocation.SyntaxTree.FilePath;
+                // Variable-based chains: use method scope + variable name (no statement differentiation)
+                // so all uses of the same variable merge into one chain.
+                if (rootIsBuilderLocal)
+                    return $"{filePath}:{method.Span.Start}:{rootText}";
+                // Initial assignment to a local (e.g., IQueryBuilder<T> query = _db.Users().Where(...))
+                // uses the assigned variable name to link with subsequent uses of that variable.
+                if (assignedVarName != null)
+                    return $"{filePath}:{method.Span.Start}:{assignedVarName}";
+                // Standalone fluent chains: use statement scope to distinguish separate chains.
                 var scopeKey = statementStart >= 0 ? statementStart : method.Span.Start;
                 return $"{filePath}:{scopeKey}:{rootText}";
             }
             if (ancestor is LocalFunctionStatementSyntax localFunc)
             {
                 var filePath = invocation.SyntaxTree.FilePath;
+                if (rootIsBuilderLocal)
+                    return $"{filePath}:{localFunc.Span.Start}:{rootText}";
+                if (assignedVarName != null)
+                    return $"{filePath}:{localFunc.Span.Start}:{assignedVarName}";
                 var scopeKey = statementStart >= 0 ? statementStart : localFunc.Span.Start;
                 return $"{filePath}:{scopeKey}:{rootText}";
             }
         }
 
         return rootText;
+    }
+
+    /// <summary>
+    /// Checks if the invocation is part of an expression being assigned to a local variable.
+    /// Returns the variable name if found, null otherwise.
+    /// Handles both declarations (var query = ...) and assignments (query = ...).
+    /// </summary>
+    private static string? GetAssignedVariableName(InvocationExpressionSyntax invocation)
+    {
+        foreach (var ancestor in invocation.Ancestors())
+        {
+            // var query = _db.Users().Where(...)
+            if (ancestor is EqualsValueClauseSyntax equalsClause
+                && equalsClause.Parent is VariableDeclaratorSyntax declarator)
+            {
+                return declarator.Identifier.Text;
+            }
+            // query = query.Where(...)
+            if (ancestor is AssignmentExpressionSyntax assignment
+                && assignment.Left is IdentifierNameSyntax ident)
+            {
+                return ident.Identifier.Text;
+            }
+            // Stop at statement boundary
+            if (ancestor is StatementSyntax)
+                break;
+        }
+        return null;
     }
 
     /// <summary>

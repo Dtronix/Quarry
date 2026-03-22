@@ -70,9 +70,19 @@ internal static class ChainAnalyzer
             ct.ThrowIfCancellationRequested();
             var chainSites = kvp.Value;
 
-            var analyzed = AnalyzeChainGroup(chainSites, registry, ct);
-            if (analyzed != null)
-                results.Add(analyzed);
+            try
+            {
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct);
+                if (analyzed != null)
+                    results.Add(analyzed);
+            }
+            catch (Exception ex)
+            {
+                var trace = IR.PipelineOrchestrator.TraceLog;
+                trace?.AppendLine($"//   [ChainAnalyzer] EXCEPTION in AnalyzeChainGroup: {ex.GetType().Name}: {ex.Message}");
+                trace?.AppendLine($"//     ChainId={kvp.Key} Sites={chainSites.Count}");
+                trace?.AppendLine($"//     StackTrace={ex.StackTrace?.Replace("\n", " | ")}");
+            }
         }
 
         return results;
@@ -86,6 +96,8 @@ internal static class ChainAnalyzer
         EntityRegistry registry,
         CancellationToken ct)
     {
+        var trace = IR.PipelineOrchestrator.TraceLog;
+
         // Find the execution terminal
         TranslatedCallSite? executionSite = null;
         var clauseSites = new List<TranslatedCallSite>();
@@ -103,7 +115,10 @@ internal static class ChainAnalyzer
         }
 
         if (executionSite == null)
+        {
+            trace?.AppendLine($"//   [ChainAnalyzer] SKIP chain (no execution terminal): {chainSites.Count} sites, first={chainSites[0].Bound.Raw.Kind} ChainId={chainSites[0].Bound.Raw.ChainId}");
             return null;
+        }
 
         // Sort clause sites by source location for deterministic ordering
         clauseSites.Sort((a, b) =>
@@ -113,10 +128,15 @@ internal static class ChainAnalyzer
             return a.Bound.Raw.Column.CompareTo(b.Bound.Raw.Column);
         });
 
+        trace?.AppendLine($"//   [ChainAnalyzer] AnalyzeChainGroup: exec={executionSite.Bound.Raw.Kind}:{executionSite.Bound.Raw.MethodName} clauses={clauseSites.Count} ChainId={executionSite.Bound.Raw.ChainId}");
+        foreach (var cs in clauseSites)
+            trace?.AppendLine($"//     clause: Kind={cs.Bound.Raw.Kind} Method={cs.Bound.Raw.MethodName} L{cs.Bound.Raw.Line} Cond={cs.Bound.Raw.ConditionalInfo != null} HasClause={cs.Clause != null && cs.Clause.IsSuccess}");
+
         // Check for disqualifiers from RawCallSite flags
         var disqualifyReason = CheckDisqualifiers(chainSites);
         if (disqualifyReason != null)
         {
+            trace?.AppendLine($"//   [ChainAnalyzer] DISQUALIFIED: {disqualifyReason}");
             return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason, registry);
         }
 
@@ -134,8 +154,10 @@ internal static class ChainAnalyzer
                 continue;
 
             // Check nesting depth
+            trace?.AppendLine($"//   [ChainAnalyzer] ConditionalInfo: NestingDepth={condInfo.NestingDepth} ConditionText={condInfo.ConditionText} MaxIfNestingDepth={MaxIfNestingDepth} Kind={site.Bound.Raw.Kind}");
             if (condInfo.NestingDepth > MaxIfNestingDepth)
             {
+                trace?.AppendLine($"//   [ChainAnalyzer] NESTING_DISQUALIFIED: depth={condInfo.NestingDepth} > max={MaxIfNestingDepth}");
                 return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry);
             }
 
@@ -163,12 +185,19 @@ internal static class ChainAnalyzer
         else
             tier = OptimizationTier.PrequotedFragments;
 
+        trace?.AppendLine($"//   [ChainAnalyzer] conditionalTerms={conditionalTerms.Count} totalBits={totalBits} tier={tier} ChainId={executionSite.Bound.Raw.ChainId}");
+        foreach (var ct2 in conditionalTerms)
+            trace?.AppendLine($"//     condTerm: bit={ct2.BitIndex} role={ct2.Role}");
+        if (conditionalTerms.Count == 0 && clauseSites.Any(s => s.Bound.Raw.ConditionalInfo != null))
+            trace?.AppendLine($"//   [ChainAnalyzer] WARNING: clauses have ConditionalInfo but no conditionalTerms were created!");
+
         ct.ThrowIfCancellationRequested();
 
         // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
             ? EnumerateMaskCombinations(conditionalTerms, branchGroups, clauseSites)
             : Array.Empty<ulong>();
+        trace?.AppendLine($"//   [ChainAnalyzer] possibleMasks={possibleMasks.Count}: [{string.Join(", ", possibleMasks)}]");
 
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
@@ -405,6 +434,8 @@ internal static class ChainAnalyzer
             parameters: parameters,
             tier: tier,
             unmatchedMethodNames: unmatchedMethodNames);
+
+        trace?.AppendLine($"//   [ChainAnalyzer] RESULT: kind={queryKind} tier={tier} where={whereTerms.Count} order={orderTerms.Count} set={setTerms.Count} join={joinPlans.Count} params={parameters.Count} masks={possibleMasks.Count} proj={projection?.Kind.ToString() ?? "null"} projCols={projection?.Columns.Count ?? 0}");
 
         return new AnalyzedChain(plan, executionSite, clauseSites);
     }
