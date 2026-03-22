@@ -274,6 +274,7 @@ internal sealed class PipelineOrchestrator
     {
         TraceLog = new System.Text.StringBuilder();
         TraceLog.AppendLine($"// === AnalyzeAndGroupTranslated: {translatedSites.Length} sites ===");
+        TraceCapture.Clear();
 
         ct.ThrowIfCancellationRequested();
 

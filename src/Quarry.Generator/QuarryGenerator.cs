@@ -560,7 +560,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         if (group.IsNewPipeline)
         {
-            EmitFileInterceptorsNewPipeline(spc, group);
+            EmitFileInterceptorsNewPipeline(spc, group, compilation);
         }
         else
         {
@@ -568,7 +568,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
     }
 
-    private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group)
+    private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
     {
         var trace = IR.PipelineOrchestrator.TraceLog ?? new System.Text.StringBuilder();
         trace.AppendLine($"// === EmitFileInterceptorsNewPipeline: {group.ContextClassName} / {System.IO.Path.GetFileName(group.SourceFilePath)} ===");
@@ -905,6 +905,47 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
         catch { }
 
+        // Check for QUARRY_TRACE preprocessor symbol and collect trace data for traced chains
+        Dictionary<string, IReadOnlyList<string>>? traceData = null;
+        var hasQuarryTrace = HasQuarryTrace(compilation);
+        foreach (var assembled in group.AssembledPlans)
+        {
+            if (!assembled.IsTraced) continue;
+
+            if (!hasQuarryTrace)
+            {
+                // Report QRY030 warning when .Trace() is present but QUARRY_TRACE is not defined
+                var execRaw = assembled.ExecutionSite.Bound.Raw;
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.TraceWithoutFlag,
+                    Location.Create(execRaw.FilePath, execRaw.Location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                        new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                        new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                    $"{GetRelativePath(execRaw.FilePath)}:{execRaw.Line}"));
+                continue;
+            }
+
+            // Collect trace data for this chain
+            traceData ??= new Dictionary<string, IReadOnlyList<string>>();
+            var allTraceLines = new List<string>();
+
+            // Collect per-site trace data for all chain members
+            foreach (var cs in assembled.ClauseSites)
+            {
+                var siteTrace = IR.TraceCapture.Get(cs.Bound.Raw.UniqueId);
+                if (siteTrace != null)
+                    allTraceLines.AddRange(siteTrace);
+            }
+
+            // Collect execution site trace data (includes assembly + carrier traces)
+            var execTrace = IR.TraceCapture.Get(assembled.ExecutionSite.Bound.Raw.UniqueId);
+            if (execTrace != null)
+                allTraceLines.AddRange(execTrace);
+
+            if (allTraceLines.Count > 0)
+                traceData[assembled.ExecutionSite.Bound.Raw.UniqueId] = allTraceLines;
+        }
+
         try
         {
             var emitter = new CodeGen.FileEmitter(
@@ -912,7 +953,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 group.ContextNamespace,
                 group.FileTag,
                 mergedSites,
-                chains);
+                chains,
+                traceData);
             var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
@@ -1959,6 +2001,20 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Simple: just return the filename
         var lastSlash = filePath.LastIndexOfAny(new[] { '/', '\\' });
         return lastSlash >= 0 ? filePath.Substring(lastSlash + 1) : filePath;
+    }
+
+    /// <summary>
+    /// Checks if the consumer project defines the QUARRY_TRACE preprocessor symbol.
+    /// </summary>
+    private static bool HasQuarryTrace(Compilation compilation)
+    {
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            if (((Microsoft.CodeAnalysis.CSharp.CSharpParseOptions)tree.Options)
+                .PreprocessorSymbolNames.Contains("QUARRY_TRACE"))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

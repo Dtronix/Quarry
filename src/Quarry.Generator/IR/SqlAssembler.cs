@@ -39,7 +39,8 @@ internal static class SqlAssembler
                 entityTypeName: executionSite.Bound.Raw.EntityTypeName,
                 resultTypeName: executionSite.Bound.Raw.ResultTypeName,
                 dialect: dialect,
-                entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace);
+                entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
+                isTraced: chain.IsTraced);
         }
 
         // Build SQL for each mask
@@ -87,7 +88,8 @@ internal static class SqlAssembler
             entityTypeName: executionSite.Bound.Raw.EntityTypeName,
             resultTypeName: executionSite.Bound.Raw.ResultTypeName,
             dialect: dialect,
-            entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace);
+            entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
+            isTraced: chain.IsTraced);
     }
 
     /// <summary>

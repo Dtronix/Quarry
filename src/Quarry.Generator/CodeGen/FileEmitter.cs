@@ -33,19 +33,22 @@ internal sealed class FileEmitter
     private readonly string _fileTag;
     private readonly IReadOnlyList<UsageSiteInfo> _sites;
     private readonly IReadOnlyList<PrebuiltChainInfo>? _chains;
+    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _traceData;
 
     public FileEmitter(
         string contextClassName,
         string? contextNamespace,
         string fileTag,
         IReadOnlyList<UsageSiteInfo> sites,
-        IReadOnlyList<PrebuiltChainInfo>? chains = null)
+        IReadOnlyList<PrebuiltChainInfo>? chains = null,
+        IReadOnlyDictionary<string, IReadOnlyList<string>>? traceData = null)
     {
         _contextClassName = contextClassName;
         _contextNamespace = contextNamespace;
         _fileTag = fileTag;
         _sites = sites;
         _chains = chains;
+        _traceData = traceData;
     }
 
     /// <summary>
@@ -344,9 +347,35 @@ internal sealed class FileEmitter
             list.Add(f);
         }
 
+        // Build trace data lookup by chain execution site UniqueId
+        var chainTraceMap = new Dictionary<string, IReadOnlyList<string>>();
+        if (_traceData != null && _chains != null)
+        {
+            foreach (var chain in _chains)
+            {
+                var execUid = chain.Analysis.ExecutionSite.UniqueId;
+                if (_traceData.TryGetValue(execUid, out var traceLines))
+                    chainTraceMap[execUid] = traceLines;
+            }
+        }
+
         // Generate grouped output
+        var chainIdx = 0;
         foreach (var (label, sites) in chainGroups)
         {
+            // Emit trace comments for traced chains
+            if (_chains != null && chainIdx < _chains.Count)
+            {
+                var chainExecUid = _chains[chainIdx].Analysis.ExecutionSite.UniqueId;
+                if (chainTraceMap.TryGetValue(chainExecUid, out var traceLines))
+                {
+                    foreach (var line in traceLines)
+                        sb.AppendLine($"    // {line}");
+                    sb.AppendLine();
+                }
+            }
+            chainIdx++;
+
             sb.AppendLine($"    #region {label}");
             sb.AppendLine();
             foreach (var site in sites)

@@ -475,6 +475,20 @@ internal static class DiagnosticDescriptors
                      "(e.g., ExecuteFetchAllAsync). Each execution path must use its own independent builder chain " +
                      "to avoid confusing aliasing behavior from the immutable builder contract.");
 
+    // ─── Trace diagnostics (QRY034) ───────────────────────────────────
+
+    /// <summary>
+    /// QRY034: .Trace() requires QUARRY_TRACE preprocessor symbol.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor TraceWithoutFlag = new(
+        id: "QRY034",
+        title: ".Trace() requires QUARRY_TRACE",
+        messageFormat: ".Trace() found on chain at {0} but QUARRY_TRACE is not defined. Add <DefineConstants>QUARRY_TRACE</DefineConstants> to enable trace output.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 
     /// <summary>

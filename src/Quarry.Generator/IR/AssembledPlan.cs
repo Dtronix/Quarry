@@ -22,7 +22,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         string entityTypeName,
         string? resultTypeName,
         SqlDialect dialect,
-        string? entitySchemaNamespace = null)
+        string? entitySchemaNamespace = null,
+        bool isTraced = false)
     {
         Plan = plan;
         SqlVariants = sqlVariants;
@@ -34,6 +35,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         ResultTypeName = resultTypeName;
         Dialect = dialect;
         EntitySchemaNamespace = entitySchemaNamespace;
+        IsTraced = isTraced;
     }
 
     public QueryPlan Plan { get; }
@@ -46,6 +48,9 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     public string? ResultTypeName { get; }
     public SqlDialect Dialect { get; }
     public string? EntitySchemaNamespace { get; }
+
+    /// <summary>Whether this chain has a .Trace() call and should emit trace comments.</summary>
+    public bool IsTraced { get; }
 
     public bool Equals(AssembledPlan? other)
     {
