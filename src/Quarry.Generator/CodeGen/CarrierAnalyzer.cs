@@ -21,21 +21,50 @@ internal static class CarrierAnalyzer
     /// </summary>
     public static CarrierStrategy Analyze(PrebuiltChainInfo chain)
     {
+        var carrierUid = chain.Analysis.ExecutionSite.UniqueId;
+
         // Gate 1: Chain parameters must be resolvable
         if (chain.ChainParameters == null)
+        {
+            IR.TraceCapture.Log(carrierUid, "[Trace] Carrier:");
+            IR.TraceCapture.Log(carrierUid, "  eligible=false, reason=chain parameters not resolved");
             return CarrierStrategy.Ineligible("chain parameters not resolved");
+        }
 
         // Gate 2: No unmatched method names in the chain
         if (chain.Analysis.UnmatchedMethodNames != null)
+        {
+            IR.TraceCapture.Log(carrierUid, "[Trace] Carrier:");
+            IR.TraceCapture.Log(carrierUid, "  eligible=false, reason=chain has unmatched methods");
             return CarrierStrategy.Ineligible("chain has unmatched methods");
+        }
 
         // Gate 3: Terminal-specific eligibility
         var terminalResult = CheckTerminalEligibility(chain);
         if (terminalResult != null)
+        {
+            IR.TraceCapture.Log(carrierUid, "[Trace] Carrier:");
+            IR.TraceCapture.Log(carrierUid, $"  eligible=false, reason={terminalResult.IneligibleReason}");
             return terminalResult;
+        }
 
         // All gates passed — build the strategy
-        return BuildEligibleStrategy(chain);
+        var strategy = BuildEligibleStrategy(chain);
+
+        // Trace logging: carrier analysis
+        IR.TraceCapture.Log(carrierUid, "[Trace] Carrier:");
+        IR.TraceCapture.Log(carrierUid, $"  eligible={strategy.IsEligible}");
+        if (strategy.IsEligible)
+        {
+            IR.TraceCapture.Log(carrierUid, $"  baseClass={strategy.BaseClassName}");
+            IR.TraceCapture.Log(carrierUid, $"  fields={strategy.Fields.Count}, staticFields={strategy.StaticFields.Count}");
+        }
+        else
+        {
+            IR.TraceCapture.Log(carrierUid, $"  reason={strategy.IneligibleReason}");
+        }
+
+        return strategy;
     }
 
     /// <summary>
