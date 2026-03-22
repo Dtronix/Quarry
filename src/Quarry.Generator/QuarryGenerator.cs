@@ -105,8 +105,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct));
 
         // Per-file output — only regenerates files whose group changed
-        context.RegisterSourceOutput(perFileGroups,
-            static (spc, group) => EmitFileInterceptors(spc, group));
+        // Combine with CompilationProvider so EmitFileInterceptors can reconstruct
+        // source locations for diagnostics (Location.Create needs SyntaxTree).
+        context.RegisterSourceOutput(
+            perFileGroups.Combine(context.CompilationProvider),
+            static (spc, pair) => EmitFileInterceptors(spc, pair.Left, pair.Right));
 
         // Phase 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
@@ -515,21 +518,42 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// <summary>
     /// Emits interceptor source and reports diagnostics for a single (context, file) group.
     /// </summary>
-    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group)
+    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
     {
+        // Find the SyntaxTree for this file so diagnostics get proper source locations
+        SyntaxTree? syntaxTree = null;
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            if (tree.FilePath == group.SourceFilePath)
+            {
+                syntaxTree = tree;
+                break;
+            }
+        }
+
         // Report all deferred diagnostics
         foreach (var diag in group.Diagnostics)
         {
             var descriptor = GetDescriptorById(diag.DiagnosticId);
             if (descriptor == null) continue;
 
-            var location = diag.Location.FilePath != null
-                ? Location.Create(diag.Location.FilePath,
+            Location location;
+            if (syntaxTree != null && diag.Location.Span.Length > 0)
+            {
+                location = Location.Create(syntaxTree, diag.Location.Span);
+            }
+            else if (diag.Location.FilePath != null)
+            {
+                location = Location.Create(diag.Location.FilePath,
                     default,
                     new Microsoft.CodeAnalysis.Text.LinePositionSpan(
                         new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1),
-                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)))
-                : Location.None;
+                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)));
+            }
+            else
+            {
+                location = Location.None;
+            }
 
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
         }

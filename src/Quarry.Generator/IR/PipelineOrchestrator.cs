@@ -339,6 +339,15 @@ internal sealed class PipelineOrchestrator
         {
             var raw = site.Bound.Raw;
 
+            // QRY001: query not analyzable (parameter receiver, variable receiver, etc.)
+            if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
+                    raw.Location,
+                    raw.NonAnalyzableReason));
+            }
+
             // QRY015: ambiguous context resolution
             if (site.Bound.ContextClassName == null && registry.GetEntryCount(raw.EntityTypeName) > 1)
             {
