@@ -148,7 +148,10 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var w = activeWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
+                // Wrap each WHERE term in parentheses when there are multiple terms
+                if (activeWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                if (activeWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
@@ -217,7 +220,10 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var w = activeWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
+                // Wrap each WHERE term in parentheses when there are multiple terms
+                if (activeWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                if (activeWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
@@ -260,7 +266,10 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var w = activeWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
+                // Wrap each WHERE term in parentheses when there are multiple terms
+                if (activeWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                if (activeWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
