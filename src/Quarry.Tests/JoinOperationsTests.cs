@@ -2,7 +2,9 @@ using NUnit.Framework;
 using Quarry;
 using Quarry.Generators.Models;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Translation;
+using Quarry.Tests.Testing;
 using System.Text;
 
 // Use explicit namespace aliases to avoid ambiguity
@@ -422,9 +424,9 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_Join_GeneratesFallbackWithConcreteType()
     {
-        var sites = new List<UsageSiteInfo>
+        var sites = new List<TranslatedCallSite>
         {
-            CreateJoinUsageSite(InterceptorKind.Join, null)
+            CreateJoinCallSite(InterceptorKind.Join)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -440,9 +442,9 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_LeftJoin_GeneratesFallbackWithConcreteType()
     {
-        var sites = new List<UsageSiteInfo>
+        var sites = new List<TranslatedCallSite>
         {
-            CreateJoinUsageSite(InterceptorKind.LeftJoin, null)
+            CreateJoinCallSite(InterceptorKind.LeftJoin)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -458,9 +460,9 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_RightJoin_GeneratesFallbackWithConcreteType()
     {
-        var sites = new List<UsageSiteInfo>
+        var sites = new List<TranslatedCallSite>
         {
-            CreateJoinUsageSite(InterceptorKind.RightJoin, null)
+            CreateJoinCallSite(InterceptorKind.RightJoin)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -476,16 +478,9 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_Join_WithClauseInfo_GeneratesOptimizedJoin()
     {
-        var clauseInfo = new JoinClauseInfo(
-            GenJoinClauseKind.Inner,
-            "TestOrder",
-            "test_orders",
-            "\"t1\".\"id\" = \"t2\".\"user_id\"",
-            Array.Empty<ParameterInfo>());
-
-        var sites = new List<UsageSiteInfo>
+        var sites = new List<TranslatedCallSite>
         {
-            CreateJoinUsageSite(InterceptorKind.Join, clauseInfo)
+            CreateJoinCallSite(InterceptorKind.Join)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -499,58 +494,35 @@ public class JoinOperationsTests
         Assert.That(source, Does.Contain("AddJoinClause"));
     }
 
-    private UsageSiteInfo CreateJoinUsageSite(InterceptorKind kind, ClauseInfo? clauseInfo)
+    private TranslatedCallSite CreateJoinCallSite(InterceptorKind kind)
     {
-        return new UsageSiteInfo(
-            methodName: kind.ToString(),
-            filePath: "Test.cs",
-            line: 10,
-            column: 5,
-            builderTypeName: "IQueryBuilder",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: null!,
-            uniqueId: "abc12345",
-            resultTypeName: null,
-            nonAnalyzableReason: null,
-            contextClassName: "TestContext",
-            projectionInfo: null,
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",  // Test data for unit tests
-            interceptableLocationVersion: 1,
-            joinedEntityTypeName: "TestOrder");
+        return new TestCallSiteBuilder()
+            .WithMethodName(kind.ToString())
+            .WithKind(kind)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithJoinedEntityType("TestOrder")
+            .WithBuilderTypeName("IQueryBuilder")
+            .WithContext("TestContext", "TestNamespace")
+            .WithUniqueId("abc12345")
+            .Build();
     }
 
     [Test]
     public void InterceptorCodeGenerator_ChainedJoin_2To3_GeneratesCorrectTypes()
     {
-        var clauseInfo = new JoinClauseInfo(
-            GenJoinClauseKind.Inner,
-            "TestItem",
-            "test_items",
-            @"""t2"".""order_id"" = ""t1"".""id""",
-            Array.Empty<ParameterInfo>());
-
-        var site = new UsageSiteInfo(
-            methodName: "Join",
-            filePath: "Test.cs",
-            line: 10,
-            column: 5,
-            builderTypeName: "IJoinedQueryBuilder",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: InterceptorKind.Join,
-            invocationSyntax: null!,
-            uniqueId: "chain23",
-            contextClassName: "TestContext",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            joinedEntityTypeName: "global::TestNamespace.TestItem",
-            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("Join")
+            .WithKind(InterceptorKind.Join)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithBuilderTypeName("IJoinedQueryBuilder")
+            .WithUniqueId("chain23")
+            .WithContext("TestContext", "TestNamespace")
+            .WithJoinedEntityType("global::TestNamespace.TestItem")
+            .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" })
+            .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<TranslatedCallSite> { site });
 
         Assert.That(source, Does.Contain("JoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem>"));
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
@@ -560,32 +532,19 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_ChainedJoin_3To4_GeneratesCorrectTypes()
     {
-        var clauseInfo = new JoinClauseInfo(
-            GenJoinClauseKind.Left,
-            "TestCategory",
-            "test_categories",
-            @"""t3"".""id"" = ""t2"".""category_id""",
-            Array.Empty<ParameterInfo>());
-
-        var site = new UsageSiteInfo(
-            methodName: "LeftJoin",
-            filePath: "Test.cs",
-            line: 15,
-            column: 5,
-            builderTypeName: "IJoinedQueryBuilder3",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: InterceptorKind.LeftJoin,
-            invocationSyntax: null!,
-            uniqueId: "chain34",
-            contextClassName: "TestContext",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            joinedEntityTypeName: "global::TestNamespace.TestCategory",
-            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("LeftJoin")
+            .WithKind(InterceptorKind.LeftJoin)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithBuilderTypeName("IJoinedQueryBuilder3")
+            .WithUniqueId("chain34")
+            .WithContext("TestContext", "TestNamespace")
+            .WithJoinedEntityType("global::TestNamespace.TestCategory")
+            .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
+            .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<TranslatedCallSite> { site });
 
         Assert.That(source, Does.Contain("JoinedQueryBuilder4<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, TestNamespace.TestCategory>"));
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
@@ -595,26 +554,18 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_JoinedWhere_2Table_GeneratesCorrectInterceptor()
     {
-        var clauseInfo = ClauseInfo.Success(ClauseKind.Where, @"""t0"".""id"" > 5", Array.Empty<ParameterInfo>());
-
-        var site = new UsageSiteInfo(
-            methodName: "Where",
-            filePath: "Test.cs",
-            line: 20,
-            column: 5,
-            builderTypeName: "IJoinedQueryBuilder",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: InterceptorKind.Where,
-            invocationSyntax: null!,
-            uniqueId: "jwhere2",
-            contextClassName: "TestContext",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" });
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithBuilderTypeName("IJoinedQueryBuilder")
+            .WithUniqueId("jwhere2")
+            .WithContext("TestContext", "TestNamespace")
+            .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" })
+            .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<TranslatedCallSite> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder<TestNamespace.TestUser, TestNamespace.TestOrder> builder"));
         Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, bool>>"));
@@ -624,27 +575,18 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_JoinedOrderBy_3Table_GeneratesCorrectInterceptor()
     {
-        var clauseInfo = new OrderByClauseInfo(@"""t2"".""item_name""", false, Array.Empty<ParameterInfo>());
-
-        // Without concrete key type — uses arity-matching fallback with generic T1, T2, T3, TKey
-        var site = new UsageSiteInfo(
-            methodName: "OrderBy",
-            filePath: "Test.cs",
-            line: 25,
-            column: 5,
-            builderTypeName: "IJoinedQueryBuilder3",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: InterceptorKind.OrderBy,
-            invocationSyntax: null!,
-            uniqueId: "jorder3",
-            contextClassName: "TestContext",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" });
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("OrderBy")
+            .WithKind(InterceptorKind.OrderBy)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithBuilderTypeName("IJoinedQueryBuilder3")
+            .WithUniqueId("jorder3")
+            .WithContext("TestContext", "TestNamespace")
+            .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
+            .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<TranslatedCallSite> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<T1, T2, T3> builder"));
         Assert.That(source, Does.Contain("Expression<Func<T1, T2, T3, TKey>>"));
@@ -654,28 +596,19 @@ public class JoinOperationsTests
     [Test]
     public void InterceptorCodeGenerator_JoinedOrderBy_3Table_ConcreteKeyType_GeneratesNonGenericInterceptor()
     {
-        var clauseInfo = new OrderByClauseInfo(@"""t2"".""item_name""", false, Array.Empty<ParameterInfo>());
-
-        // With concrete key type — generates non-generic (arity 0) interceptor
-        var site = new UsageSiteInfo(
-            methodName: "OrderBy",
-            filePath: "Test.cs",
-            line: 25,
-            column: 5,
-            builderTypeName: "IJoinedQueryBuilder3",
-            entityTypeName: "global::TestNamespace.TestUser",
-            isAnalyzable: true,
-            kind: InterceptorKind.OrderBy,
-            invocationSyntax: null!,
-            uniqueId: "jorder3c",
-            contextClassName: "TestContext",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            joinedEntityTypeNames: new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" },
-            keyTypeName: "global::System.String");
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("OrderBy")
+            .WithKind(InterceptorKind.OrderBy)
+            .WithEntityType("global::TestNamespace.TestUser")
+            .WithBuilderTypeName("IJoinedQueryBuilder3")
+            .WithUniqueId("jorder3c")
+            .WithContext("TestContext", "TestNamespace")
+            .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
+            .WithKeyType("global::System.String")
+            .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestNamespace", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestNamespace", "test0000", new List<TranslatedCallSite> { site });
 
         Assert.That(source, Does.Contain("this IJoinedQueryBuilder3<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem> builder"));
         Assert.That(source, Does.Contain("Expression<Func<TestNamespace.TestUser, TestNamespace.TestOrder, TestNamespace.TestItem, System.String>>"));
