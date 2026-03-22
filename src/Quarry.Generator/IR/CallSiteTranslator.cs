@@ -151,6 +151,10 @@ internal static class CallSiteTranslator
         var parameters = new List<ParameterInfo>();
         boundExpr = SqlExprClauseTranslator.ExtractParametersPublic(boundExpr, parameters, ref paramIndex);
 
+        // Step 2b: Enrich collection parameters with element type from column metadata.
+        // The InExpr operand is a ResolvedColumnExpr whose column type matches the element type.
+        EnrichCollectionElementTypes(boundExpr, parameters, columnLookup);
+
         // Step 3: Render to SQL
         var sql = SqlExprRenderer.Render(boundExpr, bound.Dialect, useGenericParamFormat: true);
 
@@ -557,6 +561,79 @@ internal static class CallSiteTranslator
     /// <summary>
     /// Checks whether the SqlExpr tree contains unsupported SqlRawExpr nodes.
     /// </summary>
+    /// <summary>
+    /// Enriches collection parameters' element types by looking up the InExpr operand column type.
+    /// When collection.Contains(column) produces InExpr(ResolvedColumn, [ParamSlot(isCollection)]),
+    /// the element type equals the column's CLR type.
+    /// </summary>
+    private static void EnrichCollectionElementTypes(
+        SqlExpr expr,
+        List<ParameterInfo> parameters,
+        Dictionary<string, ColumnInfo> columnLookup)
+    {
+        // Find collection parameters that need element type resolution
+        var collectionParams = new List<int>();
+        for (int i = 0; i < parameters.Count; i++)
+            if (parameters[i].IsCollection && parameters[i].CollectionElementType == null)
+                collectionParams.Add(i);
+
+        if (collectionParams.Count == 0) return;
+
+        // Walk the expression tree to find InExpr nodes with collection ParamSlotExpr values
+        FindCollectionElementTypes(expr, parameters, columnLookup);
+    }
+
+    private static void FindCollectionElementTypes(
+        SqlExpr expr,
+        List<ParameterInfo> parameters,
+        Dictionary<string, ColumnInfo> columnLookup)
+    {
+        switch (expr)
+        {
+            case InExpr inExpr:
+            {
+                // If operand is a resolved column, use its type as the element type
+                string? elementType = null;
+                if (inExpr.Operand is ResolvedColumnExpr resolvedCol)
+                {
+                    // Look up the column's CLR type by matching the quoted name
+                    foreach (var kvp in columnLookup)
+                    {
+                        var col = kvp.Value;
+                        if (col.ColumnName == resolvedCol.QuotedColumnName.Trim('"', '`', '[', ']') ||
+                            col.PropertyName == kvp.Key)
+                        {
+                            elementType = col.FullClrType ?? col.ClrType;
+                            break;
+                        }
+                    }
+                }
+                // Apply element type to collection parameters in the values list
+                if (elementType != null)
+                {
+                    foreach (var val in inExpr.Values)
+                    {
+                        if (val is ParamSlotExpr param && param.IsCollection)
+                        {
+                            if (param.LocalIndex < parameters.Count && parameters[param.LocalIndex].IsCollection)
+                            {
+                                parameters[param.LocalIndex].CollectionElementType = elementType;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            case BinaryOpExpr bin:
+                FindCollectionElementTypes(bin.Left, parameters, columnLookup);
+                FindCollectionElementTypes(bin.Right, parameters, columnLookup);
+                break;
+            case UnaryOpExpr unary:
+                FindCollectionElementTypes(unary.Operand, parameters, columnLookup);
+                break;
+        }
+    }
+
     private static bool ContainsUnsupportedRawExpr(SqlExpr expr)
     {
         switch (expr)

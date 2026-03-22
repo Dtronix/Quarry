@@ -416,11 +416,10 @@ internal static class SqlExprParser
         }
 
         // Collection Contains (IN clause) on captured variables
-        if (methodName == "Contains" && arguments.Count == 1 && target is CapturedValueExpr)
+        // collection.Contains(item) → item IN (collection_param)
+        if (methodName == "Contains" && arguments.Count == 1 && target is CapturedValueExpr capturedCollection)
         {
-            // Captured collection.Contains(item) → item IN @collection
-            // This is deferred — we can't resolve the collection type without semantic model
-            return new SqlRawExpr(target + ".Contains(...)");
+            return new InExpr(arguments[0], new SqlExpr[] { capturedCollection });
         }
 
         // Sql.* method access: target is an identifier named "Sql"

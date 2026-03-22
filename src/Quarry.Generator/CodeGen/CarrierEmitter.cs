@@ -940,7 +940,15 @@ internal static class CarrierEmitter
         for (int i = 0; i < siteParams.Count; i++)
         {
             var param = siteParams[i];
-            sb.AppendLine($"        __c.P{globalParamOffset + i} = {param.ValueExpression};");
+            var globalIdx = globalParamOffset + i;
+            if (param.IsCollection)
+            {
+                EmitCollectionContainsExtraction(sb, globalIdx, param);
+            }
+            else
+            {
+                sb.AppendLine($"        __c.P{globalIdx} = {param.ValueExpression};");
+            }
         }
     }
 

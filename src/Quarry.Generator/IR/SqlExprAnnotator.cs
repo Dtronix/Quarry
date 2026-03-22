@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -106,5 +107,112 @@ internal static class SqlExprAnnotator
         }
 
         return literal;
+    }
+
+    /// <summary>
+    /// Enriches CapturedValueExpr nodes with CLR type info by looking up identifiers
+    /// in the lambda body syntax via the semantic model.
+    /// Call this after parsing to annotate captured variable types.
+    /// </summary>
+    public static SqlExpr AnnotateCapturedTypes(
+        SqlExpr expr,
+        ExpressionSyntax lambdaBody,
+        SemanticModel semanticModel)
+    {
+        // Build a map of identifier name -> CLR type from the syntax tree
+        var typeMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+        CollectCapturedTypes(lambdaBody, semanticModel, typeMap);
+        if (typeMap.Count == 0) return expr;
+
+        return ApplyCapturedTypes(expr, typeMap);
+    }
+
+    private static void CollectCapturedTypes(
+        SyntaxNode node,
+        SemanticModel semanticModel,
+        System.Collections.Generic.Dictionary<string, string> typeMap)
+    {
+        foreach (var identifier in node.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            var name = identifier.Identifier.ValueText;
+            if (typeMap.ContainsKey(name)) continue;
+
+            var typeInfo = semanticModel.GetTypeInfo(identifier);
+            if (typeInfo.Type != null)
+            {
+                typeMap[name] = typeInfo.Type.ToDisplayString();
+            }
+        }
+    }
+
+    private static SqlExpr ApplyCapturedTypes(SqlExpr expr, System.Collections.Generic.Dictionary<string, string> typeMap)
+    {
+        switch (expr)
+        {
+            case CapturedValueExpr captured:
+                if (typeMap.TryGetValue(captured.VariableName, out var clrType))
+                    return captured.WithClrType(clrType);
+                return captured;
+
+            case BinaryOpExpr bin:
+            {
+                var left = ApplyCapturedTypes(bin.Left, typeMap);
+                var right = ApplyCapturedTypes(bin.Right, typeMap);
+                if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
+                    return bin;
+                return new BinaryOpExpr(left, bin.Operator, right);
+            }
+
+            case UnaryOpExpr unary:
+            {
+                var operand = ApplyCapturedTypes(unary.Operand, typeMap);
+                if (ReferenceEquals(operand, unary.Operand)) return unary;
+                return new UnaryOpExpr(unary.Operator, operand);
+            }
+
+            case InExpr inExpr:
+            {
+                var operand = ApplyCapturedTypes(inExpr.Operand, typeMap);
+                var changed = !ReferenceEquals(operand, inExpr.Operand);
+                var newValues = new SqlExpr[inExpr.Values.Count];
+                for (int i = 0; i < inExpr.Values.Count; i++)
+                {
+                    newValues[i] = ApplyCapturedTypes(inExpr.Values[i], typeMap);
+                    if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
+                }
+                return changed ? new InExpr(operand, newValues, inExpr.IsNegated) : inExpr;
+            }
+
+            case FunctionCallExpr func:
+            {
+                var changed = false;
+                var newArgs = new SqlExpr[func.Arguments.Count];
+                for (int i = 0; i < func.Arguments.Count; i++)
+                {
+                    newArgs[i] = ApplyCapturedTypes(func.Arguments[i], typeMap);
+                    if (!ReferenceEquals(newArgs[i], func.Arguments[i])) changed = true;
+                }
+                return changed ? new FunctionCallExpr(func.FunctionName, newArgs, func.IsAggregate) : func;
+            }
+
+            case IsNullCheckExpr isNull:
+            {
+                var operand = ApplyCapturedTypes(isNull.Operand, typeMap);
+                if (ReferenceEquals(operand, isNull.Operand)) return isNull;
+                return new IsNullCheckExpr(operand, isNull.IsNegated);
+            }
+
+            case LikeExpr like:
+            {
+                var operand = ApplyCapturedTypes(like.Operand, typeMap);
+                var pattern = ApplyCapturedTypes(like.Pattern, typeMap);
+                if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
+                    return like;
+                return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);
+            }
+
+            default:
+                return expr;
+        }
     }
 }

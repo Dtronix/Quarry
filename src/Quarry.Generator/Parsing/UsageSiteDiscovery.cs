@@ -761,6 +761,9 @@ internal static class UsageSiteDiscovery
 
         var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, parameterNames);
 
+        // Annotate captured variable types using semantic model (needed for collection IN expansion)
+        sqlExpr = IR.SqlExprAnnotator.AnnotateCapturedTypes(sqlExpr, body, semanticModel);
+
         var isDescending = false;
         if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
             invocation.ArgumentList.Arguments.Count >= 2)
@@ -1301,6 +1304,9 @@ internal static class UsageSiteDiscovery
 
         // Parse the expression directly to SqlExpr with path tracking for captured variables
         var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, parameterNames);
+
+        // Annotate captured variable types using semantic model (needed for collection IN expansion)
+        sqlExpr = IR.SqlExprAnnotator.AnnotateCapturedTypes(sqlExpr, body, semanticModel);
 
         // Determine if this is descending order (for OrderBy/ThenBy)
         var isDescending = false;

@@ -814,6 +814,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 readerCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
             }
 
+            var isCarrierEligible = assembledIdx < group.CarrierPlans.Count && group.CarrierPlans[assembledIdx].IsEligible;
+
+            // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
+            if (isCarrierEligible && chainParams.Count > 0)
+                TokenizeCollectionParameters(sqlMap, chainParams, assembled.Dialect);
+
             var chain = new PrebuiltChainInfo(
                 analysis: analysis,
                 sqlMap: sqlMap,
@@ -828,7 +834,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 joinedEntityTypeNames: assembled.ExecutionSite.JoinedEntityTypeNames,
                 joinedTableInfos: joinedTableInfos,
                 chainParameters: chainParams,
-                isCarrierEligible: assembledIdx < group.CarrierPlans.Count && group.CarrierPlans[assembledIdx].IsEligible,
+                isCarrierEligible: isCarrierEligible,
                 entitySchemaNamespace: assembled.EntitySchemaNamespace);
 
             chains.Add(chain);

@@ -230,8 +230,28 @@ internal sealed class SqlExprClauseTranslator
                 var newValues = new SqlExpr[inExpr.Values.Count];
                 for (int i = 0; i < inExpr.Values.Count; i++)
                 {
-                    newValues[i] = ExtractParameters(inExpr.Values[i], parameters, ref paramIndex);
-                    if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
+                    // CapturedValueExpr inside IN → collection parameter
+                    if (inExpr.Values[i] is CapturedValueExpr captured)
+                    {
+                        var idx = paramIndex++;
+                        var name = $"@p{idx}";
+                        var elementType = ExtractElementType(captured.ClrType);
+                        var paramInfo = new ParameterInfo(
+                            idx, name, captured.ClrType, captured.SyntaxText,
+                            isCollection: true, isCaptured: true,
+                            expressionPath: "__CONTAINS_COLLECTION__");
+                        paramInfo.CollectionElementType = elementType;
+                        parameters.Add(paramInfo);
+                        newValues[i] = new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
+                            isCaptured: true, expressionPath: "__CONTAINS_COLLECTION__",
+                            isCollection: true, elementTypeName: elementType);
+                        changed = true;
+                    }
+                    else
+                    {
+                        newValues[i] = ExtractParameters(inExpr.Values[i], parameters, ref paramIndex);
+                        if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
+                    }
                 }
                 return changed ? new InExpr(operand, newValues, inExpr.IsNegated) : inExpr;
             }
@@ -411,5 +431,27 @@ internal sealed class SqlExprClauseTranslator
             }
         }
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Extracts the element type from a collection CLR type string.
+    /// Handles arrays (string[]) and generic collections (List&lt;string&gt;, IEnumerable&lt;int&gt;).
+    /// </summary>
+    private static string? ExtractElementType(string clrType)
+    {
+        // Array types: "string[]", "int[]"
+        if (clrType.EndsWith("[]"))
+            return clrType.Substring(0, clrType.Length - 2);
+
+        // Generic types: "System.Collections.Generic.List<string>", "IEnumerable<int>"
+        var openAngle = clrType.IndexOf('<');
+        if (openAngle >= 0)
+        {
+            var closeAngle = clrType.LastIndexOf('>');
+            if (closeAngle > openAngle)
+                return clrType.Substring(openAngle + 1, closeAngle - openAngle - 1);
+        }
+
+        return null;
     }
 }
