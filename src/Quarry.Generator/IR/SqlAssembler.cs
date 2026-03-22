@@ -152,7 +152,7 @@ internal static class SqlAssembler
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
                 if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
                 if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
@@ -225,7 +225,7 @@ internal static class SqlAssembler
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
                 if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
                 if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
@@ -272,7 +272,7 @@ internal static class SqlAssembler
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
                 if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
+                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
                 if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
@@ -451,6 +451,27 @@ internal static class SqlAssembler
                 result.Add(t);
         }
         return result;
+    }
+
+    /// <summary>
+    /// Renders a WHERE condition, stripping outer parentheses only for compound
+    /// AND/OR expressions (which are redundant in WHERE context) but keeping them
+    /// for comparison operators like = > < etc.
+    /// </summary>
+    private static string RenderWhereCondition(SqlExpr condition, SqlDialect dialect, int paramIndex)
+    {
+        // Strip outer parens for compound AND/OR (redundant in WHERE context)
+        // and for comparisons involving subqueries (subqueries provide their own grouping)
+        if (condition is BinaryOpExpr bin)
+        {
+            var strip = bin.Operator == SqlBinaryOperator.And
+                || bin.Operator == SqlBinaryOperator.Or
+                || bin.Left is SubqueryExpr
+                || bin.Right is SubqueryExpr;
+            if (strip)
+                return SqlExprRenderer.Render(condition, dialect, paramIndex, stripOuterParens: true);
+        }
+        return SqlExprRenderer.Render(condition, dialect, paramIndex);
     }
 
     /// <summary>

@@ -271,7 +271,18 @@ internal sealed class UsageSiteInfo : IEquatable<UsageSiteInfo>
         ClauseInfo? clauseInfo = null;
         if (translated.Clause != null && translated.Clause.IsSuccess)
         {
-            var sql = IR.SqlExprRenderer.Render(translated.Clause.ResolvedExpression, bound.Dialect, useGenericParamFormat: true);
+            // Strip outer parens for WHERE/Having BinaryOp expressions that are compound (AND/OR)
+            // or contain subquery operands (subqueries already provide their own grouping parens)
+            var stripParens = false;
+            if ((translated.Clause.Kind == ClauseKind.Where || translated.Clause.Kind == ClauseKind.Having)
+                && translated.Clause.ResolvedExpression is IR.BinaryOpExpr topBin)
+            {
+                stripParens = topBin.Operator == IR.SqlBinaryOperator.And
+                    || topBin.Operator == IR.SqlBinaryOperator.Or
+                    || topBin.Left is IR.SubqueryExpr
+                    || topBin.Right is IR.SubqueryExpr;
+            }
+            var sql = IR.SqlExprRenderer.Render(translated.Clause.ResolvedExpression, bound.Dialect, useGenericParamFormat: true, stripOuterParens: stripParens);
             if (!string.IsNullOrEmpty(sql))
             {
                 if (translated.Clause.Kind == ClauseKind.OrderBy || translated.Clause.Kind == ClauseKind.GroupBy)
