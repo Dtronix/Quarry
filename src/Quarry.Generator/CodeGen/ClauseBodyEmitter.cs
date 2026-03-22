@@ -415,7 +415,7 @@ internal static class ClauseBodyEmitter
         string entityType, ProjectionInfo projection)
     {
         var columnList = ReaderCodeGenerator.GenerateColumnList(projection, site.Dialect ?? SqlDialect.PostgreSQL);
-        var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection);
+        var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection, site.Dialect ?? SqlDialect.SQLite);
         var readerDelegate = ReaderCodeGenerator.GenerateReaderDelegate(projection, entityType);
 
         {

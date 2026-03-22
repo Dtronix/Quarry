@@ -250,7 +250,7 @@ internal static class ReaderCodeGenerator
     /// <summary>
     /// Generates a string array literal of column names for runtime use.
     /// </summary>
-    public static string GenerateColumnNamesArray(ProjectionInfo projection)
+    public static string GenerateColumnNamesArray(ProjectionInfo projection, SqlDialect dialect = SqlDialect.SQLite)
     {
         var sb = new StringBuilder();
         sb.Append("new[] { ");
@@ -270,10 +270,10 @@ internal static class ReaderCodeGenerator
             }
             else if (!string.IsNullOrEmpty(column.TableAlias))
             {
-                // Joined query: emit aliased column name like t0."col"
-                sb.Append($"\"{column.TableAlias}.\\\"");
-                sb.Append(column.ColumnName);
-                sb.Append("\\\"\"");
+                // Joined query: emit dialect-quoted aliased column name
+                var quoted = $"{SqlFormatting.QuoteIdentifier(dialect, column.TableAlias)}.{SqlFormatting.QuoteIdentifier(dialect, column.ColumnName)}";
+                var escaped = quoted.Replace("\"", "\\\"");
+                sb.Append($"\"{escaped}\"");
             }
             else
             {

@@ -4,6 +4,7 @@ using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.Models;
 using Quarry.Generators.Projection;
+using Quarry.Generators.Sql;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -741,7 +742,7 @@ internal static class JoinBodyEmitter
         if (projection != null && projection.IsOptimalPath && projection.Columns.Count > 0)
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
-            var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection);
+            var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection, site.Dialect ?? SqlDialect.SQLite);
             var readerDelegate = ReaderCodeGenerator.GenerateReaderDelegate(projection, entityTypes[0]);
 
             sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");

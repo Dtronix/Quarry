@@ -341,6 +341,11 @@ internal static class SqlAssembler
         {
             if (i > 0) sb.Append(", ");
             var col = columns[i];
+            if (col.TableAlias != null)
+            {
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias));
+                sb.Append('.');
+            }
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.ColumnName));
         }
     }
