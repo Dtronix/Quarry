@@ -34,11 +34,6 @@ internal static class CarrierAnalyzer
         if (terminalResult != null)
             return terminalResult;
 
-        // Gate 4: MySQL InsertExecuteScalar requires separate SELECT LAST_INSERT_ID()
-        if (chain.Analysis.ExecutionSite.Kind == InterceptorKind.InsertExecuteScalar
-            && chain.Dialect == SqlDialect.MySQL)
-            return CarrierStrategy.Ineligible("MySQL InsertExecuteScalar requires separate query");
-
         // All gates passed — build the strategy
         return BuildEligibleStrategy(chain);
     }
@@ -258,11 +253,6 @@ internal static class CarrierAnalyzer
         // Gate: Unmatched methods
         if (plan.UnmatchedMethodNames != null && plan.UnmatchedMethodNames.Count > 0)
             return CarrierPlan.Ineligible("chain has unmatched methods");
-
-        // Gate: MySQL InsertExecuteScalar requires separate SELECT LAST_INSERT_ID()
-        if (assembled.ExecutionSite.Bound.Raw.Kind == InterceptorKind.InsertExecuteScalar
-            && assembled.Dialect == SqlDialect.MySQL)
-            return CarrierPlan.Ineligible("MySQL InsertExecuteScalar requires separate query");
 
         // Gate: Empty SQL variants
         if (assembled.SqlVariants.Count == 0)

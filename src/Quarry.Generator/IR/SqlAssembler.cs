@@ -328,7 +328,7 @@ internal static class SqlAssembler
                     sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName!));
                     break;
                 case SqlDialect.MySQL:
-                    // MySQL uses LAST_INSERT_ID() separately
+                    sb.Append("; SELECT LAST_INSERT_ID()");
                     break;
             }
         }

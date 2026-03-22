@@ -1251,10 +1251,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             // Insert terminal checks: SQL must be non-empty
             if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
                 isCarrierEligible = false;
-            // MySQL ExecuteScalar requires a separate SELECT LAST_INSERT_ID() query,
-            // which can't be done with a single carrier DbCommand.
-            if (executionSite.Kind == InterceptorKind.InsertExecuteScalar && dialect == SqlDialect.MySQL)
-                isCarrierEligible = false;
         }
 
         // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
