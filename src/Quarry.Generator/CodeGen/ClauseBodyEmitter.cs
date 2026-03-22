@@ -1127,11 +1127,26 @@ internal static class ClauseBodyEmitter
         sb.AppendLine($"        var __b = Unsafe.As<{concreteBaseName}<T>>(builder);");
         var bitSuffix2 = InterceptorCodeGenerator.ClauseBitSuffix(clauseBit);
 
+        // Build column name lookup for quoting
+        var columnLookup = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (site.Bound.Entity != null)
+        {
+            foreach (var col in site.Bound.Entity.Columns)
+            {
+                columnLookup[col.PropertyName] = col.ColumnName;
+                columnLookup[col.ColumnName] = col.ColumnName;
+            }
+        }
+
         var paramIdx = 0;
         for (int i = 0; i < clauseInfo.SetAssignments.Count; i++)
         {
             var assignment = clauseInfo.SetAssignments[i];
-            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(assignment.ColumnSql);
+            // Resolve and quote column name: discovery stores unquoted property name
+            var propertyName = assignment.ColumnSql.Trim('"', '[', ']', '`');
+            var resolvedName = columnLookup.TryGetValue(propertyName, out var colName) ? colName : propertyName;
+            var quotedColumn = Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, resolvedName);
+            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(quotedColumn);
 
             if (assignment.IsInlined)
             {

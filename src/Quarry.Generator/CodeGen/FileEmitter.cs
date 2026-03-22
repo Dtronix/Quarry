@@ -401,7 +401,8 @@ internal sealed class FileEmitter
         }
 
         // Check for skippable Select sites BEFORE emitting the attribute
-        if (site.Kind == InterceptorKind.Select && InterceptorCodeGenerator.ShouldSkipSelectInterceptor(site))
+        // Never skip carrier Select sites — they serve as cast entry points for carrier chains
+        if (site.Kind == InterceptorKind.Select && !isCarrierSite && InterceptorCodeGenerator.ShouldSkipSelectInterceptor(site))
         {
             return;
         }
