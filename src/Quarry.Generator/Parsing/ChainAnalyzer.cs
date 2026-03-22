@@ -359,7 +359,11 @@ internal static class ChainAnalyzer
                     SqlExpr valueExpr;
                     if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                     {
-                        valueExpr = new LiteralExpr(assignment.InlinedSqlValue, "object");
+                        // Detect boolean literals for dialect-specific formatting
+                        var inlinedVal = assignment.InlinedSqlValue;
+                        var lowerVal = inlinedVal.ToLowerInvariant();
+                        var clrType = (lowerVal == "true" || lowerVal == "false") ? "bool" : "object";
+                        valueExpr = new LiteralExpr(inlinedVal, clrType);
                     }
                     else
                     {
