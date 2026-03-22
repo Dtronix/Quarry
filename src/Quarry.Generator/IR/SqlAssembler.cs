@@ -139,20 +139,21 @@ internal static class SqlAssembler
             paramIndex += paramsBefore;
         }
 
-        // WHERE
+        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
         var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        if (activeWheres.Count > 0)
+        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
+        if (nonTrivialWheres.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < activeWheres.Count; i++)
+            for (int i = 0; i < nonTrivialWheres.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = activeWheres[i];
+                var w = nonTrivialWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
-                if (activeWheres.Count > 1) sb.Append('(');
+                if (nonTrivialWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
-                if (activeWheres.Count > 1) sb.Append(')');
+                if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
@@ -211,20 +212,21 @@ internal static class SqlAssembler
         sb.Append("DELETE FROM ");
         AppendTableRef(sb, dialect, plan.PrimaryTable);
 
-        // WHERE
+        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
         var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        if (activeWheres.Count > 0)
+        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
+        if (nonTrivialWheres.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < activeWheres.Count; i++)
+            for (int i = 0; i < nonTrivialWheres.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = activeWheres[i];
+                var w = nonTrivialWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
-                if (activeWheres.Count > 1) sb.Append('(');
+                if (nonTrivialWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
-                if (activeWheres.Count > 1) sb.Append(')');
+                if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
@@ -257,20 +259,21 @@ internal static class SqlAssembler
             }
         }
 
-        // WHERE
+        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
         var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        if (activeWheres.Count > 0)
+        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
+        if (nonTrivialWheres.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < activeWheres.Count; i++)
+            for (int i = 0; i < nonTrivialWheres.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = activeWheres[i];
+                var w = nonTrivialWheres[i];
                 var paramsBefore = CountParameters(w.Condition);
                 // Wrap each WHERE term in parentheses when there are multiple terms
-                if (activeWheres.Count > 1) sb.Append('(');
+                if (nonTrivialWheres.Count > 1) sb.Append('(');
                 sb.Append(SqlExprRenderer.Render(w.Condition, dialect, paramIndex));
-                if (activeWheres.Count > 1) sb.Append(')');
+                if (nonTrivialWheres.Count > 1) sb.Append(')');
                 paramIndex += paramsBefore;
             }
         }
@@ -398,6 +401,20 @@ internal static class SqlAssembler
             JoinClauseKind.Right => "RIGHT JOIN",
             _ => "JOIN"
         };
+    }
+
+    /// <summary>
+    /// Checks if a WHERE condition is trivially true (literal 1 or true).
+    /// Such conditions are optimized away (no WHERE clause needed).
+    /// </summary>
+    private static bool IsTrivialTrueCondition(SqlExpr expr)
+    {
+        if (expr is LiteralExpr literal)
+        {
+            var val = literal.SqlText;
+            return val == "1" || val == "true" || val == "TRUE" || val == "True";
+        }
+        return false;
     }
 
     /// <summary>
