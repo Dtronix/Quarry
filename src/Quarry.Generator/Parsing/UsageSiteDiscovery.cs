@@ -696,6 +696,19 @@ internal static class UsageSiteDiscovery
             sortedPropertyNames = ImmutableArray.CreateRange(sorted);
         }
 
+        // For join sites, extract ordered lambda parameter names for multi-entity resolution
+        ImmutableArray<string>? lambdaParamNames = null;
+        if (expression != null && usageSite.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+        {
+            if (invocation.ArgumentList.Arguments.Count > 0
+                && invocation.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax joinLambda)
+            {
+                var ordered = IR.SqlExprParser.GetLambdaParameterNamesOrdered(joinLambda);
+                if (ordered.Count >= 2)
+                    lambdaParamNames = ImmutableArray.CreateRange(ordered);
+            }
+        }
+
         return new RawCallSite(
             methodName: usageSite.MethodName,
             filePath: usageSite.FilePath,
@@ -732,7 +745,8 @@ internal static class UsageSiteDiscovery
             joinedEntityTypeNames: usageSite.JoinedEntityTypeNames,
             rawSqlTypeInfo: usageSite.RawSqlTypeInfo,
             setActionAssignments: usageSite.ClauseInfo is SetActionClauseInfo setAction ? setAction.Assignments : null,
-            setActionParameters: usageSite.ClauseInfo is SetActionClauseInfo setAction2 ? setAction2.Parameters : null);
+            setActionParameters: usageSite.ClauseInfo is SetActionClauseInfo setAction2 ? setAction2.Parameters : null,
+            lambdaParameterNames: lambdaParamNames);
     }
 
     /// <summary>

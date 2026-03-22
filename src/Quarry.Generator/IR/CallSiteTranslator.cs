@@ -102,8 +102,21 @@ internal static class CallSiteTranslator
         // columns from both the primary and joined entities (e.g., (u, o) => u.Id == o.Id)
         Dictionary<string, EntityInfo>? joinedEntities = null;
         Dictionary<string, string>? tableAliases = null;
-        if (clauseKind == ClauseKind.Join && bound.JoinedEntity != null)
+        if (clauseKind == ClauseKind.Join && bound.JoinedEntities != null && bound.JoinedEntities.Count >= 2)
         {
+            // Multi-entity join: resolve param-to-entity mapping for JOIN ON clause.
+            // The new entity (bound.JoinedEntity) is the last one; use it to disambiguate.
+            var joinMapping = ResolveJoinOnParameterMapping(expression, bound);
+            if (joinMapping != null)
+            {
+                lambdaParamName = joinMapping.Value.PrimaryParam;
+                joinedEntities = joinMapping.Value.JoinedEntities;
+                tableAliases = joinMapping.Value.TableAliases;
+            }
+        }
+        else if (clauseKind == ClauseKind.Join && bound.JoinedEntity != null)
+        {
+            // 2-entity join fallback (no JoinedEntities list)
             var joinedEntityInfo = ReconstructEntityInfoFromRef(bound.JoinedEntity);
             if (joinedEntityInfo != null)
             {
@@ -114,7 +127,6 @@ internal static class CallSiteTranslator
                     {
                         [joinParamName] = joinedEntityInfo
                     };
-                    // Assign table aliases: t0 for primary, t1 for joined
                     tableAliases = new Dictionary<string, string>(StringComparer.Ordinal)
                     {
                         [lambdaParamName] = "t0",
@@ -337,6 +349,42 @@ internal static class CallSiteTranslator
             JoinedEntities = joinedEntities;
             TableAliases = tableAliases;
         }
+    }
+
+    /// <summary>
+    /// For JOIN ON clauses with 3+ entities, resolves parameter mapping using
+    /// the ordered lambda parameter names stored during discovery.
+    /// JoinedEntities contains PREVIOUS entities; JoinedEntity is the NEW entity.
+    /// Lambda parameter position maps directly to entity index.
+    /// </summary>
+    private static JoinParameterMapping? ResolveJoinOnParameterMapping(SqlExpr expression, BoundCallSite bound)
+    {
+        // Use stored ordered lambda parameter names if available
+        var orderedParams = bound.Raw.LambdaParameterNames;
+        if (!orderedParams.HasValue || orderedParams.Value.Length < 2)
+            return ResolveJoinParameterMapping(expression, bound);
+
+        // Build the FULL entity list: previous entities + new entity
+        var allEntities = new List<EntityRef>(bound.JoinedEntities!);
+        if (bound.JoinedEntity != null)
+            allEntities.Add(bound.JoinedEntity);
+
+        var joinedEntitiesDict = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+        var tableAliasesDict = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var paramNames = orderedParams.Value;
+        for (int i = 0; i < paramNames.Length && i < allEntities.Count; i++)
+        {
+            tableAliasesDict[paramNames[i]] = $"t{i}";
+            if (i > 0)
+            {
+                var entityInfo = ReconstructEntityInfoFromRef(allEntities[i]);
+                if (entityInfo != null)
+                    joinedEntitiesDict[paramNames[i]] = entityInfo;
+            }
+        }
+
+        return new JoinParameterMapping(paramNames[0], joinedEntitiesDict, tableAliasesDict);
     }
 
     /// <summary>

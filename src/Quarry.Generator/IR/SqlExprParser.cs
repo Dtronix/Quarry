@@ -596,6 +596,25 @@ internal static class SqlExprParser
     }
 
     /// <summary>
+    /// Gets the ordered list of lambda parameter names.
+    /// </summary>
+    public static List<string> GetLambdaParameterNamesOrdered(LambdaExpressionSyntax lambda)
+    {
+        var result = new List<string>();
+        switch (lambda)
+        {
+            case SimpleLambdaExpressionSyntax simpleLambda:
+                result.Add(simpleLambda.Parameter.Identifier.ValueText);
+                break;
+            case ParenthesizedLambdaExpressionSyntax parenLambda:
+                foreach (var param in parenLambda.ParameterList.Parameters)
+                    result.Add(param.Identifier.ValueText);
+                break;
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Gets the body expression from a lambda.
     /// </summary>
     public static ExpressionSyntax? GetLambdaBody(LambdaExpressionSyntax lambda)
