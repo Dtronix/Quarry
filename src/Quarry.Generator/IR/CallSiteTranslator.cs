@@ -46,6 +46,13 @@ internal static class CallSiteTranslator
             return new TranslatedCallSite(bound);
         }
 
+        // Navigation joins (u => u.Orders) need special handling — synthesize ON clause
+        // from entity navigation metadata instead of translating the expression.
+        if (raw.IsNavigationJoin && raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+        {
+            return TranslateNavigationJoin(bound);
+        }
+
         // Attempt clause translation via SqlExpr pipeline
         try
         {
@@ -720,5 +727,93 @@ internal static class CallSiteTranslator
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Translates a navigation join (e.g., u => u.Orders) by synthesizing the ON clause
+    /// from entity navigation metadata (FK relationship).
+    /// </summary>
+    private static TranslatedCallSite TranslateNavigationJoin(BoundCallSite bound)
+    {
+        var raw = bound.Raw;
+        var navPropertyName = raw.Expression is ColumnRefExpr colRef ? colRef.PropertyName : null;
+        if (navPropertyName == null)
+            return new TranslatedCallSite(bound);
+
+        // Find the navigation in the entity metadata
+        NavigationInfo? nav = null;
+        foreach (var n in bound.Entity.Navigations)
+        {
+            if (n.PropertyName == navPropertyName)
+            {
+                nav = n;
+                break;
+            }
+        }
+        if (nav == null)
+            return new TranslatedCallSite(bound);
+
+        // Find the FK column name on the related entity and the PK column on the parent entity
+        // Navigation FK references a column on the related entity pointing to the parent's PK.
+        // The FK property name on the related entity (e.g., "UserId") maps to a column.
+        var fkPropertyName = nav.ForeignKeyPropertyName;
+
+        // Find the matching PK column on the parent entity (same property name as FK)
+        string? pkColumnName = null;
+        foreach (var col in bound.Entity.Columns)
+        {
+            if (col.PropertyName == fkPropertyName)
+            {
+                pkColumnName = col.ColumnName;
+                break;
+            }
+        }
+        if (pkColumnName == null)
+            return new TranslatedCallSite(bound);
+
+        // Find the FK column name on the joined entity
+        string? fkColumnName = null;
+        if (bound.JoinedEntity != null)
+        {
+            foreach (var col in bound.JoinedEntity.Columns)
+            {
+                if (col.PropertyName == fkPropertyName)
+                {
+                    fkColumnName = col.ColumnName;
+                    break;
+                }
+            }
+        }
+        if (fkColumnName == null)
+            return new TranslatedCallSite(bound);
+
+        // Build the ON clause: "t0"."PkCol" = "t1"."FkCol"
+        var leftCol = new ResolvedColumnExpr(
+            SqlFormatting.QuoteIdentifier(bound.Dialect, pkColumnName), "t0");
+        var rightCol = new ResolvedColumnExpr(
+            SqlFormatting.QuoteIdentifier(bound.Dialect, fkColumnName), "t1");
+        var onExpr = new BinaryOpExpr(leftCol, SqlBinaryOperator.Equal, rightCol);
+
+        // Get the joined table name
+        var joinedTableName = bound.JoinedEntity?.TableName;
+        var joinedSchemaName = bound.JoinedEntity?.SchemaName;
+
+        var joinKind = raw.Kind switch
+        {
+            InterceptorKind.LeftJoin => JoinClauseKind.Left,
+            InterceptorKind.RightJoin => JoinClauseKind.Right,
+            _ => JoinClauseKind.Inner
+        };
+
+        var clause = new TranslatedClause(
+            kind: ClauseKind.Join,
+            resolvedExpression: onExpr,
+            parameters: Array.Empty<ParameterInfo>(),
+            joinKind: joinKind,
+            joinedTableName: joinedTableName,
+            joinedSchemaName: joinedSchemaName,
+            tableAlias: "t1");
+
+        return new TranslatedCallSite(bound, clause);
     }
 }
