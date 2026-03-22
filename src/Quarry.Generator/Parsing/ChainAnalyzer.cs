@@ -398,7 +398,8 @@ internal static class ChainAnalyzer
                         col.ClrType,
                         $"entity.{col.PropertyName}",
                         typeMappingClass: col.CustomTypeMappingClass,
-                        isSensitive: col.IsSensitive));
+                        isSensitive: col.IsSensitive,
+                        entityPropertyExpression: $"__c.Entity.{col.PropertyName}"));
                     paramGlobalIndex++;
                 }
             }
