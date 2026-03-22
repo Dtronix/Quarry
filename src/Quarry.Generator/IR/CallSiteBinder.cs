@@ -43,7 +43,7 @@ internal static class CallSiteBinder
             contextNamespace = raw.ContextNamespace ?? entry.Context.Namespace ?? "";
             dialect = entry.Context.Dialect;
             tableName = entry.Entity.TableName;
-            schemaName = null; // Schema name resolved from context during SQL assembly
+            schemaName = entry.Context.Schema;
         }
         else
         {
