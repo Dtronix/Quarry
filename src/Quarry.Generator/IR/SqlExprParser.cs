@@ -197,7 +197,34 @@ internal static class SqlExprParser
                     decimal => "decimal",
                     _ => "int"
                 };
-                return new LiteralExpr(literal.Token.Text, clrType);
+                // Use Value.ToString() to strip C# type suffixes (m, f, d, L, etc.)
+                // For decimal, preserve trailing zeros by using the raw text minus the suffix
+                var numText = literal.Token.Text;
+                if (numericValue is decimal && numText.Length > 0)
+                {
+                    var last = numText[numText.Length - 1];
+                    if (last == 'm' || last == 'M')
+                        numText = numText.Substring(0, numText.Length - 1);
+                }
+                else if (numericValue is float && numText.Length > 0)
+                {
+                    var last = numText[numText.Length - 1];
+                    if (last == 'f' || last == 'F')
+                        numText = numText.Substring(0, numText.Length - 1);
+                }
+                else if (numericValue is double && numText.Length > 0)
+                {
+                    var last = numText[numText.Length - 1];
+                    if (last == 'd' || last == 'D')
+                        numText = numText.Substring(0, numText.Length - 1);
+                }
+                else if (numericValue is long && numText.Length > 0)
+                {
+                    var last = numText[numText.Length - 1];
+                    if (last == 'l' || last == 'L')
+                        numText = numText.Substring(0, numText.Length - 1);
+                }
+                return new LiteralExpr(numText, clrType);
 
             case SyntaxKind.StringLiteralExpression:
                 return new LiteralExpr(literal.Token.ValueText, "string");
