@@ -801,6 +801,42 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
+        // Emit QRY030-032 diagnostics from new pipeline chain analysis
+        foreach (var assembled in group.AssembledPlans)
+        {
+            var execRaw = assembled.ExecutionSite.Bound.Raw;
+            var location = execRaw.Location;
+            var locationDisplay = $"{GetRelativePath(execRaw.FilePath)}:{execRaw.Line}";
+
+            switch (assembled.Plan.Tier)
+            {
+                case OptimizationTier.PrebuiltDispatch:
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ChainOptimizedTier1,
+                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                        locationDisplay, assembled.Plan.PossibleMasks.Count.ToString()));
+                    break;
+                case OptimizationTier.PrequotedFragments:
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ChainOptimizedTier2,
+                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                        locationDisplay, assembled.Plan.ConditionalTerms.Count.ToString()));
+                    break;
+                case OptimizationTier.RuntimeBuild:
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ChainNotAnalyzable,
+                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                        locationDisplay, assembled.Plan.NotAnalyzableReason ?? "unknown"));
+                    break;
+            }
+        }
+
         // Emit trace file
         try
         {

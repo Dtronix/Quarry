@@ -118,99 +118,112 @@ public class Svc
     };
 
     /// <summary>
-    /// Creates a minimal UsageSiteInfo for ChainAnalyzer (only InvocationSyntax and Kind matter).
+    /// Converts an AnalyzedChain (new pipeline) to a ChainAnalysisResult (old type) for test assertions.
     /// </summary>
-    private static UsageSiteInfo MakeSite(InvocationExpressionSyntax invocation, InterceptorKind kind)
+    private static ChainAnalysisResult ConvertToResult(Quarry.Generators.Parsing.AnalyzedChain chain)
     {
-        return new UsageSiteInfo(
-            methodName: kind.ToString(),
-            filePath: invocation.SyntaxTree.FilePath ?? "test.cs",
-            line: 1,
-            column: 1,
-            builderTypeName: "Quarry.QueryBuilder`1",
-            entityTypeName: "TestApp.User",
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: invocation,
-            uniqueId: $"test_{invocation.Span.Start}");
-    }
+        var plan = chain.Plan;
 
-    /// <summary>
-    /// Extracts the method name from an invocation expression.
-    /// </summary>
-    private static string? GetMethodName(InvocationExpressionSyntax invocation)
-    {
-        return invocation.Expression switch
+        // Build clause list with roles, conditional flags, and bit indices
+        var clauses = new List<ChainedClauseSite>();
+        var conditionalBitLookup = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        // Map conditional terms to their clause sites by matching position
+        int condIdx = 0;
+        foreach (var cs in chain.ClauseSites)
         {
-            MemberAccessExpressionSyntax memberAccess => memberAccess.Name.Identifier.Text,
-            IdentifierNameSyntax identifier => identifier.Identifier.Text,
-            _ => null
-        };
+            if (cs.Bound.Raw.ConditionalInfo != null && condIdx < plan.ConditionalTerms.Count)
+            {
+                conditionalBitLookup[cs.Bound.Raw.UniqueId] = plan.ConditionalTerms[condIdx].BitIndex;
+                condIdx++;
+            }
+        }
+
+        foreach (var cs in chain.ClauseSites)
+        {
+            var isConditional = cs.Bound.Raw.ConditionalInfo != null;
+            conditionalBitLookup.TryGetValue(cs.Bound.Raw.UniqueId, out var bitIdx);
+            var hasBit = conditionalBitLookup.ContainsKey(cs.Bound.Raw.UniqueId);
+
+            var role = cs.Clause?.Kind switch
+            {
+                ClauseKind.Where => ClauseRole.Where,
+                ClauseKind.OrderBy => ClauseRole.OrderBy,
+                ClauseKind.GroupBy => ClauseRole.GroupBy,
+                ClauseKind.Having => ClauseRole.Having,
+                ClauseKind.Set => ClauseRole.Set,
+                ClauseKind.Join => ClauseRole.Join,
+                _ => ClauseRole.Where
+            };
+
+            var site = UsageSiteInfo.FromTranslatedCallSite(cs);
+            clauses.Add(new ChainedClauseSite(site, isConditional, hasBit ? (int?)bitIdx : null, role));
+        }
+
+        // Build conditional clauses with BranchKind from RawCallSite.ConditionalInfo
+        var conditionalClauses = new List<ConditionalClause>();
+        condIdx = 0;
+        foreach (var cs in chain.ClauseSites)
+        {
+            if (cs.Bound.Raw.ConditionalInfo != null && condIdx < plan.ConditionalTerms.Count)
+            {
+                var term = plan.ConditionalTerms[condIdx];
+                var site = UsageSiteInfo.FromTranslatedCallSite(cs);
+                conditionalClauses.Add(new ConditionalClause(
+                    term.BitIndex, site, cs.Bound.Raw.ConditionalInfo.BranchKind));
+                condIdx++;
+            }
+        }
+
+        var executionSite = UsageSiteInfo.FromTranslatedCallSite(chain.ExecutionSite);
+
+        return new ChainAnalysisResult(
+            tier: plan.Tier,
+            clauses: clauses,
+            executionSite: executionSite,
+            conditionalClauses: conditionalClauses,
+            possibleMasks: plan.PossibleMasks,
+            notAnalyzableReason: plan.NotAnalyzableReason,
+            unmatchedMethodNames: plan.UnmatchedMethodNames);
     }
 
     /// <summary>
-    /// Analyzes the chain in the Test method of the given source.
-    /// Finds all Quarry method invocations, builds UsageSiteInfo wrappers,
-    /// and calls ChainAnalyzer.AnalyzeChain on the execution site.
-    /// When multiple execution sites exist, analyzes the one at <paramref name="executionIndex"/>.
+    /// Runs the generator with test capture enabled, returns captured chains.
     /// </summary>
-    private static ChainAnalysisResult? AnalyzeChain(string methodBody, int executionIndex = -1)
+    private static List<Quarry.Generators.Parsing.AnalyzedChain> RunGeneratorWithCapture(string methodBody)
     {
         var source = WrapInTestSource(methodBody);
         var compilation = CreateCompilation(source);
 
-        // Run the generator first so generated entity types exist
-        var generator = new Quarry.Generators.QuarryGenerator();
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
-
-        var tree = outputCompilation.SyntaxTrees.First();
-        var semanticModel = outputCompilation.GetSemanticModel(tree);
-        var root = tree.GetRoot();
-
-        // Find all invocations in the Test method
-        var testMethod = root.DescendantNodes()
-            .OfType<MethodDeclarationSyntax>()
-            .FirstOrDefault(m => m.Identifier.Text == "Test");
-
-        if (testMethod == null)
-            throw new InvalidOperationException("Test method not found in source");
-
-        var invocations = testMethod.DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .ToList();
-
-        // Build UsageSiteInfo for each recognized Quarry method invocation
-        var sites = new List<UsageSiteInfo>();
-        var executionInvocations = new List<InvocationExpressionSyntax>();
-
-        foreach (var invocation in invocations)
+        ChainAnalyzer.TestCapturedChains = new List<Quarry.Generators.Parsing.AnalyzedChain>();
+        try
         {
-            var methodName = GetMethodName(invocation);
-            if (methodName != null && MethodKindMap.TryGetValue(methodName, out var kind))
-            {
-                sites.Add(MakeSite(invocation, kind));
-
-                if (ChainAnalyzer.IsExecutionKind(kind))
-                {
-                    executionInvocations.Add(invocation);
-                }
-            }
+            var generator = new Quarry.Generators.QuarryGenerator();
+            GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
+            driver.RunGeneratorsAndUpdateCompilation(compilation, out _, out _);
+            return new List<Quarry.Generators.Parsing.AnalyzedChain>(ChainAnalyzer.TestCapturedChains);
         }
+        finally
+        {
+            ChainAnalyzer.TestCapturedChains = null;
+        }
+    }
 
-        if (executionInvocations.Count == 0)
-            throw new InvalidOperationException("No execution method found in test source");
+    /// <summary>
+    /// Analyzes the chain in the Test method by running the full generator pipeline.
+    /// Returns the chain analysis result for the execution site at the given index.
+    /// </summary>
+    private static ChainAnalysisResult? AnalyzeChain(string methodBody, int executionIndex = -1)
+    {
+        var captured = RunGeneratorWithCapture(methodBody);
+        if (captured.Count == 0)
+            return null;
 
-        // Pick the requested execution site (default: last one)
-        var targetIndex = executionIndex >= 0 ? executionIndex : executionInvocations.Count - 1;
-        var executionInvocation = executionInvocations[targetIndex];
+        var targetIndex = executionIndex >= 0 ? executionIndex : captured.Count - 1;
+        if (targetIndex >= captured.Count)
+            return null;
 
-        var executionSite = sites.First(s =>
-            s.InvocationSyntax is InvocationExpressionSyntax inv &&
-            inv.Span == executionInvocation.Span);
-
-        return ChainAnalyzer.AnalyzeChain(
-            executionSite, sites, semanticModel, CancellationToken.None);
+        return ConvertToResult(captured[targetIndex]);
     }
 
     /// <summary>
@@ -218,56 +231,8 @@ public class Svc
     /// </summary>
     private static List<ChainAnalysisResult> AnalyzeAllChains(string methodBody)
     {
-        var source = WrapInTestSource(methodBody);
-        var compilation = CreateCompilation(source);
-
-        var generator = new Quarry.Generators.QuarryGenerator();
-        GeneratorDriver driver = CSharpGeneratorDriver.Create(generator);
-        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
-
-        var tree = outputCompilation.SyntaxTrees.First();
-        var semanticModel = outputCompilation.GetSemanticModel(tree);
-        var root = tree.GetRoot();
-
-        var testMethod = root.DescendantNodes()
-            .OfType<MethodDeclarationSyntax>()
-            .FirstOrDefault(m => m.Identifier.Text == "Test");
-
-        if (testMethod == null)
-            throw new InvalidOperationException("Test method not found in source");
-
-        var invocations = testMethod.DescendantNodes()
-            .OfType<InvocationExpressionSyntax>()
-            .ToList();
-
-        var sites = new List<UsageSiteInfo>();
-        var executionInvocations = new List<InvocationExpressionSyntax>();
-
-        foreach (var invocation in invocations)
-        {
-            var methodName = GetMethodName(invocation);
-            if (methodName != null && MethodKindMap.TryGetValue(methodName, out var kind))
-            {
-                sites.Add(MakeSite(invocation, kind));
-                if (ChainAnalyzer.IsExecutionKind(kind))
-                    executionInvocations.Add(invocation);
-            }
-        }
-
-        var results = new List<ChainAnalysisResult>();
-        foreach (var execInv in executionInvocations)
-        {
-            var execSite = sites.First(s =>
-                s.InvocationSyntax is InvocationExpressionSyntax inv &&
-                inv.Span == execInv.Span);
-
-            var result = ChainAnalyzer.AnalyzeChain(
-                execSite, sites, semanticModel, CancellationToken.None);
-            if (result != null)
-                results.Add(result);
-        }
-
-        return results;
+        var captured = RunGeneratorWithCapture(methodBody);
+        return captured.Select(ConvertToResult).ToList();
     }
 
     /// <summary>

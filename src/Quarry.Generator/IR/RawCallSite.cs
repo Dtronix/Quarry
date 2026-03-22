@@ -40,6 +40,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isInsideLoop = false,
         bool isInsideTryCatch = false,
         bool isCapturedInLambda = false,
+        bool isPassedAsArgument = false,
+        bool isAssignedFromNonQuarryMethod = false,
         ConditionalInfo? conditionalInfo = null,
         string? chainId = null,
         string? builderTypeName = null,
@@ -75,6 +77,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsInsideLoop = isInsideLoop;
         IsInsideTryCatch = isInsideTryCatch;
         IsCapturedInLambda = isCapturedInLambda;
+        IsPassedAsArgument = isPassedAsArgument;
+        IsAssignedFromNonQuarryMethod = isAssignedFromNonQuarryMethod;
         ConditionalInfo = conditionalInfo;
         ChainId = chainId;
         BuilderTypeName = builderTypeName;
@@ -126,6 +130,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     public bool IsInsideLoop { get; }
     public bool IsInsideTryCatch { get; }
     public bool IsCapturedInLambda { get; }
+    public bool IsPassedAsArgument { get; }
+    public bool IsAssignedFromNonQuarryMethod { get; }
     public ConditionalInfo? ConditionalInfo { get; }
     public string? ChainId { get; }
 

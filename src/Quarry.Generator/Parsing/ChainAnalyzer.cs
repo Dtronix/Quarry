@@ -20,6 +20,13 @@ namespace Quarry.Generators.Parsing;
 internal static class ChainAnalyzer
 {
     /// <summary>
+    /// Test capture hook: when non-null, Analyze() appends results here.
+    /// Set from test code before running the generator, read after.
+    /// </summary>
+    [ThreadStatic]
+    internal static List<AnalyzedChain>? TestCapturedChains;
+
+    /// <summary>
     /// Maximum number of conditional bits before downgrading from tier 1 to tier 2.
     /// 4 bits = up to 16 dispatch variants.
     /// </summary>
@@ -84,6 +91,8 @@ internal static class ChainAnalyzer
                 trace?.AppendLine($"//     StackTrace={ex.StackTrace?.Replace("\n", " | ")}");
             }
         }
+
+        TestCapturedChains?.AddRange(results);
 
         return results;
     }
@@ -805,6 +814,10 @@ internal static class ChainAnalyzer
                 return "Chain contains a clause inside a try/catch/finally block";
             if (raw.IsCapturedInLambda)
                 return "Chain variable captured in a lambda expression";
+            if (raw.IsPassedAsArgument)
+                return "Chain variable passed as argument to non-Quarry method or captured in lambda";
+            if (raw.IsAssignedFromNonQuarryMethod)
+                return "Chain variable assigned from non-Quarry method";
         }
         return null;
     }

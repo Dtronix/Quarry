@@ -683,6 +683,10 @@ internal static class UsageSiteDiscovery
         var conditionalInfo = DetectConditionalAncestor(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
+        // Variable-level disqualifier detection for variable-based chains
+        var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
+            DetectVariableDisqualifiers(invocation, semanticModel);
+
         // Convert InitializedPropertyNames from HashSet to sorted ImmutableArray
         ImmutableArray<string>? sortedPropertyNames = null;
         if (usageSite.InitializedPropertyNames != null && usageSite.InitializedPropertyNames.Count > 0)
@@ -720,6 +724,8 @@ internal static class UsageSiteDiscovery
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
+            isPassedAsArgument: isPassedAsArgument,
+            isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
             conditionalInfo: conditionalInfo,
             chainId: chainId,
             builderTypeName: usageSite.BuilderTypeName,
@@ -844,39 +850,142 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
+    /// Detects variable-level disqualifiers by walking all references to the chain root variable.
+    /// </summary>
+    private static (bool IsPassedAsArgument, bool IsAssignedFromNonQuarryMethod) DetectVariableDisqualifiers(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel)
+    {
+        // Find the root variable name from the chain
+        ExpressionSyntax? receiver = null;
+        if (invocation.Expression is MemberAccessExpressionSyntax ma2)
+            receiver = ma2.Expression;
+        if (receiver == null)
+            return (false, false);
+
+        while (receiver is InvocationExpressionSyntax ci)
+        {
+            if (ci.Expression is MemberAccessExpressionSyntax cm)
+                receiver = cm.Expression;
+            else
+                break;
+        }
+
+        if (receiver is not IdentifierNameSyntax rootId)
+            return (false, false);
+
+        var varName = rootId.Identifier.Text;
+        var methodBody = invocation.Ancestors()
+            .OfType<MethodDeclarationSyntax>()
+            .FirstOrDefault()?.Body;
+        if (methodBody == null)
+            return (false, false);
+
+        bool passed = false;
+        bool nonQuarry = false;
+
+        foreach (var id in methodBody.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            if (id.Identifier.Text != varName) continue;
+
+            // Passed as argument to non-Quarry method
+            if (id.Parent is ArgumentSyntax
+                && id.Parent.Parent is ArgumentListSyntax al
+                && al.Parent is InvocationExpressionSyntax ce)
+            {
+                var mn = ce.Expression switch
+                {
+                    MemberAccessExpressionSyntax m => m.Name.Identifier.Text,
+                    IdentifierNameSyntax i => i.Identifier.Text,
+                    _ => null
+                };
+                if (mn != null && !IsKnownBuilderMethod(mn))
+                    passed = true;
+            }
+
+            // Captured in lambda/local function (not a Quarry clause lambda)
+            var cl = id.Ancestors().FirstOrDefault(a =>
+                a is LambdaExpressionSyntax or AnonymousMethodExpressionSyntax or LocalFunctionStatementSyntax);
+            if (cl != null && cl.Ancestors().Any(a => a == methodBody)
+                && !(cl.Parent is ArgumentSyntax && cl.Parent.Parent is ArgumentListSyntax && cl.Parent.Parent.Parent is InvocationExpressionSyntax))
+            {
+                passed = true;
+            }
+
+            // Assigned from non-Quarry method
+            if (id.Parent is AssignmentExpressionSyntax asgn
+                && asgn.Left == id
+                && asgn.Right is InvocationExpressionSyntax rhs)
+            {
+                var mn = rhs.Expression switch
+                {
+                    MemberAccessExpressionSyntax m => m.Name.Identifier.Text,
+                    IdentifierNameSyntax i => i.Identifier.Text,
+                    _ => null
+                };
+                if (mn != null && !IsKnownBuilderMethod(mn))
+                    nonQuarry = true;
+            }
+        }
+
+        return (passed, nonQuarry);
+    }
+
+    private static bool IsKnownBuilderMethod(string name)
+    {
+        return name is "Where" or "OrderBy" or "ThenBy" or "Select" or "GroupBy" or "Having"
+            or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
+            or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
+            or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
+            or "ToAsyncEnumerable" or "ToDiagnostics"
+            or "Users" or "Orders" or "Accounts" or "Products" or "Projects";
+    }
+
+    /// <summary>
     /// Detects if the invocation is inside an if statement or ternary expression.
     /// Returns ConditionalInfo with the condition text and nesting depth.
     /// </summary>
     private static ConditionalInfo? DetectConditionalAncestor(SyntaxNode node)
     {
-        int ifDepth = 0; // Count only nested if-statement levels, not all syntax nodes
+        // Walk all ancestors to count total nesting depth and capture innermost if info
+        int totalIfDepth = 0;
+        string? innermostCondition = null;
+        BranchKind innermostBranchKind = BranchKind.Independent;
+        bool passedThroughElse = false;
+
         foreach (var ancestor in node.Ancestors())
         {
+            if (ancestor is ElseClauseSyntax)
+            {
+                passedThroughElse = true;
+                continue;
+            }
             if (ancestor is IfStatementSyntax ifStatement)
             {
-                var conditionText = ifStatement.Condition.ToString();
-                // Determine branch kind: if we're in an else branch, it's mutually exclusive
-                var branchKind = BranchKind.Independent;
-                if (ifStatement.Parent is ElseClauseSyntax)
-                    branchKind = BranchKind.MutuallyExclusive;
-                else if (ifStatement.Else != null)
+                totalIfDepth++;
+                if (innermostCondition == null)
                 {
-                    // This if has an else — check if we're in the if-true or else branch
-                    // For now, mark as Independent; the ChainAnalyzer can refine
-                    branchKind = BranchKind.Independent;
+                    innermostCondition = ifStatement.Condition.ToString();
+                    if (passedThroughElse || ifStatement.Else != null || ifStatement.Parent is ElseClauseSyntax)
+                        innermostBranchKind = BranchKind.MutuallyExclusive;
                 }
-                return new ConditionalInfo(conditionText, ifDepth, branchKind);
+                passedThroughElse = false;
+                continue;
             }
-            if (ancestor is ConditionalExpressionSyntax ternary)
+            if (ancestor is ConditionalExpressionSyntax ternary && innermostCondition == null)
             {
-                return new ConditionalInfo(ternary.Condition.ToString(), ifDepth, BranchKind.MutuallyExclusive);
+                innermostCondition = ternary.Condition.ToString();
+                innermostBranchKind = BranchKind.MutuallyExclusive;
+                continue;
             }
             if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
                 break;
-            // Only count nesting of if-blocks, not arbitrary syntax nodes
-            // (e.g., ExpressionStatement, Block, AssignmentExpression are not nesting levels)
         }
-        return null;
+
+        if (innermostCondition == null)
+            return null;
+
+        return new ConditionalInfo(innermostCondition, totalIfDepth, innermostBranchKind);
     }
 
     /// <summary>
