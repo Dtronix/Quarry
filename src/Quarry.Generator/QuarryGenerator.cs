@@ -597,8 +597,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Convert AssembledPlan → PrebuiltChainInfo for emitter compatibility (temporary bridge)
         var chains = new List<PrebuiltChainInfo>();
-        foreach (var assembled in group.AssembledPlans)
+        for (int assembledIdx = 0; assembledIdx < group.AssembledPlans.Count; assembledIdx++)
         {
+            var assembled = group.AssembledPlans[assembledIdx];
             if (assembled.Plan.Tier == OptimizationTier.RuntimeBuild)
             {
                 trace.AppendLine($"//   SKIPPED RuntimeBuild chain: ExecUniqueId={assembled.ExecutionSite.Bound.Raw.UniqueId} ExecMethod={assembled.ExecutionSite.Bound.Raw.MethodName}");
@@ -789,7 +790,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 joinedEntityTypeNames: assembled.ExecutionSite.JoinedEntityTypeNames,
                 joinedTableInfos: joinedTableInfos,
                 chainParameters: chainParams,
-                isCarrierEligible: group.CarrierPlans.Count > 0 && group.CarrierPlans.Any(cp => cp.IsEligible),
+                isCarrierEligible: assembledIdx < group.CarrierPlans.Count && group.CarrierPlans[assembledIdx].IsEligible,
                 entitySchemaNamespace: assembled.EntitySchemaNamespace);
 
             chains.Add(chain);

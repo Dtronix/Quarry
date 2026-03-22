@@ -43,7 +43,15 @@ internal static class SqlAssembler
         }
 
         // Build SQL for each mask
+        // Only include identity RETURNING/OUTPUT clause for ExecuteScalar (which returns the identity).
+        // ExecuteNonQuery does not need it.
         var insertInfo = executionSite.Bound.InsertInfo;
+        var needsIdentityReturning = executionSite.Bound.Raw.Kind != InterceptorKind.InsertExecuteNonQuery;
+        if (insertInfo != null && !needsIdentityReturning)
+        {
+            // Strip identity column info so RETURNING/OUTPUT is not appended
+            insertInfo = new Models.InsertInfo(insertInfo.Columns, null, null, null);
+        }
         var maxParamCount = 0;
         foreach (var mask in plan.PossibleMasks)
         {

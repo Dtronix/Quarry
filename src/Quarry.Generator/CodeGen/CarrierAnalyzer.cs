@@ -259,6 +259,11 @@ internal static class CarrierAnalyzer
         if (plan.UnmatchedMethodNames != null && plan.UnmatchedMethodNames.Count > 0)
             return CarrierPlan.Ineligible("chain has unmatched methods");
 
+        // Gate: MySQL InsertExecuteScalar requires separate SELECT LAST_INSERT_ID()
+        if (assembled.ExecutionSite.Bound.Raw.Kind == InterceptorKind.InsertExecuteScalar
+            && assembled.Dialect == SqlDialect.MySQL)
+            return CarrierPlan.Ineligible("MySQL InsertExecuteScalar requires separate query");
+
         // Gate: Empty SQL variants
         if (assembled.SqlVariants.Count == 0)
             return CarrierPlan.Ineligible("no SQL variants");
