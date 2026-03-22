@@ -679,4 +679,158 @@ public class Service
     }
 
     #endregion
+
+    #region Sql.Raw Placeholder Validation (QRY029)
+
+    [Test]
+    public void QRY029_TooManyArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} only, but two args supplied
+        db.Users().Where(u => Sql.Raw<bool>(""custom_func({0})"", u.UserId, u.UserName))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for too many arguments");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("2 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_TooFewArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} and {1} but only one arg supplied
+        db.Users().Where(u => Sql.Raw<bool>(""check({0}, {1})"", u.UserId))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for too few arguments");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("1 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_NonSequentialPlaceholders_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} and {2} -- skips {1}
+        db.Users().Where(u => Sql.Raw<bool>(""check({0}, {2})"", u.UserId, u.UserName, u.UserId))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for non-sequential placeholders");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("{1} is missing"));
+    }
+
+    [Test]
+    public void QRY029_ValidTemplate_NoDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        db.Users().Where(u => Sql.Raw<bool>(""custom_func({0}, {1})"", u.UserId, u.UserName))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.EqualTo(0), "Valid template should not emit QRY029");
+    }
+
+    #endregion
 }
