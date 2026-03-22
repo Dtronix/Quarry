@@ -39,6 +39,19 @@ internal static class CallSiteTranslator
 
         var raw = bound.Raw;
 
+        // UpdateSetAction: Action<T> lambdas can't be parsed into SqlExpr.
+        // Pass through SetActionAssignments from discovery as a TranslatedClause.
+        if (raw.Kind == InterceptorKind.UpdateSetAction && raw.SetActionAssignments != null)
+        {
+            var clause = new TranslatedClause(
+                ClauseKind.Set,
+                new LiteralExpr("1", "int"), // placeholder — not used for SetAction
+                raw.SetActionParameters ?? (IReadOnlyList<Translation.ParameterInfo>)Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: true,
+                setAssignments: raw.SetActionAssignments);
+            return new TranslatedCallSite(bound, clause);
+        }
+
         // Non-clause sites: Limit, Offset, Distinct, WithTimeout, ChainRoot,
         // execution terminals, insert/delete transitions, Trace
         if (raw.Expression == null || !IsClauseBearingKind(raw.Kind))

@@ -689,10 +689,13 @@ internal static class JoinBodyEmitter
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
-        var projection = site.ProjectionInfo;
+        // Prefer chain's enriched ProjectionInfo over site's discovery-time projection
+        var projection = (prebuiltChain?.ProjectionInfo != null && prebuiltChain.ProjectionInfo.Columns.Count > 0)
+            ? prebuiltChain.ProjectionInfo
+            : site.ProjectionInfo;
 
         // Simplified prebuilt chain path: AsProjected instead of AddSelectClause
-        if (prebuiltChain != null && projection != null && projection.IsOptimalPath && projection.Columns.Count > 0)
+        if (prebuiltChain != null && projection != null && projection.IsOptimalPath && projection.Columns.Count > 0 && projection.ResultTypeName != "?")
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
             sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
@@ -740,7 +743,7 @@ internal static class JoinBodyEmitter
             return;
         }
 
-        if (projection != null && projection.IsOptimalPath && projection.Columns.Count > 0)
+        if (projection != null && projection.IsOptimalPath && projection.Columns.Count > 0 && projection.ResultTypeName != "?")
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
             var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection, site.Dialect);

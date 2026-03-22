@@ -345,10 +345,14 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var projection = site.ProjectionInfo;
+        // Prefer chain's enriched ProjectionInfo over site's discovery-time projection
+        // (discovery-time ResultTypeName may be '?' when entity types are generator-produced)
+        var projection = (prebuiltChain?.ProjectionInfo != null && prebuiltChain.ProjectionInfo.Columns.Count > 0)
+            ? prebuiltChain.ProjectionInfo
+            : site.ProjectionInfo;
 
         // Simplified prebuilt chain path: AsProjected instead of SelectWithReader
-        if (prebuiltChain != null && projection != null && projection.IsOptimalPath && projection.Columns.Count > 0)
+        if (prebuiltChain != null && projection != null && projection.IsOptimalPath && projection.Columns.Count > 0 && projection.ResultTypeName != "?")
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
             var thisType = site.BuilderTypeName;
@@ -401,7 +405,8 @@ internal static class ClauseBodyEmitter
         // Non-prebuilt paths
         if (projection != null &&
             projection.IsOptimalPath &&
-            projection.Columns.Count > 0)
+            projection.Columns.Count > 0 &&
+            projection.ResultTypeName != "?")
         {
             EmitOptimalSelect(sb, site, methodName, entityType, projection);
         }
