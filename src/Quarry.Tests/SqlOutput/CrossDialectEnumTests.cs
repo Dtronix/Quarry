@@ -71,10 +71,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Pg.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
             My.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
             Ss.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE \"OrderId\" = 1",
-            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE \"OrderId\" = 1",
-            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE `OrderId` = 1",
-            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE [OrderId] = 1");
+            sqlite: "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
+            pg:     "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
+            mysql:  "UPDATE `orders` SET `Priority` = 2 WHERE `OrderId` = 1",
+            ss:     "UPDATE [orders] SET [Priority] = 2 WHERE [OrderId] = 1");
     }
 
     #endregion
