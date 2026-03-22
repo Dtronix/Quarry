@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
@@ -15,6 +16,10 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Extracts the namespace from a syntax node's containing file.
     /// </summary>
+    /// <remarks>
+    /// In the new pipeline, TranslatedCallSite does not carry InvocationSyntax,
+    /// so this always returns null. Namespace resolution is handled elsewhere.
+    /// </remarks>
     internal static string? GetNamespaceFromFilePath(Microsoft.CodeAnalysis.SyntaxNode? syntaxNode)
     {
         if (syntaxNode?.SyntaxTree == null)
@@ -126,35 +131,29 @@ internal static partial class InterceptorCodeGenerator
     /// Checks if a clause interceptor should be skipped because the clause could not be translated.
     /// When skipped, the original runtime method runs instead of a silent no-op fallback.
     /// </summary>
-    internal static bool ShouldSkipNonTranslatableClause(UsageSiteInfo site)
+    internal static bool ShouldSkipNonTranslatableClause(TranslatedCallSite site)
     {
         switch (site.Kind)
         {
             case InterceptorKind.Where:
             case InterceptorKind.DeleteWhere:
             case InterceptorKind.UpdateWhere:
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.OrderBy:
             case InterceptorKind.ThenBy:
-                if (site.ClauseInfo is OrderByClauseInfo orderByInfo && orderByInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.GroupBy:
             case InterceptorKind.Having:
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.Set:
             case InterceptorKind.UpdateSet:
-                if (site.ClauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.UpdateSetAction:
-                if (site.ClauseInfo is SetActionClauseInfo actionInfo && actionInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.UpdateSetPoco:
                 return site.UpdateInfo == null || site.UpdateInfo.Columns.Count == 0;
@@ -171,7 +170,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Checks if a Select interceptor should be skipped entirely (not emitted).
     /// </summary>
-    internal static bool ShouldSkipSelectInterceptor(UsageSiteInfo site)
+    internal static bool ShouldSkipSelectInterceptor(TranslatedCallSite site)
     {
         var projection = site.ProjectionInfo;
         if (projection == null)
@@ -439,7 +438,7 @@ internal static partial class InterceptorCodeGenerator
         }
     }
 
-    internal static void GeneratePlaceholderInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    internal static void GeneratePlaceholderInterceptor(StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
 

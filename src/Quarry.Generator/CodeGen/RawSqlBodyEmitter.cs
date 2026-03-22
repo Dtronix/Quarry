@@ -1,4 +1,5 @@
 using System.Text;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.CodeGen;
@@ -12,7 +13,7 @@ internal static class RawSqlBodyEmitter
     /// <summary>
     /// Emits a RawSqlAsync&lt;T&gt; interceptor with a typed reader delegate.
     /// </summary>
-    public static void EmitRawSqlAsync(StringBuilder sb, UsageSiteInfo site, string methodName)
+    public static void EmitRawSqlAsync(StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var rawSqlInfo = site.RawSqlTypeInfo;
         if (rawSqlInfo == null)
@@ -82,7 +83,7 @@ internal static class RawSqlBodyEmitter
     /// <summary>
     /// Emits a RawSqlScalarAsync&lt;T&gt; interceptor with typed conversion.
     /// </summary>
-    public static void EmitRawSqlScalarAsync(StringBuilder sb, UsageSiteInfo site, string methodName)
+    public static void EmitRawSqlScalarAsync(StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var rawSqlInfo = site.RawSqlTypeInfo;
         if (rawSqlInfo == null)

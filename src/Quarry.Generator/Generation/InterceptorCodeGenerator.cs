@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text;
 using Quarry.Generators.CodeGen;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
@@ -28,8 +29,8 @@ internal static partial class InterceptorCodeGenerator
         string contextClassName,
         string? contextNamespace,
         string fileTag,
-        IReadOnlyList<UsageSiteInfo> usageSites,
-        IReadOnlyList<PrebuiltChainInfo>? prebuiltChains = null)
+        IReadOnlyList<TranslatedCallSite> usageSites,
+        IReadOnlyList<AssembledPlan>? prebuiltChains = null)
     {
         var emitter = new CodeGen.FileEmitter(
             contextClassName, contextNamespace, fileTag, usageSites, prebuiltChains);
@@ -67,7 +68,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Collects all static fields needed for cached extractors across all usage sites.
     /// </summary>
-    internal static List<CachedExtractorField> CollectStaticFields(IReadOnlyList<UsageSiteInfo> usageSites, HashSet<string> chainMemberIds)
+    internal static List<CachedExtractorField> CollectStaticFields(IReadOnlyList<TranslatedCallSite> usageSites, HashSet<string> chainMemberIds)
     {
         var fields = new List<CachedExtractorField>();
 
@@ -79,11 +80,11 @@ internal static partial class InterceptorCodeGenerator
             if (site.Kind == InterceptorKind.Select && ShouldSkipSelectInterceptor(site))
                 continue;
 
-            var clauseInfo = site.ClauseInfo;
-            if (clauseInfo == null || !clauseInfo.IsSuccess)
+            var clause = site.Clause;
+            if (clause == null || !clause.IsSuccess)
                 continue;
 
-            var capturedParams = clauseInfo.Parameters
+            var capturedParams = clause.Parameters
                 .Where(p => p.IsCaptured && p.CanGenerateDirectPath && !p.IsCollection)
                 .ToList();
             foreach (var param in capturedParams)
@@ -105,7 +106,7 @@ internal static partial class InterceptorCodeGenerator
     /// Collects all unique TypeMapping class FQNs used across all usage sites and returns
     /// a mapping from field name to FQN for generating cached static readonly instances.
     /// </summary>
-    internal static Dictionary<string, string> CollectMappingInstances(IReadOnlyList<UsageSiteInfo> usageSites, HashSet<string> chainMemberIds)
+    internal static Dictionary<string, string> CollectMappingInstances(IReadOnlyList<TranslatedCallSite> usageSites, HashSet<string> chainMemberIds)
     {
         var mappings = new Dictionary<string, string>(); // fieldName → FQN
 
@@ -132,17 +133,17 @@ internal static partial class InterceptorCodeGenerator
             }
 
             // From where clause parameters
-            if (site.ClauseInfo != null)
+            if (site.Clause != null)
             {
-                foreach (var p in site.ClauseInfo.Parameters)
+                foreach (var p in site.Clause.Parameters)
                 {
                     if (p.CustomTypeMappingClass != null)
                         AddIfMissing(mappings, GetMappingFieldName(p.CustomTypeMappingClass), p.CustomTypeMappingClass);
                 }
 
                 // From Set clause mapping
-                if (site.ClauseInfo is SetClauseInfo setInfo && setInfo.CustomTypeMappingClass != null)
-                    AddIfMissing(mappings, GetMappingFieldName(setInfo.CustomTypeMappingClass), setInfo.CustomTypeMappingClass);
+                if (site.Clause.CustomTypeMappingClass != null)
+                    AddIfMissing(mappings, GetMappingFieldName(site.Clause.CustomTypeMappingClass), site.Clause.CustomTypeMappingClass);
             }
         }
 
@@ -162,7 +163,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Collects all unique EntityReader class FQNs used across all usage sites.
     /// </summary>
-    internal static Dictionary<string, string> CollectEntityReaderInstances(IReadOnlyList<UsageSiteInfo> usageSites, HashSet<string> chainMemberIds)
+    internal static Dictionary<string, string> CollectEntityReaderInstances(IReadOnlyList<TranslatedCallSite> usageSites, HashSet<string> chainMemberIds)
     {
         var readers = new Dictionary<string, string>(); // fieldName → FQN
 
@@ -226,7 +227,7 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     internal static void GenerateDispatchTable(
         StringBuilder sb,
-        Dictionary<ulong, PrebuiltSqlResult> sqlMap,
+        Dictionary<ulong, AssembledSqlVariant> sqlMap,
         string builderVar = "builder")
     {
         Debug.Assert(sqlMap.Count > 0, "Dispatch table must have at least one SQL variant.");
@@ -260,7 +261,7 @@ internal static partial class InterceptorCodeGenerator
     /// Handles scalar-only, collection-only, and mixed scalar+collection chains.
     /// </summary>
     internal static void EmitDiagnosticParameterArray(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
     {
         var hasScalar = chain.ChainParameters.Any(p => !p.IsCollection);
         var hasCollection = chain.ChainParameters.Any(p => p.IsCollection);
@@ -278,7 +279,7 @@ internal static partial class InterceptorCodeGenerator
         {
             var entries = new List<string>();
             foreach (var p in chain.ChainParameters.Where(p => !p.IsCollection))
-                entries.Add($"new(\"@p{p.Index}\", __pVal{p.Index})");
+                entries.Add($"new(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex})");
             if (hasLimitField)
                 entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL)");
             if (hasOffsetField)
@@ -296,23 +297,23 @@ internal static partial class InterceptorCodeGenerator
             + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
         var collectionLenExprs = chain.ChainParameters
             .Where(p => p.IsCollection)
-            .Select(p => $"__col{p.Index}Len");
+            .Select(p => $"__col{p.GlobalIndex}Len");
         var capacityExpr = scalarCount > 0
             ? $"{scalarCount} + {string.Join(" + ", collectionLenExprs)}"
             : string.Join(" + ", collectionLenExprs);
 
         sb.AppendLine($"        var __paramList = new System.Collections.Generic.List<DiagnosticParameter>({capacityExpr});");
 
-        foreach (var p in chain.ChainParameters.OrderBy(p => p.Index))
+        foreach (var p in chain.ChainParameters.OrderBy(p => p.GlobalIndex))
         {
             if (p.IsCollection)
             {
-                sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.Index}Len; __pi++)");
-                sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.Index}Parts[__pi], __col{p.Index}[__pi]));");
+                sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.GlobalIndex}Len; __pi++)");
+                sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.GlobalIndex}Parts[__pi], __col{p.GlobalIndex}[__pi]));");
             }
             else
             {
-                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.Index}\", __pVal{p.Index}));");
+                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}));");
             }
         }
 
@@ -341,9 +342,9 @@ internal static partial class InterceptorCodeGenerator
     /// Emits a ClauseDiagnostic[] array from compile-time clause metadata and runtime clause mask.
     /// </summary>
     internal static void EmitDiagnosticClauseArray(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo? carrier = null)
+        StringBuilder sb, AssembledPlan chain, CarrierPlan? carrier = null)
     {
-        var diagnosticClauses = chain.Analysis.Clauses
+        var diagnosticClauses = chain.GetClauseEntries()
             .Where(c => IsDiagnosticClauseRole(c.Role))
             .ToList();
 
@@ -355,11 +356,11 @@ internal static partial class InterceptorCodeGenerator
 
         var globalParamOffset = 0;
         var clauseParamOffsets = new Dictionary<string, int>();
-        foreach (var clause in chain.Analysis.Clauses)
+        foreach (var clause in chain.GetClauseEntries())
         {
             clauseParamOffsets[clause.Site.UniqueId] = globalParamOffset;
-            if (clause.Site.ClauseInfo != null)
-                globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+            if (clause.Site.Clause != null)
+                globalParamOffset += clause.Site.Clause.Parameters.Count;
         }
 
         var paginationBaseIdx = chain.ChainParameters.Count;
@@ -370,14 +371,14 @@ internal static partial class InterceptorCodeGenerator
         for (int clauseIdx = 0; clauseIdx < diagnosticClauses.Count; clauseIdx++)
         {
             var clause = diagnosticClauses[clauseIdx];
-            if (carrier == null || clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) != true)
+            if (carrier == null || clause.Site.Clause?.Parameters.Any(p => p.IsCollection) != true)
                 continue;
 
-            var sqlFrag = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var sqlFrag = clause.Site.Clause?.SqlFragment ?? "";
             var offset = clauseParamOffsets[clause.Site.UniqueId];
             var tokenizedFrag = sqlFrag;
 
-            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            foreach (var p in clause.Site.Clause!.Parameters.Where(p => p.IsCollection))
             {
                 var globalIdx = offset + p.Index;
                 var token = $"{{__COL_P{globalIdx}__}}";
@@ -409,7 +410,7 @@ internal static partial class InterceptorCodeGenerator
             }
 
             sb.AppendLine($"        var __clauseSql{clauseIdx} = @\"{EscapeStringLiteral(tokenizedFrag)}\";");
-            foreach (var p in clause.Site.ClauseInfo!.Parameters.Where(p => p.IsCollection))
+            foreach (var p in clause.Site.Clause!.Parameters.Where(p => p.IsCollection))
             {
                 var globalIdx = offset + p.Index;
                 sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", string.Join(\", \", __col{globalIdx}Parts));");
@@ -419,11 +420,11 @@ internal static partial class InterceptorCodeGenerator
         for (int clauseIdx = 0; clauseIdx < diagnosticClauses.Count; clauseIdx++)
         {
             var clause = diagnosticClauses[clauseIdx];
-            if (carrier == null || clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) != true)
+            if (carrier == null || clause.Site.Clause?.Parameters.Any(p => p.IsCollection) != true)
                 continue;
 
             var offset = clauseParamOffsets[clause.Site.UniqueId];
-            var clauseParams = clause.Site.ClauseInfo!.Parameters;
+            var clauseParams = clause.Site.Clause!.Parameters;
             var hasScalarInClause = clauseParams.Any(p => !p.IsCollection);
 
             if (!hasScalarInClause)
@@ -465,7 +466,7 @@ internal static partial class InterceptorCodeGenerator
         foreach (var clause in diagnosticClauses)
         {
             var clauseType = clause.Role.ToString();
-            var sqlFragment = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var sqlFragment = clause.Site.Clause?.SqlFragment ?? "";
             var escapedFragment = EscapeStringLiteral(sqlFragment);
             var isConditional = clause.IsConditional ? "true" : "false";
 
@@ -479,10 +480,10 @@ internal static partial class InterceptorCodeGenerator
                 isActive = $"(__c.Mask & unchecked(({maskType})(1 << {clause.BitIndex!.Value}))) != 0";
             }
 
-            var clauseParamCount = clause.Site.ClauseInfo?.Parameters.Count ?? 0;
+            var clauseParamCount = clause.Site.Clause?.Parameters.Count ?? 0;
             string paramsArg;
 
-            var hasCollectionParam = carrier != null && clause.Site.ClauseInfo?.Parameters.Any(p => p.IsCollection) == true;
+            var hasCollectionParam = carrier != null && clause.Site.Clause?.Parameters.Any(p => p.IsCollection) == true;
             var clauseSqlExpr = hasCollectionParam
                 ? $"__clauseSql{diagnosticClauses.IndexOf(clause)}"
                 : $"@\"{escapedFragment}\"";
@@ -524,9 +525,9 @@ internal static partial class InterceptorCodeGenerator
     /// Emits a ClauseDiagnostic[] array for non-carrier prebuilt chains.
     /// </summary>
     internal static void EmitNonCarrierDiagnosticClauseArray(
-        StringBuilder sb, PrebuiltChainInfo chain, string concreteParamType)
+        StringBuilder sb, AssembledPlan chain, string concreteParamType)
     {
-        var diagnosticClauses = chain.Analysis.Clauses
+        var diagnosticClauses = chain.GetClauseEntries()
             .Where(c => IsDiagnosticClauseRole(c.Role))
             .ToList();
 
@@ -537,14 +538,14 @@ internal static partial class InterceptorCodeGenerator
         }
 
         var hasConditional = diagnosticClauses.Any(c => c.IsConditional);
-        var needsMaskAccess = hasConditional && chain.SqlMap.Count > 1;
+        var needsMaskAccess = hasConditional && chain.SqlVariants.Count > 1;
 
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
         foreach (var clause in diagnosticClauses)
         {
             var clauseType = clause.Role.ToString();
-            var sqlFragment = clause.Site.ClauseInfo?.SqlFragment ?? "";
+            var sqlFragment = clause.Site.Clause?.SqlFragment ?? "";
             var escapedFragment = EscapeStringLiteral(sqlFragment);
             var isConditional = clause.IsConditional ? "true" : "false";
 

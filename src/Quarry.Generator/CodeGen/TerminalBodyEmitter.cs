@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Projection;
 using Quarry.Generators.Sql;
@@ -27,10 +28,10 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitReaderTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo chain,
-        CarrierClassInfo? carrier = null)
+        AssembledPlan chain,
+        CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
@@ -137,7 +138,7 @@ internal static class TerminalBodyEmitter
         var builderVar = "__b";
 
         // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlMap, builderVar);
+        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
 
         // Call the executor
         if (hasReader && chain.ReaderDelegateCode != null)
@@ -162,10 +163,10 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitJoinReaderTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo chain,
-        CarrierClassInfo? carrier = null)
+        AssembledPlan chain,
+        CarrierPlan? carrier = null)
     {
         var joinedNames = chain.JoinedEntityTypeNames!;
         var entityCount = joinedNames.Count;
@@ -262,7 +263,7 @@ internal static class TerminalBodyEmitter
         var builderVar = "__b";
 
         // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlMap, builderVar);
+        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
 
         // Call the executor
         if (hasReader && chain.ReaderDelegateCode != null)
@@ -286,10 +287,10 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitNonQueryTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo chain,
-        CarrierClassInfo? carrier = null)
+        AssembledPlan chain,
+        CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
@@ -329,7 +330,7 @@ internal static class TerminalBodyEmitter
         var builderVar = "__b";
 
         // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlMap, builderVar);
+        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
 
         sb.AppendLine($"        return {builderVar}.ExecuteWithPrebuiltSqlAsync(sql, cancellationToken);");
         sb.AppendLine($"    }}");
@@ -341,10 +342,10 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitDiagnosticsTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo chain,
-        CarrierClassInfo? carrier = null)
+        AssembledPlan chain,
+        CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
         var thisType = site.BuilderTypeName;
@@ -427,9 +428,9 @@ internal static class TerminalBodyEmitter
 
         // Non-carrier path: parameters aren't available in a structured way on the concrete builder,
         // so emit empty params. Clause diagnostics are available from compile-time metadata.
-        if (chain.SqlMap.Count == 1)
+        if (chain.SqlVariants.Count == 1)
         {
-            foreach (var kvp in chain.SqlMap)
+            foreach (var kvp in chain.SqlVariants)
             {
                 var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
                 sb.AppendLine($"        const string sql = @\"{escapedSql}\";");
@@ -440,7 +441,7 @@ internal static class TerminalBodyEmitter
             sb.AppendLine($"        var __b = Unsafe.As<{concreteParamType}>(builder);");
             sb.AppendLine($"        var sql = __b.ClauseMask switch");
             sb.AppendLine($"        {{");
-            foreach (var kvp in chain.SqlMap.OrderBy(k => k.Key))
+            foreach (var kvp in chain.SqlVariants.OrderBy(k => k.Key))
             {
                 var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
                 sb.AppendLine($"            {kvp.Key}UL => @\"{escapedSql}\",");
@@ -461,7 +462,7 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitRuntimeDiagnosticsTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
@@ -518,8 +519,8 @@ internal static class TerminalBodyEmitter
     /// <summary>
     /// Emits an InsertBuilder ExecuteNonQueryAsync() interceptor.
     /// </summary>
-    public static void EmitInsertNonQueryTerminal(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
+    public static void EmitInsertNonQueryTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? prebuiltChain = null, CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -565,8 +566,8 @@ internal static class TerminalBodyEmitter
     /// <summary>
     /// Emits an InsertBuilder ExecuteScalarAsync() interceptor for identity return.
     /// </summary>
-    public static void EmitInsertScalarTerminal(StringBuilder sb, UsageSiteInfo site, string methodName,
-        PrebuiltChainInfo? prebuiltChain = null, CarrierClassInfo? carrier = null)
+    public static void EmitInsertScalarTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? prebuiltChain = null, CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -631,10 +632,10 @@ internal static class TerminalBodyEmitter
     /// </summary>
     public static void EmitInsertDiagnosticsTerminal(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo? chain,
-        CarrierClassInfo? carrier = null)
+        AssembledPlan? chain,
+        CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var isCarrierOptimized = carrier != null ? "true" : "false";
@@ -643,13 +644,13 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
         sb.AppendLine($"    {{");
 
-        if (chain != null && chain.SqlMap.Count > 0 && carrier != null)
+        if (chain != null && chain.SqlVariants.Count > 0 && carrier != null)
         {
             CarrierEmitter.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
         }
-        else if (chain != null && chain.SqlMap.Count > 0)
+        else if (chain != null && chain.SqlVariants.Count > 0)
         {
-            foreach (var kvp in chain.SqlMap)
+            foreach (var kvp in chain.SqlVariants)
             {
                 var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
                 sb.AppendLine($"        return new QueryDiagnostics(@\"{escapedSql}\", Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");

@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
@@ -157,12 +158,12 @@ internal static class CarrierEmitter
     /// in the terminal generator methods. If not, the chain must not be carrier-eligible
     /// because clause interceptors would create carriers with no terminal to consume them.
     /// </summary>
-    internal static bool WouldExecutionTerminalBeEmitted(PrebuiltChainInfo chain)
+    internal static bool WouldExecutionTerminalBeEmitted(AssembledPlan chain)
     {
-        if (chain.Analysis.UnmatchedMethodNames != null)
+        if (chain.UnmatchedMethodNames != null)
             return false;
 
-        var site = chain.Analysis.ExecutionSite;
+        var site = chain.ExecutionSite;
         return site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
@@ -183,10 +184,10 @@ internal static class CarrierEmitter
     /// <summary>
     /// Returns true if a reader-based terminal (FetchAll, FetchFirst, etc.) can be emitted.
     /// </summary>
-    internal static bool CanEmitReaderTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitReaderTerminal(AssembledPlan chain)
     {
         var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(
-            chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            chain.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
         if (string.IsNullOrEmpty(rawResult))
             return false;
         if (chain.ReaderDelegateCode == null)
@@ -200,34 +201,34 @@ internal static class CarrierEmitter
     /// <summary>
     /// Returns true if a scalar terminal (ExecuteScalar) can be emitted.
     /// </summary>
-    internal static bool CanEmitScalarTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitScalarTerminal(AssembledPlan chain)
     {
         var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(
-            chain.Analysis.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            chain.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
         return !string.IsNullOrEmpty(rawResult);
     }
 
     /// <summary>
     /// Returns true if a non-query terminal (DELETE/UPDATE ExecuteNonQuery) can be emitted.
     /// </summary>
-    internal static bool CanEmitNonQueryTerminal(PrebuiltChainInfo chain)
+    internal static bool CanEmitNonQueryTerminal(AssembledPlan chain)
     {
-        return !chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+        return !chain.SqlVariants.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
             || (chain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  ")));
     }
 
     /// <summary>
     /// Returns true if an insert terminal can be emitted.
     /// </summary>
-    private static bool CanEmitInsertTerminal(PrebuiltChainInfo chain)
+    private static bool CanEmitInsertTerminal(AssembledPlan chain)
     {
-        return !chain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql));
+        return !chain.SqlVariants.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql));
     }
 
     /// <summary>
     /// Resolves the carrier base class name for a chain, handling tuple result types correctly.
     /// </summary>
-    internal static string ResolveCarrierBaseClass(PrebuiltChainInfo chain)
+    internal static string ResolveCarrierBaseClass(AssembledPlan chain)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
@@ -239,7 +240,7 @@ internal static class CarrierEmitter
         if (chain.QueryKind == QueryKind.Insert)
             return $"InsertCarrierBase<{entityType}>";
 
-        var hasSelect = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Select);
+        var hasSelect = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Select);
         var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;
 
         string? resultType = null;
@@ -247,7 +248,7 @@ internal static class CarrierEmitter
         {
             // Use the same resolution pipeline as execution terminals for tuple safety
             var resolved = InterceptorCodeGenerator.ResolveExecutionResultType(
-                chain.Analysis.ExecutionSite.ResultTypeName,
+                chain.ExecutionSite.ResultTypeName,
                 chain.ResultTypeName,
                 chain.ProjectionInfo);
             if (!string.IsNullOrEmpty(resolved))
@@ -298,7 +299,7 @@ internal static class CarrierEmitter
     /// <summary>
     /// Resolves the receiver interface type for a carrier interceptor method.
     /// </summary>
-    internal static string ResolveCarrierReceiverType(UsageSiteInfo site, string entityType, PrebuiltChainInfo? chain = null)
+    internal static string ResolveCarrierReceiverType(TranslatedCallSite site, string entityType, AssembledPlan? chain = null)
     {
         // If the site's receiver is IEntityAccessor, use that as the receiver type
         if (site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor")
@@ -348,21 +349,21 @@ internal static class CarrierEmitter
     /// Emits a complete carrier clause body for Where/Having/OrderBy/GroupBy interceptors.
     /// </summary>
     internal static void EmitCarrierClauseBody(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
-        UsageSiteInfo site, int? clauseBit, bool isFirstInChain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        TranslatedCallSite site, int? clauseBit, bool isFirstInChain,
         string concreteBuilderType, string returnInterface,
         bool hasResolvableCapturedParams, List<InterceptorCodeGenerator.CachedExtractorField> methodFields)
     {
         // Compute global parameter offset for this clause's params
         var globalParamOffset = 0;
-        foreach (var clause in chain.Analysis.Clauses)
+        foreach (var clause in chain.GetClauseEntries())
         {
             if (clause.Site.UniqueId == site.UniqueId)
                 break;
             if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
                 globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-            else if (clause.Site.ClauseInfo != null)
-                globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+            else if (clause.Site.Clause != null)
+                globalParamOffset += clause.Site.Clause.Parameters.Count;
         }
 
         if (isFirstInChain)
@@ -376,7 +377,7 @@ internal static class CarrierEmitter
         }
 
         // Extract and bind parameters using FieldInfo extraction with carrier-owned statics
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
         if (clauseInfo != null && clauseInfo.Parameters.Count > 0)
         {
             // Single-pass partition: scalar vs collection params
@@ -421,10 +422,10 @@ internal static class CarrierEmitter
                 {
                     // Set clauses: the value comes from the 'value' method parameter,
                     // not from an inlined literal or captured closure.
-                    var isSetClause = site.ClauseInfo is SetClauseInfo;
+                    var isSetClause = site.Kind == InterceptorKind.Set || site.Kind == InterceptorKind.UpdateSet;
                     var extractExpr = isSetClause ? "value"
                         : (p.IsCaptured ? $"p{p.Index}" : p.ValueExpression);
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){extractExpr}!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){extractExpr}!;");
                 }
             }
         }
@@ -446,7 +447,7 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
     /// </summary>
-    internal static void EmitCarrierClass(StringBuilder sb, CarrierClassInfo info)
+    internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info)
     {
         sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");
@@ -468,7 +469,7 @@ internal static class CarrierEmitter
         foreach (var field in info.Fields)
         {
             // Collection fields are non-nullable reference types — use null! to suppress CS8618
-            var initializer = field.Role == FieldRole.Collection ? " = null!" : "";
+            var initializer = field.TypeName.Contains("IReadOnlyList") ? " = null!" : "";
             sb.AppendLine($"    internal {field.TypeName} {field.Name}{initializer};");
         }
 
@@ -502,15 +503,15 @@ internal static class CarrierEmitter
     /// Emits the carrier chain entry interceptor (first clause in chain).
     /// </summary>
     internal static void EmitCarrierChainEntry(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
-        UsageSiteInfo site, string builderTypeName, string returnInterface,
-        int? bitIndex, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        TranslatedCallSite site, string builderTypeName, string returnInterface,
+        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
         // Cast incoming builder to concrete type to extract ExecutionContext
         sb.AppendLine($"        var __b = Unsafe.As<{builderTypeName}>(builder);");
         sb.Append($"        var __c = new {carrier.ClassName} {{ ");
 
-        var isReadOnly = chain.Analysis.ExecutionSite.Kind is InterceptorKind.ToDiagnostics;
+        var isReadOnly = chain.ExecutionSite.Kind is InterceptorKind.ToDiagnostics;
         if (!isReadOnly)
         {
             sb.Append("Ctx = __b.State.ExecutionContext");
@@ -534,8 +535,8 @@ internal static class CarrierEmitter
     /// Emits a carrier parameter-binding interceptor (Where, Having with params).
     /// </summary>
     internal static void EmitCarrierParamBind(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
-        int? bitIndex, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
@@ -553,7 +554,7 @@ internal static class CarrierEmitter
     /// Emits a carrier noop interceptor (Join, unconditional OrderBy/ThenBy/GroupBy, Distinct).
     /// </summary>
     internal static void EmitCarrierNoop(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         int? bitIndex)
     {
         if (bitIndex.HasValue)
@@ -576,7 +577,7 @@ internal static class CarrierEmitter
     /// Emits a carrier pagination bind (Limit/Offset with runtime value).
     /// </summary>
     private static void EmitCarrierPaginationBind(
-        StringBuilder sb, CarrierClassInfo carrier, string fieldName, string valueExpression)
+        StringBuilder sb, CarrierPlan carrier, string fieldName, string valueExpression)
     {
         sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).{fieldName} = {valueExpression};");
         sb.AppendLine("        return builder;");
@@ -586,7 +587,7 @@ internal static class CarrierEmitter
     /// Emits a carrier WithTimeout interceptor.
     /// </summary>
     private static void EmitCarrierWithTimeout(
-        StringBuilder sb, CarrierClassInfo carrier, string timeoutExpression)
+        StringBuilder sb, CarrierPlan carrier, string timeoutExpression)
     {
         sb.AppendLine($"        Unsafe.As<{carrier.ClassName}>(builder).Timeout = {timeoutExpression};");
         sb.AppendLine("        return builder;");
@@ -596,7 +597,7 @@ internal static class CarrierEmitter
     /// Emits the common carrier terminal preamble: Unsafe.As cast, optional OpId, and SQL dispatch.
     /// </summary>
     private static void EmitCarrierPreamble(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         bool emitOpId = true)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
@@ -609,7 +610,7 @@ internal static class CarrierEmitter
     /// Emits parameter value extraction into __pVal* local variables.
     /// </summary>
     private static void EmitCarrierParameterLocals(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier)
+        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
     {
         var paramCount = chain.ChainParameters.Count;
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
@@ -633,7 +634,7 @@ internal static class CarrierEmitter
     /// Emits DbCommand creation and binds __pVal* locals to parameters.
     /// </summary>
     private static void EmitCarrierCommandBinding(
-        StringBuilder sb, PrebuiltChainInfo chain, CarrierClassInfo carrier,
+        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
         string timeoutExpr)
     {
         sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
@@ -652,9 +653,9 @@ internal static class CarrierEmitter
             sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
             sb.AppendLine($"        __p{i}.Value = __pVal{i};");
 
-            if (param.TypeMapping != null)
+            if (param.TypeMappingClass != null)
             {
-                var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMapping);
+                var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
                 sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
             }
 
@@ -683,7 +684,7 @@ internal static class CarrierEmitter
     /// Emits a carrier execution terminal with inline per-parameter DbCommand binding.
     /// </summary>
     internal static void EmitCarrierExecutionTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string? readerExpression, string executorMethod)
     {
         EmitCarrierPreamble(sb, carrier, chain);
@@ -711,7 +712,7 @@ internal static class CarrierEmitter
     /// Emits a carrier non-query execution terminal (DELETE/UPDATE) with inline binding.
     /// </summary>
     internal static void EmitCarrierNonQueryTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
         EmitCarrierPreamble(sb, carrier, chain);
 
@@ -732,11 +733,11 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits inline per-parameter logging (sensitivity-aware).
     /// </summary>
-    private static void EmitInlineParameterLogging(StringBuilder sb, PrebuiltChainInfo chain)
+    private static void EmitInlineParameterLogging(StringBuilder sb, AssembledPlan chain)
     {
         var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Limit);
-        var hasOffsetField = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.Offset);
+        var hasLimitField = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Limit);
+        var hasOffsetField = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Offset);
         var totalParams = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
 
         if (totalParams == 0)
@@ -755,7 +756,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (CarrierClassBuilder.IsNonNullableValueType(param.TypeName))
+                else if (CarrierClassBuilder.IsNonNullableValueType(param.ClrType))
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -777,24 +778,24 @@ internal static class CarrierEmitter
     /// <summary>
     /// Gets the inline value expression for a parameter based on its type classification.
     /// </summary>
-    private static string GetParameterValueExpression(ChainParameterInfo param, int index)
+    private static string GetParameterValueExpression(QueryParameter param, int index)
     {
         // Entity-sourced parameter (SetPoco): read from Entity field, not P{n}
         if (param.EntityPropertyExpression != null)
         {
-            if (param.TypeMapping != null)
+            if (param.TypeMappingClass != null)
                 return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
             return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
         }
 
         // Mapped type: use ToDb() conversion
-        if (param.TypeMapping != null)
-            return $"(object?){InterceptorCodeGenerator.GetMappingFieldName(param.TypeMapping)}.ToDb(__c.P{index}) ?? DBNull.Value";
+        if (param.TypeMappingClass != null)
+            return $"(object?){InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass)}.ToDb(__c.P{index}) ?? DBNull.Value";
 
         // Enum with known underlying type: inline cast to underlying integral type
         if (param.IsEnum && param.EnumUnderlyingType != null)
         {
-            if (!param.TypeName.EndsWith("?"))
+            if (!param.ClrType.EndsWith("?"))
                 return $"(object)({param.EnumUnderlyingType})__c.P{index}";
 
             // Nullable enum: HasValue check + underlying cast
@@ -809,7 +810,7 @@ internal static class CarrierEmitter
     /// Emits a carrier insert execution terminal with inline per-parameter DbCommand binding.
     /// </summary>
     internal static void EmitCarrierInsertTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string executorMethod, bool isScalar = false)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
@@ -829,7 +830,7 @@ internal static class CarrierEmitter
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
         // Bind entity properties as parameters using InsertInfo
-        var insertInfo = chain.Analysis.ExecutionSite.InsertInfo;
+        var insertInfo = chain.ExecutionSite.InsertInfo;
         if (insertInfo != null)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
@@ -871,11 +872,11 @@ internal static class CarrierEmitter
     /// Emits a carrier insert ToDiagnostics terminal.
     /// </summary>
     internal static void EmitCarrierInsertToDiagnosticsTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain)
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
 
-        var insertInfo = chain.Analysis.ExecutionSite.InsertInfo;
+        var insertInfo = chain.ExecutionSite.InsertInfo;
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
             sb.AppendLine("        var __params = new DiagnosticParameter[]");
@@ -900,7 +901,7 @@ internal static class CarrierEmitter
     /// Emits a carrier ToDiagnostics terminal with full parameter and clause diagnostic output.
     /// </summary>
     internal static void EmitCarrierToDiagnosticsTerminal(
-        StringBuilder sb, CarrierClassInfo carrier, PrebuiltChainInfo chain,
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string diagnosticKind, string isCarrierOptimized)
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
@@ -918,11 +919,11 @@ internal static class CarrierEmitter
     /// Emits code to extract a collection parameter from a Contains() call.
     /// </summary>
     private static void EmitCollectionContainsExtraction(
-        StringBuilder sb, int globalIdx, ChainParameterInfo carrierParam)
+        StringBuilder sb, int globalIdx, QueryParameter carrierParam)
     {
         var fieldType = carrierParam.ElementTypeName != null
             ? $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>"
-            : carrierParam.TypeName;
+            : carrierParam.ClrType;
 
         if (carrierParam.IsDirectAccessible && carrierParam.CollectionAccessExpression != null)
         {
@@ -935,7 +936,7 @@ internal static class CarrierEmitter
     }
 
     private static void EmitCarrierParamBindings(
-        StringBuilder sb, IReadOnlyList<ChainParameterInfo> siteParams, int globalParamOffset)
+        StringBuilder sb, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
         for (int i = 0; i < siteParams.Count; i++)
         {
@@ -952,13 +953,13 @@ internal static class CarrierEmitter
         }
     }
 
-    private static void EmitCarrierSqlDispatch(StringBuilder sb, PrebuiltChainInfo chain)
+    private static void EmitCarrierSqlDispatch(StringBuilder sb, AssembledPlan chain)
     {
         var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
 
-        if (chain.SqlMap.Count == 1)
+        if (chain.SqlVariants.Count == 1)
         {
-            foreach (var kvp in chain.SqlMap)
+            foreach (var kvp in chain.SqlVariants)
             {
                 if (hasCollections)
                     sb.AppendLine($"        var sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
@@ -970,7 +971,7 @@ internal static class CarrierEmitter
         {
             sb.AppendLine("        var sql = __c.Mask switch");
             sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlMap)
+            foreach (var kvp in chain.SqlVariants)
             {
                 sb.AppendLine($"            {kvp.Key} => @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\",");
             }
@@ -988,14 +989,14 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits code to expand collection parameter tokens in the SQL template.
     /// </summary>
-    private static void EmitCollectionExpansion(StringBuilder sb, PrebuiltChainInfo chain)
+    private static void EmitCollectionExpansion(StringBuilder sb, AssembledPlan chain)
     {
         foreach (var param in chain.ChainParameters)
         {
             if (!param.IsCollection) continue;
 
-            sb.AppendLine($"        var __col{param.Index} = __c.P{param.Index};");
-            sb.AppendLine($"        var __col{param.Index}Len = __col{param.Index}.Count;");
+            sb.AppendLine($"        var __col{param.GlobalIndex} = __c.P{param.GlobalIndex};");
+            sb.AppendLine($"        var __col{param.GlobalIndex}Len = __col{param.GlobalIndex}.Count;");
 
             var dialectPrefix = chain.Dialect switch
             {
@@ -1005,31 +1006,43 @@ internal static class CarrierEmitter
             var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
 
             var isMySQL = chain.Dialect == SqlDialect.MySQL;
-            sb.AppendLine($"        var __col{param.Index}Parts = new string[__col{param.Index}Len];");
-            sb.AppendLine($"        for (int __i = 0; __i < __col{param.Index}Len; __i++)");
+            sb.AppendLine($"        var __col{param.GlobalIndex}Parts = new string[__col{param.GlobalIndex}Len];");
+            sb.AppendLine($"        for (int __i = 0; __i < __col{param.GlobalIndex}Len; __i++)");
             if (isMySQL)
-                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"?\";");
+                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"?\";");
             else if (isPostgres)
-                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"$\" + (__i + 1);");
+                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"$\" + (__i + 1);");
             else
-                sb.AppendLine($"            __col{param.Index}Parts[__i] = \"{dialectPrefix}\" + __i;");
-            sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.Index}__}}\", string.Join(\", \", __col{param.Index}Parts));");
+                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"{dialectPrefix}\" + __i;");
+            sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.GlobalIndex}__}}\", string.Join(\", \", __col{param.GlobalIndex}Parts));");
         }
     }
 
-    internal static bool HasCarrierField(CarrierClassInfo carrier, FieldRole role)
+    internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
     {
+        var targetName = role switch
+        {
+            FieldRole.Limit => "Limit",
+            FieldRole.Offset => "Offset",
+            FieldRole.Timeout => "Timeout",
+            FieldRole.ClauseMask => "Mask",
+            FieldRole.ExecutionContext => "Ctx",
+            FieldRole.Entity => "Entity",
+            FieldRole.Collection => "Collection",
+            _ => null
+        };
+        if (targetName == null) return false;
         foreach (var field in carrier.Fields)
         {
-            if (field.Role == role)
+            if (field.Name == targetName)
                 return true;
         }
         return false;
     }
 
-    internal static string GetMaskType(PrebuiltChainInfo chain)
+    internal static string GetMaskType(AssembledPlan chain)
     {
-        var bitCount = chain.Analysis.ConditionalClauses.Count;
+        var bitCount = chain.ConditionalTerms.Count;
         return bitCount <= 8 ? "byte" : bitCount <= 16 ? "ushort" : "uint";
     }
 

@@ -15,8 +15,8 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
         string? ineligibleReason = null,
         string? className = null,
         string? baseClassName = null,
-        IReadOnlyList<CarrierField>? fields = null,
-        IReadOnlyList<CarrierStaticField>? staticFields = null,
+        IReadOnlyList<Models.CarrierField>? fields = null,
+        IReadOnlyList<Models.CarrierStaticField>? staticFields = null,
         IReadOnlyList<CarrierParameter>? parameters = null,
         string? maskType = null,
         int maskBitCount = 0,
@@ -27,8 +27,8 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
         IneligibleReason = ineligibleReason;
         ClassName = className ?? "";
         BaseClassName = baseClassName ?? "";
-        Fields = fields ?? Array.Empty<CarrierField>();
-        StaticFields = staticFields ?? Array.Empty<CarrierStaticField>();
+        Fields = fields ?? Array.Empty<Models.CarrierField>();
+        StaticFields = staticFields ?? Array.Empty<Models.CarrierStaticField>();
         Parameters = parameters ?? Array.Empty<CarrierParameter>();
         MaskType = maskType;
         MaskBitCount = maskBitCount;
@@ -42,17 +42,17 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
     /// <summary>Human-readable reason if not eligible.</summary>
     public string? IneligibleReason { get; }
 
-    /// <summary>Generated carrier class name (e.g., "Chain_0").</summary>
-    public string ClassName { get; }
+    /// <summary>Generated carrier class name (e.g., "Chain_0"). Assigned during emission.</summary>
+    public string ClassName { get; set; }
 
-    /// <summary>Carrier base class name (e.g., "QueryCarrier&lt;User&gt;").</summary>
-    public string BaseClassName { get; }
+    /// <summary>Carrier base class name (e.g., "QueryCarrier&lt;User&gt;"). Assigned during emission.</summary>
+    public string BaseClassName { get; set; }
 
     /// <summary>Instance fields on the carrier class.</summary>
-    public IReadOnlyList<CarrierField> Fields { get; }
+    public IReadOnlyList<Models.CarrierField> Fields { get; }
 
     /// <summary>Static fields on the carrier class (FieldInfo caches).</summary>
-    public IReadOnlyList<CarrierStaticField> StaticFields { get; }
+    public IReadOnlyList<Models.CarrierStaticField> StaticFields { get; }
 
     /// <summary>Parameters with extraction/binding metadata.</summary>
     public IReadOnlyList<CarrierParameter> Parameters { get; }
@@ -63,8 +63,8 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
     /// <summary>Number of conditional bits.</summary>
     public int MaskBitCount { get; }
 
-    /// <summary>Fully qualified closed interface names this carrier implements.</summary>
-    public IReadOnlyList<string> ImplementedInterfaces { get; }
+    /// <summary>Fully qualified closed interface names this carrier implements. Assigned during emission.</summary>
+    public IReadOnlyList<string> ImplementedInterfaces { get; set; }
 
     /// <summary>Dead interface methods (explicit impls that throw).</summary>
     public IReadOnlyList<Models.CarrierInterfaceStub> DeadMethods { get; }

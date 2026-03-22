@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Projection;
 using Quarry.Generators.Sql;
@@ -23,16 +24,16 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitWhere(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         List<InterceptorCodeGenerator.CachedExtractorField>? methodFields,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var hasAnyParams = clauseInfo?.Parameters.Count > 0;
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
@@ -190,15 +191,15 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitOrderBy(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
         var isOrderBy = site.Kind == InterceptorKind.OrderBy;
 
         var keyType = site.KeyTypeName != null ? InterceptorCodeGenerator.GetShortTypeName(site.KeyTypeName) : null;
@@ -312,9 +313,9 @@ internal static class ClauseBodyEmitter
         }
 
         var bitSuffix = InterceptorCodeGenerator.ClauseBitSuffix(clauseBit);
-        if (clauseInfo is OrderByClauseInfo orderByInfo && orderByInfo.IsSuccess)
+        if (clauseInfo is { Kind: ClauseKind.OrderBy, IsSuccess: true })
         {
-            var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(orderByInfo.ColumnSql);
+            var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.ColumnSql);
             var builderMethod = isOrderBy ? "AddOrderByClause" : "AddThenByClause";
             sb.AppendLine($"        return {returnCastOpen}{builderVar}.{builderMethod}(@\"{escapedSql}\", direction){bitSuffix}{returnCastClose};");
         }
@@ -337,11 +338,11 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitSelect(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var projection = site.ProjectionInfo;
@@ -363,19 +364,19 @@ internal static class ClauseBodyEmitter
                 var targetInterface = $"IQueryBuilder<{entityType}, {resultType}>";
                 if (isFirstInChain)
                 {
-                    var siteParams = new List<ChainParameterInfo>();
+                    var siteParams = new List<QueryParameter>();
                     var globalParamOffset = 0;
-                    foreach (var clause in prebuiltChain.Analysis.Clauses)
+                    foreach (var clause in prebuiltChain.GetClauseEntries())
                     {
                         if (clause.Site.UniqueId == site.UniqueId)
                         {
-                            if (clause.Site.ClauseInfo != null)
-                                for (int i = 0; i < clause.Site.ClauseInfo.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
+                            if (clause.Site.Clause != null)
+                                for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
                                     siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
                             break;
                         }
-                        if (clause.Site.ClauseInfo != null)
-                            globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                        if (clause.Site.Clause != null)
+                            globalParamOffset += clause.Site.Clause.Parameters.Count;
                     }
                     int? clauseBit = null;
                     CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
@@ -411,11 +412,11 @@ internal static class ClauseBodyEmitter
     }
 
     private static void EmitOptimalSelect(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
+        StringBuilder sb, TranslatedCallSite site, string methodName,
         string entityType, ProjectionInfo projection)
     {
-        var columnList = ReaderCodeGenerator.GenerateColumnList(projection, site.Dialect ?? SqlDialect.PostgreSQL);
-        var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection, site.Dialect ?? SqlDialect.SQLite);
+        var columnList = ReaderCodeGenerator.GenerateColumnList(projection, site.Dialect);
+        var columnNames = ReaderCodeGenerator.GenerateColumnNamesArray(projection, site.Dialect);
         var readerDelegate = ReaderCodeGenerator.GenerateReaderDelegate(projection, entityType);
 
         {
@@ -438,7 +439,7 @@ internal static class ClauseBodyEmitter
     }
 
     private static void EmitFallbackSelect(
-        StringBuilder sb, UsageSiteInfo site, string methodName, string entityType)
+        StringBuilder sb, TranslatedCallSite site, string methodName, string entityType)
     {
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
@@ -459,15 +460,15 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitGroupBy(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var keyType = site.KeyTypeName != null ? InterceptorCodeGenerator.GetShortTypeName(site.KeyTypeName) : null;
 
@@ -592,15 +593,15 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitHaving(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
@@ -687,23 +688,22 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitSet(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
         var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(returnType);
 
         // Carrier-optimized path
-        var resolvedValueType = site.ValueTypeName
-            ?? (site.ClauseInfo is SetClauseInfo setClauseA ? setClauseA.ValueTypeName : null);
+        var resolvedValueType = site.ValueTypeName;
         if (carrier != null && prebuiltChain != null && resolvedValueType != null)
         {
             sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
@@ -734,8 +734,8 @@ internal static class ClauseBodyEmitter
         {
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        {builderVar}.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
-            var setValueArg = (clauseInfo is SetClauseInfo prebuiltSetInfo && prebuiltSetInfo.CustomTypeMappingClass != null)
-                ? $"{InterceptorCodeGenerator.GetMappingFieldName(prebuiltSetInfo.CustomTypeMappingClass)}.ToDb(value)"
+            var setValueArg = (clauseInfo?.CustomTypeMappingClass != null)
+                ? $"{InterceptorCodeGenerator.GetMappingFieldName(clauseInfo.CustomTypeMappingClass)}.ToDb(value)"
                 : "value";
             sb.AppendLine($"        {builderVar}.BindParam({setValueArg});");
             if (clauseBit.HasValue)
@@ -746,14 +746,14 @@ internal static class ClauseBodyEmitter
             return;
         }
 
-        if (clauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
+        if (clauseInfo is { Kind: ClauseKind.Set, IsSuccess: true } && clauseInfo.Parameters.Count > 0)
         {
-            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(setInfo.ColumnSql);
-            var valueArg = setInfo.CustomTypeMappingClass != null
-                ? $"{InterceptorCodeGenerator.GetMappingFieldName(setInfo.CustomTypeMappingClass)}.ToDb(value)"
+            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.ColumnSql);
+            var valueArg = clauseInfo.CustomTypeMappingClass != null
+                ? $"{InterceptorCodeGenerator.GetMappingFieldName(clauseInfo.CustomTypeMappingClass)}.ToDb(value)"
                 : "value";
             var bitSuffix = InterceptorCodeGenerator.ClauseBitSuffix(clauseBit);
-            sb.AppendLine($"        return {builderVar}.AddSetClause(@\"{escapedColumnSql}\", {valueArg}, {setInfo.ParameterIndex}){bitSuffix};");
+            sb.AppendLine($"        return {builderVar}.AddSetClause(@\"{escapedColumnSql}\", {valueArg}, {clauseInfo.Parameters[0].Index}){bitSuffix};");
         }
         else if (clauseInfo != null && clauseInfo.IsSuccess)
         {
@@ -774,17 +774,17 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitModificationWhere(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         List<InterceptorCodeGenerator.CachedExtractorField>? methodFields,
         bool isDelete,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
         var modKind = isDelete ? "Delete" : "Update";
 
         var hasAnyParams = clauseInfo?.Parameters.Count > 0;
@@ -916,15 +916,15 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitUpdateSet(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
@@ -933,8 +933,7 @@ internal static class ClauseBodyEmitter
         var returnInterfaceBaseName = "I" + concreteBaseName;
 
         // Carrier-optimized path
-        var resolvedValueType = site.ValueTypeName
-            ?? (site.ClauseInfo is SetClauseInfo setClauseB ? setClauseB.ValueTypeName : null);
+        var resolvedValueType = site.ValueTypeName;
         if (carrier != null && prebuiltChain != null && resolvedValueType != null)
         {
             sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
@@ -975,9 +974,9 @@ internal static class ClauseBodyEmitter
         }
 
         var bitSuffix = InterceptorCodeGenerator.ClauseBitSuffix(clauseBit);
-        if (clauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
+        if (clauseInfo is { Kind: ClauseKind.Set, IsSuccess: true })
         {
-            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(setInfo.ColumnSql);
+            var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.ColumnSql);
             sb.AppendLine($"        return {builderVar}.AddSetClause(@\"{escapedColumnSql}\", value){bitSuffix};");
         }
         else if (clauseInfo != null && clauseInfo.IsSuccess)
@@ -998,25 +997,25 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitUpdateSetAction(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.ClauseInfo;
+        var clauseInfo = site.Clause;
 
         var thisType = site.BuilderTypeName;
         var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
 
-        if (clauseInfo is not SetActionClauseInfo actionInfo || !actionInfo.IsSuccess)
+        if (clauseInfo is not { SetAssignments: not null, IsSuccess: true })
             return;
 
-        var hasCapturedParams = actionInfo.Parameters.Any(p => p.IsCaptured);
+        var hasCapturedParams = clauseInfo.Parameters.Any(p => p.IsCaptured);
         var actionParamName = hasCapturedParams ? "action" : "_";
 
         // Carrier-optimized path
@@ -1028,14 +1027,14 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"    {{");
 
             var globalParamOffset = 0;
-            foreach (var clause in prebuiltChain.Analysis.Clauses)
+            foreach (var clause in prebuiltChain.GetClauseEntries())
             {
                 if (clause.Site.UniqueId == site.UniqueId)
                     break;
                 if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
                     globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-                else if (clause.Site.ClauseInfo != null)
-                    globalParamOffset += clause.Site.ClauseInfo.Parameters.Count;
+                else if (clause.Site.Clause != null)
+                    globalParamOffset += clause.Site.Clause.Parameters.Count;
             }
 
             if (isFirstInChain)
@@ -1049,9 +1048,9 @@ internal static class ClauseBodyEmitter
                 sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
             }
 
-            for (int i = 0; i < actionInfo.Parameters.Count; i++)
+            for (int i = 0; i < clauseInfo.Parameters.Count; i++)
             {
-                var p = actionInfo.Parameters[i];
+                var p = clauseInfo.Parameters[i];
                 var globalIdx = globalParamOffset + i;
                 if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
                 var carrierParam = prebuiltChain.ChainParameters[globalIdx];
@@ -1059,11 +1058,11 @@ internal static class ClauseBodyEmitter
                 if (p.IsCaptured)
                 {
                     sb.AppendLine($"        {carrier.ClassName}.F{globalIdx} ??= action.Target!.GetType().GetField(\"{p.ValueExpression}\")!;");
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
                 }
                 else
                 {
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.TypeName}){p.ValueExpression}!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){p.ValueExpression}!;");
                 }
             }
 
@@ -1093,9 +1092,9 @@ internal static class ClauseBodyEmitter
             if (isFirstInChain && prebuiltChain.MaxParameterCount > 0)
                 sb.AppendLine($"        __b.AllocatePrebuiltParams({prebuiltChain.MaxParameterCount});");
 
-            for (int i = 0; i < actionInfo.Parameters.Count; i++)
+            for (int i = 0; i < clauseInfo.Parameters.Count; i++)
             {
-                var p = actionInfo.Parameters[i];
+                var p = clauseInfo.Parameters[i];
                 if (p.IsCaptured)
                 {
                     sb.AppendLine($"        __b.BindParam(action.Target!.GetType().GetField(\"{p.ValueExpression}\")!.GetValue(action.Target));");
@@ -1124,9 +1123,9 @@ internal static class ClauseBodyEmitter
         var bitSuffix2 = InterceptorCodeGenerator.ClauseBitSuffix(clauseBit);
 
         var paramIdx = 0;
-        for (int i = 0; i < actionInfo.Assignments.Count; i++)
+        for (int i = 0; i < clauseInfo.SetAssignments.Count; i++)
         {
-            var assignment = actionInfo.Assignments[i];
+            var assignment = clauseInfo.SetAssignments[i];
             var escapedColumnSql = InterceptorCodeGenerator.EscapeStringLiteral(assignment.ColumnSql);
 
             if (assignment.IsInlined)
@@ -1135,7 +1134,7 @@ internal static class ClauseBodyEmitter
                 continue;
             }
 
-            var p = actionInfo.Parameters[paramIdx++];
+            var p = clauseInfo.Parameters[paramIdx++];
             string valueExpr;
             if (p.IsCaptured)
             {
@@ -1161,12 +1160,12 @@ internal static class ClauseBodyEmitter
     /// </summary>
     public static void EmitUpdateSetPoco(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         string methodName,
         int? clauseBit,
-        PrebuiltChainInfo? prebuiltChain,
+        AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierClassInfo? carrier)
+        CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var updateInfo = site.UpdateInfo;

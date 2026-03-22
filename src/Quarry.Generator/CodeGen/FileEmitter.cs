@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.CodeGen;
@@ -31,21 +32,24 @@ internal sealed class FileEmitter
     private readonly string _contextClassName;
     private readonly string? _contextNamespace;
     private readonly string _fileTag;
-    private readonly IReadOnlyList<UsageSiteInfo> _sites;
-    private readonly IReadOnlyList<PrebuiltChainInfo>? _chains;
+    private readonly IReadOnlyList<TranslatedCallSite> _sites;
+    private readonly IReadOnlyList<AssembledPlan>? _chains;
+    private readonly IReadOnlyList<CarrierPlan>? _carrierPlans;
 
     public FileEmitter(
         string contextClassName,
         string? contextNamespace,
         string fileTag,
-        IReadOnlyList<UsageSiteInfo> sites,
-        IReadOnlyList<PrebuiltChainInfo>? chains = null)
+        IReadOnlyList<TranslatedCallSite> sites,
+        IReadOnlyList<AssembledPlan>? chains = null,
+        IReadOnlyList<CarrierPlan>? carrierPlans = null)
     {
         _contextClassName = contextClassName;
         _contextNamespace = contextNamespace;
         _fileTag = fileTag;
         _sites = sites;
         _chains = chains;
+        _carrierPlans = carrierPlans;
     }
 
     /// <summary>
@@ -86,7 +90,7 @@ internal sealed class FileEmitter
 
         // Also collect namespaces from the source file of each usage site
         var fileNamespaces = _sites
-            .Select(s => InterceptorCodeGenerator.GetNamespaceFromFilePath(s.InvocationSyntax))
+            .Select(s => InterceptorCodeGenerator.GetNamespaceFromFilePath(null))
             .Where(ns => !string.IsNullOrEmpty(ns) && ns != "Quarry" && ns != "System")
             .Distinct();
 
@@ -130,48 +134,52 @@ internal sealed class FileEmitter
         sb.AppendLine();
 
         // Pass 1: Build carrier class infos for carrier-eligible chains and emit at namespace scope
-        var carrierLookup = new Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>();
-        var carrierClauseLookup = new Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>();
+        var carrierLookup = new Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>();
+        var carrierClauseLookup = new Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>();
         var carrierFirstClauseIds = new HashSet<string>();
-        if (_chains != null)
+        if (_chains != null && _carrierPlans != null)
         {
             var carrierIndex = 0;
-            foreach (var chain in _chains)
+            for (var chainIndex = 0; chainIndex < _chains.Count; chainIndex++)
             {
-                if (!chain.IsCarrierEligible)
+                var chain = _chains[chainIndex];
+                var carrierPlan = chainIndex < _carrierPlans.Count ? _carrierPlans[chainIndex] : null;
+                if (carrierPlan == null || !carrierPlan.IsEligible)
                     continue;
 
-                var hasChainRoot = chain.Analysis.Clauses.Any(c => c.Role == ClauseRole.ChainRoot);
-                if (!hasChainRoot && chain.Analysis.Clauses.Count > 0 && chain.Analysis.Clauses[0].IsConditional)
+                var clauses = chain.GetClauseEntries();
+                var hasChainRoot = clauses.Any(c => c.Role == ClauseRole.ChainRoot);
+                if (!hasChainRoot && clauses.Count > 0 && clauses[0].IsConditional)
                     continue;
 
                 if (!CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
+                // Assign carrier class name, base class, and interfaces (deferred from CarrierAnalyzer)
+                carrierPlan.ClassName = $"Chain_{carrierIndex}";
                 var resolvedBase = CarrierEmitter.ResolveCarrierBaseClass(chain);
-                var carrier = CarrierClassBuilder.Build(chain, carrierIndex, resolvedBase);
-                if (carrier == null)
-                    continue;
+                carrierPlan.BaseClassName = resolvedBase;
+                carrierPlan.ImplementedInterfaces = new[] { resolvedBase };
+                carrierIndex++;
 
-                carrierLookup[chain.Analysis.ExecutionSite.UniqueId] = (carrier, chain);
-                foreach (var clause in chain.Analysis.Clauses)
+                carrierLookup[chain.ExecutionSite.UniqueId] = (carrierPlan, chain);
+                foreach (var clause in clauses)
                 {
-                    carrierClauseLookup[clause.Site.UniqueId] = (carrier, chain);
+                    carrierClauseLookup[clause.Site.UniqueId] = (carrierPlan, chain);
                 }
 
-                var chainRootClause = chain.Analysis.Clauses
+                var chainRootClause = clauses
                     .FirstOrDefault(c => c.Role == ClauseRole.ChainRoot);
                 if (chainRootClause != null)
                 {
                     carrierFirstClauseIds.Add(chainRootClause.Site.UniqueId);
                 }
-                else if (chain.Analysis.Clauses.Count > 0)
+                else if (clauses.Count > 0)
                 {
-                    carrierFirstClauseIds.Add(chain.Analysis.Clauses[0].Site.UniqueId);
+                    carrierFirstClauseIds.Add(clauses[0].Site.UniqueId);
                 }
 
-                CarrierEmitter.EmitCarrierClass(sb, carrier);
-                carrierIndex++;
+                CarrierEmitter.EmitCarrierClass(sb, carrierPlan);
             }
         }
 
@@ -183,16 +191,16 @@ internal sealed class FileEmitter
         sb.AppendLine("{");
 
         // Build chain analysis lookups for execution interceptor generation
-        var chainLookup = new Dictionary<string, PrebuiltChainInfo>();
+        var chainLookup = new Dictionary<string, AssembledPlan>();
         var clauseBitMap = new Dictionary<string, int>();
         var chainMemberIds = new HashSet<string>();
         if (_chains != null)
         {
             foreach (var chain in _chains)
             {
-                chainLookup[chain.Analysis.ExecutionSite.UniqueId] = chain;
-                chainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
-                foreach (var clause in chain.Analysis.Clauses)
+                chainLookup[chain.ExecutionSite.UniqueId] = chain;
+                chainMemberIds.Add(chain.ExecutionSite.UniqueId);
+                foreach (var clause in chain.GetClauseEntries())
                 {
                     chainMemberIds.Add(clause.Site.UniqueId);
                     if (clause.IsConditional && clause.BitIndex.HasValue)
@@ -204,25 +212,26 @@ internal sealed class FileEmitter
         }
 
         // Build clause → chain lookup
-        var chainClauseLookup = new Dictionary<string, PrebuiltChainInfo>();
+        var chainClauseLookup = new Dictionary<string, AssembledPlan>();
         var firstClauseIds = new HashSet<string>();
         if (_chains != null)
         {
             foreach (var chain in _chains)
             {
-                foreach (var clause in chain.Analysis.Clauses)
+                var clauses = chain.GetClauseEntries();
+                foreach (var clause in clauses)
                 {
                     chainClauseLookup[clause.Site.UniqueId] = chain;
                 }
-                if (chain.Analysis.Clauses.Count > 0)
+                if (clauses.Count > 0)
                 {
-                    var firstClause = chain.Analysis.Clauses[0];
+                    var firstClause = clauses[0];
                     firstClauseIds.Add(firstClause.Site.UniqueId);
                     if (firstClause.Role == ClauseRole.ChainRoot
                         && !carrierClauseLookup.ContainsKey(firstClause.Site.UniqueId)
-                        && chain.Analysis.Clauses.Count > 1)
+                        && clauses.Count > 1)
                     {
-                        firstClauseIds.Add(chain.Analysis.Clauses[1].Site.UniqueId);
+                        firstClauseIds.Add(clauses[1].Site.UniqueId);
                     }
                 }
             }
@@ -271,15 +280,15 @@ internal sealed class FileEmitter
 
         // Group interceptors by chain
         var processedSiteIds = new HashSet<string>();
-        var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites, IReadOnlyList<string>? TraceLines)>();
+        var chainGroups = new List<(string Label, List<TranslatedCallSite> Sites, IReadOnlyList<string>? TraceLines)>();
         var siteByUniqueId = allSitesForGeneration.ToDictionary(s => s.UniqueId);
 
         if (_chains != null)
         {
             foreach (var chain in _chains)
             {
-                var chainSites = new List<UsageSiteInfo>();
-                foreach (var clause in chain.Analysis.Clauses)
+                var chainSites = new List<TranslatedCallSite>();
+                foreach (var clause in chain.GetClauseEntries())
                 {
                     if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var matchingSite))
                     {
@@ -287,7 +296,7 @@ internal sealed class FileEmitter
                         processedSiteIds.Add(matchingSite.UniqueId);
                     }
                 }
-                if (siteByUniqueId.TryGetValue(chain.Analysis.ExecutionSite.UniqueId, out var execSite))
+                if (siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var execSite))
                 {
                     chainSites.Add(execSite);
                     processedSiteIds.Add(execSite.UniqueId);
@@ -295,8 +304,8 @@ internal sealed class FileEmitter
 
                 if (chainSites.Count > 0)
                 {
-                    var execMethod = chain.Analysis.ExecutionSite.MethodName;
-                    var label = $"Chain: {execMethod} at line {chain.Analysis.ExecutionSite.Line}";
+                    var execMethod = chain.ExecutionSite.MethodName;
+                    var label = $"Chain: {execMethod} at line {chain.ExecutionSite.Line}";
                     chainGroups.Add((label, chainSites, chain.TraceLines));
                 }
             }
@@ -358,15 +367,15 @@ internal sealed class FileEmitter
     /// </summary>
     private static void EmitInterceptorMethod(
         StringBuilder sb,
-        UsageSiteInfo site,
+        TranslatedCallSite site,
         List<InterceptorCodeGenerator.CachedExtractorField> staticFields,
         Dictionary<string, List<InterceptorCodeGenerator.CachedExtractorField>> staticFieldsByMethod,
-        Dictionary<string, PrebuiltChainInfo> chainLookup,
+        Dictionary<string, AssembledPlan> chainLookup,
         Dictionary<string, int> clauseBitMap,
-        Dictionary<string, PrebuiltChainInfo> chainClauseLookup,
+        Dictionary<string, AssembledPlan> chainClauseLookup,
         HashSet<string> firstClauseIds,
-        Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>? carrierLookup = null,
-        Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>? carrierClauseLookup = null,
+        Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierLookup = null,
+        Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierClauseLookup = null,
         HashSet<string>? carrierFirstClauseIds = null)
     {
         // Trace sites are compile-time-only signals — no interceptor generated
@@ -375,8 +384,8 @@ internal sealed class FileEmitter
 
         // Check if this site belongs to a carrier-optimized chain
         var isCarrierSite = false;
-        CarrierClassInfo? carrierInfo = null;
-        PrebuiltChainInfo? carrierChain = null;
+        CarrierPlan? carrierInfo = null;
+        AssembledPlan? carrierChain = null;
 
         if (carrierLookup != null && carrierLookup.TryGetValue(site.UniqueId, out var carrierExec))
         {
@@ -428,9 +437,9 @@ internal sealed class FileEmitter
                 sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} Method={site.MethodName} — NOT in chainLookup (chainLookup has {chainLookup.Count} entries)");
                 return;
             }
-            if (chain.Analysis.UnmatchedMethodNames != null)
+            if (chain.UnmatchedMethodNames != null)
             {
-                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — UnmatchedMethodNames={string.Join(",", chain.Analysis.UnmatchedMethodNames)}");
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — UnmatchedMethodNames={string.Join(",", chain.UnmatchedMethodNames)}");
                 return;
             }
             var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
@@ -464,7 +473,7 @@ internal sealed class FileEmitter
                 sb.AppendLine($"    // TRACE SKIPPED SCALAR: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
                 return;
             }
-            if (scalarChain.Analysis.UnmatchedMethodNames != null)
+            if (scalarChain.UnmatchedMethodNames != null)
                 return;
             var rawScalarResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, scalarChain.ResultTypeName, scalarChain.ProjectionInfo);
             if (string.IsNullOrEmpty(rawScalarResult))
@@ -477,14 +486,14 @@ internal sealed class FileEmitter
                 sb.AppendLine($"    // TRACE SKIPPED NONQUERY: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
                 return;
             }
-            if (nqChain.SqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
+            if (nqChain.SqlVariants.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
         else if (site.Kind is InterceptorKind.ToDiagnostics)
         {
             if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
-                && diagChain.Analysis.UnmatchedMethodNames != null)
+                && diagChain.UnmatchedMethodNames != null)
                 return;
             if (!chainLookup.ContainsKey(site.UniqueId) && site.ResultTypeName != null)
                 return;
@@ -499,7 +508,7 @@ internal sealed class FileEmitter
         var methodName = $"{site.MethodName}_{site.UniqueId}";
 
         // Determine chain analysis status for remarks
-        PrebuiltChainInfo? chainForRemarks = null;
+        AssembledPlan? chainForRemarks = null;
         chainLookup.TryGetValue(site.UniqueId, out chainForRemarks);
         if (chainForRemarks == null)
             chainClauseLookup.TryGetValue(site.UniqueId, out chainForRemarks);
@@ -511,7 +520,7 @@ internal sealed class FileEmitter
         if (chainForRemarks != null)
         {
             var carrierLabel = carrierInfo != null ? ", Carrier-Optimized" : "";
-            sb.AppendLine($"    /// <remarks>Chain: Fully Analyzed ({chainForRemarks.Analysis.Tier}{carrierLabel})</remarks>");
+            sb.AppendLine($"    /// <remarks>Chain: Fully Analyzed ({chainForRemarks.Tier}{carrierLabel})</remarks>");
         }
         else
             sb.AppendLine($"    /// <remarks>Chain: Not Analyzed (standalone interceptor)</remarks>");

@@ -192,106 +192,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// PipelineOrchestrator for chain analysis and file grouping.
     /// No re-enrichment occurs — the data is already fully enriched.
     /// </summary>
-    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcessTranslated(
-        Compilation compilation,
-        ImmutableArray<ContextInfo> contexts,
-        ImmutableArray<IR.TranslatedCallSite> translatedSites,
-        CancellationToken ct)
-    {
-        if (translatedSites.IsDefaultOrEmpty)
-            return ImmutableArray<FileInterceptorGroup>.Empty;
-
-        ct.ThrowIfCancellationRequested();
-
-        // Build EntityRegistry (needed by PipelineOrchestrator for chain analysis)
-        var registry = IR.EntityRegistry.Build(contexts, ct);
-
-        // Build a lookup of syntax nodes by method-name location for InvocationSyntax
-        // reconstruction. ChainAnalyzer needs InvocationSyntax to walk the syntax tree
-        // for dataflow analysis. The collected stage is short-lived, so SyntaxNode refs are ok.
-        var syntaxNodeLookup = new Dictionary<string, SyntaxNode>();
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            ct.ThrowIfCancellationRequested();
-            var root = tree.GetRoot(ct);
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                var methodLocation = Parsing.UsageSiteDiscovery.GetMethodLocation(invocation);
-                if (methodLocation == null) continue;
-                var (filePath, line, col) = methodLocation.Value;
-                var key = $"{filePath}:{line}:{col}";
-                syntaxNodeLookup[key] = invocation;
-            }
-        }
-
-        // Convert TranslatedCallSite → UsageSiteInfo with reconstructed SyntaxNode.
-        // This is a thin boundary conversion — all enrichment was done in Stages 3-4.
-        var usageSites = ImmutableArray.CreateBuilder<UsageSiteInfo>(translatedSites.Length);
-        foreach (var ts in translatedSites)
-        {
-            var raw = ts.Bound.Raw;
-            var key = $"{raw.FilePath}:{raw.Line}:{raw.Column}";
-            syntaxNodeLookup.TryGetValue(key, out var syntaxNode);
-
-            var adapted = UsageSiteInfo.FromTranslatedCallSite(ts, syntaxNode);
-            usageSites.Add(adapted);
-        }
-
-        var allUsageSites = usageSites.ToImmutable();
-
-        // Collect pre-analysis diagnostics
-        var diagnostics = new List<DiagnosticInfo>();
-        var sitesToSkip = new HashSet<UsageSiteInfo>();
-        foreach (var site in allUsageSites)
-        {
-            if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
-                    site.InvocationSyntax != null
-                        ? DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)
-                        : new DiagnosticLocation(site.FilePath, site.Line, site.Column, default)));
-                sitesToSkip.Add(site);
-                continue;
-            }
-
-            if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
-                    site.InvocationSyntax != null
-                        ? DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)
-                        : new DiagnosticLocation(site.FilePath, site.Line, site.Column, default),
-                    site.NonAnalyzableReason));
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Sites are already enriched by the new pipeline — no re-enrichment needed.
-        var enrichedSites = allUsageSites
-            .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .ToList();
-
-        // Discover navigation join chain members (still needs syntax tree walk)
-        var discoveredLocationKeys = new HashSet<string>(
-            allUsageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
-        var navJoinChainSites = DiscoverNavigationJoinChainMembers(
-            enrichedSites, discoveredLocationKeys, registry, compilation);
-        if (navJoinChainSites.Count > 0)
-            enrichedSites.AddRange(navJoinChainSites);
-
-        // Delegate to PipelineOrchestrator — enrichSite is identity (already enriched)
-        var orchestrator = new IR.PipelineOrchestrator(compilation, registry, allUsageSites, ct);
-        return orchestrator.AnalyzeAndGroup(
-            enrichedSites,
-            navJoinChainSites,
-            sitesToSkip,
-            diagnostics,
-            enrichSite: s => s, // Already enriched by new pipeline
-            getNonTranslatableClauseKind: GetNonTranslatableClauseKind,
-            analyzeChains: AnalyzeExecutionChainsWithDiagnostics);
-    }
+    // Old GroupByFileAndProcessTranslated removed — pipeline calls
+    // PipelineOrchestrator.AnalyzeAndGroupTranslated directly.
 
     /// <summary>
     /// Generates entity classes, context class, and metadata for a single context.
@@ -450,70 +352,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// Groups all usage sites by (context, source file) and processes them into FileInterceptorGroups.
     /// Replaces the old Execute()+GenerateInterceptors() flow with per-file incremental output.
     /// </summary>
-    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcess(
-        Compilation compilation,
-        ImmutableArray<ContextInfo> contexts,
-        ImmutableArray<UsageSiteInfo> usageSites,
-        CancellationToken ct)
-    {
-        if (usageSites.IsDefaultOrEmpty)
-            return ImmutableArray<FileInterceptorGroup>.Empty;
-
-        ct.ThrowIfCancellationRequested();
-
-        // Build EntityRegistry from all contexts — single source of entity metadata
-        var registry = IR.EntityRegistry.Build(contexts, ct);
-
-        // Collect pre-enrichment diagnostics and identify sites to skip
-        var diagnostics = new List<DiagnosticInfo>();
-        var sitesToSkip = new HashSet<UsageSiteInfo>();
-        foreach (var site in usageSites)
-        {
-            if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)));
-                sitesToSkip.Add(site);
-                continue;
-            }
-
-            if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                    site.NonAnalyzableReason));
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Enrich usage sites with entity metadata
-        var enrichedSites = usageSites
-            .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, registry, compilation))
-            .ToList();
-
-        // Discover and enrich missing chain members from resolved navigation joins
-        var discoveredLocationKeys = new HashSet<string>(
-            usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
-        var navJoinChainSites = DiscoverNavigationJoinChainMembers(
-            enrichedSites, discoveredLocationKeys, registry, compilation);
-        if (navJoinChainSites.Count > 0)
-            enrichedSites.AddRange(navJoinChainSites);
-
-        // Delegate chain analysis, diagnostic collection, and file grouping to PipelineOrchestrator
-        var orchestrator = new IR.PipelineOrchestrator(compilation, registry, usageSites, ct);
-        return orchestrator.AnalyzeAndGroup(
-            enrichedSites,
-            navJoinChainSites,
-            sitesToSkip,
-            diagnostics,
-            enrichSite: s => EnrichUsageSiteWithEntityInfo(s, registry, compilation),
-            getNonTranslatableClauseKind: GetNonTranslatableClauseKind,
-            analyzeChains: AnalyzeExecutionChainsWithDiagnostics);
-    }
+    // Old GroupByFileAndProcess removed — replaced by GroupByFileAndProcessTranslated
 
     /// <summary>
     /// Emits interceptor source and reports diagnostics for a single (context, file) group.
@@ -558,14 +397,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
         }
 
-        if (group.IsNewPipeline)
-        {
-            EmitFileInterceptorsNewPipeline(spc, group, compilation);
-        }
-        else
-        {
-            EmitFileInterceptorsLegacy(spc, group);
-        }
+        EmitFileInterceptorsNewPipeline(spc, group, compilation);
     }
 
     private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
@@ -573,193 +405,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var hasQuarryTrace = HasQuarryTrace(compilation);
 
         // Build enriched projection lookup from chains (keyed by Select clause site UniqueId)
-        // During discovery, entity types are generated by the same source generator and invisible
-        // to the semantic model, so ProjectionInfo has broken column types. ChainAnalyzer enriches
-        // these using EntityRef.Columns. We propagate the enriched projections to the clause sites.
-        var enrichedProjections = new Dictionary<string, ProjectionInfo>(StringComparer.Ordinal);
-        foreach (var assembled in group.AssembledPlans)
+        // Enrich AssembledPlans with ProjectionInfo, JoinedTableInfos, TraceLines, ReaderDelegateCode
+        for (int i = 0; i < group.AssembledPlans.Count; i++)
         {
-            if (assembled.Plan.Projection != null)
-            {
-                ProjectionInfo? enrichedProj = null;
-                if (assembled.Plan.Projection.Columns.Count > 0)
-                {
-                    // Strip SqlExpression from non-aggregate columns for bridge compatibility
-                    var bridgeCols = StripNonAggregateSqlExpressions(assembled.Plan.Projection.Columns);
-                    enrichedProj = new ProjectionInfo(
-                        assembled.Plan.Projection.Kind,
-                        assembled.Plan.Projection.ResultTypeName,
-                        bridgeCols,
-                        customEntityReaderClass: assembled.Plan.Projection.CustomEntityReaderClass);
-                }
-                else if (assembled.Plan.Projection.IsIdentity)
-                {
-                    // Identity projection (Select(u => u)) - build columns from entity metadata
-                    var entityRef = assembled.ExecutionSite.Bound.Entity;
-                    if (entityRef != null && entityRef.Columns.Count > 0)
-                        enrichedProj = BuildEntityProjectionFromEntityRef(entityRef);
-                }
-
-                if (enrichedProj != null)
-                {
-                    foreach (var cs in assembled.ClauseSites)
-                    {
-                        if (cs.Bound.Raw.Kind == InterceptorKind.Select)
-                            enrichedProjections[cs.Bound.Raw.UniqueId] = enrichedProj;
-                    }
-                }
-            }
-        }
-
-        // Convert TranslatedCallSite → UsageSiteInfo for emitter compatibility (temporary bridge)
-        var mergedSites = new List<UsageSiteInfo>(
-            group.TranslatedSites.Count + group.TranslatedChainMemberSites.Count);
-        foreach (var ts in group.TranslatedSites)
-        {
-            var enrichedProj = ResolveEnrichedProjection(ts, enrichedProjections);
-            mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj));
-        }
-        foreach (var ts in group.TranslatedChainMemberSites)
-        {
-            var enrichedProj = ResolveEnrichedProjection(ts, enrichedProjections);
-            mergedSites.Add(UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj));
-        }
-
-        if (mergedSites.Count == 0) return;
-
-        // Convert AssembledPlan → PrebuiltChainInfo for emitter compatibility (temporary bridge)
-        var chains = new List<PrebuiltChainInfo>();
-        for (int assembledIdx = 0; assembledIdx < group.AssembledPlans.Count; assembledIdx++)
-        {
-            var assembled = group.AssembledPlans[assembledIdx];
-            if (assembled.Plan.Tier == OptimizationTier.RuntimeBuild)
-                continue;
-
-            // Skip chains with incomplete tuple result types (e.g., "( Name,  Total)" instead of
-            // "(string Name, decimal Total)"). This happens when a joined query with Select projection
-            // is stored in a variable and executed on a separate statement -- the chain can't see the
-            // Select clause, and the semantic model can't resolve generated entity types in tuple elements.
-            // But do NOT skip if the chain has a Select clause site -- that means the projection was
-            // resolved inline and the SQL is correct despite the incomplete type name.
-            if (assembled.ResultTypeName != null
-                && assembled.ResultTypeName.StartsWith("(")
-                && assembled.ResultTypeName.Contains(",")
-                && System.Text.RegularExpressions.Regex.IsMatch(assembled.ResultTypeName, @"\(\s\w"))
-            {
-                // Check if the chain has its own Select clause -- if so, projection is resolved
-                var hasSelectClause = false;
-                foreach (var cs in assembled.ClauseSites)
-                {
-                    if (cs.Bound.Raw.Kind == InterceptorKind.Select)
-                    {
-                        hasSelectClause = true;
-                        break;
-                    }
-                }
-                if (!hasSelectClause)
-                    continue;
-            }
-
-            // Convert AssembledSqlVariant → PrebuiltSqlResult
-            var sqlMap = new Dictionary<ulong, Sql.PrebuiltSqlResult>();
-            foreach (var kvp in assembled.SqlVariants)
-                sqlMap[kvp.Key] = new Sql.PrebuiltSqlResult(kvp.Value.Sql, kvp.Value.ParameterCount);
-
-            // Build ChainAnalysisResult from QueryPlan
-            var executionUsageSite = UsageSiteInfo.FromTranslatedCallSite(assembled.ExecutionSite);
-
-            // Build a lookup from clause site UniqueId → conditional bit index
-            // ConditionalTerms are ordered matching the conditional clause sites
-            var conditionalBitLookup = new Dictionary<string, int>(StringComparer.Ordinal);
-            {
-                int condIdx = 0;
-                foreach (var cs in assembled.ClauseSites)
-                {
-                    if (cs.Bound.Raw.ConditionalInfo != null && condIdx < assembled.Plan.ConditionalTerms.Count)
-                    {
-                        conditionalBitLookup[cs.Bound.Raw.UniqueId] = assembled.Plan.ConditionalTerms[condIdx].BitIndex;
-                        condIdx++;
-                    }
-                }
-            }
-
-            var clauseChainedSites = new List<ChainedClauseSite>();
-            foreach (var cs in assembled.ClauseSites)
-            {
-                var role = ChainAnalyzer.MapInterceptorKindToClauseRole(cs.Bound.Raw.Kind);
-                if (role != null)
-                {
-                    conditionalBitLookup.TryGetValue(cs.Bound.Raw.UniqueId, out var bitIdx);
-                    var hasBit = conditionalBitLookup.ContainsKey(cs.Bound.Raw.UniqueId);
-                    clauseChainedSites.Add(new ChainedClauseSite(
-                        UsageSiteInfo.FromTranslatedCallSite(cs),
-                        isConditional: cs.Bound.Raw.ConditionalInfo != null,
-                        bitIndex: hasBit ? (int?)bitIdx : null,
-                        role: role.Value));
-                }
-            }
-
-            var conditionalClauses = new List<ConditionalClause>();
-            foreach (var ct in assembled.Plan.ConditionalTerms)
-            {
-                // Find the matching site for this conditional term
-                UsageSiteInfo? matchingSite = null;
-                foreach (var ccs in clauseChainedSites)
-                {
-                    if (ccs.BitIndex == ct.BitIndex)
-                    {
-                        matchingSite = ccs.Site;
-                        break;
-                    }
-                }
-                conditionalClauses.Add(new ConditionalClause(ct.BitIndex, matchingSite ?? executionUsageSite, BranchKind.Independent));
-            }
-
-            var analysis = new ChainAnalysisResult(
-                assembled.Plan.Tier,
-                clauseChainedSites,
-                executionUsageSite,
-                conditionalClauses,
-                assembled.Plan.PossibleMasks,
-                notAnalyzableReason: assembled.Plan.NotAnalyzableReason,
-                unmatchedMethodNames: assembled.Plan.UnmatchedMethodNames,
-                forkedVariableName: assembled.Plan.ForkedVariableName);
-
-            // Build chain parameters from QueryPlan.Parameters
-            var chainParams = new List<ChainParameterInfo>();
-            foreach (var p in assembled.Plan.Parameters)
-            {
-                chainParams.Add(new ChainParameterInfo(
-                    index: p.GlobalIndex,
-                    typeName: p.ClrType,
-                    valueExpression: p.ValueExpression,
-                    typeMapping: p.TypeMappingClass,
-                    isSensitive: p.IsSensitive,
-                    isEnum: p.IsEnum,
-                    enumUnderlyingType: p.EnumUnderlyingType,
-                    needsFieldInfoCache: p.NeedsFieldInfoCache,
-                    isCollection: p.IsCollection,
-                    elementTypeName: p.ElementTypeName,
-                    isDirectAccessible: p.IsDirectAccessible,
-                    collectionAccessExpression: p.CollectionAccessExpression,
-                    entityPropertyExpression: p.EntityPropertyExpression));
-            }
-
-            // Resolve joined table infos
-            List<(string, string?)>? joinedTableInfos = null;
-            if (assembled.ExecutionSite.JoinedEntityTypeNames != null)
-            {
-                joinedTableInfos = new List<(string, string?)>();
-                foreach (var join in assembled.Plan.Joins)
-                    joinedTableInfos.Add((join.Table.TableName, join.Table.SchemaName));
-            }
+            var assembled = group.AssembledPlans[i];
 
             // Resolve ProjectionInfo: prefer QueryPlan.Projection (enriched by ChainAnalyzer with entity
             // metadata), then fall back to Select clause site's raw ProjectionInfo or execution site's.
-            // The discovery-time ProjectionInfo has broken columns because the source generator can't see
-            // its own generated entity types. ChainAnalyzer enriches these using EntityRef.Columns.
             ProjectionInfo? projInfo = null;
-            // First try: QueryPlan.Projection (enriched by ChainAnalyzer with entity column metadata)
             if (assembled.Plan.Projection != null)
             {
                 if (assembled.Plan.Projection.Columns.Count > 0)
@@ -773,79 +426,89 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 }
                 else if (assembled.Plan.Projection.IsIdentity)
                 {
-                    // Identity projection (no Select clause) — build from entity columns
                     var entityRef = assembled.ExecutionSite.Bound.Entity;
                     if (entityRef != null && entityRef.Columns.Count > 0)
-                    {
                         projInfo = BuildEntityProjectionFromEntityRef(entityRef);
-                    }
                 }
             }
-            // Second try: Select clause site's raw ProjectionInfo
             if (projInfo == null)
             {
                 foreach (var cs in assembled.ClauseSites)
                 {
-                    if (cs.Bound.Raw.Kind == InterceptorKind.Select && cs.Bound.Raw.ProjectionInfo != null)
+                    if (cs.Kind == InterceptorKind.Select && cs.ProjectionInfo != null)
                     {
-                        projInfo = cs.Bound.Raw.ProjectionInfo;
+                        projInfo = cs.ProjectionInfo;
                         break;
                     }
                 }
             }
-            // Third try: execution site's ProjectionInfo
             if (projInfo == null)
                 projInfo = assembled.ExecutionSite.ProjectionInfo;
+            assembled.ProjectionInfo = projInfo;
 
-            // Generate reader delegate code for SELECT queries (the old pipeline did this via ReaderCodeGenerator)
-            string? readerCode = assembled.ReaderDelegateCode;
-            if (readerCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
+            // Generate reader delegate code for SELECT queries
+            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
             {
                 var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
-                readerCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
+                assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
             }
 
-            var isCarrierEligible = assembledIdx < group.CarrierPlans.Count && group.CarrierPlans[assembledIdx].IsEligible;
+            // Resolve joined table infos
+            if (assembled.ExecutionSite.JoinedEntityTypeNames != null)
+            {
+                var joinedTableInfos = new List<(string, string?)>();
+                foreach (var join in assembled.Plan.Joins)
+                    joinedTableInfos.Add((join.Table.TableName, join.Table.SchemaName));
+                assembled.JoinedTableInfos = joinedTableInfos;
+            }
 
-            // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
-            if (isCarrierEligible && chainParams.Count > 0)
-                TokenizeCollectionParameters(sqlMap, chainParams, assembled.Dialect);
-
-            // Collect trace lines for traced chains (from TraceCapture side-channel)
-            IReadOnlyList<string>? traceLines = null;
+            // Collect trace lines from TraceCapture side-channel
             if (assembled.IsTraced && hasQuarryTrace)
             {
-                var chainTraceLines = new List<string>();
-                var execUid = assembled.ExecutionSite.Bound.Raw.UniqueId;
+                var execUid = assembled.ExecutionSite.UniqueId;
                 var execTrace = IR.TraceCapture.Get(execUid);
-                if (execTrace != null)
-                    chainTraceLines.AddRange(execTrace);
-                if (chainTraceLines.Count > 0)
-                    traceLines = chainTraceLines;
+                if (execTrace != null && execTrace.Count > 0)
+                    assembled.TraceLines = execTrace;
             }
 
-            var chain = new PrebuiltChainInfo(
-                analysis: analysis,
-                sqlMap: sqlMap,
-                readerDelegateCode: readerCode,
-                entityTypeName: assembled.EntityTypeName,
-                resultTypeName: assembled.ResultTypeName,
-                dialect: assembled.Dialect,
-                tableName: assembled.ExecutionSite.TableName,
-                schemaName: assembled.ExecutionSite.SchemaName,
-                queryKind: assembled.Plan.Kind,
-                projectionInfo: projInfo,
-                joinedEntityTypeNames: assembled.ExecutionSite.JoinedEntityTypeNames,
-                joinedTableInfos: joinedTableInfos,
-                chainParameters: chainParams,
-                isCarrierEligible: isCarrierEligible,
-                entitySchemaNamespace: assembled.EntitySchemaNamespace,
-                traceLines: traceLines);
-
-            chains.Add(chain);
+            // Post-process SQL to tokenize collection parameter placeholders for carrier expansion
+            var isCarrierEligible = i < group.CarrierPlans.Count && group.CarrierPlans[i].IsEligible;
+            if (isCarrierEligible && assembled.Plan.Parameters.Count > 0)
+                TokenizeCollectionParameters(assembled.SqlVariants, assembled.Plan.Parameters, assembled.Dialect);
         }
 
-        // Emit QRY030-032 diagnostics from new pipeline chain analysis
+        // Merge sites and chain member sites
+        var mergedSites = new List<IR.TranslatedCallSite>(
+            group.Sites.Count + group.ChainMemberSites.Count);
+        mergedSites.AddRange(group.Sites);
+        mergedSites.AddRange(group.ChainMemberSites);
+
+        if (mergedSites.Count == 0) return;
+
+        // Filter AssembledPlans: skip RuntimeBuild and incomplete tuple types
+        var filteredPlans = new List<IR.AssembledPlan>();
+        var filteredCarrierPlans = new List<CodeGen.CarrierPlan>();
+        for (int i = 0; i < group.AssembledPlans.Count; i++)
+        {
+            var assembled = group.AssembledPlans[i];
+            if (assembled.Plan.Tier == OptimizationTier.RuntimeBuild)
+                continue;
+
+            if (assembled.ResultTypeName != null
+                && assembled.ResultTypeName.StartsWith("(")
+                && assembled.ResultTypeName.Contains(",")
+                && System.Text.RegularExpressions.Regex.IsMatch(assembled.ResultTypeName, @"\(\s\w"))
+            {
+                var hasSelectClause = assembled.ClauseSites.Any(cs => cs.Kind == InterceptorKind.Select);
+                if (!hasSelectClause) continue;
+            }
+
+            filteredPlans.Add(assembled);
+            if (i < group.CarrierPlans.Count)
+                filteredCarrierPlans.Add(group.CarrierPlans[i]);
+        }
+
+        // Emit QRY030-032 diagnostics from chain analysis
         foreach (var assembled in group.AssembledPlans)
         {
             var execRaw = assembled.ExecutionSite.Bound.Raw;
@@ -916,7 +579,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 group.ContextNamespace,
                 group.FileTag,
                 mergedSites,
-                chains);
+                filteredPlans,
+                filteredCarrierPlans);
             var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
@@ -930,37 +594,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
     }
 
-    private static void EmitFileInterceptorsLegacy(SourceProductionContext spc, FileInterceptorGroup group)
-    {
-        // Merge sites and chain member sites
-        var mergedSites = new List<UsageSiteInfo>(group.Sites.Count + group.ChainMemberSites.Count);
-        mergedSites.AddRange(group.Sites);
-        mergedSites.AddRange(group.ChainMemberSites);
-
-        if (mergedSites.Count == 0)
-            return;
-
-        try
-        {
-            var emitter = new CodeGen.FileEmitter(
-                group.ContextClassName,
-                group.ContextNamespace,
-                group.FileTag,
-                mergedSites,
-                group.Chains as IReadOnlyList<PrebuiltChainInfo>);
-            var interceptorsSource = emitter.Emit();
-
-            var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
-            spc.AddSource(fileName, interceptorsSource);
-        }
-        catch (Exception ex)
-        {
-            spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.InternalError,
-                Location.None,
-                $"Failed to generate interceptors: {ex.Message}"));
-        }
-    }
 
     /// <summary>
     /// Maps a diagnostic ID to its descriptor for deferred reporting.
@@ -1258,9 +891,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 isCarrierEligible = false;
         }
 
-        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
-        if (isCarrierEligible && chainParams != null)
-            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
+        // Collection parameter tokenization now handled in EmitFileInterceptorsNewPipeline
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
@@ -1621,9 +1252,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 isCarrierEligible = false;
         }
 
-        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
-        if (isCarrierEligible && chainParams != null)
-            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
+        // Collection parameter tokenization now handled in EmitFileInterceptorsNewPipeline
 
         return new PrebuiltChainInfo(
             result, sqlMap, readerCode,
@@ -1796,8 +1425,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// The carrier terminal expands these tokens at runtime based on the actual collection size.
     /// </summary>
     private static void TokenizeCollectionParameters(
-        Dictionary<ulong, Sql.PrebuiltSqlResult> sqlMap,
-        IReadOnlyList<ChainParameterInfo> chainParams,
+        Dictionary<ulong, IR.AssembledSqlVariant> sqlMap,
+        IReadOnlyList<IR.QueryParameter> chainParams,
         SqlDialect dialect)
     {
         // Find collection parameter indices and their tokens
@@ -1805,7 +1434,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         foreach (var param in chainParams)
         {
             if (!param.IsCollection) continue;
-            collectionParams.Add((param.Index, $"{{__COL_P{param.Index}__}}"));
+            collectionParams.Add((param.GlobalIndex, $"{{__COL_P{param.GlobalIndex}__}}"));
         }
 
         if (collectionParams.Count == 0) return;
@@ -1848,7 +1477,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
         foreach (var (key, sql, paramCount) in pendingUpdates)
         {
-            sqlMap[key] = new Sql.PrebuiltSqlResult(sql, paramCount);
+            sqlMap[key] = new IR.AssembledSqlVariant(sql, paramCount);
         }
     }
 

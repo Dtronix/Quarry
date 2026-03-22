@@ -67,6 +67,8 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public int? ConstantIntValue => Bound.Raw.ConstantIntValue;
     public RawSqlTypeInfo? RawSqlTypeInfo => Bound.RawSqlTypeInfo;
     public DiagnosticLocation Location => Bound.Raw.Location;
+    public string BuilderTypeName => Bound.Raw.BuilderTypeName ?? Bound.Entity?.EntityName ?? Bound.Raw.EntityTypeName;
+    public System.Collections.Immutable.ImmutableArray<string>? InitializedPropertyNames => Bound.Raw.InitializedPropertyNames;
 
     public bool Equals(TranslatedCallSite? other)
     {
@@ -131,6 +133,18 @@ internal sealed class TranslatedClause : IEquatable<TranslatedClause>
     public string? TableAlias { get; }
     public IReadOnlyList<SetActionAssignment>? SetAssignments { get; }
     public string? CustomTypeMappingClass { get; }
+
+    /// <summary>
+    /// Renders the resolved expression to a SQL fragment string using generic @p{n} parameter format.
+    /// Convenience property for emitters that need the pre-rendered SQL.
+    /// </summary>
+    public string SqlFragment => _sqlFragment ??= SqlExprRenderer.Render(ResolvedExpression, Sql.SqlDialect.PostgreSQL, useGenericParamFormat: true, stripOuterParens: true);
+    private string? _sqlFragment;
+
+    /// <summary>
+    /// Gets the column SQL for OrderBy/Set clauses (same as SqlFragment for these clause types).
+    /// </summary>
+    public string ColumnSql => SqlFragment;
 
     public bool Equals(TranslatedClause? other)
     {

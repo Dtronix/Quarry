@@ -1,5 +1,6 @@
 using System.Text;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.CodeGen;
@@ -16,7 +17,7 @@ internal static class TransitionBodyEmitter
     /// Carrier path only — noop cast since carrier implements both interfaces.
     /// </summary>
     public static void EmitDeleteUpdateTransition(
-        StringBuilder sb, UsageSiteInfo site, string methodName)
+        StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var returnType = site.Kind == InterceptorKind.DeleteTransition
@@ -35,7 +36,7 @@ internal static class TransitionBodyEmitter
     /// Carrier path only — stores entity on carrier, returns as IInsertBuilder.
     /// </summary>
     public static void EmitInsertTransition(
-        StringBuilder sb, UsageSiteInfo site, string methodName, CarrierClassInfo carrier)
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -54,7 +55,7 @@ internal static class TransitionBodyEmitter
     /// Creates the carrier directly from the context — zero QueryBuilder allocation.
     /// </summary>
     public static void EmitChainRoot(
-        StringBuilder sb, UsageSiteInfo site, string methodName, CarrierClassInfo carrier)
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var contextClass = site.ContextClassName ?? "QuarryContext";
@@ -71,7 +72,7 @@ internal static class TransitionBodyEmitter
     /// Carrier path: noop cast. Non-carrier path: delegates to real All() method.
     /// </summary>
     public static void EmitAllTransition(
-        StringBuilder sb, UsageSiteInfo site, string methodName, CarrierClassInfo? carrier)
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var isDelete = site.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete;
@@ -106,8 +107,8 @@ internal static class TransitionBodyEmitter
     /// Stores the runtime value on the carrier field if present; always returns builder.
     /// </summary>
     public static void EmitPagination(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo chain)
+        StringBuilder sb, TranslatedCallSite site, string methodName,
+        CarrierPlan carrier, AssembledPlan chain)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
@@ -131,8 +132,8 @@ internal static class TransitionBodyEmitter
     /// Emits a carrier Distinct interceptor method (always noop — Distinct is baked into SQL).
     /// </summary>
     public static void EmitDistinct(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
+        StringBuilder sb, TranslatedCallSite site, string methodName,
+        CarrierPlan carrier, AssembledPlan? chain = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
@@ -154,8 +155,8 @@ internal static class TransitionBodyEmitter
     /// Stores timeout on the carrier field if present; always returns builder.
     /// </summary>
     public static void EmitWithTimeout(
-        StringBuilder sb, UsageSiteInfo site, string methodName,
-        CarrierClassInfo carrier, PrebuiltChainInfo? chain = null)
+        StringBuilder sb, TranslatedCallSite site, string methodName,
+        CarrierPlan carrier, AssembledPlan? chain = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
