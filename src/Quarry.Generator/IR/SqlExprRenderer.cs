@@ -20,10 +20,27 @@ internal static class SqlExprRenderer
     /// regardless of dialect. Used by SqlExprClauseTranslator where dialect-specific parameter
     /// formatting is deferred to the SQL assembly stage.</param>
     /// <returns>The rendered SQL string.</returns>
-    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false)
+    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
     {
         var sb = new StringBuilder();
-        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat, topLevel: true);
+        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat);
+        if (stripOuterParens && sb.Length >= 2 && sb[0] == '(' && sb[sb.Length - 1] == ')')
+        {
+            // Verify the outer parens are matching (not just coincidental)
+            int depth = 0;
+            bool matching = true;
+            for (int i = 0; i < sb.Length - 1; i++)
+            {
+                if (sb[i] == '(') depth++;
+                else if (sb[i] == ')') depth--;
+                if (depth == 0 && i < sb.Length - 1) { matching = false; break; }
+            }
+            if (matching)
+            {
+                sb.Remove(sb.Length - 1, 1);
+                sb.Remove(0, 1);
+            }
+        }
         return sb.ToString();
     }
 
@@ -86,7 +103,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false, bool topLevel = false)
+    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         switch (expr)
         {
@@ -108,7 +125,7 @@ internal static class SqlExprRenderer
                 break;
 
             case BinaryOpExpr bin:
-                RenderBinary(bin, dialect, paramBase, sb, genericParams, topLevel);
+                RenderBinary(bin, dialect, paramBase, sb, genericParams);
                 break;
 
             case UnaryOpExpr unary:
@@ -206,7 +223,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false, bool topLevel = false)
+    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         // Handle string concatenation for different dialects
         if (bin.Operator == SqlBinaryOperator.Add)
@@ -216,13 +233,13 @@ internal static class SqlExprRenderer
             // For now, render normally and let the dialect-specific formatting happen at a higher level
         }
 
-        if (!topLevel) sb.Append('(');
+        sb.Append('(');
         RenderExpr(bin.Left, dialect, paramBase, sb, genericParams);
         sb.Append(' ');
         sb.Append(GetSqlOperator(bin.Operator));
         sb.Append(' ');
         RenderExpr(bin.Right, dialect, paramBase, sb, genericParams);
-        if (!topLevel) sb.Append(')');
+        sb.Append(')');
     }
 
     private static void RenderUnary(UnaryOpExpr unary, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)

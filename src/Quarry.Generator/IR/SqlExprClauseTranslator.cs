@@ -305,6 +305,12 @@ internal sealed class SqlExprClauseTranslator
         {
             case CapturedValueExpr captured:
             {
+                // Skip enum/constant member accesses (e.g., OrderPriority.Urgent) which are
+                // compile-time constants, not closure captures. These render inline as literals.
+                // Real closure captures are simple variable names without dots.
+                if (captured.SyntaxText.Contains('.'))
+                    return captured;
+
                 var idx = paramIndex++;
                 var name = $"@p{idx}";
                 parameters.Add(new ParameterInfo(
