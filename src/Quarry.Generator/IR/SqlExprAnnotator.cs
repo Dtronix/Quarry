@@ -71,22 +71,28 @@ internal static class SqlExprAnnotator
 
     private static SqlExpr AnnotateCapturedValue(CapturedValueExpr captured, ExpressionSyntax syntax, SemanticModel semanticModel)
     {
+        // Try constant folding for enum values and other compile-time constants
+        var constantValue = semanticModel.GetConstantValue(syntax);
+        if (constantValue.HasValue && constantValue.Value != null)
+        {
+            // The value is a compile-time constant — inline as a literal
+            var resolved = constantValue.Value;
+            if (resolved is int intVal)
+                return new LiteralExpr(intVal.ToString(), "int");
+            if (resolved is long longVal)
+                return new LiteralExpr(longVal.ToString(), "long");
+            if (resolved is byte byteVal)
+                return new LiteralExpr(byteVal.ToString(), "int");
+            if (resolved is short shortVal)
+                return new LiteralExpr(shortVal.ToString(), "int");
+        }
+
         // Try to resolve the type
         var typeInfo = semanticModel.GetTypeInfo(syntax);
         if (typeInfo.Type != null)
         {
             var clrType = typeInfo.Type.ToDisplayString();
             return captured.WithClrType(clrType);
-        }
-
-        // Try constant folding for enum values
-        var constantValue = semanticModel.GetConstantValue(syntax);
-        if (constantValue.HasValue && constantValue.Value != null)
-        {
-            // The value is a compile-time constant — it could be inlined as a literal
-            // But for now, just update the type if we can
-            if (typeInfo.Type != null)
-                return captured.WithClrType(typeInfo.Type.ToDisplayString());
         }
 
         return captured;
@@ -122,16 +128,19 @@ internal static class SqlExprAnnotator
     {
         // Build a map of identifier name -> CLR type from the syntax tree
         var typeMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
-        CollectCapturedTypes(lambdaBody, semanticModel, typeMap);
-        if (typeMap.Count == 0) return expr;
+        // Build a map of member access text -> constant literal value (e.g., "OrderPriority.Urgent" -> "3")
+        var constantMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+        CollectCapturedTypes(lambdaBody, semanticModel, typeMap, constantMap);
+        if (typeMap.Count == 0 && constantMap.Count == 0) return expr;
 
-        return ApplyCapturedTypes(expr, typeMap);
+        return ApplyCapturedTypes(expr, typeMap, constantMap);
     }
 
     private static void CollectCapturedTypes(
         SyntaxNode node,
         SemanticModel semanticModel,
-        System.Collections.Generic.Dictionary<string, string> typeMap)
+        System.Collections.Generic.Dictionary<string, string> typeMap,
+        System.Collections.Generic.Dictionary<string, string> constantMap)
     {
         foreach (var identifier in node.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
@@ -144,21 +153,47 @@ internal static class SqlExprAnnotator
                 typeMap[name] = typeInfo.Type.ToDisplayString();
             }
         }
+
+        // Collect constant values from member access expressions (e.g., EnumType.Member)
+        foreach (var memberAccess in node.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
+        {
+            var text = memberAccess.ToString();
+            if (constantMap.ContainsKey(text)) continue;
+
+            var constant = semanticModel.GetConstantValue(memberAccess);
+            if (constant.HasValue && constant.Value != null)
+            {
+                if (constant.Value is int intVal)
+                    constantMap[text] = intVal.ToString();
+                else if (constant.Value is long longVal)
+                    constantMap[text] = longVal.ToString();
+                else if (constant.Value is byte byteVal)
+                    constantMap[text] = byteVal.ToString();
+                else if (constant.Value is short shortVal)
+                    constantMap[text] = shortVal.ToString();
+            }
+        }
     }
 
-    private static SqlExpr ApplyCapturedTypes(SqlExpr expr, System.Collections.Generic.Dictionary<string, string> typeMap)
+    private static SqlExpr ApplyCapturedTypes(
+        SqlExpr expr,
+        System.Collections.Generic.Dictionary<string, string> typeMap,
+        System.Collections.Generic.Dictionary<string, string>? constantMap = null)
     {
         switch (expr)
         {
             case CapturedValueExpr captured:
+                // Check if this captured value is a compile-time constant (e.g., enum member)
+                if (constantMap != null && constantMap.TryGetValue(captured.SyntaxText, out var literalValue))
+                    return new LiteralExpr(literalValue, "int");
                 if (typeMap.TryGetValue(captured.VariableName, out var clrType))
                     return captured.WithClrType(clrType);
                 return captured;
 
             case BinaryOpExpr bin:
             {
-                var left = ApplyCapturedTypes(bin.Left, typeMap);
-                var right = ApplyCapturedTypes(bin.Right, typeMap);
+                var left = ApplyCapturedTypes(bin.Left, typeMap, constantMap);
+                var right = ApplyCapturedTypes(bin.Right, typeMap, constantMap);
                 if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
                     return bin;
                 return new BinaryOpExpr(left, bin.Operator, right);
@@ -166,19 +201,19 @@ internal static class SqlExprAnnotator
 
             case UnaryOpExpr unary:
             {
-                var operand = ApplyCapturedTypes(unary.Operand, typeMap);
+                var operand = ApplyCapturedTypes(unary.Operand, typeMap, constantMap);
                 if (ReferenceEquals(operand, unary.Operand)) return unary;
                 return new UnaryOpExpr(unary.Operator, operand);
             }
 
             case InExpr inExpr:
             {
-                var operand = ApplyCapturedTypes(inExpr.Operand, typeMap);
+                var operand = ApplyCapturedTypes(inExpr.Operand, typeMap, constantMap);
                 var changed = !ReferenceEquals(operand, inExpr.Operand);
                 var newValues = new SqlExpr[inExpr.Values.Count];
                 for (int i = 0; i < inExpr.Values.Count; i++)
                 {
-                    newValues[i] = ApplyCapturedTypes(inExpr.Values[i], typeMap);
+                    newValues[i] = ApplyCapturedTypes(inExpr.Values[i], typeMap, constantMap);
                     if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
                 }
                 return changed ? new InExpr(operand, newValues, inExpr.IsNegated) : inExpr;
@@ -190,7 +225,7 @@ internal static class SqlExprAnnotator
                 var newArgs = new SqlExpr[func.Arguments.Count];
                 for (int i = 0; i < func.Arguments.Count; i++)
                 {
-                    newArgs[i] = ApplyCapturedTypes(func.Arguments[i], typeMap);
+                    newArgs[i] = ApplyCapturedTypes(func.Arguments[i], typeMap, constantMap);
                     if (!ReferenceEquals(newArgs[i], func.Arguments[i])) changed = true;
                 }
                 return changed ? new FunctionCallExpr(func.FunctionName, newArgs, func.IsAggregate) : func;
@@ -198,18 +233,27 @@ internal static class SqlExprAnnotator
 
             case IsNullCheckExpr isNull:
             {
-                var operand = ApplyCapturedTypes(isNull.Operand, typeMap);
+                var operand = ApplyCapturedTypes(isNull.Operand, typeMap, constantMap);
                 if (ReferenceEquals(operand, isNull.Operand)) return isNull;
                 return new IsNullCheckExpr(operand, isNull.IsNegated);
             }
 
             case LikeExpr like:
             {
-                var operand = ApplyCapturedTypes(like.Operand, typeMap);
-                var pattern = ApplyCapturedTypes(like.Pattern, typeMap);
+                var operand = ApplyCapturedTypes(like.Operand, typeMap, constantMap);
+                var pattern = ApplyCapturedTypes(like.Pattern, typeMap, constantMap);
                 if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
                     return like;
                 return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);
+            }
+
+            case SubqueryExpr subquery when subquery.Predicate != null:
+            {
+                var predicate = ApplyCapturedTypes(subquery.Predicate, typeMap, constantMap);
+                if (ReferenceEquals(predicate, subquery.Predicate))
+                    return subquery;
+                return new SubqueryExpr(subquery.OuterParameterName, subquery.NavigationPropertyName,
+                    subquery.SubqueryKind, predicate, subquery.InnerParameterName);
             }
 
             default:
