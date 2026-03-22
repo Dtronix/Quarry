@@ -87,11 +87,39 @@ internal static class CallSiteTranslator
             lambdaParamName = "_";
         }
 
+        // For Join clauses, build joined entity lookup so the binder can resolve
+        // columns from both the primary and joined entities (e.g., (u, o) => u.Id == o.Id)
+        Dictionary<string, EntityInfo>? joinedEntities = null;
+        Dictionary<string, string>? tableAliases = null;
+        if (clauseKind == ClauseKind.Join && bound.JoinedEntity != null)
+        {
+            var joinedEntityInfo = ReconstructEntityInfoFromRef(bound.JoinedEntity);
+            if (joinedEntityInfo != null)
+            {
+                var joinParamName = ExtractSecondLambdaParameterName(expression);
+                if (joinParamName != null)
+                {
+                    joinedEntities = new Dictionary<string, EntityInfo>(StringComparer.Ordinal)
+                    {
+                        [joinParamName] = joinedEntityInfo
+                    };
+                    // Assign table aliases: t0 for primary, t1 for joined
+                    tableAliases = new Dictionary<string, string>(StringComparer.Ordinal)
+                    {
+                        [lambdaParamName] = "t0",
+                        [joinParamName] = "t1"
+                    };
+                }
+            }
+        }
+
         var boundExpr = SqlExprBinder.Bind(
             expression,
             entityInfo,
             bound.Dialect,
             lambdaParamName,
+            joinedEntities: joinedEntities,
+            tableAliases: tableAliases,
             inBooleanContext: inBooleanContext);
 
         // Step 2: Extract parameters
@@ -181,6 +209,59 @@ internal static class CallSiteTranslator
             default:
                 return null;
         }
+    }
+
+    /// <summary>
+    /// Extracts the second lambda parameter name from a binary expression.
+    /// For join conditions like (u, o) => u.Id == o.Id, returns "o".
+    /// </summary>
+    private static string? ExtractSecondLambdaParameterName(SqlExpr expr)
+    {
+        var first = ExtractLambdaParameterName(expr);
+        if (first == null) return null;
+        return ExtractOtherParameterName(expr, first);
+    }
+
+    private static string? ExtractOtherParameterName(SqlExpr expr, string exclude)
+    {
+        switch (expr)
+        {
+            case ColumnRefExpr colRef:
+                return colRef.ParameterName != exclude ? colRef.ParameterName : null;
+            case BinaryOpExpr bin:
+                return ExtractOtherParameterName(bin.Left, exclude) ?? ExtractOtherParameterName(bin.Right, exclude);
+            case UnaryOpExpr unary:
+                return ExtractOtherParameterName(unary.Operand, exclude);
+            case FunctionCallExpr func:
+                foreach (var arg in func.Arguments)
+                {
+                    var name = ExtractOtherParameterName(arg, exclude);
+                    if (name != null) return name;
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Reconstructs an EntityInfo from an EntityRef (for joined entities).
+    /// </summary>
+    private static EntityInfo? ReconstructEntityInfoFromRef(EntityRef entity)
+    {
+        if (entity.Columns.Count == 0 && entity.TableName == "")
+            return null;
+
+        return new EntityInfo(
+            entityName: entity.EntityName,
+            schemaClassName: "",
+            schemaNamespace: entity.SchemaNamespace ?? "",
+            tableName: entity.TableName,
+            namingStyle: Quarry.Shared.Migration.NamingStyleKind.SnakeCase,
+            columns: entity.Columns,
+            navigations: entity.Navigations,
+            indexes: Array.Empty<IndexInfo>(),
+            location: Microsoft.CodeAnalysis.Location.None);
     }
 
     /// <summary>

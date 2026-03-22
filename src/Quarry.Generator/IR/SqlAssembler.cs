@@ -372,7 +372,7 @@ internal static class SqlAssembler
     {
         return kind switch
         {
-            JoinClauseKind.Inner => "JOIN",
+            JoinClauseKind.Inner => "INNER JOIN",
             JoinClauseKind.Left => "LEFT JOIN",
             JoinClauseKind.Right => "RIGHT JOIN",
             _ => "JOIN"
