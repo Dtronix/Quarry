@@ -1030,7 +1030,12 @@ internal static class UsageSiteDiscovery
             {
                 var typeName = localSymbol.Type.ToDisplayString();
                 if (typeName.Contains("IQueryBuilder") || typeName.Contains("IEntityAccessor")
-                    || typeName.Contains("QueryBuilder<") || typeName.Contains("EntityAccessor<"))
+                    || typeName.Contains("QueryBuilder<") || typeName.Contains("EntityAccessor<")
+                    || typeName.Contains("IDeleteBuilder") || typeName.Contains("IExecutableDeleteBuilder")
+                    || typeName.Contains("IUpdateBuilder") || typeName.Contains("IExecutableUpdateBuilder")
+                    || typeName.Contains("IInsertBuilder")
+                    || typeName.Contains("DeleteBuilder<") || typeName.Contains("UpdateBuilder<")
+                    || typeName.Contains("InsertBuilder<"))
                     rootIsBuilderLocal = true;
             }
         }
