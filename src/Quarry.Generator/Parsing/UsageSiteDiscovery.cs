@@ -289,7 +289,20 @@ internal static class UsageSiteDiscovery
         }
 
         if (!IsQuarryBuilderType(containingType))
-            return null;
+        {
+            // For extension methods (e.g., .Trace()), resolve the receiver type
+            if (methodSymbol.IsExtensionMethod
+                && InterceptableMethods.ContainsKey(methodName)
+                && methodSymbol.ReceiverType is INamedTypeSymbol receiverType
+                && IsQuarryBuilderType(receiverType))
+            {
+                containingType = receiverType;
+            }
+            else
+            {
+                return null;
+            }
+        }
 
         // Get the method name and kind
         if (!InterceptableMethods.TryGetValue(methodName, out var kind))

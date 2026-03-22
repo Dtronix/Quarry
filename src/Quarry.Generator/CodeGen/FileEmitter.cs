@@ -389,6 +389,10 @@ internal sealed class FileEmitter
         Dictionary<string, (CarrierClassInfo Carrier, PrebuiltChainInfo Chain)>? carrierClauseLookup = null,
         HashSet<string>? carrierFirstClauseIds = null)
     {
+        // Trace sites are compile-time-only signals — no interceptor generated
+        if (site.Kind == InterceptorKind.Trace)
+            return;
+
         // Check if this site belongs to a carrier-optimized chain
         var isCarrierSite = false;
         CarrierClassInfo? carrierInfo = null;
