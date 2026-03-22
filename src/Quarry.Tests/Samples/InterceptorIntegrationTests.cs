@@ -1203,7 +1203,7 @@ public class InterceptorIntegrationTests
     public void UpdateSet_SingleColumn_GeneratesSetClause()
     {
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "NewName")
+            .Set(u => u.UserName = "NewName")
             .Where(u => u.UserId == 1)
             .ToDiagnostics().Sql;
 
@@ -1219,8 +1219,8 @@ public class InterceptorIntegrationTests
     public void UpdateSet_MultipleColumns_GeneratesMultipleSetClauses()
     {
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "NewName")
-            .Set(u => u.IsActive, false)
+            .Set(u => u.UserName = "NewName")
+            .Set(u => u.IsActive = false)
             .Where(u => u.UserId == 1)
             .ToDiagnostics().Sql;
 
@@ -1234,7 +1234,7 @@ public class InterceptorIntegrationTests
     public void UpdateSet_WithAll_GeneratesUpdateWithoutWhere()
     {
         var sql = _db.Users().Update()
-            .Set(u => u.IsActive, false)
+            .Set(u => u.IsActive = false)
             .All()
             .ToDiagnostics().Sql;
 
@@ -1252,7 +1252,7 @@ public class InterceptorIntegrationTests
     public void UpdateWhere_SimpleCondition_GeneratesWhereClause()
     {
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "Updated")
+            .Set(u => u.UserName = "Updated")
             .Where(u => u.IsActive)
             .ToDiagnostics().Sql;
 
@@ -1265,7 +1265,7 @@ public class InterceptorIntegrationTests
     {
         int userId = 42;
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "Updated")
+            .Set(u => u.UserName = "Updated")
             .Where(u => u.UserId == userId)
             .ToDiagnostics().Sql;
 
@@ -1277,7 +1277,7 @@ public class InterceptorIntegrationTests
     public void UpdateWhere_ChainedWheres_GeneratesAndConditions()
     {
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "Updated")
+            .Set(u => u.UserName = "Updated")
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .ToDiagnostics().Sql;
@@ -1291,9 +1291,9 @@ public class InterceptorIntegrationTests
     {
         // Set() after Where() operates on ExecutableUpdateBuilder
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "First")
+            .Set(u => u.UserName = "First")
             .Where(u => u.UserId == 1)
-            .Set(u => u.IsActive, true)
+            .Set(u => u.IsActive = true)
             .ToDiagnostics().Sql;
 
         Assert.That(sql, Does.Contain("SET"));
@@ -1306,7 +1306,7 @@ public class InterceptorIntegrationTests
     public async Task Update_ExecuteNonQueryAsync_Succeeds()
     {
         var result = await _db.Users().Update()
-            .Set(u => u.UserName, "Updated")
+            .Set(u => u.UserName = "Updated")
             .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
 
@@ -1371,7 +1371,7 @@ public class InterceptorIntegrationTests
         // POCO Set followed by property Set — both should produce SET clauses
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
-            .Set(u => u.IsActive, true)
+            .Set(u => u.IsActive = true)
             .Where(u => u.UserId == 1)
             .ToDiagnostics().Sql;
 
@@ -1384,7 +1384,7 @@ public class InterceptorIntegrationTests
     {
         // POCO Set after Where() operates on ExecutableUpdateBuilder
         var sql = _db.Users().Update()
-            .Set(u => u.UserName, "First")
+            .Set(u => u.UserName = "First")
             .Where(u => u.UserId == 1)
             .Set(new User { IsActive = true })
             .ToDiagnostics().Sql;
@@ -1606,7 +1606,7 @@ public class InterceptorIntegrationTests
     public async Task VariableBasedUpdate_ExecutesNonQuery()
     {
         // Variable-based UPDATE chain
-        var upd = _db.Users().Update().Set(u => u.UserName, "newname").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName = "newname").Where(u => u.UserId == 1);
         var result = await upd.ExecuteNonQueryAsync();
 
         Assert.That(result, Is.EqualTo(1));
@@ -1679,7 +1679,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalUpdate_WithConditionTrue_IncludesConditionalWhere()
     {
         // Conditional WHERE on UPDATE — condition true → mask includes conditional bit
-        var upd = _db.Users().Update().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName = "updated").Where(u => u.UserId == 1);
         if (true)
         {
             upd = upd.Where(u => u.IsActive);
@@ -1700,7 +1700,7 @@ public class InterceptorIntegrationTests
     {
         var active = true;
         var upd = _db.Users()
-            .Update().Set(u => u.UserName, "updated")
+            .Update().Set(u => u.UserName = "updated")
             .Where(u => u.UserId == 1);
         if (true)
         {
@@ -1721,7 +1721,7 @@ public class InterceptorIntegrationTests
     public async Task ConditionalUpdate_WithConditionFalse_ExcludesConditionalWhere()
     {
         // Conditional WHERE on UPDATE — condition false → only base WHERE
-        var upd = _db.Users().Update().Set(u => u.UserName, "updated").Where(u => u.UserId == 1);
+        var upd = _db.Users().Update().Set(u => u.UserName = "updated").Where(u => u.UserId == 1);
         if (false)
         {
             upd = upd.Where(u => u.IsActive);

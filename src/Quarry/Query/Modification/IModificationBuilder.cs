@@ -31,7 +31,6 @@ public interface IExecutableDeleteBuilder<T> where T : class
 /// </summary>
 public interface IUpdateBuilder<T> where T : class
 {
-    IUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value);
     IUpdateBuilder<T> Set(T entity);
     IUpdateBuilder<T> Set(Action<T> assignment);
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
@@ -46,7 +45,6 @@ public interface IUpdateBuilder<T> where T : class
 /// </summary>
 public interface IExecutableUpdateBuilder<T> where T : class
 {
-    IExecutableUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value);
     IExecutableUpdateBuilder<T> Set(T entity);
     IExecutableUpdateBuilder<T> Set(Action<T> assignment);
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);

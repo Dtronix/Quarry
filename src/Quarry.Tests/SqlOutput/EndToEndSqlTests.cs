@@ -280,7 +280,7 @@ public class EndToEndSqlTests
     {
         var sql = _db.Users().Update()
             .Set(new User { UserName = "NewName" })
-            .Set(u => u.IsActive, true)
+            .Set(u => u.IsActive = true)
             .Where(u => u.UserId == 1)
             .ToDiagnostics().Sql;
         Assert.That(sql, Does.Contain("\"UserName\""));

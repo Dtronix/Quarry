@@ -254,7 +254,7 @@ public class Svc
     public Svc(TestDbContext db) { _db = db; }
     public string Run(bool restrict)
     {
-        var q = _db.Users().Update().Set(u => u.UserName, ""Updated"");
+        var q = _db.Users().Update().Set(u => u.UserName = ""Updated"");
         if (restrict)
             q = q.Where(u => u.IsActive);
         return q.All().ToDiagnostics().Sql;
@@ -279,9 +279,9 @@ public class Svc
     public Svc(TestDbContext db) { _db = db; }
     public string Run(bool clearEmail)
     {
-        var q = _db.Users().Update().Set(u => u.UserName, ""Updated"").Where(u => u.UserId == 1);
+        var q = _db.Users().Update().Set(u => u.UserName = ""Updated"").Where(u => u.UserId == 1);
         if (clearEmail)
-            q = q.Set(u => u.IsActive, false);
+            q = q.Set(u => u.IsActive = false);
         return q.ToDiagnostics().Sql;
     }
 }
@@ -304,9 +304,9 @@ public class Svc
     public Svc(TestDbContext db) { _db = db; }
     public string Run(bool deactivate, bool restrict)
     {
-        var q = _db.Users().Update().Set(u => u.UserName, ""x"");
+        var q = _db.Users().Update().Set(u => u.UserName = ""x"");
         if (deactivate)
-            q = q.Set(u => u.IsActive, false);
+            q = q.Set(u => u.IsActive = false);
         if (restrict)
             q = q.Where(u => u.UserId == 1);
         return q.All().ToDiagnostics().Sql;
@@ -553,9 +553,9 @@ public class Svc
     public Svc(TestDbContext db) { _db = db; }
     public string Run(bool deactivate, bool targetActive)
     {
-        var q = _db.Users().Update().Set(u => u.UserName, ""x"");
+        var q = _db.Users().Update().Set(u => u.UserName = ""x"");
         if (deactivate)
-            q = q.Set(u => u.IsActive, false);
+            q = q.Set(u => u.IsActive = false);
         if (targetActive)
             q = q.Where(u => u.IsActive);
         else
@@ -583,7 +583,7 @@ public class Svc
     public Svc(TestDbContext db) { _db = db; }
     public async Task Run(bool restrict)
     {
-        var q = _db.Users().Update().Set(u => u.UserName, ""x"");
+        var q = _db.Users().Update().Set(u => u.UserName = ""x"");
         if (restrict)
             q = q.Where(u => u.IsActive);
         await q.All().ExecuteNonQueryAsync();
