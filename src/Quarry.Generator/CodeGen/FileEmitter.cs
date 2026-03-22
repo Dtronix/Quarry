@@ -33,22 +33,19 @@ internal sealed class FileEmitter
     private readonly string _fileTag;
     private readonly IReadOnlyList<UsageSiteInfo> _sites;
     private readonly IReadOnlyList<PrebuiltChainInfo>? _chains;
-    private readonly IReadOnlyDictionary<string, IReadOnlyList<string>>? _traceData;
 
     public FileEmitter(
         string contextClassName,
         string? contextNamespace,
         string fileTag,
         IReadOnlyList<UsageSiteInfo> sites,
-        IReadOnlyList<PrebuiltChainInfo>? chains = null,
-        IReadOnlyDictionary<string, IReadOnlyList<string>>? traceData = null)
+        IReadOnlyList<PrebuiltChainInfo>? chains = null)
     {
         _contextClassName = contextClassName;
         _contextNamespace = contextNamespace;
         _fileTag = fileTag;
         _sites = sites;
         _chains = chains;
-        _traceData = traceData;
     }
 
     /// <summary>
@@ -294,7 +291,7 @@ internal sealed class FileEmitter
 
         // Group interceptors by chain
         var processedSiteIds = new HashSet<string>();
-        var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites)>();
+        var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites, IReadOnlyList<string>? TraceLines)>();
         var siteByUniqueId = allSitesForGeneration.ToDictionary(s => s.UniqueId);
 
         if (_chains != null)
@@ -320,7 +317,7 @@ internal sealed class FileEmitter
                 {
                     var execMethod = chain.Analysis.ExecutionSite.MethodName;
                     var label = $"Chain: {execMethod} at line {chain.Analysis.ExecutionSite.Line}";
-                    chainGroups.Add((label, chainSites));
+                    chainGroups.Add((label, chainSites, chain.TraceLines));
                 }
             }
         }
@@ -332,7 +329,7 @@ internal sealed class FileEmitter
 
         if (standaloneSites.Count > 0)
         {
-            chainGroups.Add(("Standalone Interceptors", standaloneSites));
+            chainGroups.Add(("Standalone Interceptors", standaloneSites, null));
         }
 
         // Pre-group static fields by method name
@@ -347,34 +344,16 @@ internal sealed class FileEmitter
             list.Add(f);
         }
 
-        // Build trace data lookup by chain execution site UniqueId
-        var chainTraceMap = new Dictionary<string, IReadOnlyList<string>>();
-        if (_traceData != null && _chains != null)
-        {
-            foreach (var chain in _chains)
-            {
-                var execUid = chain.Analysis.ExecutionSite.UniqueId;
-                if (_traceData.TryGetValue(execUid, out var traceLines))
-                    chainTraceMap[execUid] = traceLines;
-            }
-        }
-
         // Generate grouped output
-        var chainIdx = 0;
-        foreach (var (label, sites) in chainGroups)
+        foreach (var (label, sites, traceLines) in chainGroups)
         {
             // Emit trace comments for traced chains
-            if (_chains != null && chainIdx < _chains.Count)
+            if (traceLines != null)
             {
-                var chainExecUid = _chains[chainIdx].Analysis.ExecutionSite.UniqueId;
-                if (chainTraceMap.TryGetValue(chainExecUid, out var traceLines))
-                {
-                    foreach (var line in traceLines)
-                        sb.AppendLine($"    // {line}");
-                    sb.AppendLine();
-                }
+                foreach (var line in traceLines)
+                    sb.AppendLine($"    // {line}");
+                sb.AppendLine();
             }
-            chainIdx++;
 
             sb.AppendLine($"    #region {label}");
             sb.AppendLine();

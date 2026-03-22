@@ -43,33 +43,18 @@ internal static class CallSiteTranslator
         // execution terminals, insert/delete transitions, Trace
         if (raw.Expression == null || !IsClauseBearingKind(raw.Kind))
         {
-            TraceCapture.Log(raw.UniqueId, $"[Trace] Translation ({raw.MethodName}):");
-            TraceCapture.Log(raw.UniqueId, "  clause=none (non-clause site)");
             return new TranslatedCallSite(bound);
         }
 
         // Attempt clause translation via SqlExpr pipeline
         try
         {
-            var result = TranslateClause(bound, registry, ct);
-            TraceCapture.Log(raw.UniqueId, $"[Trace] Translation ({raw.MethodName}):");
-            if (result.Clause != null)
-            {
-                TraceCapture.Log(raw.UniqueId, $"  clauseKind={result.Clause.Kind}, paramCount={result.Clause.Parameters.Count}");
-                TraceCapture.Log(raw.UniqueId, $"  resolvedExpr={result.Clause.ResolvedExpression.GetType().Name}");
-            }
-            else
-            {
-                TraceCapture.Log(raw.UniqueId, "  clause=null (translation produced no clause)");
-            }
-            return result;
+            return TranslateClause(bound, registry, ct);
         }
-        catch (Exception ex)
+        catch
         {
             // Translation failed — produce a TranslatedCallSite with null Clause.
             // QRY019 diagnostic will be reported in the collected stage.
-            TraceCapture.Log(raw.UniqueId, $"[Trace] Translation ({raw.MethodName}):");
-            TraceCapture.Log(raw.UniqueId, $"  FAILED: {ex.GetType().Name}: {ex.Message}");
             return new TranslatedCallSite(bound);
         }
     }

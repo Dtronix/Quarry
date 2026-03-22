@@ -27,7 +27,8 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null,
         IReadOnlyList<ChainParameterInfo>? chainParameters = null,
         bool isCarrierEligible = false,
-        string? entitySchemaNamespace = null)
+        string? entitySchemaNamespace = null,
+        IReadOnlyList<string>? traceLines = null)
     {
         Analysis = analysis;
         SqlMap = sqlMap;
@@ -45,6 +46,7 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
         ChainParameters = chainParameters ?? Array.Empty<ChainParameterInfo>();
         IsCarrierEligible = isCarrierEligible;
         EntitySchemaNamespace = entitySchemaNamespace;
+        TraceLines = traceLines;
     }
 
     /// <summary>
@@ -134,6 +136,12 @@ internal sealed class PrebuiltChainInfo : IEquatable<PrebuiltChainInfo>
     /// when the entity type name is unqualified (error types during first compilation pass).
     /// </summary>
     public string? EntitySchemaNamespace { get; }
+
+    /// <summary>
+    /// Trace comment lines for this chain. Non-null only when the chain has .Trace()
+    /// and QUARRY_TRACE is defined. Excluded from equality.
+    /// </summary>
+    public IReadOnlyList<string>? TraceLines { get; }
 
     public bool Equals(PrebuiltChainInfo? other)
     {

@@ -715,21 +715,6 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // Trace logging: record discovery path for every site
-        var uid = usageSite.UniqueId;
-        IR.TraceCapture.Log(uid, $"[Trace] Discovery ({usageSite.MethodName} at line {usageSite.Line}):");
-        IR.TraceCapture.Log(uid, $"  kind={usageSite.Kind}, isAnalyzable={usageSite.IsAnalyzable}");
-        if (usageSite.PendingClauseInfo != null)
-            IR.TraceCapture.Log(uid, "  path=PendingClauseInfo");
-        else if (usageSite.ClauseInfo != null && usageSite.ClauseInfo.IsSuccess)
-            IR.TraceCapture.Log(uid, "  path=ClauseInfo.IsSuccess -> TryParseLambdaToSqlExpr");
-        else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
-            IR.TraceCapture.Log(uid, "  path=else-if-analyzable -> TryParseLambdaToSqlExpr");
-        if (expression != null)
-            IR.TraceCapture.Log(uid, $"  parsedExpr={expression.GetType().Name}");
-        if (!usageSite.IsAnalyzable && usageSite.NonAnalyzableReason != null)
-            IR.TraceCapture.Log(uid, $"  nonAnalyzableReason={usageSite.NonAnalyzableReason}");
-
         return new RawCallSite(
             methodName: usageSite.MethodName,
             filePath: usageSite.FilePath,

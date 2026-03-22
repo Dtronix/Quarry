@@ -497,14 +497,26 @@ internal static class ChainAnalyzer
             tier: tier,
             unmatchedMethodNames: unmatchedMethodNames);
 
-        // Trace logging: chain-level analysis
-        var chainUid = executionSite.Bound.Raw.UniqueId;
-        IR.TraceCapture.Log(chainUid, "[Trace] ChainAnalysis:");
-        IR.TraceCapture.Log(chainUid, $"  tier={tier}, queryKind={queryKind}");
-        IR.TraceCapture.Log(chainUid, $"  whereTerms={whereTerms.Count}, orderTerms={orderTerms.Count}, setTerms={setTerms.Count}");
-        IR.TraceCapture.Log(chainUid, $"  joinPlans={joinPlans.Count}, params={parameters.Count}");
-        IR.TraceCapture.Log(chainUid, $"  possibleMasks=[{string.Join(", ", possibleMasks)}]");
-        IR.TraceCapture.Log(chainUid, $"  isTraced={isTraced}");
+        // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
+        // translation traces from the TranslatedCallSite data, then log chain-level analysis.
+        if (isTraced)
+        {
+            var chainUid = executionSite.Bound.Raw.UniqueId;
+
+            // Per-site retroactive trace (discovery + binding + translation)
+            foreach (var site in clauseSites)
+            {
+                LogSiteTrace(chainUid, site);
+            }
+            LogSiteTrace(chainUid, executionSite);
+
+            // Chain-level analysis trace
+            IR.TraceCapture.Log(chainUid, "[Trace] ChainAnalysis:");
+            IR.TraceCapture.Log(chainUid, $"  tier={tier}, queryKind={queryKind}");
+            IR.TraceCapture.Log(chainUid, $"  whereTerms={whereTerms.Count}, orderTerms={orderTerms.Count}, setTerms={setTerms.Count}");
+            IR.TraceCapture.Log(chainUid, $"  joinPlans={joinPlans.Count}, params={parameters.Count}");
+            IR.TraceCapture.Log(chainUid, $"  possibleMasks=[{string.Join(", ", possibleMasks)}]");
+        }
 
         return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
     }
@@ -1098,6 +1110,42 @@ internal static class ChainAnalyzer
     }
 
     #endregion
+
+    /// <summary>
+    /// Logs retroactive discovery/binding/translation trace for a single site.
+    /// Called from ChainAnalyzer when a traced chain is detected, reconstructing
+    /// trace data from the TranslatedCallSite objects already on hand.
+    /// </summary>
+    private static void LogSiteTrace(string chainUid, TranslatedCallSite site)
+    {
+        var raw = site.Bound.Raw;
+
+        // Discovery trace
+        IR.TraceCapture.Log(chainUid, $"[Trace] Discovery ({raw.MethodName} at line {raw.Line}):");
+        IR.TraceCapture.Log(chainUid, $"  kind={raw.Kind}, isAnalyzable={raw.IsAnalyzable}");
+        if (raw.Expression != null)
+            IR.TraceCapture.Log(chainUid, $"  parsedExpr={raw.Expression.GetType().Name}");
+        if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
+            IR.TraceCapture.Log(chainUid, $"  nonAnalyzableReason={raw.NonAnalyzableReason}");
+
+        // Binding trace
+        IR.TraceCapture.Log(chainUid, $"[Trace] Binding ({raw.MethodName}):");
+        IR.TraceCapture.Log(chainUid, $"  entity={raw.EntityTypeName}, table={site.Bound.TableName}, dialect={site.Bound.Dialect}");
+        if (site.Bound.JoinedEntity != null)
+            IR.TraceCapture.Log(chainUid, $"  joinedEntity={site.Bound.JoinedEntity.EntityName}");
+
+        // Translation trace
+        IR.TraceCapture.Log(chainUid, $"[Trace] Translation ({raw.MethodName}):");
+        if (site.Clause != null)
+        {
+            IR.TraceCapture.Log(chainUid, $"  clauseKind={site.Clause.Kind}, paramCount={site.Clause.Parameters.Count}");
+            IR.TraceCapture.Log(chainUid, $"  resolvedExpr={site.Clause.ResolvedExpression.GetType().Name}");
+        }
+        else
+        {
+            IR.TraceCapture.Log(chainUid, "  clause=none");
+        }
+    }
 }
 
 /// <summary>

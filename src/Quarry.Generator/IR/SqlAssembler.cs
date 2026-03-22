@@ -69,13 +69,16 @@ internal static class SqlAssembler
             readerDelegateCode = BuildReaderDelegateCode(plan.Projection, executionSite);
         }
 
-        // Trace logging: assembly results per mask
-        var asmUid = executionSite.Bound.Raw.UniqueId;
-        foreach (var kvp in sqlVariants)
+        // Trace logging: assembly results per mask (only for traced chains)
+        if (chain.IsTraced)
         {
-            TraceCapture.Log(asmUid, $"[Trace] Assembly (mask={kvp.Key}):");
-            TraceCapture.Log(asmUid, $"  sql={kvp.Value.Sql}");
-            TraceCapture.Log(asmUid, $"  paramCount={kvp.Value.ParameterCount}");
+            var asmUid = executionSite.Bound.Raw.UniqueId;
+            foreach (var kvp in sqlVariants)
+            {
+                TraceCapture.Log(asmUid, $"[Trace] Assembly (mask={kvp.Key}):");
+                TraceCapture.Log(asmUid, $"  sql={kvp.Value.Sql}");
+                TraceCapture.Log(asmUid, $"  paramCount={kvp.Value.ParameterCount}");
+            }
         }
 
         return new AssembledPlan(
