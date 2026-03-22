@@ -23,7 +23,7 @@ internal static class SqlExprRenderer
     public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false)
     {
         var sb = new StringBuilder();
-        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat);
+        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat, topLevel: true);
         return sb.ToString();
     }
 
@@ -78,10 +78,15 @@ internal static class SqlExprRenderer
                 foreach (var e in list.Expressions)
                     CollectParamsRecursive(e, result);
                 break;
+
+            case SubqueryExpr sub:
+                if (sub.Predicate != null)
+                    CollectParamsRecursive(sub.Predicate, result);
+                break;
         }
     }
 
-    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false, bool topLevel = false)
     {
         switch (expr)
         {
@@ -103,7 +108,7 @@ internal static class SqlExprRenderer
                 break;
 
             case BinaryOpExpr bin:
-                RenderBinary(bin, dialect, paramBase, sb, genericParams);
+                RenderBinary(bin, dialect, paramBase, sb, genericParams, topLevel);
                 break;
 
             case UnaryOpExpr unary:
@@ -124,6 +129,10 @@ internal static class SqlExprRenderer
 
             case LikeExpr like:
                 RenderLike(like, dialect, paramBase, sb, genericParams);
+                break;
+
+            case SubqueryExpr subquery:
+                RenderSubquery(subquery, dialect, paramBase, sb, genericParams);
                 break;
 
             case CapturedValueExpr:
@@ -197,7 +206,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false, bool topLevel = false)
     {
         // Handle string concatenation for different dialects
         if (bin.Operator == SqlBinaryOperator.Add)
@@ -207,13 +216,13 @@ internal static class SqlExprRenderer
             // For now, render normally and let the dialect-specific formatting happen at a higher level
         }
 
-        sb.Append('(');
+        if (!topLevel) sb.Append('(');
         RenderExpr(bin.Left, dialect, paramBase, sb, genericParams);
         sb.Append(' ');
         sb.Append(GetSqlOperator(bin.Operator));
         sb.Append(' ');
         RenderExpr(bin.Right, dialect, paramBase, sb, genericParams);
-        sb.Append(')');
+        if (!topLevel) sb.Append(')');
     }
 
     private static void RenderUnary(UnaryOpExpr unary, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
@@ -311,6 +320,69 @@ internal static class SqlExprRenderer
         if (like.NeedsEscape)
         {
             sb.Append(" ESCAPE '\\'");
+        }
+    }
+
+    private static void RenderSubquery(SubqueryExpr sub, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams)
+    {
+        if (!sub.IsResolved)
+        {
+            sb.Append($"/* unresolved subquery: {sub.OuterParameterName}.{sub.NavigationPropertyName}.{sub.SubqueryKind} */");
+            return;
+        }
+
+        switch (sub.SubqueryKind)
+        {
+            case SubqueryKind.Exists:
+                sb.Append("EXISTS (SELECT 1 FROM ");
+                sb.Append(sub.InnerTableQuoted);
+                sb.Append(" AS ");
+                sb.Append(sub.InnerAliasQuoted);
+                sb.Append(" WHERE ");
+                sb.Append(sub.CorrelationSql);
+                AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
+                sb.Append(')');
+                break;
+
+            case SubqueryKind.All:
+                sb.Append("NOT EXISTS (SELECT 1 FROM ");
+                sb.Append(sub.InnerTableQuoted);
+                sb.Append(" AS ");
+                sb.Append(sub.InnerAliasQuoted);
+                sb.Append(" WHERE ");
+                sb.Append(sub.CorrelationSql);
+                AppendSubqueryPredicate(sub.Predicate, " AND NOT ", dialect, paramBase, sb, genericParams);
+                sb.Append(')');
+                break;
+
+            case SubqueryKind.Count:
+                sb.Append("(SELECT COUNT(*) FROM ");
+                sb.Append(sub.InnerTableQuoted);
+                sb.Append(" AS ");
+                sb.Append(sub.InnerAliasQuoted);
+                sb.Append(" WHERE ");
+                sb.Append(sub.CorrelationSql);
+                AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
+                sb.Append(')');
+                break;
+        }
+    }
+
+    private static void AppendSubqueryPredicate(SqlExpr? predicate, string conjunction, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams)
+    {
+        if (predicate == null) return;
+
+        sb.Append(conjunction);
+        if (predicate is BinaryOpExpr)
+        {
+            // BinaryOp already renders with outer parens: (left op right)
+            RenderExpr(predicate, dialect, paramBase, sb, genericParams);
+        }
+        else
+        {
+            sb.Append('(');
+            RenderExpr(predicate, dialect, paramBase, sb, genericParams);
+            sb.Append(')');
         }
     }
 

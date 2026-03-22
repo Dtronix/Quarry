@@ -29,10 +29,11 @@ internal static class SqlExprBinder
         string lambdaParameterName,
         IReadOnlyDictionary<string, EntityInfo>? joinedEntities = null,
         IReadOnlyDictionary<string, string>? tableAliases = null,
-        bool inBooleanContext = false)
+        bool inBooleanContext = false,
+        IReadOnlyDictionary<string, EntityInfo>? entityLookup = null)
     {
         var columnLookup = BuildColumnLookup(primaryEntity);
-        var ctx = new BindContext(primaryEntity, dialect, lambdaParameterName, columnLookup, joinedEntities, tableAliases);
+        var ctx = new BindContext(primaryEntity, dialect, lambdaParameterName, columnLookup, joinedEntities, tableAliases, entityLookup);
         return BindExpr(expr, ctx, inBooleanContext);
     }
 
@@ -44,6 +45,8 @@ internal static class SqlExprBinder
         public Dictionary<string, ColumnInfo> ColumnLookup { get; }
         public IReadOnlyDictionary<string, EntityInfo>? JoinedEntities { get; }
         public IReadOnlyDictionary<string, string>? TableAliases { get; }
+        public IReadOnlyDictionary<string, EntityInfo>? EntityLookup { get; }
+        public int SubqueryAliasCounter { get; set; }
         public bool HasJoins => JoinedEntities != null && JoinedEntities.Count > 0;
         public bool HasAliases => TableAliases != null && TableAliases.Count > 0;
 
@@ -56,7 +59,8 @@ internal static class SqlExprBinder
             string lambdaParameterName,
             Dictionary<string, ColumnInfo> columnLookup,
             IReadOnlyDictionary<string, EntityInfo>? joinedEntities,
-            IReadOnlyDictionary<string, string>? tableAliases)
+            IReadOnlyDictionary<string, string>? tableAliases,
+            IReadOnlyDictionary<string, EntityInfo>? entityLookup = null)
         {
             PrimaryEntity = primaryEntity;
             Dialect = dialect;
@@ -64,6 +68,7 @@ internal static class SqlExprBinder
             ColumnLookup = columnLookup;
             JoinedEntities = joinedEntities;
             TableAliases = tableAliases;
+            EntityLookup = entityLookup;
         }
 
         /// <summary>
@@ -145,6 +150,9 @@ internal static class SqlExprBinder
                 if (bound == null) return list;
                 return new ExprListExpr(bound);
             }
+
+            case SubqueryExpr sub:
+                return BindSubquery(sub, ctx);
 
             // Terminal nodes that don't need binding
             case ResolvedColumnExpr:
@@ -274,5 +282,143 @@ internal static class SqlExprBinder
             SqlDialect.PostgreSQL => value ? "TRUE" : "FALSE",
             _ => value ? "1" : "0"
         };
+    }
+
+    private static SqlExpr BindSubquery(SubqueryExpr sub, BindContext ctx)
+    {
+        if (sub.IsResolved) return sub;
+        if (ctx.EntityLookup == null) return sub;
+
+        // Find navigation property on the primary entity (or joined entity)
+        NavigationInfo? nav = null;
+        EntityInfo? outerEntity = null;
+
+        if (sub.OuterParameterName == ctx.LambdaParameterName)
+        {
+            outerEntity = ctx.PrimaryEntity;
+        }
+        else if (ctx.JoinedEntities != null && ctx.JoinedEntities.TryGetValue(sub.OuterParameterName, out var je))
+        {
+            outerEntity = je;
+        }
+
+        if (outerEntity == null) return sub;
+
+        foreach (var n in outerEntity.Navigations)
+        {
+            if (n.PropertyName == sub.NavigationPropertyName)
+            {
+                nav = n;
+                break;
+            }
+        }
+
+        if (nav == null) return sub;
+
+        // Look up target entity
+        if (!ctx.EntityLookup.TryGetValue(nav.RelatedEntityName, out var targetEntity))
+            return sub;
+
+        // Resolve FK column name from property name
+        string? fkColumnName = null;
+        var targetColumnLookup = BuildColumnLookup(targetEntity);
+        if (targetColumnLookup.TryGetValue(nav.ForeignKeyPropertyName, out var fkCol))
+            fkColumnName = fkCol.ColumnName;
+        else
+            fkColumnName = nav.ForeignKeyPropertyName; // fallback
+
+        // Resolve PK column name from outer entity
+        string? pkColumnName = null;
+        foreach (var col in outerEntity.Columns)
+        {
+            if (col.Kind == Quarry.Shared.Migration.ColumnKind.PrimaryKey)
+            {
+                pkColumnName = col.ColumnName;
+                break;
+            }
+        }
+        if (pkColumnName == null) return sub;
+
+        var alias = $"sq{ctx.SubqueryAliasCounter++}";
+        var innerTableQuoted = QuoteIdentifier(targetEntity.TableName, ctx.Dialect);
+        var innerAliasQuoted = QuoteIdentifier(alias, ctx.Dialect);
+
+        // Build correlation: inner.FK = outer.PK
+        var fkQuoted = QuoteIdentifier(fkColumnName, ctx.Dialect);
+        var pkQuoted = QuoteIdentifier(pkColumnName, ctx.Dialect);
+        var outerQualifier = GetOuterQualifier(sub.OuterParameterName, ctx);
+        var correlationSql = $"{innerAliasQuoted}.{fkQuoted} = {outerQualifier}.{pkQuoted}";
+
+        // Bind predicate if present
+        SqlExpr? boundPredicate = sub.Predicate;
+        if (boundPredicate != null && sub.InnerParameterName != null)
+        {
+            // Create a child context for the inner entity
+            var innerColumnLookup = BuildColumnLookup(targetEntity);
+            var innerCtx = new BindContext(
+                targetEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
+                ctx.JoinedEntities, ctx.TableAliases, ctx.EntityLookup);
+            innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
+
+            // Override: inner parameter columns should be qualified with the subquery alias
+            // We create a custom table aliases map for the inner context
+            var innerAliases = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                [sub.InnerParameterName] = alias
+            };
+            // Also add outer aliases so outer refs resolve correctly
+            if (ctx.TableAliases != null)
+            {
+                foreach (var kv in ctx.TableAliases)
+                    innerAliases[kv.Key] = kv.Value;
+            }
+            // Map the outer parameter to its table
+            if (!innerAliases.ContainsKey(sub.OuterParameterName))
+            {
+                if (sub.OuterParameterName == ctx.LambdaParameterName)
+                    innerAliases[sub.OuterParameterName] = ctx.PrimaryEntity.TableName;
+                else if (ctx.JoinedEntities != null && ctx.JoinedEntities.TryGetValue(sub.OuterParameterName, out var oje))
+                    innerAliases[sub.OuterParameterName] = oje.TableName;
+            }
+
+            var innerJoined = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+            if (ctx.JoinedEntities != null)
+            {
+                foreach (var kv in ctx.JoinedEntities)
+                    innerJoined[kv.Key] = kv.Value;
+            }
+            // Add outer entity so outer param refs resolve
+            if (sub.OuterParameterName == ctx.LambdaParameterName)
+                innerJoined[sub.OuterParameterName] = ctx.PrimaryEntity;
+
+            innerCtx = new BindContext(
+                targetEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
+                innerJoined, innerAliases, ctx.EntityLookup);
+            innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
+
+            boundPredicate = BindExpr(boundPredicate, innerCtx, false);
+            ctx.SubqueryAliasCounter = innerCtx.SubqueryAliasCounter;
+        }
+
+        return new SubqueryExpr(
+            sub.OuterParameterName,
+            sub.NavigationPropertyName,
+            sub.SubqueryKind,
+            boundPredicate,
+            sub.InnerParameterName,
+            innerTableQuoted,
+            innerAliasQuoted,
+            correlationSql);
+    }
+
+    private static string GetOuterQualifier(string outerParamName, BindContext ctx)
+    {
+        if (ctx.TableAliases != null && ctx.TableAliases.TryGetValue(outerParamName, out var alias))
+            return QuoteIdentifier(alias, ctx.Dialect);
+        if (outerParamName == ctx.LambdaParameterName)
+            return QuoteIdentifier(ctx.PrimaryEntity.TableName, ctx.Dialect);
+        if (ctx.JoinedEntities != null && ctx.JoinedEntities.TryGetValue(outerParamName, out var je))
+            return QuoteIdentifier(je.TableName, ctx.Dialect);
+        return QuoteIdentifier(outerParamName, ctx.Dialect);
     }
 }

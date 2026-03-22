@@ -24,6 +24,17 @@ internal static class CallSiteTranslator
         BoundCallSite bound,
         CancellationToken ct)
     {
+        return Translate(bound, null, ct);
+    }
+
+    /// <summary>
+    /// Translates a bound call site with access to the entity registry for subquery resolution.
+    /// </summary>
+    public static TranslatedCallSite Translate(
+        BoundCallSite bound,
+        EntityRegistry? registry,
+        CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
 
         var raw = bound.Raw;
@@ -38,7 +49,7 @@ internal static class CallSiteTranslator
         // Attempt clause translation via SqlExpr pipeline
         try
         {
-            return TranslateClause(bound, ct);
+            return TranslateClause(bound, registry, ct);
         }
         catch
         {
@@ -48,7 +59,7 @@ internal static class CallSiteTranslator
         }
     }
 
-    private static TranslatedCallSite TranslateClause(BoundCallSite bound, CancellationToken ct)
+    private static TranslatedCallSite TranslateClause(BoundCallSite bound, EntityRegistry? registry, CancellationToken ct)
     {
         var raw = bound.Raw;
         var expression = raw.Expression!;
@@ -120,7 +131,8 @@ internal static class CallSiteTranslator
             lambdaParamName,
             joinedEntities: joinedEntities,
             tableAliases: tableAliases,
-            inBooleanContext: inBooleanContext);
+            inBooleanContext: inBooleanContext,
+            entityLookup: registry?.ByEntityName);
 
         // Step 2: Extract parameters
         int paramIndex = 0;
@@ -206,6 +218,8 @@ internal static class CallSiteTranslator
                 return ExtractLambdaParameterName(isNull.Operand);
             case LikeExpr like:
                 return ExtractLambdaParameterName(like.Operand);
+            case SubqueryExpr sub:
+                return sub.OuterParameterName;
             default:
                 return null;
         }
@@ -356,6 +370,10 @@ internal static class CallSiteTranslator
                 foreach (var e in list.Expressions)
                     if (ContainsUnsupportedRawExpr(e))
                         return true;
+                return false;
+            case SubqueryExpr sub:
+                if (sub.Predicate != null)
+                    return ContainsUnsupportedRawExpr(sub.Predicate);
                 return false;
             default:
                 return false;

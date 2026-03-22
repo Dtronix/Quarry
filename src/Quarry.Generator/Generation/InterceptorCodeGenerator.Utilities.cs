@@ -376,6 +376,7 @@ internal static partial class InterceptorCodeGenerator
             "Right" => $"Unsafe.As<BinaryExpression>({prevExpr}).Right",
             "Operand" => $"Unsafe.As<UnaryExpression>({prevExpr}).Operand",
             "Object" => $"Unsafe.As<MethodCallExpression>({prevExpr}).Object!",
+            "LambdaBody" => $"Unsafe.As<LambdaExpression>({prevExpr}).Body",
             "Expression" => $"Unsafe.As<MemberExpression>({prevExpr}).Expression!",
             "Test" => $"Unsafe.As<ConditionalExpression>({prevExpr}).Test",
             "IfTrue" => $"Unsafe.As<ConditionalExpression>({prevExpr}).IfTrue",

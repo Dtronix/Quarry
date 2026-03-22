@@ -91,10 +91,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // === Stage 4: Per-Site Translation (individually cached) ===
         var translatedCallSites = boundCallSites
-            .Select(static (bound, ct) =>
+            .Combine(entityRegistry)
+            .Select(static (pair, ct) =>
             {
-                try { return IR.CallSiteTranslator.Translate(bound, ct); }
-                catch { return new IR.TranslatedCallSite(bound); }
+                try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
+                catch { return new IR.TranslatedCallSite(pair.Left); }
             });
 
         // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===

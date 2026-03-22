@@ -57,7 +57,8 @@ internal enum SqlExprKind
     LikeExpr,
     CapturedValue,
     SqlRaw,
-    ExprList
+    ExprList,
+    Subquery
 }
 
 /// <summary>
@@ -90,4 +91,17 @@ internal enum SqlUnaryOperator
 {
     Not,
     Negate
+}
+
+/// <summary>
+/// Subquery kinds for navigation property collection methods.
+/// </summary>
+internal enum SubqueryKind
+{
+    /// <summary>.Any() or .Any(predicate) -> EXISTS (SELECT 1 FROM ...)</summary>
+    Exists,
+    /// <summary>.All(predicate) -> NOT EXISTS (SELECT 1 FROM ... AND NOT predicate)</summary>
+    All,
+    /// <summary>.Count() or .Count(predicate) -> (SELECT COUNT(*) FROM ...)</summary>
+    Count
 }

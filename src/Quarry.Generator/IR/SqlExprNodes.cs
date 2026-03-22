@@ -480,3 +480,85 @@ internal sealed class ExprListExpr : SqlExpr
         return true;
     }
 }
+
+/// <summary>
+/// Correlated subquery expression from navigation property collection methods
+/// (e.g., u.Orders.Any(), u.Orders.Count(o => o.Total > 100)).
+/// Created unresolved by the parser; resolved by the binder with entity metadata.
+/// </summary>
+internal sealed class SubqueryExpr : SqlExpr
+{
+    public override SqlExprKind Kind => SqlExprKind.Subquery;
+
+    // --- Parser-assigned fields (unresolved) ---
+    public string OuterParameterName { get; }
+    public string NavigationPropertyName { get; }
+    public SubqueryKind SubqueryKind { get; }
+    public SqlExpr? Predicate { get; }
+    public string? InnerParameterName { get; }
+
+    // --- Binder-assigned fields (resolved) ---
+    public string? InnerTableQuoted { get; }
+    public string? InnerAliasQuoted { get; }
+    public string? CorrelationSql { get; }
+    public bool IsResolved { get; }
+
+    public SubqueryExpr(
+        string outerParameterName,
+        string navigationPropertyName,
+        SubqueryKind subqueryKind,
+        SqlExpr? predicate,
+        string? innerParameterName)
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+    {
+        OuterParameterName = outerParameterName;
+        NavigationPropertyName = navigationPropertyName;
+        SubqueryKind = subqueryKind;
+        Predicate = predicate;
+        InnerParameterName = innerParameterName;
+        IsResolved = false;
+    }
+
+    public SubqueryExpr(
+        string outerParameterName,
+        string navigationPropertyName,
+        SubqueryKind subqueryKind,
+        SqlExpr? predicate,
+        string? innerParameterName,
+        string innerTableQuoted,
+        string innerAliasQuoted,
+        string correlationSql)
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+    {
+        OuterParameterName = outerParameterName;
+        NavigationPropertyName = navigationPropertyName;
+        SubqueryKind = subqueryKind;
+        Predicate = predicate;
+        InnerParameterName = innerParameterName;
+        InnerTableQuoted = innerTableQuoted;
+        InnerAliasQuoted = innerAliasQuoted;
+        CorrelationSql = correlationSql;
+        IsResolved = true;
+    }
+
+    private static int ComputeHash(string outerParam, string navProp, SubqueryKind kind, SqlExpr? predicate)
+    {
+        var hc = new HashCode();
+        hc.Add(SqlExprKind.Subquery);
+        hc.Add(outerParam);
+        hc.Add(navProp);
+        hc.Add((int)kind);
+        if (predicate != null) hc.Add(predicate.GetHashCode());
+        return hc.ToHashCode();
+    }
+
+    protected override bool DeepEquals(SqlExpr other)
+    {
+        var o = (SubqueryExpr)other;
+        return OuterParameterName == o.OuterParameterName
+            && NavigationPropertyName == o.NavigationPropertyName
+            && SubqueryKind == o.SubqueryKind
+            && InnerParameterName == o.InnerParameterName
+            && Equals(Predicate, o.Predicate);
+    }
+}

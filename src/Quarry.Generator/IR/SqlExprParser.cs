@@ -335,19 +335,30 @@ internal static class SqlExprParser
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var methodName = memberAccess.Name.Identifier.ValueText;
-            SqlExpr target;
+
+            // Check for subquery methods on navigation properties (e.g., u.Orders.Any())
+            if (IsSubqueryMethod(methodName))
+            {
+                var target = ParseExpression(memberAccess.Expression, lambdaParameters, context);
+                if (target is ColumnRefExpr navRef)
+                {
+                    return ParseSubqueryCall(navRef, methodName, invocation.ArgumentList, lambdaParameters, context);
+                }
+            }
+
+            SqlExpr target2;
             if (context != null)
             {
                 context.Push("Object");
-                target = ParseExpression(memberAccess.Expression, lambdaParameters, context);
+                target2 = ParseExpression(memberAccess.Expression, lambdaParameters, context);
                 context.Pop();
             }
             else
             {
-                target = ParseExpression(memberAccess.Expression, lambdaParameters, context);
+                target2 = ParseExpression(memberAccess.Expression, lambdaParameters, context);
             }
 
-            return MapMethodCall(target, methodName, arguments, lambdaParameters);
+            return MapMethodCall(target2, methodName, arguments, lambdaParameters);
         }
 
         // Handle simple invocation: Method(args) or Sql.Method(args) handled above
@@ -578,5 +589,84 @@ internal static class SqlExprParser
             ParenthesizedLambdaExpressionSyntax paren => paren.Body as ExpressionSyntax,
             _ => null
         };
+    }
+
+    private static bool IsSubqueryMethod(string methodName)
+    {
+        return methodName == "Any" || methodName == "All" || methodName == "Count";
+    }
+
+    private static SqlExpr ParseSubqueryCall(
+        ColumnRefExpr navRef,
+        string methodName,
+        ArgumentListSyntax argumentList,
+        HashSet<string> lambdaParameters,
+        ParseContext? context)
+    {
+        var kind = methodName switch
+        {
+            "Any" => SubqueryKind.Exists,
+            "All" => SubqueryKind.All,
+            "Count" => SubqueryKind.Count,
+            _ => SubqueryKind.Exists
+        };
+
+        SqlExpr? predicate = null;
+        string? innerParamName = null;
+
+        if (argumentList.Arguments.Count == 1)
+        {
+            var argExpr = argumentList.Arguments[0].Expression;
+            if (argExpr is SimpleLambdaExpressionSyntax simpleLambda)
+            {
+                innerParamName = simpleLambda.Parameter.Identifier.ValueText;
+                var innerParams = new HashSet<string>(lambdaParameters, StringComparer.Ordinal) { innerParamName };
+                var body = simpleLambda.Body as ExpressionSyntax;
+                if (body != null)
+                {
+                    if (context != null)
+                    {
+                        context.Push("Arguments[1]");
+                        context.Push("LambdaBody");
+                        predicate = ParseExpression(body, innerParams, context);
+                        context.Pop();
+                        context.Pop();
+                    }
+                    else
+                    {
+                        predicate = ParseExpression(body, innerParams, null);
+                    }
+                }
+            }
+            else if (argExpr is ParenthesizedLambdaExpressionSyntax parenLambda
+                     && parenLambda.ParameterList.Parameters.Count == 1)
+            {
+                innerParamName = parenLambda.ParameterList.Parameters[0].Identifier.ValueText;
+                var innerParams = new HashSet<string>(lambdaParameters, StringComparer.Ordinal) { innerParamName };
+                var body = parenLambda.Body as ExpressionSyntax;
+                if (body != null)
+                {
+                    if (context != null)
+                    {
+                        context.Push("Arguments[1]");
+                        context.Push("LambdaBody");
+                        predicate = ParseExpression(body, innerParams, context);
+                        context.Pop();
+                        context.Pop();
+                    }
+                    else
+                    {
+                        predicate = ParseExpression(body, innerParams, null);
+                    }
+                }
+            }
+        }
+
+        return new SubqueryExpr(
+            navRef.ParameterName,
+            navRef.PropertyName,
+            kind,
+            predicate,
+            innerParamName);
     }
 }
