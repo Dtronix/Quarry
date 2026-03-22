@@ -43,10 +43,11 @@ internal static class SqlAssembler
         }
 
         // Build SQL for each mask
+        var insertInfo = executionSite.Bound.InsertInfo;
         var maxParamCount = 0;
         foreach (var mask in plan.PossibleMasks)
         {
-            var result = RenderSqlForMask(plan, mask, dialect);
+            var result = RenderSqlForMask(plan, mask, dialect, insertInfo);
             sqlVariants[mask] = result;
             if (result.ParameterCount > maxParamCount)
                 maxParamCount = result.ParameterCount;
@@ -75,14 +76,14 @@ internal static class SqlAssembler
     /// <summary>
     /// Renders the complete SQL for a given mask value.
     /// </summary>
-    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, ulong mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         return plan.Kind switch
         {
             QueryKind.Select => RenderSelectSql(plan, mask, dialect),
             QueryKind.Delete => RenderDeleteSql(plan, mask, dialect),
             QueryKind.Update => RenderUpdateSql(plan, mask, dialect),
-            QueryKind.Insert => RenderInsertSql(plan, mask, dialect),
+            QueryKind.Insert => RenderInsertSql(plan, mask, dialect, insertInfo),
             _ => new AssembledSqlVariant("", 0)
         };
     }
@@ -277,7 +278,7 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
-    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, ulong mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         var sb = new StringBuilder();
 
@@ -299,6 +300,26 @@ internal static class SqlAssembler
                 sb.Append(SqlFormatting.FormatParameter(dialect, plan.InsertColumns[i].ParameterIndex));
             }
             sb.Append(')');
+        }
+
+        // RETURNING clause for identity column
+        if (insertInfo?.QuotedIdentityColumnName != null)
+        {
+            switch (dialect)
+            {
+                case SqlDialect.SQLite:
+                case SqlDialect.PostgreSQL:
+                    sb.Append(" RETURNING ");
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName!));
+                    break;
+                case SqlDialect.SqlServer:
+                    sb.Append(" OUTPUT INSERTED.");
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName!));
+                    break;
+                case SqlDialect.MySQL:
+                    // MySQL uses LAST_INSERT_ID() separately
+                    break;
+            }
         }
 
         return new AssembledSqlVariant(sb.ToString(), plan.InsertColumns.Count);
