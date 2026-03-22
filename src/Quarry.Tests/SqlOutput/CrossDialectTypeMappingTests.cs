@@ -73,10 +73,10 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
             Pg.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             My.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             Ss.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
-            sqlite: "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = 1)",
-            pg:     "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = TRUE)",
-            mysql:  "SELECT `AccountId`, `AccountName` FROM `accounts` WHERE (`IsActive` = 1)",
-            ss:     "SELECT [AccountId], [AccountName] FROM [accounts] WHERE ([IsActive] = 1)");
+            sqlite: "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `AccountId`, `AccountName` FROM `accounts` WHERE `IsActive` = 1",
+            ss:     "SELECT [AccountId], [AccountName] FROM [accounts] WHERE [IsActive] = 1");
     }
 
     #endregion

@@ -19,10 +19,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName, "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
     }
 
     [Test]
@@ -51,10 +51,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(new Pg.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(new My.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(new Ss.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 1");
     }
 
     #endregion
@@ -69,10 +69,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName, "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = @p1 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 1");
     }
 
     #endregion
@@ -88,10 +88,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName, "x").Where(u => u.UserId == id).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = @p1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = $2)",
-            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = ?)",
-            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = @p1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = @p1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = $2",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = ?",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = @p1");
     }
 
     #endregion
@@ -106,10 +106,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             My.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             Ss.Accounts().Update().Set(a => a.Balance, new Money(100m)).Where(a => a.AccountId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE (\"AccountId\" = 1)",
-            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE (\"AccountId\" = 1)",
-            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE (`AccountId` = 1)",
-            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE ([AccountId] = 1)");
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1");
     }
 
     #endregion
@@ -124,10 +124,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE [UserId] = 1");
     }
 
     [Test]
@@ -156,10 +156,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = 0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1");
     }
 
     #endregion
@@ -174,10 +174,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive, false).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = @p0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = $1 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = @p0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = @p0 WHERE [UserId] = 1");
     }
 
     #endregion
@@ -193,10 +193,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ? WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
     }
 
     [Test]
@@ -208,10 +208,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = 0 WHERE (\"UserId\" = 1)",
-            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = FALSE WHERE (\"UserId\" = 1)",
-            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE (`UserId` = 1)",
-            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE ([UserId] = 1)");
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0, \"IsActive\" = 0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = FALSE WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE [UserId] = 1");
     }
 
     #endregion
@@ -226,10 +226,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             Pg.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             My.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             Ss.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE (\"AccountId\" = 1)",
-            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE (\"AccountId\" = 1)",
-            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE (`AccountId` = 1)",
-            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE ([AccountId] = 1)");
+            sqlite: "UPDATE \"accounts\" SET \"Balance\" = @p0 WHERE \"AccountId\" = 1",
+            pg:     "UPDATE \"accounts\" SET \"Balance\" = $1 WHERE \"AccountId\" = 1",
+            mysql:  "UPDATE `accounts` SET `Balance` = ? WHERE `AccountId` = 1",
+            ss:     "UPDATE [accounts] SET [Balance] = @p0 WHERE [AccountId] = 1");
     }
 
     #endregion

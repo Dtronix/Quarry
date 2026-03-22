@@ -135,7 +135,7 @@ internal static class SqlAssembler
             sb.Append(" ON ");
 
             var paramsBefore = CountParameters(join.OnCondition);
-            sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex));
+            sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
             paramIndex += paramsBefore;
         }
 
@@ -465,17 +465,11 @@ internal static class SqlAssembler
     /// </summary>
     private static string RenderWhereCondition(SqlExpr condition, SqlDialect dialect, int paramIndex)
     {
-        // Strip outer parens for compound AND/OR (redundant in WHERE context)
-        // and for comparisons involving subqueries (subqueries provide their own grouping)
-        if (condition is BinaryOpExpr bin)
-        {
-            var strip = bin.Operator == SqlBinaryOperator.And
-                || bin.Operator == SqlBinaryOperator.Or
-                || bin.Left is SubqueryExpr
-                || bin.Right is SubqueryExpr;
-            if (strip)
-                return SqlExprRenderer.Render(condition, dialect, paramIndex, stripOuterParens: true);
-        }
+        // Strip redundant outer parens from any top-level binary expression in WHERE context.
+        // The renderer wraps all BinaryOpExpr in parens, but a top-level WHERE condition
+        // doesn't need them (e.g., WHERE col > 50 not WHERE (col > 50)).
+        if (condition is BinaryOpExpr)
+            return SqlExprRenderer.Render(condition, dialect, paramIndex, stripOuterParens: true);
         return SqlExprRenderer.Render(condition, dialect, paramIndex);
     }
 

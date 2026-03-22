@@ -123,6 +123,18 @@ internal static class CallSiteTranslator
                 }
             }
         }
+        // For non-join clauses in a join context (WHERE/SELECT/OrderBy after JOIN),
+        // set up joined entity info by matching ColumnRefExpr parameter names to entities.
+        else if (clauseKind != ClauseKind.Join && bound.JoinedEntities != null && bound.JoinedEntities.Count >= 2)
+        {
+            var paramEntityMapping = ResolveJoinParameterMapping(expression, bound);
+            if (paramEntityMapping != null)
+            {
+                lambdaParamName = paramEntityMapping.Value.PrimaryParam;
+                joinedEntities = paramEntityMapping.Value.JoinedEntities;
+                tableAliases = paramEntityMapping.Value.TableAliases;
+            }
+        }
 
         var boundExpr = SqlExprBinder.Bind(
             expression,
@@ -298,6 +310,204 @@ internal static class CallSiteTranslator
             navigations: entity.Navigations,
             indexes: Array.Empty<IndexInfo>(),
             location: Microsoft.CodeAnalysis.Location.None);
+    }
+
+    private readonly struct JoinParameterMapping
+    {
+        public readonly string PrimaryParam;
+        public readonly Dictionary<string, EntityInfo> JoinedEntities;
+        public readonly Dictionary<string, string> TableAliases;
+
+        public JoinParameterMapping(string primaryParam,
+            Dictionary<string, EntityInfo> joinedEntities,
+            Dictionary<string, string> tableAliases)
+        {
+            PrimaryParam = primaryParam;
+            JoinedEntities = joinedEntities;
+            TableAliases = tableAliases;
+        }
+    }
+
+    /// <summary>
+    /// For non-join clauses in a join context, resolves which lambda parameter names
+    /// map to which entities by checking ColumnRefExpr property names against entity columns.
+    /// </summary>
+    private static JoinParameterMapping? ResolveJoinParameterMapping(SqlExpr expression, BoundCallSite bound)
+    {
+        var allParams = new HashSet<string>(StringComparer.Ordinal);
+        CollectParameterNames(expression, allParams);
+        if (allParams.Count == 0)
+            return null;
+
+        // Build column lookup for each entity in the join
+        // JoinedEntities[0] = primary entity, [1] = first joined, etc.
+        var entityColumnSets = new List<HashSet<string>>(bound.JoinedEntities!.Count);
+        for (int i = 0; i < bound.JoinedEntities.Count; i++)
+        {
+            var colSet = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var col in bound.JoinedEntities[i].Columns)
+                colSet.Add(col.PropertyName);
+            entityColumnSets.Add(colSet);
+        }
+
+        // Map each parameter name to its entity index
+        var paramToEntityIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var paramName in allParams)
+        {
+            var referencedProps = new HashSet<string>(StringComparer.Ordinal);
+            CollectPropertyNamesForParam(expression, paramName, referencedProps);
+
+            for (int i = 0; i < entityColumnSets.Count; i++)
+            {
+                bool matches = false;
+                foreach (var prop in referencedProps)
+                {
+                    if (entityColumnSets[i].Contains(prop))
+                    {
+                        matches = true;
+                        break;
+                    }
+                }
+                if (matches)
+                {
+                    paramToEntityIndex[paramName] = i;
+                    break;
+                }
+            }
+        }
+
+        // Determine primary param (maps to entity index 0)
+        string? primaryParam = null;
+        foreach (var kvp in paramToEntityIndex)
+        {
+            if (kvp.Value == 0)
+            {
+                primaryParam = kvp.Key;
+                break;
+            }
+        }
+
+        // If no param maps to primary entity, pick the first unused param name or use placeholder
+        if (primaryParam == null)
+        {
+            // The primary entity's param isn't in the expression (e.g., (u, o) => o.Total > 50)
+            // Use a placeholder that won't conflict
+            primaryParam = "_qprimary";
+        }
+
+        // Build joinedEntities and tableAliases
+        var joinedEntities = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+        var tableAliases = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [primaryParam] = "t0"
+        };
+
+        foreach (var kvp in paramToEntityIndex)
+        {
+            if (kvp.Value > 0)
+            {
+                var entityRef = bound.JoinedEntities[kvp.Value];
+                var entityInfo = ReconstructEntityInfoFromRef(entityRef);
+                if (entityInfo != null)
+                {
+                    joinedEntities[kvp.Key] = entityInfo;
+                    tableAliases[kvp.Key] = "t" + kvp.Value;
+                }
+            }
+        }
+
+        // Even if no joined entity columns are used in this clause, we still need
+        // the table aliases so the primary entity columns get the "t0" prefix
+        return new JoinParameterMapping(primaryParam, joinedEntities, tableAliases);
+    }
+
+    /// <summary>
+    /// Collects all unique lambda parameter names from ColumnRefExpr nodes in the tree.
+    /// </summary>
+    private static void CollectParameterNames(SqlExpr expr, HashSet<string> names)
+    {
+        switch (expr)
+        {
+            case ColumnRefExpr colRef:
+                names.Add(colRef.ParameterName);
+                break;
+            case BinaryOpExpr bin:
+                CollectParameterNames(bin.Left, names);
+                CollectParameterNames(bin.Right, names);
+                break;
+            case UnaryOpExpr unary:
+                CollectParameterNames(unary.Operand, names);
+                break;
+            case FunctionCallExpr func:
+                foreach (var arg in func.Arguments)
+                    CollectParameterNames(arg, names);
+                break;
+            case InExpr inExpr:
+                CollectParameterNames(inExpr.Operand, names);
+                foreach (var val in inExpr.Values)
+                    CollectParameterNames(val, names);
+                break;
+            case IsNullCheckExpr isNull:
+                CollectParameterNames(isNull.Operand, names);
+                break;
+            case LikeExpr like:
+                CollectParameterNames(like.Operand, names);
+                CollectParameterNames(like.Pattern, names);
+                break;
+            case ExprListExpr list:
+                foreach (var e in list.Expressions)
+                    CollectParameterNames(e, names);
+                break;
+            case SubqueryExpr sub:
+                if (sub.Predicate != null)
+                    CollectParameterNames(sub.Predicate, names);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Collects all property names referenced by ColumnRefExpr nodes for a specific parameter name.
+    /// </summary>
+    private static void CollectPropertyNamesForParam(SqlExpr expr, string paramName, HashSet<string> props)
+    {
+        switch (expr)
+        {
+            case ColumnRefExpr colRef:
+                if (colRef.ParameterName == paramName)
+                    props.Add(colRef.PropertyName);
+                break;
+            case BinaryOpExpr bin:
+                CollectPropertyNamesForParam(bin.Left, paramName, props);
+                CollectPropertyNamesForParam(bin.Right, paramName, props);
+                break;
+            case UnaryOpExpr unary:
+                CollectPropertyNamesForParam(unary.Operand, paramName, props);
+                break;
+            case FunctionCallExpr func:
+                foreach (var arg in func.Arguments)
+                    CollectPropertyNamesForParam(arg, paramName, props);
+                break;
+            case InExpr inExpr:
+                CollectPropertyNamesForParam(inExpr.Operand, paramName, props);
+                foreach (var val in inExpr.Values)
+                    CollectPropertyNamesForParam(val, paramName, props);
+                break;
+            case IsNullCheckExpr isNull:
+                CollectPropertyNamesForParam(isNull.Operand, paramName, props);
+                break;
+            case LikeExpr like:
+                CollectPropertyNamesForParam(like.Operand, paramName, props);
+                CollectPropertyNamesForParam(like.Pattern, paramName, props);
+                break;
+            case ExprListExpr list:
+                foreach (var e in list.Expressions)
+                    CollectPropertyNamesForParam(e, paramName, props);
+                break;
+            case SubqueryExpr sub:
+                if (sub.Predicate != null)
+                    CollectPropertyNamesForParam(sub.Predicate, paramName, props);
+                break;
+        }
     }
 
     /// <summary>

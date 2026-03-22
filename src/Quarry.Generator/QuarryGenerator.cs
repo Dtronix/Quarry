@@ -607,15 +607,30 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
             // Skip chains with incomplete tuple result types (e.g., "( Name,  Total)" instead of
             // "(string Name, decimal Total)"). This happens when a joined query with Select projection
-            // is stored in a variable and executed on a separate statement — the chain can't see the
+            // is stored in a variable and executed on a separate statement -- the chain can't see the
             // Select clause, and the semantic model can't resolve generated entity types in tuple elements.
+            // But do NOT skip if the chain has a Select clause site -- that means the projection was
+            // resolved inline and the SQL is correct despite the incomplete type name.
             if (assembled.ResultTypeName != null
                 && assembled.ResultTypeName.StartsWith("(")
                 && assembled.ResultTypeName.Contains(",")
                 && System.Text.RegularExpressions.Regex.IsMatch(assembled.ResultTypeName, @"\(\s\w"))
             {
-                trace.AppendLine($"//   SKIPPED incomplete tuple result: ExecUniqueId={assembled.ExecutionSite.Bound.Raw.UniqueId} ResultType={assembled.ResultTypeName}");
-                continue;
+                // Check if the chain has its own Select clause -- if so, projection is resolved
+                var hasSelectClause = false;
+                foreach (var cs in assembled.ClauseSites)
+                {
+                    if (cs.Bound.Raw.Kind == InterceptorKind.Select)
+                    {
+                        hasSelectClause = true;
+                        break;
+                    }
+                }
+                if (!hasSelectClause)
+                {
+                    trace.AppendLine($"//   SKIPPED incomplete tuple result: ExecUniqueId={assembled.ExecutionSite.Bound.Raw.UniqueId} ResultType={assembled.ResultTypeName}");
+                    continue;
+                }
             }
 
             // Convert AssembledSqlVariant → PrebuiltSqlResult

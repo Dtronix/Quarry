@@ -100,7 +100,7 @@ public class EndToEndSqlTests
     public void Where_Comparison_GreaterThan()
     {
         var sql = _db.Users().Where(u => u.UserId > 0).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"UserId\" > 0)"));
+        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE \"UserId\" > 0"));
     }
 
     [Test]
@@ -110,7 +110,7 @@ public class EndToEndSqlTests
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND ((\"UserId\" > 0))"));
+        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)"));
     }
 
     #endregion
@@ -200,7 +200,7 @@ public class EndToEndSqlTests
     public void Orders_Where()
     {
         var sql = _db.Orders().Where(o => o.OrderId > 0).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"orders\" WHERE (\"OrderId\" > 0)"));
+        Assert.That(sql, Is.EqualTo("SELECT * FROM \"orders\" WHERE \"OrderId\" > 0"));
     }
 
     #endregion

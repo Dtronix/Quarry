@@ -45,10 +45,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Limit(10).Offset(0)
                 .Select((u, o) => (u.UserName, o.Total, o.Status))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` ORDER BY `t1`.`Total` DESC LIMIT 10",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = 1 ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = TRUE ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` = 1 ORDER BY `t1`.`Total` DESC LIMIT 10",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] = 1 ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
     }
 
     #endregion

@@ -18,10 +18,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Pg.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             My.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             Ss.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
-            pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = $1)",
-            mysql:  "SELECT * FROM `orders` WHERE (`Priority` = ?)",
-            ss:     "SELECT * FROM [orders] WHERE ([Priority] = @p0)");
+            sqlite: "SELECT * FROM \"orders\" WHERE \"Priority\" = @p0",
+            pg:     "SELECT * FROM \"orders\" WHERE \"Priority\" = $1",
+            mysql:  "SELECT * FROM `orders` WHERE `Priority` = ?",
+            ss:     "SELECT * FROM [orders] WHERE [Priority] = @p0");
     }
 
     #region Boolean in INSERT
@@ -71,10 +71,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Pg.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
             My.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
             Ss.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE (\"OrderId\" = 1)",
-            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE (\"OrderId\" = 1)",
-            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE (`OrderId` = 1)",
-            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE ([OrderId] = 1)");
+            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE \"OrderId\" = 1",
+            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE \"OrderId\" = 1",
+            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE `OrderId` = 1",
+            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE [OrderId] = 1");
     }
 
     #endregion
