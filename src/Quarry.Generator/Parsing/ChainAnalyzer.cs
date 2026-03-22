@@ -303,8 +303,13 @@ internal static class ChainAnalyzer
                         else
                         {
                             // Single Set: column = value from the expression
+                            // The lambda u => u.Column produces the column reference only.
+                            // The value parameter is the second arg to Set(), handled at runtime
+                            // by the emitter via SetClauseInfo.ValueParameterIndex.
                             var col = new ResolvedColumnExpr(SqlExprRenderer.Render(expr, site.Bound.Dialect));
-                            var valExpr = new ParamSlotExpr(paramGlobalIndex - 1, "object", "@p" + (paramGlobalIndex - 1));
+                            // Use the next available parameter index for the value slot
+                            var valueIdx = clauseParams.Count > 0 ? paramGlobalIndex - 1 : paramGlobalIndex;
+                            var valExpr = new ParamSlotExpr(valueIdx, "object", "@p" + valueIdx);
                             setTerms.Add(new SetTerm(col, valExpr, clause.CustomTypeMappingClass, clauseBitIndex));
                         }
                         break;
