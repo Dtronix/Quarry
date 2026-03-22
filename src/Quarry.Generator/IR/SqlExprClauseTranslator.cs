@@ -247,6 +247,11 @@ internal sealed class SqlExprClauseTranslator
                             isCollection: true, elementTypeName: elementType);
                         changed = true;
                     }
+                    else if (inExpr.Values[i] is LiteralExpr)
+                    {
+                        // Inlined constant literals (from constant array resolution) stay as literals
+                        newValues[i] = inExpr.Values[i];
+                    }
                     else
                     {
                         newValues[i] = ExtractParameters(inExpr.Values[i], parameters, ref paramIndex);

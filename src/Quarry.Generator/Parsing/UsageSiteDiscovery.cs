@@ -665,13 +665,8 @@ internal static class UsageSiteDiscovery
         }
         else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
         {
-            // Neither ClauseInfo nor PendingClauseInfo - try direct SqlExpr parsing
+            // Neither ClauseInfo nor PendingClauseInfo — try direct SqlExpr parsing
             var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
-            // TEMP DIAG: force marker into expression
-            if (parsed == null)
-                expression = new IR.SqlRawExpr("/* PARSE_NULL */");
-            else
-                expression = new IR.SqlRawExpr($"/* PARSE_OK type={parsed.Value.Expression.GetType().Name} */");
             if (parsed != null)
             {
                 expression = parsed.Value.Expression;
