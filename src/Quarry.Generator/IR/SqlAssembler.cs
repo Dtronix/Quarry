@@ -106,7 +106,7 @@ internal static class SqlAssembler
         if (plan.IsDistinct)
             sb.Append("DISTINCT ");
 
-        if (plan.Projection.Columns.Count > 0 && !plan.Projection.IsIdentity)
+        if (plan.Projection.Columns.Count > 0)
         {
             AppendSelectColumns(sb, dialect, plan.Projection.Columns);
         }

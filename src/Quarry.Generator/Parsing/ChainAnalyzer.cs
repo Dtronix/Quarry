@@ -229,6 +229,7 @@ internal static class ChainAnalyzer
         int? limitLiteral = null;
         int? offsetLiteral = null;
         bool isDistinct = false;
+        bool hasSelectClause = false;
         SelectProjection? projection = null;
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
@@ -411,6 +412,7 @@ internal static class ChainAnalyzer
             }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
+                hasSelectClause = true;
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
             }
         }
@@ -433,6 +435,43 @@ internal static class ChainAnalyzer
                 executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
                 Array.Empty<ProjectedColumn>(),
                 isIdentity: true);
+        }
+
+        // Enrich identity projections with entity columns so SqlAssembler renders
+        // explicit column names instead of SELECT *.
+        // Only for chains that have an explicit Select clause (hasSelectClause flag).
+        // Discovery may produce wrong columns (e.g. computed properties like DisplayLabel),
+        // so we always use the authoritative entity column metadata from EntityRef.
+        if (hasSelectClause && projection.IsIdentity)
+        {
+            var entityRef = executionSite.Bound.Entity;
+            if (entityRef != null && entityRef.Columns.Count > 0)
+            {
+                var entityCols = new List<ProjectedColumn>();
+                var ord = 0;
+                foreach (var ec in entityRef.Columns)
+                {
+                    entityCols.Add(new ProjectedColumn(
+                        propertyName: ec.PropertyName,
+                        columnName: ec.ColumnName,
+                        clrType: ec.ClrType,
+                        fullClrType: ec.FullClrType,
+                        isNullable: ec.IsNullable,
+                        ordinal: ord++,
+                        customTypeMapping: ec.CustomTypeMappingClass,
+                        isValueType: ec.IsValueType,
+                        readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
+                        isForeignKey: ec.Kind == ColumnKind.ForeignKey,
+                        foreignKeyEntityName: ec.ReferencedEntityName,
+                        isEnum: ec.IsEnum));
+                }
+                projection = new SelectProjection(
+                    projection.Kind,
+                    projection.ResultTypeName,
+                    entityCols,
+                    customEntityReaderClass: entityRef.CustomEntityReaderClass,
+                    isIdentity: true);
+            }
         }
 
         // Handle insert columns

@@ -557,20 +557,34 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var enrichedProjections = new Dictionary<string, ProjectionInfo>(StringComparer.Ordinal);
         foreach (var assembled in group.AssembledPlans)
         {
-            if (assembled.Plan.Projection != null && assembled.Plan.Projection.Columns.Count > 0)
+            if (assembled.Plan.Projection != null)
             {
-                // Strip SqlExpression from non-aggregate columns for bridge compatibility
-                var bridgeCols = StripNonAggregateSqlExpressions(assembled.Plan.Projection.Columns);
-                var enrichedProj = new ProjectionInfo(
-                    assembled.Plan.Projection.Kind,
-                    assembled.Plan.Projection.ResultTypeName,
-                    bridgeCols,
-                    customEntityReaderClass: assembled.Plan.Projection.CustomEntityReaderClass);
-
-                foreach (var cs in assembled.ClauseSites)
+                ProjectionInfo? enrichedProj = null;
+                if (assembled.Plan.Projection.Columns.Count > 0)
                 {
-                    if (cs.Bound.Raw.Kind == InterceptorKind.Select)
-                        enrichedProjections[cs.Bound.Raw.UniqueId] = enrichedProj;
+                    // Strip SqlExpression from non-aggregate columns for bridge compatibility
+                    var bridgeCols = StripNonAggregateSqlExpressions(assembled.Plan.Projection.Columns);
+                    enrichedProj = new ProjectionInfo(
+                        assembled.Plan.Projection.Kind,
+                        assembled.Plan.Projection.ResultTypeName,
+                        bridgeCols,
+                        customEntityReaderClass: assembled.Plan.Projection.CustomEntityReaderClass);
+                }
+                else if (assembled.Plan.Projection.IsIdentity)
+                {
+                    // Identity projection (Select(u => u)) - build columns from entity metadata
+                    var entityRef = assembled.ExecutionSite.Bound.Entity;
+                    if (entityRef != null && entityRef.Columns.Count > 0)
+                        enrichedProj = BuildEntityProjectionFromEntityRef(entityRef);
+                }
+
+                if (enrichedProj != null)
+                {
+                    foreach (var cs in assembled.ClauseSites)
+                    {
+                        if (cs.Bound.Raw.Kind == InterceptorKind.Select)
+                            enrichedProjections[cs.Bound.Raw.UniqueId] = enrichedProj;
+                    }
                 }
             }
         }
