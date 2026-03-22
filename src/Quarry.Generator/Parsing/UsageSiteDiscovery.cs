@@ -70,7 +70,8 @@ internal static class UsageSiteDiscovery
         ["Delete"] = InterceptorKind.DeleteTransition,
         ["Update"] = InterceptorKind.UpdateTransition,
         ["All"] = InterceptorKind.AllTransition,
-        ["Insert"] = InterceptorKind.InsertTransition
+        ["Insert"] = InterceptorKind.InsertTransition,
+        ["Trace"] = InterceptorKind.Trace
     };
 
     // Methods on InsertBuilder that need special handling
@@ -651,8 +652,13 @@ internal static class UsageSiteDiscovery
         }
         else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
         {
-            // Neither ClauseInfo nor PendingClauseInfo — try direct SqlExpr parsing
+            // Neither ClauseInfo nor PendingClauseInfo - try direct SqlExpr parsing
             var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
+            // TEMP DIAG: force marker into expression
+            if (parsed == null)
+                expression = new IR.SqlRawExpr("/* PARSE_NULL */");
+            else
+                expression = new IR.SqlRawExpr($"/* PARSE_OK type={parsed.Value.Expression.GetType().Name} */");
             if (parsed != null)
             {
                 expression = parsed.Value.Expression;
@@ -708,6 +714,21 @@ internal static class UsageSiteDiscovery
                     lambdaParamNames = ImmutableArray.CreateRange(ordered);
             }
         }
+
+        // Trace logging: record discovery path for every site
+        var uid = usageSite.UniqueId;
+        IR.TraceCapture.Log(uid, $"[Trace] Discovery ({usageSite.MethodName} at line {usageSite.Line}):");
+        IR.TraceCapture.Log(uid, $"  kind={usageSite.Kind}, isAnalyzable={usageSite.IsAnalyzable}");
+        if (usageSite.PendingClauseInfo != null)
+            IR.TraceCapture.Log(uid, "  path=PendingClauseInfo");
+        else if (usageSite.ClauseInfo != null && usageSite.ClauseInfo.IsSuccess)
+            IR.TraceCapture.Log(uid, "  path=ClauseInfo.IsSuccess -> TryParseLambdaToSqlExpr");
+        else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
+            IR.TraceCapture.Log(uid, "  path=else-if-analyzable -> TryParseLambdaToSqlExpr");
+        if (expression != null)
+            IR.TraceCapture.Log(uid, $"  parsedExpr={expression.GetType().Name}");
+        if (!usageSite.IsAnalyzable && usageSite.NonAnalyzableReason != null)
+            IR.TraceCapture.Log(uid, $"  nonAnalyzableReason={usageSite.NonAnalyzableReason}");
 
         return new RawCallSite(
             methodName: usageSite.MethodName,
@@ -777,6 +798,9 @@ internal static class UsageSiteDiscovery
 
         // Annotate captured variable types using semantic model (needed for collection IN expansion)
         sqlExpr = IR.SqlExprAnnotator.AnnotateCapturedTypes(sqlExpr, body, semanticModel);
+
+        // Inline constant collection arrays (e.g., new[] { "a", "b" }.Contains(x) → IN ('a', 'b'))
+        sqlExpr = IR.SqlExprAnnotator.InlineConstantCollections(sqlExpr, body, semanticModel);
 
         var isDescending = false;
         if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
@@ -1321,6 +1345,9 @@ internal static class UsageSiteDiscovery
 
         // Annotate captured variable types using semantic model (needed for collection IN expansion)
         sqlExpr = IR.SqlExprAnnotator.AnnotateCapturedTypes(sqlExpr, body, semanticModel);
+
+        // Inline constant collection arrays (e.g., new[] { "a", "b" }.Contains(x) → IN ('a', 'b'))
+        sqlExpr = IR.SqlExprAnnotator.InlineConstantCollections(sqlExpr, body, semanticModel);
 
         // Determine if this is descending order (for OrderBy/ThenBy)
         var isDescending = false;

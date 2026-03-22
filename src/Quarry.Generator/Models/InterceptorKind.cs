@@ -202,6 +202,12 @@ internal enum InterceptorKind
     InsertTransition,
 
     /// <summary>
+    /// .Trace() method - compile-time-only signal for chain tracing.
+    /// No interceptor generated; marks the chain as traced for inline comment emission.
+    /// </summary>
+    Trace,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

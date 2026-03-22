@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace Quarry.Generator.IR;
+namespace Quarry.Generators.IR;
 
 /// <summary>
 /// Side-channel accumulator for per-site trace messages.
