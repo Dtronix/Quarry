@@ -1,128 +1,110 @@
-# Quarry Compiler Migration Handoff
+# Work Handoff
 
 ## Key Components
 
 - **New Pipeline**: RawCallSite → BoundCallSite → TranslatedCallSite → [Collect] → ChainAnalyzer → QueryPlan → SqlAssembler → AssembledPlan → CarrierAnalyzer → CarrierPlan → FileInterceptorGroup
-- **Bridge Layer**: REMOVED. EmitFileInterceptorsNewPipeline now passes new types (TranslatedCallSite, AssembledPlan, CarrierPlan) directly to emitters. No more UsageSiteInfo/PrebuiltChainInfo conversion.
-- **FileInterceptorGroup**: Simplified to single constructor with new types only (Sites: TranslatedCallSite[], AssembledPlans, ChainMemberSites, CarrierPlans). Old dual-type design removed.
-- **PipelineOrchestrator**: Converted to static class. Old instance methods (AnalyzeAndGroup, GroupIntoFiles) removed. Only AnalyzeAndGroupTranslated remains.
-- **CarrierPlan**: ClassName and BaseClassName now assigned during emission in FileEmitter (not during analysis). CarrierAnalyzer.AnalyzeNew sets them to null/empty, FileEmitter assigns "Chain_N" names.
-- **AssembledPlan**: Added convenience properties mirroring PrebuiltChainInfo API (QueryKind, TableName, SchemaName, IsJoinChain, ChainParameters, UnmatchedMethodNames, Tier, etc.). GetClauseEntries() replaces chain.Analysis.Clauses. ProjectionInfo/TraceLines/JoinedTableInfos set by EmitFileInterceptorsNewPipeline.
-- **TranslatedClause**: Added SqlFragment property (lazy-rendered from ResolvedExpression) and ColumnSql alias. These replace ClauseInfo.SqlFragment for emitters that need pre-rendered SQL.
-- **ChainId Scoping**: Unchanged from previous session.
-- **Trace Logging**: TraceCapture data now flows to AssembledPlan.TraceLines directly (set in EmitFileInterceptorsNewPipeline). FileEmitter reads chain.TraceLines from AssembledPlan. Trace format unchanged.
-- **Subquery Support**: Unchanged.
-- **TestCapturedChains**: Unchanged.
+- **Bridge Layer**: REMOVED. EmitFileInterceptorsNewPipeline passes new types directly to emitters.
+- **FileInterceptorGroup**: Single constructor with new types only (Sites: TranslatedCallSite[], AssembledPlans, ChainMemberSites, CarrierPlans).
+- **PipelineOrchestrator**: Static class. Only AnalyzeAndGroupTranslated remains.
+- **CarrierPlan**: ClassName/BaseClassName assigned during emission in FileEmitter.
+- **AssembledPlan**: Has convenience properties mirroring PrebuiltChainInfo API. ProjectionInfo/TraceLines/JoinedTableInfos set by EmitFileInterceptorsNewPipeline.
+- **TranslatedClause**: Has SqlFragment (lazy-rendered) and SetAssignments for SetAction.
+- **TestCallSiteBuilder**: New test helper in `src/Quarry.Tests/Testing/TestCallSiteBuilder.cs` for constructing TranslatedCallSite in unit tests.
 
 ## Completions (This Session)
 
-1. Phase 1: Verified shared enums/types already extracted to standalone files in Models/ — no work needed.
-2. Phase 2: Migrated ALL emitters to consume new pipeline types directly:
-   - RawSqlBodyEmitter: UsageSiteInfo → TranslatedCallSite
-   - TransitionBodyEmitter: UsageSiteInfo → TranslatedCallSite, CarrierClassInfo → CarrierPlan, PrebuiltChainInfo → AssembledPlan
-   - ClauseBodyEmitter: Full migration including ClauseInfo → TranslatedClause property renames, ChainParameterInfo → QueryParameter property renames (.Index→.GlobalIndex, .TypeName→.ClrType, .TypeMapping→.TypeMappingClass)
-   - JoinBodyEmitter: Full migration including JoinClauseInfo removal (OnConditionSql → SqlFragment, JoinedEntityName → site.JoinedEntityTypeName)
-   - TerminalBodyEmitter: Full migration including chain.SqlMap → chain.SqlVariants
-   - CarrierEmitter: Full migration including CarrierClassInfo → CarrierPlan, ChainParameterInfo → QueryParameter, chain.Analysis.* flattening
-   - InterceptorCodeGenerator: Full migration of all utility methods
-   - FileEmitter: Rewritten to take TranslatedCallSite/AssembledPlan/CarrierPlan directly, build carrier lookups from passed-in CarrierPlans instead of CarrierClassBuilder
-3. Phase 2b: Removed bridge layer from QuarryGenerator:
-   - EmitFileInterceptorsNewPipeline now enriches AssembledPlan directly (ProjectionInfo, ReaderDelegateCode, JoinedTableInfos, TraceLines) and passes new types to FileEmitter
-   - Removed EmitFileInterceptorsLegacy
-   - Removed GroupByFileAndProcess (old pipeline entry point)
-   - Removed GroupByFileAndProcessTranslated (intermediate bridge)
-   - Removed old PipelineOrchestrator instance methods
-   - Updated TokenizeCollectionParameters to use AssembledSqlVariant/QueryParameter
-4. Fixed CarrierPlan.ClassName assignment: deferred to FileEmitter emission phase (Chain_0, Chain_1, etc.)
+1. **Fix ResultTypeName `?` regression** (~160 generated code errors → 0):
+   - ClauseBodyEmitter/JoinBodyEmitter: Prefer chain's enriched ProjectionInfo over site's discovery-time projection.
+   - Added `ResultTypeName != "?"` guard to Select emitter paths; unresolvable types fall through to generic `<T, TResult>` fallback.
+
+2. **Fix UpdateSetAction interceptor gap** (178 CS9144 errors → 0):
+   - CallSiteTranslator: Handle `UpdateSetAction` (Action<T> lambda) before null expression check. Creates TranslatedClause with SetActionAssignments from RawCallSite.
+   - Without this fix, SetAction interceptor attributes were orphaned (no method body), causing cascading CS9144 signature mismatches.
+
+3. **Migrate unit tests from UsageSiteInfo to TranslatedCallSite** (~108 errors → 0):
+   - Created `TestCallSiteBuilder` fluent helper for test fixture construction.
+   - Migrated: ExecutionInterceptorTests, EntityReaderTests, JoinOperationsTests, TypeMappingInterceptorTests, RawSqlInterceptorTests, InlineExtractionGeneratorTests.
+
+4. **Fix entity reader field collection** (14 CS0103 errors → 0):
+   - InterceptorCodeGenerator.CollectEntityReaderInstances: Also check chain-level ProjectionInfo for CustomEntityReaderClass.
+
+5. **Fix carrier pagination logging** (10 CS1061 errors → 0):
+   - CarrierEmitter.EmitInlineParameterLogging: Use HasCarrierField() instead of checking clause roles. Literal pagination doesn't produce carrier fields.
+
+6. **Fix carrier Select skip** (147 test failures → 39):
+   - FileEmitter: Never skip carrier Select sites via ShouldSkipSelectInterceptor — they're needed as cast entry points.
+
+7. **Add SetAction column quoting for standalone path**:
+   - ClauseBodyEmitter.EmitUpdateSetAction: Resolve and quote column names using entity metadata for standalone (non-chain) path.
 
 ## Previous Session Completions
 
 1-32. See git log for full history. Key milestones:
 - New pipeline architecture built (Stages 1-5)
 - SqlAssembler, CarrierPlan, ChainAnalyzer rewritten
-- 2951/2954 tests passing before this session's migration
+- All emitters migrated to new types, bridge layer removed
+- 2951/2954 tests passing before this session's work
 
 ## Progress
 
-- Generator build: Clean (0 errors, warnings only)
-- Test project: 214 compilation errors (generated code + test code regressions from bridge removal)
-- Tests before this session: 2951/2954 passing (99.9%)
+- Generator build: Clean (0 errors)
+- Test project build: Clean (0 errors)
+- Tests: 2914/2954 passing (98.6%), 39 failing, 1 skipped
 - Branch: feature/compiler-architecture
-- Phase 1 (extract enums): Complete ✓
-- Phase 2 (migrate emitters + remove bridge): Complete ✓
-- Phase 3 (rewire QuarryGenerator): Partially complete (bridge removed, old dead code remains)
-- Phase 4 (delete old code): Not started — blocked on test fixes
-- Phase 5 (fix tests): Not started — 214 compilation errors + 2 pre-existing failures
 
 ## Current State
 
-### Emitter migration complete, tests pending
-- All emitters now consume TranslatedCallSite, AssembledPlan, CarrierPlan directly
-- Bridge layer fully removed from EmitFileInterceptorsNewPipeline
-- Old pipeline code still exists as dead code (UsageSiteInfo, PrebuiltChainInfo, etc.) — will be deleted in Phase 4
-- CarrierPlan ClassName/BaseClassName now assigned in FileEmitter during carrier class emission
+### 39 test failures remain
 
-### Known regressions from migration (test project fails to compile with 214 errors)
-1. **Result type `?` in generated Select interceptors (~120 errors)**: The old bridge enriched Select clause sites with `projectionOverride` which fixed broken `ResultTypeName`. With the bridge removed, Select sites keep discovery-time `ResultTypeName` which is `?` when the semantic model can't resolve generated entity types. Fix: emitters should use `chain.ProjectionInfo.ResultTypeName` or `chain.ResultTypeName` instead of `site.ResultTypeName` for Select sites in chains. ClauseBodyEmitter.EmitSelect already receives the `prebuiltChain` (now `AssembledPlan`) parameter.
-2. **Test code uses old types (~54 errors)**: Test files directly construct `FileEmitter`/`FileInterceptorGroup` with `UsageSiteInfo`/`PrebuiltChainInfo`. Need updating to use new types or the old test helpers need replacement with TestCallSiteBuilder/TestPlanBuilder as described in the plan.
-3. **Missing entity reader fields (~7 errors)**: `_entityReader_X` fields not generated for some custom entity reader classes.
-4. **CarrierField namespace collision**: `CodeGen.CarrierField` (2-arg: Name, Type) and `Models.CarrierField` (3-arg: Name, TypeName, Role) coexist. Fixed by using fully-qualified `Models.CarrierField` in CarrierPlan and CarrierAnalyzer. Will be fully resolved when `CodeGen.CarrierStrategy.cs` is deleted in Phase 4.
-5. TranslatedClause.SqlFragment renders using PostgreSQL dialect with generic param format — used only for standalone clause rendering, not chain SQL.
-6. JoinBodyEmitter.EmitJoin: `clauseInfo.JoinedEntityName` replaced with `InterceptorCodeGenerator.GetShortTypeName(site.JoinedEntityTypeName ?? site.EntityTypeName)` — verify for all join patterns.
+The failures fall into these categories:
+
+**SetAction column quoting in chain path (~15 tests)**: `Update_SetAction_*`, `Update_Where_CapturedParameter`, etc. The SetAction SET clause produces unquoted column names in prebuilt SQL: `SET UserName = 'NewName'` instead of `SET "UserName" = 'NewName'`.
+- **Root cause**: The `ChainAnalyzer` quotes columns via `SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql)`, but the generated SQL still shows unquoted. The standalone emitter path was fixed (this session), but the chain/SqlAssembler path still produces unquoted columns.
+- **What was tried**: Added column quoting in the standalone EmitUpdateSetAction path. This fixes standalone tests but not chain-analyzed tests.
+- **What to investigate next**: Check if `ChainAnalyzer` SetAction processing is actually reached (line 343). Verify `raw.SetActionAssignments` is populated. Use `.Trace()` on a failing SetAction chain to see the ChainAnalysis output. The `EnrichSetActionClauseWithMapping` function in the old pipeline (QuarryGenerator.cs:2527) was responsible for quoting — verify its equivalent is called in the new flow.
+
+**Logging tests (~4-5 tests)**: CategoryLevelDebug_SuppressesTraceParameterLogs, FetchAll_LogsSqlAndCompletion, etc. May be related to the carrier pagination logging fix or other emission changes.
+
+**Join unit tests (~6 tests)**: InterceptorCodeGenerator_ChainedJoin_*, InterceptorCodeGenerator_JoinedWhere/OrderBy. The test fixtures were migrated to TestCallSiteBuilder but ClauseInfo data (JoinClauseInfo, OrderByClauseInfo) was dropped. These tests verify generated interceptor code patterns and may need TranslatedClause with appropriate clause data to produce expected output.
+
+**TypeMapping tests (~3-4 tests)**: FallbackPath_*, GenerateInterceptorsFile_SetMappedColumn. The test fixture migration may have lost type mapping information that was previously set on ClauseInfo.
+
+**Navigation join (~2 tests)**: Pre-existing failures from previous session. ChainId computation across type-changing fluent calls.
 
 ## Known Issues / Bugs
 
-- **Navigation join inferred type (2 test failures from previous session)**: JoinExecution_NavigationJoin_InferredType_TupleProjection and Traced variant. ChainId computation doesn't link fluent chains across type-changing calls. See previous handoff for full details.
-- **Navigation join ON clause table aliases**: Produces `("UserId" = "UserId")` instead of `"t0"."UserId" = "t1"."UserId"` in standalone (non-chain) path. Only affects non-chain path.
+- **Navigation join inferred type** (2 tests): JoinExecution_NavigationJoin_InferredType_TupleProjection and Traced variant. ChainId computation doesn't link fluent chains across type-changing calls. Pre-existing.
+- **Navigation join ON clause table aliases**: Produces `("UserId" = "UserId")` instead of `"t0"."UserId" = "t1"."UserId"` in standalone (non-chain) path. Pre-existing.
+
+## Dependencies / Blockers
+
+None external. All remaining work is internal to the generator.
 
 ## Architecture Decisions
 
 - **Big bang over incremental**: Adapter approach was fundamentally broken. Building new system completely and switching in one shot was the only reliable path.
-- **Bridge removal strategy**: Changed emitter type signatures first (mechanical), then fixed property access changes. Used parallel agents for independent emitter files.
-- **CarrierPlan deferred naming**: ClassName and BaseClassName can't be determined during CarrierAnalyzer (which runs per-chain without file-level context). Deferred to FileEmitter which knows the carrier index within the file.
-- **AssembledPlan convenience properties**: Added properties like QueryKind, TableName, IsJoinChain that delegate to Plan/ExecutionSite. Reduces verbosity in emitters without adding new data.
-- **GetClauseEntries() method**: Replaces chain.Analysis.Clauses pattern. Builds ChainClauseEntry list with conditional bit indices computed from ConditionalTerms alignment. Called per-access (not cached) since it's used at most once per chain emission.
-- **TranslatedClause.SqlFragment**: Lazy-rendered from ResolvedExpression using PostgreSQL dialect + generic param format. Matches old ClauseInfo.SqlFragment behavior. Used by emitters for standalone clause SQL rendering (non-carrier path).
-- **Trace system integration**: TraceCapture data flows to AssembledPlan.TraceLines in EmitFileInterceptorsNewPipeline (same location as before, just no type conversion). FileEmitter reads TraceLines directly from AssembledPlan.
+- **CarrierPlan deferred naming**: ClassName/BaseClassName assigned in FileEmitter during carrier class emission, not during CarrierAnalyzer (which lacks file-level context).
+- **Chain ProjectionInfo preferred over site**: Discovery-time ProjectionInfo may have `?` ResultTypeName when entity types are generator-produced. EmitSelect now prefers chain's enriched ProjectionInfo.
+- **UpdateSetAction pass-through in CallSiteTranslator**: Action<T> lambdas can't be parsed into SqlExpr. The translator creates a TranslatedClause with a placeholder expression and the raw SetActionAssignments.
+- **ShouldSkipSelectInterceptor exemption for carrier sites**: Carrier Select sites must always be emitted as they serve as Unsafe.As cast entry points, even when the projection fails validation.
+- **TestCallSiteBuilder**: Replaces direct UsageSiteInfo construction in tests. Builds the full object graph (RawCallSite → BoundCallSite → TranslatedCallSite) from simplified parameters.
 
 ## Next Work (Priority Order)
 
-### 1. Fix ResultTypeName `?` regression in generated Select interceptors (~120 compilation errors)
+### 1. Fix SetAction column quoting in chain SQL path (~15 tests)
+The ChainAnalyzer should be quoting SetAction columns at line 364, but the generated prebuilt SQL shows unquoted column names. Investigate why the quoting isn't applied in the final SQL output.
+- Check if `raw.SetActionAssignments` is populated for the failing test chains
+- Use `.Trace()` to inspect ChainAnalysis output for a SetAction chain
+- If the issue is in SqlAssembler/SqlExprRenderer, check how ResolvedColumnExpr is rendered
 
-**Root cause**: The old bridge called `UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj)` for every clause site. For Select sites, this replaced the discovery-time `ResultTypeName` (which is `?` because the semantic model can't see generator-produced entity types) with the enriched projection's `ResultTypeName`. With the bridge removed, Select sites keep the broken `?`.
+### 2. Fix logging integration tests (~4-5 tests)
+CategoryLevelDebug, FetchAll_LogsSql, etc. May be caused by carrier pagination logging changes or other emission path changes.
 
-**Where the enriched data lives now**: `AssembledPlan.ProjectionInfo` is set correctly in `EmitFileInterceptorsNewPipeline` (QuarryGenerator.cs ~line 570). It has the correct `ResultTypeName`. The problem is that emitters read `site.ResultTypeName` instead of `chain.ProjectionInfo.ResultTypeName`.
+### 3. Fix join unit test fixtures (~6 tests)
+The TestCallSiteBuilder migration dropped ClauseInfo data. These tests need TranslatedClause with join/orderby clause data to produce the expected generated code patterns.
 
-**Fix approach**: In `ClauseBodyEmitter.EmitSelect` (and `JoinBodyEmitter.EmitJoinedSelect`), when a `prebuiltChain` (now `AssembledPlan`) is available, use `prebuiltChain.ResultTypeName ?? site.ResultTypeName` instead of `site.ResultTypeName`. The chain's ResultTypeName is enriched and correct. Search for `site.ResultTypeName` in all emitters and check if the chain alternative should be preferred.
+### 4. Fix TypeMapping unit test fixtures (~3-4 tests)
+Similar to join tests — need TranslatedClause with proper parameter/clause data for the generated code to match expectations.
 
-**Alternatively**: Add an enrichment pass in `EmitFileInterceptorsNewPipeline` that propagates the enriched `ResultTypeName` onto the `TranslatedCallSite` objects themselves. This would require making `ResultTypeName` settable on `TranslatedCallSite` (or on `RawCallSite`). This is less clean but fewer emitter changes.
-
-**Verify with**: Use `.Trace()` on a failing chain to see what ResultTypeName the pipeline produces at each stage.
-
-### 2. Fix test code compilation errors (~54 errors)
-
-Test files directly construct `FileEmitter` and `FileInterceptorGroup` with old types (`UsageSiteInfo`, `PrebuiltChainInfo`). These are in:
-- `src/Quarry.Tests/Integration/` — integration test helpers
-- Any test that calls `new FileEmitter(...)` or `new FileInterceptorGroup(...)`
-
-**Fix approach**: Search test project for `new FileEmitter(` and `new FileInterceptorGroup(` and update to use new types. May need `TestCallSiteBuilder` / `TestPlanBuilder` helpers as described in impl-plan-compiler-bigbang.md Step 11. Or construct `TranslatedCallSite`/`AssembledPlan` directly with test data.
-
-### 3. Fix missing entity reader fields (~7 errors)
-
-`_entityReader_X` fields not generated for some custom entity reader classes. Check `InterceptorCodeGenerator.CollectEntityReaderInstances` — the migration changed `IReadOnlyList<UsageSiteInfo>` to `IReadOnlyList<TranslatedCallSite>`. Verify the property access patterns are correct (likely `site.ProjectionInfo` access needs adjustment).
-
-### 4. Phase 4: Delete old pipeline code
-
-Once tests compile and pass, delete all dead old-pipeline code:
-- `Models/UsageSiteInfo.cs`, `ClauseInfo.cs`, `PendingClauseInfo.cs`, `ChainAnalysisResult.cs`, `PrebuiltChainInfo.cs`, `ChainParameterInfo.cs`, `CarrierClassInfo.cs`
-- `Translation/ClauseTranslator.cs`, `ExpressionSyntaxTranslator.cs`, `ExpressionTranslationContext.cs`, `ExpressionTranslationResult.cs`, `SubqueryScope.cs`
-- `Sql/CompileTimeSqlBuilder.cs`, `SqlFragmentTemplate.cs`
-- `Generation/CarrierClassBuilder.cs`
-- `CodeGen/CarrierStrategy.cs` (resolves CarrierField namespace collision)
-- Old methods in `QuarryGenerator.cs` (BuildPrebuiltChainInfo, BuildPrebuiltChainInfoForJoin, EnrichUsageSiteWithEntityInfo, AnalyzeExecutionChainsWithDiagnostics, DiscoverNavigationJoinChainMembers, GetNonTranslatableClauseKind, etc.)
-- Old methods in `UsageSiteDiscovery.cs` (DiscoverUsageSite, old discovery paths)
-
-### 5. Fix remaining pre-existing test failures
-- 2 navigation join inferred type failures (ChainId computation across type-changing fluent calls)
-- Clean up UsageSiteDiscovery to be RawCallSite-only
-- Rewrite any internal unit tests that reference deleted old types
+### 5. Phase 4: Delete old pipeline code
+Once tests pass, delete all dead old-pipeline code: UsageSiteInfo, ClauseInfo, PendingClauseInfo, ChainAnalysisResult, PrebuiltChainInfo, ChainParameterInfo, CarrierClassInfo, ClauseTranslator, ExpressionSyntaxTranslator, ExpressionTranslationContext, ExpressionTranslationResult, SubqueryScope, CompileTimeSqlBuilder, SqlFragmentTemplate, CarrierClassBuilder, CarrierStrategy, old methods in QuarryGenerator.cs and UsageSiteDiscovery.cs.
