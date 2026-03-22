@@ -153,6 +153,10 @@ internal static class SqlExprRenderer
         {
             sb.Append('$').Append(idx + 1); // PostgreSQL uses 1-based $1, $2, ...
         }
+        else if (!genericParams && dialect == SqlDialect.MySQL)
+        {
+            sb.Append('?'); // MySQL uses positional ? parameters
+        }
         else
         {
             sb.Append("@p").Append(idx);

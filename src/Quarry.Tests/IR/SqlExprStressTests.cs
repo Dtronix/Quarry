@@ -356,7 +356,7 @@ public class SqlExprStressTests
 
         var sql = BindAndRender(like, UserEntity, GenSqlDialect.MySQL, "u");
 
-        Assert.That(sql, Is.EqualTo("`name` LIKE CONCAT('%', @p0, '%')"));
+        Assert.That(sql, Is.EqualTo("`name` LIKE CONCAT('%', ?, '%')"));
     }
 
     [Test]
@@ -685,7 +685,7 @@ public class SqlExprStressTests
 
         Assert.That(sqlite,  Is.EqualTo("((\"age\" > @p0) AND (\"name\" = @p1))"));
         Assert.That(pg,      Is.EqualTo("((\"age\" > $1) AND (\"name\" = $2))"));
-        Assert.That(mysql,   Is.EqualTo("((`age` > @p0) AND (`name` = @p1))"));
+        Assert.That(mysql,   Is.EqualTo("((`age` > ?) AND (`name` = ?))"));
         Assert.That(sqlsrv,  Is.EqualTo("(([age] > @p0) AND ([name] = @p1))"));
     }
 
@@ -713,7 +713,7 @@ public class SqlExprStressTests
         Assert.That(SqlExprRenderer.Render(like, GenSqlDialect.PostgreSQL),
             Is.EqualTo("col LIKE '%' || $1 || '%'"));
         Assert.That(SqlExprRenderer.Render(like, GenSqlDialect.MySQL),
-            Is.EqualTo("col LIKE CONCAT('%', @p0, '%')"));
+            Is.EqualTo("col LIKE CONCAT('%', ?, '%')"));
         Assert.That(SqlExprRenderer.Render(like, GenSqlDialect.SqlServer),
             Is.EqualTo("col LIKE '%' + @p0 + '%'"));
     }

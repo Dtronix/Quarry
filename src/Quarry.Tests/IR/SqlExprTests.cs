@@ -379,7 +379,7 @@ public class SqlExprTests
         var like = new LikeExpr(col, param, likePrefix: "%", likeSuffix: "%");
 
         var sql = SqlExprRenderer.Render(like, GenSqlDialect.MySQL);
-        Assert.That(sql, Is.EqualTo("`name` LIKE CONCAT('%', @p0, '%')"));
+        Assert.That(sql, Is.EqualTo("`name` LIKE CONCAT('%', ?, '%')"));
     }
 
     [Test]
