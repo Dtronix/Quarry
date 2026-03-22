@@ -269,26 +269,6 @@ internal sealed class FileEmitter
             .Where(s => s.IsAnalyzable || chainMemberIds.Contains(s.UniqueId))
             .ToList();
 
-        // TRACE: Log filtering results
-        sb.AppendLine($"    // TRACE: _sites.Count={_sites.Count} chainMemberIds.Count={chainMemberIds.Count} allSitesForGeneration.Count={allSitesForGeneration.Count}");
-        foreach (var s in _sites)
-        {
-            var inChain = chainMemberIds.Contains(s.UniqueId);
-            var included = s.IsAnalyzable || inChain;
-            if (!included)
-                sb.AppendLine($"    // TRACE FILTERED OUT: Kind={s.Kind} UniqueId={s.UniqueId} IsAnalyzable={s.IsAnalyzable} InChain={inChain} Method={s.MethodName}");
-        }
-        foreach (var s in allSitesForGeneration)
-            sb.AppendLine($"    // TRACE INCLUDED: Kind={s.Kind} UniqueId={s.UniqueId} IsAnalyzable={s.IsAnalyzable} Method={s.MethodName}");
-        if (_chains != null)
-        {
-            sb.AppendLine($"    // TRACE: _chains.Count={_chains.Count}");
-            foreach (var ch in _chains)
-            {
-                sb.AppendLine($"    // TRACE CHAIN: ExecUniqueId={ch.Analysis.ExecutionSite.UniqueId} ExecMethod={ch.Analysis.ExecutionSite.MethodName} Tier={ch.Analysis.Tier}");
-            }
-        }
-
         // Group interceptors by chain
         var processedSiteIds = new HashSet<string>();
         var chainGroups = new List<(string Label, List<UsageSiteInfo> Sites, IReadOnlyList<string>? TraceLines)>();
