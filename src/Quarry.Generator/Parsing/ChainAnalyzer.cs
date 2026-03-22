@@ -369,6 +369,25 @@ internal static class ChainAnalyzer
                     setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
                 }
             }
+            else if (kind == InterceptorKind.UpdateSetPoco && site.Bound.UpdateInfo != null)
+            {
+                // UpdateSetPoco: build SET terms from UpdateInfo columns.
+                // Each column gets a parameter slot.
+                var updateInfo = site.Bound.UpdateInfo;
+                foreach (var col in updateInfo.Columns)
+                {
+                    var colExpr = new ResolvedColumnExpr(col.QuotedColumnName);
+                    var valExpr = new ParamSlotExpr(paramGlobalIndex, col.ClrType, "@p" + paramGlobalIndex);
+                    setTerms.Add(new SetTerm(colExpr, valExpr, col.CustomTypeMappingClass, clauseBitIndex));
+                    parameters.Add(new QueryParameter(
+                        paramGlobalIndex,
+                        col.ClrType,
+                        $"entity.{col.PropertyName}",
+                        typeMappingClass: col.CustomTypeMappingClass,
+                        isSensitive: col.IsSensitive));
+                    paramGlobalIndex++;
+                }
+            }
             else if (kind == InterceptorKind.Limit)
             {
                 hasLimit = true;
