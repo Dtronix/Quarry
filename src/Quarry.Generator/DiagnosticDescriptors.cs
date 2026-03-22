@@ -399,6 +399,22 @@ internal static class DiagnosticDescriptors
         description: "A column has both a .Unique() modifier and an explicit single-column unique Index() on the same column. " +
                      "Remove one to avoid redundancy.");
 
+    // ─── Sql.Raw diagnostics (QRY029) ──────────────────────────────────
+
+    /// <summary>
+    /// QRY029: Sql.Raw template placeholder mismatch.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SqlRawPlaceholderMismatch = new(
+        id: "QRY029",
+        title: "Sql.Raw placeholder mismatch",
+        messageFormat: "Sql.Raw template error: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The Sql.Raw template placeholders ({0}, {1}, ...) do not match the supplied arguments. " +
+                     "Placeholders must be sequential starting from {0} and match the argument count.");
+
     // ─── Chain analysis diagnostics (QRY030–QRY032) ───────────────────
 
     /// <summary>

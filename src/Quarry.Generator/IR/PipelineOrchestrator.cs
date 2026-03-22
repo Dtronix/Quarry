@@ -371,6 +371,19 @@ internal sealed class PipelineOrchestrator
                     raw.Location,
                     site.Clause.ErrorMessage));
             }
+
+            // QRY029: Sql.Raw template placeholder mismatch
+            if (raw.Expression is RawCallExpr rawCallExpr)
+            {
+                var validationError = rawCallExpr.Validate();
+                if (validationError != null)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.SqlRawPlaceholderMismatch.Id,
+                        raw.Location,
+                        validationError));
+                }
+            }
         }
     }
 

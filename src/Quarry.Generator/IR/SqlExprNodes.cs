@@ -475,6 +475,61 @@ internal sealed class RawCallExpr : SqlExpr
         return hash;
     }
 
+    /// <summary>
+    /// Validates that the template placeholders are sequential and match the argument count.
+    /// Returns null if valid, or an error message if invalid.
+    /// </summary>
+    public string? Validate()
+    {
+        // Scan template for {N} placeholders and collect indices
+        var foundIndices = new HashSet<int>();
+        int maxIndex = -1;
+        int pos = 0;
+        while (pos < Template.Length)
+        {
+            if (Template[pos] == '{')
+            {
+                int numStart = pos + 1;
+                int numEnd = numStart;
+                while (numEnd < Template.Length && Template[numEnd] >= '0' && Template[numEnd] <= '9')
+                    numEnd++;
+                if (numEnd > numStart && numEnd < Template.Length && Template[numEnd] == '}'
+                    && int.TryParse(Template.Substring(numStart, numEnd - numStart), out int idx))
+                {
+                    foundIndices.Add(idx);
+                    if (idx > maxIndex) maxIndex = idx;
+                    pos = numEnd + 1;
+                    continue;
+                }
+            }
+            pos++;
+        }
+
+        if (foundIndices.Count == 0 && Arguments.Count == 0)
+            return null; // no placeholders, no arguments -- valid
+
+        if (foundIndices.Count == 0 && Arguments.Count > 0)
+            return $"template has no placeholders but {Arguments.Count} argument(s) were supplied";
+
+        if (Arguments.Count == 0 && foundIndices.Count > 0)
+            return $"template has {foundIndices.Count} placeholder(s) but no arguments were supplied";
+
+        // Check sequential from 0
+        for (int i = 0; i <= maxIndex; i++)
+        {
+            if (!foundIndices.Contains(i))
+                return $"placeholder {{{i}}} is missing (placeholders must be sequential starting from {{0}})";
+        }
+
+        if (maxIndex + 1 > Arguments.Count)
+            return $"template references {{{maxIndex}}} but only {Arguments.Count} argument(s) were supplied";
+
+        if (Arguments.Count > maxIndex + 1)
+            return $"template has {maxIndex + 1} placeholder(s) but {Arguments.Count} argument(s) were supplied";
+
+        return null;
+    }
+
     protected override bool DeepEquals(SqlExpr other)
     {
         var o = (RawCallExpr)other;
