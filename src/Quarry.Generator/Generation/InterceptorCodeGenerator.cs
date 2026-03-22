@@ -163,7 +163,10 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Collects all unique EntityReader class FQNs used across all usage sites.
     /// </summary>
-    internal static Dictionary<string, string> CollectEntityReaderInstances(IReadOnlyList<TranslatedCallSite> usageSites, HashSet<string> chainMemberIds)
+    internal static Dictionary<string, string> CollectEntityReaderInstances(
+        IReadOnlyList<TranslatedCallSite> usageSites,
+        HashSet<string> chainMemberIds,
+        IReadOnlyList<IR.AssembledPlan>? chains = null)
     {
         var readers = new Dictionary<string, string>(); // fieldName → FQN
 
@@ -173,6 +176,19 @@ internal static partial class InterceptorCodeGenerator
             {
                 var fqn = site.ProjectionInfo.CustomEntityReaderClass;
                 AddIfMissing(readers, GetEntityReaderFieldName(fqn), fqn);
+            }
+        }
+
+        // Also check chain-level ProjectionInfo (enriched with entity metadata)
+        if (chains != null)
+        {
+            foreach (var chain in chains)
+            {
+                if (chain.ProjectionInfo?.CustomEntityReaderClass != null)
+                {
+                    var fqn = chain.ProjectionInfo.CustomEntityReaderClass;
+                    AddIfMissing(readers, GetEntityReaderFieldName(fqn), fqn);
+                }
             }
         }
 

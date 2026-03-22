@@ -694,7 +694,7 @@ internal static class CarrierEmitter
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Parameter logging
-        EmitInlineParameterLogging(sb, chain);
+        EmitInlineParameterLogging(sb, chain, carrier);
 
         // Parameter value extraction + command binding
         EmitCarrierParameterLocals(sb, chain, carrier);
@@ -719,7 +719,7 @@ internal static class CarrierEmitter
         sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
-        EmitInlineParameterLogging(sb, chain);
+        EmitInlineParameterLogging(sb, chain, carrier);
 
         EmitCarrierParameterLocals(sb, chain, carrier);
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
@@ -733,11 +733,11 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits inline per-parameter logging (sensitivity-aware).
     /// </summary>
-    private static void EmitInlineParameterLogging(StringBuilder sb, AssembledPlan chain)
+    private static void EmitInlineParameterLogging(StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
     {
         var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Limit);
-        var hasOffsetField = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Offset);
+        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
+        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
         var totalParams = paramCount + (hasLimitField ? 1 : 0) + (hasOffsetField ? 1 : 0);
 
         if (totalParams == 0)

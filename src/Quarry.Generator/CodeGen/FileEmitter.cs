@@ -245,7 +245,7 @@ internal sealed class FileEmitter
         var mappingInstances = InterceptorCodeGenerator.CollectMappingInstances(_sites, chainMemberIds);
 
         // Collect all unique EntityReader classes
-        var entityReaderInstances = InterceptorCodeGenerator.CollectEntityReaderInstances(_sites, chainMemberIds);
+        var entityReaderInstances = InterceptorCodeGenerator.CollectEntityReaderInstances(_sites, chainMemberIds, _chains);
 
         // Filter out carrier member FieldInfo fields
         var interceptorStaticFields = staticFields
