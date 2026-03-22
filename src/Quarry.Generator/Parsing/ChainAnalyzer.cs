@@ -372,12 +372,15 @@ internal static class ChainAnalyzer
             else if (kind == InterceptorKind.UpdateSetPoco && site.Bound.UpdateInfo != null)
             {
                 // UpdateSetPoco: build SET terms from UpdateInfo columns.
-                // Each column gets a parameter slot.
+                // Each column gets a parameter slot with a local index (0-based
+                // within this clause) so the assembler can renumber them in SQL order.
                 var updateInfo = site.Bound.UpdateInfo;
                 foreach (var col in updateInfo.Columns)
                 {
                     var colExpr = new ResolvedColumnExpr(col.QuotedColumnName);
-                    var valExpr = new ParamSlotExpr(paramGlobalIndex, col.ClrType, "@p" + paramGlobalIndex);
+                    // Each SET value is a standalone expression with one param at LocalIndex=0.
+                    // The assembler's paramBase handles the actual position in the SQL output.
+                    var valExpr = new ParamSlotExpr(0, col.ClrType, "@p0");
                     setTerms.Add(new SetTerm(colExpr, valExpr, col.CustomTypeMappingClass, clauseBitIndex));
                     parameters.Add(new QueryParameter(
                         paramGlobalIndex,
