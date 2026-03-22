@@ -327,16 +327,16 @@ internal sealed class FileEmitter
         // Generate grouped output
         foreach (var (label, sites, traceLines) in chainGroups)
         {
-            // Emit trace comments for traced chains
+            sb.AppendLine($"    #region {label}");
+            sb.AppendLine();
+
+            // Emit trace comments inside the region for traced chains
             if (traceLines != null)
             {
                 foreach (var line in traceLines)
                     sb.AppendLine($"    // {line}");
                 sb.AppendLine();
             }
-
-            sb.AppendLine($"    #region {label}");
-            sb.AppendLine();
             foreach (var site in sites)
             {
                 EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds);
