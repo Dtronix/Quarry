@@ -226,6 +226,7 @@ internal static class ChainAnalyzer
         var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
 
         // Process clause sites to build terms
+        var consumedConditionalTerms = new HashSet<int>();
         for (int i = 0; i < clauseSites.Count; i++)
         {
             var site = clauseSites[i];
@@ -237,13 +238,13 @@ internal static class ChainAnalyzer
             // Check if this clause is conditional
             if (raw.ConditionalInfo != null)
             {
-                // Find its bit index
+                // Find its bit index — match by role and consume each term only once
                 for (int ci = 0; ci < conditionalTerms.Count; ci++)
                 {
-                    if (conditionalTerms[ci].Role == role)
+                    if (conditionalTerms[ci].Role == role && !consumedConditionalTerms.Contains(ci))
                     {
-                        // Match by position - conditionalTerms are in clauseSites order for conditional ones
                         clauseBitIndex = conditionalTerms[ci].BitIndex;
+                        consumedConditionalTerms.Add(ci);
                         break;
                     }
                 }
