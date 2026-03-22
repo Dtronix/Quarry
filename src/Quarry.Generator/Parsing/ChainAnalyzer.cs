@@ -8,6 +8,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
+using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Parsing;
@@ -511,11 +512,7 @@ internal static class ChainAnalyzer
             LogSiteTrace(chainUid, executionSite);
 
             // Chain-level analysis trace
-            IR.TraceCapture.Log(chainUid, "[Trace] ChainAnalysis:");
-            IR.TraceCapture.Log(chainUid, $"  tier={tier}, queryKind={queryKind}");
-            IR.TraceCapture.Log(chainUid, $"  whereTerms={whereTerms.Count}, orderTerms={orderTerms.Count}, setTerms={setTerms.Count}");
-            IR.TraceCapture.Log(chainUid, $"  joinPlans={joinPlans.Count}, params={parameters.Count}");
-            IR.TraceCapture.Log(chainUid, $"  possibleMasks=[{string.Join(", ", possibleMasks)}]");
+            LogChainTrace(chainUid, plan, executionSite);
         }
 
         return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
@@ -1119,32 +1116,208 @@ internal static class ChainAnalyzer
     private static void LogSiteTrace(string chainUid, TranslatedCallSite site)
     {
         var raw = site.Bound.Raw;
+        var log = IR.TraceCapture.Log;
 
-        // Discovery trace
-        IR.TraceCapture.Log(chainUid, $"[Trace] Discovery ({raw.MethodName} at line {raw.Line}):");
-        IR.TraceCapture.Log(chainUid, $"  kind={raw.Kind}, isAnalyzable={raw.IsAnalyzable}");
+        // ── Discovery ──
+        log(chainUid, $"[Trace] Discovery ({raw.MethodName} at line {raw.Line}):");
+        log(chainUid, $"  kind={raw.Kind}, builderKind={raw.BuilderKind}, isAnalyzable={raw.IsAnalyzable}");
+        log(chainUid, $"  chainId={raw.ChainId ?? "(null)"}, uniqueId={raw.UniqueId}");
+        log(chainUid, $"  builderType={raw.BuilderTypeName}, entityType={raw.EntityTypeName}");
+        if (raw.ResultTypeName != null)
+            log(chainUid, $"  resultType={raw.ResultTypeName}");
         if (raw.Expression != null)
-            IR.TraceCapture.Log(chainUid, $"  parsedExpr={raw.Expression.GetType().Name}");
+            log(chainUid, $"  parsedExpr={FormatExpr(raw.Expression)}");
+        if (raw.ClauseKind.HasValue)
+            log(chainUid, $"  clauseKind={raw.ClauseKind.Value}, isDescending={raw.IsDescending}");
+        if (raw.JoinedEntityTypeName != null)
+            log(chainUid, $"  joinedEntityType={raw.JoinedEntityTypeName}, isNavigationJoin={raw.IsNavigationJoin}");
+        if (raw.JoinedEntityTypeNames != null)
+            log(chainUid, $"  joinedEntityTypes=[{string.Join(", ", raw.JoinedEntityTypeNames)}]");
+        if (raw.ConditionalInfo != null)
+            log(chainUid, $"  conditional: depth={raw.ConditionalInfo.NestingDepth}, condition=\"{raw.ConditionalInfo.ConditionText}\", branch={raw.ConditionalInfo.BranchKind}");
+        if (raw.ConstantIntValue.HasValue)
+            log(chainUid, $"  constantIntValue={raw.ConstantIntValue.Value}");
+        if (raw.ProjectionInfo != null)
+            log(chainUid, $"  projection: kind={raw.ProjectionInfo.Kind}, columns={raw.ProjectionInfo.Columns.Count}, resultType={raw.ProjectionInfo.ResultTypeName}");
         if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
-            IR.TraceCapture.Log(chainUid, $"  nonAnalyzableReason={raw.NonAnalyzableReason}");
+            log(chainUid, $"  nonAnalyzableReason={raw.NonAnalyzableReason}");
+        // Disqualifiers
+        if (raw.IsInsideLoop || raw.IsInsideTryCatch || raw.IsCapturedInLambda || raw.IsPassedAsArgument || raw.IsAssignedFromNonQuarryMethod)
+            log(chainUid, $"  disqualifiers: loop={raw.IsInsideLoop}, tryCatch={raw.IsInsideTryCatch}, lambdaCapture={raw.IsCapturedInLambda}, passedAsArg={raw.IsPassedAsArgument}, nonQuarryAssign={raw.IsAssignedFromNonQuarryMethod}");
 
-        // Binding trace
-        IR.TraceCapture.Log(chainUid, $"[Trace] Binding ({raw.MethodName}):");
-        IR.TraceCapture.Log(chainUid, $"  entity={raw.EntityTypeName}, table={site.Bound.TableName}, dialect={site.Bound.Dialect}");
+        // ── Binding ──
+        log(chainUid, $"[Trace] Binding ({raw.MethodName}):");
+        log(chainUid, $"  entity={raw.EntityTypeName}, table={site.Bound.TableName}, schema={site.Bound.SchemaName ?? "(null)"}, dialect={site.Bound.Dialect}");
+        log(chainUid, $"  context={site.Bound.ContextClassName}");
+        if (site.Bound.Entity != null && site.Bound.Entity.Columns.Count > 0)
+            log(chainUid, $"  resolvedColumns=[{string.Join(", ", ColumnNames(site.Bound.Entity.Columns))}]");
         if (site.Bound.JoinedEntity != null)
-            IR.TraceCapture.Log(chainUid, $"  joinedEntity={site.Bound.JoinedEntity.EntityName}");
+            log(chainUid, $"  joinedEntity={site.Bound.JoinedEntity.EntityName}, joinedTable={site.Bound.JoinedEntity.TableName}");
+        if (site.Bound.JoinedEntities != null)
+        {
+            foreach (var je in site.Bound.JoinedEntities)
+                log(chainUid, $"  joinedEntity: {je.EntityName} -> {je.TableName}");
+        }
+        if (site.Bound.InsertInfo != null)
+            log(chainUid, $"  insertInfo: columns={site.Bound.InsertInfo.Columns.Count}");
+        if (site.Bound.UpdateInfo != null)
+            log(chainUid, $"  updateInfo: columns={site.Bound.UpdateInfo.Columns.Count}");
 
-        // Translation trace
-        IR.TraceCapture.Log(chainUid, $"[Trace] Translation ({raw.MethodName}):");
+        // ── Translation ──
+        log(chainUid, $"[Trace] Translation ({raw.MethodName}):");
         if (site.Clause != null)
         {
-            IR.TraceCapture.Log(chainUid, $"  clauseKind={site.Clause.Kind}, paramCount={site.Clause.Parameters.Count}");
-            IR.TraceCapture.Log(chainUid, $"  resolvedExpr={site.Clause.ResolvedExpression.GetType().Name}");
+            log(chainUid, $"  clauseKind={site.Clause.Kind}, isSuccess={site.Clause.IsSuccess}");
+            log(chainUid, $"  resolvedExpr={FormatExpr(site.Clause.ResolvedExpression)}");
+            if (site.Clause.Parameters.Count > 0)
+            {
+                foreach (var p in site.Clause.Parameters)
+                {
+                    var flags = new List<string>();
+                    if (p.IsCaptured) flags.Add("captured");
+                    if (p.IsCollection) flags.Add("collection");
+                    log(chainUid, $"  param[{p.Index}]: type={p.ClrType}, value={p.ValueExpression}, path={p.ExpressionPath ?? "(null)"}{(flags.Count > 0 ? $", flags=[{string.Join(",", flags)}]" : "")}");
+                }
+            }
+            else
+            {
+                log(chainUid, "  params=none");
+            }
+            if (site.Clause.JoinKind.HasValue)
+                log(chainUid, $"  joinKind={site.Clause.JoinKind.Value}, joinedTable={site.Clause.JoinedTableName}, alias={site.Clause.TableAlias}");
+            if (site.Clause.SetAssignments != null)
+            {
+                foreach (var sa in site.Clause.SetAssignments)
+                    log(chainUid, $"  setAssignment: {sa.ColumnSql}={sa.InlinedSqlValue ?? "(param)"}, type={sa.ValueTypeName ?? "?"}");
+            }
+            if (site.Clause.ErrorMessage != null)
+                log(chainUid, $"  error={site.Clause.ErrorMessage}");
         }
         else
         {
-            IR.TraceCapture.Log(chainUid, "  clause=none");
+            log(chainUid, "  clause=none (non-clause site)");
         }
+    }
+
+    /// <summary>
+    /// Logs chain-level analysis trace including joins, projections, parameters, and pagination.
+    /// </summary>
+    private static void LogChainTrace(string chainUid, QueryPlan plan, TranslatedCallSite executionSite)
+    {
+        var log = IR.TraceCapture.Log;
+
+        log(chainUid, "[Trace] ChainAnalysis:");
+        log(chainUid, $"  tier={plan.Tier}, queryKind={plan.Kind}");
+        log(chainUid, $"  primaryTable={plan.PrimaryTable.TableName}, schema={plan.PrimaryTable.SchemaName ?? "(null)"}");
+        log(chainUid, $"  isDistinct={plan.IsDistinct}");
+        if (plan.NotAnalyzableReason != null)
+            log(chainUid, $"  notAnalyzableReason={plan.NotAnalyzableReason}");
+        if (plan.UnmatchedMethodNames != null)
+            log(chainUid, $"  unmatchedMethods=[{string.Join(", ", plan.UnmatchedMethodNames)}]");
+
+        // Joins
+        if (plan.Joins.Count > 0)
+        {
+            foreach (var j in plan.Joins)
+                log(chainUid, $"  join: {j.Kind} {j.Table.TableName} ON {FormatExpr(j.OnCondition)}{(j.IsNavigationJoin ? " (navigation)" : "")}");
+        }
+
+        // WHERE terms
+        if (plan.WhereTerms.Count > 0)
+        {
+            foreach (var w in plan.WhereTerms)
+                log(chainUid, $"  where: {FormatExpr(w.Condition)}{(w.BitIndex.HasValue ? $" [bit={w.BitIndex}]" : "")}");
+        }
+
+        // ORDER BY terms
+        if (plan.OrderTerms.Count > 0)
+        {
+            foreach (var o in plan.OrderTerms)
+                log(chainUid, $"  orderBy: {FormatExpr(o.Expression)} {(o.IsDescending ? "DESC" : "ASC")}{(o.BitIndex.HasValue ? $" [bit={o.BitIndex}]" : "")}");
+        }
+
+        // GROUP BY
+        if (plan.GroupByExprs.Count > 0)
+        {
+            foreach (var g in plan.GroupByExprs)
+                log(chainUid, $"  groupBy: {FormatExpr(g)}");
+        }
+
+        // HAVING
+        if (plan.HavingExprs.Count > 0)
+        {
+            foreach (var h in plan.HavingExprs)
+                log(chainUid, $"  having: {FormatExpr(h)}");
+        }
+
+        // SET terms
+        if (plan.SetTerms.Count > 0)
+        {
+            foreach (var s in plan.SetTerms)
+                log(chainUid, $"  set: {FormatExpr(s.Column)}={FormatExpr(s.Value)}");
+        }
+
+        // Projection
+        if (plan.Projection != null)
+        {
+            log(chainUid, $"  projection: kind={plan.Projection.Kind}, resultType={plan.Projection.ResultTypeName}, identity={plan.Projection.IsIdentity}");
+            foreach (var c in plan.Projection.Columns)
+                log(chainUid, $"    col: {c.PropertyName} -> {c.ColumnName ?? "(null)"} [{c.ClrType}]{(c.SqlExpression != null ? $" expr={c.SqlExpression}" : "")}{(c.IsAggregateFunction ? " (aggregate)" : "")}{(c.TableAlias != null ? $" alias={c.TableAlias}" : "")}");
+        }
+
+        // Pagination
+        if (plan.Pagination != null)
+            log(chainUid, $"  pagination: limit={plan.Pagination.LiteralLimit?.ToString() ?? (plan.Pagination.LimitParamIndex.HasValue ? $"P{plan.Pagination.LimitParamIndex}" : "none")}, offset={plan.Pagination.LiteralOffset?.ToString() ?? (plan.Pagination.OffsetParamIndex.HasValue ? $"P{plan.Pagination.OffsetParamIndex}" : "none")}");
+
+        // Parameters
+        if (plan.Parameters.Count > 0)
+        {
+            log(chainUid, $"  parameters ({plan.Parameters.Count}):");
+            foreach (var p in plan.Parameters)
+            {
+                var flags = new List<string>();
+                if (p.IsCaptured) flags.Add("captured");
+                if (p.IsCollection) flags.Add($"collection<{p.ElementTypeName ?? "?"}>");
+                if (p.IsEnum) flags.Add($"enum({p.EnumUnderlyingType})");
+                if (p.NeedsFieldInfoCache) flags.Add("fieldInfo");
+                if (p.TypeMappingClass != null) flags.Add($"mapping={p.TypeMappingClass}");
+                log(chainUid, $"    P{p.GlobalIndex}: type={p.ClrType}, value={p.ValueExpression}{(flags.Count > 0 ? $", [{string.Join(", ", flags)}]" : "")}");
+            }
+        }
+        else
+        {
+            log(chainUid, "  parameters=none");
+        }
+
+        // Conditional terms + masks
+        if (plan.ConditionalTerms.Count > 0)
+        {
+            foreach (var ct in plan.ConditionalTerms)
+                log(chainUid, $"  conditionalTerm: bit={ct.BitIndex}");
+        }
+        log(chainUid, $"  possibleMasks=[{string.Join(", ", plan.PossibleMasks)}]");
+    }
+
+    /// <summary>
+    /// Formats a SqlExpr for trace output. Renders to SQL using a generic parameter format
+    /// for readability, falling back to type name on failure.
+    /// </summary>
+    private static string FormatExpr(IR.SqlExpr expr)
+    {
+        try
+        {
+            return IR.SqlExprRenderer.Render(expr, Sql.SqlDialect.PostgreSQL, useGenericParamFormat: true, stripOuterParens: true);
+        }
+        catch
+        {
+            return expr.GetType().Name;
+        }
+    }
+
+    private static IEnumerable<string> ColumnNames(IReadOnlyList<Models.ColumnInfo> columns)
+    {
+        foreach (var c in columns)
+            yield return c.PropertyName;
     }
 }
 
