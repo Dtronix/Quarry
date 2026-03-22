@@ -720,7 +720,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 clauseChainedSites,
                 executionUsageSite,
                 conditionalClauses,
-                assembled.Plan.PossibleMasks);
+                assembled.Plan.PossibleMasks,
+                notAnalyzableReason: assembled.Plan.NotAnalyzableReason,
+                unmatchedMethodNames: assembled.Plan.UnmatchedMethodNames,
+                forkedVariableName: assembled.Plan.ForkedVariableName);
 
             // Build chain parameters from QueryPlan.Parameters
             var chainParams = new List<ChainParameterInfo>();
@@ -868,12 +871,24 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                         locationDisplay, assembled.Plan.ConditionalTerms.Count.ToString()));
                     break;
                 case OptimizationTier.RuntimeBuild:
-                    spc.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainNotAnalyzable,
-                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
-                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
-                        locationDisplay, assembled.Plan.NotAnalyzableReason ?? "unknown"));
+                    if (assembled.Plan.ForkedVariableName != null)
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.ForkedQueryChain,
+                            Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                            assembled.Plan.ForkedVariableName));
+                    }
+                    else
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.ChainNotAnalyzable,
+                            Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                            locationDisplay, assembled.Plan.NotAnalyzableReason ?? "unknown"));
+                    }
                     break;
             }
         }

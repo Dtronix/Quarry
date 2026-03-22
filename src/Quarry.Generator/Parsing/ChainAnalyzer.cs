@@ -106,12 +106,14 @@ internal static class ChainAnalyzer
         TranslatedCallSite? executionSite = null;
         var clauseSites = new List<TranslatedCallSite>();
         bool isTraced = false;
+        int executionCount = 0;
 
         foreach (var site in chainSites)
         {
             if (IsExecutionKind(site.Bound.Raw.Kind))
             {
                 executionSite = site;
+                executionCount++;
             }
             else if (site.Bound.Raw.Kind == InterceptorKind.Trace)
             {
@@ -126,6 +128,22 @@ internal static class ChainAnalyzer
 
         if (executionSite == null)
             return null;
+
+        // Detect forked chains (multiple execution terminals sharing one ChainId)
+        if (executionCount > 1)
+        {
+            // Extract variable name from the ChainId (format: "filepath:offset:varName")
+            var chainId = executionSite.Bound.Raw.ChainId;
+            string? varName = null;
+            if (chainId != null)
+            {
+                var lastColon = chainId.LastIndexOf(':');
+                if (lastColon >= 0)
+                    varName = chainId.Substring(lastColon + 1);
+            }
+            return MakeRuntimeBuildChain(executionSite, clauseSites,
+                "Forked query chain", registry, isTraced, forkedVariableName: varName);
+        }
 
         // Sort clause sites by source location for deterministic ordering
         clauseSites.Sort((a, b) =>
@@ -979,7 +997,8 @@ internal static class ChainAnalyzer
         List<TranslatedCallSite> clauseSites,
         string reason,
         EntityRegistry? registry = null,
-        bool isTraced = false)
+        bool isTraced = false,
+        string? forkedVariableName = null)
     {
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
@@ -1026,7 +1045,8 @@ internal static class ChainAnalyzer
             possibleMasks: Array.Empty<ulong>(),
             parameters: Array.Empty<QueryParameter>(),
             tier: OptimizationTier.RuntimeBuild,
-            notAnalyzableReason: reason);
+            notAnalyzableReason: reason,
+            forkedVariableName: forkedVariableName);
 
         return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
     }

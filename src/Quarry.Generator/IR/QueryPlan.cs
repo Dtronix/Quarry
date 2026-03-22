@@ -33,7 +33,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         IReadOnlyList<QueryParameter> parameters,
         OptimizationTier tier,
         string? notAnalyzableReason = null,
-        IReadOnlyList<string>? unmatchedMethodNames = null)
+        IReadOnlyList<string>? unmatchedMethodNames = null,
+        string? forkedVariableName = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
@@ -53,6 +54,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         Tier = tier;
         NotAnalyzableReason = notAnalyzableReason;
         UnmatchedMethodNames = unmatchedMethodNames;
+        ForkedVariableName = forkedVariableName;
     }
 
     public QueryKind Kind { get; }
@@ -73,6 +75,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public OptimizationTier Tier { get; }
     public string? NotAnalyzableReason { get; }
     public IReadOnlyList<string>? UnmatchedMethodNames { get; }
+    public string? ForkedVariableName { get; }
 
     public bool Equals(QueryPlan? other)
     {
@@ -95,7 +98,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SqlExprSequenceEqual(GroupByExprs, other.GroupByExprs)
             && EqualityHelpers.SqlExprSequenceEqual(HavingExprs, other.HavingExprs)
             && EqualityHelpers.UlongSequenceEqual(PossibleMasks, other.PossibleMasks)
-            && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames);
+            && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames)
+            && ForkedVariableName == other.ForkedVariableName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryPlan);
