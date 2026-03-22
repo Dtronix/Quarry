@@ -44,14 +44,15 @@
 
 ## Progress
 
-- Build: Clean (0 errors, warnings only)
-- Tests: Pending verification after emitter migration (running now)
+- Generator build: Clean (0 errors, warnings only)
+- Test project: 214 compilation errors (generated code + test code regressions from bridge removal)
+- Tests before this session: 2951/2954 passing (99.9%)
 - Branch: feature/compiler-architecture
 - Phase 1 (extract enums): Complete ✓
-- Phase 2 (migrate emitters): Complete ✓
+- Phase 2 (migrate emitters + remove bridge): Complete ✓
 - Phase 3 (rewire QuarryGenerator): Partially complete (bridge removed, old dead code remains)
-- Phase 4 (delete old code): Not started
-- Phase 5 (fix tests): Not started
+- Phase 4 (delete old code): Not started — blocked on test fixes
+- Phase 5 (fix tests): Not started — 214 compilation errors + 2 pre-existing failures
 
 ## Current State
 
@@ -86,28 +87,42 @@
 
 ## Next Work (Priority Order)
 
-### 1. Run tests and fix any regressions from emitter migration
-Tests are currently running. Expected: most tests should pass since the emitter logic is unchanged, just consuming new types. Fix any property access mismatches or missing data.
+### 1. Fix ResultTypeName `?` regression in generated Select interceptors (~120 compilation errors)
 
-### 2. Phase 4: Delete old pipeline code
-Delete all dead code now that emitters consume new types directly:
-- `Models/UsageSiteInfo.cs`, `Models/ClauseInfo.cs`, `Models/PendingClauseInfo.cs`
-- `Models/ChainAnalysisResult.cs`, `Models/PrebuiltChainInfo.cs`, `Models/ChainParameterInfo.cs`
-- `Models/CarrierClassInfo.cs`
-- `Translation/ClauseTranslator.cs`, `Translation/ExpressionSyntaxTranslator.cs`
-- `Translation/ExpressionTranslationContext.cs`, `Translation/ExpressionTranslationResult.cs`
-- `Translation/SubqueryScope.cs`
-- `Sql/CompileTimeSqlBuilder.cs`, `Sql/SqlFragmentTemplate.cs`
+**Root cause**: The old bridge called `UsageSiteInfo.FromTranslatedCallSite(ts, projectionOverride: enrichedProj)` for every clause site. For Select sites, this replaced the discovery-time `ResultTypeName` (which is `?` because the semantic model can't see generator-produced entity types) with the enriched projection's `ResultTypeName`. With the bridge removed, Select sites keep the broken `?`.
+
+**Where the enriched data lives now**: `AssembledPlan.ProjectionInfo` is set correctly in `EmitFileInterceptorsNewPipeline` (QuarryGenerator.cs ~line 570). It has the correct `ResultTypeName`. The problem is that emitters read `site.ResultTypeName` instead of `chain.ProjectionInfo.ResultTypeName`.
+
+**Fix approach**: In `ClauseBodyEmitter.EmitSelect` (and `JoinBodyEmitter.EmitJoinedSelect`), when a `prebuiltChain` (now `AssembledPlan`) is available, use `prebuiltChain.ResultTypeName ?? site.ResultTypeName` instead of `site.ResultTypeName`. The chain's ResultTypeName is enriched and correct. Search for `site.ResultTypeName` in all emitters and check if the chain alternative should be preferred.
+
+**Alternatively**: Add an enrichment pass in `EmitFileInterceptorsNewPipeline` that propagates the enriched `ResultTypeName` onto the `TranslatedCallSite` objects themselves. This would require making `ResultTypeName` settable on `TranslatedCallSite` (or on `RawCallSite`). This is less clean but fewer emitter changes.
+
+**Verify with**: Use `.Trace()` on a failing chain to see what ResultTypeName the pipeline produces at each stage.
+
+### 2. Fix test code compilation errors (~54 errors)
+
+Test files directly construct `FileEmitter` and `FileInterceptorGroup` with old types (`UsageSiteInfo`, `PrebuiltChainInfo`). These are in:
+- `src/Quarry.Tests/Integration/` — integration test helpers
+- Any test that calls `new FileEmitter(...)` or `new FileInterceptorGroup(...)`
+
+**Fix approach**: Search test project for `new FileEmitter(` and `new FileInterceptorGroup(` and update to use new types. May need `TestCallSiteBuilder` / `TestPlanBuilder` helpers as described in impl-plan-compiler-bigbang.md Step 11. Or construct `TranslatedCallSite`/`AssembledPlan` directly with test data.
+
+### 3. Fix missing entity reader fields (~7 errors)
+
+`_entityReader_X` fields not generated for some custom entity reader classes. Check `InterceptorCodeGenerator.CollectEntityReaderInstances` — the migration changed `IReadOnlyList<UsageSiteInfo>` to `IReadOnlyList<TranslatedCallSite>`. Verify the property access patterns are correct (likely `site.ProjectionInfo` access needs adjustment).
+
+### 4. Phase 4: Delete old pipeline code
+
+Once tests compile and pass, delete all dead old-pipeline code:
+- `Models/UsageSiteInfo.cs`, `ClauseInfo.cs`, `PendingClauseInfo.cs`, `ChainAnalysisResult.cs`, `PrebuiltChainInfo.cs`, `ChainParameterInfo.cs`, `CarrierClassInfo.cs`
+- `Translation/ClauseTranslator.cs`, `ExpressionSyntaxTranslator.cs`, `ExpressionTranslationContext.cs`, `ExpressionTranslationResult.cs`, `SubqueryScope.cs`
+- `Sql/CompileTimeSqlBuilder.cs`, `SqlFragmentTemplate.cs`
 - `Generation/CarrierClassBuilder.cs`
-- Old methods in QuarryGenerator.cs (BuildPrebuiltChainInfo, BuildPrebuiltChainInfoForJoin, EnrichUsageSiteWithEntityInfo, etc.)
-- Old methods in UsageSiteDiscovery.cs (DiscoverUsageSite, old discovery paths)
-- `CodeGen/CarrierStrategy.cs` (old carrier types)
+- `CodeGen/CarrierStrategy.cs` (resolves CarrierField namespace collision)
+- Old methods in `QuarryGenerator.cs` (BuildPrebuiltChainInfo, BuildPrebuiltChainInfoForJoin, EnrichUsageSiteWithEntityInfo, AnalyzeExecutionChainsWithDiagnostics, DiscoverNavigationJoinChainMembers, GetNonTranslatableClauseKind, etc.)
+- Old methods in `UsageSiteDiscovery.cs` (DiscoverUsageSite, old discovery paths)
 
-### 3. Phase 5: Fix remaining test failures
-- Fix 2 navigation join inferred type failures (from previous sessions)
-- Fix any new test failures from the emitter migration
-- Rewrite internal unit tests that reference deleted old types
-
-### 4. Clean up UsageSiteDiscovery (Phase 3 remainder)
-- Remove DiscoverUsageSite and old ClauseTranslator calls
-- Make DiscoverRawCallSite the sole entry point
+### 5. Fix remaining pre-existing test failures
+- 2 navigation join inferred type failures (ChainId computation across type-changing fluent calls)
+- Clean up UsageSiteDiscovery to be RawCallSite-only
+- Rewrite any internal unit tests that reference deleted old types
