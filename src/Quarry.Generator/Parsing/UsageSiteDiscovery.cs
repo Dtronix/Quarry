@@ -723,6 +723,12 @@ internal static class UsageSiteDiscovery
             }
         }
 
+        // Detect batch insert chains (Values() or InsertMany() in receiver chain)
+        var isBatchInsert = usageSite.Kind is InterceptorKind.InsertExecuteNonQuery
+                or InterceptorKind.InsertExecuteScalar
+                or InterceptorKind.InsertToDiagnostics
+            && DetectBatchInsertInChain(invocation);
+
         return new RawCallSite(
             methodName: usageSite.MethodName,
             filePath: usageSite.FilePath,
@@ -760,7 +766,8 @@ internal static class UsageSiteDiscovery
             rawSqlTypeInfo: usageSite.RawSqlTypeInfo,
             setActionAssignments: usageSite.ClauseInfo is SetActionClauseInfo setAction ? setAction.Assignments : null,
             setActionParameters: usageSite.ClauseInfo is SetActionClauseInfo setAction2 ? setAction2.Parameters : null,
-            lambdaParameterNames: lambdaParamNames);
+            lambdaParameterNames: lambdaParamNames,
+            isBatchInsert: isBatchInsert);
     }
 
     /// <summary>
@@ -823,6 +830,29 @@ internal static class UsageSiteDiscovery
         };
 
         return (sqlExpr, clauseKind, isDescending);
+    }
+
+    /// <summary>
+    /// Detects if an insert terminal's receiver chain contains Values() or InsertMany(),
+    /// indicating a batch insert that cannot be carrier-optimized.
+    /// </summary>
+    private static bool DetectBatchInsertInChain(InvocationExpressionSyntax terminal)
+    {
+        // Walk the receiver chain from the terminal backwards
+        var current = terminal.Expression;
+        while (current is MemberAccessExpressionSyntax ma)
+        {
+            var name = ma.Name.Identifier.ValueText;
+            if (name == "Values" || name == "InsertMany")
+                return true;
+
+            // Walk deeper into the receiver
+            if (ma.Expression is InvocationExpressionSyntax invoc)
+                current = invoc.Expression;
+            else
+                break;
+        }
+        return false;
     }
 
     /// <summary>

@@ -49,7 +49,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         RawSqlTypeInfo? rawSqlTypeInfo = null,
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
-        ImmutableArray<string>? lambdaParameterNames = null)
+        ImmutableArray<string>? lambdaParameterNames = null,
+        bool isBatchInsert = false)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -88,6 +89,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         SetActionAssignments = setActionAssignments;
         SetActionParameters = setActionParameters;
         LambdaParameterNames = lambdaParameterNames;
+        IsBatchInsert = isBatchInsert;
     }
 
     // Identity and location
@@ -153,6 +155,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Ordered lambda parameter names for multi-entity join ON clause resolution
     public ImmutableArray<string>? LambdaParameterNames { get; }
 
+    // Batch insert flag (chain contains Values() or uses InsertMany)
+    public bool IsBatchInsert { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -190,7 +195,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
             && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
             && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters)
-            && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames);
+            && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
+            && IsBatchInsert == other.IsBatchInsert;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);
