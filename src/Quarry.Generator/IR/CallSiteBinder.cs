@@ -129,6 +129,16 @@ internal static class CallSiteBinder
         // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
         RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;
 
+        // Trace logging: record binding results
+        TraceCapture.Log(raw.UniqueId, $"[Trace] Binding ({raw.MethodName}):");
+        TraceCapture.Log(raw.UniqueId, $"  entity={raw.EntityTypeName}, found={entry != null}, ambiguous={isAmbiguous}");
+        if (entry != null)
+            TraceCapture.Log(raw.UniqueId, $"  table={tableName}, dialect={dialect}");
+        if (joinedEntity != null)
+            TraceCapture.Log(raw.UniqueId, $"  joinedEntity={resolvedJoinedEntityTypeName}");
+        if (joinedEntities != null)
+            TraceCapture.Log(raw.UniqueId, $"  joinedEntities=[{string.Join(", ", raw.JoinedEntityTypeNames!)}]");
+
         var bound = new BoundCallSite(
             raw: raw,
             contextClassName: contextClassName,
