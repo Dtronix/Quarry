@@ -37,7 +37,8 @@ internal static class SqlAssembler
                 executionSite: executionSite,
                 clauseSites: chain.ClauseSites,
                 entityTypeName: executionSite.Bound.Raw.EntityTypeName,
-                resultTypeName: executionSite.Bound.Raw.ResultTypeName,
+                resultTypeName: executionSite.Bound.Raw.ResultTypeName
+                    ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null),
                 dialect: dialect,
                 entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
                 isTraced: chain.IsTraced);
@@ -89,7 +90,8 @@ internal static class SqlAssembler
             executionSite: executionSite,
             clauseSites: chain.ClauseSites,
             entityTypeName: executionSite.Bound.Raw.EntityTypeName,
-            resultTypeName: executionSite.Bound.Raw.ResultTypeName,
+            resultTypeName: executionSite.Bound.Raw.ResultTypeName
+                ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null),
             dialect: dialect,
             entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
             isTraced: chain.IsTraced);

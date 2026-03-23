@@ -76,9 +76,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var rawCallSites = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => UsageSiteDiscovery.IsQuarryMethodCandidate(node),
-                transform: static (ctx, ct) => DiscoverRawCallSite(ctx, ct))
-            .Where(static site => site is not null)
-            .Select(static (site, _) => site!);
+                transform: static (ctx, ct) => DiscoverRawCallSites(ctx, ct))
+            .SelectMany(static (sites, _) => sites);
 
         // === Stage 3: Per-Site Binding (individually cached) ===
         var boundCallSites = rawCallSites
@@ -167,20 +166,21 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Discovers a raw call site from an invocation expression for the new pipeline.
+    /// Discovers raw call sites from an invocation expression for the new pipeline.
+    /// Returns multiple sites for navigation joins (the join site + post-join sites).
     /// </summary>
-    private static IR.RawCallSite? DiscoverRawCallSite(GeneratorSyntaxContext context, CancellationToken ct)
+    private static ImmutableArray<IR.RawCallSite> DiscoverRawCallSites(GeneratorSyntaxContext context, CancellationToken ct)
     {
         if (context.Node is not InvocationExpressionSyntax invocation)
-            return null;
+            return ImmutableArray<IR.RawCallSite>.Empty;
 
         try
         {
-            return UsageSiteDiscovery.DiscoverRawCallSite(invocation, context.SemanticModel, ct);
+            return UsageSiteDiscovery.DiscoverRawCallSites(invocation, context.SemanticModel, ct);
         }
         catch
         {
-            return null;
+            return ImmutableArray<IR.RawCallSite>.Empty;
         }
     }
 

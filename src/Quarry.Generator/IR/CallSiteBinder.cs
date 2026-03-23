@@ -125,6 +125,11 @@ internal static class CallSiteBinder
             }
             joinedEntities = resolved;
         }
+        // For non-join sites with builderKind == JoinedQuery that don't have JoinedEntityTypeNames
+        // (synthetically discovered post-join sites), build it from the entity + the first resolved
+        // join entity we can find. This is resolved later from the Join clause site in ChainAnalyzer.
+        // Note: we do NOT set JoinedEntityTypeNames on Join sites themselves — doing so would
+        // confuse the JoinBodyEmitter into treating them as chained joins.
 
         // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
         RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;

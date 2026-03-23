@@ -771,6 +771,207 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
+    /// Discovers raw call sites from an invocation expression, returning one or more RawCallSites.
+    /// For navigation join sites, this also forward-scans the fluent chain to discover post-join
+    /// method calls (Select, Trace, ToDiagnostics, etc.) that Roslyn cannot resolve because the
+    /// joined entity type is generated and type inference for the navigation lambda fails.
+    /// </summary>
+    public static ImmutableArray<RawCallSite> DiscoverRawCallSites(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var site = DiscoverRawCallSite(invocation, semanticModel, cancellationToken);
+        if (site == null)
+            return ImmutableArray<RawCallSite>.Empty;
+
+        // For navigation joins, forward-scan the chain to discover post-join sites
+        // that Roslyn can't resolve due to generated entity type inference failure.
+        if (site.IsNavigationJoin
+            && site.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+        {
+            var postJoinSites = DiscoverPostJoinSites(
+                invocation, site, semanticModel, cancellationToken);
+            if (postJoinSites.Length > 0)
+            {
+                var builder = ImmutableArray.CreateBuilder<RawCallSite>(1 + postJoinSites.Length);
+                builder.Add(site);
+                builder.AddRange(postJoinSites);
+                return builder.MoveToImmutable();
+            }
+        }
+
+        return ImmutableArray.Create(site);
+    }
+
+    /// <summary>
+    /// Walks forward from a navigation join invocation through the fluent chain,
+    /// creating RawCallSites for each post-join method call (Select, OrderBy, Trace,
+    /// ToDiagnostics, ExecuteFetchAllAsync, etc.) that the normal discovery missed.
+    /// </summary>
+    private static ImmutableArray<RawCallSite> DiscoverPostJoinSites(
+        InvocationExpressionSyntax joinInvocation,
+        RawCallSite joinSite,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var results = ImmutableArray.CreateBuilder<RawCallSite>();
+        var entityTypeName = joinSite.EntityTypeName;
+
+        // Resolve the joined entity type name. The Join site may have "TJoined" (unresolved type
+        // parameter) because Roslyn couldn't infer it. Try to resolve from the navigation lambda's
+        // semantic type info (e.g., NavigationList<Order> → Order).
+        string? joinedEntityTypeName = joinSite.JoinedEntityTypeName;
+        if (joinedEntityTypeName == null || joinedEntityTypeName == "TJoined")
+        {
+            if (joinInvocation.ArgumentList.Arguments.Count > 0
+                && joinInvocation.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax joinLambda)
+            {
+                var body = IR.SqlExprParser.GetLambdaBody(joinLambda);
+                if (body != null)
+                {
+                    var bodyType = semanticModel.GetTypeInfo(body, cancellationToken).Type;
+                    if (bodyType is INamedTypeSymbol navType
+                        && navType.Name == "NavigationList"
+                        && navType.TypeArguments.Length == 1
+                        && navType.TypeArguments[0].TypeKind != TypeKind.TypeParameter)
+                    {
+                        joinedEntityTypeName = navType.TypeArguments[0].ToDisplayString();
+                    }
+                }
+            }
+        }
+
+        // Build the joined entity type names list for synthetic post-join sites
+        List<string>? joinedEntityTypeNames = null;
+        if (joinedEntityTypeName != null && joinedEntityTypeName != "TJoined")
+        {
+            joinedEntityTypeNames = new List<string> { entityTypeName, joinedEntityTypeName };
+        }
+
+        // Walk UP the syntax tree to find invocations that use this join's result as receiver.
+        // Pattern: invocation.Parent is MemberAccessExpressionSyntax.Parent is InvocationExpressionSyntax
+        var currentInvoc = joinInvocation;
+        while (currentInvoc.Parent is MemberAccessExpressionSyntax parentMa
+               && parentMa.Parent is InvocationExpressionSyntax parentInvoc
+               && parentMa.Expression == currentInvoc)
+        {
+            var methodName = parentMa.Name.Identifier.ValueText;
+            if (!InterceptableMethods.TryGetValue(methodName, out var kind))
+                break;
+
+            // Check if this site was already discovered by the normal path
+            var normalDiscovery = DiscoverUsageSite(parentInvoc, semanticModel, cancellationToken);
+            if (normalDiscovery != null)
+            {
+                // Normal discovery succeeded — no need for synthetic site.
+                // Continue walking in case later sites in the chain fail.
+                currentInvoc = parentInvoc;
+                continue;
+            }
+
+            // Get location info
+            var location = GetMethodLocation(parentInvoc);
+            if (location == null)
+                break;
+
+            var (filePath, line, column) = location.Value;
+
+            // Get interceptable location
+            string? interceptableLocationData = null;
+            int interceptableLocationVersion = 1;
+#if QUARRY_GENERATOR
+            try
+            {
+#pragma warning disable RSEXPERIMENTAL002
+                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+                if (interceptableLocation != null)
+                {
+                    interceptableLocationData = interceptableLocation.Data;
+                    interceptableLocationVersion = interceptableLocation.Version;
+                }
+            }
+            catch { }
+#endif
+            if (interceptableLocationData == null)
+                break;
+
+            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
+
+            // Detect disqualifying patterns
+            var isInsideLoop = DetectLoopAncestor(parentInvoc);
+            var isInsideTryCatch = DetectTryCatchAncestor(parentInvoc);
+            var isCapturedInLambda = DetectLambdaCaptureAncestor(parentInvoc);
+            var conditionalInfo = DetectConditionalAncestor(parentInvoc);
+
+            // For Select(), analyze the projection syntactically
+            ProjectionInfo? projectionInfo = null;
+            if (kind == InterceptorKind.Select)
+            {
+                try
+                {
+                    // Entity count = 2 for a 2-entity nav join (primary + joined)
+                    projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
+                        parentInvoc,
+                        entityCount: 2,
+                        DefaultDiscoveryDialect);
+                }
+                catch { }
+            }
+
+            // Parse clause lambda to SqlExpr if applicable
+            SqlExpr? expression = null;
+            ClauseKind? clauseKind = null;
+            bool isDescending = false;
+            if (IsClauseMethod(kind))
+            {
+                var parsed = TryParseLambdaToSqlExpr(kind, parentInvoc, semanticModel);
+                if (parsed != null)
+                {
+                    expression = parsed.Value.Expression;
+                    clauseKind = parsed.Value.ClauseKind;
+                    isDescending = parsed.Value.IsDescending;
+                }
+            }
+
+            results.Add(new RawCallSite(
+                methodName: methodName,
+                filePath: filePath,
+                line: line,
+                column: column,
+                uniqueId: uniqueId,
+                kind: kind,
+                builderKind: BuilderKind.JoinedQuery,
+                entityTypeName: entityTypeName,
+                resultTypeName: null,
+                isAnalyzable: true,
+                nonAnalyzableReason: null,
+                interceptableLocationData: interceptableLocationData,
+                interceptableLocationVersion: interceptableLocationVersion,
+                location: new DiagnosticLocation(filePath, line, column, parentInvoc.Span),
+                expression: expression,
+                clauseKind: clauseKind,
+                isDescending: isDescending,
+                projectionInfo: projectionInfo,
+                contextClassName: joinSite.ContextClassName,
+                contextNamespace: joinSite.ContextNamespace,
+                isInsideLoop: isInsideLoop,
+                isInsideTryCatch: isInsideTryCatch,
+                isCapturedInLambda: isCapturedInLambda,
+                conditionalInfo: conditionalInfo,
+                chainId: chainId,
+                builderTypeName: "IJoinedQueryBuilder",
+                joinedEntityTypeNames: joinedEntityTypeNames));
+
+            currentInvoc = parentInvoc;
+        }
+
+        return results.ToImmutable();
+    }
+
+    /// <summary>
     /// Parses a lambda argument to SqlExpr without semantic translation.
     /// </summary>
     private static (SqlExpr Expression, ClauseKind ClauseKind, bool IsDescending)?

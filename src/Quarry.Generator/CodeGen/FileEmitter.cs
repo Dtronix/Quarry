@@ -290,17 +290,26 @@ internal sealed class FileEmitter
                 var chainSites = new List<TranslatedCallSite>();
                 foreach (var clause in chain.GetClauseEntries())
                 {
-                    if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var matchingSite))
+                    // Use the chain's updated site when JoinedEntityTypeNames was propagated
+                    // by ChainAnalyzer, otherwise use the original from allSitesForGeneration.
+                    var useSite = clause.Site;
+                    if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var origSite)
+                        && origSite.Bound.JoinedEntityTypeNames != null)
                     {
-                        chainSites.Add(matchingSite);
-                        processedSiteIds.Add(matchingSite.UniqueId);
+                        useSite = origSite;
                     }
+                    chainSites.Add(useSite);
+                    processedSiteIds.Add(useSite.UniqueId);
                 }
-                if (siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var execSite))
+                // Use the chain's execution site (may have propagated JoinedEntityTypeNames)
+                var chainExecSite = chain.ExecutionSite;
+                if (siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var origExecSite)
+                    && origExecSite.Bound.JoinedEntityTypeNames != null)
                 {
-                    chainSites.Add(execSite);
-                    processedSiteIds.Add(execSite.UniqueId);
+                    chainExecSite = origExecSite;
                 }
+                chainSites.Add(chainExecSite);
+                processedSiteIds.Add(chainExecSite.UniqueId);
 
                 if (chainSites.Count > 0)
                 {

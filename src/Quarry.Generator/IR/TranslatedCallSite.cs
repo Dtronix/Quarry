@@ -70,6 +70,31 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public string BuilderTypeName => Bound.Raw.BuilderTypeName ?? Bound.Entity?.EntityName ?? Bound.Raw.EntityTypeName;
     public System.Collections.Immutable.ImmutableArray<string>? InitializedPropertyNames => Bound.Raw.InitializedPropertyNames;
 
+    /// <summary>
+    /// Creates a copy with updated JoinedEntityTypeNames and JoinedEntities.
+    /// Used by ChainAnalyzer to propagate resolved names from the Join site to the execution site.
+    /// </summary>
+    public TranslatedCallSite WithJoinedEntityTypeNames(
+        IReadOnlyList<string> joinedEntityTypeNames,
+        IReadOnlyList<EntityRef>? joinedEntities)
+    {
+        var newBound = new BoundCallSite(
+            raw: Bound.Raw,
+            contextClassName: Bound.ContextClassName,
+            contextNamespace: Bound.ContextNamespace,
+            dialect: Bound.Dialect,
+            tableName: Bound.TableName,
+            schemaName: Bound.SchemaName,
+            entity: Bound.Entity,
+            joinedEntity: Bound.JoinedEntity,
+            joinedEntityTypeNames: joinedEntityTypeNames,
+            joinedEntities: joinedEntities,
+            insertInfo: Bound.InsertInfo,
+            updateInfo: Bound.UpdateInfo,
+            rawSqlTypeInfo: Bound.RawSqlTypeInfo);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+    }
+
     public bool Equals(TranslatedCallSite? other)
     {
         if (other is null) return false;

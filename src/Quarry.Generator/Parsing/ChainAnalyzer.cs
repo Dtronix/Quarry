@@ -162,6 +162,45 @@ internal static class ChainAnalyzer
 
         ct.ThrowIfCancellationRequested();
 
+        // For navigation join chains, synthetically discovered post-join sites may not have
+        // JoinedEntityTypeNames (Roslyn couldn't resolve the post-join call's receiver type).
+        // Build the names from the Join clause site's entity + joined entity and propagate.
+        IReadOnlyList<string>? resolvedJoinNames = null;
+        IReadOnlyList<EntityRef>? resolvedJoinEntities = null;
+        foreach (var site in clauseSites)
+        {
+            if (site.Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+                && site.Bound.JoinedEntity != null)
+            {
+                // First check if the Join already has JoinedEntityTypeNames from discovery
+                if (site.Bound.JoinedEntityTypeNames != null && site.Bound.JoinedEntityTypeNames.Count >= 2)
+                {
+                    resolvedJoinNames = site.Bound.JoinedEntityTypeNames;
+                    resolvedJoinEntities = site.Bound.JoinedEntities;
+                }
+                else
+                {
+                    // Build from entity + joinedEntity (navigation join case)
+                    resolvedJoinNames = new List<string> { site.Bound.Raw.EntityTypeName, site.Bound.JoinedEntity.EntityName };
+                    resolvedJoinEntities = new List<EntityRef> { site.Bound.Entity, site.Bound.JoinedEntity };
+                }
+                break;
+            }
+        }
+        if (resolvedJoinNames != null)
+        {
+            if (executionSite.Bound.JoinedEntityTypeNames == null)
+                executionSite = executionSite.WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
+            for (int i = 0; i < clauseSites.Count; i++)
+            {
+                if (clauseSites[i].Bound.JoinedEntityTypeNames == null
+                    && clauseSites[i].Bound.Raw.Kind is not (InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin))
+                {
+                    clauseSites[i] = clauseSites[i].WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
+                }
+            }
+        }
+
         // Identify conditional clauses from ConditionalInfo
         var conditionalTerms = new List<ConditionalTerm>();
         var bitIndex = 0;

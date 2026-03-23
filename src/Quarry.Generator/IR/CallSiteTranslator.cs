@@ -801,10 +801,13 @@ internal static class CallSiteTranslator
             return new TranslatedCallSite(bound);
 
         // Build the ON clause: "t0"."PkCol" = "t1"."FkCol"
+        // Use the same format as SqlExprBinder: QuotedColumnName includes the table qualifier prefix
+        var leftQualifier = SqlFormatting.QuoteIdentifier(bound.Dialect, "t0");
+        var rightQualifier = SqlFormatting.QuoteIdentifier(bound.Dialect, "t1");
         var leftCol = new ResolvedColumnExpr(
-            SqlFormatting.QuoteIdentifier(bound.Dialect, pkColumnName), "t0");
+            $"{leftQualifier}.{SqlFormatting.QuoteIdentifier(bound.Dialect, pkColumnName)}", leftQualifier);
         var rightCol = new ResolvedColumnExpr(
-            SqlFormatting.QuoteIdentifier(bound.Dialect, fkColumnName), "t1");
+            $"{rightQualifier}.{SqlFormatting.QuoteIdentifier(bound.Dialect, fkColumnName)}", rightQualifier);
         var onExpr = new BinaryOpExpr(leftCol, SqlBinaryOperator.Equal, rightCol);
 
         // Get the joined table name
