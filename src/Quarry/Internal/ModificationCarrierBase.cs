@@ -38,8 +38,8 @@ public abstract class DeleteCarrierBase<T> : IEntityAccessor<T>, IDeleteBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T> IEntityAccessor<T>.Insert(T entity)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T> IEntityAccessor<T>.InsertBatch<TColumns>(Func<T, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryPlan IEntityAccessor<T>.ToQueryPlan()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -116,8 +116,8 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T> IEntityAccessor<T>.Insert(T entity)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T> IEntityAccessor<T>.InsertBatch<TColumns>(Func<T, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryPlan IEntityAccessor<T>.ToQueryPlan()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -206,16 +206,13 @@ public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T> IEntityAccessor<T>.Insert(T entity)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IInsertBuilder<T> IEntityAccessor<T>.InsertMany(IEnumerable<T> entities)
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T> IEntityAccessor<T>.InsertBatch<TColumns>(Func<T, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryPlan IEntityAccessor<T>.ToQueryPlan()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // IInsertBuilder<T> explicit implementations
-
-    IInsertBuilder<T> IInsertBuilder<T>.Values(T entity)
-        => throw new InvalidOperationException("Carrier method IInsertBuilder.Values is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     IInsertBuilder<T> IInsertBuilder<T>.WithTimeout(TimeSpan timeout)
         => throw new InvalidOperationException("Carrier method IInsertBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -231,4 +228,68 @@ public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<
 
     QueryDiagnostics IInsertBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IInsertBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+}
+
+public abstract class BatchInsertCarrierBase<T> : IEntityAccessor<T>, IBatchInsertBuilder<T>, IExecutableBatchInsert<T>
+    where T : class
+{
+    public IQueryExecutionContext? Ctx;
+
+    // ── IEntityAccessor<T> stubs ──
+
+    IQueryBuilder<T> IEntityAccessor<T>.Where(Expression<Func<T, bool>> predicate)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IQueryBuilder<T, TResult> IEntityAccessor<T>.Select<TResult>(Func<T, TResult> selector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Select is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.Join<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.LeftJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.RightJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.Join<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder<T, TJoined> IEntityAccessor<T>.LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IQueryBuilder<T> IEntityAccessor<T>.Distinct()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Distinct is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IQueryBuilder<T> IEntityAccessor<T>.WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
+    string IEntityAccessor<T>.ToSql()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+    QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IDeleteBuilder<T> IEntityAccessor<T>.Delete()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Delete is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IUpdateBuilder<T> IEntityAccessor<T>.Update()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IInsertBuilder<T> IEntityAccessor<T>.Insert(T entity)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T> IEntityAccessor<T>.InsertBatch<TColumns>(Func<T, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryPlan IEntityAccessor<T>.ToQueryPlan()
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // IBatchInsertBuilder<T> explicit implementations
+
+    IExecutableBatchInsert<T> IBatchInsertBuilder<T>.Values(IEnumerable<T> entities)
+        => throw new InvalidOperationException("Carrier method IBatchInsertBuilder.Values is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    IBatchInsertBuilder<T> IBatchInsertBuilder<T>.WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IBatchInsertBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // IExecutableBatchInsert<T> explicit implementations
+
+    Task<int> IExecutableBatchInsert<T>.ExecuteNonQueryAsync(CancellationToken cancellationToken)
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ExecuteNonQueryAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    Task<TKey> IExecutableBatchInsert<T>.ExecuteScalarAsync<TKey>(CancellationToken cancellationToken)
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    string IExecutableBatchInsert<T>.ToSql()
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    QueryDiagnostics IExecutableBatchInsert<T>.ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }

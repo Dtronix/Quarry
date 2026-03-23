@@ -52,7 +52,8 @@ internal enum ClauseRole
     DeleteTransition,
     UpdateTransition,
     AllTransition,
-    InsertTransition
+    InsertTransition,
+    BatchInsertValues
 }
 
 /// <summary>

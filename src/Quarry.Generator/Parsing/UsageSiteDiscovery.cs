@@ -38,6 +38,8 @@ internal static class UsageSiteDiscovery
         "IDeleteBuilder",
         "IExecutableDeleteBuilder",
         "IInsertBuilder",
+        "IBatchInsertBuilder",
+        "IExecutableBatchInsert",
         "IEntityAccessor",
         "EntityAccessor"
     };
@@ -71,6 +73,8 @@ internal static class UsageSiteDiscovery
         ["Update"] = InterceptorKind.UpdateTransition,
         ["All"] = InterceptorKind.AllTransition,
         ["Insert"] = InterceptorKind.InsertTransition,
+        ["InsertBatch"] = InterceptorKind.BatchInsertColumnSelector,
+        ["Values"] = InterceptorKind.BatchInsertValues,
         ["Trace"] = InterceptorKind.Trace
     };
 
@@ -80,6 +84,22 @@ internal static class UsageSiteDiscovery
         "ExecuteNonQueryAsync",
         "ExecuteScalarAsync",
         "ToDiagnostics"
+    };
+
+    // Methods on IBatchInsertBuilder that need special handling
+    private static readonly HashSet<string> BatchInsertBuilderMethods = new(StringComparer.Ordinal)
+    {
+        "Values",
+        "WithTimeout"
+    };
+
+    // Methods on IExecutableBatchInsert that need special handling
+    private static readonly HashSet<string> ExecutableBatchInsertMethods = new(StringComparer.Ordinal)
+    {
+        "ExecuteNonQueryAsync",
+        "ExecuteScalarAsync",
+        "ToDiagnostics",
+        "ToSql"
     };
 
     // RawSql methods on QuarryContext that we intercept
@@ -105,7 +125,8 @@ internal static class UsageSiteDiscovery
 
         // Check if this is an interceptable method
         if (InterceptableMethods.ContainsKey(methodName)
-            || RawSqlMethods.ContainsKey(methodName))
+            || RawSqlMethods.ContainsKey(methodName)
+            || methodName == "ToSql")
             return true;
 
         // Could be a context entity factory method (Users(), Orders(), Delete<T>(), Update<T>())
@@ -309,6 +330,17 @@ internal static class UsageSiteDiscovery
         {
             if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
                 kind = InterceptorKind.InsertToDiagnostics;
+            else if (IsBatchInsertBuilderType(containingType.Name) && BatchInsertBuilderMethods.Contains(methodName))
+                kind = methodName == "Values" ? InterceptorKind.BatchInsertValues : InterceptorKind.WithTimeout;
+            else if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
+                kind = methodName switch
+                {
+                    "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
+                    "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
+                    "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
+                    "ToSql" => InterceptorKind.BatchInsertToSql,
+                    _ => InterceptorKind.Unknown
+                };
             else
                 return null;
         }
@@ -322,6 +354,24 @@ internal static class UsageSiteDiscovery
                 "ToDiagnostics" => InterceptorKind.InsertToDiagnostics,
                 _ => kind
             };
+        }
+
+        // Remap generic InterceptableMethods kinds to batch insert kinds when on batch insert types
+        if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
+        {
+            kind = methodName switch
+            {
+                "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
+                "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
+                "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
+                "ToSql" => InterceptorKind.BatchInsertToSql,
+                _ => kind
+            };
+        }
+
+        if (IsBatchInsertBuilderType(containingType.Name) && methodName == "Values")
+        {
+            kind = InterceptorKind.BatchInsertValues;
         }
 
         HashSet<string>? initializedPropertyNames = null;
@@ -580,11 +630,20 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // Detect batch insert chains (Values() or InsertMany() in receiver chain)
-        var isBatchInsert = kind is InterceptorKind.InsertExecuteNonQuery
-                or InterceptorKind.InsertExecuteScalar
-                or InterceptorKind.InsertToDiagnostics
-            && DetectBatchInsertInChain(invocation);
+        // Extract batch insert column names from column selector lambda
+        ImmutableArray<string>? batchInsertColumnNames = null;
+        if (kind == InterceptorKind.BatchInsertColumnSelector)
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNames(invocation);
+        }
+        // For batch insert terminals, walk the chain to find the column selector and extract column names
+        if (kind is InterceptorKind.BatchInsertExecuteNonQuery
+            or InterceptorKind.BatchInsertExecuteScalar
+            or InterceptorKind.BatchInsertToDiagnostics
+            or InterceptorKind.BatchInsertToSql)
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
+        }
 
         // ── Step 16: Build RawCallSite directly ────────────────────────────
         return new RawCallSite(
@@ -623,7 +682,7 @@ internal static class UsageSiteDiscovery
             setActionAssignments: setActionAssignments,
             setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
-            isBatchInsert: isBatchInsert);
+            batchInsertColumnNames: batchInsertColumnNames);
     }
 
     /// <summary>
@@ -894,26 +953,136 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Detects if an insert terminal's receiver chain contains Values() or InsertMany(),
-    /// indicating a batch insert that cannot be carrier-optimized.
+    /// Extracts column names from a batch insert column selector lambda.
+    /// Handles both single-column (u => u.Username) and tuple (u => (u.Username, u.Password)) forms.
     /// </summary>
-    private static bool DetectBatchInsertInChain(InvocationExpressionSyntax terminal)
+    private static ImmutableArray<string>? ExtractBatchInsertColumnNames(InvocationExpressionSyntax invocation)
     {
-        // Walk the receiver chain from the terminal backwards
-        var current = terminal.Expression;
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return null;
+
+        var argExpr = invocation.ArgumentList.Arguments[0].Expression;
+        if (argExpr is not LambdaExpressionSyntax lambda)
+            return null;
+
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body as ExpressionSyntax,
+            ParenthesizedLambdaExpressionSyntax paren => paren.Body as ExpressionSyntax,
+            _ => null
+        };
+
+        if (body == null) return null;
+
+        var names = new List<string>();
+
+        // Tuple form: u => (u.Username, u.Password)
+        if (body is TupleExpressionSyntax tuple)
+        {
+            foreach (var arg in tuple.Arguments)
+            {
+                if (arg.Expression is MemberAccessExpressionSyntax ma)
+                    names.Add(ma.Name.Identifier.ValueText);
+                else
+                    return null; // non-analyzable
+            }
+        }
+        // Single-column form: u => u.Username
+        else if (body is MemberAccessExpressionSyntax singleMa)
+        {
+            names.Add(singleMa.Name.Identifier.ValueText);
+        }
+        else
+        {
+            return null; // non-analyzable
+        }
+
+        return names.Count > 0 ? ImmutableArray.CreateRange(names) : null;
+    }
+
+    /// <summary>
+    /// Walks the receiver chain from a batch insert terminal to find the
+    /// BatchInsertColumnSelector (Insert(lambda)) and extract column names.
+    /// When the syntactic walk hits a variable, traces through its declaration
+    /// to find the InsertBatch call in the initializer chain.
+    /// </summary>
+    private static ImmutableArray<string>? ExtractBatchInsertColumnNamesFromChain(
+        InvocationExpressionSyntax terminal,
+        SemanticModel semanticModel,
+        CancellationToken ct)
+    {
+        var result = WalkChainForInsertBatch(terminal.Expression);
+        if (result != null)
+            return result;
+
+        // Syntactic walk didn't find InsertBatch — the receiver may be a variable.
+        // Trace through variable declarations to find the initializer chain.
+        var root = VariableTracer.WalkFluentChainRoot(
+            terminal.Expression is MemberAccessExpressionSyntax ma ? ma.Expression : terminal.Expression);
+        if (root is IdentifierNameSyntax)
+        {
+            var traceResult = VariableTracer.TraceToChainRoot(root, semanticModel, ct, maxHops: 2);
+            if (traceResult.Traced)
+            {
+                // Find the declarator of the first variable to get its full initializer
+                // (not just the root — we need the whole chain including InsertBatch)
+                var currentRoot = root;
+                for (int i = 0; i < traceResult.Hops; i++)
+                {
+                    if (currentRoot is not IdentifierNameSyntax ident)
+                        break;
+                    var declarator = VariableTracer.TryResolveDeclarator(ident, semanticModel, ct);
+                    var initializer = declarator != null ? VariableTracer.GetInitializerExpression(declarator) : null;
+                    if (initializer == null)
+                        break;
+
+                    // Try walking this initializer's chain for InsertBatch
+                    if (initializer is InvocationExpressionSyntax initInvoc)
+                    {
+                        result = WalkChainForInsertBatch(initInvoc.Expression);
+                        if (result != null)
+                            return result;
+                        // Also check if initInvoc itself is the InsertBatch call
+                        if (initInvoc.Expression is MemberAccessExpressionSyntax initMa
+                            && initMa.Name.Identifier.ValueText == "InsertBatch"
+                            && initInvoc.ArgumentList.Arguments.Count == 1
+                            && initInvoc.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax)
+                        {
+                            return ExtractBatchInsertColumnNames(initInvoc);
+                        }
+                    }
+
+                    currentRoot = VariableTracer.WalkFluentChainRoot(initializer);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Syntactic walk looking for InsertBatch(lambda) in a receiver chain.
+    /// </summary>
+    private static ImmutableArray<string>? WalkChainForInsertBatch(ExpressionSyntax expression)
+    {
+        var current = expression;
         while (current is MemberAccessExpressionSyntax ma)
         {
-            var name = ma.Name.Identifier.ValueText;
-            if (name == "Values" || name == "InsertMany")
-                return true;
-
-            // Walk deeper into the receiver
             if (ma.Expression is InvocationExpressionSyntax invoc)
+            {
+                if (invoc.Expression is MemberAccessExpressionSyntax innerMa
+                    && innerMa.Name.Identifier.ValueText == "InsertBatch"
+                    && invoc.ArgumentList.Arguments.Count == 1
+                    && invoc.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax)
+                {
+                    return ExtractBatchInsertColumnNames(invoc);
+                }
                 current = invoc.Expression;
+            }
             else
                 break;
         }
-        return false;
+        return null;
     }
 
     /// <summary>
@@ -1002,13 +1171,7 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return (false, false);
 
-        while (receiver is InvocationExpressionSyntax ci)
-        {
-            if (ci.Expression is MemberAccessExpressionSyntax cm)
-                receiver = cm.Expression;
-            else
-                break;
-        }
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
 
         if (receiver is not IdentifierNameSyntax rootId)
             return (false, false);
@@ -1144,48 +1307,38 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return null;
 
-        // Walk up through fluent chain
-        while (receiver is InvocationExpressionSyntax chainedInvoc)
-        {
-            if (chainedInvoc.Expression is MemberAccessExpressionSyntax chainedMember)
-                receiver = chainedMember.Expression;
-            else
-                break;
-        }
+        // Walk up through fluent chain to the syntactic root
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
 
-        // The root receiver identifies the chain (e.g., "db" in db.Users().Where(...))
-        var rootText = receiver.ToString();
+        // Trace through variable assignments to find the original chain origin
+        var traceResult = VariableTracer.TraceToChainRoot(receiver, semanticModel, ct, maxHops: 2);
+        var rootExpr = traceResult.Root;
+        var rootText = rootExpr.ToString();
 
-        // Check if root receiver is a local variable whose type is a Quarry builder
-        // (IQueryBuilder, IEntityAccessor, etc.). All uses of such a variable within the
-        // same method belong to the same chain (variable-based chains).
-        // Non-builder locals (like DbContext variables) still use statement scope to
-        // distinguish separate chains: db.Users().Execute(); db.Users().Execute();
+        // Check if the traced root is a local variable whose type is a Quarry builder.
+        // After tracing, this is only true when tracing stopped at maxHops (the root
+        // is still a builder variable we couldn't trace further).
         bool rootIsBuilderLocal = false;
-        if (receiver is IdentifierNameSyntax rootIdent)
+        if (rootExpr is IdentifierNameSyntax rootIdent)
         {
             var symbol = semanticModel.GetSymbolInfo(rootIdent, ct).Symbol;
             if (symbol is ILocalSymbol localSymbol)
             {
-                var typeName = localSymbol.Type.ToDisplayString();
-                if (typeName.Contains("IQueryBuilder") || typeName.Contains("IEntityAccessor")
-                    || typeName.Contains("QueryBuilder<") || typeName.Contains("EntityAccessor<")
-                    || typeName.Contains("IDeleteBuilder") || typeName.Contains("IExecutableDeleteBuilder")
-                    || typeName.Contains("IUpdateBuilder") || typeName.Contains("IExecutableUpdateBuilder")
-                    || typeName.Contains("IInsertBuilder")
-                    || typeName.Contains("DeleteBuilder<") || typeName.Contains("UpdateBuilder<")
-                    || typeName.Contains("InsertBuilder<"))
+                if (VariableTracer.IsBuilderType(localSymbol.Type.ToDisplayString()))
                     rootIsBuilderLocal = true;
             }
         }
 
-        // For non-local roots (fields/properties like _db), check if the containing statement
-        // assigns to a local variable. If so, use that variable's name to link the initial
-        // fluent chain with subsequent variable-based operations.
+        // Determine the assigned variable name for chain linking.
+        // When tracing succeeded and the root is a non-builder (e.g., context variable),
+        // use the first variable name from the trace to link all sites together.
         string? assignedVarName = null;
         if (!rootIsBuilderLocal)
         {
-            assignedVarName = GetAssignedVariableName(invocation);
+            if (traceResult.Traced && traceResult.FirstVariableName != null)
+                assignedVarName = traceResult.FirstVariableName;
+            else
+                assignedVarName = GetAssignedVariableName(invocation);
         }
 
         // Find the containing method scope
@@ -1204,8 +1357,7 @@ internal static class UsageSiteDiscovery
                 // so all uses of the same variable merge into one chain.
                 if (rootIsBuilderLocal)
                     return $"{filePath}:{method.Span.Start}:{rootText}";
-                // Initial assignment to a local (e.g., IQueryBuilder<T> query = _db.Users().Where(...))
-                // uses the assigned variable name to link with subsequent uses of that variable.
+                // Assignment linkage: traced first variable or direct assignment.
                 if (assignedVarName != null)
                     return $"{filePath}:{method.Span.Start}:{assignedVarName}";
                 // Standalone fluent chains: use statement scope to distinguish separate chains.
@@ -1321,7 +1473,17 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static bool IsDelegateParameterType(ITypeSymbol type)
     {
-        return type.TypeKind == TypeKind.Delegate;
+        if (type.TypeKind == TypeKind.Delegate)
+            return true;
+
+        // Expression<Func<...>> is a class, not a delegate, but should be treated as
+        // a delegate-like parameter for overload disambiguation (e.g., Insert(entity) vs Insert(lambda))
+        if (type is INamedTypeSymbol namedType
+            && namedType.IsGenericType
+            && namedType.ToDisplayString().StartsWith("System.Linq.Expressions.Expression<"))
+            return true;
+
+        return false;
     }
 
     private static bool IsNavigationJoinLambda(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
@@ -1558,12 +1720,6 @@ internal static class UsageSiteDiscovery
 
 
     /// <summary>
-    /// Walks backward from the terminal invocation through the fluent chain,
-    /// finds all Insert/InsertMany/Values calls, and collects property names
-    /// from their object initializers into a union set.
-    /// Returns null if any argument is non-analyzable or if the union is empty.
-    /// </summary>
-    /// <summary>
     /// Extracts initialized property names from a Set(entity) call's single argument.
     /// Returns null if the argument is not an analyzable object initializer.
     /// </summary>
@@ -1597,14 +1753,9 @@ internal static class UsageSiteDiscovery
                 next = ma.Expression;
             }
 
-            if (calledMethod == "Insert" || calledMethod == "Values")
+            if (calledMethod == "Insert")
             {
                 if (!TryExtractPropertyNamesFromArgument(invoc, result))
-                    return null;
-            }
-            else if (calledMethod == "InsertMany")
-            {
-                if (!TryExtractPropertyNamesFromInsertManyArgument(invoc, result))
                     return null;
             }
 
@@ -1669,65 +1820,9 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Handles InsertMany() arguments: ImplicitArrayCreationExpressionSyntax,
-    /// ArrayCreationExpressionSyntax, and CollectionExpressionSyntax.
-    /// Returns false if non-analyzable.
-    /// </summary>
-    private static bool TryExtractPropertyNamesFromInsertManyArgument(InvocationExpressionSyntax invocation, HashSet<string> result)
-    {
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return false;
-
-        var argExpr = invocation.ArgumentList.Arguments[0].Expression;
-
-        if (argExpr is ImplicitArrayCreationExpressionSyntax implicitArray && implicitArray.Initializer != null)
-        {
-            return ExtractFromArrayElements(implicitArray.Initializer.Expressions, result);
-        }
-
-        if (argExpr is ArrayCreationExpressionSyntax arrayCreation && arrayCreation.Initializer != null)
-        {
-            return ExtractFromArrayElements(arrayCreation.Initializer.Expressions, result);
-        }
-
-        if (argExpr is CollectionExpressionSyntax collectionExpr)
-        {
-            foreach (var element in collectionExpr.Elements)
-            {
-                if (element is ExpressionElementSyntax exprElement)
-                {
-                    if (!TryExtractPropertyNamesFromExpression(exprElement.Expression, result))
-                        return false;
-                }
-                else
-                {
-                    return false; // Spread or other non-analyzable element
-                }
-            }
-            return true;
-        }
-
-        // Non-analyzable: variable, method call, etc.
-        return false;
-    }
-
-    /// <summary>
-    /// Helper to iterate array initializer elements and extract property names.
-    /// </summary>
-    private static bool ExtractFromArrayElements(SeparatedSyntaxList<ExpressionSyntax> elements, HashSet<string> result)
-    {
-        foreach (var element in elements)
-        {
-            if (!TryExtractPropertyNamesFromExpression(element, result))
-                return false;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Walks the receiver invocation chain to find an Insert/InsertMany call and extracts
+    /// Walks the receiver invocation chain to find an Insert call and extracts
     /// the entity type name syntactically from its argument expression.
-    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToDiagnostics()</c>, this finds
+    /// For example, in <c>ctx.Insert(new User{}).ToDiagnostics()</c>, this finds
     /// <c>Insert(new User{})</c> and returns "User".
     /// </summary>
     private static string? ExtractEntityTypeNameFromChain(ExpressionSyntax receiverExpression)
@@ -1748,7 +1843,7 @@ internal static class UsageSiteDiscovery
                 // Prepare for next iteration (walk deeper)
                 var next = ma.Expression;
 
-                if (calledMethod == "Insert" || calledMethod == "InsertMany")
+                if (calledMethod == "Insert")
                 {
                     if (invoc.ArgumentList.Arguments.Count > 0)
                     {
@@ -2035,8 +2130,8 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Resolves the entity type name from an identifier by tracing to its variable declaration
     /// and inspecting the initializer expression. Handles patterns like:
-    /// <c>var users = new[] { new User{} }; db.InsertMany(users)...</c>
-    /// <c>var users = items.Select(i => new User{...}); db.InsertMany(users)...</c>
+    /// <c>var users = new[] { new User{} }; db.InsertBatch(u => u.Name).Values(users)...</c>
+    /// <c>var users = items.Select(i => new User{...}); db.InsertBatch(u => u.Name).Values(users)...</c>
     /// </summary>
     private static string? ExtractTypeNameFromIdentifierInitializer(ExpressionSyntax expression)
     {
@@ -2206,7 +2301,7 @@ internal static class UsageSiteDiscovery
                         && argType.TypeKind != TypeKind.TypeParameter
                         && argType.TypeKind != TypeKind.Error)
                     {
-                        // For InsertMany(IEnumerable<T>), unwrap the element type
+                        // For InsertBatch(Func<T, TColumns>), unwrap the element type
                         if (argType.IsGenericType && chainedMethod.Parameters.Length > 0)
                         {
                             var paramType = chainedMethod.Parameters[0].Type;
@@ -2334,6 +2429,12 @@ internal static class UsageSiteDiscovery
     private static bool IsInsertBuilderType(string typeName)
         => typeName == "IInsertBuilder";
 
+    private static bool IsBatchInsertBuilderType(string typeName)
+        => typeName == "IBatchInsertBuilder";
+
+    private static bool IsExecutableBatchInsertType(string typeName)
+        => typeName == "IExecutableBatchInsert";
+
     /// <summary>
     /// Extracts the entity and result type arguments from a builder type.
     /// </summary>
@@ -2382,6 +2483,8 @@ internal static class UsageSiteDiscovery
         if (typeName.Contains("DeleteBuilder")) return BuilderKind.Delete;
         if (typeName.Contains("ExecutableUpdateBuilder")) return BuilderKind.ExecutableUpdate;
         if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
+        if (typeName.Contains("ExecutableBatchInsert")) return BuilderKind.ExecutableBatchInsert;
+        if (typeName.Contains("BatchInsertBuilder")) return BuilderKind.BatchInsert;
         if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
         if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
         return BuilderKind.Query;
@@ -2468,43 +2571,11 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return null;
 
-        // Recursively unwrap fluent chain: while receiver is an invocation, drill into its receiver
-        while (receiver is InvocationExpressionSyntax chainedInvocation)
-        {
-            if (chainedInvocation.Expression is MemberAccessExpressionSyntax chainedMember)
-            {
-                receiver = chainedMember.Expression;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        // If receiver is a local variable, trace through its initializer to find the context.
-        // This handles patterns like: var del = _db.Delete<T>().Where(...); del.ExecuteNonQueryAsync()
-        if (receiver is IdentifierNameSyntax identifier)
-        {
-            var symbol = semanticModel.GetSymbolInfo(identifier, cancellationToken).Symbol;
-            if (symbol is ILocalSymbol local && local.DeclaringSyntaxReferences.Length == 1)
-            {
-                var declSyntax = local.DeclaringSyntaxReferences[0].GetSyntax();
-                if (declSyntax is VariableDeclaratorSyntax declarator && declarator.Initializer?.Value != null)
-                {
-                    // Create a synthetic invocation-like wrapper to reuse our chain-walking logic
-                    var initExpr = declarator.Initializer.Value;
-                    // Walk the initializer's fluent chain to find the root
-                    while (initExpr is InvocationExpressionSyntax initInvoc)
-                    {
-                        if (initInvoc.Expression is MemberAccessExpressionSyntax initMember)
-                            initExpr = initMember.Expression;
-                        else
-                            break;
-                    }
-                    receiver = initExpr;
-                }
-            }
-        }
+        // Walk the fluent chain to the syntactic root, then trace through variable
+        // assignments (up to 2 hops) to find the original chain origin.
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
+        var traceResult = VariableTracer.TraceToChainRoot(receiver, semanticModel, cancellationToken, maxHops: 2);
+        receiver = traceResult.Root;
 
         // Now receiver should be the root (e.g., `db.Users` or `db` or `variable`)
         // For property access like db.Users, we want the type of db (the left side)

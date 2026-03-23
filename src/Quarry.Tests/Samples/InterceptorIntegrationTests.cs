@@ -1136,27 +1136,7 @@ public class InterceptorIntegrationTests
         Assert.That(_connection.LastCommand.CommandText, Does.Not.Contain("\"LastLogin\""));
     }
 
-    [Test]
-    public async Task InsertMany_MultipleEntities_ExecuteNonQueryAsync_Succeeds()
-    {
-        _connection.NonQueryResult = 3;
-
-        var entities = new[]
-        {
-            new User { UserName = "user1", IsActive = true, CreatedAt = DateTime.UtcNow },
-            new User { UserName = "user2", IsActive = false, CreatedAt = DateTime.UtcNow },
-            new User { UserName = "user3", IsActive = true, CreatedAt = DateTime.UtcNow }
-        };
-
-        var result = await _db.Users().InsertMany(entities).ExecuteNonQueryAsync();
-
-        Assert.That(result, Is.EqualTo(3));
-        Assert.That(_connection.LastCommand, Is.Not.Null);
-        Assert.That(_connection.LastCommand!.CommandText, Does.Contain("INSERT INTO"));
-        Assert.That(_connection.LastCommand.CommandText, Does.Contain("\"users\""));
-        // Should have 3 VALUE tuples
-        Assert.That(_connection.LastCommand.CommandText, Does.Contain("), ("));
-    }
+    // InsertMany test removed: old InsertMany() API has been replaced by column-selector batch API.
 
     [Test]
     public async Task Insert_SingleEntity_ExecuteScalarAsync_ReturnsIdentity()

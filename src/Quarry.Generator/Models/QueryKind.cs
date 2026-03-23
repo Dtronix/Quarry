@@ -8,5 +8,6 @@ internal enum QueryKind
     Select,
     Delete,
     Update,
-    Insert
+    Insert,
+    BatchInsert
 }

@@ -177,6 +177,9 @@ internal static class CarrierEmitter
             InterceptorKind.InsertExecuteNonQuery or InterceptorKind.InsertExecuteScalar
                 or InterceptorKind.InsertToDiagnostics
                 => CanEmitInsertTerminal(chain),
+            InterceptorKind.BatchInsertExecuteNonQuery or InterceptorKind.BatchInsertExecuteScalar
+                or InterceptorKind.BatchInsertToDiagnostics or InterceptorKind.BatchInsertToSql
+                => true, // Batch insert terminals are always emittable
             _ => true
         };
     }
@@ -239,6 +242,8 @@ internal static class CarrierEmitter
             return $"UpdateCarrierBase<{entityType}>";
         if (chain.QueryKind == QueryKind.Insert)
             return $"InsertCarrierBase<{entityType}>";
+        if (chain.QueryKind == QueryKind.BatchInsert)
+            return $"BatchInsertCarrierBase<{entityType}>";
 
         var hasSelect = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Select);
         var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;

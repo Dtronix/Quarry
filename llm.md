@@ -165,8 +165,13 @@ db.Users.Where(u => u.Orders.Count(o => o.Total > 50) > 2).ExecuteFetchAllAsync(
 // Insert — initializer-aware: only explicitly set properties generate columns
 await db.Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
 var id = await db.Insert(user).ExecuteScalarAsync<int>(); // returns generated key
-await db.InsertMany(users).ExecuteNonQueryAsync();
 var sql = db.Insert(user).ToSql(); // preview SQL
+
+// Batch insert — column-selector lambda + data-provider collection
+await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+// Variable-stored
+var batch = db.Users().InsertBatch(u => (u.UserName, u.IsActive));
+await batch.Values(users).ExecuteNonQueryAsync();
 
 // Update — must call Where() or All() before execution
 await db.Update<User>().Set(u => u.UserName, "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
@@ -258,7 +263,7 @@ Public API uses interfaces; concrete builders are internal. Interceptors cast vi
 
 **Query interfaces:** `IQueryBuilder<T>` (no projection: Where, Select, OrderBy, ThenBy, Offset, Limit, Distinct, GroupBy, Having, WithTimeout, Join/LeftJoin/RightJoin, ToSql). `IQueryBuilder<TEntity, TResult>` (with projection: adds execution methods). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder4<T1,T2,T3,T4>` (+ projected variants with `TResult`). Max 4 tables.
 
-**Modification interfaces:** `IDeleteBuilder<T>` → `IExecutableDeleteBuilder<T>` (via Where/All). `IUpdateBuilder<T>` → `IExecutableUpdateBuilder<T>` (via Where/All). `IInsertBuilder<T>` (Values, ExecuteNonQueryAsync, ExecuteScalarAsync, ToSql).
+**Modification interfaces:** `IDeleteBuilder<T>` → `IExecutableDeleteBuilder<T>` (via Where/All). `IUpdateBuilder<T>` → `IExecutableUpdateBuilder<T>` (via Where/All). `IInsertBuilder<T>` (single-entity insert). `IBatchInsertBuilder<T>` (after column-selector `InsertBatch(lambda)`) → `IExecutableBatchInsert<T>` (after `Values(collection)`, supports ExecuteNonQueryAsync, ExecuteScalarAsync, ToSql, ToDiagnostics).
 
 Key files: `Query/IQueryBuilder.cs`, `Query/IJoinedQueryBuilder.cs`, `Query/Modification/IModificationBuilder.cs`.
 
@@ -355,11 +360,36 @@ Key type: `RawSqlTypeInfo` (`Models/RawSqlTypeInfo.cs`) — `RawSqlTypeKind`, `R
 
 ### Insert Interceptor Pipeline
 
-**Discovery:** `UsageSiteDiscovery` identifies `Insert`/`InsertMany` call chains → extracts `InitializedPropertyNames` from object initializer syntax by walking fluent chain backward. Returns `null` if any argument is non-analyzable (variables, factory methods).
+**Single insert discovery:** `UsageSiteDiscovery` identifies `Insert` call chains → extracts `InitializedPropertyNames` from object initializer syntax by walking fluent chain backward. Returns `null` if any argument is non-analyzable (variables, factory methods).
 
 **Column selection:** `InsertInfo.FromEntityInfo()` filters columns: skip computed, skip identity (moved to RETURNING/OUTPUT), then if `InitializedPropertyNames` provided → include only those properties. Fallback: all non-identity/non-computed columns.
 
 **Interceptor kinds:** `InsertExecuteNonQuery`, `InsertExecuteScalar`, `InsertToSql`. Generated code calls `builder.SetColumns()`, iterates entities to `AddParameter`/`AddRow`, delegates to `ModificationExecutor`.
+
+### Batch Insert Pipeline
+
+**API:** `IEntityAccessor<T>.InsertBatch<TColumns>(Func<T, TColumns> columnSelector)` → `IBatchInsertBuilder<T>` → `.Values(IEnumerable<T>)` → `IExecutableBatchInsert<T>`. Column selector lambda is analyzed at compile time; data provision happens at runtime.
+
+**Discovery:** `UsageSiteDiscovery` identifies `InsertBatch`, `Values`, and terminal (`ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ToSql`, `ToDiagnostics`) call sites. `ExtractBatchInsertColumnNamesFromChain` walks the receiver chain (and traces through variables via `VariableTracer`) to find the `InsertBatch(lambda)` call and extract column names from the lambda.
+
+**Variable-stored chains:** `VariableTracer.TraceToChainRoot` traces through up to 2 variable assignments (builder-type locals only) to unify fragmented chains. `ComputeChainId` and `ResolveContextFromCallSite` both use this tracing to ensure all sites in a variable-split chain share the same ChainId and context.
+
+**Code generation:** `BatchInsertCarrierBase<T>` carrier class stores `BatchEntities` field. Terminal interceptors call `BatchInsertSqlBuilder.Build()` which expands the compile-time SQL prefix with runtime entity count and parameter placeholders. `MaxParameterCount` (2100) guard prevents oversized batches.
+
+**Interceptor kinds:** `BatchInsertColumnSelector`, `BatchInsertValues`, `BatchInsertExecuteNonQuery`, `BatchInsertExecuteScalar`, `BatchInsertToSql`, `BatchInsertToDiagnostics`.
+
+### Variable-Walking Chain Unification
+
+**Problem:** When a fluent chain is split across local variables, each variable assignment gets a different `ChainId`, fragmenting the chain for analysis.
+
+**Solution:** `VariableTracer` (`Parsing/VariableTracer.cs`) provides reusable primitives:
+- `WalkFluentChainRoot(expr)` — walks nested invocations to the deepest non-invocation receiver
+- `TraceToChainRoot(receiver, semanticModel, ct, maxHops=2)` — traces through builder-type variable declarations to find the original chain origin. Only traces through variables whose type is a known Quarry builder (prevents context variable collapse).
+- `IsBuilderType(displayString)` / `IsBuilderTypeName(shortName)` — consolidated builder type checks
+
+**Consumers:** `ComputeChainId` (chain grouping), `ExtractBatchInsertColumnNamesFromChain` (column name extraction), `ResolveContextFromCallSite` (context resolution), `AnalyzabilityChecker.HasAnalyzableInitializer` (QRY001 suppression).
+
+**Key invariant:** `TraceResult.FirstVariableName` records the deepest variable (closest to chain origin), matching `GetAssignedVariableName` on the root statement for ChainId consistency.
 
 ### LIKE Parameterization
 

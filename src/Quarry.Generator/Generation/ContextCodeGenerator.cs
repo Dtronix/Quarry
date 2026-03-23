@@ -148,45 +148,6 @@ internal static class ContextCodeGenerator
         };
     }
 
-    /// <summary>
-    /// Generates Insert methods for an entity.
-    /// </summary>
-    private static void GenerateInsertMethods(StringBuilder sb, EntityMapping mapping, string? schemaName, string access)
-    {
-        var entity = mapping.Entity;
-        var entityName = entity.EntityName;
-        var tableName = entity.TableName;
-        var schemaArg = !string.IsNullOrEmpty(schemaName) ? "_schemaName" : "null";
-
-        // Insert(entity) - single entity insert
-        sb.AppendLine($"    /// <summary>");
-        sb.AppendLine($"    /// Creates an INSERT operation for a single {entityName}.");
-        sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    /// <param name=\"entity\">The entity to insert.</param>");
-        sb.AppendLine($"    /// <returns>An InsertBuilder for execution.</returns>");
-        sb.AppendLine($"    {access} IInsertBuilder<{entityName}> Insert({entityName} entity)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new InsertBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, (IQueryExecutionContext)this, entity);");
-        sb.AppendLine($"    }}");
-        sb.AppendLine();
-
-        // InsertMany(entities) - batch insert
-        sb.AppendLine($"    /// <summary>");
-        sb.AppendLine($"    /// Creates an INSERT operation for multiple {entityName} entities.");
-        sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    /// <param name=\"entities\">The entities to insert.</param>");
-        sb.AppendLine($"    /// <returns>An InsertBuilder for execution.</returns>");
-        sb.AppendLine($"    {access} IInsertBuilder<{entityName}> InsertMany(IEnumerable<{entityName}> entities)");
-        sb.AppendLine($"    {{");
-        sb.AppendLine($"        var builder = new InsertBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, (IQueryExecutionContext)this);");
-        sb.AppendLine($"        foreach (var entity in entities)");
-        sb.AppendLine($"        {{");
-        sb.AppendLine($"            builder.Values(entity);");
-        sb.AppendLine($"        }}");
-        sb.AppendLine($"        return builder;");
-        sb.AppendLine($"    }}");
-        sb.AppendLine();
-    }
 
     /// <summary>
     /// Generates an Update method for an entity.

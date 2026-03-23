@@ -385,7 +385,18 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
         }
 
-        EmitFileInterceptorsNewPipeline(spc, group, compilation);
+        try
+        {
+            EmitFileInterceptorsNewPipeline(spc, group, compilation);
+        }
+        catch (Exception ex)
+        {
+            var loc = syntaxTree != null ? Location.Create(syntaxTree, default) : Location.None;
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                loc,
+                $"Failed to emit interceptors for '{group.SourceFilePath}': {ex.Message}\n{ex.StackTrace}"));
+        }
     }
 
     private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
@@ -434,8 +445,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 projInfo = assembled.ExecutionSite.ProjectionInfo;
             assembled.ProjectionInfo = projInfo;
 
-            // Generate reader delegate code for SELECT queries
-            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
+            // Generate reader delegate code for SELECT queries (skip if projection failed)
+            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select
+                && projInfo != null && projInfo.Kind != ProjectionKind.Unknown)
             {
                 var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
                 assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);

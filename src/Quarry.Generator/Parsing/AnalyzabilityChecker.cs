@@ -104,8 +104,9 @@ internal static class AnalyzabilityChecker
                     }
                     return (false, "Query builder is stored in a local variable");
 
-                case IParameterSymbol:
-                    // Parameter - not analyzable
+                case IParameterSymbol param:
+                    if (IsQuarryContextType(param.Type))
+                        return (true, null);
                     return (false, "Query builder is a method parameter");
 
                 case IFieldSymbol field:
@@ -145,7 +146,7 @@ internal static class AnalyzabilityChecker
                 if (invokedMethod.ContainingType != null && IsQuarryContextType(invokedMethod.ContainingType))
                     return (true, null);
                 if (invokedMethod.ReturnType is INamedTypeSymbol rt
-                    && rt.Name is "IQueryBuilder" or "QueryBuilder" or "IDeleteBuilder" or "IUpdateBuilder" or "EntityAccessor" or "IEntityAccessor")
+                    && VariableTracer.IsBuilderTypeName(rt.Name))
                     return (true, null);
             }
         }
@@ -157,24 +158,57 @@ internal static class AnalyzabilityChecker
     /// <summary>
     /// Checks if a local variable has a single declaration with an analyzable initializer
     /// (e.g. a property access, constructor call, or fluent chain from a known source).
+    /// Traces through builder variable assignments up to 2 hops.
     /// </summary>
     private static bool HasAnalyzableInitializer(
         ILocalSymbol local,
         IdentifierNameSyntax usage,
         SemanticModel semanticModel)
     {
-        // Find the declaring syntax reference
-        if (local.DeclaringSyntaxReferences.Length != 1)
+        var declarator = VariableTracer.TryResolveDeclarator(usage, semanticModel, CancellationToken.None);
+        if (declarator == null)
             return false;
 
-        var declSyntax = local.DeclaringSyntaxReferences[0].GetSyntax();
-        if (declSyntax is not VariableDeclaratorSyntax declarator)
-            return false;
-
-        var initializer = declarator.Initializer?.Value;
+        var initializer = VariableTracer.GetInitializerExpression(declarator);
         if (initializer == null)
             return false;
 
+        if (CheckInitializerAnalyzability(initializer, semanticModel))
+            return true;
+
+        // If the initializer's chain root is a builder variable, trace through it
+        var root = VariableTracer.WalkFluentChainRoot(initializer);
+        if (root is IdentifierNameSyntax rootIdent)
+        {
+            var traceResult = VariableTracer.TraceToChainRoot(rootIdent, semanticModel, CancellationToken.None, maxHops: 2);
+            if (traceResult.Traced)
+            {
+                // Re-check analyzability from the traced origin's initializer
+                var tracedDeclarator = traceResult.Root is IdentifierNameSyntax tracedIdent
+                    ? VariableTracer.TryResolveDeclarator(tracedIdent, semanticModel, CancellationToken.None)
+                    : null;
+                if (tracedDeclarator != null)
+                {
+                    var tracedInit = VariableTracer.GetInitializerExpression(tracedDeclarator);
+                    if (tracedInit != null)
+                        return CheckInitializerAnalyzability(tracedInit, semanticModel);
+                }
+                // Traced root is not a variable (e.g., context access) — analyzable
+                if (traceResult.Root is not IdentifierNameSyntax)
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if an initializer expression is analyzable (property access or fluent chain).
+    /// </summary>
+    private static bool CheckInitializerAnalyzability(
+        ExpressionSyntax initializer,
+        SemanticModel semanticModel)
+    {
         // Property access: db.Users
         if (initializer is MemberAccessExpressionSyntax memberAccess)
         {

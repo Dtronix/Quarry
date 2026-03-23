@@ -202,6 +202,38 @@ internal enum InterceptorKind
     InsertTransition,
 
     /// <summary>
+    /// Insert(u => (u.Col1, u.Col2)) — batch insert column declaration on IEntityAccessor.
+    /// On the carrier path: returns carrier as IBatchInsertBuilder.
+    /// </summary>
+    BatchInsertColumnSelector,
+
+    /// <summary>
+    /// .Values(entities) — data provision on IBatchInsertBuilder.
+    /// On the carrier path: stores entity collection on carrier, returns as IExecutableBatchInsert.
+    /// </summary>
+    BatchInsertValues,
+
+    /// <summary>
+    /// ExecuteNonQueryAsync() on IExecutableBatchInsert — batch insert execution.
+    /// </summary>
+    BatchInsertExecuteNonQuery,
+
+    /// <summary>
+    /// ExecuteScalarAsync&lt;TKey&gt;() on IExecutableBatchInsert — batch insert with identity return.
+    /// </summary>
+    BatchInsertExecuteScalar,
+
+    /// <summary>
+    /// ToDiagnostics() on IExecutableBatchInsert — batch insert diagnostics.
+    /// </summary>
+    BatchInsertToDiagnostics,
+
+    /// <summary>
+    /// ToSql() on IExecutableBatchInsert — batch insert SQL preview.
+    /// </summary>
+    BatchInsertToSql,
+
+    /// <summary>
     /// .Trace() method - compile-time-only signal for chain tracing.
     /// No interceptor generated; marks the chain as traced for inline comment emission.
     /// </summary>
@@ -225,4 +257,6 @@ internal enum BuilderKind
     ExecutableUpdate,
     JoinedQuery,
     EntityAccessor,
+    BatchInsert,
+    ExecutableBatchInsert,
 }

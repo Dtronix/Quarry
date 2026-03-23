@@ -49,4 +49,10 @@ public static class TraceExtensions
 
     public static IInsertBuilder<T> Trace<T>(this IInsertBuilder<T> builder) where T : class
         => builder;
+
+    public static IBatchInsertBuilder<T> Trace<T>(this IBatchInsertBuilder<T> builder) where T : class
+        => builder;
+
+    public static IExecutableBatchInsert<T> Trace<T>(this IExecutableBatchInsert<T> builder) where T : class
+        => builder;
 }

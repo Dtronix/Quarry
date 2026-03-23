@@ -258,10 +258,8 @@ internal static class ChainAnalyzer
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
         // But we track Limit/Offset/Distinct/WithTimeout which have no clause translation.
-        // Batch insert chains have Values()/InsertMany() calls that are not intercepted.
+        // New batch insert chains (BatchInsertColumnSelector → Values → terminal) are fully tracked.
         IReadOnlyList<string>? unmatchedMethodNames = null;
-        if (executionSite.Bound.Raw.IsBatchInsert)
-            unmatchedMethodNames = new[] { "Values" };
 
         // Build QueryPlan terms from TranslatedClause data
         var whereTerms = new List<WhereTerm>();
@@ -537,7 +535,7 @@ internal static class ChainAnalyzer
         }
 
         // Handle insert columns
-        if (queryKind == QueryKind.Insert && executionSite.Bound.InsertInfo != null)
+        if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && executionSite.Bound.InsertInfo != null)
         {
             var insertInfo = executionSite.Bound.InsertInfo;
             for (int c = 0; c < insertInfo.Columns.Count; c++)
@@ -972,6 +970,12 @@ internal static class ChainAnalyzer
             kind == InterceptorKind.InsertToDiagnostics)
             return QueryKind.Insert;
 
+        if (kind == InterceptorKind.BatchInsertExecuteNonQuery ||
+            kind == InterceptorKind.BatchInsertExecuteScalar ||
+            kind == InterceptorKind.BatchInsertToDiagnostics ||
+            kind == InterceptorKind.BatchInsertToSql)
+            return QueryKind.BatchInsert;
+
         return builderKind switch
         {
             BuilderKind.Delete or BuilderKind.ExecutableDelete => QueryKind.Delete,
@@ -1137,6 +1141,8 @@ internal static class ChainAnalyzer
             InterceptorKind.UpdateTransition => ClauseRole.UpdateTransition,
             InterceptorKind.AllTransition => ClauseRole.AllTransition,
             InterceptorKind.InsertTransition => ClauseRole.InsertTransition,
+            InterceptorKind.BatchInsertColumnSelector => ClauseRole.InsertTransition,
+            InterceptorKind.BatchInsertValues => ClauseRole.BatchInsertValues,
             _ => null
         };
     }
@@ -1156,7 +1162,11 @@ internal static class ChainAnalyzer
             or InterceptorKind.ToDiagnostics
             or InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
-            or InterceptorKind.InsertToDiagnostics;
+            or InterceptorKind.InsertToDiagnostics
+            or InterceptorKind.BatchInsertExecuteNonQuery
+            or InterceptorKind.BatchInsertExecuteScalar
+            or InterceptorKind.BatchInsertToDiagnostics
+            or InterceptorKind.BatchInsertToSql;
     }
 
     /// <summary>
