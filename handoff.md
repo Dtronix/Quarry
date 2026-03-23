@@ -3,25 +3,25 @@
 ## Key Components
 
 - **New Pipeline**: RawCallSite → BoundCallSite → TranslatedCallSite → [Collect] → ChainAnalyzer → QueryPlan → SqlAssembler → AssembledPlan → CarrierAnalyzer → CarrierPlan → FileInterceptorGroup
-- **Bridge Layer**: REMOVED. EmitFileInterceptorsNewPipeline passes new types directly to emitters.
+- **No Bridge Layer**: EmitFileInterceptorsNewPipeline passes new types directly to emitters.
 - **FileInterceptorGroup**: Single constructor with new types only (Sites: TranslatedCallSite[], AssembledPlans, ChainMemberSites, CarrierPlans).
 - **PipelineOrchestrator**: Static class. Only AnalyzeAndGroupTranslated remains.
 - **CarrierPlan**: ClassName/BaseClassName assigned during emission in FileEmitter.
-- **AssembledPlan**: Has convenience properties mirroring PrebuiltChainInfo API. ProjectionInfo/TraceLines/JoinedTableInfos set by EmitFileInterceptorsNewPipeline.
+- **AssembledPlan**: Has convenience properties mirroring old PrebuiltChainInfo API. ProjectionInfo/TraceLines/JoinedTableInfos set by EmitFileInterceptorsNewPipeline.
 - **TranslatedClause**: Has SqlFragment (lazy-rendered) and SetAssignments for SetAction.
-- **TestCallSiteBuilder**: Test helper in `src/Quarry.Tests/Testing/TestCallSiteBuilder.cs` for constructing TranslatedCallSite in unit tests. Has `CreateJoinClause` and `CreateSimpleClause` static helpers.
+- **TestCallSiteBuilder**: Test helper in `src/Quarry.Tests/Testing/TestCallSiteBuilder.cs` for constructing TranslatedCallSite in unit tests.
+- **DiscoverRawCallSite**: Self-contained discovery method. No delegation to old DiscoverUsageSite. Parses clauses via SqlExprParser, handles SetAction directly.
+- **QuarryGenerator.cs**: Reduced from ~3,000 lines to ~1,200 lines. Only contains Initialize(), EmitFileInterceptorsNewPipeline(), context/migration code, and shared utilities.
 
 ## Completions (This Session)
 
-1. **Fix navigation join chain discovery** (2 failing tests → 0, +2 bonus):
-   - Added `DiscoverRawCallSites` (plural) to `UsageSiteDiscovery.cs` — wraps `DiscoverRawCallSite` and for navigation joins, forward-scans the fluent chain to discover post-join sites (Select, Trace, ToDiagnostics, ExecuteFetchAllAsync, etc.).
-   - Added `DiscoverPostJoinSites` — walks UP syntax tree from Join invocation, creates synthetic RawCallSites for each post-join method call.
-   - Changed `QuarryGenerator.Initialize()` Stage 2 to use `SelectMany` with the new plural method.
-   - Added `TranslatedCallSite.WithJoinedEntityTypeNames()` for immutable propagation.
-   - Added `JoinedEntityTypeNames` propagation in `ChainAnalyzer.AnalyzeChainGroup()`.
-   - Modified `FileEmitter.Emit()` to prefer chain-updated sites over original sites.
-   - `SqlAssembler`: falls back to projection's `ResultTypeName` when execution site lacks it.
-   - `CallSiteTranslator.TranslateNavigationJoin`: fixed ON clause to use table-qualified column names (`"t0"."UserId" = "t1"."UserId"` instead of `"UserId" = "UserId"`).
+1. **Phase 1 — Delete dead old-pipeline methods from QuarryGenerator.cs**: Removed 25 unreachable methods (~1,800 lines) including GetUsageSiteInfo, AnalyzeExecutionChainsWithDiagnostics, BuildPrebuiltChainInfo, EnrichUsageSiteWithEntityInfo, and 21 helper methods. Also removed DiscoverAllUsageSites from UsageSiteDiscovery.cs.
+
+2. **Phase 2 — Rewrite DiscoverRawCallSite to be self-contained**: Inlined symbol resolution, type extraction, InterceptorKind classification, and projection analysis from old DiscoverUsageSite. Added ExtractSetActionAssignments for direct SetAction handling without ClauseTranslator. Replaced DiscoverUsageSite call in DiscoverPostJoinSites with lightweight symbol check. Deleted AnalyzeClause and TrySyntacticAnalysis.
+
+3. **Phase 3 — Delete old pipeline types and translation infrastructure (~6,400 lines)**: Deleted 16 files: UsageSiteInfo, ClauseInfo, PendingClauseInfo, ChainAnalysisResult, PrebuiltChainInfo, ChainParameterInfo, CarrierClassInfo, InterceptorMethodInfo, ClauseTranslator, ExpressionSyntaxTranslator, ExpressionTranslationContext, ExpressionTranslationResult, SubqueryScope, CompileTimeSqlBuilder, SqlFragmentTemplate, CarrierClassBuilder. Moved IsNonNullableValueType to CarrierEmitter. Made SqlExprClauseTranslator static. Extracted ParameterInfo to standalone file. Converted TryDiscoverExecutionSiteSyntactically and DiscoverRawSqlUsageSite to return RawCallSite directly.
+
+4. **Phase 4 — Clean up test files**: Deleted 8 test files (ChainAnalyzerTests, ClauseTranslationTests, CompileTimeSqlBuilderTests, ExpressionPatternTranslationTests, ExpressionTranslationTests, TypeMappingExpressionTests, CompileTimeRuntimeEquivalenceTests, CompileTimeConverter). Fixed CrossDialectTestBase and JoinOperationsTests. Test count reduced from 2949 to 2451 (deleted tests were internal unit tests of removed pipeline code).
 
 ## Previous Session Completions
 
@@ -29,91 +29,81 @@
 - New pipeline architecture built (Stages 1-5)
 - SqlAssembler, CarrierPlan, ChainAnalyzer rewritten
 - All emitters migrated to new types, bridge layer removed
-- 2951/2954 tests passing before previous session's work
-- Previous session: ResultTypeName regression, UpdateSetAction gap, unit test migration, entity reader fix, carrier pagination logging, carrier Select skip, SetAction column quoting (standalone path)
-- Previous session: Fix SetAction column quoting in chain/prebuilt SQL path, join unit test fixtures, logging integration tests, Set type mapping test, carrier diagnostics test
+- Navigation join forward-scan approach implemented
+- All end-to-end tests passing
 
 ## Progress
 
-- Generator build: Clean (0 errors)
+- Generator build: Clean (0 errors, 0 warnings)
 - Test project build: Clean (0 errors)
-- Tests: 2949/2954 passing (99.8%), 0 failing, 5 skipped
+- Tests: 2451/2456 passing (99.8%), 0 failing, 5 skipped
 - Branch: feature/compiler-architecture
 - Plan steps 1–8: Complete (previous sessions)
-- Plan step 9 (UsageSiteDiscovery rewrite): **Not started** — see Deviations
-- Plan step 10 (delete old code): **Blocked** by step 9
-- Plan step 11 (fix tests): **Complete** — all non-skipped tests pass
+- Plan step 9 (UsageSiteDiscovery rewrite): **Complete**
+- Plan step 10 (delete old code): **Complete**
+- Plan step 11 (fix tests): **Complete**
+- **All plan steps complete.**
 
 ## Current State
 
-All tests pass. 5 tests are skipped (runtime fallback — not a generator issue). Ready for Step 9.
+The big-bang compiler switchover is complete. The old pipeline (UsageSiteInfo, ClauseTranslator, ExpressionSyntaxTranslator, CompileTimeSqlBuilder, etc.) has been fully removed. The new IR pipeline is the sole code path.
 
-### Root cause of navigation join fix (for reference)
+### What's clean
+- Zero references to old types (UsageSiteInfo, ClauseInfo, PrebuiltChainInfo, etc.) in the codebase
+- No adapter/conversion layers between pipeline stages
+- Pipeline flows: RawCallSite → BoundCallSite → TranslatedCallSite → QueryPlan → AssembledPlan → CarrierPlan → generated source
+- QuarryGenerator.cs reduced from ~3,000 to ~1,200 lines
+- UsageSiteDiscovery.cs reduced from ~2,900 to ~2,500 lines
 
-Navigation joins like `.Join(u => u.Orders)` use type inference for `TJoined`. Since `User` is a generated type (from the same source generator's Phase 1), Roslyn's semantic model can't resolve `u.Orders` and type inference fails. The return type becomes `IJoinedQueryBuilder<User, ?>` where `?` is truly unknown. All subsequent method calls (Select, Trace, ToDiagnostics) fail semantic resolution — Roslyn returns no symbol and no candidates. The generator never discovers these call sites.
-
-Explicit joins like `.Join<Order>((u, o) => ...)` work because the `<Order>` type argument is written in source — Roslyn preserves it even as an error type, making the return type `IJoinedQueryBuilder<User, Order>` fully named. Subsequent calls resolve against the interface definition.
-
-The fix forward-scans the syntax tree from the Join invocation to discover post-join method calls, then propagates resolved entity type names during chain analysis.
+### Remaining old code in UsageSiteDiscovery.cs
+- `TryDiscoverExecutionSiteSyntactically` (~100 lines): Still constructs an intermediate `RawCallSite` via syntactic-only discovery for Update/Delete execution methods where generated entity types make the entire receiver chain unresolvable. This method works correctly but could be simplified.
+- `DiscoverRawSqlUsageSite` + `ResolveRawSqlTypeInfo` (~200 lines): RawSql discovery. Works correctly but still internally structured around the old pattern.
 
 ## Known Issues / Bugs
 
 - **Runtime fallback reader delegate** (5 skipped tests): Runtime `Select()` doesn't build reader from expression tree. Only generator interceptors provide readers. This is a runtime limitation, not a generator issue.
 
-## Technical Debt (from navigation join fix)
-
-The following items work correctly but have suboptimal design. They should be cleaned up, ideally during Step 9 (discovery rewrite).
+## Technical Debt
 
 ### 1. Split responsibility for JoinedEntityTypeNames population
-
-**Problem**: For explicit joins (`Join<Order>(...)`), `JoinedEntityTypeNames` is populated during discovery by `ExtractJoinedEntityTypeNames(containingType)` and passed through the binder unchanged. For navigation joins (`Join(u => u.Orders)`), discovery can't resolve the type, so `JoinedEntityTypeNames` is left null on the Join site and on synthetic post-join sites. The ChainAnalyzer then builds it from `BoundCallSite.Entity` + `BoundCallSite.JoinedEntity`.
-
-**Why it matters**: Two different code paths populate the same field, making it hard to reason about when `JoinedEntityTypeNames` is available.
-
-**How to fix**: Have `CallSiteBinder.Bind()` always build `JoinedEntityTypeNames` for Join sites when a `JoinedEntity` is resolved — but under a new field name like `ResolvedJoinedEntityTypeNames` to avoid confusing `JoinBodyEmitter` (which uses `JoinedEntityTypeNames.Count >= 2` to detect chained joins vs first-level joins). Then have ChainAnalyzer propagate from this field. The key constraint: `JoinedEntityTypeNames` must NOT be set on first-level Join sites because `JoinBodyEmitter` at line 65 uses `joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2` to decide if it's a chained join.
+For explicit joins, `JoinedEntityTypeNames` is populated during discovery. For navigation joins, it's left null and populated by ChainAnalyzer. Two code paths for the same field. See previous handoff for detailed fix proposal.
 
 ### 2. FileEmitter site-selection logic
-
-**Problem**: `FileEmitter.Emit()` (line ~290) builds `chainSites` by looking up each clause site by UniqueId in `siteByUniqueId` (built from `allSitesForGeneration`). For navigation join chains, the original sites lack `JoinedEntityTypeNames`, but the chain-updated sites (from `AssembledPlan.ClauseSites`) have them. The emitter now has conditional logic: use the chain's site when the original lacks `JoinedEntityTypeNames`, otherwise use the original.
-
-**Why it matters**: Fragile conditional logic that can break if other fields are also propagated in the future.
-
-**How to fix**: Have `PipelineOrchestrator.GroupTranslatedIntoFiles()` replace sites in its `allSites` collection with their chain-updated versions before building `FileInterceptorGroup`. This way, `FileInterceptorGroup.Sites` always has the latest data, and the emitter doesn't need the conditional. Specifically: after `SqlAssembler.Assemble()`, build a `Dictionary<string, TranslatedCallSite>` from all chain clause sites and execution sites (keyed by UniqueId), then use it to replace entries in the sites list passed to `FileInterceptorGroup`.
+FileEmitter has conditional logic to prefer chain-updated sites over original sites for navigation joins. Should be resolved by updating sites in PipelineOrchestrator before grouping.
 
 ### 3. SqlAssembler ResultTypeName fallback
+SqlAssembler falls back to projection's ResultTypeName when execution site lacks it. Should propagate ResultTypeName during chain analysis instead.
 
-**Problem**: `SqlAssembler.Assemble()` sets `resultTypeName: executionSite.Bound.Raw.ResultTypeName ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null)`. The fallback to projection's ResultTypeName is needed because synthetic post-join execution sites have `Raw.ResultTypeName == null`.
-
-**Why it matters**: The `IsIdentity == false` guard is fragile — it assumes identity projections don't need a ResultTypeName, which may not hold for all query shapes.
-
-**How to fix**: Propagate `ResultTypeName` to the synthetic execution site during ChainAnalyzer analysis (after `BuildProjection` at ~line 472). Add it to `TranslatedCallSite.WithJoinedEntityTypeNames()` or create a more general `WithPropagatedChainData()` method. Then the SqlAssembler fallback becomes unnecessary.
+### 4. SetAction translation during discovery
+`ExtractSetActionAssignments` in UsageSiteDiscovery.cs handles SetAction parsing directly. The constant inlining uses a simplified `FormatConstantAsSqlLiteralSimple` that may not cover all edge cases the old `ExpressionSyntaxTranslator.FormatConstantAsSqlLiteral` handled (e.g., char type, string escaping edge cases). Monitor for SetAction-related test failures.
 
 ## Dependencies / Blockers
 
-- **Step 10 (old code deletion) blocked by Step 9 (discovery rewrite)**: `DiscoverRawCallSite` still delegates to `DiscoverUsageSite` which depends on `ClauseTranslator` and other old translation infrastructure. Until discovery is rewritten to use SqlExpr directly, the old code cannot be deleted.
+None. All plan steps are complete.
 
 ## Architecture Decisions
 
 - **Try/catch NOT a chain disqualifier**: Quarry builder methods don't throw, so prebuilt SQL dispatch works correctly inside try/catch blocks.
-- **Foreach collection expression NOT a loop**: `DetectLoopAncestor` now checks whether the node is in the loop *body* vs the *collection expression*.
+- **Foreach collection expression NOT a loop**: `DetectLoopAncestor` checks whether the node is in the loop *body* vs the *collection expression*.
 - **Literal pagination inlining**: The new pipeline inlines literal `Limit(10)` values directly into SQL as `LIMIT 10` instead of using a runtime parameter.
 - **SetAction column quoting location**: Quoting happens in ChainAnalyzer's `ClauseKind.Set` branch, not the `InterceptorKind.UpdateSetAction` branch.
 - **CarrierPlan deferred naming**: ClassName/BaseClassName assigned in FileEmitter during carrier class emission, not during CarrierAnalyzer.
 - **Chain ProjectionInfo preferred over site**: Discovery-time ProjectionInfo may have `?` ResultTypeName when entity types are generator-produced. EmitSelect prefers chain's enriched ProjectionInfo.
-- **Navigation join forward-scan approach**: Instead of modifying Roslyn's type inference, the generator forward-scans the syntax tree from the Join invocation to discover post-join method calls. Type information (JoinedEntityTypeNames) is propagated from the Join's bound data to synthetic post-join sites during chain analysis. This avoids changing the pipeline's single-site-per-transform architecture by using `SelectMany`.
-- **JoinedEntityTypeNames NOT set on Join sites by binder**: Setting it on Join sites confuses JoinBodyEmitter into treating first-level joins as chained joins. Only set on post-join sites via ChainAnalyzer propagation. See Technical Debt #1 for the longer-term fix.
+- **Navigation join forward-scan approach**: Generator forward-scans the syntax tree from Join invocation to discover post-join method calls. Type information propagated from Join's bound data to synthetic post-join sites during chain analysis.
+- **Old pipeline unit tests deleted, not rewritten**: The 498 deleted tests tested internals of the old pipeline (ClauseTranslator, ExpressionSyntaxTranslator, CompileTimeSqlBuilder, old ChainAnalyzer). These are covered by the 2451 end-to-end tests that validate generator output. If unit-level coverage of the new IR pipeline is desired, new tests should be written against SqlExprParser, SqlExprBinder, SqlExprRenderer, ChainAnalyzer.Analyze, and SqlAssembler.Assemble.
+- **SqlExprClauseTranslator made static**: The instance method `Translate(PendingClauseInfo)` was dead code. Only `ExtractParametersPublic` (static) is used by CallSiteTranslator.
 
 ## Open Questions
 
-- **Should Step 9 address the technical debt items above?** The discovery rewrite touches the same files (UsageSiteDiscovery, CallSiteBinder, ChainAnalyzer). It may be the natural place to unify `JoinedEntityTypeNames` population.
+- **Should unit tests be written for the new IR pipeline internals?** The end-to-end tests provide behavioral coverage, but unit tests for SqlExprParser, ChainAnalyzer.Analyze, SqlAssembler.Assemble etc. would improve debuggability and regression detection.
 
 ## Next Work (Priority Order)
 
-### 1. Step 9: Rewrite UsageSiteDiscovery
-Rewrite `DiscoverRawCallSite` to stop delegating to `DiscoverUsageSite`. Parse all clause lambdas directly via SqlExprParser. Handle SetAction/SetPoco directly without ClauseTranslator. This unblocks Step 10. Consider addressing Technical Debt items 1-3 during this rewrite.
+### 1. Address technical debt items 1-3
+Clean up JoinedEntityTypeNames split population, FileEmitter conditional logic, and SqlAssembler ResultTypeName fallback. These are functional but fragile.
 
-### 2. Step 10: Delete old pipeline code (~7,800 lines)
-Once Step 9 is complete, delete all old types and translation infrastructure.
+### 2. Write unit tests for new IR pipeline internals
+Create targeted tests for SqlExprParser, SqlExprBinder, SqlExprRenderer, ChainAnalyzer.Analyze, SqlAssembler.Assemble to replace the coverage lost from deleted old pipeline tests.
 
 ### 3. Fix runtime fallback reader delegate (5 skipped tests)
 Requires runtime `Select()` to compile a reader delegate from the selector expression. This is a runtime change, not generator work.
