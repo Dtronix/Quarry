@@ -168,7 +168,8 @@ public class TypeMappingInterceptorTests
             ClauseKind.Set,
             new SqlRawExpr("\"Balance\" = @p0"),
             parameters,
-            setAssignments: setAssignments);
+            setAssignments: setAssignments,
+            customTypeMappingClass: MappingFqn);
 
         var usageSites = new List<TranslatedCallSite>
         {

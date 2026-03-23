@@ -554,9 +554,8 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
         Assert.That(diag.IsCarrierOptimized, Is.True);
         Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
 
-        // Verify Limit parameter is present
-        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
-        Assert.That(diag.Parameters[0].Value, Is.EqualTo(10));
+        // Limit 10 is a literal constant — inlined directly into SQL, no runtime parameter
+        Assert.That(diag.Sql, Does.Contain("LIMIT 10"));
 
         // Verify per-clause diagnostics include OrderBy
         var orderByClause = diag.Clauses.First(c => c.ClauseType == "OrderBy");
