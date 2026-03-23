@@ -981,4 +981,88 @@ public static class Queries
     }
 
     #endregion
+
+    #region Variable-Stored Chain QRY001 Tests
+
+    [Test]
+    public void Generator_VariableStoredChain_WithAnalyzableInitializer_NoQRY001()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Col<bool> IsActive => Default(true);
+}
+
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // Variable-stored chain from analyzable source — should NOT emit QRY001
+        var query = db.Users().Where(u => u.IsActive);
+        query.Select(u => u.UserName).ToDiagnostics();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry001 = diagnostics.Where(d => d.Id == "QRY001").ToList();
+        Assert.That(qry001.Count, Is.EqualTo(0),
+            "Variable-stored chain from context property should not emit QRY001");
+    }
+
+    [Test]
+    public void Generator_ParameterReceiver_StillEmitsQRY001()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(IQueryBuilder<User> externalBuilder)
+    {
+        // Parameter receiver — 3+ hops or non-traceable — should still emit QRY001
+        externalBuilder.Select(u => u.UserName).ToDiagnostics();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry001 = diagnostics.Where(d => d.Id == "QRY001").ToList();
+        Assert.That(qry001.Count, Is.GreaterThan(0),
+            "Parameter receiver should still emit QRY001");
+    }
+
+    #endregion
 }
