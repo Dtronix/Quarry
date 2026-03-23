@@ -642,7 +642,7 @@ internal static class UsageSiteDiscovery
             or InterceptorKind.BatchInsertToDiagnostics
             or InterceptorKind.BatchInsertToSql)
         {
-            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation);
+            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
 
         // ── Step 16: Build RawCallSite directly ────────────────────────────
@@ -1003,16 +1003,73 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Walks the receiver chain from a batch insert terminal to find the
     /// BatchInsertColumnSelector (Insert(lambda)) and extract column names.
+    /// When the syntactic walk hits a variable, traces through its declaration
+    /// to find the InsertBatch call in the initializer chain.
     /// </summary>
-    private static ImmutableArray<string>? ExtractBatchInsertColumnNamesFromChain(InvocationExpressionSyntax terminal)
+    private static ImmutableArray<string>? ExtractBatchInsertColumnNamesFromChain(
+        InvocationExpressionSyntax terminal,
+        SemanticModel semanticModel,
+        CancellationToken ct)
     {
-        var current = terminal.Expression;
+        var result = WalkChainForInsertBatch(terminal.Expression);
+        if (result != null)
+            return result;
+
+        // Syntactic walk didn't find InsertBatch — the receiver may be a variable.
+        // Trace through variable declarations to find the initializer chain.
+        var root = VariableTracer.WalkFluentChainRoot(
+            terminal.Expression is MemberAccessExpressionSyntax ma ? ma.Expression : terminal.Expression);
+        if (root is IdentifierNameSyntax)
+        {
+            var traceResult = VariableTracer.TraceToChainRoot(root, semanticModel, ct, maxHops: 2);
+            if (traceResult.Traced)
+            {
+                // Find the declarator of the first variable to get its full initializer
+                // (not just the root — we need the whole chain including InsertBatch)
+                var currentRoot = root;
+                for (int i = 0; i < traceResult.Hops; i++)
+                {
+                    if (currentRoot is not IdentifierNameSyntax ident)
+                        break;
+                    var declarator = VariableTracer.TryResolveDeclarator(ident, semanticModel, ct);
+                    var initializer = declarator != null ? VariableTracer.GetInitializerExpression(declarator) : null;
+                    if (initializer == null)
+                        break;
+
+                    // Try walking this initializer's chain for InsertBatch
+                    if (initializer is InvocationExpressionSyntax initInvoc)
+                    {
+                        result = WalkChainForInsertBatch(initInvoc.Expression);
+                        if (result != null)
+                            return result;
+                        // Also check if initInvoc itself is the InsertBatch call
+                        if (initInvoc.Expression is MemberAccessExpressionSyntax initMa
+                            && initMa.Name.Identifier.ValueText == "InsertBatch"
+                            && initInvoc.ArgumentList.Arguments.Count == 1
+                            && initInvoc.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax)
+                        {
+                            return ExtractBatchInsertColumnNames(initInvoc);
+                        }
+                    }
+
+                    currentRoot = VariableTracer.WalkFluentChainRoot(initializer);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Syntactic walk looking for InsertBatch(lambda) in a receiver chain.
+    /// </summary>
+    private static ImmutableArray<string>? WalkChainForInsertBatch(ExpressionSyntax expression)
+    {
+        var current = expression;
         while (current is MemberAccessExpressionSyntax ma)
         {
             if (ma.Expression is InvocationExpressionSyntax invoc)
             {
-                var calledMethod = ma.Name.Identifier.ValueText;
-                // Look for the Insert method with a lambda argument
                 if (invoc.Expression is MemberAccessExpressionSyntax innerMa
                     && innerMa.Name.Identifier.ValueText == "InsertBatch"
                     && invoc.ArgumentList.Arguments.Count == 1
