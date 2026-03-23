@@ -1114,13 +1114,7 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return (false, false);
 
-        while (receiver is InvocationExpressionSyntax ci)
-        {
-            if (ci.Expression is MemberAccessExpressionSyntax cm)
-                receiver = cm.Expression;
-            else
-                break;
-        }
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
 
         if (receiver is not IdentifierNameSyntax rootId)
             return (false, false);
@@ -1256,49 +1250,38 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return null;
 
-        // Walk up through fluent chain
-        while (receiver is InvocationExpressionSyntax chainedInvoc)
-        {
-            if (chainedInvoc.Expression is MemberAccessExpressionSyntax chainedMember)
-                receiver = chainedMember.Expression;
-            else
-                break;
-        }
+        // Walk up through fluent chain to the syntactic root
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
 
-        // The root receiver identifies the chain (e.g., "db" in db.Users().Where(...))
-        var rootText = receiver.ToString();
+        // Trace through variable assignments to find the original chain origin
+        var traceResult = VariableTracer.TraceToChainRoot(receiver, semanticModel, ct, maxHops: 2);
+        var rootExpr = traceResult.Root;
+        var rootText = rootExpr.ToString();
 
-        // Check if root receiver is a local variable whose type is a Quarry builder
-        // (IQueryBuilder, IEntityAccessor, etc.). All uses of such a variable within the
-        // same method belong to the same chain (variable-based chains).
-        // Non-builder locals (like DbContext variables) still use statement scope to
-        // distinguish separate chains: db.Users().Execute(); db.Users().Execute();
+        // Check if the traced root is a local variable whose type is a Quarry builder.
+        // After tracing, this is only true when tracing stopped at maxHops (the root
+        // is still a builder variable we couldn't trace further).
         bool rootIsBuilderLocal = false;
-        if (receiver is IdentifierNameSyntax rootIdent)
+        if (rootExpr is IdentifierNameSyntax rootIdent)
         {
             var symbol = semanticModel.GetSymbolInfo(rootIdent, ct).Symbol;
             if (symbol is ILocalSymbol localSymbol)
             {
-                var typeName = localSymbol.Type.ToDisplayString();
-                if (typeName.Contains("IQueryBuilder") || typeName.Contains("IEntityAccessor")
-                    || typeName.Contains("QueryBuilder<") || typeName.Contains("EntityAccessor<")
-                    || typeName.Contains("IDeleteBuilder") || typeName.Contains("IExecutableDeleteBuilder")
-                    || typeName.Contains("IUpdateBuilder") || typeName.Contains("IExecutableUpdateBuilder")
-                    || typeName.Contains("IInsertBuilder")
-                    || typeName.Contains("IBatchInsertBuilder") || typeName.Contains("IExecutableBatchInsert")
-                    || typeName.Contains("DeleteBuilder<") || typeName.Contains("UpdateBuilder<")
-                    || typeName.Contains("InsertBuilder<"))
+                if (VariableTracer.IsBuilderType(localSymbol.Type.ToDisplayString()))
                     rootIsBuilderLocal = true;
             }
         }
 
-        // For non-local roots (fields/properties like _db), check if the containing statement
-        // assigns to a local variable. If so, use that variable's name to link the initial
-        // fluent chain with subsequent variable-based operations.
+        // Determine the assigned variable name for chain linking.
+        // When tracing succeeded and the root is a non-builder (e.g., context variable),
+        // use the first variable name from the trace to link all sites together.
         string? assignedVarName = null;
         if (!rootIsBuilderLocal)
         {
-            assignedVarName = GetAssignedVariableName(invocation);
+            if (traceResult.Traced && traceResult.FirstVariableName != null)
+                assignedVarName = traceResult.FirstVariableName;
+            else
+                assignedVarName = GetAssignedVariableName(invocation);
         }
 
         // Find the containing method scope
@@ -1317,8 +1300,7 @@ internal static class UsageSiteDiscovery
                 // so all uses of the same variable merge into one chain.
                 if (rootIsBuilderLocal)
                     return $"{filePath}:{method.Span.Start}:{rootText}";
-                // Initial assignment to a local (e.g., IQueryBuilder<T> query = _db.Users().Where(...))
-                // uses the assigned variable name to link with subsequent uses of that variable.
+                // Assignment linkage: traced first variable or direct assignment.
                 if (assignedVarName != null)
                     return $"{filePath}:{method.Span.Start}:{assignedVarName}";
                 // Standalone fluent chains: use statement scope to distinguish separate chains.
