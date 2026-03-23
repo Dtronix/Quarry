@@ -1,5 +1,11 @@
-using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.Patterns;
+using Quarry.Generators.IR;
+using Quarry.Generators.Models;
 
 namespace Quarry.Analyzers.Tests;
 
@@ -19,7 +25,7 @@ public class MultipleQueriesRuleTests
         var rule = new MultipleQueriesSameTableRule();
         Assert.That(rule.Descriptor.Id, Is.EqualTo("QRA402"));
         Assert.That(rule.Descriptor.Category, Is.EqualTo("QuarryAnalyzer"));
-        Assert.That(rule.Descriptor.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Info));
+        Assert.That(rule.Descriptor.DefaultSeverity, Is.EqualTo(DiagnosticSeverity.Info));
     }
 
     [Test]
@@ -27,23 +33,31 @@ public class MultipleQueriesRuleTests
     {
         // When entityTypeName is null, rule should not report
         var rule = new MultipleQueriesSameTableRule();
-        var tree = Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText("class C { void M() { Test(); } }");
-        var compilation = Microsoft.CodeAnalysis.CSharp.CSharpCompilation.Create("Test",
+        var tree = CSharpSyntaxTree.ParseText("class C { void M() { Test(); } }");
+        var compilation = CSharpCompilation.Create("Test",
             new[] { tree },
-            new[] { Microsoft.CodeAnalysis.MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
-            new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(Microsoft.CodeAnalysis.OutputKind.DynamicallyLinkedLibrary));
+            new[] { MetadataReference.CreateFromFile(typeof(object).Assembly.Location) },
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var semanticModel = compilation.GetSemanticModel(tree);
         var invocation = tree.GetRoot().DescendantNodes()
-            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>().First();
+            .OfType<InvocationExpressionSyntax>().First();
 
-        var site = new Quarry.Generators.Models.UsageSiteInfo(
-            methodName: "Where", filePath: "Test.cs", line: 1, column: 1,
-            builderTypeName: "QueryBuilder", entityTypeName: null!,
-            isAnalyzable: true, kind: Quarry.Generators.Models.InterceptorKind.Where,
-            invocationSyntax: invocation, uniqueId: "test_1",
-            dialect: GenSqlDialect.PostgreSQL);
+        var site = new RawCallSite(
+            methodName: "Where",
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_1",
+            kind: InterceptorKind.Where,
+            builderKind: BuilderKind.Query,
+            entityTypeName: null!,
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)));
 
-        var context = new Quarry.Analyzers.Rules.QueryAnalysisContext(
+        var context = new QueryAnalysisContext(
             site, null, null, null, semanticModel, invocation,
             new EmptyAnalyzerConfigOptions());
 

@@ -68,27 +68,47 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(contextDeclarations.Collect(),
             static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
 
-        // Phase 2: Register a syntax provider to find Quarry method invocations
-        var usageSites = context.SyntaxProvider
+        // === NEW: Build EntityRegistry from collected contexts ===
+        var entityRegistry = contextDeclarations.Collect()
+            .Select(static (contexts, ct) => IR.EntityRegistry.Build(contexts, ct));
+
+        // === Stage 2: Raw Call Site Discovery (returns RawCallSite) ===
+        var rawCallSites = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => UsageSiteDiscovery.IsQuarryMethodCandidate(node),
-                transform: static (ctx, ct) => GetUsageSiteInfo(ctx, ct))
-            .Where(static site => site is not null)
-            .Select(static (site, _) => site!);
+                transform: static (ctx, ct) => DiscoverRawCallSites(ctx, ct))
+            .SelectMany(static (sites, _) => sites);
 
-        // Combine contexts with compilation
-        var compilationAndContexts = context.CompilationProvider
-            .Combine(contextDeclarations.Collect());
+        // === Stage 3: Per-Site Binding (individually cached) ===
+        var boundCallSites = rawCallSites
+            .Combine(entityRegistry)
+            .SelectMany(static (pair, ct) =>
+            {
+                try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
+                catch { return ImmutableArray<IR.BoundCallSite>.Empty; }
+            });
 
-        // Combine usage sites with compilation and contexts, fan out per-file
-        var perFileGroups = compilationAndContexts
-            .Combine(usageSites.Collect())
+        // === Stage 4: Per-Site Translation (individually cached) ===
+        var translatedCallSites = boundCallSites
+            .Combine(entityRegistry)
+            .Select(static (pair, ct) =>
+            {
+                try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
+                catch { return new IR.TranslatedCallSite(pair.Left); }
+            });
+
+        // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===
+        var perFileGroups = entityRegistry
+            .Combine(translatedCallSites.Collect())
             .SelectMany(static (data, ct) =>
-                GroupByFileAndProcess(data.Left.Left, data.Left.Right, data.Right, ct));
+                IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct));
 
         // Per-file output — only regenerates files whose group changed
-        context.RegisterSourceOutput(perFileGroups,
-            static (spc, group) => EmitFileInterceptors(spc, group));
+        // Combine with CompilationProvider so EmitFileInterceptors can reconstruct
+        // source locations for diagnostics (Location.Create needs SyntaxTree).
+        context.RegisterSourceOutput(
+            perFileGroups.Combine(context.CompilationProvider),
+            static (spc, pair) => EmitFileInterceptors(spc, pair.Left, pair.Right));
 
         // Phase 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
@@ -135,15 +155,33 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Transforms an invocation syntax node into usage site information.
+    /// Discovers raw call sites from an invocation expression for the new pipeline.
+    /// Returns multiple sites for navigation joins (the join site + post-join sites).
     /// </summary>
-    private static UsageSiteInfo? GetUsageSiteInfo(GeneratorSyntaxContext context, CancellationToken ct)
+    private static ImmutableArray<IR.RawCallSite> DiscoverRawCallSites(GeneratorSyntaxContext context, CancellationToken ct)
     {
         if (context.Node is not InvocationExpressionSyntax invocation)
-            return null;
+            return ImmutableArray<IR.RawCallSite>.Empty;
 
-        return UsageSiteDiscovery.DiscoverUsageSite(invocation, context.SemanticModel, ct);
+        try
+        {
+            return UsageSiteDiscovery.DiscoverRawCallSites(invocation, context.SemanticModel, ct);
+        }
+        catch
+        {
+            return ImmutableArray<IR.RawCallSite>.Empty;
+        }
     }
+
+    /// <summary>
+    /// Processes translated call sites into per-file output groups.
+    /// The new pipeline (Stages 2-4) has already performed discovery, binding, and
+    /// translation. This method delegates to PipelineOrchestrator for chain analysis
+    /// and file grouping.
+    /// No re-enrichment occurs — the data is already fully enriched.
+    /// </summary>
+    // Old GroupByFileAndProcessTranslated removed — pipeline calls
+    // PipelineOrchestrator.AnalyzeAndGroupTranslated directly.
 
     /// <summary>
     /// Generates entity classes, context class, and metadata for a single context.
@@ -302,322 +340,248 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// Groups all usage sites by (context, source file) and processes them into FileInterceptorGroups.
     /// Replaces the old Execute()+GenerateInterceptors() flow with per-file incremental output.
     /// </summary>
-    private static ImmutableArray<FileInterceptorGroup> GroupByFileAndProcess(
-        Compilation compilation,
-        ImmutableArray<ContextInfo> contexts,
-        ImmutableArray<UsageSiteInfo> usageSites,
-        CancellationToken ct)
-    {
-        if (usageSites.IsDefaultOrEmpty)
-            return ImmutableArray<FileInterceptorGroup>.Empty;
-
-        ct.ThrowIfCancellationRequested();
-
-        // Build a lookup from entity type name to EntityInfo
-        var entityLookup = BuildEntityLookup(contexts);
-
-        // Build entity registry (entityName → EntityInfo) for subquery resolution
-        var entityRegistry = BuildEntityRegistry(contexts);
-
-        // Collect diagnostics for non-analyzable queries and anonymous type projections
-        var diagnostics = new List<DiagnosticInfo>();
-        var sitesToSkip = new HashSet<UsageSiteInfo>();
-        foreach (var site in usageSites)
-        {
-            // Check for anonymous type projection failure (QRY014 - Error)
-            if (site.ProjectionInfo?.FailureReason == ProjectionFailureReason.AnonymousTypeNotSupported)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.AnonymousTypeNotSupported.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax)));
-                sitesToSkip.Add(site);
-                continue;
-            }
-
-            // Collect QRY001 warnings for non-analyzable queries
-            if (!site.IsAnalyzable && site.NonAnalyzableReason != null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.QueryNotAnalyzable.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                    site.NonAnalyzableReason));
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Enrich usage sites with entity metadata from contexts
-        var enrichedSites = usageSites
-            .Where(s => s.IsAnalyzable && !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
-            .ToList();
-
-        // Discover and enrich missing chain members from resolved navigation joins.
-        var discoveredLocationKeys = new HashSet<string>(
-            usageSites.Select(s => $"{s.FilePath}:{s.Line}:{s.Column}"));
-        var navJoinChainSites = DiscoverNavigationJoinChainMembers(
-            enrichedSites, discoveredLocationKeys, entityLookup, contexts, entityRegistry, compilation);
-        if (navJoinChainSites.Count > 0)
-        {
-            enrichedSites.AddRange(navJoinChainSites);
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Collect QRY015 for ambiguous context resolution
-        foreach (var site in enrichedSites)
-        {
-            if (site.ContextClassName == null)
-            {
-                var list = LookupEntityList(site.EntityTypeName, entityLookup);
-                if (list != null && list.Count > 1)
-                {
-                    var chosen = list[0];
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.AmbiguousContextResolution.Id,
-                        DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                        site.EntityTypeName,
-                        chosen.Context.ClassName,
-                        chosen.Context.Dialect.ToString()));
-                }
-            }
-        }
-
-        // Collect QRY016 for unbound parameter placeholders in generated SQL
-        foreach (var site in enrichedSites)
-        {
-            if (site.ClauseInfo is { IsSuccess: true } clause)
-            {
-                var boundIndices = new HashSet<int>(
-                    clause.Parameters.Select(p => p.Index));
-
-                foreach (Match match in ParameterPlaceholderRegex.Matches(clause.SqlFragment))
-                {
-                    var index = int.Parse(match.Groups[1].Value);
-                    if (!boundIndices.Contains(index))
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.UnboundParameterPlaceholder.Id,
-                            DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                            match.Value));
-                    }
-                }
-            }
-        }
-
-        // Collect QRY019 for clause interceptors that could not be translated
-        foreach (var site in enrichedSites)
-        {
-            var clauseKind = GetNonTranslatableClauseKind(site);
-            if (clauseKind != null)
-            {
-                diagnostics.Add(new DiagnosticInfo(
-                    DiagnosticDescriptors.ClauseNotTranslatable.Id,
-                    DiagnosticLocation.FromSyntaxNode(site.InvocationSyntax),
-                    clauseKind));
-            }
-        }
-
-        ct.ThrowIfCancellationRequested();
-
-        // Analyze execution chains for pre-built SQL optimization tiers.
-        var allSitesForChainAnalysis = usageSites
-            .Where(s => !sitesToSkip.Contains(s))
-            .Select(s => EnrichUsageSiteWithEntityInfo(s, entityLookup, contexts, entityRegistry, compilation))
-            .ToList();
-        if (navJoinChainSites.Count > 0)
-            allSitesForChainAnalysis.AddRange(navJoinChainSites);
-        var (prebuiltChains, chainDiagnostics) = AnalyzeExecutionChainsWithDiagnostics(
-            compilation, allSitesForChainAnalysis, entityLookup, ct);
-        diagnostics.AddRange(chainDiagnostics);
-
-        // Build a set of chain member UniqueIds so we can include non-analyzable clause
-        // and execution sites that are part of analyzed chains.
-        var chainMemberUniqueIds = new HashSet<string>();
-        foreach (var chain in prebuiltChains)
-        {
-            foreach (var clause in chain.Analysis.Clauses)
-                chainMemberUniqueIds.Add(clause.Site.UniqueId);
-            chainMemberUniqueIds.Add(chain.Analysis.ExecutionSite.UniqueId);
-        }
-
-        // Merge non-analyzable chain member sites from allSitesForChainAnalysis into enrichedSites
-        var enrichedSiteIds = new HashSet<string>(enrichedSites.Select(s => s.UniqueId));
-        var additionalChainSites = allSitesForChainAnalysis
-            .Where(s => chainMemberUniqueIds.Contains(s.UniqueId) && !enrichedSiteIds.Contains(s.UniqueId))
-            .ToList();
-
-        var allSitesForGeneration = enrichedSites.Concat(additionalChainSites).ToList();
-
-        ct.ThrowIfCancellationRequested();
-
-        // Group by (contextClassName, filePath) for per-file output
-        var fileGroups = allSitesForGeneration
-            .GroupBy(s => (ContextClassName: s.ContextClassName ?? "Quarry", FilePath: s.FilePath))
-            .ToList();
-
-        var result = ImmutableArray.CreateBuilder<FileInterceptorGroup>(fileGroups.Count);
-
-        foreach (var group in fileGroups)
-        {
-            var sites = group.ToList();
-            if (sites.Count == 0)
-                continue;
-
-            var contextClassName = group.Key.ContextClassName;
-            var filePath = group.Key.FilePath;
-
-            // Compute human-readable file tag for output filename
-            var fileTag = FileHasher.ComputeFileTag(filePath);
-
-            // Derive namespace
-            var namespaceName = sites.Select(s => s.ContextNamespace)
-                                    .FirstOrDefault(ns => !string.IsNullOrEmpty(ns))
-                                ?? GetNamespaceFromEntityType(sites[0].EntityTypeName);
-
-            // Filter pre-built chains for this context AND this file
-            var fileChains = prebuiltChains
-                .Where(c => c.Analysis.ExecutionSite.ContextClassName == contextClassName
-                         && c.Analysis.ExecutionSite.FilePath == filePath)
-                .ToList();
-
-            // Separate chain member sites for this file
-            var fileChainMemberIds = new HashSet<string>();
-            foreach (var chain in fileChains)
-            {
-                foreach (var clause in chain.Analysis.Clauses)
-                    fileChainMemberIds.Add(clause.Site.UniqueId);
-                fileChainMemberIds.Add(chain.Analysis.ExecutionSite.UniqueId);
-            }
-
-            // Single-pass partition: analyzable/non-chain-member sites vs chain member sites.
-            var fileSites = new List<UsageSiteInfo>();
-            var fileChainMemberSites = new List<UsageSiteInfo>();
-            foreach (var s in sites)
-            {
-                if (s.IsAnalyzable || !fileChainMemberIds.Contains(s.UniqueId))
-                    fileSites.Add(s);
-                if (!s.IsAnalyzable && fileChainMemberIds.Contains(s.UniqueId))
-                    fileChainMemberSites.Add(s);
-            }
-
-            // Collect diagnostics for this file
-            var fileDiagnostics = diagnostics
-                .Where(d => d.Location.FilePath == filePath)
-                .ToList();
-
-            result.Add(new FileInterceptorGroup(
-                contextClassName,
-                namespaceName,
-                filePath,
-                fileTag,
-                fileSites,
-                fileChains,
-                fileChainMemberSites,
-                fileDiagnostics));
-        }
-
-        // Create diagnostic-only groups for files that have diagnostics but no sites in any group.
-        // This happens when a file has only non-analyzable sites (QRY001/QRY014).
-        var coveredFilePaths = new HashSet<string>(fileGroups.Select(g => g.Key.FilePath));
-        var orphanedDiagnostics = diagnostics
-            .Where(d => !coveredFilePaths.Contains(d.Location.FilePath))
-            .GroupBy(d => d.Location.FilePath)
-            .ToList();
-
-        foreach (var orphanGroup in orphanedDiagnostics)
-        {
-            var filePath = orphanGroup.Key;
-            var fileTag = FileHasher.ComputeFileTag(filePath);
-
-            // Find the original non-analyzable site to get the SyntaxTree for location reconstruction
-            var originalSite = usageSites.FirstOrDefault(s => s.FilePath == filePath);
-
-            result.Add(new FileInterceptorGroup(
-                "Quarry",
-                null,
-                filePath,
-                fileTag,
-                Array.Empty<UsageSiteInfo>(),
-                Array.Empty<PrebuiltChainInfo>(),
-                Array.Empty<UsageSiteInfo>(),
-                orphanGroup.ToList()));
-        }
-
-        return result.ToImmutable();
-    }
+    // Old GroupByFileAndProcess removed — replaced by GroupByFileAndProcessTranslated
 
     /// <summary>
     /// Emits interceptor source and reports diagnostics for a single (context, file) group.
     /// </summary>
-    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group)
+    private static void EmitFileInterceptors(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
     {
-        // Report all deferred diagnostics
+        // Find the SyntaxTree for this file so diagnostics get proper source locations
         SyntaxTree? syntaxTree = null;
-        foreach (var site in group.Sites)
+        foreach (var tree in compilation.SyntaxTrees)
         {
-            if (site.InvocationSyntax?.SyntaxTree != null)
+            if (tree.FilePath == group.SourceFilePath)
             {
-                syntaxTree = site.InvocationSyntax.SyntaxTree;
+                syntaxTree = tree;
                 break;
             }
         }
-        if (syntaxTree == null)
-        {
-            foreach (var site in group.ChainMemberSites)
-            {
-                if (site.InvocationSyntax?.SyntaxTree != null)
-                {
-                    syntaxTree = site.InvocationSyntax.SyntaxTree;
-                    break;
-                }
-            }
-        }
 
+        // Report all deferred diagnostics
         foreach (var diag in group.Diagnostics)
         {
             var descriptor = GetDescriptorById(diag.DiagnosticId);
             if (descriptor == null) continue;
 
-            var location = syntaxTree != null
-                ? diag.Location.ToLocation(syntaxTree)
-                : Location.None;
+            Location location;
+            if (syntaxTree != null && diag.Location.Span.Length > 0)
+            {
+                location = Location.Create(syntaxTree, diag.Location.Span);
+            }
+            else if (diag.Location.FilePath != null)
+            {
+                location = Location.Create(diag.Location.FilePath,
+                    default,
+                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1),
+                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)));
+            }
+            else
+            {
+                location = Location.None;
+            }
 
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
         }
 
+        EmitFileInterceptorsNewPipeline(spc, group, compilation);
+    }
+
+    private static void EmitFileInterceptorsNewPipeline(SourceProductionContext spc, FileInterceptorGroup group, Compilation compilation)
+    {
+        var hasQuarryTrace = HasQuarryTrace(compilation);
+
+        // Build enriched projection lookup from chains (keyed by Select clause site UniqueId)
+        // Enrich AssembledPlans with ProjectionInfo, JoinedTableInfos, TraceLines, ReaderDelegateCode
+        for (int i = 0; i < group.AssembledPlans.Count; i++)
+        {
+            var assembled = group.AssembledPlans[i];
+
+            // Resolve ProjectionInfo: prefer QueryPlan.Projection (enriched by ChainAnalyzer with entity
+            // metadata), then fall back to Select clause site's raw ProjectionInfo or execution site's.
+            ProjectionInfo? projInfo = null;
+            if (assembled.Plan.Projection != null)
+            {
+                if (assembled.Plan.Projection.Columns.Count > 0)
+                {
+                    var bridgeColumns = StripNonAggregateSqlExpressions(assembled.Plan.Projection.Columns);
+                    projInfo = new ProjectionInfo(
+                        assembled.Plan.Projection.Kind,
+                        assembled.Plan.Projection.ResultTypeName,
+                        bridgeColumns,
+                        customEntityReaderClass: assembled.Plan.Projection.CustomEntityReaderClass);
+                }
+                else if (assembled.Plan.Projection.IsIdentity)
+                {
+                    var entityRef = assembled.ExecutionSite.Bound.Entity;
+                    if (entityRef != null && entityRef.Columns.Count > 0)
+                        projInfo = BuildEntityProjectionFromEntityRef(entityRef);
+                }
+            }
+            if (projInfo == null)
+            {
+                foreach (var cs in assembled.ClauseSites)
+                {
+                    if (cs.Kind == InterceptorKind.Select && cs.ProjectionInfo != null)
+                    {
+                        projInfo = cs.ProjectionInfo;
+                        break;
+                    }
+                }
+            }
+            if (projInfo == null)
+                projInfo = assembled.ExecutionSite.ProjectionInfo;
+            assembled.ProjectionInfo = projInfo;
+
+            // Generate reader delegate code for SELECT queries
+            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
+            {
+                var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
+                assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
+            }
+
+            // Resolve joined table infos
+            if (assembled.ExecutionSite.JoinedEntityTypeNames != null)
+            {
+                var joinedTableInfos = new List<(string, string?)>();
+                foreach (var join in assembled.Plan.Joins)
+                    joinedTableInfos.Add((join.Table.TableName, join.Table.SchemaName));
+                assembled.JoinedTableInfos = joinedTableInfos;
+            }
+
+            // Collect trace lines from TraceCapture side-channel
+            if (assembled.IsTraced && hasQuarryTrace)
+            {
+                var execUid = assembled.ExecutionSite.UniqueId;
+                var execTrace = IR.TraceCapture.Get(execUid);
+                if (execTrace != null && execTrace.Count > 0)
+                    assembled.TraceLines = execTrace;
+            }
+
+            // Post-process SQL to tokenize collection parameter placeholders for carrier expansion
+            var isCarrierEligible = i < group.CarrierPlans.Count && group.CarrierPlans[i].IsEligible;
+            if (isCarrierEligible && assembled.Plan.Parameters.Count > 0)
+                TokenizeCollectionParameters(assembled.SqlVariants, assembled.Plan.Parameters, assembled.Dialect);
+        }
+
         // Merge sites and chain member sites
-        var mergedSites = new List<UsageSiteInfo>(group.Sites.Count + group.ChainMemberSites.Count);
+        var mergedSites = new List<IR.TranslatedCallSite>(
+            group.Sites.Count + group.ChainMemberSites.Count);
         mergedSites.AddRange(group.Sites);
         mergedSites.AddRange(group.ChainMemberSites);
 
-        if (mergedSites.Count == 0)
-            return;
+        if (mergedSites.Count == 0) return;
+
+        // Filter AssembledPlans: skip RuntimeBuild and incomplete tuple types
+        var filteredPlans = new List<IR.AssembledPlan>();
+        var filteredCarrierPlans = new List<CodeGen.CarrierPlan>();
+        for (int i = 0; i < group.AssembledPlans.Count; i++)
+        {
+            var assembled = group.AssembledPlans[i];
+            if (assembled.Plan.Tier == OptimizationTier.RuntimeBuild)
+                continue;
+
+            if (assembled.ResultTypeName != null
+                && assembled.ResultTypeName.StartsWith("(")
+                && assembled.ResultTypeName.Contains(",")
+                && System.Text.RegularExpressions.Regex.IsMatch(assembled.ResultTypeName, @"\(\s\w"))
+            {
+                var hasSelectClause = assembled.ClauseSites.Any(cs => cs.Kind == InterceptorKind.Select);
+                if (!hasSelectClause) continue;
+            }
+
+            filteredPlans.Add(assembled);
+            if (i < group.CarrierPlans.Count)
+                filteredCarrierPlans.Add(group.CarrierPlans[i]);
+        }
+
+        // Emit QRY030-032 diagnostics from chain analysis
+        foreach (var assembled in group.AssembledPlans)
+        {
+            var execRaw = assembled.ExecutionSite.Bound.Raw;
+            var location = execRaw.Location;
+            var locationDisplay = $"{GetRelativePath(execRaw.FilePath)}:{execRaw.Line}";
+
+            switch (assembled.Plan.Tier)
+            {
+                case OptimizationTier.PrebuiltDispatch:
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ChainOptimizedTier1,
+                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                        locationDisplay, assembled.Plan.PossibleMasks.Count.ToString()));
+                    break;
+                case OptimizationTier.PrequotedFragments:
+                    spc.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.ChainOptimizedTier2,
+                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                        locationDisplay, assembled.Plan.ConditionalTerms.Count.ToString()));
+                    break;
+                case OptimizationTier.RuntimeBuild:
+                    if (assembled.Plan.ForkedVariableName != null)
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.ForkedQueryChain,
+                            Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                            assembled.Plan.ForkedVariableName));
+                    }
+                    else
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.ChainNotAnalyzable,
+                            Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                                new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                            locationDisplay, assembled.Plan.NotAnalyzableReason ?? "unknown"));
+                    }
+                    break;
+            }
+        }
+
+        // Report QRY034 warning for traced chains when QUARRY_TRACE is not defined
+        if (!hasQuarryTrace)
+        {
+            foreach (var assembled in group.AssembledPlans)
+            {
+                if (!assembled.IsTraced) continue;
+                var execRaw = assembled.ExecutionSite.Bound.Raw;
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.TraceWithoutFlag,
+                    Location.Create(execRaw.FilePath, execRaw.Location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                        new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
+                        new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
+                    $"{GetRelativePath(execRaw.FilePath)}:{execRaw.Line}"));
+            }
+        }
 
         try
         {
-            // Generate interceptors file
-            var interceptorsSource = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            var emitter = new CodeGen.FileEmitter(
                 group.ContextClassName,
                 group.ContextNamespace,
                 group.FileTag,
                 mergedSites,
-                group.Chains as IReadOnlyList<PrebuiltChainInfo>);
-
+                filteredPlans,
+                filteredCarrierPlans);
+            var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
         }
         catch (Exception ex)
         {
-            // Report diagnostic for interceptor generation failure
-            var diagnostic = Diagnostic.Create(
+            spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.InternalError,
                 Location.None,
-                $"Failed to generate interceptors: {ex.Message}");
-
-            spc.ReportDiagnostic(diagnostic);
+                $"Failed to generate interceptors: {ex.Message}"));
         }
     }
+
 
     /// <summary>
     /// Maps a diagnostic ID to its descriptor for deferred reporting.
@@ -633,301 +597,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ChainOptimizedTier2,
         DiagnosticDescriptors.ChainNotAnalyzable,
         DiagnosticDescriptors.ForkedQueryChain,
+        DiagnosticDescriptors.SqlRawPlaceholderMismatch,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
         s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
-    /// <summary>
-    /// Analyzes execution chains for pre-built SQL optimization.
-    /// Identifies execution call sites, performs dataflow analysis on their query chains,
-    /// builds pre-built SQL maps for tier 1 chains, and collects QRY030-032 diagnostics.
-    /// </summary>
-    private static (IReadOnlyList<PrebuiltChainInfo> Chains, List<DiagnosticInfo> Diagnostics) AnalyzeExecutionChainsWithDiagnostics(
-        Compilation compilation,
-        List<UsageSiteInfo> enrichedSites,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        CancellationToken ct)
-    {
-        var prebuiltChains = new List<PrebuiltChainInfo>();
-        var diagnostics = new List<DiagnosticInfo>();
-
-        // Find execution sites (including joined builders)
-        var executionSites = enrichedSites
-            .Where(s => ChainAnalyzer.IsExecutionKind(s.Kind))
-            .ToList();
-
-        if (executionSites.Count == 0)
-            return (prebuiltChains, diagnostics);
-
-        // Group all sites by syntax tree for efficient lookup
-        var sitesByTree = enrichedSites
-            .Where(s => s.InvocationSyntax.SyntaxTree != null)
-            .GroupBy(s => s.InvocationSyntax.SyntaxTree)
-            .ToDictionary(g => g.Key, g => (IReadOnlyList<UsageSiteInfo>)g.ToList());
-
-        foreach (var executionSite in executionSites)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var tree = executionSite.InvocationSyntax.SyntaxTree;
-            if (tree == null)
-                continue;
-
-            // Get the semantic model for this tree
-            SemanticModel semanticModel;
-            try
-            {
-                semanticModel = compilation.GetSemanticModel(tree);
-            }
-            catch
-            {
-                continue;
-            }
-
-            // Get all sites in the same syntax tree
-            if (!sitesByTree.TryGetValue(tree, out var sitesInTree))
-                continue;
-
-            var result = ChainAnalyzer.AnalyzeChain(
-                executionSite, sitesInTree, semanticModel, ct);
-
-            if (result == null)
-                continue;
-
-            // Collect diagnostic based on tier
-            var diagLocation = DiagnosticLocation.FromSyntaxNode(executionSite.InvocationSyntax);
-            var locationDisplay = $"{GetRelativePath(executionSite.FilePath)}:{executionSite.Line}";
-
-            switch (result.Tier)
-            {
-                case OptimizationTier.PrebuiltDispatch:
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ChainOptimizedTier1.Id,
-                        diagLocation,
-                        locationDisplay,
-                        result.PossibleMasks.Count.ToString()));
-                    break;
-
-                case OptimizationTier.PrequotedFragments:
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.ChainOptimizedTier2.Id,
-                        diagLocation,
-                        locationDisplay,
-                        result.ConditionalClauses.Count.ToString()));
-                    break;
-
-                case OptimizationTier.RuntimeBuild:
-                    if (result.ForkedVariableName != null)
-                    {
-                        // QRY033: Forked chain — error severity
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.ForkedQueryChain.Id,
-                            diagLocation,
-                            result.ForkedVariableName));
-                    }
-                    else
-                    {
-                        diagnostics.Add(new DiagnosticInfo(
-                            DiagnosticDescriptors.ChainNotAnalyzable.Id,
-                            diagLocation,
-                            locationDisplay,
-                            result.NotAnalyzableReason ?? "unknown reason"));
-                    }
-                    break;
-            }
-
-            // Build PrebuiltChainInfo for tier 1 chains.
-            if (result.Tier == OptimizationTier.PrebuiltDispatch)
-            {
-                PrebuiltChainInfo? chainInfo;
-                if (executionSite.JoinedEntityTypeNames != null && executionSite.JoinedEntityTypeNames.Count >= 2)
-                    chainInfo = BuildPrebuiltChainInfoForJoin(result, executionSite, entityLookup);
-                else
-                    chainInfo = BuildPrebuiltChainInfo(result, executionSite, entityLookup);
-                if (chainInfo != null)
-                    prebuiltChains.Add(chainInfo);
-            }
-        }
-
-        return (prebuiltChains, diagnostics);
-    }
-
-    /// <summary>
-    /// Builds a <see cref="PrebuiltChainInfo"/> for a tier 1 chain by resolving entity metadata
-    /// and building the compile-time SQL map.
-    /// </summary>
-    private static PrebuiltChainInfo? BuildPrebuiltChainInfo(
-        ChainAnalysisResult result,
-        UsageSiteInfo executionSite,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        var resolved = TryResolveEntityContext(
-            executionSite.EntityTypeName, executionSite.ContextClassName, entityLookup, out _);
-        if (resolved == null)
-            return null;
-
-        var (entity, ctx) = resolved.Value;
-        var dialect = ctx.Dialect;
-        var tableName = entity.TableName;
-        var schemaName = ctx.Schema;
-
-        // Determine query kind from execution site
-        var queryKind = DetermineQueryKind(executionSite);
-        if (queryKind == null)
-            return null;
-
-        // Build SQL map using CompileTimeSqlBuilder
-        Dictionary<ulong, PrebuiltSqlResult>? sqlMap;
-        try
-        {
-            if (queryKind.Value == QueryKind.Insert)
-            {
-                // Insert SQL is built from entity metadata, not from clause analysis
-                var insertInfo = executionSite.InsertInfo;
-                if (insertInfo == null || insertInfo.Columns.Count == 0)
-                    return null;
-                var columns = insertInfo.Columns.Select(c => c.QuotedColumnName).ToList();
-                // ExecuteScalar and ToDiagnostics include RETURNING clause; ExecuteNonQuery does not.
-                // Pass unquoted name — BuildInsertSql applies dialect-specific quoting.
-                var identityCol = executionSite.Kind is InterceptorKind.InsertExecuteScalar or InterceptorKind.InsertToDiagnostics
-                    ? insertInfo.IdentityColumnName : null;
-                var insertResult = CompileTimeSqlBuilder.BuildInsertSql(
-                    dialect, tableName, schemaName, columns, columns.Count, identityCol);
-                sqlMap = new Dictionary<ulong, PrebuiltSqlResult>
-                {
-                    [0UL] = new PrebuiltSqlResult(insertResult.Sql, columns.Count)
-                };
-            }
-            else
-            {
-                // For ToDiagnostics terminals, extract constant Limit/Offset values to inline as literals.
-                // If any Limit/Offset clause has a non-constant value, skip prebuilt chain
-                // (the runtime ToDiagnostics path handles variable values correctly).
-                var pagination = ExtractLiteralPagination(result, executionSite.Kind);
-                if (pagination.HasVariablePagination)
-                    return null;
-
-                sqlMap = queryKind.Value switch
-                {
-                    QueryKind.Select => CompileTimeSqlBuilder.BuildSelectSqlMap(
-                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName,
-                        literalLimit: pagination.Limit, literalOffset: pagination.Offset),
-                    QueryKind.Delete => CompileTimeSqlBuilder.BuildDeleteSqlMap(
-                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                    QueryKind.Update => CompileTimeSqlBuilder.BuildUpdateSqlMap(
-                        result.PossibleMasks, result.Clauses, dialect, tableName, schemaName),
-                    _ => null
-                };
-            }
-        }
-        catch
-        {
-            // If SQL building fails for any reason, skip this chain
-            return null;
-        }
-
-        if (sqlMap == null || sqlMap.Count == 0)
-            return null;
-
-        // Bail out if any clause has captured parameters that can't generate direct extraction paths.
-        // Without extraction, the BindParam(p0) reference is unresolved, causing compile errors.
-        // Exception: UpdateSetAction captures use delegate.Target + FieldInfo (not expression tree
-        // paths), so they don't need CanGenerateDirectPath.
-        foreach (var clause in result.Clauses)
-        {
-            if (clause.Site.Kind == InterceptorKind.UpdateSetAction)
-                continue;
-
-            if (clause.Site.ClauseInfo?.Parameters is { Count: > 0 } clauseParams)
-            {
-                if (clauseParams.Any(p => p.IsCaptured && !p.CanGenerateDirectPath))
-                    return null;
-            }
-        }
-
-        // Find the Select clause for reader delegate (SELECT queries only)
-        string? readerCode = null;
-        ProjectionInfo? projInfo = null;
-        if (queryKind.Value == QueryKind.Select)
-        {
-            var selectClause = result.Clauses
-                .Where(c => c.Role == ClauseRole.Select)
-                .Select(c => c.Site)
-                .FirstOrDefault(s => s.ProjectionInfo != null);
-
-            if (selectClause?.ProjectionInfo != null)
-            {
-                projInfo = selectClause.ProjectionInfo;
-                var entityType = InterceptorCodeGenerator.GetShortTypeName(executionSite.EntityTypeName);
-                readerCode = Quarry.Generators.Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
-            }
-            else
-            {
-                // No Select clause — identity projection (SELECT *).
-                // Build a ProjectionInfo from EntityInfo for the reader delegate.
-                projInfo = BuildEntityProjectionFromEntityInfo(entity);
-                if (projInfo != null)
-                {
-                    var entityType = InterceptorCodeGenerator.GetShortTypeName(executionSite.EntityTypeName);
-                    readerCode = Quarry.Generators.Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
-                }
-            }
-        }
-
-        // Build chain parameter info for carrier optimization.
-        // Carrier eligibility mirrors execution terminal checks — if the terminal would be
-        // skipped by GenerateInterceptorMethod, the chain must NOT be carrier-eligible,
-        // otherwise clause interceptors create carriers with no terminal to consume them.
-        var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null
-            && result.UnmatchedMethodNames == null;
-
-        if (isCarrierEligible && queryKind.Value == QueryKind.Select)
-        {
-            // SELECT terminal checks: result type resolution, reader delegate, ambiguous columns
-            // ToDiagnostics doesn't read rows, so skip the reader check for it.
-            var isToDiag = executionSite.Kind == InterceptorKind.ToDiagnostics;
-            var resolvedResult = InterceptorCodeGenerator.ResolveExecutionResultTypePublic(
-                executionSite.ResultTypeName, executionSite.ResultTypeName, projInfo);
-            if (string.IsNullOrEmpty(resolvedResult))
-                isCarrierEligible = false;
-            else if (readerCode == null && !isToDiag)
-                isCarrierEligible = false;
-            else if (projInfo != null && projInfo.Columns.Any(c =>
-                c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName)))
-                isCarrierEligible = false;
-        }
-        else if (isCarrierEligible && queryKind.Value is QueryKind.Delete or QueryKind.Update)
-        {
-            // NonQuery terminal checks: SQL variants must be non-empty and well-formed
-            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
-                || (queryKind.Value == QueryKind.Update && v.Sql.Contains("SET  "))))
-                isCarrierEligible = false;
-        }
-        else if (isCarrierEligible && queryKind.Value == QueryKind.Insert)
-        {
-            // Insert terminal checks: SQL must be non-empty
-            if (sqlMap.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)))
-                isCarrierEligible = false;
-            // MySQL ExecuteScalar requires a separate SELECT LAST_INSERT_ID() query,
-            // which can't be done with a single carrier DbCommand.
-            if (executionSite.Kind == InterceptorKind.InsertExecuteScalar && dialect == SqlDialect.MySQL)
-                isCarrierEligible = false;
-        }
-
-        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
-        if (isCarrierEligible && chainParams != null)
-            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
-
-        return new PrebuiltChainInfo(
-            result, sqlMap, readerCode,
-            executionSite.EntityTypeName, executionSite.ResultTypeName,
-            dialect, tableName, schemaName, queryKind.Value, projInfo,
-            chainParameters: chainParams,
-            isCarrierEligible: isCarrierEligible,
-            entitySchemaNamespace: entity.SchemaNamespace);
-    }
 
     /// <summary>
     /// Builds an entity projection from EntityInfo for identity projections (no Select clause).
@@ -963,264 +638,72 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds a <see cref="PrebuiltChainInfo"/> for a tier 1 joined chain by resolving
-    /// all joined entity metadata and building the compile-time SQL map.
+    /// Builds an entity projection from an EntityRef for identity projections in the new pipeline bridge.
+    /// Similar to <see cref="BuildEntityProjectionFromEntityInfo"/> but uses the lightweight EntityRef.
     /// </summary>
-    private static PrebuiltChainInfo? BuildPrebuiltChainInfoForJoin(
-        ChainAnalysisResult result,
-        UsageSiteInfo executionSite,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        var joinedNames = executionSite.JoinedEntityTypeNames!;
-        var resolvedEntities = new List<EntityInfo>(joinedNames.Count);
-        ContextInfo? sharedContext = null;
-
-        foreach (var name in joinedNames)
-        {
-            var resolved = TryResolveEntityContext(name, executionSite.ContextClassName, entityLookup, out _);
-            if (resolved == null)
-                return null;
-
-            var (entity, ctx) = resolved.Value;
-
-            // All entities must share the same context (same dialect, schema)
-            if (sharedContext == null)
-                sharedContext = ctx;
-            else if (sharedContext.Dialect != ctx.Dialect)
-                return null;
-
-            resolvedEntities.Add(entity);
-        }
-
-        if (sharedContext == null || resolvedEntities.Count < 2)
-            return null;
-
-        var dialect = sharedContext.Dialect;
-
-        // Joined chains must have an explicit Select clause — no identity projection
-        var selectClause = result.Clauses
-            .Where(c => c.Role == ClauseRole.Select)
-            .Select(c => c.Site)
-            .FirstOrDefault(s => s.ProjectionInfo != null);
-
-        if (selectClause?.ProjectionInfo == null)
-            return null;
-
-        var projInfo = selectClause.ProjectionInfo;
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(executionSite.EntityTypeName);
-        var readerCode = Quarry.Generators.Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
-
-        // Build table info list for join SQL generation
-        var tables = new List<(string TableName, string? SchemaName)>(resolvedEntities.Count);
-        foreach (var e in resolvedEntities)
-            tables.Add((e.TableName, sharedContext.Schema));
-
-        // Build SQL map using CompileTimeSqlBuilder with join support
-        // Join chains need "t0" alias on the primary table (matches runtime QueryState.WithJoin)
-        // For ToDiagnostics terminals, extract constant Limit/Offset to inline as literals.
-        var joinPagination = ExtractLiteralPagination(result, executionSite.Kind);
-        if (joinPagination.HasVariablePagination)
-            return null;
-
-        Dictionary<ulong, PrebuiltSqlResult>? sqlMap;
-        try
-        {
-            sqlMap = CompileTimeSqlBuilder.BuildSelectSqlMap(
-                result.PossibleMasks, result.Clauses, dialect, tables[0].TableName, tables[0].SchemaName, "t0",
-                literalLimit: joinPagination.Limit, literalOffset: joinPagination.Offset);
-        }
-        catch
-        {
-            return null;
-        }
-
-        if (sqlMap == null || sqlMap.Count == 0)
-            return null;
-
-        // Build joined entity type names and table infos for the chain info
-        var joinedTypeNames = joinedNames.ToList();
-        var joinedTableInfos = tables;
-
-        // Build chain parameter info for carrier optimization
-        var chainParams = BuildChainParameters(result);
-        var isCarrierEligible = chainParams != null;
-
-        if (isCarrierEligible)
-        {
-            // ToDiagnostics doesn't read rows, so skip the reader check for it.
-            var isToDiag = executionSite.Kind == InterceptorKind.ToDiagnostics;
-            if (readerCode == null && !isToDiag)
-                isCarrierEligible = false;
-        }
-
-        // Post-process SQL to tokenize collection parameter placeholders for carrier expansion.
-        if (isCarrierEligible && chainParams != null)
-            TokenizeCollectionParameters(sqlMap, chainParams, dialect);
-
-        return new PrebuiltChainInfo(
-            result, sqlMap, readerCode,
-            executionSite.EntityTypeName, executionSite.ResultTypeName,
-            dialect, tables[0].TableName, tables[0].SchemaName,
-            QueryKind.Select, projInfo,
-            joinedTypeNames, joinedTableInfos,
-            chainParameters: chainParams,
-            isCarrierEligible: isCarrierEligible,
-            entitySchemaNamespace: resolvedEntities[0].SchemaNamespace);
-    }
-
     /// <summary>
-    /// Builds a list of <see cref="ChainParameterInfo"/> for carrier class field generation
-    /// by walking clause sites in chain order and collecting their parameters with global indices.
-    /// Returns null if carrier parameter extraction fails (e.g., collection parameters that
-    /// cannot be represented as typed carrier fields).
+    /// Strip SqlExpression from non-aggregate columns for bridge compatibility.
+    /// The old pipeline emitters treat SqlExpression as "computed/aggregate expression",
+    /// but the new pipeline sets it for ALL columns (e.g., "u.UserId"). Leaving it set
+    /// triggers the "ambiguous columns" guard in FileEmitter which skips terminal generation.
     /// </summary>
-    private static IReadOnlyList<ChainParameterInfo>? BuildChainParameters(ChainAnalysisResult result)
+    private static IReadOnlyList<ProjectedColumn> StripNonAggregateSqlExpressions(
+        IReadOnlyList<ProjectedColumn> columns)
     {
-        var chainParams = new List<ChainParameterInfo>();
-        var globalIndex = 0;
-
-        foreach (var clause in result.Clauses)
+        var result = new List<ProjectedColumn>(columns.Count);
+        foreach (var col in columns)
         {
-            // OrderBy/ThenBy/GroupBy require resolved KeyTypeName for carrier path.
-            // Without it, the clause interceptor falls back to non-carrier (open-generic),
-            // creating a mismatch where the terminal expects a carrier but gets a real builder.
-            if (clause.Role is ClauseRole.OrderBy or ClauseRole.ThenBy or ClauseRole.GroupBy)
+            if (col.SqlExpression != null && !col.IsAggregateFunction)
             {
-                if (clause.Site.KeyTypeName == null)
-                    return null;
+                result.Add(new ProjectedColumn(
+                    col.PropertyName, col.ColumnName, col.ClrType, col.FullClrType,
+                    col.IsNullable, col.Ordinal, col.Alias,
+                    sqlExpression: null,
+                    isAggregateFunction: false,
+                    customTypeMapping: col.CustomTypeMapping,
+                    isValueType: col.IsValueType,
+                    readerMethodName: col.ReaderMethodName,
+                    tableAlias: col.TableAlias,
+                    isForeignKey: col.IsForeignKey,
+                    foreignKeyEntityName: col.ForeignKeyEntityName,
+                    isEnum: col.IsEnum));
             }
-
-            // Set/UpdateSet: carrier eligibility depends on parameter type resolution.
-            // ValueTypeName (needed for concrete interceptor signatures) is resolved during
-            // enrichment — here we only check that parameter types are available.
-            if (clause.Role is ClauseRole.Set or ClauseRole.UpdateSet)
+            else
             {
-                // UpdateSetPoco: entity-sourced parameters — one per column from UpdateInfo
-                if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-                {
-                    foreach (var col in clause.Site.UpdateInfo.Columns)
-                    {
-                        // Build the entity property access expression for terminal parameter extraction
-                        var propExpr = col.IsForeignKey
-                            ? $"__c.Entity.{col.PropertyName}.Id"
-                            : $"__c.Entity.{col.PropertyName}";
-                        if (col.CustomTypeMappingClass != null)
-                            propExpr = $"{InterceptorCodeGenerator.GetMappingFieldName(col.CustomTypeMappingClass)}.ToDb({propExpr})";
-
-                        chainParams.Add(new ChainParameterInfo(
-                            index: globalIndex,
-                            typeName: col.FullClrType,
-                            valueExpression: propExpr,
-                            typeMapping: col.CustomTypeMappingClass,
-                            isSensitive: col.IsSensitive,
-                            entityPropertyExpression: propExpr));
-
-                        globalIndex++;
-                    }
-                    continue;
-                }
-
-                // UpdateSetAction: multiple assignments from Action<T> lambda.
-                // Fall through to normal parameter processing — each assignment's parameter
-                // is already in ClauseInfo.Parameters with resolved types.
-                if (clause.Site.ClauseInfo is SetActionClauseInfo)
-                {
-                    // Validated — fall through to standard parameter processing
-                }
-                // Scalar Set<TValue>: require SetClauseInfo with resolvable parameter types.
-                // Fall through to normal parameter processing — the standard ClrType checks
-                // will validate that carrier fields can be typed.
-                else if (clause.Site.ClauseInfo is not SetClauseInfo)
-                    return null;
-            }
-
-            // InsertTransition has no expression parameters — skip parameter extraction
-            if (clause.Role is ClauseRole.InsertTransition)
-                continue;
-
-            if (clause.Site.ClauseInfo == null)
-                continue;
-
-            foreach (var param in clause.Site.ClauseInfo.Parameters)
-            {
-                // Collection parameters need a resolved element type for carrier fields
-                if (param.IsCollection)
-                {
-                    if (string.IsNullOrWhiteSpace(param.CollectionElementType))
-                        return null;
-
-                    // Classify the receiver for direct-access vs runtime-helper extraction.
-                    // Public static fields/properties can be accessed directly in generated code.
-                    var isDirectAccessible = false;
-                    string? collectionAccessExpression = null;
-
-                    if (param.CollectionReceiverSymbol is IFieldSymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public } publicField)
-                    {
-                        isDirectAccessible = true;
-                        collectionAccessExpression = $"global::{publicField.ContainingType.ToDisplayString()}.{publicField.Name}";
-                    }
-                    else if (param.CollectionReceiverSymbol is IPropertySymbol { IsStatic: true, DeclaredAccessibility: Accessibility.Public, GetMethod: not null } publicProp)
-                    {
-                        isDirectAccessible = true;
-                        collectionAccessExpression = $"global::{publicProp.ContainingType.ToDisplayString()}.{publicProp.Name}";
-                    }
-
-                    chainParams.Add(new ChainParameterInfo(
-                        index: globalIndex,
-                        typeName: param.ClrType,
-                        valueExpression: param.ValueExpression,
-                        isCollection: true,
-                        elementTypeName: param.CollectionElementType,
-                        isDirectAccessible: isDirectAccessible,
-                        collectionAccessExpression: collectionAccessExpression));
-
-                    globalIndex++;
-                    continue;
-                }
-
-                // Parameters with unresolved types cannot be carrier fields
-                if (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object?")
-                    return null;
-
-                // For Set clauses, the CustomTypeMappingClass lives on SetClauseInfo
-                // rather than on the individual ParameterInfo — propagate it.
-                var typeMapping = param.CustomTypeMappingClass;
-                if (typeMapping == null
-                    && clause.Role is ClauseRole.Set or ClauseRole.UpdateSet
-                    && clause.Site.ClauseInfo is SetClauseInfo sci)
-                {
-                    typeMapping = sci.CustomTypeMappingClass;
-                }
-                // For SetAction assignments, propagate type mapping from the assignment
-                if (typeMapping == null
-                    && clause.Site.Kind == InterceptorKind.UpdateSetAction
-                    && clause.Site.ClauseInfo is SetActionClauseInfo saci)
-                {
-                    var localIdx = param.Index; // Index within this clause's parameters
-                    if (localIdx < saci.Assignments.Count)
-                        typeMapping = saci.Assignments[localIdx].CustomTypeMappingClass;
-                }
-
-                // For Action<T> captured params, needsFieldInfoCache is true because we use
-                // delegate.Target + cached FieldInfo (no expression tree path, but still needs cache).
-                var needsFieldInfoCache = param.IsCaptured
-                    && (param.CanGenerateDirectPath || clause.Site.Kind == InterceptorKind.UpdateSetAction);
-
-                chainParams.Add(new ChainParameterInfo(
-                    index: globalIndex,
-                    typeName: param.ClrType,
-                    valueExpression: param.ValueExpression,
-                    typeMapping: typeMapping,
-                    isEnum: param.IsEnum,
-                    enumUnderlyingType: param.EnumUnderlyingType,
-                    needsFieldInfoCache: needsFieldInfoCache));
-
-                globalIndex++;
+                result.Add(col);
             }
         }
-
-        return chainParams;
+        return result;
     }
+
+    private static ProjectionInfo? BuildEntityProjectionFromEntityRef(IR.EntityRef entityRef)
+    {
+        if (entityRef.Columns.Count == 0)
+            return null;
+
+        var columns = new List<ProjectedColumn>();
+        var ordinal = 0;
+        foreach (var col in entityRef.Columns)
+        {
+            columns.Add(new ProjectedColumn(
+                propertyName: col.PropertyName,
+                columnName: col.ColumnName,
+                clrType: col.ClrType,
+                fullClrType: col.FullClrType,
+                isNullable: col.IsNullable,
+                ordinal: ordinal++,
+                customTypeMapping: col.CustomTypeMappingClass,
+                isValueType: col.IsValueType,
+                readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
+                isForeignKey: col.Kind == ColumnKind.ForeignKey,
+                foreignKeyEntityName: col.ReferencedEntityName,
+                isEnum: col.IsEnum));
+        }
+
+        return new ProjectionInfo(ProjectionKind.Entity, entityRef.EntityName, columns,
+            customEntityReaderClass: entityRef.CustomEntityReaderClass);
+    }
+
 
     /// <summary>
     /// Replaces collection parameter placeholders in pre-built SQL with expansion tokens.
@@ -1228,8 +711,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// The carrier terminal expands these tokens at runtime based on the actual collection size.
     /// </summary>
     private static void TokenizeCollectionParameters(
-        Dictionary<ulong, Sql.PrebuiltSqlResult> sqlMap,
-        IReadOnlyList<ChainParameterInfo> chainParams,
+        Dictionary<ulong, IR.AssembledSqlVariant> sqlMap,
+        IReadOnlyList<IR.QueryParameter> chainParams,
         SqlDialect dialect)
     {
         // Find collection parameter indices and their tokens
@@ -1237,7 +720,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         foreach (var param in chainParams)
         {
             if (!param.IsCollection) continue;
-            collectionParams.Add((param.Index, $"{{__COL_P{param.Index}__}}"));
+            collectionParams.Add((param.GlobalIndex, $"{{__COL_P{param.GlobalIndex}__}}"));
         }
 
         if (collectionParams.Count == 0) return;
@@ -1280,7 +763,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
         foreach (var (key, sql, paramCount) in pendingUpdates)
         {
-            sqlMap[key] = new Sql.PrebuiltSqlResult(sql, paramCount);
+            sqlMap[key] = new IR.AssembledSqlVariant(sql, paramCount);
         }
     }
 
@@ -1304,83 +787,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         return input; // Nth occurrence not found
     }
 
-    /// <summary>
-    /// Extracts constant Limit/Offset values from a chain's clause sites for ToDiagnostics terminals.
-    /// Returns <c>hasVariablePagination = true</c> if any Limit/Offset clause has a non-constant
-    /// value, meaning the chain should fall back to the runtime ToDiagnostics path.
-    /// </summary>
-    private static (int? Limit, int? Offset, bool HasVariablePagination) ExtractLiteralPagination(
-        ChainAnalysisResult result, InterceptorKind terminalKind)
-    {
-        if (terminalKind is not InterceptorKind.ToDiagnostics)
-            return (null, null, false);
-
-        int? literalLimit = null;
-        int? literalOffset = null;
-
-        foreach (var clause in result.Clauses)
-        {
-            if (clause.Role == ClauseRole.Limit)
-            {
-                if (clause.Site.ConstantIntValue == null)
-                    return (null, null, true);
-                literalLimit = clause.Site.ConstantIntValue;
-            }
-            else if (clause.Role == ClauseRole.Offset)
-            {
-                if (clause.Site.ConstantIntValue == null)
-                    return (null, null, true);
-                literalOffset = clause.Site.ConstantIntValue;
-            }
-        }
-
-        return (literalLimit, literalOffset, false);
-    }
-
-    /// <summary>
-    /// Determines the <see cref="QueryKind"/> from an execution site's builder type.
-    /// </summary>
-    private static QueryKind? DetermineQueryKind(UsageSiteInfo executionSite)
-    {
-        switch (executionSite.Kind)
-        {
-            case InterceptorKind.ExecuteFetchAll:
-            case InterceptorKind.ExecuteFetchFirst:
-            case InterceptorKind.ExecuteFetchFirstOrDefault:
-            case InterceptorKind.ExecuteFetchSingle:
-            case InterceptorKind.ExecuteScalar:
-            case InterceptorKind.ToAsyncEnumerable:
-                return QueryKind.Select;
-
-            case InterceptorKind.ExecuteNonQuery:
-                // Determine by builder kind
-                if (executionSite.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
-                    return QueryKind.Delete;
-                if (executionSite.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
-                    return QueryKind.Update;
-                // QueryBuilder ExecuteNonQuery is a SELECT-like operation
-                if (executionSite.BuilderKind is BuilderKind.Query or BuilderKind.JoinedQuery)
-                    return QueryKind.Select;
-                return null;
-
-            case InterceptorKind.ToDiagnostics:
-                if (executionSite.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
-                    return QueryKind.Delete;
-                if (executionSite.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
-                    return QueryKind.Update;
-                if (executionSite.BuilderKind is BuilderKind.Query or BuilderKind.JoinedQuery)
-                    return QueryKind.Select;
-                return null; // IEntityAccessor — trivial db.Users().ToDiagnostics(), no clauses to optimize
-
-            case InterceptorKind.InsertExecuteNonQuery:
-            case InterceptorKind.InsertExecuteScalar:
-            case InterceptorKind.InsertToDiagnostics:
-                return QueryKind.Insert;
-
-            default:
-                return null;
-        }
-    }
 
     /// <summary>
     /// Gets a relative file path for display in diagnostics.
@@ -1393,950 +799,19 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds a lookup from entity type names to EntityInfo.
-    /// Supports multiple contexts registering the same entity type.
+    /// Checks if the consumer project defines the QUARRY_TRACE preprocessor symbol.
     /// </summary>
-    private static Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> BuildEntityLookup(
-        ImmutableArray<ContextInfo> contexts)
+    private static bool HasQuarryTrace(Compilation compilation)
     {
-        var lookup = new Dictionary<string, List<(EntityInfo, ContextInfo)>>(StringComparer.Ordinal);
-
-        if (contexts.IsDefaultOrEmpty)
-            return lookup;
-
-        foreach (var contextInfo in contexts)
+        foreach (var tree in compilation.SyntaxTrees)
         {
-            foreach (var entity in contextInfo.Entities)
-            {
-                // Build possible type name variants
-                var shortName = entity.EntityName;
-                var qualifiedName = string.IsNullOrEmpty(contextInfo.Namespace)
-                    ? shortName
-                    : $"{contextInfo.Namespace}.{shortName}";
-                var globalName = $"global::{qualifiedName}";
-
-                AddToLookup(lookup, shortName, entity, contextInfo);
-                AddToLookup(lookup, qualifiedName, entity, contextInfo);
-                AddToLookup(lookup, globalName, entity, contextInfo);
-            }
+            if (((Microsoft.CodeAnalysis.CSharp.CSharpParseOptions)tree.Options)
+                .PreprocessorSymbolNames.Contains("QUARRY_TRACE"))
+                return true;
         }
-
-        return lookup;
+        return false;
     }
 
-    /// <summary>
-    /// Builds a flat entity registry keyed by entity name for subquery resolution.
-    /// </summary>
-    private static Dictionary<string, EntityInfo> BuildEntityRegistry(
-        ImmutableArray<ContextInfo> contexts)
-    {
-        var registry = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-
-        if (contexts.IsDefaultOrEmpty)
-            return registry;
-
-        foreach (var contextInfo in contexts)
-        {
-            foreach (var entity in contextInfo.Entities)
-            {
-                // First-writer-wins for entities with same name across contexts
-                if (!registry.ContainsKey(entity.EntityName))
-                    registry[entity.EntityName] = entity;
-            }
-        }
-
-        return registry;
-    }
-
-    private static void AddToLookup(
-        Dictionary<string, List<(EntityInfo, ContextInfo)>> lookup,
-        string key,
-        EntityInfo entity,
-        ContextInfo context)
-    {
-        if (!lookup.TryGetValue(key, out var list))
-        {
-            list = new List<(EntityInfo, ContextInfo)>();
-            lookup[key] = list;
-        }
-        // Avoid duplicate entries for the same context
-        if (!list.Any(e => e.Item2.ClassName == context.ClassName))
-            list.Add((entity, context));
-    }
-
-    /// <summary>
-    /// Resolves entity context from the multi-value lookup, using contextClassName to disambiguate.
-    /// </summary>
-    private static (EntityInfo Entity, ContextInfo Context)? TryResolveEntityContext(
-        string entityTypeName,
-        string? contextClassName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        out bool isAmbiguous)
-    {
-        isAmbiguous = false;
-        var list = LookupEntityList(entityTypeName, entityLookup);
-        if (list == null || list.Count == 0)
-            return null;
-
-        if (list.Count == 1)
-            return list[0];
-
-        // Multiple contexts — use contextClassName to disambiguate
-        if (contextClassName != null)
-        {
-            foreach (var entry in list)
-            {
-                if (entry.Context.ClassName == contextClassName)
-                    return entry;
-            }
-        }
-
-        // Fallback: first-writer-wins — flag as ambiguous
-        isAmbiguous = contextClassName == null;
-        return list[0];
-    }
-
-    /// <summary>
-    /// Looks up the list of entity contexts for a type name with fallback resolution.
-    /// </summary>
-    private static List<(EntityInfo Entity, ContextInfo Context)>? LookupEntityList(
-        string typeName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        if (entityLookup.TryGetValue(typeName, out var list))
-            return list;
-
-        var name = typeName.StartsWith("global::") ? typeName.Substring(8) : typeName;
-        if (entityLookup.TryGetValue(name, out list))
-            return list;
-
-        var lastDot = name.LastIndexOf('.');
-        var shortName = lastDot > 0 ? name.Substring(lastDot + 1) : name;
-        if (entityLookup.TryGetValue(shortName, out list))
-            return list;
-
-        return null;
-    }
-
-    /// <summary>
-    /// Enriches a usage site with entity metadata if available.
-    /// This fixes the empty column name issue by using schema-derived column info,
-    /// and translates pending clauses when entity metadata becomes available.
-    /// </summary>
-    private static UsageSiteInfo EnrichUsageSiteWithEntityInfo(
-        UsageSiteInfo site,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        ImmutableArray<ContextInfo> contexts,
-        Dictionary<string, EntityInfo>? entityRegistry = null,
-        Compilation? compilation = null)
-    {
-        // Check if this site needs any enrichment
-        var needsProjectionEnrichment = site.Kind == InterceptorKind.Select && site.ProjectionInfo != null;
-        var needsClauseEnrichment = site.PendingClauseInfo != null;
-        var needsInsertEnrichment = site.Kind is InterceptorKind.InsertExecuteNonQuery
-                                                or InterceptorKind.InsertExecuteScalar
-                                                or InterceptorKind.InsertToDiagnostics;
-        var needsUpdatePocoEnrichment = site.Kind == InterceptorKind.UpdateSetPoco;
-        var needsJoinEnrichment = site.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
-                                  && site.ClauseInfo == null
-                                  && site.JoinedEntityTypeName != null;
-        // Joined clause methods (Where/OrderBy on JoinedQueryBuilder) need multi-entity enrichment
-        var needsJoinedClauseEnrichment = site.JoinedEntityTypeNames != null
-                                          && site.JoinedEntityTypeNames.Count >= 2
-                                          && site.ClauseInfo == null
-                                          && IsClauseOrSelectMethod(site.Kind);
-        // RawSql sites: enrich type info when T matches a known entity
-        var needsRawSqlEnrichment = site.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync
-                                    && site.RawSqlTypeInfo != null
-                                    && site.RawSqlTypeInfo.TypeKind == Models.RawSqlTypeKind.Dto;
-        // Set/UpdateSet: resolve ValueTypeName from enriched entity columns when discovery couldn't
-        var needsSetValueTypeEnrichment = site.Kind is InterceptorKind.Set or InterceptorKind.UpdateSet
-                                          && site.ClauseInfo is SetClauseInfo sci && sci.ValueTypeName == null;
-        // SetAction: enrich assignments with custom type mappings from EntityInfo
-        var needsSetActionEnrichment = site.Kind is InterceptorKind.UpdateSetAction
-                                       && site.ClauseInfo is SetActionClauseInfo;
-
-        if (!needsProjectionEnrichment && !needsClauseEnrichment && !needsInsertEnrichment
-            && !needsUpdatePocoEnrichment && !needsJoinEnrichment && !needsJoinedClauseEnrichment
-            && !needsRawSqlEnrichment && !needsSetValueTypeEnrichment && !needsSetActionEnrichment)
-            return site;
-
-        // Try to find matching entity, using contextClassName to disambiguate
-        var resolved = TryResolveEntityContext(site.EntityTypeName, site.ContextClassName, entityLookup, out _);
-        if (resolved == null)
-            return site;
-
-        var entityContext = resolved.Value;
-
-        // Enrich projection if needed
-        var enrichedProjection = site.ProjectionInfo;
-        if (needsProjectionEnrichment && site.ProjectionInfo != null)
-        {
-            enrichedProjection = EnrichProjectionWithEntityInfo(
-                site.ProjectionInfo,
-                entityContext.Entity,
-                entityContext.Context.Dialect);
-        }
-
-        // Translate pending clause if needed.
-        // Skip single-entity pending clause enrichment when joined clause enrichment is
-        // needed — the single-entity path cannot resolve columns from secondary entities
-        // (e.g., "o.Status" in (u, o) => statuses.Contains(o.Status)) and would produce a
-        // non-null failure that blocks the multi-entity TryTranslateJoinedClause path.
-        var enrichedClauseInfo = site.ClauseInfo;
-        PendingClauseInfo? clearedPendingClause = null; // Will be null after enrichment
-        if (needsClauseEnrichment && !needsJoinedClauseEnrichment && site.PendingClauseInfo != null)
-        {
-            enrichedClauseInfo = TranslatePendingClause(
-                site.PendingClauseInfo,
-                entityContext.Entity,
-                entityContext.Context.Dialect,
-                site.InvocationSyntax as InvocationExpressionSyntax,
-                entityRegistry,
-                compilation);
-            // Clear pending clause info since it's been translated
-            clearedPendingClause = null;
-        }
-        else
-        {
-            clearedPendingClause = site.PendingClauseInfo;
-        }
-
-        // Create insert info if needed
-        InsertInfo? enrichedInsertInfo = site.InsertInfo;
-        if (needsInsertEnrichment)
-        {
-            enrichedInsertInfo = InsertInfo.FromEntityInfo(
-                entityContext.Entity,
-                entityContext.Context.Dialect,
-                site.InitializedPropertyNames);
-        }
-
-        // Create update info if needed (POCO Set)
-        InsertInfo? enrichedUpdateInfo = site.UpdateInfo;
-        if (needsUpdatePocoEnrichment)
-        {
-            enrichedUpdateInfo = InsertInfo.FromEntityInfo(
-                entityContext.Entity,
-                entityContext.Context.Dialect,
-                site.InitializedPropertyNames);
-        }
-
-        // Enrich join clause if needed
-        string? resolvedJoinedEntityTypeName = null;
-        if (needsJoinEnrichment && enrichedClauseInfo == null)
-        {
-            // For navigation joins with unresolved type parameters, resolve from navigation metadata
-            if (site.IsNavigationJoin && site.JoinedEntityTypeName != null
-                && !entityLookup.ContainsKey(site.JoinedEntityTypeName))
-            {
-                resolvedJoinedEntityTypeName = ResolveNavigationJoinEntityType(
-                    site, entityContext.Entity, entityLookup);
-            }
-
-            var siteForJoin = resolvedJoinedEntityTypeName != null
-                ? new UsageSiteInfo(
-                    methodName: site.MethodName, filePath: site.FilePath,
-                    line: site.Line, column: site.Column,
-                    builderTypeName: site.BuilderTypeName, entityTypeName: site.EntityTypeName,
-                    isAnalyzable: site.IsAnalyzable, kind: site.Kind,
-                    invocationSyntax: site.InvocationSyntax, uniqueId: site.UniqueId,
-                    joinedEntityTypeName: resolvedJoinedEntityTypeName,
-                    isNavigationJoin: site.IsNavigationJoin,
-                    builderKind: site.BuilderKind)
-                : site;
-            enrichedClauseInfo = TryTranslateJoinClause(siteForJoin, entityContext, entityLookup);
-        }
-
-        // Enrich joined clause methods (Where/OrderBy/GroupBy on joined builders)
-        // Note: Joined Select projection is analyzed in Phase 2 (UsageSiteDiscovery) and
-        // may be further enriched via EnrichJoinedProjectionWithEntityInfo below
-        if (needsJoinedClauseEnrichment && enrichedClauseInfo == null && site.Kind != InterceptorKind.Select)
-        {
-            enrichedClauseInfo = TryTranslateJoinedClause(site, entityContext, entityLookup);
-            if (enrichedClauseInfo != null)
-                clearedPendingClause = null; // Clear pending clause — joined translation succeeded
-        }
-
-        // Analyze joined Select projection using entity metadata
-        if (needsJoinedClauseEnrichment && site.Kind == InterceptorKind.Select
-            && site.InvocationSyntax is InvocationExpressionSyntax selectInvocation)
-        {
-            enrichedProjection = TryAnalyzeJoinedProjection(
-                selectInvocation, site.JoinedEntityTypeNames!, entityLookup, entityContext.Context.Dialect);
-        }
-
-        // Enrich Set clause with custom type mapping info from schema
-        if (site.Kind == InterceptorKind.Set && enrichedClauseInfo is SetClauseInfo setClause && setClause.CustomTypeMappingClass == null)
-        {
-            enrichedClauseInfo = EnrichSetClauseWithMapping(setClause, entityContext.Entity);
-        }
-
-        // Enrich Set/UpdateSet with resolved ValueTypeName from entity column metadata.
-        // During discovery, the entity's generated properties may not be available yet
-        // (same generator pipeline), so ValueTypeName can be null. Resolve it here using
-        // the enriched EntityInfo from Pipeline 1.
-        if (needsSetValueTypeEnrichment)
-        {
-            var setClauseToEnrich = (enrichedClauseInfo ?? site.ClauseInfo) as SetClauseInfo;
-            if (setClauseToEnrich != null && setClauseToEnrich.ValueTypeName == null)
-            {
-                var resolvedValueType = ResolveSetValueTypeFromEntity(setClauseToEnrich, entityContext.Entity);
-                if (resolvedValueType != null)
-                {
-                    enrichedClauseInfo = new SetClauseInfo(
-                        setClauseToEnrich.ColumnSql,
-                        setClauseToEnrich.ParameterIndex,
-                        setClauseToEnrich.Parameters,
-                        setClauseToEnrich.CustomTypeMappingClass,
-                        resolvedValueType);
-                }
-            }
-        }
-
-        // Also enrich UpdateSet mapping (same as InterceptorKind.Set above)
-        if (site.Kind == InterceptorKind.UpdateSet && enrichedClauseInfo is SetClauseInfo updateSetClause && updateSetClause.CustomTypeMappingClass == null)
-        {
-            enrichedClauseInfo = EnrichSetClauseWithMapping(updateSetClause, entityContext.Entity);
-        }
-
-        // Enrich UpdateSetAction: resolve custom type mappings, value types, and proper column quoting
-        if (needsSetActionEnrichment && enrichedClauseInfo is SetActionClauseInfo actionClause)
-        {
-            enrichedClauseInfo = EnrichSetActionClauseWithMapping(actionClause, entityContext.Entity, entityContext.Context.Dialect);
-        }
-
-        // Enrich RawSql type info when T matches a known entity from Pipeline 1
-        var enrichedRawSqlTypeInfo = site.RawSqlTypeInfo;
-        if (needsRawSqlEnrichment && site.RawSqlTypeInfo != null)
-        {
-            enrichedRawSqlTypeInfo = EnrichRawSqlTypeInfoWithEntity(site.RawSqlTypeInfo, entityContext.Entity);
-        }
-
-        // Create updated usage site with enriched data
-        return new UsageSiteInfo(
-            methodName: site.MethodName,
-            filePath: site.FilePath,
-            line: site.Line,
-            column: site.Column,
-            builderTypeName: site.BuilderTypeName,
-            entityTypeName: site.EntityTypeName,
-            isAnalyzable: site.IsAnalyzable,
-            kind: site.Kind,
-            invocationSyntax: site.InvocationSyntax,
-            uniqueId: site.UniqueId,
-            resultTypeName: site.ResultTypeName,
-            nonAnalyzableReason: site.NonAnalyzableReason,
-            contextClassName: entityContext.Context.ClassName,
-            contextNamespace: entityContext.Context.Namespace,
-            projectionInfo: enrichedProjection,
-            clauseInfo: enrichedClauseInfo,
-            interceptableLocationData: site.InterceptableLocationData,
-            interceptableLocationVersion: site.InterceptableLocationVersion,
-            pendingClauseInfo: clearedPendingClause,
-            insertInfo: enrichedInsertInfo,
-            joinedEntityTypeName: resolvedJoinedEntityTypeName ?? site.JoinedEntityTypeName,
-            joinedEntityTypeNames: site.JoinedEntityTypeNames,
-            dialect: entityContext.Context.Dialect,
-            initializedPropertyNames: site.InitializedPropertyNames,
-            updateInfo: enrichedUpdateInfo,
-            keyTypeName: (enrichedClauseInfo is Models.OrderByClauseInfo orderByInfo && orderByInfo.KeyTypeName != null)
-                ? orderByInfo.KeyTypeName : site.KeyTypeName,
-            rawSqlTypeInfo: enrichedRawSqlTypeInfo,
-            isNavigationJoin: site.IsNavigationJoin,
-            builderKind: site.BuilderKind,
-            valueTypeName: (enrichedClauseInfo is SetClauseInfo setClauseForValue && setClauseForValue.ValueTypeName != null)
-                ? setClauseForValue.ValueTypeName
-                : (site.ClauseInfo is SetClauseInfo origSetClause && origSetClause.ValueTypeName != null)
-                    ? origSetClause.ValueTypeName
-                    : site.ValueTypeName);
-    }
-
-    /// <summary>
-    /// Attempts to translate a join condition using enriched entity metadata.
-    /// </summary>
-    private static ClauseInfo? TryTranslateJoinClause(
-        UsageSiteInfo site,
-        (EntityInfo Entity, ContextInfo Context) leftEntityContext,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        if (site.JoinedEntityTypeName == null || site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
-            return null;
-
-        // Find the right (newly joined) entity info
-        var rightEntityContext = LookupEntityContext(site.JoinedEntityTypeName, entityLookup);
-        if (rightEntityContext == null)
-            return null;
-
-        var joinKind = site.Kind switch
-        {
-            InterceptorKind.LeftJoin => Models.JoinClauseKind.Left,
-            InterceptorKind.RightJoin => Models.JoinClauseKind.Right,
-            _ => Models.JoinClauseKind.Inner
-        };
-
-        try
-        {
-            // Check if this is a navigation-based join (u => u.Orders)
-            if (site.IsNavigationJoin)
-            {
-                return Translation.ClauseTranslator.TranslateNavigationJoin(
-                    invocation,
-                    leftEntityContext.Entity,
-                    rightEntityContext.Value.Entity,
-                    leftEntityContext.Context.Dialect,
-                    joinKind);
-            }
-
-            // Check if this is a chained join (from JoinedQueryBuilder/3)
-            if (site.JoinedEntityTypeNames != null && site.JoinedEntityTypeNames.Count >= 2)
-            {
-                // Resolve all prior entity infos
-                var priorEntities = new List<(string TypeName, EntityInfo Entity)>();
-                foreach (var typeName in site.JoinedEntityTypeNames)
-                {
-                    var ctx = LookupEntityContext(typeName, entityLookup);
-                    if (ctx == null)
-                        return null;
-                    priorEntities.Add((typeName, ctx.Value.Entity));
-                }
-
-                return Translation.ClauseTranslator.TranslateChainedJoinFromEntityInfo(
-                    invocation,
-                    priorEntities.Select(e => e.Entity).ToList(),
-                    rightEntityContext.Value.Entity,
-                    leftEntityContext.Context.Dialect,
-                    joinKind);
-            }
-
-            return Translation.ClauseTranslator.TranslateJoinFromEntityInfo(
-                invocation,
-                leftEntityContext.Entity,
-                rightEntityContext.Value.Entity,
-                leftEntityContext.Context.Dialect,
-                joinKind);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Discovers missing chain members (Select, Execute) from navigation join chains where
-    /// the semantic model couldn't resolve downstream calls due to unresolved TJoined.
-    /// Walks up the syntax tree from each enriched navigation join to find undiscovered calls.
-    /// </summary>
-    private static List<UsageSiteInfo> DiscoverNavigationJoinChainMembers(
-        List<UsageSiteInfo> enrichedSites,
-        HashSet<string> discoveredLocations,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        ImmutableArray<ContextInfo> contexts,
-        Dictionary<string, EntityInfo>? entityRegistry,
-        Compilation compilation)
-    {
-        var result = new List<UsageSiteInfo>();
-
-        foreach (var site in enrichedSites)
-        {
-            if (!site.IsNavigationJoin || site.JoinedEntityTypeName == null)
-                continue;
-
-            // Skip if the enrichment didn't resolve the entity type (still unresolved)
-            if (!entityLookup.ContainsKey(site.JoinedEntityTypeName))
-                continue;
-
-            // Walk up the syntax tree from the Join invocation to find parent method calls
-            var joinInvocation = site.InvocationSyntax;
-            var current = joinInvocation.Parent;
-
-            // The join invocation is part of a fluent chain: .Join(...).Select(...).Execute(...)
-            // Walk up through MemberAccessExpression → InvocationExpression pairs
-            while (current != null)
-            {
-                // Pattern: joinInvocation is the Expression of a MemberAccessExpression
-                if (current is MemberAccessExpressionSyntax memberAccess
-                    && memberAccess.Parent is InvocationExpressionSyntax parentInvocation)
-                {
-                    var methodName = memberAccess.Name.Identifier.ValueText;
-
-                    // Check if this call was already discovered
-                    var location = Parsing.UsageSiteDiscovery.GetMethodLocation(parentInvocation);
-                    if (location == null)
-                    {
-                        current = parentInvocation.Parent;
-                        continue;
-                    }
-                    var (filePath, line, column) = location.Value;
-                    var locationKey = $"{filePath}:{line}:{column}";
-
-                    if (discoveredLocations.Contains(locationKey))
-                    {
-                        current = parentInvocation.Parent;
-                        continue;
-                    }
-
-                    // Determine the interceptor kind
-                    if (!Parsing.UsageSiteDiscovery.InterceptableMethods.TryGetValue(methodName, out var kind))
-                    {
-                        current = parentInvocation.Parent;
-                        continue;
-                    }
-
-                    // Build the joined entity type names list
-                    var joinedEntityTypeNames = new List<string> { site.EntityTypeName, site.JoinedEntityTypeName };
-
-                    var uniqueId = Parsing.UsageSiteDiscovery.GenerateUniqueId(filePath, line, column, methodName);
-
-                    // Get interceptable location
-                    string? interceptableLocationData = null;
-                    int interceptableLocationVersion = 1;
-                    var semanticModel = compilation.GetSemanticModel(parentInvocation.SyntaxTree);
-#if QUARRY_GENERATOR
-                    try
-                    {
-#pragma warning disable RSEXPERIMENTAL002
-                        var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvocation, default);
-#pragma warning restore RSEXPERIMENTAL002
-                        if (interceptableLocation != null)
-                        {
-                            interceptableLocationData = interceptableLocation.Data;
-                            interceptableLocationVersion = interceptableLocation.Version;
-                        }
-                    }
-                    catch { }
-#endif
-
-                    var newSite = new UsageSiteInfo(
-                        methodName: methodName,
-                        filePath: filePath,
-                        line: line,
-                        column: column,
-                        builderTypeName: "IJoinedQueryBuilder",
-                        entityTypeName: site.EntityTypeName,
-                        isAnalyzable: true,
-                        kind: kind,
-                        invocationSyntax: parentInvocation,
-                        uniqueId: uniqueId,
-                        contextClassName: site.ContextClassName,
-                        contextNamespace: site.ContextNamespace,
-                        joinedEntityTypeNames: joinedEntityTypeNames,
-                        dialect: site.Dialect,
-                        interceptableLocationData: interceptableLocationData,
-                        interceptableLocationVersion: interceptableLocationVersion,
-                        builderKind: BuilderKind.JoinedQuery);
-
-                    // Enrich the new site
-                    var enriched = EnrichUsageSiteWithEntityInfo(newSite, entityLookup, contexts, entityRegistry, compilation);
-                    result.Add(enriched);
-                    discoveredLocations.Add(locationKey);
-
-                    current = parentInvocation.Parent;
-                }
-                else
-                {
-                    break;
-                }
-            }
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Resolves the joined entity type name for a navigation join by extracting the
-    /// navigation property name from the lambda syntax and looking it up in entity metadata.
-    /// For example, u => u.Orders → NavigationInfo.PropertyName == "Orders" → RelatedEntityName == "Order".
-    /// </summary>
-    private static string? ResolveNavigationJoinEntityType(
-        UsageSiteInfo site,
-        EntityInfo leftEntity,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        // Extract navigation property name from the lambda: u => u.Orders → "Orders"
-        if (site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
-            return null;
-
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return null;
-
-        var arg = invocation.ArgumentList.Arguments[0].Expression;
-        string? navPropertyName = null;
-
-        if (arg is Microsoft.CodeAnalysis.CSharp.Syntax.SimpleLambdaExpressionSyntax simpleLambda
-            && simpleLambda.Body is Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax memberAccess)
-        {
-            navPropertyName = memberAccess.Name.Identifier.Text;
-        }
-        else if (arg is Microsoft.CodeAnalysis.CSharp.Syntax.ParenthesizedLambdaExpressionSyntax parenLambda
-            && parenLambda.Body is Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax parenMemberAccess)
-        {
-            navPropertyName = parenMemberAccess.Name.Identifier.Text;
-        }
-
-        if (navPropertyName == null)
-            return null;
-
-        // Find matching navigation in entity metadata
-        var nav = leftEntity.Navigations.FirstOrDefault(n => n.PropertyName == navPropertyName);
-        if (nav == null)
-            return null;
-
-        // Verify the related entity exists in the lookup
-        if (entityLookup.ContainsKey(nav.RelatedEntityName))
-            return nav.RelatedEntityName;
-
-        return null;
-    }
-
-    /// <summary>
-    /// Looks up entity context by type name with fallback resolution (first match).
-    /// Used for join entity resolution where context disambiguation is not needed.
-    /// </summary>
-    private static (EntityInfo Entity, ContextInfo Context)? LookupEntityContext(
-        string typeName,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        var list = LookupEntityList(typeName, entityLookup);
-        return list != null && list.Count > 0 ? list[0] : ((EntityInfo, ContextInfo)?)null;
-    }
-
-    /// <summary>
-    /// Checks if an interceptor kind is a clause method or Select.
-    /// </summary>
-    private static bool IsClauseOrSelectMethod(InterceptorKind kind)
-    {
-        return kind switch
-        {
-            InterceptorKind.Where => true,
-            InterceptorKind.OrderBy => true,
-            InterceptorKind.ThenBy => true,
-            InterceptorKind.GroupBy => true,
-            InterceptorKind.Select => true,
-            _ => false
-        };
-    }
-
-    /// <summary>
-    /// Attempts to translate a clause (Where/OrderBy) on a joined builder using multi-entity metadata.
-    /// </summary>
-    private static ClauseInfo? TryTranslateJoinedClause(
-        UsageSiteInfo site,
-        (EntityInfo Entity, ContextInfo Context) primaryEntityContext,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup)
-    {
-        if (site.JoinedEntityTypeNames == null || site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
-            return null;
-
-        // Resolve all entity infos
-        var entities = new List<EntityInfo>();
-        foreach (var typeName in site.JoinedEntityTypeNames)
-        {
-            var ctx = LookupEntityContext(typeName, entityLookup);
-            if (ctx == null)
-                return null;
-            entities.Add(ctx.Value.Entity);
-        }
-
-        var dialect = primaryEntityContext.Context.Dialect;
-
-        try
-        {
-            if (site.Kind == InterceptorKind.Where)
-            {
-                return Translation.ClauseTranslator.TranslateJoinedWhere(
-                    invocation, entities, dialect);
-            }
-            else if (site.Kind == InterceptorKind.OrderBy || site.Kind == InterceptorKind.ThenBy)
-            {
-                return Translation.ClauseTranslator.TranslateJoinedOrderBy(
-                    invocation, entities, dialect);
-            }
-            else if (site.Kind == InterceptorKind.GroupBy)
-            {
-                return Translation.ClauseTranslator.TranslateJoinedGroupBy(
-                    invocation, entities, dialect);
-            }
-        }
-        catch
-        {
-            // Translation failed - will use fallback
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Analyzes a joined Select projection using entity metadata from schema definitions.
-    /// Called during enrichment when EntityInfo is available.
-    /// </summary>
-    private static ProjectionInfo? TryAnalyzeJoinedProjection(
-        InvocationExpressionSyntax invocation,
-        IReadOnlyList<string> entityTypeNames,
-        Dictionary<string, List<(EntityInfo Entity, ContextInfo Context)>> entityLookup,
-        SqlDialect dialect)
-    {
-        var entities = new List<EntityInfo>();
-        foreach (var typeName in entityTypeNames)
-        {
-            var ctx = LookupEntityContext(typeName, entityLookup);
-            if (ctx == null)
-                return null;
-            entities.Add(ctx.Value.Entity);
-        }
-
-        try
-        {
-            return Projection.ProjectionAnalyzer.AnalyzeJoined(invocation, entities, dialect);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Translates a pending clause to SQL using entity metadata.
-    /// Uses syntactic translator first; if it fails and an entity registry with navigations
-    /// is available, falls back to semantic path (which supports subqueries).
-    /// </summary>
-    private static ClauseInfo? TranslatePendingClause(
-        PendingClauseInfo pendingClause,
-        EntityInfo entity,
-        SqlDialect dialect,
-        InvocationExpressionSyntax? originalInvocation = null,
-        Dictionary<string, EntityInfo>? entityRegistry = null,
-        Compilation? compilation = null)
-    {
-        // Try syntactic translator first (handles most cases)
-        var translator = new Translation.SyntacticClauseTranslator(entity, dialect);
-        var result = translator.Translate(pendingClause);
-
-        if (result != null && result.IsSuccess)
-            return result;
-
-        // Syntactic translation failed — try semantic path with entity registry (handles subqueries)
-        if (originalInvocation != null && entityRegistry != null && pendingClause.Kind == ClauseKind.Where)
-        {
-            try
-            {
-                var semanticResult = Translation.ClauseTranslator.TranslateWhereWithEntityInfo(
-                    originalInvocation, null!, entity, dialect, entityRegistry, compilation);
-                if (semanticResult.IsSuccess)
-                    return semanticResult;
-            }
-            catch
-            {
-                // Return original syntactic failure
-            }
-        }
-
-        return result;
-    }
-
-    /// <summary>
-    /// Enriches projection columns with proper column names from entity metadata.
-    /// </summary>
-    private static ProjectionInfo EnrichProjectionWithEntityInfo(
-        ProjectionInfo projection,
-        EntityInfo entity,
-        SqlDialect dialect)
-    {
-        // For entity projections (Select(u => u)), the discovery phase may have produced
-        // 0 columns because the entity type is generated by this same source generator and
-        // wasn't available in the semantic model yet. Rebuild from the full EntityInfo.
-        if (projection.Kind == ProjectionKind.Entity && projection.Columns.Count < entity.Columns.Count)
-        {
-            var columns = new List<ProjectedColumn>();
-            var ordinal = 0;
-            foreach (var col in entity.Columns)
-            {
-                columns.Add(new ProjectedColumn(
-                    propertyName: col.PropertyName,
-                    columnName: col.ColumnName,
-                    clrType: col.ClrType,
-                    fullClrType: col.FullClrType,
-                    isNullable: col.IsNullable,
-                    ordinal: ordinal++,
-                    customTypeMapping: col.CustomTypeMappingClass,
-                    isValueType: col.IsValueType,
-                    readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
-                    isForeignKey: col.Kind == ColumnKind.ForeignKey,
-                    foreignKeyEntityName: col.ReferencedEntityName,
-                    isEnum: col.IsEnum));
-            }
-            return new ProjectionInfo(ProjectionKind.Entity, entity.EntityName, columns,
-                customEntityReaderClass: entity.CustomEntityReaderClass);
-        }
-
-        // Build column lookup from entity
-        var columnLookup = entity.Columns.ToDictionary(c => c.PropertyName, StringComparer.Ordinal);
-
-        // Update each projected column with the correct column name and type metadata from schema
-        var updatedColumns = new List<ProjectedColumn>();
-        foreach (var column in projection.Columns)
-        {
-            if (columnLookup.TryGetValue(column.PropertyName, out var entityColumn))
-            {
-                // Update with correct column name and type metadata from schema
-                updatedColumns.Add(new ProjectedColumn(
-                    propertyName: column.PropertyName,
-                    columnName: entityColumn.ColumnName,
-                    clrType: entityColumn.ClrType,
-                    fullClrType: entityColumn.FullClrType,
-                    isNullable: entityColumn.IsNullable,
-                    ordinal: column.Ordinal,
-                    alias: column.Alias,
-                    sqlExpression: column.IsAggregateFunction || (column.SqlExpression != null && column.SqlExpression.Contains('('))
-                        ? column.SqlExpression   // Keep intentional SQL expressions (aggregates, functions)
-                        : null,                  // Clear fallback syntax like "u.UserId" — ColumnName is authoritative after enrichment
-                    isAggregateFunction: column.IsAggregateFunction,
-                    customTypeMapping: entityColumn.CustomTypeMappingClass,
-                    isValueType: entityColumn.IsValueType,
-                    readerMethodName: entityColumn.DbReaderMethodName ?? entityColumn.ReaderMethodName,
-                    isForeignKey: entityColumn.Kind == ColumnKind.ForeignKey,
-                    foreignKeyEntityName: entityColumn.ReferencedEntityName,
-                    isEnum: entityColumn.IsEnum));
-            }
-            else if (column.IsAggregateFunction && !string.IsNullOrEmpty(column.SqlExpression!))
-            {
-                // Re-translate aggregate SQL expressions using entity metadata.
-                // During discovery, property names may have been used as column names
-                // (e.g., SUM("Total") instead of SUM("total")) because the entity type
-                // was generated and invisible. Replace with correct DB column names.
-                var fixedSql = FixAggregateSqlExpression(column.SqlExpression!, columnLookup, dialect);
-
-                // Fix aggregate CLR type when it was unresolved during discovery.
-                // For Min/Max/Avg/Sum, the return type depends on the argument column's type.
-                // During discovery, the semantic model may return error types for generated entities,
-                // causing the CLR type to fall back to "object". Resolve from entity column info.
-                var fixedClrType = column.ClrType;
-                var fixedFullClrType = column.FullClrType;
-                var fixedIsValueType = column.IsValueType;
-                var fixedReaderMethod = column.ReaderMethodName;
-                if (fixedClrType == "object" || string.IsNullOrWhiteSpace(fixedClrType) || fixedClrType == "?")
-                {
-                    var resolvedType = ResolveAggregateClrTypeFromSql(column.SqlExpression!, columnLookup);
-                    if (resolvedType != null)
-                    {
-                        fixedClrType = resolvedType.ClrType;
-                        fixedFullClrType = resolvedType.FullClrType;
-                        fixedIsValueType = resolvedType.IsValueType;
-                        fixedReaderMethod = resolvedType.DbReaderMethodName ?? resolvedType.ReaderMethodName;
-                    }
-                }
-
-                updatedColumns.Add(new ProjectedColumn(
-                    propertyName: column.PropertyName,
-                    columnName: column.ColumnName,
-                    clrType: fixedClrType,
-                    fullClrType: fixedFullClrType,
-                    isNullable: column.IsNullable,
-                    ordinal: column.Ordinal,
-                    alias: column.Alias,
-                    sqlExpression: fixedSql,
-                    isAggregateFunction: true,
-                    isValueType: fixedIsValueType,
-                    readerMethodName: fixedReaderMethod));
-            }
-            else if (string.IsNullOrEmpty(column.ColumnName) && !column.IsAggregateFunction)
-            {
-                // Column not found - keep original but log warning
-                updatedColumns.Add(column);
-            }
-            else
-            {
-                // Keep column as-is (already has name)
-                updatedColumns.Add(column);
-            }
-        }
-
-        // Rebuild the result type name from the enriched columns when the original is unresolved
-        var resultTypeName = projection.ResultTypeName;
-        if (projection.Kind == ProjectionKind.Tuple && updatedColumns.Count > 0)
-        {
-            resultTypeName = BuildTupleTypeName(updatedColumns);
-        }
-        else if (projection.Kind == ProjectionKind.SingleColumn && updatedColumns.Count == 1)
-        {
-            // Fix scalar Select result type: the discovery phase may produce "?" when
-            // the entity type is generated and the semantic model can't resolve the return type.
-            var col = updatedColumns[0];
-            var colType = !string.IsNullOrWhiteSpace(col.ClrType) && col.ClrType != "?" ? col.ClrType : col.FullClrType;
-            if (!string.IsNullOrWhiteSpace(colType) && colType != "?")
-            {
-                var fixedType = col.IsNullable && !colType.EndsWith("?") ? $"{colType}?" : colType;
-                resultTypeName = fixedType;
-            }
-        }
-
-        // Propagate custom entity reader only for Entity projections
-        var entityReaderClass = projection.Kind == ProjectionKind.Entity
-            ? entity.CustomEntityReaderClass
-            : null;
-
-        return new ProjectionInfo(projection.Kind, resultTypeName, updatedColumns,
-            customEntityReaderClass: entityReaderClass);
-    }
-
-    /// <summary>
-    /// Fixes aggregate SQL expressions by replacing property-name-based column references
-    /// with the correct database column names from entity metadata.
-    /// </summary>
-    /// <remarks>
-    /// During discovery, generated entity types may be invisible, so aggregate functions like
-    /// SUM("Total") use the property name as column name. This method replaces those with
-    /// the actual DB column names from EntityInfo (e.g., SUM("total")).
-    /// </remarks>
-    /// <summary>
-    /// Resolves aggregate CLR type from the SQL expression by extracting the referenced column
-    /// and looking up its type in the entity column metadata.
-    /// For MIN/MAX/SUM, the return type matches the argument column type.
-    /// For AVG, the return type depends on the argument type (but decimal is a safe default).
-    /// For COUNT, the return type is always int (handled separately during discovery).
-    /// </summary>
-    private static ColumnInfo? ResolveAggregateClrTypeFromSql(
-        string sqlExpression,
-        Dictionary<string, ColumnInfo> columnLookup)
-    {
-        // Extract the column name from patterns like: MIN("Total"), MAX("column_name"), AVG("Total")
-        // The SQL expression is in the form FUNC("ColumnName") or FUNC(quoted_col)
-        foreach (var kvp in columnLookup)
-        {
-            // Check if the SQL expression references this column (by property name or column name)
-            if (sqlExpression.Contains($"\"{kvp.Key}\"") || sqlExpression.Contains($"\"{kvp.Value.ColumnName}\""))
-            {
-                return kvp.Value;
-            }
-        }
-
-        return null;
-    }
-
-    private static string FixAggregateSqlExpression(
-        string sqlExpression,
-        Dictionary<string, ColumnInfo> columnLookup,
-        SqlDialect dialect)
-    {
-        // For each column in the lookup, replace quoted property names with quoted DB column names
-        var result = sqlExpression;
-        foreach (var kvp in columnLookup)
-        {
-            if (kvp.Key == kvp.Value.ColumnName)
-                continue; // No change needed
-
-            // Replace quoted property name references: "PropertyName" → "column_name"
-            var quotedProperty = QuoteIdentifier(kvp.Key, dialect);
-            var quotedColumn = QuoteIdentifier(kvp.Value.ColumnName, dialect);
-
-            if (result.Contains(quotedProperty))
-            {
-                result = result.Replace(quotedProperty, quotedColumn);
-            }
-        }
-
-        return result;
-    }
 
     /// <summary>
     /// Quotes an identifier according to the SQL dialect.
@@ -2387,269 +862,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         return $"({string.Join(", ", elements)})";
     }
 
-    /// <summary>
-    /// Extracts the namespace from a fully qualified type name.
-    /// </summary>
-    private static string? GetNamespaceFromEntityType(string fullTypeName)
-    {
-        // Remove global:: prefix if present
-        if (fullTypeName.StartsWith("global::"))
-        {
-            fullTypeName = fullTypeName.Substring(8);
-        }
-
-        var lastDot = fullTypeName.LastIndexOf('.');
-        if (lastDot <= 0)
-            return null;
-
-        return fullTypeName.Substring(0, lastDot);
-    }
-
-    /// <summary>
-    /// Resolves the CLR value type from the SET column SQL by matching against entity column metadata.
-    /// Returns the column's FullClrType, or null if the column cannot be matched.
-    /// </summary>
-    private static string? ResolveSetValueTypeFromEntity(SetClauseInfo setClause, EntityInfo entity)
-    {
-        var rawColumnName = setClause.ColumnSql.Trim('"', '[', ']', '`');
-
-        foreach (var column in entity.Columns)
-        {
-            if (column.ColumnName == rawColumnName)
-                return column.FullClrType;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Enriches a SetClauseInfo with custom type mapping info by matching the column SQL
-    /// back to a column in the entity schema.
-    /// </summary>
-    private static ClauseInfo EnrichSetClauseWithMapping(SetClauseInfo setClause, EntityInfo entity)
-    {
-        // The columnSql is a quoted column name like "Amount" or [Amount] or `Amount`
-        // Strip quoting to match against column names
-        var rawColumnName = setClause.ColumnSql
-            .Trim('"', '[', ']', '`');
-
-        foreach (var column in entity.Columns)
-        {
-            if (column.ColumnName == rawColumnName && column.CustomTypeMappingClass != null)
-            {
-                return new SetClauseInfo(
-                    setClause.ColumnSql,
-                    setClause.ParameterIndex,
-                    setClause.Parameters,
-                    column.CustomTypeMappingClass,
-                    setClause.ValueTypeName);
-            }
-        }
-
-        return setClause;
-    }
-
-    /// <summary>
-    /// Enriches a SetActionClauseInfo with custom type mappings from entity schema columns,
-    /// resolves value types, and applies correct dialect-specific column quoting.
-    /// </summary>
-    private static ClauseInfo EnrichSetActionClauseWithMapping(SetActionClauseInfo actionClause, EntityInfo entity, SqlDialect dialect)
-    {
-        var enrichedAssignments = new List<SetActionAssignment>(actionClause.Assignments.Count);
-        var enrichedParameters = new List<Translation.ParameterInfo>(actionClause.Parameters.Count);
-        var paramEnrichIdx = 0;
-
-        for (int i = 0; i < actionClause.Assignments.Count; i++)
-        {
-            var assignment = actionClause.Assignments[i];
-
-            // The ColumnSql from discovery is the unquoted property name.
-            // Resolve the actual column name and quote it with the correct dialect.
-            var propertyName = assignment.ColumnSql.Trim('"', '[', ']', '`');
-            string? mapping = null;
-            string? valueType = assignment.ValueTypeName;
-            string? resolvedColumnName = null;
-            string? resolvedClrType = null;
-
-            foreach (var column in entity.Columns)
-            {
-                if (column.PropertyName == propertyName || column.ColumnName == propertyName)
-                {
-                    resolvedColumnName = column.ColumnName;
-                    resolvedClrType = column.FullClrType;
-                    if (column.CustomTypeMappingClass != null)
-                        mapping = column.CustomTypeMappingClass;
-                    if (valueType == null)
-                        valueType = column.FullClrType;
-                    break;
-                }
-            }
-
-            // Quote the column name with the correct dialect
-            var quotedColumn = QuoteIdentifier(resolvedColumnName ?? propertyName, dialect);
-
-            // Re-format boolean literals for the target dialect.
-            // During discovery, inlined SQL values are formatted with DefaultDiscoveryDialect (PostgreSQL).
-            // Boolean formatting is dialect-sensitive, so we must re-format here.
-            var inlinedSqlValue = ReformatInlinedBooleanForDialect(assignment.InlinedSqlValue, dialect);
-
-            enrichedAssignments.Add(new SetActionAssignment(quotedColumn, valueType, mapping,
-                inlinedSqlValue: inlinedSqlValue, inlinedCSharpExpression: assignment.InlinedCSharpExpression));
-
-            // Enrich the corresponding parameter's ClrType from the column metadata.
-            // Inlined assignments have no parameter entry — skip them.
-            if (!assignment.IsInlined && paramEnrichIdx < actionClause.Parameters.Count)
-            {
-                var param = actionClause.Parameters[paramEnrichIdx++];
-                if (resolvedClrType != null
-                    && (string.IsNullOrWhiteSpace(param.ClrType) || param.ClrType == "?" || param.ClrType == "object" || param.ClrType == "object?"))
-                {
-                    enrichedParameters.Add(new Translation.ParameterInfo(
-                        param.Index, param.Name, resolvedClrType, param.ValueExpression,
-                        isCaptured: param.IsCaptured, expressionPath: param.ExpressionPath));
-                }
-                else
-                {
-                    enrichedParameters.Add(param);
-                }
-            }
-        }
-
-        return new SetActionClauseInfo(enrichedAssignments, enrichedParameters);
-    }
-
-    /// <summary>
-    /// Re-formats a boolean SQL literal for the target dialect.
-    /// During discovery, boolean values are formatted as PostgreSQL ("TRUE"/"FALSE").
-    /// Non-PostgreSQL dialects need "1"/"0" instead. Returns the original value unchanged
-    /// for non-boolean tokens.
-    /// </summary>
-    private static string? ReformatInlinedBooleanForDialect(string? sqlValue, SqlDialect dialect)
-    {
-        if (sqlValue == null)
-            return null;
-
-        if (dialect == SqlDialect.PostgreSQL)
-        {
-            // Already in PostgreSQL format from discovery — pass through.
-            return sqlValue;
-        }
-
-        // Discovery uses PostgreSQL format, so we only need to convert TRUE/FALSE → 1/0.
-        return sqlValue switch
-        {
-            "TRUE" => "1",
-            "FALSE" => "0",
-            _ => sqlValue
-        };
-    }
-
-    /// <summary>
-    /// Returns the clause kind name if the site has a non-translatable clause that would
-    /// have silently dropped the clause in older versions. Returns null if the site is fine.
-    /// </summary>
-    private static string? GetNonTranslatableClauseKind(UsageSiteInfo site)
-    {
-        switch (site.Kind)
-        {
-            case InterceptorKind.Where:
-            case InterceptorKind.DeleteWhere:
-            case InterceptorKind.UpdateWhere:
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return "Where";
-                break;
-
-            case InterceptorKind.OrderBy:
-            case InterceptorKind.ThenBy:
-                if (site.ClauseInfo is OrderByClauseInfo orderByInfo && orderByInfo.IsSuccess)
-                    break;
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return site.Kind == InterceptorKind.OrderBy ? "OrderBy" : "ThenBy";
-                break;
-
-            case InterceptorKind.GroupBy:
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return "GroupBy";
-                break;
-
-            case InterceptorKind.Having:
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return "Having";
-                break;
-
-            case InterceptorKind.Set:
-            case InterceptorKind.UpdateSet:
-                if (site.ClauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
-                    break;
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return "Set";
-                break;
-
-            case InterceptorKind.UpdateSetAction:
-                if (site.ClauseInfo is SetActionClauseInfo actionInfo && actionInfo.IsSuccess)
-                    break;
-                if (site.ClauseInfo == null || !site.ClauseInfo.IsSuccess)
-                    return "Set";
-                break;
-
-            case InterceptorKind.UpdateSetPoco:
-                if (site.UpdateInfo == null || site.UpdateInfo.Columns.Count == 0)
-                    return "Set";
-                break;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Enriches a RawSqlTypeInfo with column metadata from a known entity.
-    /// Promotes the type kind to Entity and populates TypeMapping, Ref&lt;&gt;, and enum info
-    /// from the Pipeline 1 schema.
-    /// </summary>
-    private static Models.RawSqlTypeInfo EnrichRawSqlTypeInfoWithEntity(
-        Models.RawSqlTypeInfo original,
-        Models.EntityInfo entity)
-    {
-        // Build a lookup from property name to column info
-        var columnLookup = new Dictionary<string, Models.ColumnInfo>(StringComparer.OrdinalIgnoreCase);
-        foreach (var column in entity.Columns)
-        {
-            columnLookup[column.PropertyName] = column;
-        }
-
-        // Re-create properties with enriched metadata from entity columns
-        var enrichedProperties = new List<Models.RawSqlPropertyInfo>();
-        foreach (var prop in original.Properties)
-        {
-            if (columnLookup.TryGetValue(prop.PropertyName, out var column))
-            {
-                // Enriched with entity column metadata
-                enrichedProperties.Add(new Models.RawSqlPropertyInfo(
-                    propertyName: column.PropertyName,
-                    clrType: column.ClrType,
-                    readerMethodName: column.ReaderMethodName,
-                    isNullable: column.IsNullable,
-                    isEnum: column.IsEnum,
-                    fullClrType: column.FullClrType,
-                    customTypeMappingClass: column.CustomTypeMappingClass,
-                    dbReaderMethodName: column.DbReaderMethodName,
-                    isForeignKey: column.Kind == ColumnKind.ForeignKey,
-                    referencedEntityName: column.ReferencedEntityName));
-            }
-            else
-            {
-                // Property not found in entity schema — keep original
-                enrichedProperties.Add(prop);
-            }
-        }
-
-        return new Models.RawSqlTypeInfo(
-            original.ResultTypeName,
-            Models.RawSqlTypeKind.Entity,
-            enrichedProperties,
-            original.HasCancellationToken,
-            original.ScalarReaderMethod);
-    }
 
     /// <summary>
     /// Checks if a type is a known type that uses GetValue fallback but is still valid

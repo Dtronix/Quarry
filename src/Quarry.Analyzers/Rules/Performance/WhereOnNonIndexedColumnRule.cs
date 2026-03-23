@@ -16,8 +16,7 @@ internal sealed class WhereOnNonIndexedColumnRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
         var entity = context.PrimaryEntity;
@@ -33,7 +32,7 @@ internal sealed class WhereOnNonIndexedColumnRule : IQueryAnalysisRule
         }
 
         // Extract column names referenced in WHERE
-        var sql = clause.SqlFragment;
+        var sql = context.GetRenderedSql()!;
         foreach (var col in entity.Columns)
         {
             var colRef = $"t0.\"{col.ColumnName}\"";

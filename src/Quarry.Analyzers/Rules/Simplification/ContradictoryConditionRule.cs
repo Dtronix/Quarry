@@ -16,11 +16,10 @@ internal sealed class ContradictoryConditionRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var sql = clause.SqlFragment;
+        var sql = context.GetRenderedSql()!;
 
         // Extract comparison triples from AND-joined conditions
         var comparisons = ComparisonExtractor.Extract(sql);
@@ -53,7 +52,7 @@ internal sealed class ContradictoryConditionRule : IQueryAnalysisRule
             !double.TryParse(b.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var vb))
             return false;
 
-        // x > 5 AND x < 3 → contradictory
+        // x > 5 AND x < 3 -> contradictory
         if (a.Op == ">" && b.Op == "<" && va >= vb) return true;
         if (a.Op == "<" && b.Op == ">" && vb >= va) return true;
         if (a.Op == ">=" && b.Op == "<" && va >= vb) return true;
@@ -63,7 +62,7 @@ internal sealed class ContradictoryConditionRule : IQueryAnalysisRule
         if (a.Op == ">=" && b.Op == "<=" && va > vb) return true;
         if (a.Op == "<=" && b.Op == ">=" && vb > va) return true;
 
-        // x = 5 AND x = 3 → contradictory
+        // x = 5 AND x = 3 -> contradictory
         if (a.Op == "=" && b.Op == "=" && va != vb) return true;
 
         return false;

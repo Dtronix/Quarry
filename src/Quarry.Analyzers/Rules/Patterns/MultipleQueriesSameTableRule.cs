@@ -3,6 +3,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Parsing;
 
@@ -41,7 +42,7 @@ internal sealed class MultipleQueriesSameTableRule : IQueryAnalysisRule
         var entityOccurrences = new List<InvocationExpressionSyntax>();
         foreach (var inv in invocations)
         {
-            var site = UsageSiteDiscovery.DiscoverUsageSite(inv, context.SemanticModel, default);
+            var site = UsageSiteDiscovery.DiscoverRawCallSite(inv, context.SemanticModel, default);
             if (site?.EntityTypeName == context.Site.EntityTypeName)
                 entityOccurrences.Add(inv);
         }

@@ -63,4 +63,40 @@ internal static class EqualityHelpers
         }
         return true;
     }
+
+    public static bool SqlExprSequenceEqual(IReadOnlyList<IR.SqlExpr>? a, IReadOnlyList<IR.SqlExpr>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (!a[i].Equals(b[i])) return false;
+        }
+        return true;
+    }
+
+    public static bool UlongSequenceEqual(IReadOnlyList<ulong>? a, IReadOnlyList<ulong>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
+    }
+
+    public static bool NullableStringSequenceEqual(IReadOnlyList<string>? a, IReadOnlyList<string>? b)
+    {
+        if (a is null && b is null) return true;
+        if (a is null || b is null) return false;
+        if (a.Count != b.Count) return false;
+        for (int i = 0; i < a.Count; i++)
+        {
+            if (a[i] != b[i]) return false;
+        }
+        return true;
+    }
 }

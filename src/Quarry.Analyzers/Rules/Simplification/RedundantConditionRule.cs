@@ -16,11 +16,10 @@ internal sealed class RedundantConditionRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var comparisons = ComparisonExtractor.Extract(clause.SqlFragment);
+        var comparisons = ComparisonExtractor.Extract(context.GetRenderedSql()!);
         if (comparisons.Count < 2)
             yield break;
 
@@ -55,7 +54,7 @@ internal sealed class RedundantConditionRule : IQueryAnalysisRule
             !double.TryParse(b.Value, NumberStyles.Any, CultureInfo.InvariantCulture, out var vb))
             return (null, null);
 
-        // x > 5 AND x > 3 → x > 3 is redundant (subsumed by x > 5)
+        // x > 5 AND x > 3 -> x > 3 is redundant (subsumed by x > 5)
         if (a.Op == ">" && b.Op == ">" && va > vb) return (b, a);
         if (a.Op == ">" && b.Op == ">" && vb > va) return (a, b);
 
@@ -68,7 +67,7 @@ internal sealed class RedundantConditionRule : IQueryAnalysisRule
         if (a.Op == "<=" && b.Op == "<=" && va < vb) return (b, a);
         if (a.Op == "<=" && b.Op == "<=" && vb < va) return (a, b);
 
-        // x > 5 AND x >= 3 → x >= 3 is redundant
+        // x > 5 AND x >= 3 -> x >= 3 is redundant
         if (a.Op == ">" && b.Op == ">=" && va >= vb) return (b, a);
         if (b.Op == ">" && a.Op == ">=" && vb >= va) return (a, b);
 

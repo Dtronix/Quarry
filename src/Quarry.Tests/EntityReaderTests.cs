@@ -1,8 +1,10 @@
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Sql;
 using Quarry.Generators.Projection;
 using Quarry.Shared.Migration;
+using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests;
@@ -173,9 +175,10 @@ public class EntityReaderTests
             },
             customEntityReaderClass: ReaderFqn);
 
-        var usageSite = CreateSelectUsageSite(projection, "User");
+        var callSite = TestCallSiteBuilder.CreateSelectSite("User", "User", projection,
+            customEntityReaderClass: ReaderFqn);
         var code = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestDb", "TestApp", "test0000", new[] { usageSite });
+            "TestDb", "TestApp", "test0000", new[] { callSite });
 
         Assert.That(code, Does.Contain($"private static readonly {ReaderFqn} _entityReader_TestApp_UserReader = new();"),
             "Should emit cached EntityReader instance as static readonly field");
@@ -192,9 +195,9 @@ public class EntityReaderTests
                 CreateProjectedColumn("UserId", "user_id", "int", 0),
             });
 
-        var usageSite = CreateSelectUsageSite(projection, "User");
+        var callSite = TestCallSiteBuilder.CreateSelectSite("User", "User", projection);
         var code = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestDb", "TestApp", "test0000", new[] { usageSite });
+            "TestDb", "TestApp", "test0000", new[] { callSite });
 
         Assert.That(code, Does.Not.Contain("_entityReader_"),
             "Should not emit EntityReader field when no custom reader is configured");
@@ -295,29 +298,6 @@ public class EntityReaderTests
             ordinal: ordinal,
             isValueType: clrType != "string",
             readerMethodName: readerMethod);
-    }
-
-    private static UsageSiteInfo CreateSelectUsageSite(ProjectionInfo projection, string entityType)
-    {
-        // Minimal UsageSiteInfo for Select interceptor
-        return new UsageSiteInfo(
-            methodName: "Select",
-            filePath: "/test/Program.cs",
-            line: 10,
-            column: 5,
-            builderTypeName: $"Quarry.QueryBuilder<{entityType}>",
-            entityTypeName: entityType,
-            isAnalyzable: true,
-            kind: InterceptorKind.Select,
-            invocationSyntax: Microsoft.CodeAnalysis.CSharp.SyntaxFactory.InvocationExpression(
-                Microsoft.CodeAnalysis.CSharp.SyntaxFactory.IdentifierName("Select")),
-            uniqueId: "Select_0",
-            contextClassName: "TestDb",
-            contextNamespace: "TestApp",
-            projectionInfo: projection,
-            interceptableLocationData: "AAAAAAAAAA==",
-            interceptableLocationVersion: 1,
-            dialect: GenSqlDialect.SQLite);
     }
 
     #endregion

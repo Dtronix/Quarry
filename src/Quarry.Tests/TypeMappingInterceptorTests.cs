@@ -1,9 +1,8 @@
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Translation;
-using Quarry.Shared.Migration;
+using Quarry.Tests.Testing;
 
 namespace Quarry.Tests;
 
@@ -20,7 +19,7 @@ public class TypeMappingInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithMappedInsertColumn_EmitsStaticMappingField()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateInsertUsageSite(new[]
             {
@@ -39,7 +38,7 @@ public class TypeMappingInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithMultipleMappedColumns_EmitsSingleField()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateInsertUsageSite(new[]
             {
@@ -61,7 +60,7 @@ public class TypeMappingInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithNoMappings_DoesNotEmitMappingField()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateInsertUsageSite(new[]
             {
@@ -84,7 +83,7 @@ public class TypeMappingInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_InsertMappedColumn_WrapsWithToDb()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateInsertUsageSite(new[]
             {
@@ -102,7 +101,7 @@ public class TypeMappingInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_InsertNonMappedColumn_DoesNotWrapWithToDb()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateInsertUsageSite(new[]
             {
@@ -135,10 +134,14 @@ public class TypeMappingInterceptorTests
             }
         };
 
-        var clauseInfo = ClauseInfo.Success(ClauseKind.Where, "\"Balance\" = @p0", parameters);
-        var usageSites = new List<UsageSiteInfo>
+        var clause = new TranslatedClause(
+            ClauseKind.Where,
+            new SqlRawExpr("\"Balance\" = @p0"),
+            parameters);
+
+        var usageSites = new List<TranslatedCallSite>
         {
-            CreateWhereUsageSite(clauseInfo)
+            CreateWhereUsageSite(clause)
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -156,10 +159,21 @@ public class TypeMappingInterceptorTests
             new(0, "@p0", "decimal", "value")
         };
 
-        var setClause = new SetClauseInfo("\"Balance\"", 0, parameters, MappingFqn);
-        var usageSites = new List<UsageSiteInfo>
+        var setAssignments = new List<SetActionAssignment>
         {
-            CreateSetUsageSite(setClause)
+            new("\"Balance\"", "decimal", MappingFqn)
+        };
+
+        var clause = new TranslatedClause(
+            ClauseKind.Set,
+            new SqlRawExpr("\"Balance\" = @p0"),
+            parameters,
+            setAssignments: setAssignments,
+            customTypeMappingClass: MappingFqn);
+
+        var usageSites = new List<TranslatedCallSite>
+        {
+            CreateSetUsageSite(clause)
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -177,10 +191,20 @@ public class TypeMappingInterceptorTests
             new(0, "@p0", "decimal", "value")
         };
 
-        var setClause = new SetClauseInfo("\"AccountName\"", 0, parameters);
-        var usageSites = new List<UsageSiteInfo>
+        var setAssignments = new List<SetActionAssignment>
         {
-            CreateSetUsageSite(setClause)
+            new("\"AccountName\"", "decimal", null)
+        };
+
+        var clause = new TranslatedClause(
+            ClauseKind.Set,
+            new SqlRawExpr("\"AccountName\" = @p0"),
+            parameters,
+            setAssignments: setAssignments);
+
+        var usageSites = new List<TranslatedCallSite>
+        {
+            CreateSetUsageSite(clause)
         };
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -212,51 +236,6 @@ public class TypeMappingInterceptorTests
 
     #region Helper Methods
 
-    private static EntityInfo CreateTestEntity(string name, ColumnInfo[] columns)
-    {
-        return new EntityInfo(
-            entityName: name,
-            schemaClassName: $"{name}Schema",
-            schemaNamespace: "TestApp",
-            tableName: name.ToLowerInvariant() + "s",
-            namingStyle: NamingStyleKind.Exact,
-            columns: columns,
-            navigations: Array.Empty<NavigationInfo>(),
-            indexes: Array.Empty<IndexInfo>(),
-            location: Location.None);
-    }
-
-    private static ColumnInfo CreateColumn(string name, string clrType, bool isNullable, ColumnKind kind)
-    {
-        return new ColumnInfo(
-            propertyName: name,
-            columnName: name,
-            clrType: clrType,
-            fullClrType: clrType,
-            isNullable: isNullable,
-            kind: kind,
-            referencedEntityName: null,
-            modifiers: new ColumnModifiers());
-    }
-
-    private static ColumnInfo CreateMappedColumn(
-        string name, string clrType, string fullClrType, bool isNullable,
-        string mappingClass, string dbClrType, string dbReaderMethodName)
-    {
-        return new ColumnInfo(
-            propertyName: name,
-            columnName: name,
-            clrType: clrType,
-            fullClrType: fullClrType,
-            isNullable: isNullable,
-            kind: ColumnKind.Standard,
-            referencedEntityName: null,
-            modifiers: new ColumnModifiers(),
-            customTypeMappingClass: mappingClass,
-            dbClrType: dbClrType,
-            dbReaderMethodName: dbReaderMethodName);
-    }
-
     private static InsertColumnInfo CreateInsertColumn(
         string name, string clrType, bool isNullable, string? customTypeMappingClass)
     {
@@ -271,7 +250,7 @@ public class TypeMappingInterceptorTests
             customTypeMappingClass: customTypeMappingClass);
     }
 
-    private static UsageSiteInfo CreateInsertUsageSite(InsertColumnInfo[] columns)
+    private static TranslatedCallSite CreateInsertUsageSite(InsertColumnInfo[] columns)
     {
         var insertInfo = new InsertInfo(
             columns: columns,
@@ -279,58 +258,48 @@ public class TypeMappingInterceptorTests
             identityPropertyName: null,
             quotedIdentityColumnName: null);
 
-        return new UsageSiteInfo(
-            methodName: "Insert",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "QueryBuilder<Account>",
-            entityTypeName: "Account",
-            isAnalyzable: true,
-            kind: InterceptorKind.InsertExecuteNonQuery,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "insert_test",
-            insertInfo: insertInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        return new TestCallSiteBuilder()
+            .WithMethodName("Insert")
+            .WithKind(InterceptorKind.InsertExecuteNonQuery)
+            .WithEntityType("Account")
+            .WithBuilderKind(BuilderKind.Query)
+            .WithBuilderTypeName("QueryBuilder<Account>")
+            .WithUniqueId("insert_test")
+            .WithContext("AppDbContext", "TestApp")
+            .WithTable("accounts")
+            .WithInsertInfo(insertInfo)
+            .Build();
     }
 
-    private static UsageSiteInfo CreateWhereUsageSite(ClauseInfo clauseInfo)
+    private static TranslatedCallSite CreateWhereUsageSite(TranslatedClause clause)
     {
-        return new UsageSiteInfo(
-            methodName: "Where",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "QueryBuilder<Account, Account>",
-            entityTypeName: "Account",
-            isAnalyzable: true,
-            kind: InterceptorKind.Where,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "where_test",
-            resultTypeName: "Account",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        return new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("Account")
+            .WithResultType("Account")
+            .WithBuilderTypeName("QueryBuilder<Account, Account>")
+            .WithUniqueId("where_test")
+            .WithContext("AppDbContext", "TestApp")
+            .WithTable("accounts")
+            .WithClause(clause)
+            .Build();
     }
 
-    private static UsageSiteInfo CreateSetUsageSite(SetClauseInfo setClause)
+    private static TranslatedCallSite CreateSetUsageSite(TranslatedClause clause)
     {
-        return new UsageSiteInfo(
-            methodName: "Set",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "UpdateBuilder<Account>",
-            entityTypeName: "Account",
-            isAnalyzable: true,
-            kind: InterceptorKind.Set,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "set_test",
-            resultTypeName: "Account",
-            clauseInfo: setClause,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        return new TestCallSiteBuilder()
+            .WithMethodName("Set")
+            .WithKind(InterceptorKind.Set)
+            .WithEntityType("Account")
+            .WithResultType("Account")
+            .WithBuilderKind(BuilderKind.Update)
+            .WithBuilderTypeName("UpdateBuilder<Account>")
+            .WithUniqueId("set_test")
+            .WithContext("AppDbContext", "TestApp")
+            .WithTable("accounts")
+            .WithClause(clause)
+            .Build();
     }
 
     private static int CountOccurrences(string source, string search)

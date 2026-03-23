@@ -25,7 +25,7 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
             Ss.Accounts().Insert(new Ss.Account { UserId = 1, AccountName = "Savings", Balance = new Money(100m), CreditLimit = new Money(500m), IsActive = true }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES ($1, $2, $3, $4, $5) RETURNING \"AccountId\"",
-            mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`, `credit_limit`, `IsActive`) VALUES (?, ?, ?, ?, ?)",
+            mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`, `credit_limit`, `IsActive`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[AccountId]");
     }
 
@@ -39,7 +39,7 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
             Ss.Accounts().Insert(new Ss.Account { UserId = 1, AccountName = "Checking", Balance = new Money(0m) }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES (@p0, @p1, @p2) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES ($1, $2, $3) RETURNING \"AccountId\"",
-            mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?)",
+            mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[AccountId]");
     }
 
@@ -73,10 +73,10 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
             Pg.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             My.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             Ss.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
-            sqlite: "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = 1)",
-            pg:     "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE (\"IsActive\" = TRUE)",
-            mysql:  "SELECT `AccountId`, `AccountName` FROM `accounts` WHERE (`IsActive` = 1)",
-            ss:     "SELECT [AccountId], [AccountName] FROM [accounts] WHERE ([IsActive] = 1)");
+            sqlite: "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"AccountId\", \"AccountName\" FROM \"accounts\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `AccountId`, `AccountName` FROM `accounts` WHERE `IsActive` = 1",
+            ss:     "SELECT [AccountId], [AccountName] FROM [accounts] WHERE [IsActive] = 1");
     }
 
     #endregion

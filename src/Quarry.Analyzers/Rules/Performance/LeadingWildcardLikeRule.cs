@@ -14,11 +14,10 @@ internal sealed class LeadingWildcardLikeRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var sql = clause.SqlFragment;
+        var sql = context.GetRenderedSql()!;
         if (sql.Contains("LIKE '%") || sql.Contains("LIKE N'%"))
         {
             yield return Diagnostic.Create(Descriptor, context.InvocationSyntax.GetLocation());

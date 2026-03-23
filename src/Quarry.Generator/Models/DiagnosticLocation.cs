@@ -44,8 +44,8 @@ internal readonly struct DiagnosticLocation : IEquatable<DiagnosticLocation>
     /// <summary>
     /// Creates a <see cref="DiagnosticLocation"/> from a <see cref="SyntaxNode"/>.
     /// </summary>
-    public static DiagnosticLocation FromSyntaxNode(SyntaxNode node)
-        => FromLocation(node.GetLocation());
+    public static DiagnosticLocation FromSyntaxNode(SyntaxNode? node)
+        => node != null ? FromLocation(node.GetLocation()) : default;
 
     /// <summary>
     /// Reconstructs a Roslyn <see cref="Location"/> from this value type.

@@ -3,11 +3,11 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.Simplification;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Shared.Sql;
-using Quarry.Generators.Translation;
 using Quarry.Shared.Migration;
 
 namespace Quarry.Analyzers.Tests;
@@ -17,42 +17,44 @@ public class SimplificationRuleTests
 {
     private static QueryAnalysisContext CreateWhereContext(string sqlFragment, int paramCount = 0, EntityInfo? entity = null)
     {
-        var parameters = Enumerable.Range(0, paramCount)
-            .Select(i => new ParameterInfo(i, $"@p{i}", "System.Int32", $"value{i}"))
-            .ToList();
+        // Create a SqlRawExpr that will render to the desired SQL fragment
+        SqlExpr? expression = new SqlRawExpr(sqlFragment);
 
-        var clause = ClauseInfo.Success(ClauseKind.Where, sqlFragment, parameters);
-        var site = CreateSite(InterceptorKind.Where, clauseInfo: clause);
+        var site = CreateSite(InterceptorKind.Where, expression: expression, clauseKind: ClauseKind.Where);
 
         return CreateContext(site, entity);
     }
 
-    private static UsageSiteInfo CreateSite(
+    private static RawCallSite CreateSite(
         InterceptorKind kind,
         string methodName = "Where",
-        ClauseInfo? clauseInfo = null,
+        SqlExpr? expression = null,
+        ClauseKind? clauseKind = null,
         ProjectionInfo? projectionInfo = null)
     {
-        return new UsageSiteInfo(
+        return new RawCallSite(
             methodName: methodName,
             filePath: "Test.cs",
             line: 1,
             column: 1,
-            builderTypeName: "QueryBuilder",
-            entityTypeName: "User",
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName("Test")),
             uniqueId: "test_1",
+            kind: kind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
             resultTypeName: "User",
-            contextClassName: "TestDbContext",
-            contextNamespace: "Test",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)),
+            expression: expression,
+            clauseKind: clauseKind,
             projectionInfo: projectionInfo,
-            clauseInfo: clauseInfo,
-            dialect: GenSqlDialect.PostgreSQL);
+            contextClassName: "TestDbContext",
+            contextNamespace: "Test");
     }
 
-    private static QueryAnalysisContext CreateContext(UsageSiteInfo site, EntityInfo? entity = null)
+    private static QueryAnalysisContext CreateContext(RawCallSite site, EntityInfo? entity = null)
     {
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { Test(); } }");
         var compilation = CSharpCompilation.Create("Test",
@@ -67,7 +69,7 @@ public class SimplificationRuleTests
             new EmptyAnalyzerConfigOptions());
     }
 
-    // ── QRA102: SingleValueInRule ──
+    // -- QRA102: SingleValueInRule --
 
     [Test]
     public void QRA102_SingleParameterIn_Reports()
@@ -88,7 +90,7 @@ public class SimplificationRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA103: TautologicalConditionRule ──
+    // -- QRA103: TautologicalConditionRule --
 
     [Test]
     public void QRA103_OneEqualsOne_Reports()
@@ -117,7 +119,7 @@ public class SimplificationRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA104: ContradictoryConditionRule ──
+    // -- QRA104: ContradictoryConditionRule --
 
     [Test]
     public void QRA104_ConflictingRanges_Reports()
@@ -146,7 +148,7 @@ public class SimplificationRuleTests
         Assert.That(diagnostics, Has.Count.EqualTo(1));
     }
 
-    // ── QRA105: RedundantConditionRule ──
+    // -- QRA105: RedundantConditionRule --
 
     [Test]
     public void QRA105_WeakerGreaterThan_Reports()
@@ -167,7 +169,7 @@ public class SimplificationRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA106: NullableWithoutNullCheckRule ──
+    // -- QRA106: NullableWithoutNullCheckRule --
 
     [Test]
     public void QRA106_NullableColumnEquality_Reports()

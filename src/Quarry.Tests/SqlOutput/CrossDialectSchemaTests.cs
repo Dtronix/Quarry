@@ -83,10 +83,10 @@ internal class CrossDialectSchemaTests : CrossDialectTestBase
             Pg.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
             My.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
             Ss.Orders().Where(o => o.UserId.Id == 5).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
-            pg:     "SELECT * FROM \"orders\" WHERE (\"UserId\" = 5)",
-            mysql:  "SELECT * FROM `orders` WHERE (`UserId` = 5)",
-            ss:     "SELECT * FROM [orders] WHERE ([UserId] = 5)");
+            sqlite: "SELECT * FROM \"orders\" WHERE \"UserId\" = 5",
+            pg:     "SELECT * FROM \"orders\" WHERE \"UserId\" = 5",
+            mysql:  "SELECT * FROM `orders` WHERE `UserId` = 5",
+            ss:     "SELECT * FROM [orders] WHERE [UserId] = 5");
     }
 
     #endregion

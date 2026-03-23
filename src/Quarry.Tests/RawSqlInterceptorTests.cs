@@ -1,6 +1,7 @@
-using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Tests.Testing;
 
 namespace Quarry.Tests;
 
@@ -25,7 +26,7 @@ public class RawSqlInterceptorTests
                 new RawSqlPropertyInfo("Email", "string", "GetString", true)
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -53,7 +54,7 @@ public class RawSqlInterceptorTests
             },
             hasCancellationToken: true);
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -78,7 +79,7 @@ public class RawSqlInterceptorTests
             },
             hasCancellationToken: false);
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -102,7 +103,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: "GetInt32");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "int", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "int", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -124,7 +125,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: "GetString");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "string", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "string", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -149,7 +150,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: "GetInt32");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, "int", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlScalarAsync, "int", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -171,7 +172,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: "GetString");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, "string", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlScalarAsync, "string", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -193,7 +194,7 @@ public class RawSqlInterceptorTests
             hasCancellationToken: true,
             scalarReaderMethod: "GetInt64");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, "long", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlScalarAsync, "long", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -222,7 +223,7 @@ public class RawSqlInterceptorTests
                     isEnum: true, fullClrType: "UserStatus")
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "User", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "User", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -246,7 +247,7 @@ public class RawSqlInterceptorTests
                     isForeignKey: true, referencedEntityName: "User")
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "Order", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "Order", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -270,7 +271,7 @@ public class RawSqlInterceptorTests
                     customTypeMappingClass: "MoneyMapping", dbReaderMethodName: "GetDecimal")
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "Product", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "Product", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -298,7 +299,7 @@ public class RawSqlInterceptorTests
                 new RawSqlPropertyInfo("Age", "int", "GetInt32", true)
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
 
         // Act
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -318,13 +319,13 @@ public class RawSqlInterceptorTests
     public void GenerateInterceptorsFile_MultipleRawSqlSites_GeneratesAllInterceptors()
     {
         // Arrange
-        var dtoSite = CreateRawSqlUsageSite(
+        var dtoSite = CreateRawSqlCallSite(
             InterceptorKind.RawSqlAsync, "UserDto",
             new RawSqlTypeInfo("UserDto", RawSqlTypeKind.Dto,
                 new[] { new RawSqlPropertyInfo("Name", "string", "GetString", false) }),
             uniqueId: "site1");
 
-        var scalarSite = CreateRawSqlUsageSite(
+        var scalarSite = CreateRawSqlCallSite(
             InterceptorKind.RawSqlScalarAsync, "int",
             new RawSqlTypeInfo("int", RawSqlTypeKind.Scalar,
                 System.Array.Empty<RawSqlPropertyInfo>(), scalarReaderMethod: "GetInt32"),
@@ -352,7 +353,7 @@ public class RawSqlInterceptorTests
             RawSqlTypeKind.Dto,
             System.Array.Empty<RawSqlPropertyInfo>());
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "EmptyDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "EmptyDto", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
@@ -387,7 +388,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: readerMethod);
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, clrType, rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlScalarAsync, clrType, rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
@@ -416,7 +417,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: readerMethod);
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, clrType, rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, clrType, rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
@@ -438,7 +439,7 @@ public class RawSqlInterceptorTests
             System.Array.Empty<RawSqlPropertyInfo>(),
             scalarReaderMethod: "GetInt32");
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlScalarAsync, "int?", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlScalarAsync, "int?", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
@@ -469,7 +470,7 @@ public class RawSqlInterceptorTests
                 new RawSqlPropertyInfo("Notes", "string", "GetString", true),
             });
 
-        var site = CreateRawSqlUsageSite(InterceptorKind.RawSqlAsync, "MixedDto", rawSqlTypeInfo);
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "MixedDto", rawSqlTypeInfo);
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
@@ -486,27 +487,19 @@ public class RawSqlInterceptorTests
 
     #region Helper Methods
 
-    private static UsageSiteInfo CreateRawSqlUsageSite(
+    private static TranslatedCallSite CreateRawSqlCallSite(
         InterceptorKind kind,
         string resultType,
         RawSqlTypeInfo rawSqlTypeInfo,
         string uniqueId = "test123")
     {
-        return new UsageSiteInfo(
-            methodName: kind == InterceptorKind.RawSqlAsync ? "RawSqlAsync" : "RawSqlScalarAsync",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "QuarryContext",
-            entityTypeName: resultType,
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: uniqueId,
-            resultTypeName: resultType,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1,
-            rawSqlTypeInfo: rawSqlTypeInfo);
+        return new TestCallSiteBuilder()
+            .WithMethodName(kind == InterceptorKind.RawSqlAsync ? "RawSqlAsync" : "RawSqlScalarAsync")
+            .WithKind(kind)
+            .WithEntityType(resultType)
+            .WithRawSqlTypeInfo(rawSqlTypeInfo)
+            .WithUniqueId(uniqueId)
+            .Build();
     }
 
     #endregion

@@ -1,8 +1,6 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 
 namespace Quarry.Analyzers.Rules.Simplification;
@@ -17,13 +15,12 @@ internal sealed class SingleValueInRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
         // Check SQL fragment for single-parameter IN clause
-        var sql = clause.SqlFragment;
-        if (!sql.Contains("IN (") || clause.Parameters.Count != 1)
+        var sql = context.GetRenderedSql()!;
+        if (!sql.Contains("IN ("))
             yield break;
 
         // Verify it's a single-value IN by checking the SQL pattern
@@ -37,7 +34,7 @@ internal sealed class SingleValueInRule : IQueryAnalysisRule
             yield break;
 
         var inContent = afterIn.Substring(0, closeIndex).Trim();
-        // Single parameter like @p0
+        // Single parameter like @p0 — no commas means single value
         if (inContent.StartsWith("@p") && !inContent.Contains(","))
         {
             yield return Diagnostic.Create(
