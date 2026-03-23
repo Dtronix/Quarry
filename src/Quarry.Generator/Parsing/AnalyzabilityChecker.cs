@@ -104,8 +104,9 @@ internal static class AnalyzabilityChecker
                     }
                     return (false, "Query builder is stored in a local variable");
 
-                case IParameterSymbol:
-                    // Parameter - not analyzable
+                case IParameterSymbol param:
+                    if (IsQuarryContextType(param.Type))
+                        return (true, null);
                     return (false, "Query builder is a method parameter");
 
                 case IFieldSymbol field:

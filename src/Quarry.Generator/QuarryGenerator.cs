@@ -445,8 +445,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 projInfo = assembled.ExecutionSite.ProjectionInfo;
             assembled.ProjectionInfo = projInfo;
 
-            // Generate reader delegate code for SELECT queries
-            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select && projInfo != null)
+            // Generate reader delegate code for SELECT queries (skip if projection failed)
+            if (assembled.ReaderDelegateCode == null && assembled.Plan.Kind == QueryKind.Select
+                && projInfo != null && projInfo.Kind != ProjectionKind.Unknown)
             {
                 var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
                 assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);

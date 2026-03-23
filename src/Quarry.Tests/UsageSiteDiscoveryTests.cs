@@ -1008,10 +1008,9 @@ public partial class TestDbContext : QuarryContext
 
 public class Service
 {
-    public void Test()
+    public void Test(TestDbContext db)
     {
         // Variable-stored chain from analyzable source — should NOT emit QRY001
-        var db = new TestDbContext(null!);
         var query = db.Users().Where(u => u.IsActive);
         query.Select(u => u.UserName).ToDiagnostics();
     }

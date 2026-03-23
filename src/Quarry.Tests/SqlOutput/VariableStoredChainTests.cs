@@ -74,4 +74,18 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Query — Variable Stored
+
+    [Test]
+    public void Query_VariableStored_ToDiagnostics()
+    {
+        var query = Lite.Users().Where(u => u.IsActive);
+        var sql = query.Select(u => u.UserName).ToDiagnostics().Sql;
+
+        Assert.That(sql, Does.Contain("\"IsActive\""));
+        Assert.That(sql, Does.Contain("\"UserName\""));
+    }
+
+    #endregion
 }
