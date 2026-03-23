@@ -74,8 +74,14 @@ internal static class PipelineOrchestrator
 
         ct.ThrowIfCancellationRequested();
 
+        // Propagate chain-updated sites (e.g., JoinedEntityTypeNames from ChainAnalyzer)
+        // back into the main site array so downstream code sees a single consistent view.
+        // This eliminates the need for FileEmitter to conditionally select between original
+        // and chain-updated sites.
+        var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans);
+
         // Group into files
-        return GroupTranslatedIntoFiles(translatedSites, assembledPlans, carrierPlans, diagnostics);
+        return GroupTranslatedIntoFiles(updatedSites, assembledPlans, carrierPlans, diagnostics);
     }
 
     private static void CollectTranslatedDiagnostics(
@@ -133,6 +139,36 @@ internal static class PipelineOrchestrator
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Replaces sites in the main array with chain-updated versions from AssembledPlans.
+    /// ChainAnalyzer may update sites (e.g., propagating JoinedEntityTypeNames to post-join
+    /// and execution sites). This ensures all downstream code sees the enriched sites.
+    /// </summary>
+    private static ImmutableArray<TranslatedCallSite> PropagateChainUpdatedSites(
+        ImmutableArray<TranslatedCallSite> allSites,
+        List<AssembledPlan> assembledPlans)
+    {
+        // Build lookup of chain-updated sites by UniqueId
+        var chainUpdatedSites = new Dictionary<string, TranslatedCallSite>(StringComparer.Ordinal);
+        foreach (var plan in assembledPlans)
+        {
+            chainUpdatedSites[plan.ExecutionSite.UniqueId] = plan.ExecutionSite;
+            foreach (var cs in plan.ClauseSites)
+                chainUpdatedSites[cs.UniqueId] = cs;
+        }
+
+        if (chainUpdatedSites.Count == 0)
+            return allSites;
+
+        // Replace sites that were updated during chain analysis
+        var builder = ImmutableArray.CreateBuilder<TranslatedCallSite>(allSites.Length);
+        foreach (var site in allSites)
+        {
+            builder.Add(chainUpdatedSites.TryGetValue(site.UniqueId, out var updated) ? updated : site);
+        }
+        return builder.MoveToImmutable();
     }
 
     private static ImmutableArray<FileInterceptorGroup> GroupTranslatedIntoFiles(

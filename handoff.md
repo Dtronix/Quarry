@@ -65,17 +65,15 @@ The big-bang compiler switchover is complete. The old pipeline (UsageSiteInfo, C
 
 ## Technical Debt
 
-### 1. Split responsibility for JoinedEntityTypeNames population
-For explicit joins, `JoinedEntityTypeNames` is populated during discovery. For navigation joins, it's left null and populated by ChainAnalyzer. Two code paths for the same field. See previous handoff for detailed fix proposal.
+All four original tech debt items have been resolved:
 
-### 2. FileEmitter site-selection logic
-FileEmitter has conditional logic to prefer chain-updated sites over original sites for navigation joins. Should be resolved by updating sites in PipelineOrchestrator before grouping.
+1. ~~Split responsibility for JoinedEntityTypeNames population~~ — **Resolved.** PipelineOrchestrator.PropagateChainUpdatedSites() now merges chain-updated sites back into the main array after ChainAnalyzer runs. ChainAnalyzer still synthesizes the names (it needs chain context), but the propagation is centralized.
 
-### 3. SqlAssembler ResultTypeName fallback
-SqlAssembler falls back to projection's ResultTypeName when execution site lacks it. Should propagate ResultTypeName during chain analysis instead.
+2. ~~FileEmitter site-selection logic~~ — **Resolved.** Conditional site-preference logic removed from FileEmitter. PipelineOrchestrator handles propagation before file grouping, so FileEmitter sees consistent sites.
 
-### 4. SetAction translation during discovery
-`ExtractSetActionAssignments` in UsageSiteDiscovery.cs handles SetAction parsing directly. The constant inlining uses a simplified `FormatConstantAsSqlLiteralSimple` that may not cover all edge cases the old `ExpressionSyntaxTranslator.FormatConstantAsSqlLiteral` handled (e.g., char type, string escaping edge cases). Monitor for SetAction-related test failures.
+3. ~~SqlAssembler ResultTypeName fallback~~ — **Resolved.** Extracted duplicated fallback into `ResolveResultTypeName()` helper, computed once and reused for both RuntimeBuild and normal assembly paths.
+
+4. ~~SetAction FormatConstantAsSqlLiteralSimple~~ — **Resolved.** Added backslash escaping via `EscapeSqlString()` helper. Unsupported types (DateTime, Guid, byte[], enums) explicitly documented as falling back to parameter binding. Boolean dialect handling confirmed to be downstream in ChainAnalyzer.
 
 ## Dependencies / Blockers
 

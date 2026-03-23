@@ -283,24 +283,16 @@ internal sealed class FileEmitter
                 var chainSites = new List<TranslatedCallSite>();
                 foreach (var clause in chain.GetClauseEntries())
                 {
-                    // Use the chain's updated site when JoinedEntityTypeNames was propagated
-                    // by ChainAnalyzer, otherwise use the original from allSitesForGeneration.
-                    var useSite = clause.Site;
-                    if (siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var origSite)
-                        && origSite.Bound.JoinedEntityTypeNames != null)
-                    {
-                        useSite = origSite;
-                    }
+                    // PipelineOrchestrator has already propagated chain-updated sites
+                    // (e.g., JoinedEntityTypeNames) back into the main site array,
+                    // so we can use the sites from allSitesForGeneration directly.
+                    var useSite = siteByUniqueId.TryGetValue(clause.Site.UniqueId, out var resolved)
+                        ? resolved : clause.Site;
                     chainSites.Add(useSite);
                     processedSiteIds.Add(useSite.UniqueId);
                 }
-                // Use the chain's execution site (may have propagated JoinedEntityTypeNames)
-                var chainExecSite = chain.ExecutionSite;
-                if (siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var origExecSite)
-                    && origExecSite.Bound.JoinedEntityTypeNames != null)
-                {
-                    chainExecSite = origExecSite;
-                }
+                var chainExecSite = siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var resolvedExec)
+                    ? resolvedExec : chain.ExecutionSite;
                 chainSites.Add(chainExecSite);
                 processedSiteIds.Add(chainExecSite.UniqueId);
 

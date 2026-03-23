@@ -1475,7 +1475,9 @@ internal static class UsageSiteDiscovery
 
     /// <summary>
     /// Formats a compile-time constant value as a SQL literal without requiring a translation context.
-    /// Uses PostgreSQL boolean format (TRUE/FALSE) matching DefaultDiscoveryDialect.
+    /// Uses PostgreSQL boolean format (TRUE/FALSE) — ChainAnalyzer detects boolean literals and
+    /// re-tags them for dialect-specific formatting downstream.
+    /// Unsupported types return null, causing the value to be emitted as a runtime parameter instead.
     /// </summary>
     private static string? FormatConstantAsSqlLiteralSimple(object? value)
     {
@@ -1493,11 +1495,22 @@ internal static class UsageSiteDiscovery
             float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
             double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
             decimal m => m.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            bool bv => bv ? "TRUE" : "FALSE", // PostgreSQL format (DefaultDiscoveryDialect)
-            char c => $"'{c.ToString().Replace("'", "''")}'",
-            string str => $"'{str.Replace("'", "''")}'",
-            _ => null
+            bool bv => bv ? "TRUE" : "FALSE",
+            char c => $"'{EscapeSqlString(c.ToString())}'",
+            string str => $"'{EscapeSqlString(str)}'",
+            _ => null // DateTime, Guid, byte[], enums, etc. fall back to parameter binding
         };
+    }
+
+    /// <summary>
+    /// Escapes a string for use in a SQL single-quoted literal.
+    /// Handles single quotes and backslashes (PostgreSQL standard_conforming_strings=on).
+    /// </summary>
+    private static string EscapeSqlString(string value)
+    {
+        if (value.IndexOf('\'') < 0 && value.IndexOf('\\') < 0)
+            return value;
+        return value.Replace("'", "''").Replace("\\", "\\\\");
     }
 
     /// <summary>

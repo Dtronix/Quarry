@@ -16,6 +16,16 @@ namespace Quarry.Generators.IR;
 internal static class SqlAssembler
 {
     /// <summary>
+    /// Resolves the result type name from the execution site, falling back to the
+    /// projection's result type for non-identity projections (e.g., Select with a lambda).
+    /// </summary>
+    private static string? ResolveResultTypeName(TranslatedCallSite executionSite, QueryPlan plan)
+    {
+        return executionSite.Bound.Raw.ResultTypeName
+            ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null);
+    }
+
+    /// <summary>
     /// Assembles an AnalyzedChain into an AssembledPlan with rendered SQL variants.
     /// </summary>
     public static AssembledPlan Assemble(AnalyzedChain chain, EntityRegistry registry)
@@ -23,6 +33,7 @@ internal static class SqlAssembler
         var plan = chain.Plan;
         var executionSite = chain.ExecutionSite;
         var dialect = executionSite.Bound.Dialect;
+        var resultTypeName = ResolveResultTypeName(executionSite, plan);
 
         var sqlVariants = new Dictionary<ulong, AssembledSqlVariant>();
 
@@ -37,8 +48,7 @@ internal static class SqlAssembler
                 executionSite: executionSite,
                 clauseSites: chain.ClauseSites,
                 entityTypeName: executionSite.Bound.Raw.EntityTypeName,
-                resultTypeName: executionSite.Bound.Raw.ResultTypeName
-                    ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null),
+                resultTypeName: resultTypeName,
                 dialect: dialect,
                 entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
                 isTraced: chain.IsTraced);
@@ -90,8 +100,7 @@ internal static class SqlAssembler
             executionSite: executionSite,
             clauseSites: chain.ClauseSites,
             entityTypeName: executionSite.Bound.Raw.EntityTypeName,
-            resultTypeName: executionSite.Bound.Raw.ResultTypeName
-                ?? (plan.Projection?.IsIdentity == false ? plan.Projection.ResultTypeName : null),
+            resultTypeName: resultTypeName,
             dialect: dialect,
             entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
             isTraced: chain.IsTraced);

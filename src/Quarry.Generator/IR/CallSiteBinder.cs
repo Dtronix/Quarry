@@ -111,7 +111,11 @@ internal static class CallSiteBinder
             }
         }
 
-        // Pass through joined entity type names from discovery
+        // Pass through joined entity type names from discovery.
+        // For explicit joins, post-join sites get JoinedEntityTypeNames from the builder type args.
+        // For navigation joins, Roslyn can't resolve the post-join builder type, so these are null
+        // and get synthesized by ChainAnalyzer during chain analysis, then propagated by
+        // PipelineOrchestrator before file grouping.
         IReadOnlyList<EntityRef>? joinedEntities = null;
         if (raw.JoinedEntityTypeNames != null)
         {
@@ -125,11 +129,6 @@ internal static class CallSiteBinder
             }
             joinedEntities = resolved;
         }
-        // For non-join sites with builderKind == JoinedQuery that don't have JoinedEntityTypeNames
-        // (synthetically discovered post-join sites), build it from the entity + the first resolved
-        // join entity we can find. This is resolved later from the Join clause site in ChainAnalyzer.
-        // Note: we do NOT set JoinedEntityTypeNames on Join sites themselves — doing so would
-        // confuse the JoinBodyEmitter into treating them as chained joins.
 
         // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
         RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;

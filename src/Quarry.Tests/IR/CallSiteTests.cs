@@ -92,6 +92,24 @@ public class CallSiteTests
     }
 
     [Test]
+    public void RawCallSite_DifferentIsPassedAsArgument_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isPassedAsArgument: false);
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isPassedAsArgument: true);
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
+    public void RawCallSite_DifferentIsAssignedFromNonQuarryMethod_NotEqual()
+    {
+        var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isAssignedFromNonQuarryMethod: false);
+        var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", isAssignedFromNonQuarryMethod: true);
+
+        Assert.That(a.Equals(b), Is.False);
+    }
+
+    [Test]
     public void RawCallSite_DifferentChainId_NotEqual()
     {
         var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1", chainId: "chain_0");
@@ -240,6 +258,8 @@ public class CallSiteTests
         bool isInsideLoop = false,
         bool isInsideTryCatch = false,
         bool isCapturedInLambda = false,
+        bool isPassedAsArgument = false,
+        bool isAssignedFromNonQuarryMethod = false,
         ConditionalInfo? conditionalInfo = null,
         string? chainId = null)
     {
@@ -263,6 +283,8 @@ public class CallSiteTests
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
+            isPassedAsArgument: isPassedAsArgument,
+            isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
             conditionalInfo: conditionalInfo,
             chainId: chainId);
     }
