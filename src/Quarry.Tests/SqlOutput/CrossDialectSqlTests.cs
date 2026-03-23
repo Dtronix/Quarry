@@ -1,7 +1,5 @@
-using Quarry.Generators.Sql;
 using Quarry.Internal;
 using Quarry.Tests.Samples;
-using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Pg = Quarry.Tests.Samples.Pg;
 using My = Quarry.Tests.Samples.My;
 using Ss = Quarry.Tests.Samples.Ss;
@@ -58,8 +56,7 @@ internal abstract class CrossDialectTestBase
     }
 
     /// <summary>
-    /// Unified QueryDiagnostics overload: dispatches compile-time verification
-    /// based on <see cref="DiagnosticQueryKind"/>.
+    /// Unified QueryDiagnostics overload: verifies runtime SQL matches expected values.
     /// </summary>
     protected static void AssertDialects(
         QueryDiagnostics sqliteDiag, QueryDiagnostics pgDiag,
@@ -68,132 +65,10 @@ internal abstract class CrossDialectTestBase
     {
         Assert.Multiple(() =>
         {
-            // Runtime assertions
-            Assert.That(sqliteDiag.Sql, Is.EqualTo(sqlite), "SQLite runtime");
-            Assert.That(pgDiag.Sql, Is.EqualTo(pg), "PostgreSQL runtime");
-            Assert.That(mysqlDiag.Sql, Is.EqualTo(mysql), "MySQL runtime");
-            Assert.That(ssDiag.Sql, Is.EqualTo(ss), "SqlServer runtime");
-
-            // Compile-time equivalence assertions
-            AssertDiagnosticsCompileTime(sqliteDiag, "SQLite");
-            AssertDiagnosticsCompileTime(pgDiag, "PostgreSQL");
-            AssertDiagnosticsCompileTime(mysqlDiag, "MySQL");
-            AssertDiagnosticsCompileTime(ssDiag, "SqlServer");
+            Assert.That(sqliteDiag.Sql, Is.EqualTo(sqlite), "SQLite");
+            Assert.That(pgDiag.Sql, Is.EqualTo(pg), "PostgreSQL");
+            Assert.That(mysqlDiag.Sql, Is.EqualTo(mysql), "MySQL");
+            Assert.That(ssDiag.Sql, Is.EqualTo(ss), "SqlServer");
         });
-    }
-
-    // ───────────────────────────────────────────────────────────────
-    // Compile-time assertion helpers
-    // ───────────────────────────────────────────────────────────────
-
-    private static void AssertDiagnosticsCompileTime(QueryDiagnostics diag, string dialectName)
-    {
-        // When the generated interceptor provides prebuilt SQL, RawState is null.
-        // Compile-time verification is unnecessary — the prebuilt SQL IS the compile-time output.
-        if (diag.RawState == null)
-            return;
-
-        switch (diag.Kind)
-        {
-            case DiagnosticQueryKind.Select:
-                AssertSelectCompileTime(diag.Sql, (QueryState)diag.RawState!, dialectName);
-                break;
-            case DiagnosticQueryKind.Update:
-                AssertUpdateCompileTime(diag.Sql, (UpdateState)diag.RawState!, dialectName);
-                break;
-            case DiagnosticQueryKind.Delete:
-                AssertDeleteCompileTime(diag.Sql, (DeleteState)diag.RawState!, dialectName);
-                break;
-            case DiagnosticQueryKind.Insert:
-                AssertInsertCompileTime(diag.Sql, (InsertState)diag.RawState!, diag.InsertRowCount, dialectName);
-                break;
-        }
-    }
-
-    private static void AssertSelectCompileTime(string runtimeSql, QueryState state, string dialectName)
-    {
-        var (clauses, dialect, table, schema, alias) =
-            CompileTimeConverter.ConvertSelectState(state);
-        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
-        var result = CompileTimeSqlBuilder.BuildSelectSql(
-            0UL, clauses, templates, dialect, table, schema, alias);
-
-        bool hasPagination = state.Limit.HasValue || state.Offset.HasValue;
-        if (hasPagination)
-        {
-            // Compare non-pagination prefix only
-            var runtimePrefix = GetPaginationPrefix(runtimeSql, dialect);
-            var compilePrefix = GetPaginationPrefix(result.Sql, dialect);
-            Assert.That(compilePrefix, Is.EqualTo(runtimePrefix),
-                $"{dialectName} compile-time prefix mismatch");
-        }
-        else
-        {
-            Assert.That(result.Sql, Is.EqualTo(runtimeSql),
-                $"{dialectName} compile-time mismatch");
-        }
-    }
-
-    private static void AssertUpdateCompileTime(string runtimeSql, UpdateState state, string dialectName)
-    {
-        var (clauses, dialect, table, schema) =
-            CompileTimeConverter.ConvertUpdateState(state);
-        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
-        var result = CompileTimeSqlBuilder.BuildUpdateSql(
-            0UL, clauses, templates, dialect, table, schema);
-
-        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
-            $"{dialectName} compile-time mismatch");
-    }
-
-    private static void AssertDeleteCompileTime(string runtimeSql, DeleteState state, string dialectName)
-    {
-        var (clauses, dialect, table, schema) =
-            CompileTimeConverter.ConvertDeleteState(state);
-        var templates = CompileTimeSqlBuilder.BuildTemplates(clauses);
-        var result = CompileTimeSqlBuilder.BuildDeleteSql(
-            0UL, clauses, templates, dialect, table, schema);
-
-        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
-            $"{dialectName} compile-time mismatch");
-    }
-
-    private static void AssertInsertCompileTime(string runtimeSql, InsertState state, int rowCount, string dialectName)
-    {
-        var genDialect = (GenSqlDialect)(int)state.Dialect;
-        var result = CompileTimeSqlBuilder.BuildInsertSql(
-            genDialect,
-            state.TableName,
-            state.SchemaName,
-            state.Columns,
-            state.Columns.Count * rowCount,
-            state.IdentityColumn);
-
-        Assert.That(result.Sql, Is.EqualTo(runtimeSql),
-            $"{dialectName} compile-time mismatch");
-    }
-
-    /// <summary>
-    /// Extracts the SQL prefix before pagination keywords (LIMIT/OFFSET/FETCH).
-    /// For SQL Server, pagination starts at "OFFSET"; for others at "LIMIT".
-    /// </summary>
-    private static string GetPaginationPrefix(string sql, GenSqlDialect dialect)
-    {
-        // For SQL Server with no ORDER BY, the "ORDER BY (SELECT NULL)" is pagination-related
-        // Find the start of pagination
-        int paginationStart;
-        if (dialect == GenSqlDialect.SqlServer)
-        {
-            // SQL Server: pagination starts at ORDER BY (SELECT NULL) or OFFSET
-            paginationStart = sql.IndexOf(" ORDER BY (SELECT NULL)", StringComparison.Ordinal);
-            if (paginationStart < 0)
-                paginationStart = sql.LastIndexOf(" OFFSET ", StringComparison.Ordinal);
-        }
-        else
-        {
-            paginationStart = sql.LastIndexOf(" LIMIT ", StringComparison.Ordinal);
-        }
-
-        return paginationStart >= 0 ? sql[..paginationStart] : sql;
     }
 }

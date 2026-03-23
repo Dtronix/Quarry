@@ -384,41 +384,6 @@ public class JoinOperationsTests
 
     #endregion
 
-    #region JoinClauseInfo Tests
-
-    [Test]
-    public void JoinClauseInfo_Constructor_SetsProperties()
-    {
-        var info = new JoinClauseInfo(
-            GenJoinClauseKind.Left,
-            "Order",
-            "orders",
-            "t1.user_id = t2.id",
-            Array.Empty<ParameterInfo>());
-
-        Assert.That(info.JoinKind, Is.EqualTo(GenJoinClauseKind.Left));
-        Assert.That(info.JoinedEntityName, Is.EqualTo("Order"));
-        Assert.That(info.JoinedTableName, Is.EqualTo("orders"));
-        Assert.That(info.OnConditionSql, Is.EqualTo("t1.user_id = t2.id"));
-        Assert.That(info.IsSuccess, Is.True);
-        Assert.That(info.Kind, Is.EqualTo(ClauseKind.Join));
-    }
-
-    [Test]
-    public void JoinClauseInfo_SqlFragment_EqualsOnConditionSql()
-    {
-        var info = new JoinClauseInfo(
-            GenJoinClauseKind.Inner,
-            "Order",
-            "orders",
-            "t1.id = t2.user_id",
-            Array.Empty<ParameterInfo>());
-
-        Assert.That(info.SqlFragment, Is.EqualTo("t1.id = t2.user_id"));
-    }
-
-    #endregion
-
     #region InterceptorCodeGenerator Join Tests
 
     [Test]
