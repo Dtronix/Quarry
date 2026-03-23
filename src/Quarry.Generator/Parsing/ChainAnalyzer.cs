@@ -298,20 +298,30 @@ internal static class ChainAnalyzer
                     case ClauseKind.Set:
                         if (clause.SetAssignments != null)
                         {
-                            // SetAction: multiple assignments
+                            // SetAction: multiple assignments. Parameters were remapped above,
+                            // so walk backwards from paramGlobalIndex to assign each non-inlined
+                            // assignment its correct parameter slot.
+                            var setParamCount = clauseParams.Count;
+                            var nextSetParamIdx = paramGlobalIndex - setParamCount;
                             foreach (var assignment in clause.SetAssignments)
                             {
-                                // Parse column from assignment.ColumnSql
-                                var col = new ResolvedColumnExpr(assignment.ColumnSql);
+                                // Quote the column name — ColumnSql stores the unquoted property name
+                                var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
+                                var col = new ResolvedColumnExpr(quotedCol);
                                 SqlExpr valueExpr;
                                 if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                                 {
-                                    valueExpr = new LiteralExpr(assignment.InlinedSqlValue, "object");
+                                    // Detect boolean literals for dialect-specific formatting
+                                    var inlinedVal = assignment.InlinedSqlValue;
+                                    var lowerVal = inlinedVal.ToLowerInvariant();
+                                    var clrType = (lowerVal == "true" || lowerVal == "false") ? "bool" : "object";
+                                    valueExpr = new LiteralExpr(inlinedVal, clrType);
                                 }
                                 else
                                 {
-                                    // Parameter reference
-                                    valueExpr = new ParamSlotExpr(paramGlobalIndex - 1, "object", "@p" + (paramGlobalIndex - 1));
+                                    // Parameter reference — each non-inlined gets the next slot
+                                    valueExpr = new ParamSlotExpr(nextSetParamIdx, "object", "@p" + nextSetParamIdx);
+                                    nextSetParamIdx++;
                                 }
                                 setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
                             }
@@ -897,8 +907,6 @@ internal static class ChainAnalyzer
             var raw = site.Bound.Raw;
             if (raw.IsInsideLoop)
                 return "Chain contains a clause inside a loop body";
-            if (raw.IsInsideTryCatch)
-                return "Chain contains a clause inside a try/catch/finally block";
             if (raw.IsCapturedInLambda)
                 return "Chain variable captured in a lambda expression";
             if (raw.IsPassedAsArgument)

@@ -426,7 +426,7 @@ public class JoinOperationsTests
     {
         var sites = new List<TranslatedCallSite>
         {
-            CreateJoinCallSite(InterceptorKind.Join)
+            CreateJoinCallSite(InterceptorKind.Join, withClause: false)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -444,7 +444,7 @@ public class JoinOperationsTests
     {
         var sites = new List<TranslatedCallSite>
         {
-            CreateJoinCallSite(InterceptorKind.LeftJoin)
+            CreateJoinCallSite(InterceptorKind.LeftJoin, withClause: false)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -462,7 +462,7 @@ public class JoinOperationsTests
     {
         var sites = new List<TranslatedCallSite>
         {
-            CreateJoinCallSite(InterceptorKind.RightJoin)
+            CreateJoinCallSite(InterceptorKind.RightJoin, withClause: false)
         };
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -494,17 +494,25 @@ public class JoinOperationsTests
         Assert.That(source, Does.Contain("AddJoinClause"));
     }
 
-    private TranslatedCallSite CreateJoinCallSite(InterceptorKind kind)
+    private TranslatedCallSite CreateJoinCallSite(InterceptorKind kind, bool withClause = true)
     {
-        return new TestCallSiteBuilder()
+        var joinKind = kind switch
+        {
+            InterceptorKind.LeftJoin => JoinClauseKind.Left,
+            InterceptorKind.RightJoin => JoinClauseKind.Right,
+            _ => JoinClauseKind.Inner
+        };
+        var builder = new TestCallSiteBuilder()
             .WithMethodName(kind.ToString())
             .WithKind(kind)
             .WithEntityType("global::TestNamespace.TestUser")
             .WithJoinedEntityType("TestOrder")
             .WithBuilderTypeName("IQueryBuilder")
             .WithContext("TestContext", "TestNamespace")
-            .WithUniqueId("abc12345")
-            .Build();
+            .WithUniqueId("abc12345");
+        if (withClause)
+            builder.WithClause(TestCallSiteBuilder.CreateJoinClause("orders", joinKind: joinKind));
+        return builder.Build();
     }
 
     [Test]
@@ -519,6 +527,7 @@ public class JoinOperationsTests
             .WithContext("TestContext", "TestNamespace")
             .WithJoinedEntityType("global::TestNamespace.TestItem")
             .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" })
+            .WithClause(TestCallSiteBuilder.CreateJoinClause("items"))
             .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -541,6 +550,7 @@ public class JoinOperationsTests
             .WithContext("TestContext", "TestNamespace")
             .WithJoinedEntityType("global::TestNamespace.TestCategory")
             .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
+            .WithClause(TestCallSiteBuilder.CreateJoinClause("categories", joinKind: JoinClauseKind.Left))
             .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -562,6 +572,7 @@ public class JoinOperationsTests
             .WithUniqueId("jwhere2")
             .WithContext("TestContext", "TestNamespace")
             .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder" })
+            .WithClause(TestCallSiteBuilder.CreateSimpleClause(ClauseKind.Where, "\"IsActive\" = 1"))
             .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -583,6 +594,7 @@ public class JoinOperationsTests
             .WithUniqueId("jorder3")
             .WithContext("TestContext", "TestNamespace")
             .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
+            .WithClause(TestCallSiteBuilder.CreateSimpleClause(ClauseKind.OrderBy, "\"UserName\""))
             .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(
@@ -605,6 +617,7 @@ public class JoinOperationsTests
             .WithContext("TestContext", "TestNamespace")
             .WithJoinedEntityTypeNames(new[] { "global::TestNamespace.TestUser", "global::TestNamespace.TestOrder", "global::TestNamespace.TestItem" })
             .WithKeyType("global::System.String")
+            .WithClause(TestCallSiteBuilder.CreateSimpleClause(ClauseKind.OrderBy, "\"UserName\""))
             .Build();
 
         var source = InterceptorCodeGenerator.GenerateInterceptorsFile(

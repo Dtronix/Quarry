@@ -578,8 +578,10 @@ public class Svc
     }
 
     [Test]
-    public void Disqualified_AssignedInTryCatch()
+    public void TryCatch_DoesNotDisqualify()
     {
+        // Try/catch is NOT a disqualifier — Quarry builder methods don't throw,
+        // so a chain inside try/catch is safe for prebuilt dispatch.
         var result = AnalyzeChain(@"
         var q = db.Users().Where(u => u.IsActive);
         try { q = q.Where(u => u.Age > 0); } catch { }
@@ -587,8 +589,7 @@ public class Svc
 ");
 
         Assert.That(result, Is.Not.Null);
-        Assert.That(result!.Tier, Is.EqualTo(OptimizationTier.RuntimeBuild));
-        Assert.That(result.NotAnalyzableReason, Does.Contain("try/catch"));
+        Assert.That(result!.Tier, Is.EqualTo(OptimizationTier.PrebuiltDispatch));
     }
 
     [Test]
@@ -791,16 +792,16 @@ public class Svc
     }
 
     [Test]
-    public void Integration_QRY032_ReasonMessageFlowsThrough()
+    public void Integration_QRY032_TryCatch_NoLongerEmitsDiagnostic()
     {
+        // Try/catch is not a disqualifier, so no QRY032 is emitted.
         var diagnostics = RunGeneratorAndGetDiagnostics(@"
         var q = db.Users().Where(u => u.IsActive);
         try { q = q.Where(u => u.Age > 0); } catch { }
         await q.Select(u => u).ExecuteFetchAllAsync();
 ", "QRY032");
 
-        Assert.That(diagnostics, Has.Count.GreaterThanOrEqualTo(1));
-        Assert.That(diagnostics[0].GetMessage(), Does.Contain("try/catch"));
+        Assert.That(diagnostics, Has.Count.EqualTo(0));
     }
 
     #endregion

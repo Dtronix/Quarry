@@ -860,16 +860,30 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static bool DetectLoopAncestor(SyntaxNode node)
     {
+        SyntaxNode? child = node;
         foreach (var ancestor in node.Ancestors())
         {
-            if (ancestor is ForStatementSyntax
-                || ancestor is WhileStatementSyntax
-                || ancestor is ForEachStatementSyntax
-                || ancestor is DoStatementSyntax)
+            if (ancestor is ForStatementSyntax forStmt)
+            {
+                // Only disqualify if inside the loop body, not the initializer/condition/incrementor
+                if (child == forStmt.Statement)
+                    return true;
+            }
+            else if (ancestor is WhileStatementSyntax || ancestor is DoStatementSyntax)
+            {
                 return true;
+            }
+            else if (ancestor is ForEachStatementSyntax forEachStmt)
+            {
+                // The collection expression (iteration source) is evaluated once — not a loop.
+                // Only disqualify if inside the loop body.
+                if (child == forEachStmt.Statement)
+                    return true;
+            }
             // Stop at method boundary
             if (ancestor is MethodDeclarationSyntax || ancestor is LocalFunctionStatementSyntax)
                 break;
+            child = ancestor;
         }
         return false;
     }

@@ -150,6 +150,43 @@ internal class TestCallSiteBuilder
     }
 
     /// <summary>
+    /// Creates a TranslatedClause for join tests with the given table and ON condition.
+    /// </summary>
+    public static TranslatedClause CreateJoinClause(
+        string joinedTableName,
+        string onConditionSql = "\"t0\".\"Id\" = \"t1\".\"Id\"",
+        JoinClauseKind joinKind = JoinClauseKind.Inner,
+        string? joinedSchemaName = null,
+        string? tableAlias = null)
+    {
+        return new TranslatedClause(
+            ClauseKind.Join,
+            new ResolvedColumnExpr(onConditionSql),
+            new List<Generators.Translation.ParameterInfo>(),
+            isSuccess: true,
+            joinKind: joinKind,
+            joinedTableName: joinedTableName,
+            joinedSchemaName: joinedSchemaName,
+            tableAlias: tableAlias);
+    }
+
+    /// <summary>
+    /// Creates a TranslatedClause for Where/OrderBy tests.
+    /// </summary>
+    public static TranslatedClause CreateSimpleClause(
+        ClauseKind kind,
+        string sql = "\"Col\" = 1",
+        bool isDescending = false)
+    {
+        return new TranslatedClause(
+            kind,
+            new ResolvedColumnExpr(sql),
+            new List<Generators.Translation.ParameterInfo>(),
+            isSuccess: true,
+            isDescending: isDescending);
+    }
+
+    /// <summary>
     /// Creates a simple Select clause site with the given entity and result type.
     /// </summary>
     public static TranslatedCallSite CreateSelectSite(
