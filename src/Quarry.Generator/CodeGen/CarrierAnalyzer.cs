@@ -151,12 +151,14 @@ internal static class CarrierAnalyzer
             fields.Add(new Models.CarrierField("Mask", maskType, Models.FieldRole.ClauseMask));
         }
 
-        // Pagination fields
+        // Pagination fields — only add if the chain actually has the clause and it's not inlined
         if (plan.Pagination != null)
         {
-            if (plan.Pagination.LimitParamIndex != null || plan.Pagination.LiteralLimit == null)
+            var hasLimit = plan.Pagination.LimitParamIndex != null || plan.Pagination.LiteralLimit != null;
+            var hasOffset = plan.Pagination.OffsetParamIndex != null || plan.Pagination.LiteralOffset != null;
+            if (hasLimit && plan.Pagination.LimitParamIndex != null)
                 fields.Add(new Models.CarrierField("Limit", "int", Models.FieldRole.Limit));
-            if (plan.Pagination.OffsetParamIndex != null || plan.Pagination.LiteralOffset == null)
+            if (hasOffset && plan.Pagination.OffsetParamIndex != null)
                 fields.Add(new Models.CarrierField("Offset", "int", Models.FieldRole.Offset));
         }
 

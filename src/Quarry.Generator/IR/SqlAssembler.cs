@@ -372,7 +372,7 @@ internal static class SqlAssembler
                 if (!string.IsNullOrEmpty(col.Alias))
                 {
                     sb.Append(" AS ");
-                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.Alias));
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.Alias!));
                 }
             }
             else

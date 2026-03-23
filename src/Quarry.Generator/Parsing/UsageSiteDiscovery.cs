@@ -464,7 +464,9 @@ internal static class UsageSiteDiscovery
 
         var isOnJoinedBuilder = containingType.Name.Contains("JoinedQueryBuilder");
         var clauseAnalyzable = isAnalyzable || AnalyzabilityChecker.IsClauseAnalyzable(invocation, semanticModel);
-        if (clauseAnalyzable && IsClauseMethod(kind))
+        // UpdateSetAction uses Action<T> lambdas (block bodies) that can't be parsed to SqlExpr.
+        // It's handled separately in Step 12 via ExtractSetActionAssignments.
+        if (clauseAnalyzable && IsClauseMethod(kind) && kind != InterceptorKind.UpdateSetAction)
         {
             var parsed = TryParseLambdaToSqlExpr(kind, invocation, semanticModel);
             if (parsed != null)

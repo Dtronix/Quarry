@@ -67,7 +67,7 @@ internal class TestCallSiteBuilder
         _schemaName = schema;
         return this;
     }
-    public TestCallSiteBuilder WithClause(TranslatedClause clause) { _clause = clause; return this; }
+    public TestCallSiteBuilder WithClause(TranslatedClause? clause) { _clause = clause; return this; }
     public TestCallSiteBuilder WithKeyType(string? type) { _keyTypeName = type; return this; }
     public TestCallSiteBuilder WithValueType(string? type) { _valueTypeName = type; return this; }
     public TestCallSiteBuilder WithJoinedEntityType(string? type) { _joinedEntityTypeName = type; return this; }

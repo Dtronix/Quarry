@@ -271,7 +271,7 @@ internal static class ReaderCodeGenerator
             else if (!string.IsNullOrEmpty(column.TableAlias))
             {
                 // Joined query: emit dialect-quoted aliased column name
-                var quoted = $"{SqlFormatting.QuoteIdentifier(dialect, column.TableAlias)}.{SqlFormatting.QuoteIdentifier(dialect, column.ColumnName)}";
+                var quoted = $"{SqlFormatting.QuoteIdentifier(dialect, column.TableAlias!)}.{SqlFormatting.QuoteIdentifier(dialect, column.ColumnName)}";
                 var escaped = quoted.Replace("\"", "\\\"");
                 sb.Append($"\"{escaped}\"");
             }

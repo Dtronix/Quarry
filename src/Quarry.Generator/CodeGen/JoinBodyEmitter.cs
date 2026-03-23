@@ -135,7 +135,7 @@ internal static class JoinBodyEmitter
                 sb.AppendLine($"        Expression<Func<{funcTypeArgs}>> _)");
                 sb.AppendLine($"    {{");
                 sb.AppendLine($"        var __b = Unsafe.As<{concreteReceiverBuilderName}<{receiverTypeArgs}>>(builder);");
-                var escapedTableName = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.JoinedTableName);
+                var escapedTableName = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.JoinedTableName ?? "");
                 sb.AppendLine($"        return __b.AddJoinClause<{joinedType}>({joinKind}, @\"{escapedTableName}\", @\"{escapedSql}\");");
                 sb.AppendLine($"    }}");
             }
@@ -238,7 +238,7 @@ internal static class JoinBodyEmitter
             }
             sb.AppendLine($"    {{");
             sb.AppendLine($"        var __b = Unsafe.As<{concreteThisType}<{entityType}>>({joinBuilderExpr});");
-            var escapedTableName = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.JoinedTableName);
+            var escapedTableName = InterceptorCodeGenerator.EscapeStringLiteral(clauseInfo.JoinedTableName ?? "");
             sb.AppendLine($"        return __b.AddJoinClause<{joinedEntityName}>({joinKind}, @\"{escapedTableName}\", @\"{escapedSql}\");");
             sb.AppendLine($"    }}");
         }
