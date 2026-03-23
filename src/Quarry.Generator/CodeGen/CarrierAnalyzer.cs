@@ -175,6 +175,13 @@ internal static class CarrierAnalyzer
             fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity));
         }
 
+        // BatchEntities field for batch insert chains
+        if (plan.Kind == QueryKind.BatchInsert)
+        {
+            var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
+            fields.Add(new Models.CarrierField("BatchEntities", $"System.Collections.Generic.IEnumerable<{entityType}>?", Models.FieldRole.Entity));
+        }
+
         return new CarrierPlan(
             isEligible: true,
             className: null, // Assigned during file grouping

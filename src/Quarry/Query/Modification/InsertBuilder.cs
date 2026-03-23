@@ -29,13 +29,6 @@ public sealed class InsertBuilder<T> : IInsertBuilder<T> where T : class
         _entities.Add(entity);
     }
 
-    public IInsertBuilder<T> Values(T entity)
-    {
-        ArgumentNullException.ThrowIfNull(entity);
-        _entities.Add(entity);
-        return this;
-    }
-
     public IInsertBuilder<T> WithTimeout(TimeSpan timeout)
     {
         if (timeout <= TimeSpan.Zero)

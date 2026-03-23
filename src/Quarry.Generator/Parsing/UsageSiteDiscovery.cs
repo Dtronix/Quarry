@@ -38,6 +38,8 @@ internal static class UsageSiteDiscovery
         "IDeleteBuilder",
         "IExecutableDeleteBuilder",
         "IInsertBuilder",
+        "IBatchInsertBuilder",
+        "IExecutableBatchInsert",
         "IEntityAccessor",
         "EntityAccessor"
     };
@@ -71,6 +73,8 @@ internal static class UsageSiteDiscovery
         ["Update"] = InterceptorKind.UpdateTransition,
         ["All"] = InterceptorKind.AllTransition,
         ["Insert"] = InterceptorKind.InsertTransition,
+        ["InsertBatch"] = InterceptorKind.BatchInsertColumnSelector,
+        ["Values"] = InterceptorKind.BatchInsertValues,
         ["Trace"] = InterceptorKind.Trace
     };
 
@@ -80,6 +84,22 @@ internal static class UsageSiteDiscovery
         "ExecuteNonQueryAsync",
         "ExecuteScalarAsync",
         "ToDiagnostics"
+    };
+
+    // Methods on IBatchInsertBuilder that need special handling
+    private static readonly HashSet<string> BatchInsertBuilderMethods = new(StringComparer.Ordinal)
+    {
+        "Values",
+        "WithTimeout"
+    };
+
+    // Methods on IExecutableBatchInsert that need special handling
+    private static readonly HashSet<string> ExecutableBatchInsertMethods = new(StringComparer.Ordinal)
+    {
+        "ExecuteNonQueryAsync",
+        "ExecuteScalarAsync",
+        "ToDiagnostics",
+        "ToSql"
     };
 
     // RawSql methods on QuarryContext that we intercept
@@ -105,7 +125,8 @@ internal static class UsageSiteDiscovery
 
         // Check if this is an interceptable method
         if (InterceptableMethods.ContainsKey(methodName)
-            || RawSqlMethods.ContainsKey(methodName))
+            || RawSqlMethods.ContainsKey(methodName)
+            || methodName == "ToSql")
             return true;
 
         // Could be a context entity factory method (Users(), Orders(), Delete<T>(), Update<T>())
@@ -309,6 +330,17 @@ internal static class UsageSiteDiscovery
         {
             if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
                 kind = InterceptorKind.InsertToDiagnostics;
+            else if (IsBatchInsertBuilderType(containingType.Name) && BatchInsertBuilderMethods.Contains(methodName))
+                kind = methodName == "Values" ? InterceptorKind.BatchInsertValues : InterceptorKind.WithTimeout;
+            else if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
+                kind = methodName switch
+                {
+                    "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
+                    "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
+                    "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
+                    "ToSql" => InterceptorKind.BatchInsertToSql,
+                    _ => InterceptorKind.Unknown
+                };
             else
                 return null;
         }
@@ -323,6 +355,26 @@ internal static class UsageSiteDiscovery
                 _ => kind
             };
         }
+
+        // Remap methods on IExecutableBatchInsert to batch insert kinds
+        if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
+        {
+            kind = methodName switch
+            {
+                "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
+                "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
+                "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
+                "ToSql" => InterceptorKind.BatchInsertToSql,
+                _ => kind
+            };
+        }
+
+        // Remap Values on IBatchInsertBuilder
+        if (IsBatchInsertBuilderType(containingType.Name) && methodName == "Values")
+        {
+            kind = InterceptorKind.BatchInsertValues;
+        }
+
 
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
@@ -586,6 +638,21 @@ internal static class UsageSiteDiscovery
                 or InterceptorKind.InsertToDiagnostics
             && DetectBatchInsertInChain(invocation);
 
+        // Extract batch insert column names from column selector lambda
+        ImmutableArray<string>? batchInsertColumnNames = null;
+        if (kind == InterceptorKind.BatchInsertColumnSelector)
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNames(invocation);
+        }
+        // For batch insert terminals, walk the chain to find the column selector and extract column names
+        if (kind is InterceptorKind.BatchInsertExecuteNonQuery
+            or InterceptorKind.BatchInsertExecuteScalar
+            or InterceptorKind.BatchInsertToDiagnostics
+            or InterceptorKind.BatchInsertToSql)
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation);
+        }
+
         // ── Step 16: Build RawCallSite directly ────────────────────────────
         return new RawCallSite(
             methodName: methodName,
@@ -623,7 +690,8 @@ internal static class UsageSiteDiscovery
             setActionAssignments: setActionAssignments,
             setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
-            isBatchInsert: isBatchInsert);
+            isBatchInsert: isBatchInsert,
+            batchInsertColumnNames: batchInsertColumnNames);
     }
 
     /// <summary>
@@ -917,6 +985,82 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
+    /// Extracts column names from a batch insert column selector lambda.
+    /// Handles both single-column (u => u.Username) and tuple (u => (u.Username, u.Password)) forms.
+    /// </summary>
+    private static ImmutableArray<string>? ExtractBatchInsertColumnNames(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return null;
+
+        var argExpr = invocation.ArgumentList.Arguments[0].Expression;
+        if (argExpr is not LambdaExpressionSyntax lambda)
+            return null;
+
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body as ExpressionSyntax,
+            ParenthesizedLambdaExpressionSyntax paren => paren.Body as ExpressionSyntax,
+            _ => null
+        };
+
+        if (body == null) return null;
+
+        var names = new List<string>();
+
+        // Tuple form: u => (u.Username, u.Password)
+        if (body is TupleExpressionSyntax tuple)
+        {
+            foreach (var arg in tuple.Arguments)
+            {
+                if (arg.Expression is MemberAccessExpressionSyntax ma)
+                    names.Add(ma.Name.Identifier.ValueText);
+                else
+                    return null; // non-analyzable
+            }
+        }
+        // Single-column form: u => u.Username
+        else if (body is MemberAccessExpressionSyntax singleMa)
+        {
+            names.Add(singleMa.Name.Identifier.ValueText);
+        }
+        else
+        {
+            return null; // non-analyzable
+        }
+
+        return names.Count > 0 ? ImmutableArray.CreateRange(names) : null;
+    }
+
+    /// <summary>
+    /// Walks the receiver chain from a batch insert terminal to find the
+    /// BatchInsertColumnSelector (Insert(lambda)) and extract column names.
+    /// </summary>
+    private static ImmutableArray<string>? ExtractBatchInsertColumnNamesFromChain(InvocationExpressionSyntax terminal)
+    {
+        var current = terminal.Expression;
+        while (current is MemberAccessExpressionSyntax ma)
+        {
+            if (ma.Expression is InvocationExpressionSyntax invoc)
+            {
+                var calledMethod = ma.Name.Identifier.ValueText;
+                // Look for the Insert method with a lambda argument
+                if (invoc.Expression is MemberAccessExpressionSyntax innerMa
+                    && innerMa.Name.Identifier.ValueText == "InsertBatch"
+                    && invoc.ArgumentList.Arguments.Count == 1
+                    && invoc.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax)
+                {
+                    return ExtractBatchInsertColumnNames(invoc);
+                }
+                current = invoc.Expression;
+            }
+            else
+                break;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Detects if the invocation is inside a for/while/foreach/do loop.
     /// </summary>
     private static bool DetectLoopAncestor(SyntaxNode node)
@@ -1173,6 +1317,7 @@ internal static class UsageSiteDiscovery
                     || typeName.Contains("IDeleteBuilder") || typeName.Contains("IExecutableDeleteBuilder")
                     || typeName.Contains("IUpdateBuilder") || typeName.Contains("IExecutableUpdateBuilder")
                     || typeName.Contains("IInsertBuilder")
+                    || typeName.Contains("IBatchInsertBuilder") || typeName.Contains("IExecutableBatchInsert")
                     || typeName.Contains("DeleteBuilder<") || typeName.Contains("UpdateBuilder<")
                     || typeName.Contains("InsertBuilder<"))
                     rootIsBuilderLocal = true;
@@ -1321,7 +1466,17 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static bool IsDelegateParameterType(ITypeSymbol type)
     {
-        return type.TypeKind == TypeKind.Delegate;
+        if (type.TypeKind == TypeKind.Delegate)
+            return true;
+
+        // Expression<Func<...>> is a class, not a delegate, but should be treated as
+        // a delegate-like parameter for overload disambiguation (e.g., Insert(entity) vs Insert(lambda))
+        if (type is INamedTypeSymbol namedType
+            && namedType.IsGenericType
+            && namedType.ToDisplayString().StartsWith("System.Linq.Expressions.Expression<"))
+            return true;
+
+        return false;
     }
 
     private static bool IsNavigationJoinLambda(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
@@ -2334,6 +2489,12 @@ internal static class UsageSiteDiscovery
     private static bool IsInsertBuilderType(string typeName)
         => typeName == "IInsertBuilder";
 
+    private static bool IsBatchInsertBuilderType(string typeName)
+        => typeName == "IBatchInsertBuilder";
+
+    private static bool IsExecutableBatchInsertType(string typeName)
+        => typeName == "IExecutableBatchInsert";
+
     /// <summary>
     /// Extracts the entity and result type arguments from a builder type.
     /// </summary>
@@ -2382,6 +2543,8 @@ internal static class UsageSiteDiscovery
         if (typeName.Contains("DeleteBuilder")) return BuilderKind.Delete;
         if (typeName.Contains("ExecutableUpdateBuilder")) return BuilderKind.ExecutableUpdate;
         if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
+        if (typeName.Contains("ExecutableBatchInsert")) return BuilderKind.ExecutableBatchInsert;
+        if (typeName.Contains("BatchInsertBuilder")) return BuilderKind.BatchInsert;
         if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
         if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
         return BuilderKind.Query;

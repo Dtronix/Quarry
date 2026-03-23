@@ -58,7 +58,8 @@ internal static class SqlAssembler
         // Only include identity RETURNING/OUTPUT clause for ExecuteScalar (which returns the identity).
         // ExecuteNonQuery does not need it.
         var insertInfo = executionSite.Bound.InsertInfo;
-        var needsIdentityReturning = executionSite.Bound.Raw.Kind != InterceptorKind.InsertExecuteNonQuery;
+        var needsIdentityReturning = executionSite.Bound.Raw.Kind is not InterceptorKind.InsertExecuteNonQuery
+            and not InterceptorKind.BatchInsertExecuteNonQuery;
         if (insertInfo != null && !needsIdentityReturning)
         {
             // Strip identity column info so RETURNING/OUTPUT is not appended
@@ -92,6 +93,18 @@ internal static class SqlAssembler
             }
         }
 
+        // Build batch insert metadata
+        string? batchReturningSuffix = null;
+        int batchColumnsPerRow = 0;
+        if (plan.Kind == QueryKind.BatchInsert && insertInfo != null)
+        {
+            batchColumnsPerRow = insertInfo.Columns.Count;
+            if (needsIdentityReturning && insertInfo.IdentityColumnName != null)
+            {
+                batchReturningSuffix = RenderReturningSuffix(dialect, insertInfo.IdentityColumnName);
+            }
+        }
+
         return new AssembledPlan(
             plan: plan,
             sqlVariants: sqlVariants,
@@ -103,7 +116,9 @@ internal static class SqlAssembler
             resultTypeName: resultTypeName,
             dialect: dialect,
             entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
-            isTraced: chain.IsTraced);
+            isTraced: chain.IsTraced,
+            batchInsertReturningSuffix: batchReturningSuffix,
+            batchInsertColumnsPerRow: batchColumnsPerRow);
     }
 
     /// <summary>
@@ -117,6 +132,7 @@ internal static class SqlAssembler
             QueryKind.Delete => RenderDeleteSql(plan, mask, dialect),
             QueryKind.Update => RenderUpdateSql(plan, mask, dialect),
             QueryKind.Insert => RenderInsertSql(plan, mask, dialect, insertInfo),
+            QueryKind.BatchInsert => RenderBatchInsertSql(plan, mask, dialect, insertInfo),
             _ => new AssembledSqlVariant("", 0)
         };
     }
@@ -361,7 +377,52 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), plan.InsertColumns.Count);
     }
 
+    /// <summary>
+    /// Renders the SQL prefix for batch inserts. Entity count is unknown at compile time,
+    /// so only the prefix (INSERT INTO table (columns) VALUES ) is rendered.
+    /// The runtime BatchInsertSqlBuilder expands the row template per entity.
+    /// </summary>
+    private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    {
+        var sb = new StringBuilder();
+
+        sb.Append("INSERT INTO ");
+        AppendTableRef(sb, dialect, plan.PrimaryTable);
+
+        if (plan.InsertColumns.Count > 0)
+        {
+            sb.Append(" (");
+            for (int i = 0; i < plan.InsertColumns.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(plan.InsertColumns[i].QuotedColumnName);
+            }
+            sb.Append(") VALUES ");
+        }
+
+        // The SQL prefix ends here — runtime will append (param, param), (param, param), ...
+        // Return with 0 parameter count since params are runtime-determined
+        return new AssembledSqlVariant(sb.ToString(), 0);
+    }
+
     #region Helpers
+
+    /// <summary>
+    /// Renders the RETURNING/OUTPUT suffix for identity column retrieval.
+    /// </summary>
+    private static string? RenderReturningSuffix(SqlDialect dialect, string identityColumnName)
+    {
+        return dialect switch
+        {
+            SqlDialect.SQLite or SqlDialect.PostgreSQL
+                => $" RETURNING {SqlFormatting.QuoteIdentifier(dialect, identityColumnName)}",
+            SqlDialect.SqlServer
+                => $" OUTPUT INSERTED.{SqlFormatting.QuoteIdentifier(dialect, identityColumnName)}",
+            SqlDialect.MySQL
+                => "; SELECT LAST_INSERT_ID()",
+            _ => null
+        };
+    }
 
     private static void AppendTableRef(StringBuilder sb, SqlDialect dialect, TableRef table)
     {

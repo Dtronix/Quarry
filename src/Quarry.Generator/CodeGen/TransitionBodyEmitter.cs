@@ -51,6 +51,44 @@ internal static class TransitionBodyEmitter
     }
 
     /// <summary>
+    /// Emits a batch insert column selector interceptor.
+    /// Carrier path only — returns carrier as IBatchInsertBuilder.
+    /// The column selector expression is ignored at runtime (compile-time only).
+    /// </summary>
+    public static void EmitBatchInsertColumnSelector(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static IBatchInsertBuilder<T> {methodName}<T, TColumns>(");
+        sb.AppendLine($"        this IEntityAccessor<T> builder,");
+        sb.AppendLine($"        Func<T, TColumns> columnSelector) where T : class");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        sb.AppendLine($"        return Unsafe.As<IBatchInsertBuilder<T>>(__c);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a batch insert Values() interceptor.
+    /// Carrier path only — stores entities on carrier, returns as IExecutableBatchInsert.
+    /// </summary>
+    public static void EmitBatchInsertValues(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static IExecutableBatchInsert<{entityType}> {methodName}(");
+        sb.AppendLine($"        this IBatchInsertBuilder<{entityType}> builder,");
+        sb.AppendLine($"        IEnumerable<{entityType}> entities)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        sb.AppendLine($"        __c.BatchEntities = entities;");
+        sb.AppendLine($"        return Unsafe.As<IExecutableBatchInsert<{entityType}>>(__c);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Emits a carrier ChainRoot interceptor (e.g., db.Users()).
     /// Creates the carrier directly from the context — zero QueryBuilder allocation.
     /// </summary>

@@ -50,7 +50,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
         ImmutableArray<string>? lambdaParameterNames = null,
-        bool isBatchInsert = false)
+        bool isBatchInsert = false,
+        ImmutableArray<string>? batchInsertColumnNames = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -90,6 +91,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         SetActionParameters = setActionParameters;
         LambdaParameterNames = lambdaParameterNames;
         IsBatchInsert = isBatchInsert;
+        BatchInsertColumnNames = batchInsertColumnNames;
     }
 
     // Identity and location
@@ -158,6 +160,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Batch insert flag (chain contains Values() or uses InsertMany)
     public bool IsBatchInsert { get; }
 
+    // Column names from batch insert column selector lambda (e.g., u => (u.Username, u.Password) → ["Username", "Password"])
+    public ImmutableArray<string>? BatchInsertColumnNames { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -198,7 +203,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
             && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters)
             && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
-            && IsBatchInsert == other.IsBatchInsert;
+            && IsBatchInsert == other.IsBatchInsert
+            && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);
