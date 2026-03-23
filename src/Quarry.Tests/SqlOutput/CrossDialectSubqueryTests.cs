@@ -159,8 +159,8 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
             My.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
             Ss.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0)) > 0",
-            pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0)) > 0",
-            mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > @p0)) > 0",
+            pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > $1)) > 0",
+            mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > ?)) > 0",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0)) > 0");
     }
 
@@ -210,8 +210,8 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
             My.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
             Ss.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0))",
-            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0))",
-            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > @p0))",
+            pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > $1))",
+            mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > ?))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0))");
     }
 
@@ -225,8 +225,8 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
             My.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
             Ss.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
             sqlite: "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = @p0))",
-            pg:     "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = @p0))",
-            mysql:  "SELECT * FROM `users` WHERE NOT EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND NOT (`sq0`.`Status` = @p0))",
+            pg:     "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = $1))",
+            mysql:  "SELECT * FROM `users` WHERE NOT EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND NOT (`sq0`.`Status` = ?))",
             ss:     "SELECT * FROM [users] WHERE NOT EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND NOT ([sq0].[Status] = @p0))");
     }
 

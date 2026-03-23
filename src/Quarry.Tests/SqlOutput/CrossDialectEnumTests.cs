@@ -18,10 +18,10 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Pg.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             My.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
             Ss.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"orders\" WHERE (\"Priority\" = @p0)",
-            pg:     "SELECT * FROM \"orders\" WHERE (\"Priority\" = $1)",
-            mysql:  "SELECT * FROM `orders` WHERE (`Priority` = ?)",
-            ss:     "SELECT * FROM [orders] WHERE ([Priority] = @p0)");
+            sqlite: "SELECT * FROM \"orders\" WHERE \"Priority\" = @p0",
+            pg:     "SELECT * FROM \"orders\" WHERE \"Priority\" = $1",
+            mysql:  "SELECT * FROM `orders` WHERE `Priority` = ?",
+            ss:     "SELECT * FROM [orders] WHERE [Priority] = @p0");
     }
 
     #region Boolean in INSERT
@@ -37,7 +37,7 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
-            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?)",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
     }
 
@@ -55,7 +55,7 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
             Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"OrderId\"",
             pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES ($1, $2, $3, $4, $5) RETURNING \"OrderId\"",
-            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `Priority`, `OrderDate`) VALUES (?, ?, ?, ?, ?)",
+            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `Priority`, `OrderDate`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [Priority], [OrderDate]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderId]");
     }
 
@@ -67,14 +67,14 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     public void Update_Set_EnumColumn()
     {
         AssertDialects(
-            Lite.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            Pg.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            My.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            Ss.Orders().Update().Set(o => o.Priority, OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            sqlite: "UPDATE \"orders\" SET \"Priority\" = @p0 WHERE (\"OrderId\" = 1)",
-            pg:     "UPDATE \"orders\" SET \"Priority\" = $1 WHERE (\"OrderId\" = 1)",
-            mysql:  "UPDATE `orders` SET `Priority` = ? WHERE (`OrderId` = 1)",
-            ss:     "UPDATE [orders] SET [Priority] = @p0 WHERE ([OrderId] = 1)");
+            Lite.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            Pg.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            My.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            Ss.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
+            pg:     "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
+            mysql:  "UPDATE `orders` SET `Priority` = 2 WHERE `OrderId` = 1",
+            ss:     "UPDATE [orders] SET [Priority] = 2 WHERE [OrderId] = 1");
     }
 
     #endregion

@@ -14,14 +14,25 @@ internal sealed class CartesianProductRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause is not JoinClauseInfo joinClause)
+        if (context.Site.ClauseKind != ClauseKind.Join)
             yield break;
 
-        var onSql = joinClause.OnConditionSql?.Trim();
-        if (string.IsNullOrEmpty(onSql) || onSql == "1 = 1" || onSql == "1=1")
+        // If there's no ON expression at all, it's a cartesian product
+        if (context.Site.Expression == null)
         {
             yield return Diagnostic.Create(Descriptor, context.InvocationSyntax.GetLocation());
+            yield break;
+        }
+
+        // Render and check for trivial ON conditions
+        var sql = context.GetRenderedSql();
+        if (sql != null)
+        {
+            var trimmed = sql.Trim();
+            if (trimmed == "1 = 1" || trimmed == "1=1")
+            {
+                yield return Diagnostic.Create(Descriptor, context.InvocationSyntax.GetLocation());
+            }
         }
     }
 }

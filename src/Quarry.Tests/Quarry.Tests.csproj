@@ -16,6 +16,7 @@
     <!-- Emit generated source files to disk for debugging -->
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
     <CompilerGeneratedFilesOutputPath>$(BaseIntermediateOutputPath)\GeneratedFiles</CompilerGeneratedFilesOutputPath>
+    <DefineConstants>$(DefineConstants);QUARRY_TRACE</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>

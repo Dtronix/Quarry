@@ -1,7 +1,8 @@
-using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Translation;
+using Quarry.Tests.Testing;
 
 namespace Quarry.Tests;
 
@@ -298,12 +299,12 @@ public class InlineExtractionGeneratorTests
                 isCaptured: true, expressionPath: expressionPath)
         };
 
-        var clauseInfo = ClauseInfo.Success(
+        var clause = new TranslatedClause(
             ClauseKind.Where,
-            "\"id\" > @p0",
+            new SqlRawExpr("\"id\" > @p0"),
             parameters);
 
-        return GenerateInterceptorsFile(clauseInfo);
+        return GenerateInterceptorsFile(clause);
     }
 
     private static string GenerateWhereInterceptorWithParams(
@@ -316,18 +317,18 @@ public class InlineExtractionGeneratorTests
         var sqlFragment = string.Join(" AND ",
             paramSpecs.Select(p => $"\"col{p.index}\" > @p{p.index}"));
 
-        var clauseInfo = ClauseInfo.Success(ClauseKind.Where, sqlFragment, parameters);
-        return GenerateInterceptorsFile(clauseInfo);
+        var clause = new TranslatedClause(ClauseKind.Where, new SqlRawExpr(sqlFragment), parameters);
+        return GenerateInterceptorsFile(clause);
     }
 
     private static string GenerateWhereInterceptorNoCaptured()
     {
-        var clauseInfo = ClauseInfo.Success(
+        var clause = new TranslatedClause(
             ClauseKind.Where,
-            "\"is_active\" = true",
+            new SqlRawExpr("\"is_active\" = true"),
             new List<ParameterInfo>());
 
-        return GenerateInterceptorsFile(clauseInfo);
+        return GenerateInterceptorsFile(clause);
     }
 
     private static string GenerateWhereInterceptorWithLiteralParam()
@@ -338,12 +339,12 @@ public class InlineExtractionGeneratorTests
                 isCaptured: false)
         };
 
-        var clauseInfo = ClauseInfo.Success(
+        var clause = new TranslatedClause(
             ClauseKind.Where,
-            "\"Name\" LIKE '%' || @p0 || '%'",
+            new SqlRawExpr("\"Name\" LIKE '%' || @p0 || '%'"),
             parameters);
 
-        return GenerateInterceptorsFile(clauseInfo);
+        return GenerateInterceptorsFile(clause);
     }
 
     private static string GenerateWhereInterceptorWithMixedParams()
@@ -356,33 +357,31 @@ public class InlineExtractionGeneratorTests
                 isCaptured: true, expressionPath: "Body.Right")
         };
 
-        var clauseInfo = ClauseInfo.Success(
+        var clause = new TranslatedClause(
             ClauseKind.Where,
-            "\"Name\" LIKE '%' || @p0 || '%' AND \"id\" > @p1",
+            new SqlRawExpr("\"Name\" LIKE '%' || @p0 || '%' AND \"id\" > @p1"),
             parameters);
 
-        return GenerateInterceptorsFile(clauseInfo);
+        return GenerateInterceptorsFile(clause);
     }
 
-    private static string GenerateInterceptorsFile(ClauseInfo clauseInfo)
+    private static string GenerateInterceptorsFile(TranslatedClause clause)
     {
-        var site = new UsageSiteInfo(
-            methodName: "Where",
-            filePath: "Test.cs",
-            line: 10,
-            column: 5,
-            builderTypeName: "IQueryBuilder",
-            entityTypeName: "User",
-            isAnalyzable: true,
-            kind: InterceptorKind.Where,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "abc123",
-            clauseInfo: clauseInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithFilePath("Test.cs")
+            .WithLine(10)
+            .WithColumn(5)
+            .WithEntityType("User")
+            .WithKind(InterceptorKind.Where)
+            .WithBuilderKind(BuilderKind.Query)
+            .WithUniqueId("abc123")
+            .WithClause(clause)
+            .WithContext("TestContext", "TestApp")
+            .Build();
 
         return InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "TestContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "TestContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
     }
 
     #endregion

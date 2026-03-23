@@ -332,7 +332,7 @@ public static class Queries
 {
     public static string Test(TestDbContext db, int userId, string newName)
     {
-        return db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ToDiagnostics().Sql;
+        return db.Users().Update().Set(u => u.UserName = newName).Where(u => u.UserId == userId).ToDiagnostics().Sql;
     }
 }
 ";
@@ -580,7 +580,7 @@ public static class Queries
 {
     public static async Task Test(TestDbContext db, int userId, string newName)
     {
-        await db.Users().Update().Set(u => u.UserName, newName).Where(u => u.UserId == userId).ExecuteNonQueryAsync();
+        await db.Users().Update().Set(u => u.UserName = newName).Where(u => u.UserId == userId).ExecuteNonQueryAsync();
     }
 }
 ";

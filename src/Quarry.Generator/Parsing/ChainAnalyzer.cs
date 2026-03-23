@@ -1,25 +1,32 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
+using Quarry.Generators.Sql;
+using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Parsing;
 
 /// <summary>
-/// Performs intra-method dataflow analysis on query chains to determine
-/// the optimization tier for pre-built SQL generation.
+/// Analyzes query chains from TranslatedCallSite data to produce QueryPlan instances.
+/// No SemanticModel or syntax tree walking — all metadata comes from RawCallSite fields
+/// populated during Stage 2 discovery.
 /// </summary>
-/// <remarks>
-/// Given an execution call site (e.g., ExecuteFetchAllAsync()), walks backward
-/// and forward through the containing method to reconstruct the full query chain
-/// and determine whether all clause combinations can be enumerated at compile time.
-/// </remarks>
 internal static class ChainAnalyzer
 {
+    /// <summary>
+    /// Test capture hook: when non-null, Analyze() appends results here.
+    /// Set from test code before running the generator, read after.
+    /// </summary>
+    [ThreadStatic]
+    internal static List<AnalyzedChain>? TestCapturedChains;
+
     /// <summary>
     /// Maximum number of conditional bits before downgrading from tier 1 to tier 2.
     /// 4 bits = up to 16 dispatch variants.
@@ -32,867 +39,979 @@ internal static class ChainAnalyzer
     private const int MaxIfNestingDepth = 2;
 
     /// <summary>
-    /// Entry point: analyzes the chain ending at an execution call site.
-    /// Returns null if the execution site's invocation syntax cannot be resolved.
+    /// Analyzes all chains from the collected translated call sites.
+    /// Groups by ChainId, identifies execution terminals, classifies tiers,
+    /// and builds QueryPlan instances.
     /// </summary>
-    public static ChainAnalysisResult? AnalyzeChain(
-        UsageSiteInfo executionSite,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken)
+    public static IReadOnlyList<AnalyzedChain> Analyze(
+        ImmutableArray<TranslatedCallSite> sites,
+        EntityRegistry registry,
+        CancellationToken ct)
     {
-        if (executionSite.InvocationSyntax is not InvocationExpressionSyntax executionInvocation)
-            return null;
+        // Group sites by ChainId
+        var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
+        var unchained = new List<TranslatedCallSite>();
 
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Step 1: Determine if this is a direct fluent chain or a variable-based chain
-        var receiverVariable = ResolveReceiverVariable(executionInvocation, semanticModel);
-
-        if (receiverVariable == null)
+        foreach (var site in sites)
         {
-            // Direct fluent chain — all clauses are unconditional
-            return AnalyzeDirectFluentChain(executionSite, executionInvocation, allSitesInMethod);
-        }
-
-        // Check for forked chains (QRY033) — applies to all tiers
-        var forkedVarName = DetectForkedChain(
-            receiverVariable, executionInvocation, allSitesInMethod, semanticModel);
-        if (forkedVarName != null)
-        {
-            return new ChainAnalysisResult(
-                tier: OptimizationTier.RuntimeBuild,
-                clauses: Array.Empty<ChainedClauseSite>(),
-                executionSite: executionSite,
-                conditionalClauses: Array.Empty<ConditionalClause>(),
-                possibleMasks: Array.Empty<ulong>(),
-                notAnalyzableReason: $"Forked chain: variable '{forkedVarName}' consumed by multiple execution paths",
-                forkedVariableName: forkedVarName);
-        }
-
-        // Variable-based chain — perform full dataflow analysis
-        return AnalyzeVariableChain(
-            executionSite, executionInvocation, receiverVariable,
-            allSitesInMethod, semanticModel, cancellationToken);
-    }
-
-    /// <summary>
-    /// Resolves the local variable that the execution call is invoked on.
-    /// Returns null if the receiver is a direct fluent chain (no variable).
-    /// </summary>
-    private static ILocalSymbol? ResolveReceiverVariable(
-        InvocationExpressionSyntax executionInvocation,
-        SemanticModel semanticModel)
-    {
-        if (executionInvocation.Expression is not MemberAccessExpressionSyntax memberAccess)
-            return null;
-
-        var receiver = memberAccess.Expression;
-
-        // Walk past any fluent chain on the receiver to find the root
-        while (receiver is InvocationExpressionSyntax chainedInvocation)
-        {
-            if (chainedInvocation.Expression is MemberAccessExpressionSyntax chainedMemberAccess)
+            ct.ThrowIfCancellationRequested();
+            var chainId = site.Bound.Raw.ChainId;
+            if (chainId != null)
             {
-                receiver = chainedMemberAccess.Expression;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        // Check if the root is a local variable or parameter.
-        // QuarryContext variables are chain roots, not builder variables —
-        // treat chains rooted on context as direct fluent.
-        if (receiver is IdentifierNameSyntax identifier)
-        {
-            var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-            ITypeSymbol? varType = symbol switch
-            {
-                ILocalSymbol local => local.Type,
-                IParameterSymbol param => param.Type,
-                _ => null
-            };
-
-            if (varType != null && !IsQuarryContextType(varType))
-            {
-                // IParameterSymbol: method parameters holding builder variables.
-                // Variable-based chain analysis requires declaration sites in the method body,
-                // which parameters lack. Return null to treat as direct fluent chain.
-                return symbol as ILocalSymbol;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Analyzes a direct fluent chain (e.g., db.Students.Where(...).Select(...).ExecuteFetchAllAsync()).
-    /// All clauses are unconditional → tier 1 with a single mask value of 0.
-    /// </summary>
-    private static ChainAnalysisResult AnalyzeDirectFluentChain(
-        UsageSiteInfo executionSite,
-        InvocationExpressionSyntax executionInvocation,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod)
-    {
-        var clauses = new List<ChainedClauseSite>();
-
-        // Walk the fluent chain from execution backward, collecting clause sites
-        var chainInvocations = CollectFluentChainInvocations(executionInvocation);
-
-        // Match each invocation in the chain against allSitesInMethod
-        var unmatchedMethodNames = new List<string>();
-        foreach (var invocation in chainInvocations)
-        {
-            var matchedSite = FindMatchingSite(invocation, allSitesInMethod);
-            if (matchedSite != null)
-            {
-                var role = MapInterceptorKindToClauseRole(matchedSite.Kind);
-                if (role != null)
+                if (!chains.TryGetValue(chainId, out var list))
                 {
-                    clauses.Add(new ChainedClauseSite(matchedSite, isConditional: false, bitIndex: null, role: role.Value));
+                    list = new List<TranslatedCallSite>();
+                    chains[chainId] = list;
                 }
+                list.Add(site);
             }
             else
             {
-                // Track method names of unmatched invocations (e.g., Limit, Offset, AddWhereClause)
-                var methodName = invocation.Expression is MemberAccessExpressionSyntax ma
-                    ? ma.Name.Identifier.Text
-                    : invocation.Expression.ToString();
-                unmatchedMethodNames.Add(methodName);
+                unchained.Add(site);
             }
         }
 
-        return new ChainAnalysisResult(
-            tier: OptimizationTier.PrebuiltDispatch,
-            clauses: clauses,
-            executionSite: executionSite,
-            conditionalClauses: Array.Empty<ConditionalClause>(),
-            possibleMasks: new[] { 0UL },
-            unmatchedMethodNames: unmatchedMethodNames.Count > 0 ? unmatchedMethodNames : null);
+        var results = new List<AnalyzedChain>();
+
+        foreach (var kvp in chains)
+        {
+            ct.ThrowIfCancellationRequested();
+            var chainSites = kvp.Value;
+
+            try
+            {
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct);
+                if (analyzed != null)
+                    results.Add(analyzed);
+            }
+            catch
+            {
+            }
+        }
+
+        TestCapturedChains?.AddRange(results);
+
+        return results;
     }
 
     /// <summary>
-    /// Analyzes a variable-based query chain with potential conditional branches.
+    /// Analyzes a single chain group (all sites sharing the same ChainId).
     /// </summary>
-    private static ChainAnalysisResult? AnalyzeVariableChain(
-        UsageSiteInfo executionSite,
-        InvocationExpressionSyntax executionInvocation,
-        ILocalSymbol variable,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken)
+    private static AnalyzedChain? AnalyzeChainGroup(
+        List<TranslatedCallSite> chainSites,
+        EntityRegistry registry,
+        CancellationToken ct)
     {
-        // Find the containing method body
-        var methodBody = FindContainingMethodBody(executionInvocation);
-        if (methodBody == null)
+        // Find the execution terminal, detect .Trace(), and collect clause sites
+        TranslatedCallSite? executionSite = null;
+        var clauseSites = new List<TranslatedCallSite>();
+        bool isTraced = false;
+        int executionCount = 0;
+
+        foreach (var site in chainSites)
         {
-            return MakeRuntimeBuildResult(executionSite, "Could not find containing method body");
+            if (IsExecutionKind(site.Bound.Raw.Kind))
+            {
+                executionSite = site;
+                executionCount++;
+            }
+            else if (site.Bound.Raw.Kind == InterceptorKind.Trace)
+            {
+                isTraced = true;
+                // Trace sites are excluded from clause processing
+            }
+            else
+            {
+                clauseSites.Add(site);
+            }
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        if (executionSite == null)
+            return null;
 
-        // Pre-cache typed descendant node lists from a single tree walk
-        var cache = new MethodBodyCache(methodBody);
+        // Detect forked chains (multiple execution terminals sharing one ChainId)
+        if (executionCount > 1)
+        {
+            // Extract variable name from the ChainId (format: "filepath:offset:varName")
+            var chainId = executionSite.Bound.Raw.ChainId;
+            string? varName = null;
+            if (chainId != null)
+            {
+                var lastColon = chainId.LastIndexOf(':');
+                if (lastColon >= 0)
+                    varName = chainId.Substring(lastColon + 1);
+            }
+            return MakeRuntimeBuildChain(executionSite, clauseSites,
+                "Forked query chain", registry, isTraced, forkedVariableName: varName);
+        }
 
-        // Step 2 & 3: Find all assignments and build the flow graph
-        var flowGraph = BuildFlowGraph(variable, cache, allSitesInMethod, semanticModel);
+        // Sort clause sites by source location for deterministic ordering
+        clauseSites.Sort((a, b) =>
+        {
+            var cmp = a.Bound.Raw.Line.CompareTo(b.Bound.Raw.Line);
+            if (cmp != 0) return cmp;
+            return a.Bound.Raw.Column.CompareTo(b.Bound.Raw.Column);
+        });
 
-        // Step 5: Check for disqualifiers
-        var disqualifyReason = CheckDisqualifiers(variable, cache, semanticModel);
+        // Check for disqualifiers from RawCallSite flags
+        var disqualifyReason = CheckDisqualifiers(chainSites);
         if (disqualifyReason != null)
         {
-            return MakeRuntimeBuildResult(executionSite, disqualifyReason);
+            return MakeRuntimeBuildChain(executionSite, clauseSites, disqualifyReason, registry, isTraced);
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        ct.ThrowIfCancellationRequested();
 
-        // Also collect any clauses from the fluent chain on the execution invocation itself
-        // e.g., query.Where(...).ExecuteFetchAllAsync() — the Where is on the execution chain
-        var executionChainClauses = CollectExecutionChainClauses(executionInvocation, allSitesInMethod);
-
-        // Step 4: Identify branch points
-        var branchPoints = FindBranchPoints(flowGraph);
-
-        // Check nesting depth
-        if (HasExcessiveNesting(branchPoints))
+        // For navigation join chains, synthetically discovered post-join sites may not have
+        // JoinedEntityTypeNames (Roslyn couldn't resolve the post-join call's receiver type).
+        // Build the names from the Join clause site's entity + joined entity and propagate.
+        IReadOnlyList<string>? resolvedJoinNames = null;
+        IReadOnlyList<EntityRef>? resolvedJoinEntities = null;
+        foreach (var site in clauseSites)
         {
-            return MakeRuntimeBuildResult(executionSite, "Conditional nesting depth exceeds maximum");
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Step 6: Assign bit indices
-        var conditionalClauses = new List<ConditionalClause>();
-        var allChainedClauses = new List<ChainedClauseSite>();
-        var bitIndex = 0;
-
-        foreach (var node in flowGraph.Nodes)
-        {
-            // Process all matched sites in the flow node (a single assignment
-            // like `var del = _db.Delete<T>().Where(...).Where(...)` may contain
-            // multiple clause invocations in its fluent chain).
-            var sitesToProcess = node.AllMatchedSites.Count > 0
-                ? node.AllMatchedSites
-                : (node.MatchedSite != null ? new List<UsageSiteInfo> { node.MatchedSite } : null);
-
-            if (sitesToProcess == null)
-                continue;
-
-            foreach (var site in sitesToProcess)
+            if (site.Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+                && site.Bound.JoinedEntity != null)
             {
-                var role = MapInterceptorKindToClauseRole(site.Kind);
-                if (role == null)
-                    continue;
-
-                if (node.IsConditional)
+                // First check if the Join already has JoinedEntityTypeNames from discovery
+                if (site.Bound.JoinedEntityTypeNames != null && site.Bound.JoinedEntityTypeNames.Count >= 2)
                 {
-                    var branchKind = GetBranchKind(node, branchPoints);
-                    conditionalClauses.Add(new ConditionalClause(bitIndex, site, branchKind));
-                    allChainedClauses.Add(new ChainedClauseSite(site, isConditional: true, bitIndex: bitIndex, role: role.Value));
-                    bitIndex++;
+                    resolvedJoinNames = site.Bound.JoinedEntityTypeNames;
+                    resolvedJoinEntities = site.Bound.JoinedEntities;
                 }
                 else
                 {
-                    allChainedClauses.Add(new ChainedClauseSite(site, isConditional: false, bitIndex: null, role: role.Value));
+                    // Build from entity + joinedEntity (navigation join case)
+                    resolvedJoinNames = new List<string> { site.Bound.Raw.EntityTypeName, site.Bound.JoinedEntity.EntityName };
+                    resolvedJoinEntities = new List<EntityRef> { site.Bound.Entity, site.Bound.JoinedEntity };
+                }
+                break;
+            }
+        }
+        if (resolvedJoinNames != null)
+        {
+            if (executionSite.Bound.JoinedEntityTypeNames == null)
+                executionSite = executionSite.WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
+            // Only propagate to sites AFTER the join — pre-join sites use single-entity builder types
+            bool seenJoin = false;
+            for (int i = 0; i < clauseSites.Count; i++)
+            {
+                if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+                {
+                    seenJoin = true;
+                    continue;
+                }
+                if (seenJoin && clauseSites[i].Bound.JoinedEntityTypeNames == null)
+                {
+                    clauseSites[i] = clauseSites[i].WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
                 }
             }
         }
 
-        // Add clauses from the execution chain (these are always unconditional
-        // since they're part of the terminal fluent chain)
-        foreach (var clauseSite in executionChainClauses)
+        // Identify conditional clauses from ConditionalInfo
+        var conditionalTerms = new List<ConditionalTerm>();
+        var bitIndex = 0;
+        var branchGroups = new Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>>(StringComparer.Ordinal);
+
+        foreach (var site in clauseSites)
         {
-            allChainedClauses.Add(clauseSite);
+            var condInfo = site.Bound.Raw.ConditionalInfo;
+            if (condInfo == null)
+                continue;
+
+            // Check nesting depth
+            if (condInfo.NestingDepth > MaxIfNestingDepth)
+            {
+                return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry, isTraced);
+            }
+
+            var role = MapInterceptorKindToClauseRole(site.Bound.Raw.Kind);
+            if (role == null)
+                continue;
+
+            conditionalTerms.Add(new ConditionalTerm(bitIndex, role.Value));
+
+            // Group by condition text for mutual exclusivity detection
+            if (!branchGroups.TryGetValue(condInfo.ConditionText, out var group))
+            {
+                group = new List<(TranslatedCallSite, int)>();
+                branchGroups[condInfo.ConditionText] = group;
+            }
+            group.Add((site, bitIndex));
+            bitIndex++;
         }
 
-        // Step 6 continued: Determine tier based on bit count
+        // Determine tier
         var totalBits = bitIndex;
         OptimizationTier tier;
-
-        if (totalBits == 0)
-        {
+        if (totalBits <= MaxTier1Bits)
             tier = OptimizationTier.PrebuiltDispatch;
-        }
-        else if (totalBits <= MaxTier1Bits)
-        {
-            tier = OptimizationTier.PrebuiltDispatch;
-        }
         else
-        {
             tier = OptimizationTier.PrequotedFragments;
-        }
 
-        // Step 7: Enumerate mask combinations
+        ct.ThrowIfCancellationRequested();
+
+        // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
-            ? EnumerateMaskCombinations(branchPoints, conditionalClauses)
+            ? EnumerateMaskCombinations(conditionalTerms, branchGroups, clauseSites)
             : Array.Empty<ulong>();
 
-        return new ChainAnalysisResult(
-            tier: tier,
-            clauses: allChainedClauses,
-            executionSite: executionSite,
-            conditionalClauses: conditionalClauses,
-            possibleMasks: possibleMasks);
-    }
+        // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
+        // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
+        // But we track Limit/Offset/Distinct/WithTimeout which have no clause translation.
+        // Batch insert chains have Values()/InsertMany() calls that are not intercepted.
+        IReadOnlyList<string>? unmatchedMethodNames = null;
+        if (executionSite.Bound.Raw.IsBatchInsert)
+            unmatchedMethodNames = new[] { "Values" };
 
-    /// <summary>
-    /// Collects invocations from a fluent chain, ordered from root to terminal.
-    /// Excludes the terminal (execution) invocation itself.
-    /// </summary>
-    private static List<InvocationExpressionSyntax> CollectFluentChainInvocations(
-        InvocationExpressionSyntax terminalInvocation)
-    {
-        var invocations = new List<InvocationExpressionSyntax>();
-        var current = terminalInvocation;
+        // Build QueryPlan terms from TranslatedClause data
+        var whereTerms = new List<WhereTerm>();
+        var orderTerms = new List<OrderTerm>();
+        var groupByExprs = new List<SqlExpr>();
+        var havingExprs = new List<SqlExpr>();
+        var setTerms = new List<SetTerm>();
+        var joinPlans = new List<JoinPlan>();
+        var insertColumns = new List<InsertColumn>();
+        var parameters = new List<QueryParameter>();
+        var paramGlobalIndex = 0;
+        PaginationPlan? pagination = null;
+        var hasLimit = false;
+        var hasOffset = false;
+        int? limitLiteral = null;
+        int? offsetLiteral = null;
+        bool isDistinct = false;
+        bool hasSelectClause = false;
+        SelectProjection? projection = null;
+        var primaryTable = new TableRef(
+            executionSite.Bound.TableName,
+            executionSite.Bound.SchemaName);
 
-        while (current.Expression is MemberAccessExpressionSyntax memberAccess &&
-               memberAccess.Expression is InvocationExpressionSyntax parentInvocation)
+        // Determine query kind from execution site
+        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
+
+        // Process clause sites to build terms
+        var consumedConditionalTerms = new HashSet<int>();
+        for (int i = 0; i < clauseSites.Count; i++)
         {
-            invocations.Add(parentInvocation);
-            current = parentInvocation;
-        }
+            var site = clauseSites[i];
+            var raw = site.Bound.Raw;
+            var kind = raw.Kind;
+            var role = MapInterceptorKindToClauseRole(kind);
+            int? clauseBitIndex = null;
 
-        invocations.Reverse(); // Root to terminal order
-        return invocations;
-    }
-
-    /// <summary>
-    /// Collects clause sites from the fluent chain on the execution invocation.
-    /// For example, in query.Where(...).ExecuteFetchAllAsync(), the Where is collected.
-    /// </summary>
-    private static List<ChainedClauseSite> CollectExecutionChainClauses(
-        InvocationExpressionSyntax executionInvocation,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod)
-    {
-        var clauses = new List<ChainedClauseSite>();
-
-        // Walk the fluent chain on the execution invocation (but not past the variable)
-        var current = executionInvocation;
-        while (current.Expression is MemberAccessExpressionSyntax memberAccess &&
-               memberAccess.Expression is InvocationExpressionSyntax parentInvocation)
-        {
-            var matchedSite = FindMatchingSite(parentInvocation, allSitesInMethod);
-            if (matchedSite != null)
+            // Check if this clause is conditional
+            if (raw.ConditionalInfo != null)
             {
-                var role = MapInterceptorKindToClauseRole(matchedSite.Kind);
-                if (role != null)
+                // Find its bit index — match by role and consume each term only once
+                for (int ci = 0; ci < conditionalTerms.Count; ci++)
                 {
-                    clauses.Add(new ChainedClauseSite(matchedSite, isConditional: false, bitIndex: null, role: role.Value));
+                    if (conditionalTerms[ci].Role == role && !consumedConditionalTerms.Contains(ci))
+                    {
+                        clauseBitIndex = conditionalTerms[ci].BitIndex;
+                        consumedConditionalTerms.Add(ci);
+                        break;
+                    }
                 }
             }
-            current = parentInvocation;
-        }
 
-        clauses.Reverse(); // Root to terminal order
-        return clauses;
-    }
-
-    /// <summary>
-    /// Finds the containing method body (BlockSyntax) for an invocation.
-    /// </summary>
-    private static BlockSyntax? FindContainingMethodBody(SyntaxNode node)
-    {
-        var current = node.Parent;
-        while (current != null)
-        {
-            switch (current)
+            if (site.Clause != null && site.Clause.IsSuccess)
             {
-                case MethodDeclarationSyntax method:
-                    return method.Body;
-                case LocalFunctionStatementSyntax localFunc:
-                    return localFunc.Body;
-                case AccessorDeclarationSyntax accessor:
-                    return accessor.Body;
-            }
-            current = current.Parent;
-        }
-        return null;
-    }
+                var clause = site.Clause;
+                var expr = clause.ResolvedExpression;
 
-    /// <summary>
-    /// Builds the variable flow graph by finding all assignments to the tracked variable.
-    /// </summary>
-    private static VariableFlowGraph BuildFlowGraph(
-        ILocalSymbol variable,
-        MethodBodyCache cache,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel)
-    {
-        var nodes = new List<FlowNode>();
+                // Remap parameters
+                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex);
+                parameters.AddRange(clauseParams);
 
-        // Walk all statements in the method body in order
-        foreach (var statement in cache.Statements)
-        {
-            switch (statement)
-            {
-                case LocalDeclarationStatementSyntax localDecl:
+                switch (clause.Kind)
                 {
-                    // Check if this declares our tracked variable
-                    foreach (var declarator in localDecl.Declaration.Variables)
-                    {
-                        var declaredSymbol = semanticModel.GetDeclaredSymbol(declarator);
-                        if (SymbolEqualityComparer.Default.Equals(declaredSymbol, variable) &&
-                            declarator.Initializer?.Value != null)
+                    case ClauseKind.Where:
+                        whereTerms.Add(new WhereTerm(expr, clauseBitIndex));
+                        break;
+
+                    case ClauseKind.OrderBy:
+                        orderTerms.Add(new OrderTerm(expr, clause.IsDescending, clauseBitIndex));
+                        break;
+
+                    case ClauseKind.GroupBy:
+                        groupByExprs.Add(expr);
+                        break;
+
+                    case ClauseKind.Having:
+                        havingExprs.Add(expr);
+                        break;
+
+                    case ClauseKind.Set:
+                        if (clause.SetAssignments != null)
                         {
-                            var rhs = declarator.Initializer.Value;
-                            var node = CreateFlowNode(statement, rhs, allSitesInMethod, semanticModel);
-                            nodes.Add(node);
+                            // SetAction: multiple assignments. Parameters were remapped above,
+                            // so walk backwards from paramGlobalIndex to assign each non-inlined
+                            // assignment its correct parameter slot.
+                            var setParamCount = clauseParams.Count;
+                            var nextSetParamIdx = paramGlobalIndex - setParamCount;
+                            foreach (var assignment in clause.SetAssignments)
+                            {
+                                // Quote the column name — ColumnSql stores the unquoted property name
+                                var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
+                                var col = new ResolvedColumnExpr(quotedCol);
+                                SqlExpr valueExpr;
+                                if (assignment.IsInlined && assignment.InlinedSqlValue != null)
+                                {
+                                    // Detect boolean literals for dialect-specific formatting
+                                    var inlinedVal = assignment.InlinedSqlValue;
+                                    var lowerVal = inlinedVal.ToLowerInvariant();
+                                    var clrType = (lowerVal == "true" || lowerVal == "false") ? "bool" : "object";
+                                    valueExpr = new LiteralExpr(inlinedVal, clrType);
+                                }
+                                else
+                                {
+                                    // Parameter reference — each non-inlined gets the next slot
+                                    valueExpr = new ParamSlotExpr(nextSetParamIdx, "object", "@p" + nextSetParamIdx);
+                                    nextSetParamIdx++;
+                                }
+                                setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
+                            }
                         }
-                    }
-                    break;
+                        else
+                        {
+                            // Single Set: column = value from the expression
+                            // The lambda u => u.Column produces the column reference only.
+                            // The value parameter is the second arg to Set(), handled at runtime
+                            // by the emitter via SetClauseInfo.ValueParameterIndex.
+                            var col = new ResolvedColumnExpr(SqlExprRenderer.Render(expr, site.Bound.Dialect));
+                            // Use the next available parameter index for the value slot
+                            var valueIdx = clauseParams.Count > 0 ? paramGlobalIndex - 1 : paramGlobalIndex;
+                            var valExpr = new ParamSlotExpr(valueIdx, "object", "@p" + valueIdx);
+                            setTerms.Add(new SetTerm(col, valExpr, clause.CustomTypeMappingClass, clauseBitIndex));
+                        }
+                        break;
+
+                    case ClauseKind.Join:
+                        var joinTable = new TableRef(
+                            clause.JoinedTableName ?? "",
+                            clause.JoinedSchemaName,
+                            clause.TableAlias);
+                        var joinKind = clause.JoinKind ?? JoinClauseKind.Inner;
+                        joinPlans.Add(new JoinPlan(joinKind, joinTable, expr, raw.IsNavigationJoin));
+                        break;
+                }
+            }
+            else if (kind == InterceptorKind.UpdateSetAction && raw.SetActionAssignments != null)
+            {
+                // SetAction (Action<T> lambda): parameters and assignments stored on RawCallSite
+                // because Action<T> can't be parsed to SqlExpr.
+                if (raw.SetActionParameters != null)
+                {
+                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex);
+                    parameters.AddRange(clauseParams);
                 }
 
-                case ExpressionStatementSyntax exprStmt
-                    when exprStmt.Expression is AssignmentExpressionSyntax assignment:
+                // Build set terms from assignments. Non-inlined assignments consume parameters
+                // in order — track which parameter index each non-inlined assignment gets.
+                // After RemapParameters, paramGlobalIndex was incremented by SetActionParameters.Count.
+                // So the first SetAction parameter's global index = paramGlobalIndex - SetActionParameters.Count.
+                var setParamCount = raw.SetActionParameters?.Count ?? 0;
+                var nextParamIdx = paramGlobalIndex - setParamCount;
+
+                foreach (var assignment in raw.SetActionAssignments)
                 {
-                    // Check if the LHS is our tracked variable
-                    var lhsSymbol = semanticModel.GetSymbolInfo(assignment.Left).Symbol;
-                    if (SymbolEqualityComparer.Default.Equals(lhsSymbol, variable))
+                    // Quote the column name using the dialect — SetActionAssignment.ColumnSql
+                    // stores the unquoted property name from discovery
+                    var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
+                    var col = new ResolvedColumnExpr(quotedCol);
+                    SqlExpr valueExpr;
+                    if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                     {
-                        var rhs = assignment.Right;
-                        var node = CreateFlowNode(statement, rhs, allSitesInMethod, semanticModel);
-                        nodes.Add(node);
+                        // Detect boolean literals for dialect-specific formatting
+                        var inlinedVal = assignment.InlinedSqlValue;
+                        var lowerVal = inlinedVal.ToLowerInvariant();
+                        var clrType = (lowerVal == "true" || lowerVal == "false") ? "bool" : "object";
+                        valueExpr = new LiteralExpr(inlinedVal, clrType);
                     }
-                    break;
-                }
-            }
-        }
-
-        return new VariableFlowGraph(nodes);
-    }
-
-    /// <summary>
-    /// Creates a flow node from an assignment statement, matching the RHS against known usage sites.
-    /// </summary>
-    private static FlowNode CreateFlowNode(
-        StatementSyntax statement,
-        ExpressionSyntax rhs,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel)
-    {
-        // Find all invocations in the RHS (could be a fluent chain)
-        var rhsInvocations = rhs.DescendantNodesAndSelf()
-            .OfType<InvocationExpressionSyntax>()
-            .ToList();
-
-        // Match each invocation against allSitesInMethod
-        var matchedSites = new List<UsageSiteInfo>();
-        foreach (var invocation in rhsInvocations)
-        {
-            var site = FindMatchingSite(invocation, allSitesInMethod);
-            if (site != null)
-            {
-                matchedSites.Add(site);
-            }
-        }
-
-        // Determine nesting context
-        var (containingIf, isInElseBranch) = FindContainingIf(statement);
-
-        // Use the last (outermost in fluent chain) matched site as the primary
-        var primarySite = matchedSites.Count > 0 ? matchedSites[matchedSites.Count - 1] : null;
-
-        return new FlowNode(
-            statement: statement,
-            matchedSite: primarySite,
-            allMatchedSites: matchedSites,
-            containingIf: containingIf,
-            isInElseBranch: isInElseBranch,
-            isConditional: containingIf != null);
-    }
-
-    /// <summary>
-    /// Finds the immediately containing IfStatementSyntax for a statement,
-    /// and determines if the statement is in the else branch.
-    /// </summary>
-    private static (IfStatementSyntax? ContainingIf, bool IsInElseBranch) FindContainingIf(
-        StatementSyntax statement)
-    {
-        var current = statement.Parent;
-        while (current != null)
-        {
-            // Stop at method boundaries
-            if (current is MethodDeclarationSyntax or LocalFunctionStatementSyntax or
-                AccessorDeclarationSyntax)
-            {
-                return (null, false);
-            }
-
-            if (current is IfStatementSyntax ifStatement)
-            {
-                // Determine if the statement is in the if-branch or else-branch
-                var isInElse = ifStatement.Else != null &&
-                               ifStatement.Else.Statement.Contains(statement);
-                return (ifStatement, isInElse);
-            }
-
-            // Check if we're inside an else clause's body
-            if (current is ElseClauseSyntax elseClause &&
-                elseClause.Parent is IfStatementSyntax parentIf)
-            {
-                return (parentIf, true);
-            }
-
-            current = current.Parent;
-        }
-
-        return (null, false);
-    }
-
-    /// <summary>
-    /// Identifies branch points from the flow graph by grouping nodes by their containing if-statement.
-    /// </summary>
-    private static List<BranchPoint> FindBranchPoints(VariableFlowGraph flowGraph)
-    {
-        var branchPoints = new List<BranchPoint>();
-        var ifGroups = new Dictionary<IfStatementSyntax, List<FlowNode>>();
-
-        foreach (var node in flowGraph.Nodes)
-        {
-            if (node.ContainingIf != null)
-            {
-                if (!ifGroups.TryGetValue(node.ContainingIf, out var group))
-                {
-                    group = new List<FlowNode>();
-                    ifGroups[node.ContainingIf] = group;
-                }
-                group.Add(node);
-            }
-        }
-
-        foreach (var kvp in ifGroups)
-        {
-            var ifStatement = kvp.Key;
-            var nodes = kvp.Value;
-            var hasIfBranch = nodes.Any(n => !n.IsInElseBranch);
-            var hasElseBranch = nodes.Any(n => n.IsInElseBranch);
-
-            var branchKind = hasIfBranch && hasElseBranch
-                ? BranchKind.MutuallyExclusive
-                : BranchKind.Independent;
-
-            branchPoints.Add(new BranchPoint(ifStatement, nodes, branchKind));
-        }
-
-        return branchPoints;
-    }
-
-    /// <summary>
-    /// Checks for disqualifying patterns that prevent analysis.
-    /// Returns the reason string if disqualified, null otherwise.
-    /// </summary>
-    private static string? CheckDisqualifiers(
-        ILocalSymbol variable,
-        MethodBodyCache cache,
-        SemanticModel semanticModel)
-    {
-        foreach (var statement in cache.Statements)
-        {
-            // Check assignments
-            ExpressionSyntax? lhs = null;
-
-            if (statement is ExpressionStatementSyntax exprStmt &&
-                exprStmt.Expression is AssignmentExpressionSyntax assignment)
-            {
-                var lhsSymbol = semanticModel.GetSymbolInfo(assignment.Left).Symbol;
-                if (SymbolEqualityComparer.Default.Equals(lhsSymbol, variable))
-                {
-                    lhs = assignment.Left;
-
-                    // Check: assigned inside a loop?
-                    if (IsInsideLoop(statement))
-                        return "Variable assigned inside a loop body";
-
-                    // Check: assigned inside try/catch/finally?
-                    if (IsInsideTryCatchFinally(statement))
-                        return "Variable assigned inside a try/catch/finally block";
-
-                    // Check: assigned from opaque method return value?
-                    var rhs = assignment.Right;
-                    if (IsOpaqueAssignment(rhs, semanticModel))
-                        return "Variable assigned from non-Quarry method return value";
-                }
-            }
-
-            if (statement is LocalDeclarationStatementSyntax localDecl)
-            {
-                foreach (var declarator in localDecl.Declaration.Variables)
-                {
-                    var declaredSymbol = semanticModel.GetDeclaredSymbol(declarator);
-                    if (SymbolEqualityComparer.Default.Equals(declaredSymbol, variable) &&
-                        declarator.Initializer?.Value != null)
+                    else
                     {
-                        // Check: declared inside a loop?
-                        if (IsInsideLoop(statement))
-                            return "Variable declared inside a loop body";
-
-                        // Check: declared inside try/catch/finally?
-                        if (IsInsideTryCatchFinally(statement))
-                            return "Variable declared inside a try/catch/finally block";
-
-                        // Check: assigned from opaque method return value?
-                        if (IsOpaqueAssignment(declarator.Initializer.Value, semanticModel))
-                            return "Variable assigned from non-Quarry method return value";
+                        valueExpr = new ParamSlotExpr(nextParamIdx, "object", "@p" + nextParamIdx);
+                        nextParamIdx++;
                     }
+                    setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
+                }
+            }
+            else if (kind == InterceptorKind.UpdateSetPoco && site.Bound.UpdateInfo != null)
+            {
+                // UpdateSetPoco: build SET terms from UpdateInfo columns.
+                // Each column gets a parameter slot with a local index (0-based
+                // within this clause) so the assembler can renumber them in SQL order.
+                var updateInfo = site.Bound.UpdateInfo;
+                foreach (var col in updateInfo.Columns)
+                {
+                    var colExpr = new ResolvedColumnExpr(col.QuotedColumnName);
+                    // Each SET value is a standalone expression with one param at LocalIndex=0.
+                    // The assembler's paramBase handles the actual position in the SQL output.
+                    var valExpr = new ParamSlotExpr(0, col.ClrType, "@p0");
+                    setTerms.Add(new SetTerm(colExpr, valExpr, col.CustomTypeMappingClass, clauseBitIndex));
+                    parameters.Add(new QueryParameter(
+                        paramGlobalIndex,
+                        col.ClrType,
+                        $"entity.{col.PropertyName}",
+                        typeMappingClass: col.CustomTypeMappingClass,
+                        isSensitive: col.IsSensitive,
+                        entityPropertyExpression: $"__c.Entity.{col.PropertyName}"));
+                    paramGlobalIndex++;
+                }
+            }
+            else if (kind == InterceptorKind.Limit)
+            {
+                hasLimit = true;
+                limitLiteral = raw.ConstantIntValue;
+            }
+            else if (kind == InterceptorKind.Offset)
+            {
+                hasOffset = true;
+                offsetLiteral = raw.ConstantIntValue;
+            }
+            else if (kind == InterceptorKind.Distinct)
+            {
+                isDistinct = true;
+            }
+            else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
+            {
+                hasSelectClause = true;
+                projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
+            }
+        }
+
+        // Build pagination
+        if (hasLimit || hasOffset)
+        {
+            pagination = new PaginationPlan(
+                literalLimit: limitLiteral,
+                literalOffset: offsetLiteral,
+                limitParamIndex: hasLimit && limitLiteral == null ? paramGlobalIndex++ : (int?)null,
+                offsetParamIndex: hasOffset && offsetLiteral == null ? paramGlobalIndex++ : (int?)null);
+        }
+
+        // Default projection if none specified
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+        }
+
+        // Enrich identity projections with entity columns so SqlAssembler renders
+        // explicit column names instead of SELECT *.
+        // Only for chains that have an explicit Select clause (hasSelectClause flag).
+        // Discovery may produce wrong columns (e.g. computed properties like DisplayLabel),
+        // so we always use the authoritative entity column metadata from EntityRef.
+        if (hasSelectClause && projection.IsIdentity)
+        {
+            var entityRef = executionSite.Bound.Entity;
+            if (entityRef != null && entityRef.Columns.Count > 0)
+            {
+                var entityCols = new List<ProjectedColumn>();
+                var ord = 0;
+                foreach (var ec in entityRef.Columns)
+                {
+                    entityCols.Add(new ProjectedColumn(
+                        propertyName: ec.PropertyName,
+                        columnName: ec.ColumnName,
+                        clrType: ec.ClrType,
+                        fullClrType: ec.FullClrType,
+                        isNullable: ec.IsNullable,
+                        ordinal: ord++,
+                        customTypeMapping: ec.CustomTypeMappingClass,
+                        isValueType: ec.IsValueType,
+                        readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
+                        isForeignKey: ec.Kind == ColumnKind.ForeignKey,
+                        foreignKeyEntityName: ec.ReferencedEntityName,
+                        isEnum: ec.IsEnum));
+                }
+                projection = new SelectProjection(
+                    projection.Kind,
+                    projection.ResultTypeName,
+                    entityCols,
+                    customEntityReaderClass: entityRef.CustomEntityReaderClass,
+                    isIdentity: true);
+            }
+        }
+
+        // Handle insert columns
+        if (queryKind == QueryKind.Insert && executionSite.Bound.InsertInfo != null)
+        {
+            var insertInfo = executionSite.Bound.InsertInfo;
+            for (int c = 0; c < insertInfo.Columns.Count; c++)
+            {
+                var col = insertInfo.Columns[c];
+                insertColumns.Add(new InsertColumn(col.QuotedColumnName, paramGlobalIndex++));
+            }
+        }
+
+        // Default to identity projection (whole entity) when no Select clause was found
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+        }
+
+        var plan = new QueryPlan(
+            kind: queryKind,
+            primaryTable: primaryTable,
+            joins: joinPlans,
+            whereTerms: whereTerms,
+            orderTerms: orderTerms,
+            groupByExprs: groupByExprs,
+            havingExprs: havingExprs,
+            projection: projection,
+            pagination: pagination,
+            isDistinct: isDistinct,
+            setTerms: setTerms,
+            insertColumns: insertColumns,
+            conditionalTerms: conditionalTerms,
+            possibleMasks: possibleMasks,
+            parameters: parameters,
+            tier: tier,
+            unmatchedMethodNames: unmatchedMethodNames);
+
+        // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
+        // translation traces from the TranslatedCallSite data, then log chain-level analysis.
+        if (isTraced)
+        {
+            var chainUid = executionSite.Bound.Raw.UniqueId;
+
+            // Per-site retroactive trace (discovery + binding + translation)
+            foreach (var site in clauseSites)
+            {
+                LogSiteTrace(chainUid, site);
+            }
+            LogSiteTrace(chainUid, executionSite);
+
+            // Chain-level analysis trace
+            LogChainTrace(chainUid, plan, executionSite);
+        }
+
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
+    }
+
+    /// <summary>
+    /// Remaps clause-local parameters to global parameter indices.
+    /// </summary>
+    private static List<QueryParameter> RemapParameters(
+        IReadOnlyList<ParameterInfo> clauseParams,
+        ref int globalIndex)
+    {
+        var result = new List<QueryParameter>(clauseParams.Count);
+        foreach (var p in clauseParams)
+        {
+            result.Add(new QueryParameter(
+                globalIndex: globalIndex++,
+                clrType: p.ClrType,
+                valueExpression: p.ValueExpression,
+                isCaptured: p.IsCaptured,
+                expressionPath: p.ExpressionPath,
+                isCollection: p.IsCollection,
+                elementTypeName: p.CollectionElementType,
+                typeMappingClass: p.CustomTypeMappingClass,
+                isEnum: p.IsEnum,
+                enumUnderlyingType: p.EnumUnderlyingType,
+                needsFieldInfoCache: p.IsCaptured && p.CanGenerateDirectPath,
+                isDirectAccessible: false, // Computed during carrier analysis
+                collectionAccessExpression: null)); // Computed during carrier analysis
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a SelectProjection from ProjectionInfo, enriching columns with entity metadata.
+    /// During discovery, the source generator can't see its own generated entity types, so
+    /// ProjectionInfo columns may have empty ClrType/ColumnName. We fix these by cross-referencing
+    /// with EntityRef.Columns which has the authoritative column metadata from schema analysis.
+    /// For multi-entity (joined) projections, resolves all joined entities from the registry.
+    /// </summary>
+    private static SelectProjection BuildProjection(ProjectionInfo projInfo, TranslatedCallSite executionSite, EntityRegistry registry)
+    {
+        // Build column lookups for enrichment
+        // For joined queries, build per-tableAlias lookups from all joined entities
+        var joinedEntityTypeNames = executionSite.Bound.JoinedEntityTypeNames;
+        var isJoined = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
+
+        Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup = null;
+        Dictionary<string, ColumnInfo>? entityColumnLookup = null;
+        var entityRef = executionSite.Bound.Entity;
+
+        if (isJoined)
+        {
+            // Multi-entity: build per-tableAlias column lookups
+            perAliasLookup = new Dictionary<string, Dictionary<string, ColumnInfo>>(StringComparer.Ordinal);
+            for (int i = 0; i < joinedEntityTypeNames!.Count; i++)
+            {
+                var alias = $"t{i}";
+                var entry = registry.Resolve(joinedEntityTypeNames[i]);
+                if (entry != null)
+                {
+                    var lookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
+                    foreach (var ec in EntityRef.FromEntityInfo(entry.Entity).Columns)
+                        lookup[ec.PropertyName] = ec;
+                    perAliasLookup[alias] = lookup;
                 }
             }
         }
-
-        // Check: variable passed as argument to a method call
-        foreach (var invocation in cache.Invocations)
+        else if (entityRef != null && entityRef.Columns.Count > 0)
         {
-            foreach (var arg in invocation.ArgumentList.Arguments)
-            {
-                var argSymbol = semanticModel.GetSymbolInfo(arg.Expression).Symbol;
-                if (SymbolEqualityComparer.Default.Equals(argSymbol, variable))
-                    return "Variable passed as argument to a method call";
-            }
+            // Single-entity: flat lookup
+            entityColumnLookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
+            foreach (var ec in entityRef.Columns)
+                entityColumnLookup[ec.PropertyName] = ec;
         }
 
-        // Check: variable captured in lambda or local function
-        foreach (var lambda in cache.Lambdas)
+        var columns = new List<ProjectedColumn>();
+        if (projInfo.Columns != null)
         {
-            var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
-            if (dataFlow != null && dataFlow.Succeeded)
+            foreach (var col in projInfo.Columns)
             {
-                foreach (var captured in dataFlow.Captured)
+                // Aggregate columns with unresolved type ("object"): resolve from the
+                // referenced entity column. During discovery, Min/Max default to "object"
+                // because the semantic model can't resolve generated entity property types.
+                if (col.IsAggregateFunction && IsUnresolvedAggregateType(col.ClrType) && col.SqlExpression != null)
                 {
-                    if (SymbolEqualityComparer.Default.Equals(captured, variable))
-                        return "Variable captured in a lambda expression";
-                }
-            }
-        }
-
-        foreach (var localFunc in cache.LocalFunctions)
-        {
-            if (localFunc.Body != null)
-            {
-                var dataFlow = semanticModel.AnalyzeDataFlow(localFunc.Body);
-                if (dataFlow != null && dataFlow.Succeeded)
-                {
-                    foreach (var captured in dataFlow.Captured)
+                    var resolvedType = TryResolveAggregateTypeFromSql(col.SqlExpression, entityColumnLookup, perAliasLookup, col.TableAlias);
+                    if (resolvedType != null)
                     {
-                        if (SymbolEqualityComparer.Default.Equals(captured, variable))
-                            return "Variable captured in a local function";
+                        columns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: col.ColumnName,
+                            clrType: resolvedType,
+                            fullClrType: resolvedType,
+                            isNullable: col.IsNullable,
+                            ordinal: col.Ordinal,
+                            alias: col.Alias,
+                            sqlExpression: col.SqlExpression,
+                            isAggregateFunction: true,
+                            isValueType: true,
+                            readerMethodName: GetReaderMethodForType(resolvedType),
+                            tableAlias: col.TableAlias));
+                        continue;
                     }
                 }
-            }
-        }
 
-        return null;
-    }
-
-    /// <summary>
-    /// Checks if a statement is inside any loop construct.
-    /// </summary>
-    private static bool IsInsideLoop(StatementSyntax statement)
-    {
-        var current = statement.Parent;
-        while (current != null)
-        {
-            if (current is MethodDeclarationSyntax or LocalFunctionStatementSyntax)
-                return false;
-
-            if (current is ForStatementSyntax or ForEachStatementSyntax or
-                WhileStatementSyntax or DoStatementSyntax)
-                return true;
-
-            current = current.Parent;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Checks if a statement is inside a try/catch/finally block.
-    /// </summary>
-    private static bool IsInsideTryCatchFinally(StatementSyntax statement)
-    {
-        var current = statement.Parent;
-        while (current != null)
-        {
-            if (current is MethodDeclarationSyntax or LocalFunctionStatementSyntax)
-                return false;
-
-            if (current is TryStatementSyntax or CatchClauseSyntax or FinallyClauseSyntax)
-                return true;
-
-            current = current.Parent;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Checks if an RHS expression is an opaque assignment (not a Quarry builder method call).
-    /// </summary>
-    private static bool IsOpaqueAssignment(ExpressionSyntax rhs, SemanticModel semanticModel)
-    {
-        // Walk through the expression to find the innermost call
-        var rootInvocation = rhs as InvocationExpressionSyntax;
-
-        // If the RHS is not an invocation, check if it's a property access (db.Students)
-        if (rootInvocation == null)
-        {
-            if (rhs is MemberAccessExpressionSyntax memberAccess)
-            {
-                var symbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
-                if (symbol is IPropertySymbol prop)
+                if (NeedsEnrichment(col))
                 {
-                    // Check if the property type is a Quarry builder
-                    return !IsQuarryBuilderType(prop.Type);
+                    ColumnInfo? entityCol = null;
+
+                    if (isJoined && perAliasLookup != null && col.TableAlias != null)
+                    {
+                        // Multi-entity: match by TableAlias + PropertyName
+                        if (perAliasLookup.TryGetValue(col.TableAlias, out var aliasLookup))
+                            aliasLookup.TryGetValue(col.PropertyName, out entityCol);
+                    }
+                    else if (entityColumnLookup != null)
+                    {
+                        // Single-entity: match by PropertyName
+                        entityColumnLookup.TryGetValue(col.PropertyName, out entityCol);
+                    }
+
+                    if (entityCol != null)
+                    {
+                        columns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: entityCol.ColumnName,
+                            clrType: string.IsNullOrWhiteSpace(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            fullClrType: string.IsNullOrWhiteSpace(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            isNullable: entityCol.IsNullable,
+                            ordinal: col.Ordinal,
+                            alias: col.Alias,
+                            sqlExpression: col.SqlExpression,
+                            isAggregateFunction: col.IsAggregateFunction,
+                            customTypeMapping: entityCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
+                            isValueType: entityCol.IsValueType,
+                            readerMethodName: entityCol.DbReaderMethodName ?? entityCol.ReaderMethodName,
+                            tableAlias: col.TableAlias,
+                            isForeignKey: entityCol.Kind == ColumnKind.ForeignKey,
+                            foreignKeyEntityName: entityCol.ReferencedEntityName,
+                            isEnum: entityCol.IsEnum));
+                        continue;
+                    }
                 }
+                columns.Add(col);
             }
-
-            // Simple identifier (another variable) or literal — opaque
-            if (rhs is IdentifierNameSyntax)
-                return false; // Variable reference, not opaque (tracked separately)
-
-            return true; // Other expressions are opaque
         }
 
-        // Walk the fluent chain to find the root
-        var current = rootInvocation;
-        while (current != null)
+        // Rebuild result type name from enriched columns
+        var resultTypeName = projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName;
+        if (projInfo.Kind == ProjectionKind.Tuple && columns.Count > 0)
         {
-            var methodSymbol = semanticModel.GetSymbolInfo(current).Symbol as IMethodSymbol;
-            if (methodSymbol != null)
+            var rebuilt = BuildTupleResultTypeName(columns);
+            if (!string.IsNullOrEmpty(rebuilt))
+                resultTypeName = rebuilt;
+        }
+        else if (projInfo.Kind == ProjectionKind.SingleColumn && columns.Count == 1)
+        {
+            var col = columns[0];
+            var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
+            if (!string.IsNullOrWhiteSpace(colType) && colType != "?" && colType != "object")
             {
-                // Check if this is a Quarry builder method
-                if (!IsQuarryBuilderMethod(methodSymbol))
-                    return true;
+                if (col.IsNullable && !colType.EndsWith("?"))
+                    colType += "?";
+                resultTypeName = colType;
             }
-
-            // Walk to parent invocation in fluent chain
-            if (current.Expression is MemberAccessExpressionSyntax chainedMemberAccess &&
-                chainedMemberAccess.Expression is InvocationExpressionSyntax parentInvocation)
+        }
+        // Fix unresolved "?" result type by checking enriched columns
+        if (resultTypeName == "?" && columns.Count > 0)
+        {
+            if (columns.Count == 1)
             {
-                current = parentInvocation;
+                var col = columns[0];
+                var colType = !string.IsNullOrWhiteSpace(col.ClrType) ? col.ClrType : col.FullClrType;
+                if (!string.IsNullOrWhiteSpace(colType) && colType != "?")
+                    resultTypeName = col.IsNullable && !colType.EndsWith("?") ? colType + "?" : colType;
             }
             else
             {
+                var rebuilt = BuildTupleResultTypeName(columns);
+                if (!string.IsNullOrEmpty(rebuilt))
+                    resultTypeName = rebuilt;
+            }
+        }
+
+        return new SelectProjection(
+            kind: projInfo.Kind,
+            resultTypeName: resultTypeName,
+            columns: columns,
+            customEntityReaderClass: projInfo.CustomEntityReaderClass ?? entityRef?.CustomEntityReaderClass,
+            isIdentity: projInfo.Kind == ProjectionKind.Entity);
+    }
+
+    /// <summary>
+    /// Checks if a projected column needs enrichment (has missing type or column name info).
+    /// </summary>
+    private static bool NeedsEnrichment(ProjectedColumn col)
+    {
+        // Aggregates have empty ColumnName by design — don't trigger enrichment for them
+        if (col.IsAggregateFunction)
+            return string.IsNullOrWhiteSpace(col.ClrType);
+        return string.IsNullOrWhiteSpace(col.ClrType)
+            || string.IsNullOrWhiteSpace(col.ColumnName);
+    }
+
+    /// <summary>
+    /// Checks if an aggregate's CLR type is unresolved and needs enrichment.
+    /// </summary>
+    private static bool IsUnresolvedAggregateType(string clrType)
+    {
+        return clrType == "object" || clrType == "?" || string.IsNullOrWhiteSpace(clrType);
+    }
+
+    /// <summary>
+    /// Public entry point for resolving aggregate type from SQL (used by bridge enrichment).
+    /// </summary>
+    internal static string? TryResolveAggregateTypeFromSqlPublic(
+        string sqlExpression,
+        Dictionary<string, ColumnInfo> entityColumnLookup)
+    {
+        return TryResolveAggregateTypeFromSql(sqlExpression, entityColumnLookup, null, null);
+    }
+
+    /// <summary>
+    /// Public entry point for getting reader method (used by bridge enrichment).
+    /// </summary>
+    internal static string GetReaderMethodForTypePublic(string clrType)
+    {
+        return GetReaderMethodForType(clrType);
+    }
+
+    /// <summary>
+    /// Tries to resolve the CLR type for an aggregate column by extracting the referenced
+    /// column name from the SQL expression and looking it up in entity column metadata.
+    /// E.g., SUM("Total") → extract "Total" → look up Total column → type is "decimal".
+    /// </summary>
+    private static string? TryResolveAggregateTypeFromSql(
+        string sqlExpression,
+        Dictionary<string, ColumnInfo>? entityColumnLookup,
+        Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup,
+        string? tableAlias)
+    {
+        // Extract the column name from expressions like: SUM("Total"), MIN(t0."Total"),
+        // SUM(`Total`), MIN([Total])
+        var propName = ExtractColumnNameFromAggregateSql(sqlExpression);
+        if (propName == null)
+            return null;
+
+        ColumnInfo? col = null;
+        if (tableAlias != null && perAliasLookup != null)
+        {
+            if (perAliasLookup.TryGetValue(tableAlias, out var aliasLookup))
+                aliasLookup.TryGetValue(propName, out col);
+        }
+        else if (entityColumnLookup != null)
+        {
+            entityColumnLookup.TryGetValue(propName, out col);
+        }
+
+        if (col != null && !string.IsNullOrWhiteSpace(col.ClrType) && col.ClrType != "object")
+            return col.ClrType;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Extracts a column/property name from an aggregate SQL expression.
+    /// Handles: SUM("Total"), MIN(t0."Total"), AVG(`Total`), MAX([Total]).
+    /// For COUNT(*), returns null.
+    /// </summary>
+    private static string? ExtractColumnNameFromAggregateSql(string sql)
+    {
+        // Skip COUNT(*)
+        if (sql.Contains("*"))
+            return null;
+
+        // Find the innermost quoted identifier
+        int start = -1, end = -1;
+        for (int i = sql.Length - 1; i >= 0; i--)
+        {
+            if (end < 0 && (sql[i] == '"' || sql[i] == '`' || sql[i] == ']'))
+            {
+                end = i;
+                var closeChar = sql[i] == ']' ? '[' : sql[i];
+                for (int j = i - 1; j >= 0; j--)
+                {
+                    if (sql[j] == closeChar)
+                    {
+                        start = j + 1;
+                        break;
+                    }
+                }
                 break;
             }
         }
 
-        return false;
+        if (start >= 0 && end > start)
+            return sql.Substring(start, end - start);
+
+        return null;
     }
 
     /// <summary>
-    /// Checks if a method belongs to a Quarry builder type or is a factory method
-    /// on QuarryContext that returns a builder (e.g., Delete&lt;T&gt;(), Update&lt;T&gt;()).
+    /// Gets the DbDataReader method for a CLR type.
     /// </summary>
-    private static bool IsQuarryBuilderMethod(IMethodSymbol method)
+    private static string GetReaderMethodForType(string clrType)
     {
-        var containingType = method.ContainingType;
-        if (containingType == null)
-            return false;
-
-        if (IsQuarryBuilderType(containingType))
-            return true;
-
-        // Factory methods on QuarryContext (Delete<T>, Update<T>, Insert, etc.)
-        // that return builder types are also valid Quarry chain roots.
-        if (IsQuarryContextType(containingType))
-            return true;
-
-        return false;
-    }
-
-    /// <summary>
-    /// Checks if a type is a Quarry builder type.
-    /// </summary>
-    private static bool IsQuarryBuilderType(ITypeSymbol type)
-    {
-        var typeName = type.Name;
-        return typeName is "QueryBuilder" or "JoinedQueryBuilder" or "JoinedQueryBuilder3"
-            or "JoinedQueryBuilder4" or "UpdateBuilder" or "ExecutableUpdateBuilder"
-            or "DeleteBuilder" or "ExecutableDeleteBuilder" or "InsertBuilder"
-            or "IQueryBuilder" or "IJoinedQueryBuilder" or "IJoinedQueryBuilder3"
-            or "IJoinedQueryBuilder4" or "IUpdateBuilder" or "IExecutableUpdateBuilder"
-            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "IInsertBuilder"
-            or "EntityAccessor" or "IEntityAccessor";
-    }
-
-    /// <summary>
-    /// Checks if a type derives from QuarryContext.
-    /// </summary>
-    private static bool IsQuarryContextType(ITypeSymbol type)
-    {
-        var current = type;
-        while (current != null)
+        return clrType switch
         {
-            if (current.Name == "QuarryContext")
-                return true;
-            current = current.BaseType;
-        }
-        return false;
+            "int" or "Int32" => "GetInt32",
+            "long" or "Int64" => "GetInt64",
+            "decimal" or "Decimal" => "GetDecimal",
+            "double" or "Double" => "GetDouble",
+            "float" or "Single" => "GetFloat",
+            "string" or "String" => "GetString",
+            "bool" or "Boolean" => "GetBoolean",
+            "DateTime" => "GetDateTime",
+            "Guid" => "GetGuid",
+            "byte" or "Byte" => "GetByte",
+            "short" or "Int16" => "GetInt16",
+            _ => "GetValue"
+        };
     }
 
     /// <summary>
-    /// Checks if any branch point has excessive nesting depth.
+    /// Builds a tuple result type name from enriched columns.
     /// </summary>
-    private static bool HasExcessiveNesting(List<BranchPoint> branchPoints)
+    private static string BuildTupleResultTypeName(List<ProjectedColumn> columns)
     {
-        foreach (var bp in branchPoints)
+        var parts = new List<string>();
+        foreach (var col in columns)
         {
-            var depth = GetIfNestingDepth(bp.IfStatement);
-            if (depth > MaxIfNestingDepth)
-                return true;
+            var typeName = col.ClrType;
+            if (string.IsNullOrWhiteSpace(typeName))
+                typeName = col.FullClrType;
+            if (string.IsNullOrWhiteSpace(typeName))
+                return ""; // Can't build a valid type name
+
+            if (col.IsNullable && !typeName.EndsWith("?"))
+                typeName += "?";
+
+            // Omit default ItemN names
+            var isDefaultName = col.PropertyName.StartsWith("Item") &&
+                int.TryParse(col.PropertyName.Substring(4), out var idx) &&
+                idx == col.Ordinal + 1;
+
+            parts.Add(isDefaultName ? typeName : $"{typeName} {col.PropertyName}");
         }
-        return false;
+        return $"({string.Join(", ", parts)})";
     }
 
     /// <summary>
-    /// Gets the nesting depth of an if-statement within other if-statements.
+    /// Checks for disqualifying conditions from RawCallSite flags.
     /// </summary>
-    private static int GetIfNestingDepth(IfStatementSyntax ifStatement)
+    private static string? CheckDisqualifiers(List<TranslatedCallSite> chainSites)
     {
-        var depth = 0;
-        var current = ifStatement.Parent;
-        while (current != null)
+        foreach (var site in chainSites)
         {
-            if (current is MethodDeclarationSyntax or LocalFunctionStatementSyntax)
-                break;
-
-            if (current is IfStatementSyntax)
-                depth++;
-
-            current = current.Parent;
+            var raw = site.Bound.Raw;
+            if (raw.IsInsideLoop)
+                return "Chain contains a clause inside a loop body";
+            if (raw.IsCapturedInLambda)
+                return "Chain variable captured in a lambda expression";
+            if (raw.IsPassedAsArgument)
+                return "Chain variable passed as argument to non-Quarry method or captured in lambda";
+            if (raw.IsAssignedFromNonQuarryMethod)
+                return "Chain variable assigned from non-Quarry method";
         }
-        return depth;
+        return null;
     }
 
     /// <summary>
-    /// Gets the branch kind for a conditional flow node.
+    /// Determines the QueryKind from the execution terminal's InterceptorKind.
     /// </summary>
-    private static BranchKind GetBranchKind(FlowNode node, List<BranchPoint> branchPoints)
+    private static QueryKind DetermineQueryKind(InterceptorKind kind, BuilderKind builderKind)
     {
-        if (node.ContainingIf == null)
-            return BranchKind.Independent;
+        if (kind == InterceptorKind.InsertExecuteNonQuery ||
+            kind == InterceptorKind.InsertExecuteScalar ||
+            kind == InterceptorKind.InsertToDiagnostics)
+            return QueryKind.Insert;
 
-        foreach (var bp in branchPoints)
+        return builderKind switch
         {
-            if (bp.IfStatement == node.ContainingIf)
-                return bp.Kind;
-        }
-
-        return BranchKind.Independent;
+            BuilderKind.Delete or BuilderKind.ExecutableDelete => QueryKind.Delete,
+            BuilderKind.Update or BuilderKind.ExecutableUpdate => QueryKind.Update,
+            _ => QueryKind.Select
+        };
     }
 
     /// <summary>
-    /// Enumerates all possible ClauseMask values from branch points and conditional clauses.
+    /// Enumerates all possible ClauseMask values from conditional terms and branch groups.
     /// </summary>
     private static IReadOnlyList<ulong> EnumerateMaskCombinations(
-        List<BranchPoint> branchPoints,
-        List<ConditionalClause> conditionalClauses)
+        List<ConditionalTerm> conditionalTerms,
+        Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
+        List<TranslatedCallSite> clauseSites)
     {
-        if (conditionalClauses.Count == 0)
+        if (conditionalTerms.Count == 0)
             return new[] { 0UL };
 
-        // Group conditional clauses by their branch point
         var independentBits = new List<int>();
         var exclusiveGroups = new List<List<int>>();
 
-        foreach (var bp in branchPoints)
+        foreach (var kvp in branchGroups)
         {
-            var bitsInBranch = conditionalClauses
-                .Where(cc => bp.Nodes.Any(n => n.MatchedSite == cc.Site))
-                .Select(cc => cc.BitIndex)
-                .ToList();
+            var group = kvp.Value;
+            // Determine if this branch group is mutually exclusive
+            var hasMutuallyExclusive = group.Any(g =>
+                g.Site.Bound.Raw.ConditionalInfo?.BranchKind == BranchKind.MutuallyExclusive);
 
-            if (bitsInBranch.Count == 0)
-                continue;
-
-            if (bp.Kind == BranchKind.Independent)
+            if (hasMutuallyExclusive && group.Count >= 2)
             {
-                independentBits.AddRange(bitsInBranch);
+                exclusiveGroups.Add(group.Select(g => g.BitIndex).ToList());
             }
             else
             {
-                exclusiveGroups.Add(bitsInBranch);
+                independentBits.AddRange(group.Select(g => g.BitIndex));
             }
         }
 
-        // Also add any conditional clauses not associated with a branch point as independent
-        var allBranchBits = new HashSet<int>(independentBits);
-        foreach (var group in exclusiveGroups)
-            foreach (var bit in group)
-                allBranchBits.Add(bit);
-
-        foreach (var cc in conditionalClauses)
-        {
-            if (!allBranchBits.Contains(cc.BitIndex))
-                independentBits.Add(cc.BitIndex);
-        }
-
-        // Orphaned conditional clauses (not mapped to any branch point) are treated as independent.
-        // This can happen when a clause's matched site wasn't grouped into a BranchPoint because
-        // the FlowNode tracking matched a different site as primary. These are safely independent
-        // since they represent a single conditional path with no mutual exclusivity.
-
-        // Build combinations: independent bits contribute 2^N each,
-        // exclusive groups contribute one-of-N each
+        // Build combinations
         var masks = new List<ulong> { 0UL };
 
         // Independent bits: each can be on or off
@@ -925,32 +1044,72 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Finds a UsageSiteInfo matching a given invocation by comparing source spans.
+    /// Creates a RuntimeBuild (tier 3) result.
     /// </summary>
-    private static UsageSiteInfo? FindMatchingSite(
-        InvocationExpressionSyntax invocation,
-        IReadOnlyList<UsageSiteInfo> allSites)
+    private static AnalyzedChain MakeRuntimeBuildChain(
+        TranslatedCallSite executionSite,
+        List<TranslatedCallSite> clauseSites,
+        string reason,
+        EntityRegistry? registry = null,
+        bool isTraced = false,
+        string? forkedVariableName = null)
     {
-        var span = invocation.Span;
+        var primaryTable = new TableRef(
+            executionSite.Bound.TableName,
+            executionSite.Bound.SchemaName);
+        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
 
-        foreach (var site in allSites)
+        // Even for runtime chains, enrich the Select projection so emitters can produce
+        // concrete-typed interceptors (required for C# interceptor signature matching)
+        SelectProjection? projection = null;
+        if (registry != null)
         {
-            if (site.InvocationSyntax is InvocationExpressionSyntax siteInvocation &&
-                siteInvocation.Span == span &&
-                siteInvocation.SyntaxTree == invocation.SyntaxTree)
+            foreach (var site in clauseSites)
             {
-                return site;
+                if (site.Bound.Raw.Kind == InterceptorKind.Select && site.Bound.Raw.ProjectionInfo != null)
+                {
+                    projection = BuildProjection(site.Bound.Raw.ProjectionInfo, executionSite, registry);
+                    break;
+                }
             }
         }
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+        }
 
-        return null;
+        var plan = new QueryPlan(
+            kind: queryKind,
+            primaryTable: primaryTable,
+            joins: Array.Empty<JoinPlan>(),
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: projection,
+            pagination: null,
+            isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: Array.Empty<ulong>(),
+            parameters: Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.RuntimeBuild,
+            notAnalyzableReason: reason,
+            forkedVariableName: forkedVariableName);
+
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
     }
 
     /// <summary>
     /// Maps an InterceptorKind to a ClauseRole.
     /// Returns null for kinds that are not clause roles (e.g., execution methods).
     /// </summary>
-    private static ClauseRole? MapInterceptorKindToClauseRole(InterceptorKind kind)
+    internal static ClauseRole? MapInterceptorKindToClauseRole(InterceptorKind kind)
     {
         return kind switch
         {
@@ -983,65 +1142,6 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Creates a tier 3 (RuntimeBuild) result with a reason.
-    /// </summary>
-    private static ChainAnalysisResult MakeRuntimeBuildResult(
-        UsageSiteInfo executionSite,
-        string reason)
-    {
-        return new ChainAnalysisResult(
-            tier: OptimizationTier.RuntimeBuild,
-            clauses: Array.Empty<ChainedClauseSite>(),
-            executionSite: executionSite,
-            conditionalClauses: Array.Empty<ConditionalClause>(),
-            possibleMasks: Array.Empty<ulong>(),
-            notAnalyzableReason: reason);
-    }
-
-    /// <summary>
-    /// Detects forked chains: a builder variable consumed by multiple execution-terminating paths.
-    /// Returns the variable name if a fork is detected, null otherwise.
-    /// </summary>
-    /// <remarks>
-    /// This applies to all optimization tiers. A builder variable that forks into
-    /// multiple execution paths is a compile error (QRY033) regardless of tier.
-    /// </remarks>
-    internal static string? DetectForkedChain(
-        ILocalSymbol variable,
-        InvocationExpressionSyntax executionInvocation,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel)
-    {
-        // Only flag builder variables, not context variables.
-        // Context variables (QuarryContext subclasses) are expected to be reused across
-        // multiple queries. Builder variables should not be.
-        if (IsQuarryContextType(variable.Type))
-            return null;
-
-        var executionCount = 0;
-
-        foreach (var site in allSitesInMethod)
-        {
-            if (!IsExecutionKind(site.Kind))
-                continue;
-
-            if (site.InvocationSyntax is not InvocationExpressionSyntax siteInvocation)
-                continue;
-
-            // Resolve the receiver variable for this execution site
-            var siteReceiver = ResolveReceiverVariable(siteInvocation, semanticModel);
-            if (siteReceiver != null && SymbolEqualityComparer.Default.Equals(siteReceiver, variable))
-            {
-                executionCount++;
-                if (executionCount > 1)
-                    return variable.Name;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// Checks if an InterceptorKind represents an execution method.
     /// </summary>
     internal static bool IsExecutionKind(InterceptorKind kind)
@@ -1059,101 +1159,245 @@ internal static class ChainAnalyzer
             or InterceptorKind.InsertToDiagnostics;
     }
 
-    #region Internal Types
+    /// <summary>
+    /// Logs retroactive discovery/binding/translation trace for a single site.
+    /// Called from ChainAnalyzer when a traced chain is detected, reconstructing
+    /// trace data from the TranslatedCallSite objects already on hand.
+    /// </summary>
+    private static void LogSiteTrace(string chainUid, TranslatedCallSite site)
+    {
+        var raw = site.Bound.Raw;
+        var log = IR.TraceCapture.Log;
+
+        // ── Discovery ──
+        log(chainUid, $"[Trace] Discovery ({raw.MethodName} at line {raw.Line}):");
+        log(chainUid, $"  kind={raw.Kind}, builderKind={raw.BuilderKind}, isAnalyzable={raw.IsAnalyzable}");
+        log(chainUid, $"  chainId={raw.ChainId ?? "(null)"}, uniqueId={raw.UniqueId}");
+        log(chainUid, $"  builderType={raw.BuilderTypeName}, entityType={raw.EntityTypeName}");
+        if (raw.ResultTypeName != null)
+            log(chainUid, $"  resultType={raw.ResultTypeName}");
+        if (raw.Expression != null)
+            log(chainUid, $"  parsedExpr={FormatExpr(raw.Expression)}");
+        if (raw.ClauseKind.HasValue)
+            log(chainUid, $"  clauseKind={raw.ClauseKind.Value}, isDescending={raw.IsDescending}");
+        if (raw.JoinedEntityTypeName != null)
+            log(chainUid, $"  joinedEntityType={raw.JoinedEntityTypeName}, isNavigationJoin={raw.IsNavigationJoin}");
+        if (raw.JoinedEntityTypeNames != null)
+            log(chainUid, $"  joinedEntityTypes=[{string.Join(", ", raw.JoinedEntityTypeNames)}]");
+        if (raw.ConditionalInfo != null)
+            log(chainUid, $"  conditional: depth={raw.ConditionalInfo.NestingDepth}, condition=\"{raw.ConditionalInfo.ConditionText}\", branch={raw.ConditionalInfo.BranchKind}");
+        if (raw.ConstantIntValue.HasValue)
+            log(chainUid, $"  constantIntValue={raw.ConstantIntValue.Value}");
+        if (raw.ProjectionInfo != null)
+            log(chainUid, $"  projection: kind={raw.ProjectionInfo.Kind}, columns={raw.ProjectionInfo.Columns.Count}, resultType={raw.ProjectionInfo.ResultTypeName}");
+        if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
+            log(chainUid, $"  nonAnalyzableReason={raw.NonAnalyzableReason}");
+        // Disqualifiers
+        if (raw.IsInsideLoop || raw.IsInsideTryCatch || raw.IsCapturedInLambda || raw.IsPassedAsArgument || raw.IsAssignedFromNonQuarryMethod)
+            log(chainUid, $"  disqualifiers: loop={raw.IsInsideLoop}, tryCatch={raw.IsInsideTryCatch}, lambdaCapture={raw.IsCapturedInLambda}, passedAsArg={raw.IsPassedAsArgument}, nonQuarryAssign={raw.IsAssignedFromNonQuarryMethod}");
+
+        // ── Binding ──
+        log(chainUid, $"[Trace] Binding ({raw.MethodName}):");
+        log(chainUid, $"  entity={raw.EntityTypeName}, table={site.Bound.TableName}, schema={site.Bound.SchemaName ?? "(null)"}, dialect={site.Bound.Dialect}");
+        log(chainUid, $"  context={site.Bound.ContextClassName}");
+        if (site.Bound.Entity != null && site.Bound.Entity.Columns.Count > 0)
+            log(chainUid, $"  resolvedColumns=[{string.Join(", ", ColumnNames(site.Bound.Entity.Columns))}]");
+        if (site.Bound.JoinedEntity != null)
+            log(chainUid, $"  joinedEntity={site.Bound.JoinedEntity.EntityName}, joinedTable={site.Bound.JoinedEntity.TableName}");
+        if (site.Bound.JoinedEntities != null)
+        {
+            foreach (var je in site.Bound.JoinedEntities)
+                log(chainUid, $"  joinedEntity: {je.EntityName} -> {je.TableName}");
+        }
+        if (site.Bound.InsertInfo != null)
+            log(chainUid, $"  insertInfo: columns={site.Bound.InsertInfo.Columns.Count}");
+        if (site.Bound.UpdateInfo != null)
+            log(chainUid, $"  updateInfo: columns={site.Bound.UpdateInfo.Columns.Count}");
+
+        // ── Translation ──
+        log(chainUid, $"[Trace] Translation ({raw.MethodName}):");
+        if (site.Clause != null)
+        {
+            log(chainUid, $"  clauseKind={site.Clause.Kind}, isSuccess={site.Clause.IsSuccess}");
+            log(chainUid, $"  resolvedExpr={FormatExpr(site.Clause.ResolvedExpression)}");
+            if (site.Clause.Parameters.Count > 0)
+            {
+                foreach (var p in site.Clause.Parameters)
+                {
+                    var flags = new List<string>();
+                    if (p.IsCaptured) flags.Add("captured");
+                    if (p.IsCollection) flags.Add("collection");
+                    log(chainUid, $"  param[{p.Index}]: type={p.ClrType}, value={p.ValueExpression}, path={p.ExpressionPath ?? "(null)"}{(flags.Count > 0 ? $", flags=[{string.Join(",", flags)}]" : "")}");
+                }
+            }
+            else
+            {
+                log(chainUid, "  params=none");
+            }
+            if (site.Clause.JoinKind.HasValue)
+                log(chainUid, $"  joinKind={site.Clause.JoinKind.Value}, joinedTable={site.Clause.JoinedTableName}, alias={site.Clause.TableAlias}");
+            if (site.Clause.SetAssignments != null)
+            {
+                foreach (var sa in site.Clause.SetAssignments)
+                    log(chainUid, $"  setAssignment: {sa.ColumnSql}={sa.InlinedSqlValue ?? "(param)"}, type={sa.ValueTypeName ?? "?"}");
+            }
+            if (site.Clause.ErrorMessage != null)
+                log(chainUid, $"  error={site.Clause.ErrorMessage}");
+        }
+        else
+        {
+            log(chainUid, "  clause=none (non-clause site)");
+        }
+    }
 
     /// <summary>
-    /// Caches typed descendant node lists from a single tree walk of the method body.
-    /// Avoids repeated O(N) DescendantNodes() traversals.
+    /// Logs chain-level analysis trace including joins, projections, parameters, and pagination.
     /// </summary>
-    private sealed class MethodBodyCache
+    private static void LogChainTrace(string chainUid, QueryPlan plan, TranslatedCallSite executionSite)
     {
-        public readonly List<StatementSyntax> Statements;
-        public readonly List<InvocationExpressionSyntax> Invocations;
-        public readonly List<LambdaExpressionSyntax> Lambdas;
-        public readonly List<LocalFunctionStatementSyntax> LocalFunctions;
+        var log = IR.TraceCapture.Log;
 
-        public MethodBodyCache(BlockSyntax methodBody)
+        log(chainUid, "[Trace] ChainAnalysis:");
+        log(chainUid, $"  tier={plan.Tier}, queryKind={plan.Kind}");
+        log(chainUid, $"  primaryTable={plan.PrimaryTable.TableName}, schema={plan.PrimaryTable.SchemaName ?? "(null)"}");
+        log(chainUid, $"  isDistinct={plan.IsDistinct}");
+        if (plan.NotAnalyzableReason != null)
+            log(chainUid, $"  notAnalyzableReason={plan.NotAnalyzableReason}");
+        if (plan.UnmatchedMethodNames != null)
+            log(chainUid, $"  unmatchedMethods=[{string.Join(", ", plan.UnmatchedMethodNames)}]");
+
+        // Joins
+        if (plan.Joins.Count > 0)
         {
-            Statements = new List<StatementSyntax>();
-            Invocations = new List<InvocationExpressionSyntax>();
-            Lambdas = new List<LambdaExpressionSyntax>();
-            LocalFunctions = new List<LocalFunctionStatementSyntax>();
+            foreach (var j in plan.Joins)
+                log(chainUid, $"  join: {j.Kind} {j.Table.TableName} ON {FormatExpr(j.OnCondition)}{(j.IsNavigationJoin ? " (navigation)" : "")}");
+        }
 
-            foreach (var node in methodBody.DescendantNodes())
+        // WHERE terms
+        if (plan.WhereTerms.Count > 0)
+        {
+            foreach (var w in plan.WhereTerms)
+                log(chainUid, $"  where: {FormatExpr(w.Condition)}{(w.BitIndex.HasValue ? $" [bit={w.BitIndex}]" : "")}");
+        }
+
+        // ORDER BY terms
+        if (plan.OrderTerms.Count > 0)
+        {
+            foreach (var o in plan.OrderTerms)
+                log(chainUid, $"  orderBy: {FormatExpr(o.Expression)} {(o.IsDescending ? "DESC" : "ASC")}{(o.BitIndex.HasValue ? $" [bit={o.BitIndex}]" : "")}");
+        }
+
+        // GROUP BY
+        if (plan.GroupByExprs.Count > 0)
+        {
+            foreach (var g in plan.GroupByExprs)
+                log(chainUid, $"  groupBy: {FormatExpr(g)}");
+        }
+
+        // HAVING
+        if (plan.HavingExprs.Count > 0)
+        {
+            foreach (var h in plan.HavingExprs)
+                log(chainUid, $"  having: {FormatExpr(h)}");
+        }
+
+        // SET terms
+        if (plan.SetTerms.Count > 0)
+        {
+            foreach (var s in plan.SetTerms)
+                log(chainUid, $"  set: {FormatExpr(s.Column)}={FormatExpr(s.Value)}");
+        }
+
+        // Projection
+        if (plan.Projection != null)
+        {
+            log(chainUid, $"  projection: kind={plan.Projection.Kind}, resultType={plan.Projection.ResultTypeName}, identity={plan.Projection.IsIdentity}");
+            foreach (var c in plan.Projection.Columns)
+                log(chainUid, $"    col: {c.PropertyName} -> {c.ColumnName ?? "(null)"} [{c.ClrType}]{(c.SqlExpression != null ? $" expr={c.SqlExpression}" : "")}{(c.IsAggregateFunction ? " (aggregate)" : "")}{(c.TableAlias != null ? $" alias={c.TableAlias}" : "")}");
+        }
+
+        // Pagination
+        if (plan.Pagination != null)
+            log(chainUid, $"  pagination: limit={plan.Pagination.LiteralLimit?.ToString() ?? (plan.Pagination.LimitParamIndex.HasValue ? $"P{plan.Pagination.LimitParamIndex}" : "none")}, offset={plan.Pagination.LiteralOffset?.ToString() ?? (plan.Pagination.OffsetParamIndex.HasValue ? $"P{plan.Pagination.OffsetParamIndex}" : "none")}");
+
+        // Parameters
+        if (plan.Parameters.Count > 0)
+        {
+            log(chainUid, $"  parameters ({plan.Parameters.Count}):");
+            foreach (var p in plan.Parameters)
             {
-                if (node is StatementSyntax stmt)
-                    Statements.Add(stmt);
-                if (node is InvocationExpressionSyntax inv)
-                    Invocations.Add(inv);
-                if (node is LambdaExpressionSyntax lambda)
-                    Lambdas.Add(lambda);
-                if (node is LocalFunctionStatementSyntax localFunc)
-                    LocalFunctions.Add(localFunc);
+                var flags = new List<string>();
+                if (p.IsCaptured) flags.Add("captured");
+                if (p.IsCollection) flags.Add($"collection<{p.ElementTypeName ?? "?"}>");
+                if (p.IsEnum) flags.Add($"enum({p.EnumUnderlyingType})");
+                if (p.NeedsFieldInfoCache) flags.Add("fieldInfo");
+                if (p.TypeMappingClass != null) flags.Add($"mapping={p.TypeMappingClass}");
+                log(chainUid, $"    P{p.GlobalIndex}: type={p.ClrType}, value={p.ValueExpression}{(flags.Count > 0 ? $", [{string.Join(", ", flags)}]" : "")}");
             }
         }
+        else
+        {
+            log(chainUid, "  parameters=none");
+        }
+
+        // Conditional terms + masks
+        if (plan.ConditionalTerms.Count > 0)
+        {
+            foreach (var ct in plan.ConditionalTerms)
+                log(chainUid, $"  conditionalTerm: bit={ct.BitIndex}");
+        }
+        log(chainUid, $"  possibleMasks=[{string.Join(", ", plan.PossibleMasks)}]");
     }
 
     /// <summary>
-    /// Represents the linear flow of assignments to a tracked variable.
+    /// Formats a SqlExpr for trace output. Renders to SQL using a generic parameter format
+    /// for readability, falling back to type name on failure.
     /// </summary>
-    private sealed class VariableFlowGraph
+    private static string FormatExpr(IR.SqlExpr expr)
     {
-        public VariableFlowGraph(List<FlowNode> nodes)
+        try
         {
-            Nodes = nodes;
+            return IR.SqlExprRenderer.Render(expr, Sql.SqlDialect.PostgreSQL, useGenericParamFormat: true, stripOuterParens: true);
         }
-
-        public List<FlowNode> Nodes { get; }
+        catch
+        {
+            return expr.GetType().Name;
+        }
     }
 
-    /// <summary>
-    /// A single assignment node in the flow graph.
-    /// </summary>
-    private sealed class FlowNode
+    private static IEnumerable<string> ColumnNames(IReadOnlyList<Models.ColumnInfo> columns)
     {
-        public FlowNode(
-            StatementSyntax statement,
-            UsageSiteInfo? matchedSite,
-            List<UsageSiteInfo> allMatchedSites,
-            IfStatementSyntax? containingIf,
-            bool isInElseBranch,
-            bool isConditional)
-        {
-            Statement = statement;
-            MatchedSite = matchedSite;
-            AllMatchedSites = allMatchedSites;
-            ContainingIf = containingIf;
-            IsInElseBranch = isInElseBranch;
-            IsConditional = isConditional;
-        }
+        foreach (var c in columns)
+            yield return c.PropertyName;
+    }
+}
 
-        public StatementSyntax Statement { get; }
-        public UsageSiteInfo? MatchedSite { get; }
-        public List<UsageSiteInfo> AllMatchedSites { get; }
-        public IfStatementSyntax? ContainingIf { get; }
-        public bool IsInElseBranch { get; }
-        public bool IsConditional { get; }
+/// <summary>
+/// A query chain analysis result pairing a QueryPlan with its associated call sites.
+/// </summary>
+internal sealed class AnalyzedChain
+{
+    public AnalyzedChain(
+        QueryPlan plan,
+        TranslatedCallSite executionSite,
+        IReadOnlyList<TranslatedCallSite> clauseSites,
+        bool isTraced = false)
+    {
+        Plan = plan;
+        ExecutionSite = executionSite;
+        ClauseSites = clauseSites;
+        IsTraced = isTraced;
     }
 
-    /// <summary>
-    /// A branch point in the flow graph where execution may diverge.
-    /// </summary>
-    private sealed class BranchPoint
-    {
-        public BranchPoint(
-            IfStatementSyntax ifStatement,
-            List<FlowNode> nodes,
-            BranchKind kind)
-        {
-            IfStatement = ifStatement;
-            Nodes = nodes;
-            Kind = kind;
-        }
+    /// <summary>The logical query plan.</summary>
+    public QueryPlan Plan { get; }
 
-        public IfStatementSyntax IfStatement { get; }
-        public List<FlowNode> Nodes { get; }
-        public BranchKind Kind { get; }
-    }
+    /// <summary>The execution terminal site.</summary>
+    public TranslatedCallSite ExecutionSite { get; }
 
-    #endregion
+    /// <summary>All clause sites in the chain (in source order).</summary>
+    public IReadOnlyList<TranslatedCallSite> ClauseSites { get; }
+
+    /// <summary>Whether this chain has a .Trace() call and should emit trace comments.</summary>
+    public bool IsTraced { get; }
 }

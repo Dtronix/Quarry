@@ -2,10 +2,11 @@ using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.WastedWork;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Shared.Sql;
 using Quarry.Shared.Migration;
 
 namespace Quarry.Analyzers.Tests;
@@ -14,7 +15,7 @@ namespace Quarry.Analyzers.Tests;
 public class WastedWorkRuleTests
 {
     private static QueryAnalysisContext CreateContext(
-        UsageSiteInfo site, EntityInfo? entity = null, IReadOnlyList<EntityInfo>? joinedEntities = null)
+        RawCallSite site, EntityInfo? entity = null, IReadOnlyList<EntityInfo>? joinedEntities = null)
     {
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { Test(); } }");
         var compilation = CSharpCompilation.Create("Test",
@@ -29,28 +30,34 @@ public class WastedWorkRuleTests
             new EmptyAnalyzerConfigOptions());
     }
 
-    private static UsageSiteInfo CreateSite(
+    private static RawCallSite CreateSite(
         InterceptorKind kind,
         string methodName = "Test",
-        ClauseInfo? clauseInfo = null,
+        SqlExpr? expression = null,
+        ClauseKind? clauseKind = null,
         ProjectionInfo? projectionInfo = null)
     {
-        return new UsageSiteInfo(
+        return new RawCallSite(
             methodName: methodName,
             filePath: "Test.cs",
-            line: 1, column: 1,
-            builderTypeName: "QueryBuilder",
-            entityTypeName: "User",
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName("Test")),
+            line: 1,
+            column: 1,
             uniqueId: "test_1",
-            projectionInfo: projectionInfo,
-            clauseInfo: clauseInfo,
-            dialect: GenSqlDialect.PostgreSQL);
+            kind: kind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)),
+            expression: expression,
+            clauseKind: clauseKind,
+            projectionInfo: projectionInfo);
     }
 
-    // ── QRA202: WideTableSelectRule ──
+    // -- QRA202: WideTableSelectRule --
 
     [Test]
     public void QRA202_WideEntityProjection_Reports()
@@ -92,7 +99,7 @@ public class WastedWorkRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA204: DuplicateProjectionColumnRule ──
+    // -- QRA204: DuplicateProjectionColumnRule --
 
     [Test]
     public void QRA204_DuplicateColumn_Reports()
@@ -126,14 +133,14 @@ public class WastedWorkRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA205: CartesianProductRule ──
+    // -- QRA205: CartesianProductRule --
 
     [Test]
     public void QRA205_EmptyOnCondition_Reports()
     {
         var rule = new CartesianProductRule();
-        var joinClause = new JoinClauseInfo(JoinClauseKind.Inner, "Order", "orders", "", new List<Quarry.Generators.Translation.ParameterInfo>());
-        var site = CreateSite(InterceptorKind.Join, clauseInfo: joinClause);
+        // No expression = no ON condition = cartesian product
+        var site = CreateSite(InterceptorKind.Join, clauseKind: ClauseKind.Join);
         var context = CreateContext(site);
         var diagnostics = rule.Analyze(context).ToList();
         Assert.That(diagnostics, Has.Count.EqualTo(1));
@@ -143,8 +150,8 @@ public class WastedWorkRuleTests
     public void QRA205_ValidOnCondition_NoReport()
     {
         var rule = new CartesianProductRule();
-        var joinClause = new JoinClauseInfo(JoinClauseKind.Inner, "Order", "orders", "t0.\"UserId\" = t1.\"UserId\"", new List<Quarry.Generators.Translation.ParameterInfo>());
-        var site = CreateSite(InterceptorKind.Join, clauseInfo: joinClause);
+        var onExpr = new SqlRawExpr("t0.\"UserId\" = t1.\"UserId\"");
+        var site = CreateSite(InterceptorKind.Join, expression: onExpr, clauseKind: ClauseKind.Join);
         var context = CreateContext(site);
         var diagnostics = rule.Analyze(context).ToList();
         Assert.That(diagnostics, Is.Empty);

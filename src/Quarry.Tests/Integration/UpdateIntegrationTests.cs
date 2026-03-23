@@ -6,13 +6,13 @@ namespace Quarry.Tests.Integration;
 [TestFixture]
 internal class UpdateIntegrationTests : SqliteIntegrationTestBase
 {
-    #region Set<TValue>(Expression, TValue) — Two-Argument Form
+    #region Set(Action<T>) — Expression Lambda (Single Column)
 
     [Test]
-    public async Task Update_Set_TwoArg_UpdatesSingleColumn()
+    public async Task Update_SetAction_UpdatesSingleColumn()
     {
         var rows = await Db.Users().Update()
-            .Set(u => u.UserName, "Updated")
+            .Set(u => u.UserName = "Updated")
             .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
 
@@ -27,11 +27,10 @@ internal class UpdateIntegrationTests : SqliteIntegrationTestBase
     }
 
     [Test]
-    public async Task Update_Set_TwoArg_MultipleColumns()
+    public async Task Update_SetAction_MultipleColumns()
     {
         var rows = await Db.Users().Update()
-            .Set(u => u.UserName, "Multi")
-            .Set(u => u.IsActive, false)
+            .Set(u => { u.UserName = "Multi"; u.IsActive = false; })
             .Where(u => u.UserId == 2)
             .ExecuteNonQueryAsync();
 
@@ -173,14 +172,14 @@ internal class UpdateIntegrationTests : SqliteIntegrationTestBase
 
     #endregion
 
-    #region Set(Action<T>) — Chained with Other Set Forms
+    #region Set(Action<T>) — Chained SetAction Calls
 
     [Test]
-    public async Task Update_SetAction_ChainedWithTwoArgSet()
+    public async Task Update_SetAction_ChainedCalls()
     {
         var rows = await Db.Users().Update()
             .Set(u => u.UserName = "Chained")
-            .Set(u => u.IsActive, false)
+            .Set(u => u.IsActive = false)
             .Where(u => u.UserId == 2)
             .ExecuteNonQueryAsync();
 

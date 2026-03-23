@@ -124,9 +124,6 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
 
     // IUpdateBuilder<T> explicit implementations
 
-    IUpdateBuilder<T> IUpdateBuilder<T>.Set<TValue>(Expression<Func<T, TValue>> column, TValue value)
-        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
-
     IUpdateBuilder<T> IUpdateBuilder<T>.Set(T entity)
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -143,9 +140,6 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // IExecutableUpdateBuilder<T> explicit implementations
-
-    IExecutableUpdateBuilder<T> IExecutableUpdateBuilder<T>.Set<TValue>(Expression<Func<T, TValue>> column, TValue value)
-        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     IExecutableUpdateBuilder<T> IExecutableUpdateBuilder<T>.Set(T entity)
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");

@@ -51,10 +51,10 @@ internal class CrossDialectWhereTests : CrossDialectTestBase
             Pg.Users().Where(u => u.UserId > 0).ToDiagnostics(),
             My.Users().Where(u => u.UserId > 0).ToDiagnostics(),
             Ss.Users().Where(u => u.UserId > 0).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (\"UserId\" > 0)",
-            pg:     "SELECT * FROM \"users\" WHERE (\"UserId\" > 0)",
-            mysql:  "SELECT * FROM `users` WHERE (`UserId` > 0)",
-            ss:     "SELECT * FROM [users] WHERE ([UserId] > 0)");
+            sqlite: "SELECT * FROM \"users\" WHERE \"UserId\" > 0",
+            pg:     "SELECT * FROM \"users\" WHERE \"UserId\" > 0",
+            mysql:  "SELECT * FROM `users` WHERE `UserId` > 0",
+            ss:     "SELECT * FROM [users] WHERE [UserId] > 0");
     }
 
     [Test]
@@ -65,10 +65,10 @@ internal class CrossDialectWhereTests : CrossDialectTestBase
             Pg.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
             My.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
             Ss.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (\"UserId\" <= 100)",
-            pg:     "SELECT * FROM \"users\" WHERE (\"UserId\" <= 100)",
-            mysql:  "SELECT * FROM `users` WHERE (`UserId` <= 100)",
-            ss:     "SELECT * FROM [users] WHERE ([UserId] <= 100)");
+            sqlite: "SELECT * FROM \"users\" WHERE \"UserId\" <= 100",
+            pg:     "SELECT * FROM \"users\" WHERE \"UserId\" <= 100",
+            mysql:  "SELECT * FROM `users` WHERE `UserId` <= 100",
+            ss:     "SELECT * FROM [users] WHERE [UserId] <= 100");
     }
 
     #endregion
@@ -115,10 +115,10 @@ internal class CrossDialectWhereTests : CrossDialectTestBase
             Pg.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
             My.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
             Ss.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND ((\"UserId\" > 0))",
-            pg:     "SELECT * FROM \"users\" WHERE (\"IsActive\" = TRUE) AND ((\"UserId\" > 0))",
-            mysql:  "SELECT * FROM `users` WHERE (`IsActive` = 1) AND ((`UserId` > 0))",
-            ss:     "SELECT * FROM [users] WHERE ([IsActive] = 1) AND (([UserId] > 0))");
+            sqlite: "SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)",
+            pg:     "SELECT * FROM \"users\" WHERE (\"IsActive\" = TRUE) AND (\"UserId\" > 0)",
+            mysql:  "SELECT * FROM `users` WHERE (`IsActive` = 1) AND (`UserId` > 0)",
+            ss:     "SELECT * FROM [users] WHERE ([IsActive] = 1) AND ([UserId] > 0)");
     }
 
     [Test]

@@ -1,12 +1,11 @@
-using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.Performance;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Shared.Sql;
-using Quarry.Generators.Translation;
 using Quarry.Shared.Migration;
 
 namespace Quarry.Analyzers.Tests;
@@ -16,19 +15,23 @@ public class PerformanceRuleTests
 {
     private static QueryAnalysisContext CreateWhereContext(string sqlFragment, EntityInfo? entity = null)
     {
-        var clause = ClauseInfo.Success(ClauseKind.Where, sqlFragment, new List<ParameterInfo>());
-        var site = new UsageSiteInfo(
+        var expression = new SqlRawExpr(sqlFragment);
+        var site = new RawCallSite(
             methodName: "Where",
             filePath: "Test.cs",
             line: 1, column: 1,
-            builderTypeName: "QueryBuilder",
-            entityTypeName: "User",
-            isAnalyzable: true,
-            kind: InterceptorKind.Where,
-            invocationSyntax: SyntaxFactory.InvocationExpression(SyntaxFactory.IdentifierName("Test")),
             uniqueId: "test_1",
-            clauseInfo: clause,
-            dialect: GenSqlDialect.PostgreSQL);
+            kind: InterceptorKind.Where,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)),
+            expression: expression,
+            clauseKind: ClauseKind.Where);
 
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { Test(); } }");
         var compilation = CSharpCompilation.Create("Test",
@@ -43,7 +46,7 @@ public class PerformanceRuleTests
             new EmptyAnalyzerConfigOptions());
     }
 
-    // ── QRA301: LeadingWildcardLikeRule ──
+    // -- QRA301: LeadingWildcardLikeRule --
 
     [Test]
     public void QRA301_LeadingWildcard_Reports()
@@ -63,7 +66,7 @@ public class PerformanceRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA302: FunctionOnColumnInWhereRule ──
+    // -- QRA302: FunctionOnColumnInWhereRule --
 
     [Test]
     public void QRA302_LowerFunction_Reports()
@@ -84,7 +87,7 @@ public class PerformanceRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA303: OrOnDifferentColumnsRule ──
+    // -- QRA303: OrOnDifferentColumnsRule --
 
     [Test]
     public void QRA303_OrDifferentColumns_Reports()
@@ -104,7 +107,7 @@ public class PerformanceRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA304: WhereOnNonIndexedColumnRule ──
+    // -- QRA304: WhereOnNonIndexedColumnRule --
 
     [Test]
     public void QRA304_NonIndexedColumn_Reports()

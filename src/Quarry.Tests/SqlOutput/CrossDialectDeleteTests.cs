@@ -19,10 +19,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             Pg.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
-            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
-            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1)",
-            mysql:  "DELETE FROM `users` WHERE (`UserId` = 1)",
-            ss:     "DELETE FROM [users] WHERE ([UserId] = 1)");
+            sqlite: "DELETE FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "DELETE FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "DELETE FROM `users` WHERE `UserId` = 1",
+            ss:     "DELETE FROM [users] WHERE [UserId] = 1");
     }
 
     [Test]
@@ -33,10 +33,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             Pg.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
-            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
-            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" > 100)",
-            mysql:  "DELETE FROM `users` WHERE (`UserId` > 100)",
-            ss:     "DELETE FROM [users] WHERE ([UserId] > 100)");
+            sqlite: "DELETE FROM \"users\" WHERE \"UserId\" > 100",
+            pg:     "DELETE FROM \"users\" WHERE \"UserId\" > 100",
+            mysql:  "DELETE FROM `users` WHERE `UserId` > 100",
+            ss:     "DELETE FROM [users] WHERE [UserId] > 100");
     }
 
     #endregion
@@ -83,10 +83,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             Pg.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
-            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = 1",
-            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND \"IsActive\" = TRUE",
-            mysql:  "DELETE FROM `users` WHERE (`UserId` = 1) AND `IsActive` = 1",
-            ss:     "DELETE FROM [users] WHERE ([UserId] = 1) AND [IsActive] = 1");
+            sqlite: "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND (\"IsActive\" = 1)",
+            pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND (\"IsActive\" = TRUE)",
+            mysql:  "DELETE FROM `users` WHERE (`UserId` = 1) AND (`IsActive` = 1)",
+            ss:     "DELETE FROM [users] WHERE ([UserId] = 1) AND ([IsActive] = 1)");
     }
 
     #endregion
@@ -101,10 +101,10 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             Pg.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
             My.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
             Ss.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
-            sqlite: "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
-            pg:     "DELETE FROM \"orders\" WHERE (\"OrderId\" = 42)",
-            mysql:  "DELETE FROM `orders` WHERE (`OrderId` = 42)",
-            ss:     "DELETE FROM [orders] WHERE ([OrderId] = 42)");
+            sqlite: "DELETE FROM \"orders\" WHERE \"OrderId\" = 42",
+            pg:     "DELETE FROM \"orders\" WHERE \"OrderId\" = 42",
+            mysql:  "DELETE FROM `orders` WHERE `OrderId` = 42",
+            ss:     "DELETE FROM [orders] WHERE [OrderId] = 42");
     }
 
     #endregion

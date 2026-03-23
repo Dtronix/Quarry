@@ -23,10 +23,10 @@ internal class CrossDialectComplexTests : CrossDialectTestBase
             Pg.Users().Where(u => u.UserId > 10).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
             My.Users().Where(u => u.UserId > 10).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
             Ss.Users().Where(u => u.UserId > 10).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserId\" > 10)",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserId\" > 10)",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`UserId` > 10)",
-            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([UserId] > 10)");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" > 10",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" > 10",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` > 10",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] > 10");
     }
 
     #endregion
@@ -55,10 +55,10 @@ internal class CrossDialectComplexTests : CrossDialectTestBase
             Pg.Users().Where(u => u.IsActive).Where(u => u.UserId > 5).Select(u => (u.UserId, u.UserName, u.Email)).ToDiagnostics(),
             My.Users().Where(u => u.IsActive).Where(u => u.UserId > 5).Select(u => (u.UserId, u.UserName, u.Email)).ToDiagnostics(),
             Ss.Users().Where(u => u.IsActive).Where(u => u.UserId > 5).Select(u => (u.UserId, u.UserName, u.Email)).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE (\"IsActive\" = 1) AND ((\"UserId\" > 5))",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE (\"IsActive\" = TRUE) AND ((\"UserId\" > 5))",
-            mysql:  "SELECT `UserId`, `UserName`, `Email` FROM `users` WHERE (`IsActive` = 1) AND ((`UserId` > 5))",
-            ss:     "SELECT [UserId], [UserName], [Email] FROM [users] WHERE ([IsActive] = 1) AND (([UserId] > 5))");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 5)",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE (\"IsActive\" = TRUE) AND (\"UserId\" > 5)",
+            mysql:  "SELECT `UserId`, `UserName`, `Email` FROM `users` WHERE (`IsActive` = 1) AND (`UserId` > 5)",
+            ss:     "SELECT [UserId], [UserName], [Email] FROM [users] WHERE ([IsActive] = 1) AND ([UserId] > 5)");
     }
 
     #endregion
@@ -123,10 +123,10 @@ internal class CrossDialectComplexTests : CrossDialectTestBase
             Pg.Orders().Where(o => o.Total > 100).Select(o => (o.OrderId, o.Total, o.Status)).ToDiagnostics(),
             My.Orders().Where(o => o.Total > 100).Select(o => (o.OrderId, o.Total, o.Status)).ToDiagnostics(),
             Ss.Orders().Where(o => o.Total > 100).Select(o => (o.OrderId, o.Total, o.Status)).ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE (\"Total\" > 100)",
-            pg:     "SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE (\"Total\" > 100)",
-            mysql:  "SELECT `OrderId`, `Total`, `Status` FROM `orders` WHERE (`Total` > 100)",
-            ss:     "SELECT [OrderId], [Total], [Status] FROM [orders] WHERE ([Total] > 100)");
+            sqlite: "SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100",
+            pg:     "SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100",
+            mysql:  "SELECT `OrderId`, `Total`, `Status` FROM `orders` WHERE `Total` > 100",
+            ss:     "SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100");
     }
 
     #endregion
@@ -141,10 +141,10 @@ internal class CrossDialectComplexTests : CrossDialectTestBase
             Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Where((u, o) => u.IsActive).Select((u, o) => (u.UserName, o.Total)).ToDiagnostics(),
             My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Where((u, o) => u.IsActive).Select((u, o) => (u.UserName, o.Total)).ToDiagnostics(),
             Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Where((u, o) => u.IsActive).Select((u, o) => (u.UserName, o.Total)).ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\"",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\"",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`IsActive`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t0].[IsActive]");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`IsActive` = 1",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t0].[IsActive] = 1");
     }
 
     [Test]

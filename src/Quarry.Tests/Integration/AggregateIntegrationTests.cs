@@ -19,6 +19,7 @@ internal class AggregateIntegrationTests : SqliteIntegrationTestBase
             .Where(o => true)
             .GroupBy(o => o.Status)
             .Select(o => (o.Status, Sql.Count()))
+            .Trace()
             .ExecuteFetchAllAsync();
 
         Assert.That(results, Has.Count.GreaterThan(0));

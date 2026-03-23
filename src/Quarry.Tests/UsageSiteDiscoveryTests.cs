@@ -679,4 +679,306 @@ public class Service
     }
 
     #endregion
+
+    #region Sql.Raw Placeholder Validation (QRY029)
+
+    [Test]
+    public void QRY029_TooManyArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} only, but two args supplied
+        db.Users().Where(u => Sql.Raw<bool>(""custom_func({0})"", u.UserId, u.UserName))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for too many arguments");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("2 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_TooFewArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} and {1} but only one arg supplied
+        db.Users().Where(u => Sql.Raw<bool>(""check({0}, {1})"", u.UserId))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for too few arguments");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("1 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_NonSequentialPlaceholders_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // {0} and {2} -- skips {1}
+        db.Users().Where(u => Sql.Raw<bool>(""check({0}, {2})"", u.UserId, u.UserName, u.UserId))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0), "Should emit QRY029 for non-sequential placeholders");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("{1} is missing"));
+    }
+
+    [Test]
+    public void QRY029_ValidTemplate_NoDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        db.Users().Where(u => Sql.Raw<bool>(""custom_func({0}, {1})"", u.UserId, u.UserName))
+            .Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.EqualTo(0), "Valid template should not emit QRY029");
+    }
+
+    #endregion
+
+    #region .Trace() Chain Tracing (QRY034)
+
+    private static CSharpCompilation CreateCompilationWithSymbols(string source, params string[] preprocessorSymbols)
+    {
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest, preprocessorSymbols: preprocessorSymbols);
+        var syntaxTrees = new[] { CSharpSyntaxTree.ParseText(source, parseOptions) };
+
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(QuarryCoreAssemblyPath),
+            MetadataReference.CreateFromFile(SystemRuntimeAssemblyPath),
+            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
+        };
+
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Collections.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.Expressions.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "netstandard.dll")));
+
+        return CSharpCompilation.Create(
+            "TestAssembly",
+            syntaxTrees,
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+    }
+
+    private const string TraceTestSchema = @"
+using Quarry;
+namespace TestApp;
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Col<bool> IsActive { get; }
+}
+";
+
+    private const string TraceTestSource = TraceTestSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Trace()
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+    [Test]
+    public void Trace_WithQuarryTraceSymbol_EmitsTraceComments()
+    {
+        var compilation = CreateCompilationWithSymbols(TraceTestSource, "QUARRY_TRACE");
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        // Should not emit QRY034 when QUARRY_TRACE is defined
+        var qry034 = diagnostics.Where(d => d.Id == "QRY034").ToList();
+        Assert.That(qry034.Count, Is.EqualTo(0), "Should not emit QRY034 when QUARRY_TRACE is defined");
+
+        // Find the interceptors file
+        var interceptorTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors."));
+        Assert.That(interceptorTree, Is.Not.Null, "Should generate an interceptors file");
+
+        var code = interceptorTree!.GetText().ToString();
+
+        // Verify trace comments are present
+        Assert.That(code, Does.Contain("// [Trace]"), "Should contain // [Trace] comments");
+        Assert.That(code, Does.Contain("// [Trace] Discovery"), "Should contain discovery trace");
+        Assert.That(code, Does.Contain("// [Trace] Binding"), "Should contain binding trace");
+        Assert.That(code, Does.Contain("// [Trace] Translation"), "Should contain translation trace");
+        Assert.That(code, Does.Contain("// [Trace] ChainAnalysis"), "Should contain chain analysis trace");
+        Assert.That(code, Does.Contain("// [Trace] Assembly"), "Should contain assembly trace");
+    }
+
+    [Test]
+    public void Trace_WithoutQuarryTraceSymbol_EmitsQRY034()
+    {
+        var compilation = CreateCompilation(TraceTestSource);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        // Should emit QRY034 when .Trace() is present but QUARRY_TRACE is not defined
+        var qry034 = diagnostics.Where(d => d.Id == "QRY034").ToList();
+        Assert.That(qry034.Count, Is.GreaterThan(0), "Should emit QRY034 when QUARRY_TRACE is not defined");
+        Assert.That(qry034[0].GetMessage(), Does.Contain("QUARRY_TRACE"));
+
+        // Verify trace comments are NOT present in generated output
+        var interceptorTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors."));
+        if (interceptorTree != null)
+        {
+            var code = interceptorTree.GetText().ToString();
+            Assert.That(code, Does.Not.Contain("// [Trace] Discovery"), "Should not contain trace comments without QUARRY_TRACE");
+        }
+    }
+
+    [Test]
+    public void Trace_ChainWithoutTrace_NoTraceComments()
+    {
+        var sourceWithoutTrace = TraceTestSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        // Even with QUARRY_TRACE defined, chains without .Trace() should not have trace comments
+        var compilation = CreateCompilationWithSymbols(sourceWithoutTrace, "QUARRY_TRACE");
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var interceptorTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors."));
+        if (interceptorTree != null)
+        {
+            var code = interceptorTree.GetText().ToString();
+            Assert.That(code, Does.Not.Contain("// [Trace] Discovery"), "Non-traced chains should not have trace comments");
+        }
+
+        // No QRY034 expected (no .Trace() call)
+        var qry034 = diagnostics.Where(d => d.Id == "QRY034").ToList();
+        Assert.That(qry034.Count, Is.EqualTo(0), "Should not emit QRY034 without .Trace() call");
+    }
+
+    #endregion
 }

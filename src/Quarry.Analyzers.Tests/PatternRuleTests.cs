@@ -1,18 +1,18 @@
-using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.Patterns;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Shared.Sql;
 
 namespace Quarry.Analyzers.Tests;
 
 [TestFixture]
 public class PatternRuleTests
 {
-    // ── QRA401: QueryInsideLoopRule ──
+    // -- QRA401: QueryInsideLoopRule --
 
     [Test]
     public void QRA401_InsideForLoop_Reports()
@@ -97,17 +97,20 @@ public class PatternRuleTests
             return name == methodName;
         });
 
-        var site = new UsageSiteInfo(
+        var site = new RawCallSite(
             methodName: methodName,
             filePath: "Test.cs",
             line: 1, column: 1,
-            builderTypeName: "QueryBuilder",
-            entityTypeName: "User",
-            isAnalyzable: true,
-            kind: InterceptorKind.ExecuteFetchAll,
-            invocationSyntax: targetInvocation,
             uniqueId: "test_1",
-            dialect: GenSqlDialect.PostgreSQL);
+            kind: InterceptorKind.ExecuteFetchAll,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)));
 
         return new QueryAnalysisContext(
             site, null, null, null, semanticModel, targetInvocation,

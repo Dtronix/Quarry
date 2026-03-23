@@ -145,7 +145,7 @@ public class ModificationBuilderTests
     {
         var builder = new UpdateBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
 
-        var result = builder.Set(e => e.Name, "NewName");
+        var result = builder.Set(e => e.Name = "NewName");
 
         Assert.That(result, Is.SameAs(builder)); // Mutable pattern
     }
@@ -255,7 +255,7 @@ public class ModificationBuilderTests
         builder.AddSetClause("\"name\"", "NewName");
         var executableBuilder = builder.All();
 
-        var result = executableBuilder.Set(e => e.Name, "AnotherName");
+        var result = executableBuilder.Set(e => e.Name = "AnotherName");
 
         Assert.That(result, Is.SameAs(executableBuilder)); // Mutable pattern
     }

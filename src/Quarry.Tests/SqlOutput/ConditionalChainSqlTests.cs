@@ -187,7 +187,7 @@ internal class ConditionalChainSqlTests
     [Test]
     public void Update_SetValue_ConditionalWhere_Active()
     {
-        IExecutableUpdateBuilder<User> query = _db.Users().Update().Set(u => u.UserName, "Updated").All();
+        IExecutableUpdateBuilder<User> query = _db.Users().Update().Set(u => u.UserName = "Updated").All();
         if (true)
         {
             query = query.Where(u => u.IsActive);
@@ -203,7 +203,7 @@ internal class ConditionalChainSqlTests
     [Test]
     public void Update_SetValue_ConditionalWhere_Inactive()
     {
-        IExecutableUpdateBuilder<User> query = _db.Users().Update().Set(u => u.UserName, "Updated").All();
+        IExecutableUpdateBuilder<User> query = _db.Users().Update().Set(u => u.UserName = "Updated").All();
         if (false)
         {
             query = query.Where(u => u.IsActive);

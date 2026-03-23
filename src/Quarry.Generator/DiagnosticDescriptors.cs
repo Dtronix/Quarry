@@ -399,6 +399,22 @@ internal static class DiagnosticDescriptors
         description: "A column has both a .Unique() modifier and an explicit single-column unique Index() on the same column. " +
                      "Remove one to avoid redundancy.");
 
+    // ─── Sql.Raw diagnostics (QRY029) ──────────────────────────────────
+
+    /// <summary>
+    /// QRY029: Sql.Raw template placeholder mismatch.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor SqlRawPlaceholderMismatch = new(
+        id: "QRY029",
+        title: "Sql.Raw placeholder mismatch",
+        messageFormat: "Sql.Raw template error: {0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The Sql.Raw template placeholders ({0}, {1}, ...) do not match the supplied arguments. " +
+                     "Placeholders must be sequential starting from {0} and match the argument count.");
+
     // ─── Chain analysis diagnostics (QRY030–QRY032) ───────────────────
 
     /// <summary>
@@ -458,6 +474,20 @@ internal static class DiagnosticDescriptors
         description: "A query builder variable is used as the receiver for multiple execution-terminating calls " +
                      "(e.g., ExecuteFetchAllAsync). Each execution path must use its own independent builder chain " +
                      "to avoid confusing aliasing behavior from the immutable builder contract.");
+
+    // ─── Trace diagnostics (QRY034) ───────────────────────────────────
+
+    /// <summary>
+    /// QRY034: .Trace() requires QUARRY_TRACE preprocessor symbol.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor TraceWithoutFlag = new(
+        id: "QRY034",
+        title: ".Trace() requires QUARRY_TRACE",
+        messageFormat: ".Trace() found on chain at {0} but QUARRY_TRACE is not defined. Add <DefineConstants>QUARRY_TRACE</DefineConstants> to enable trace output.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
 
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 

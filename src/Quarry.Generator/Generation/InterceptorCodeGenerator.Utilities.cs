@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
@@ -15,7 +16,11 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Extracts the namespace from a syntax node's containing file.
     /// </summary>
-    private static string? GetNamespaceFromFilePath(Microsoft.CodeAnalysis.SyntaxNode? syntaxNode)
+    /// <remarks>
+    /// In the new pipeline, TranslatedCallSite does not carry InvocationSyntax,
+    /// so this always returns null. Namespace resolution is handled elsewhere.
+    /// </remarks>
+    internal static string? GetNamespaceFromFilePath(Microsoft.CodeAnalysis.SyntaxNode? syntaxNode)
     {
         if (syntaxNode?.SyntaxTree == null)
             return null;
@@ -56,7 +61,7 @@ internal static partial class InterceptorCodeGenerator
     /// Converts an absolute file path to a shorter relative-style path for display in comments.
     /// Returns a path starting from a recognized project marker, or the last few path segments.
     /// </summary>
-    private static string GetRelativePath(string filePath)
+    internal static string GetRelativePath(string filePath)
     {
         if (string.IsNullOrEmpty(filePath))
             return filePath;
@@ -90,7 +95,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Extracts the namespace from a fully qualified type name.
     /// </summary>
-    private static string? GetNamespaceFromTypeName(string typeName)
+    internal static string? GetNamespaceFromTypeName(string typeName)
     {
         // Handle global:: prefix
         if (typeName.StartsWith("global::"))
@@ -126,35 +131,29 @@ internal static partial class InterceptorCodeGenerator
     /// Checks if a clause interceptor should be skipped because the clause could not be translated.
     /// When skipped, the original runtime method runs instead of a silent no-op fallback.
     /// </summary>
-    private static bool ShouldSkipNonTranslatableClause(UsageSiteInfo site)
+    internal static bool ShouldSkipNonTranslatableClause(TranslatedCallSite site)
     {
         switch (site.Kind)
         {
             case InterceptorKind.Where:
             case InterceptorKind.DeleteWhere:
             case InterceptorKind.UpdateWhere:
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.OrderBy:
             case InterceptorKind.ThenBy:
-                if (site.ClauseInfo is OrderByClauseInfo orderByInfo && orderByInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.GroupBy:
             case InterceptorKind.Having:
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.Set:
             case InterceptorKind.UpdateSet:
-                if (site.ClauseInfo is SetClauseInfo setInfo && setInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.UpdateSetAction:
-                if (site.ClauseInfo is SetActionClauseInfo actionInfo && actionInfo.IsSuccess)
-                    return false;
-                return site.ClauseInfo == null || !site.ClauseInfo.IsSuccess;
+                return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.UpdateSetPoco:
                 return site.UpdateInfo == null || site.UpdateInfo.Columns.Count == 0;
@@ -171,7 +170,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Checks if a Select interceptor should be skipped entirely (not emitted).
     /// </summary>
-    private static bool ShouldSkipSelectInterceptor(UsageSiteInfo site)
+    internal static bool ShouldSkipSelectInterceptor(TranslatedCallSite site)
     {
         var projection = site.ProjectionInfo;
         if (projection == null)
@@ -264,7 +263,7 @@ internal static partial class InterceptorCodeGenerator
     /// This prevents element names from being emitted as types in interceptor signatures
     /// when the semantic model produces unresolved element types.
     /// </summary>
-    private static string SanitizeTupleResultType(string tupleType)
+    internal static string SanitizeTupleResultType(string tupleType)
     {
         // Delegate to the full implementation
         return SanitizeTupleResultTypeCore(tupleType);
@@ -282,7 +281,7 @@ internal static partial class InterceptorCodeGenerator
         string? siteResultType, string? chainResultType, ProjectionInfo? projectionInfo)
         => ResolveExecutionResultType(siteResultType, chainResultType, projectionInfo);
 
-    private static string? ResolveExecutionResultType(
+    internal static string? ResolveExecutionResultType(
         string? siteResultType,
         string? chainResultType,
         ProjectionInfo? projectionInfo)
@@ -366,7 +365,15 @@ internal static partial class InterceptorCodeGenerator
         // Handle Arguments[N] format
         if (segment.StartsWith("Arguments["))
         {
-            return $"Unsafe.As<MethodCallExpression>({prevExpr}).Arguments[{segment.Substring("Arguments[".Length, 1)}]";
+            var idx = segment.Substring("Arguments[".Length, segment.IndexOf(']') - "Arguments[".Length);
+            return $"Unsafe.As<MethodCallExpression>({prevExpr}).Arguments[{idx}]";
+        }
+
+        // Handle Expressions[N] format (NewArrayExpression for params arrays)
+        if (segment.StartsWith("Expressions["))
+        {
+            var idx = segment.Substring("Expressions[".Length, segment.IndexOf(']') - "Expressions[".Length);
+            return $"Unsafe.As<NewArrayExpression>({prevExpr}).Expressions[{idx}]";
         }
 
         return segment switch
@@ -376,6 +383,7 @@ internal static partial class InterceptorCodeGenerator
             "Right" => $"Unsafe.As<BinaryExpression>({prevExpr}).Right",
             "Operand" => $"Unsafe.As<UnaryExpression>({prevExpr}).Operand",
             "Object" => $"Unsafe.As<MethodCallExpression>({prevExpr}).Object!",
+            "LambdaBody" => $"Unsafe.As<LambdaExpression>({prevExpr}).Body",
             "Expression" => $"Unsafe.As<MemberExpression>({prevExpr}).Expression!",
             "Test" => $"Unsafe.As<ConditionalExpression>({prevExpr}).Test",
             "IfTrue" => $"Unsafe.As<ConditionalExpression>({prevExpr}).IfTrue",
@@ -419,7 +427,7 @@ internal static partial class InterceptorCodeGenerator
     /// Generates cached extractor code using static fields for all captured parameters.
     /// Emits inline Unsafe.As navigation with cached FieldInfo.
     /// </summary>
-    private static void GenerateCachedExtraction(StringBuilder sb, List<CachedExtractorField> fields)
+    internal static void GenerateCachedExtraction(StringBuilder sb, List<CachedExtractorField> fields)
     {
         foreach (var field in fields)
         {
@@ -430,7 +438,7 @@ internal static partial class InterceptorCodeGenerator
         }
     }
 
-    private static void GeneratePlaceholderInterceptor(StringBuilder sb, UsageSiteInfo site, string methodName)
+    internal static void GeneratePlaceholderInterceptor(StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);
 
@@ -512,7 +520,7 @@ internal static partial class InterceptorCodeGenerator
     /// <summary>
     /// Escapes a string for use in a verbatim string literal.
     /// </summary>
-    private static string EscapeStringLiteral(string value)
+    internal static string EscapeStringLiteral(string value)
     {
         return value.Replace("\"", "\"\"");
     }
@@ -521,13 +529,13 @@ internal static partial class InterceptorCodeGenerator
     /// Returns a <c>.WithClauseBit(N)</c> suffix for conditional clause interceptors,
     /// or an empty string for unconditional clauses.
     /// </summary>
-    private static string ClauseBitSuffix(int? bitIndex)
+    internal static string ClauseBitSuffix(int? bitIndex)
         => bitIndex.HasValue ? $".WithClauseBit({bitIndex.Value})" : "";
 
     /// <summary>
     /// Returns the concrete type name corresponding to a concrete or interface builder type name.
     /// </summary>
-    private static string ToConcreteTypeName(string typeName)
+    internal static string ToConcreteTypeName(string typeName)
     {
         if (typeName.Length > 1 && typeName[0] == 'I' && char.IsUpper(typeName[1]))
             return typeName.Substring(1);
@@ -538,7 +546,7 @@ internal static partial class InterceptorCodeGenerator
     /// Maps IEntityAccessor to the appropriate return type for interceptors.
     /// IEntityAccessor methods return IQueryBuilder types, not IEntityAccessor types.
     /// </summary>
-    private static string ToReturnTypeName(string thisType)
+    internal static string ToReturnTypeName(string thisType)
         => thisType is "IEntityAccessor" or "EntityAccessor" ? "IQueryBuilder" : thisType;
 
     /// <summary>
@@ -546,21 +554,21 @@ internal static partial class InterceptorCodeGenerator
     /// When true, the builder is a boxed EntityAccessor struct and must be
     /// converted to a QueryBuilder via CreateQueryBuilder() before Unsafe.As casts.
     /// </summary>
-    private static bool IsEntityAccessorType(string builderTypeName)
+    internal static bool IsEntityAccessorType(string builderTypeName)
         => builderTypeName is "IEntityAccessor" or "EntityAccessor";
 
     /// <summary>
     /// Returns the expression to convert a builder to a QueryBuilder when the receiver is IEntityAccessor.
     /// Unboxes the EntityAccessor struct and calls CreateQueryBuilder() to get a real QueryBuilder.
     /// </summary>
-    private static string EntityAccessorToQueryBuilder(string entityType)
+    internal static string EntityAccessorToQueryBuilder(string entityType)
         => $"((EntityAccessor<{entityType}>)(object)builder).CreateQueryBuilder()";
 
     /// <summary>
     /// Returns true if the SQL fragment is a constant boolean TRUE tautology.
     /// Used to elide WHERE clauses like .Where(u => true) that add no filtering.
     /// </summary>
-    private static bool IsConstantTrueClause(string sqlFragment)
+    internal static bool IsConstantTrueClause(string sqlFragment)
     {
         var trimmed = sqlFragment.Trim();
         return trimmed is "TRUE" or "1" or "true";

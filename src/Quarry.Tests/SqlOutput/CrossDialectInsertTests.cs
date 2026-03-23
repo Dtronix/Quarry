@@ -21,7 +21,7 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
             Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
-            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?)",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
     }
 
@@ -43,7 +43,7 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
             Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\"",
             pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\"",
-            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?)",
+            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]");
     }
 
@@ -64,7 +64,7 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
             Ss.OrderItems().Insert(new Ss.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).ToDiagnostics().Sql,
             sqlite: "INSERT INTO \"order_items\" (\"OrderId\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"LineTotal\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"OrderItemId\"",
             pg:     "INSERT INTO \"order_items\" (\"OrderId\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"LineTotal\") VALUES ($1, $2, $3, $4, $5) RETURNING \"OrderItemId\"",
-            mysql:  "INSERT INTO `order_items` (`OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal`) VALUES (?, ?, ?, ?, ?)",
+            mysql:  "INSERT INTO `order_items` (`OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [order_items] ([OrderId], [ProductName], [Quantity], [UnitPrice], [LineTotal]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderItemId]");
     }
 
@@ -183,15 +183,14 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
         await Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteScalarAsync<int>();
         var ssSql = Connection.LastCommand!.CommandText;
 
-        // SQLite/PG/SS: RETURNING/OUTPUT in the INSERT itself (captured as CommandText)
-        // MySQL: second query is SELECT LAST_INSERT_ID() (that's what LastCommand captures)
         Assert.Multiple(() =>
         {
             Assert.That(liteSql, Is.EqualTo(
                 "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\""), "SQLite");
             Assert.That(pgSql, Is.EqualTo(
                 "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\""), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo("SELECT LAST_INSERT_ID()"), "MySQL");
+            Assert.That(mySql, Is.EqualTo(
+                "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()"), "MySQL");
             Assert.That(ssSql, Is.EqualTo(
                 "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]"), "SqlServer");
         });
@@ -220,7 +219,8 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
                 "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\""), "SQLite");
             Assert.That(pgSql, Is.EqualTo(
                 "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\""), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo("SELECT LAST_INSERT_ID()"), "MySQL");
+            Assert.That(mySql, Is.EqualTo(
+                "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()"), "MySQL");
             Assert.That(ssSql, Is.EqualTo(
                 "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]"), "SqlServer");
         });

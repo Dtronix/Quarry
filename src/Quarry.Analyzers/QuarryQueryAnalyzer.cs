@@ -13,6 +13,7 @@ using Quarry.Analyzers.Rules.Patterns;
 using Quarry.Analyzers.Rules.Performance;
 using Quarry.Analyzers.Rules.Simplification;
 using Quarry.Analyzers.Rules.WastedWork;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Parsing;
 
@@ -120,7 +121,7 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
             return;
 
         var invocation = (InvocationExpressionSyntax)nodeContext.Node;
-        var site = UsageSiteDiscovery.DiscoverUsageSite(invocation, nodeContext.SemanticModel, nodeContext.CancellationToken);
+        var site = UsageSiteDiscovery.DiscoverRawCallSite(invocation, nodeContext.SemanticModel, nodeContext.CancellationToken);
         if (site == null)
             return;
 

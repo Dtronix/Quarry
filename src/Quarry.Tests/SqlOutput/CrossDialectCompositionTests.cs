@@ -185,10 +185,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
                 .Limit(5)
                 .Select(u => (u.UserName, u.Email))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE (\"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || @p0 || '%') ORDER BY \"UserName\" DESC LIMIT 5",
-            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE (\"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || $1 || '%') ORDER BY \"UserName\" DESC LIMIT 5",
-            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL AND `UserName` LIKE CONCAT('%', ?, '%')) ORDER BY `UserName` DESC LIMIT 5",
-            ss:     "SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL AND [UserName] LIKE '%' + @p0 + '%') ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
+            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || @p0 || '%' ORDER BY \"UserName\" DESC LIMIT 5",
+            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || $1 || '%' ORDER BY \"UserName\" DESC LIMIT 5",
+            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `Email` IS NOT NULL AND `UserName` LIKE CONCAT('%', ?, '%') ORDER BY `UserName` DESC LIMIT 5",
+            ss:     "SELECT [UserName], [Email] FROM [users] WHERE [Email] IS NOT NULL AND [UserName] LIKE '%' + @p0 + '%' ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
     }
 
     #endregion
@@ -492,9 +492,9 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
 
     #endregion
 
-    #region 14. Runtime collection parameter (IN clause with non-inlineable collection)
+    #region 14. Static readonly collection (IN clause with inlineable field)
 
-    // Static field — TryResolveVariableCollectionLiterals can't trace field initializers
+    // Static readonly field with constant initializer - new pipeline inlines these
     private static readonly string[] _runtimeStatuses = new[] { "pending", "processing", "shipped" };
 
     [Test]
@@ -513,10 +513,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             Ss.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
                 .Select(o => (o.OrderId, o.Status))
                 .ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN (@p0, @p1, @p2)",
-            pg:     "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ($1, $2, $3)",
-            mysql:  "SELECT `OrderId`, `Status` FROM `orders` WHERE `Status` IN (?, ?, ?)",
-            ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN (@p0, @p1, @p2)");
+            sqlite: "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ('pending', 'processing', 'shipped')",
+            pg:     "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ('pending', 'processing', 'shipped')",
+            mysql:  "SELECT `OrderId`, `Status` FROM `orders` WHERE `Status` IN ('pending', 'processing', 'shipped')",
+            ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN ('pending', 'processing', 'shipped')");
     }
 
     [Test]
@@ -526,17 +526,13 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             .Select(o => (o.OrderId, o.Status))
             .ToDiagnostics();
 
-        // Verify top-level parameters include expanded collection values
-        Assert.That(diag.Parameters, Has.Count.EqualTo(3));
-        Assert.That(diag.Parameters[0].Value, Is.EqualTo("pending"));
-        Assert.That(diag.Parameters[1].Value, Is.EqualTo("processing"));
-        Assert.That(diag.Parameters[2].Value, Is.EqualTo("shipped"));
+        // Static readonly field with constant initializer is inlined - no runtime parameters
+        Assert.That(diag.Parameters, Has.Count.EqualTo(0));
 
-        // Verify per-clause parameters on the Where clause
+        // Verify the Where clause has the inlined IN values
         var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
-        Assert.That(whereClause.Parameters, Has.Count.EqualTo(3));
-        Assert.That(whereClause.Parameters[0].Value, Is.EqualTo("pending"));
-        Assert.That(whereClause.SqlFragment, Does.Contain("@p0"));
+        Assert.That(whereClause.Parameters, Has.Count.EqualTo(0));
+        Assert.That(whereClause.SqlFragment, Does.Contain("IN ('pending'"));
     }
 
     #endregion
@@ -558,9 +554,8 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
         Assert.That(diag.IsCarrierOptimized, Is.True);
         Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
 
-        // Verify Limit parameter is present
-        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
-        Assert.That(diag.Parameters[0].Value, Is.EqualTo(10));
+        // Limit 10 is a literal constant — inlined directly into SQL, no runtime parameter
+        Assert.That(diag.Sql, Does.Contain("LIMIT 10"));
 
         // Verify per-clause diagnostics include OrderBy
         var orderByClause = diag.Clauses.First(c => c.ClauseType == "OrderBy");

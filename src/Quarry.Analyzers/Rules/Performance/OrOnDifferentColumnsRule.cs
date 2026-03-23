@@ -15,11 +15,10 @@ internal sealed class OrOnDifferentColumnsRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var sql = clause.SqlFragment;
+        var sql = context.GetRenderedSql()!;
         if (!sql.Contains(" OR ", StringComparison.OrdinalIgnoreCase))
             yield break;
 

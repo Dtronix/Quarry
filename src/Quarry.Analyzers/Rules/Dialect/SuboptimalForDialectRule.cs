@@ -3,7 +3,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
-using Quarry;
 
 namespace Quarry.Analyzers.Rules.Dialect;
 
@@ -28,7 +27,10 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
         var site = context.Site;
-        var dialect = site.Dialect;
+        var dialect = context.Context?.Dialect;
+
+        if (dialect == null)
+            yield break;
 
         // SQLite: RIGHT JOIN not supported
         if (dialect == SqlDialect.SQLite && site.Kind == InterceptorKind.RightJoin)
@@ -39,7 +41,7 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
                 "SQLite does not support RIGHT JOIN; consider restructuring as LEFT JOIN");
         }
 
-        // MySQL: FULL OUTER JOIN not supported — check for potential patterns
+        // MySQL: FULL OUTER JOIN not supported -- check for potential patterns
         // Note: Quarry doesn't have a direct FullOuterJoin, so this is mostly informational
         if (dialect == SqlDialect.MySQL && site.Kind == InterceptorKind.RightJoin)
         {
@@ -49,7 +51,7 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
                 "MySQL has limited RIGHT JOIN optimization; consider restructuring as LEFT JOIN");
         }
 
-        // SQL Server: OFFSET/FETCH requires ORDER BY — produces invalid SQL without it
+        // SQL Server: OFFSET/FETCH requires ORDER BY -- produces invalid SQL without it
         if (dialect == SqlDialect.SqlServer && IsExecutionSite(site.Kind))
         {
             bool hasOffset = false;

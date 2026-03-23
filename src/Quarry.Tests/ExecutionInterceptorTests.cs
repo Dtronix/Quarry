@@ -1,10 +1,11 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Quarry.Generators.Generation;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Sql;
 using Quarry.Generators.Projection;
 using Quarry.Shared.Migration;
+using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests;
@@ -23,7 +24,7 @@ public class ExecutionInterceptorTests
     {
         // Execution interceptors are intentionally skipped — the built-in execution methods
         // work correctly because the Select interceptor provides the reader delegate.
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchAll, "User", "User")
         };
@@ -41,7 +42,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithExecuteFetchFirst_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchFirst, "User", "User")
         };
@@ -58,7 +59,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithExecuteFetchFirstOrDefault_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchFirstOrDefault, "User", "User")
         };
@@ -75,7 +76,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithExecuteFetchSingle_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchSingle, "User", "User")
         };
@@ -92,7 +93,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithExecuteScalar_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteScalar, "User", "User")
         };
@@ -109,7 +110,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithExecuteNonQuery_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteNonQuery, "User", "User")
         };
@@ -126,7 +127,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithToAsyncEnumerable_SkipsInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ToAsyncEnumerable, "User", "User")
         };
@@ -154,7 +155,7 @@ public class ExecutionInterceptorTests
                 CreateProjectedColumn("Name", "Name", "string", 1)
             });
 
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchAll, "User", "User", projection)
         };
@@ -171,7 +172,7 @@ public class ExecutionInterceptorTests
     [Test]
     public void GenerateInterceptorsFile_WithoutProjection_SkipsExecutionInterceptor()
     {
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchAll, "User", "User", null)
         };
@@ -189,7 +190,7 @@ public class ExecutionInterceptorTests
     public void GenerateInterceptorsFile_IncludesRequiredUsings()
     {
         // Arrange
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchAll, "User", "User")
         };
@@ -211,7 +212,7 @@ public class ExecutionInterceptorTests
     public void GenerateInterceptorsFile_IncludesInterceptsLocationAttributeDefinition()
     {
         // The attribute definition is always included in the file even when execution interceptors are skipped.
-        var usageSites = new List<UsageSiteInfo>
+        var usageSites = new List<TranslatedCallSite>
         {
             CreateExecutionUsageSite(InterceptorKind.ExecuteFetchAll, "User", "User")
         };
@@ -406,23 +407,18 @@ public class ExecutionInterceptorTests
 
         var insertInfo = InsertInfo.FromEntityInfo(entity, GenSqlDialect.SQLite, initializedPropertyNames: null);
 
-        var site = new UsageSiteInfo(
-            methodName: "ExecuteNonQueryAsync",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "IInsertBuilder",
-            entityTypeName: "Widget",
-            isAnalyzable: true,
-            kind: InterceptorKind.InsertExecuteNonQuery,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test_insert_sensitive",
-            insertInfo: insertInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteNonQueryAsync")
+            .WithKind(InterceptorKind.InsertExecuteNonQuery)
+            .WithEntityType("Widget")
+            .WithBuilderKind(BuilderKind.Query)
+            .WithBuilderTypeName("InsertBuilder<Widget>")
+            .WithUniqueId("test_insert_sensitive")
+            .WithInsertInfo(insertInfo)
+            .Build();
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
 
         // Sensitive column should have isSensitive: true
         Assert.That(result, Does.Contain("isSensitive: true"));
@@ -443,23 +439,18 @@ public class ExecutionInterceptorTests
 
         var updateInfo = InsertInfo.FromEntityInfo(entity, GenSqlDialect.SQLite, initializedPropertyNames: null);
 
-        var site = new UsageSiteInfo(
-            methodName: "Set",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "UpdateBuilder<Widget>",
-            entityTypeName: "Widget",
-            isAnalyzable: true,
-            kind: InterceptorKind.UpdateSetPoco,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test_update_sensitive",
-            updateInfo: updateInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("Set")
+            .WithKind(InterceptorKind.UpdateSetPoco)
+            .WithEntityType("Widget")
+            .WithBuilderKind(BuilderKind.Update)
+            .WithBuilderTypeName("UpdateBuilder<Widget>")
+            .WithUniqueId("test_update_sensitive")
+            .WithUpdateInfo(updateInfo)
+            .Build();
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
 
         // Sensitive column's AddSetClause should have isSensitive: true
         Assert.That(result, Does.Contain("isSensitive: true"));
@@ -542,23 +533,18 @@ public class ExecutionInterceptorTests
         });
         var insertInfo = InsertInfo.FromEntityInfo(entity, GenSqlDialect.PostgreSQL);
 
-        var site = new UsageSiteInfo(
-            methodName: "ExecuteNonQueryAsync",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "InsertBuilder<Order>",
-            entityTypeName: "Order",
-            isAnalyzable: true,
-            kind: InterceptorKind.InsertExecuteNonQuery,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test_insert_fk",
-            insertInfo: insertInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteNonQueryAsync")
+            .WithKind(InterceptorKind.InsertExecuteNonQuery)
+            .WithEntityType("Order")
+            .WithBuilderKind(BuilderKind.Query)
+            .WithBuilderTypeName("InsertBuilder<Order>")
+            .WithUniqueId("test_insert_fk")
+            .WithInsertInfo(insertInfo)
+            .Build();
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
 
         // FK column should have .Id extraction
         Assert.That(result, Does.Contain("entity.UserId.Id"));
@@ -578,23 +564,18 @@ public class ExecutionInterceptorTests
         });
         var insertInfo = InsertInfo.FromEntityInfo(entity, GenSqlDialect.PostgreSQL);
 
-        var site = new UsageSiteInfo(
-            methodName: "ExecuteScalarAsync",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "InsertBuilder<Order>",
-            entityTypeName: "Order",
-            isAnalyzable: true,
-            kind: InterceptorKind.InsertExecuteScalar,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test_insert_scalar_fk",
-            insertInfo: insertInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteScalarAsync")
+            .WithKind(InterceptorKind.InsertExecuteScalar)
+            .WithEntityType("Order")
+            .WithBuilderKind(BuilderKind.Query)
+            .WithBuilderTypeName("InsertBuilder<Order>")
+            .WithUniqueId("test_insert_scalar_fk")
+            .WithInsertInfo(insertInfo)
+            .Build();
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
 
         // FK column should have .Id extraction
         Assert.That(result, Does.Contain("entity.UserId.Id"));
@@ -611,23 +592,18 @@ public class ExecutionInterceptorTests
         });
         var updateInfo = InsertInfo.FromEntityInfo(entity, GenSqlDialect.PostgreSQL);
 
-        var site = new UsageSiteInfo(
-            methodName: "Set",
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: "UpdateBuilder<Order>",
-            entityTypeName: "Order",
-            isAnalyzable: true,
-            kind: InterceptorKind.UpdateSetPoco,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test_update_fk",
-            updateInfo: updateInfo,
-            interceptableLocationData: "dGVzdGRhdGE=",
-            interceptableLocationVersion: 1);
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("Set")
+            .WithKind(InterceptorKind.UpdateSetPoco)
+            .WithEntityType("Order")
+            .WithBuilderKind(BuilderKind.Update)
+            .WithBuilderTypeName("UpdateBuilder<Order>")
+            .WithUniqueId("test_update_fk")
+            .WithUpdateInfo(updateInfo)
+            .Build();
 
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
-            "AppDbContext", "TestApp", "test0000", new List<UsageSiteInfo> { site });
+            "AppDbContext", "TestApp", "test0000", new List<TranslatedCallSite> { site });
 
         // FK column should extract .Id
         Assert.That(result, Does.Contain("e.UserId.Id"));
@@ -682,42 +658,13 @@ public class ExecutionInterceptorTests
             modifiers: new ColumnModifiers(isSensitive: true));
     }
 
-    private static UsageSiteInfo CreateExecutionUsageSite(
+    private static TranslatedCallSite CreateExecutionUsageSite(
         InterceptorKind kind,
         string entityType,
         string resultType,
         ProjectionInfo? projection = null)
     {
-        return new UsageSiteInfo(
-            methodName: GetMethodName(kind),
-            filePath: "TestFile.cs",
-            line: 10,
-            column: 10,
-            builderTypeName: $"QueryBuilder<{entityType}, {resultType}>",
-            entityTypeName: entityType,
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: SyntaxFactory.ParseExpression("test"),
-            uniqueId: "test123",
-            resultTypeName: resultType,
-            projectionInfo: projection,
-            interceptableLocationData: "dGVzdGRhdGE=",  // Test data for unit tests
-            interceptableLocationVersion: 1);
-    }
-
-    private static string GetMethodName(InterceptorKind kind)
-    {
-        return kind switch
-        {
-            InterceptorKind.ExecuteFetchAll => "ExecuteFetchAllAsync",
-            InterceptorKind.ExecuteFetchFirst => "ExecuteFetchFirstAsync",
-            InterceptorKind.ExecuteFetchFirstOrDefault => "ExecuteFetchFirstOrDefaultAsync",
-            InterceptorKind.ExecuteFetchSingle => "ExecuteFetchSingleAsync",
-            InterceptorKind.ExecuteScalar => "ExecuteScalarAsync",
-            InterceptorKind.ExecuteNonQuery => "ExecuteNonQueryAsync",
-            InterceptorKind.ToAsyncEnumerable => "ToAsyncEnumerable",
-            _ => "Unknown"
-        };
+        return TestCallSiteBuilder.CreateExecutionSite(kind, entityType, resultType, projection);
     }
 
     private static ProjectionInfo CreateProjectionInfo(

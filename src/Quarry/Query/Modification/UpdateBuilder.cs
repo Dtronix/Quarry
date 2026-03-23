@@ -20,12 +20,6 @@ public sealed class UpdateBuilder<T> : IUpdateBuilder<T> where T : class
         _state = new UpdateState(dialect, tableName, schemaName, executionContext);
     }
 
-    public IUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value)
-    {
-        ArgumentNullException.ThrowIfNull(column);
-        return this;
-    }
-
     public IUpdateBuilder<T> Set(T entity)
     {
         ArgumentNullException.ThrowIfNull(entity);
@@ -144,12 +138,6 @@ public sealed class ExecutableUpdateBuilder<T> : IExecutableUpdateBuilder<T> whe
     internal ExecutableUpdateBuilder(UpdateState state)
     {
         _state = state;
-    }
-
-    public IExecutableUpdateBuilder<T> Set<TValue>(Expression<Func<T, TValue>> column, TValue value)
-    {
-        ArgumentNullException.ThrowIfNull(column);
-        return this;
     }
 
     public IExecutableUpdateBuilder<T> Set(T entity)

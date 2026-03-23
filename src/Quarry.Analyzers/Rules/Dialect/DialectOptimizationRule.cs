@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
-using Quarry;
 
 namespace Quarry.Analyzers.Rules.Dialect;
 
@@ -17,14 +16,16 @@ internal sealed class DialectOptimizationRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var dialect = context.Site.Dialect;
-        var sql = clause.SqlFragment;
+        var dialect = context.Context?.Dialect;
+        if (dialect == null)
+            yield break;
 
-        // PostgreSQL: LOWER() + LIKE → suggest ILIKE
+        var sql = context.GetRenderedSql()!;
+
+        // PostgreSQL: LOWER() + LIKE -> suggest ILIKE
         if (dialect == SqlDialect.PostgreSQL &&
             sql.Contains("LOWER(", StringComparison.OrdinalIgnoreCase) &&
             sql.Contains("LIKE", StringComparison.OrdinalIgnoreCase))

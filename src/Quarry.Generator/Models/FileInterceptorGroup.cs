@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using Quarry.Generators.CodeGen;
+using Quarry.Generators.IR;
 
 namespace Quarry.Generators.Models;
 
@@ -15,60 +17,33 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
         string? contextNamespace,
         string sourceFilePath,
         string fileTag,
-        IReadOnlyList<UsageSiteInfo> sites,
-        IReadOnlyList<PrebuiltChainInfo> chains,
-        IReadOnlyList<UsageSiteInfo> chainMemberSites,
-        IReadOnlyList<DiagnosticInfo> diagnostics)
+        IReadOnlyList<TranslatedCallSite> sites,
+        IReadOnlyList<AssembledPlan> assembledPlans,
+        IReadOnlyList<TranslatedCallSite> chainMemberSites,
+        IReadOnlyList<DiagnosticInfo> diagnostics,
+        IReadOnlyList<CarrierPlan> carrierPlans)
     {
         ContextClassName = contextClassName;
         ContextNamespace = contextNamespace;
         SourceFilePath = sourceFilePath;
         FileTag = fileTag;
         Sites = sites;
-        Chains = chains;
+        AssembledPlans = assembledPlans;
         ChainMemberSites = chainMemberSites;
         Diagnostics = diagnostics;
+        CarrierPlans = carrierPlans;
     }
 
-    /// <summary>
-    /// Gets the context class name.
-    /// </summary>
     public string ContextClassName { get; }
-
-    /// <summary>
-    /// Gets the context namespace.
-    /// </summary>
     public string? ContextNamespace { get; }
-
-    /// <summary>
-    /// Gets the source file path that all sites in this group originate from.
-    /// </summary>
     public string SourceFilePath { get; }
-
-    /// <summary>
-    /// Gets the sanitized file tag derived from the source path, used in output filename and class name.
-    /// </summary>
     public string FileTag { get; }
 
-    /// <summary>
-    /// Gets all analyzable usage sites from this file for this context.
-    /// </summary>
-    public IReadOnlyList<UsageSiteInfo> Sites { get; }
+    public IReadOnlyList<TranslatedCallSite> Sites { get; }
+    public IReadOnlyList<AssembledPlan> AssembledPlans { get; }
+    public IReadOnlyList<TranslatedCallSite> ChainMemberSites { get; }
+    public IReadOnlyList<CarrierPlan> CarrierPlans { get; }
 
-    /// <summary>
-    /// Gets pre-built chains whose execution terminal is in this file.
-    /// </summary>
-    public IReadOnlyList<PrebuiltChainInfo> Chains { get; }
-
-    /// <summary>
-    /// Gets non-analyzable clause sites pulled in by chain analysis
-    /// (conditional clause sites that would otherwise be excluded).
-    /// </summary>
-    public IReadOnlyList<UsageSiteInfo> ChainMemberSites { get; }
-
-    /// <summary>
-    /// Gets diagnostics discovered during grouping/analysis for deferred reporting.
-    /// </summary>
     public IReadOnlyList<DiagnosticInfo> Diagnostics { get; }
 
     public bool Equals(FileInterceptorGroup? other)
@@ -80,8 +55,9 @@ internal sealed class FileInterceptorGroup : IEquatable<FileInterceptorGroup>
             && SourceFilePath == other.SourceFilePath
             && FileTag == other.FileTag
             && EqualityHelpers.SequenceEqual(Sites, other.Sites)
-            && EqualityHelpers.SequenceEqual(Chains, other.Chains)
+            && EqualityHelpers.SequenceEqual(AssembledPlans, other.AssembledPlans)
             && EqualityHelpers.SequenceEqual(ChainMemberSites, other.ChainMemberSites)
+            && EqualityHelpers.SequenceEqual(CarrierPlans, other.CarrierPlans)
             && EqualityHelpers.SequenceEqual(Diagnostics, other.Diagnostics);
     }
 

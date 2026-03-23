@@ -25,10 +25,14 @@
     <Compile Include="..\Quarry.Generator\Models\*.cs" Link="Shared\Models\%(Filename)%(Extension)" />
     <Compile Include="..\Quarry.Generator\Parsing\*.cs" Link="Shared\Parsing\%(Filename)%(Extension)" />
     <Compile Include="..\Quarry.Generator\Translation\*.cs" Link="Shared\Translation\%(Filename)%(Extension)" />
-    <Compile Include="..\Quarry.Generator\Projection\ProjectionAnalyzer.cs" Link="Shared\Projection\ProjectionAnalyzer.cs" />
+    <!-- ProjectionAnalyzer.cs included via Projection\*.cs below -->
     <Compile Include="..\Quarry.Generator\DiagnosticDescriptors.cs" Link="Shared\DiagnosticDescriptors.cs" />
     <Compile Include="..\Quarry.Generator\Sql\*.cs" Link="Shared\Sql\%(Filename)%(Extension)" />
     <Compile Include="..\Quarry.Generator\Utilities\*.cs" Link="Shared\Utilities\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\IR\*.cs" Link="Shared\IR\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\CodeGen\*.cs" Link="Shared\CodeGen\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Generation\*.cs" Link="Shared\Generation\%(Filename)%(Extension)" />
+    <Compile Include="..\Quarry.Generator\Projection\*.cs" Link="Shared\Projection\%(Filename)%(Extension)" />
   </ItemGroup>
 
   <!-- Shared project (compiled into this assembly) -->
