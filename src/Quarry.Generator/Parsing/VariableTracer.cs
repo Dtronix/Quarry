@@ -78,6 +78,13 @@ internal static class VariableTracer
             if (root is not IdentifierNameSyntax ident)
                 break;
 
+            // Only trace through builder-type variables. Non-builder locals
+            // (e.g., context variables like `db`) must not be traced — doing so
+            // would collapse independent chains from the same context into one.
+            var symbol = semanticModel.GetSymbolInfo(ident, ct).Symbol;
+            if (symbol is not ILocalSymbol local || !IsBuilderType(local.Type.ToDisplayString()))
+                break;
+
             var declarator = TryResolveDeclarator(ident, semanticModel, ct);
             if (declarator == null)
                 break;

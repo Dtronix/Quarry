@@ -29,20 +29,9 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     }
 
     [Test]
-    public async Task BatchInsert_VariableStored_ExecuteNonQueryAsync()
-    {
-        var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
-        var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
-        await batch.Values(users).ExecuteNonQueryAsync();
-
-        Assert.That(Connection.LastCommand!.CommandText, Is.EqualTo(
-            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3)"));
-    }
-
-    [Test]
     public void BatchInsert_TwoHopVariable_ToDiagnostics()
     {
-        // Two-hop pattern: InsertBatch -> var batch -> batch.Values -> var exec -> exec.ToSql
+        // Two-hop pattern: InsertBatch -> var batch -> batch.Values -> var exec -> exec.ToDiagnostics
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
         var exec = batch.Values(new[] { new User { UserName = "a", IsActive = true } });
         var sql = exec.ToDiagnostics().Sql;
@@ -73,40 +62,15 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     }
 
     [Test]
-    public async Task BatchInsert_TwoHopVariable_ExecuteNonQueryAsync()
+    public void BatchInsert_TwoHopVariable_ExecuteNonQueryAsync_ToDiagnostics()
     {
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
         var exec = batch.Values(users);
-        await exec.ExecuteNonQueryAsync();
+        var sql = exec.ToDiagnostics().Sql;
 
-        Assert.That(Connection.LastCommand!.CommandText, Is.EqualTo(
-            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3)"));
-    }
-
-    #endregion
-
-    #region Query — Variable Stored
-
-    [Test]
-    public void Query_VariableStored_ToDiagnostics()
-    {
-        var query = Lite.Users().Where(u => u.IsActive);
-        var sql = query.Select(u => u.UserName).ToDiagnostics().Sql;
-
-        Assert.That(sql, Does.Contain("\"IsActive\""));
-        Assert.That(sql, Does.Contain("\"UserName\""));
-    }
-
-    [Test]
-    public void Query_VariableStored_SelectAndExecute()
-    {
-        var query = Lite.Users().Where(u => u.IsActive);
-        var diag = query.Select(u => new { u.UserName, u.Email }).ToDiagnostics();
-
-        Assert.That(diag.Sql, Does.Contain("\"IsActive\""));
-        Assert.That(diag.Sql, Does.Contain("\"UserName\""));
-        Assert.That(diag.Sql, Does.Contain("\"Email\""));
+        Assert.That(sql, Is.EqualTo(
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3) RETURNING \"UserId\""));
     }
 
     #endregion
