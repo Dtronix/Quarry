@@ -98,7 +98,8 @@ internal static class VariableTracer
     }
 
     /// <summary>
-    /// Checks if a type name (display string) is a known Quarry builder type.
+    /// Checks if a type display string is a known Quarry builder type.
+    /// Use for ILocalSymbol.Type.ToDisplayString() checks where generic forms appear.
     /// </summary>
     internal static bool IsBuilderType(string typeName)
     {
@@ -111,6 +112,21 @@ internal static class VariableTracer
             || typeName.Contains("IInsertBuilder")
             || typeName.Contains("IBatchInsertBuilder") || typeName.Contains("IExecutableBatchInsert")
             || typeName.Contains("InsertBuilder<");
+    }
+
+    /// <summary>
+    /// Checks if a short type name (INamedTypeSymbol.Name) is a known Quarry builder type.
+    /// Use for IMethodSymbol.ReturnType.Name or IPropertySymbol.Type.Name checks.
+    /// </summary>
+    internal static bool IsBuilderTypeName(string name)
+    {
+        return name is "IQueryBuilder" or "QueryBuilder"
+            or "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4"
+            or "IEntityAccessor" or "EntityAccessor"
+            or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "DeleteBuilder"
+            or "IUpdateBuilder" or "IExecutableUpdateBuilder" or "UpdateBuilder"
+            or "IInsertBuilder" or "InsertBuilder"
+            or "IBatchInsertBuilder" or "IExecutableBatchInsert";
     }
 
     /// <summary>
