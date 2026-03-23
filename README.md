@@ -112,7 +112,11 @@ Define tables as C# classes inheriting `Schema`. Columns are expression-bodied p
 
 ### Initializer-Aware Inserts
 
-`Insert` and `InsertMany` inspect object initializer syntax at compile time. Only explicitly set properties generate INSERT columns, producing minimal SQL without runtime reflection over property values.
+`Insert` inspects object initializer syntax at compile time. Only explicitly set properties generate INSERT columns, producing minimal SQL without runtime reflection over property values.
+
+### Batch Insert
+
+`InsertBatch` separates column declaration (compile-time analyzable lambda) from data provision (runtime collection), enabling full carrier optimization for multi-row inserts.
 
 ### Navigation Subqueries
 
@@ -314,10 +318,14 @@ db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2); // filtered COUNT
 ### Insert
 
 ```csharp
-// Initializer-aware — only set properties generate columns
+// Single insert — initializer-aware, only set properties generate columns
 await db.Users().Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
 var id = await db.Users().Insert(user).ExecuteScalarAsync<int>();  // returns generated key
-await db.Users().InsertMany(users).ExecuteNonQueryAsync();
+
+// Batch insert — column-selector + data-provider pattern
+await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+var sql = db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToSql();
+
 ```
 
 ### Update
@@ -375,7 +383,7 @@ await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 | `ExecuteNonQueryAsync()` | `Task<int>` |
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
 | `ToDiagnostics()` | `QueryDiagnostics` (SQL, parameters, optimization tier, clause breakdown) |
-| `ToSql()` | `string` (preview SQL) |
+| `ToSql()` | `string` (preview SQL, expands batch insert rows) |
 
 ### Query Diagnostics
 

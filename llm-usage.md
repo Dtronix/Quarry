@@ -119,7 +119,12 @@ db.Users.Select(u => Sql.Raw<int>("COALESCE(\"Score\", 0)"));
 // Insert — initializer-aware (only set properties generate columns)
 await db.Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
 var id = await db.Insert(user).ExecuteScalarAsync<int>(); // returns identity
-await db.InsertMany(users).ExecuteNonQueryAsync();
+
+// Batch insert — column-selector lambda + data-provider collection
+await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+// Variable-stored
+var batch = db.Users().InsertBatch(u => (u.UserName, u.IsActive));
+await batch.Values(users).ExecuteNonQueryAsync();
 
 // Update — requires Where() or All()
 await db.Update<User>().Set(u => u.UserName, "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
