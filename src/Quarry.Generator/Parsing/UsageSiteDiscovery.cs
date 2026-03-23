@@ -1641,32 +1641,6 @@ internal static class UsageSiteDiscovery
         return false;
     }
 
-    /// <summary>
-    /// Discovers all usage sites in a compilation.
-    /// </summary>
-    public static IEnumerable<UsageSiteInfo> DiscoverAllUsageSites(
-        Compilation compilation,
-        CancellationToken cancellationToken)
-    {
-        foreach (var syntaxTree in compilation.SyntaxTrees)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var semanticModel = compilation.GetSemanticModel(syntaxTree);
-            var root = syntaxTree.GetRoot(cancellationToken);
-
-            foreach (var invocation in root.DescendantNodes().OfType<InvocationExpressionSyntax>())
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var usageSite = DiscoverUsageSite(invocation, semanticModel, cancellationToken);
-                if (usageSite != null)
-                {
-                    yield return usageSite;
-                }
-            }
-        }
-    }
 
     /// <summary>
     /// Walks backward from the terminal invocation through the fluent chain,
