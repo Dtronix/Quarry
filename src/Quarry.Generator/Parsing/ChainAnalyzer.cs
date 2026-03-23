@@ -191,10 +191,16 @@ internal static class ChainAnalyzer
         {
             if (executionSite.Bound.JoinedEntityTypeNames == null)
                 executionSite = executionSite.WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
+            // Only propagate to sites AFTER the join — pre-join sites use single-entity builder types
+            bool seenJoin = false;
             for (int i = 0; i < clauseSites.Count; i++)
             {
-                if (clauseSites[i].Bound.JoinedEntityTypeNames == null
-                    && clauseSites[i].Bound.Raw.Kind is not (InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin))
+                if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+                {
+                    seenJoin = true;
+                    continue;
+                }
+                if (seenJoin && clauseSites[i].Bound.JoinedEntityTypeNames == null)
                 {
                     clauseSites[i] = clauseSites[i].WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
                 }

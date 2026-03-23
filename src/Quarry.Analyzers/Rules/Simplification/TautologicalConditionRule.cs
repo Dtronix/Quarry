@@ -14,11 +14,10 @@ internal sealed class TautologicalConditionRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        var clause = context.Site.ClauseInfo;
-        if (clause == null || clause.Kind != ClauseKind.Where || !clause.IsSuccess)
+        if (context.Site.ClauseKind != ClauseKind.Where || context.Site.Expression == null)
             yield break;
 
-        var sql = clause.SqlFragment.Trim();
+        var sql = context.GetRenderedSql()!.Trim();
 
         // Check for 1 = 1
         if (sql.Contains("1 = 1") || sql.Contains("1=1"))

@@ -1,19 +1,19 @@
-using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.Rules;
 using Quarry.Analyzers.Rules.Simplification;
 using Quarry.Analyzers.Rules.WastedWork;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
-using Quarry.Shared.Sql;
 
 namespace Quarry.Analyzers.Tests;
 
 [TestFixture]
 public class SyntaxDrivenRuleTests
 {
-    // ── QRA101: CountComparedToZeroRule ──
+    // -- QRA101: CountComparedToZeroRule --
 
     [Test]
     public void QRA101_CountGreaterThanZero_Reports()
@@ -57,7 +57,7 @@ public class SyntaxDrivenRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── QRA203: OrderByWithoutLimitRule ──
+    // -- QRA203: OrderByWithoutLimitRule --
 
     [Test]
     public void QRA203_OrderByNoLimit_Reports()
@@ -74,7 +74,7 @@ public class SyntaxDrivenRuleTests
     public void QRA203_OrderByWithTake_NoReport()
     {
         var rule = new OrderByWithoutLimitRule();
-        // Chain: x.OrderBy().Take() — Take is a subsequent call
+        // Chain: x.OrderBy().Take() -- Take is a subsequent call
         var source = "class C { void M() { x.OrderBy().Take(10); } }";
         var tree = CSharpSyntaxTree.ParseText(source);
         var compilation = CSharpCompilation.Create("Test",
@@ -92,12 +92,20 @@ public class SyntaxDrivenRuleTests
             return false;
         });
 
-        var site = new UsageSiteInfo(
-            methodName: "OrderBy", filePath: "Test.cs", line: 1, column: 1,
-            builderTypeName: "QueryBuilder", entityTypeName: "User",
-            isAnalyzable: true, kind: InterceptorKind.OrderBy,
-            invocationSyntax: orderByInv, uniqueId: "test_1",
-            dialect: GenSqlDialect.PostgreSQL);
+        var site = new RawCallSite(
+            methodName: "OrderBy",
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_1",
+            kind: InterceptorKind.OrderBy,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)));
 
         var context = new QueryAnalysisContext(
             site, null, null, null, semanticModel, orderByInv,
@@ -127,12 +135,20 @@ public class SyntaxDrivenRuleTests
             return false;
         });
 
-        var site = new UsageSiteInfo(
-            methodName: "OrderBy", filePath: "Test.cs", line: 1, column: 1,
-            builderTypeName: "QueryBuilder", entityTypeName: "User",
-            isAnalyzable: true, kind: InterceptorKind.OrderBy,
-            invocationSyntax: orderByInv, uniqueId: "test_1",
-            dialect: GenSqlDialect.PostgreSQL);
+        var site = new RawCallSite(
+            methodName: "OrderBy",
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_1",
+            kind: InterceptorKind.OrderBy,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)));
 
         var context = new QueryAnalysisContext(
             site, null, null, null, semanticModel, orderByInv,
@@ -163,12 +179,20 @@ public class SyntaxDrivenRuleTests
             return name == methodName;
         });
 
-        var site = new UsageSiteInfo(
-            methodName: methodName, filePath: "Test.cs", line: 1, column: 1,
-            builderTypeName: "QueryBuilder", entityTypeName: "User",
-            isAnalyzable: true, kind: kind,
-            invocationSyntax: targetInv, uniqueId: "test_1",
-            dialect: GenSqlDialect.PostgreSQL);
+        var site = new RawCallSite(
+            methodName: methodName,
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_1",
+            kind: kind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)));
 
         return new QueryAnalysisContext(
             site, null, null, null, semanticModel, targetInv,

@@ -164,10 +164,10 @@ internal static class CarrierAnalyzer
         if (assembled.ClauseSites.Any(cs => cs.Bound.Raw.Kind == InterceptorKind.WithTimeout))
             fields.Add(new Models.CarrierField("Timeout", "TimeSpan?", Models.FieldRole.Timeout));
 
-        // Entity field for insert/setPoco chains
+        // Entity field for insert/setPoco chains (NOT needed for SetAction — values are inlined in SQL)
         var hasSetPoco = assembled.ClauseSites.Any(cs =>
             cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPoco);
-        if (plan.Kind == QueryKind.Insert || plan.SetTerms.Count > 0 || hasSetPoco)
+        if (plan.Kind == QueryKind.Insert || hasSetPoco)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
             fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity));
