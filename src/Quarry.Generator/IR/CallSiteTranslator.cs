@@ -71,10 +71,11 @@ internal static class CallSiteTranslator
         {
             return TranslateClause(bound, registry, ct);
         }
-        catch
+        catch (Exception ex)
         {
             // Translation failed — produce a TranslatedCallSite with null Clause.
             // QRY019 diagnostic will be reported in the collected stage.
+            TraceCapture.Log(raw.UniqueId, $"Translation failed: {ex.GetType().Name}: {ex.Message}");
             return new TranslatedCallSite(bound);
         }
     }

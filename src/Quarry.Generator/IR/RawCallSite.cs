@@ -185,6 +185,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && IsInsideLoop == other.IsInsideLoop
             && IsInsideTryCatch == other.IsInsideTryCatch
             && IsCapturedInLambda == other.IsCapturedInLambda
+            && IsPassedAsArgument == other.IsPassedAsArgument
+            && IsAssignedFromNonQuarryMethod == other.IsAssignedFromNonQuarryMethod
             && ChainId == other.ChainId
             && BuilderTypeName == other.BuilderTypeName
             && Equals(Expression, other.Expression)

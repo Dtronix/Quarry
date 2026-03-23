@@ -88,12 +88,6 @@ internal sealed class FileEmitter
             .Distinct()
             .ToList();
 
-        // Also collect namespaces from the source file of each usage site
-        var fileNamespaces = _sites
-            .Select(s => InterceptorCodeGenerator.GetNamespaceFromFilePath(null))
-            .Where(ns => !string.IsNullOrEmpty(ns) && ns != "Quarry" && ns != "System")
-            .Distinct();
-
         // Collect context namespaces
         var contextNamespaces = _sites
             .Select(s => s.ContextNamespace)
@@ -109,7 +103,6 @@ internal sealed class FileEmitter
             : Enumerable.Empty<string?>();
 
         var allNamespaces = entityNamespaces
-            .Concat(fileNamespaces)
             .Concat(contextNamespaces!)
             .Concat(chainSchemaNamespaces!)
             .Distinct()
@@ -550,8 +543,7 @@ internal sealed class FileEmitter
         var isJoinedBuilder = site.JoinedEntityTypeNames != null && site.JoinedEntityTypeNames.Count >= 2;
 
         // Look up clause bitmask bit index
-        clauseBitMap.TryGetValue(site.UniqueId, out var rawBit);
-        int? clauseBit = clauseBitMap.ContainsKey(site.UniqueId) ? rawBit : null;
+        int? clauseBit = clauseBitMap.TryGetValue(site.UniqueId, out var rawBit) ? rawBit : null;
 
         // Resolve prebuilt chain membership for clause sites
         chainClauseLookup.TryGetValue(site.UniqueId, out var prebuiltClauseChain);
