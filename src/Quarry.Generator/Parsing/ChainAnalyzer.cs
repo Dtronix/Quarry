@@ -1153,33 +1153,6 @@ internal static class ChainAnalyzer
             or InterceptorKind.InsertToDiagnostics;
     }
 
-    #region Legacy compatibility (will be removed in Step 10)
-
-    /// <summary>
-    /// Legacy entry point for the old pipeline. Returns null always since the old syntax-tree-based
-    /// analysis has been removed. The old pipeline in QuarryGenerator will gracefully handle null results
-    /// by skipping chain optimization for those sites.
-    /// </summary>
-    [Obsolete("Use Analyze(ImmutableArray<TranslatedCallSite>, EntityRegistry, CancellationToken) instead")]
-    public static ChainAnalysisResult? AnalyzeChain(
-        UsageSiteInfo executionSite,
-        IReadOnlyList<UsageSiteInfo> allSitesInMethod,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken)
-    {
-        // The old syntax-tree-based analysis has been removed.
-        // Return a RuntimeBuild result so the old pipeline falls back gracefully.
-        return new ChainAnalysisResult(
-            tier: OptimizationTier.RuntimeBuild,
-            clauses: Array.Empty<ChainedClauseSite>(),
-            executionSite: executionSite,
-            conditionalClauses: Array.Empty<ConditionalClause>(),
-            possibleMasks: Array.Empty<ulong>(),
-            notAnalyzableReason: "Legacy chain analysis disabled — new pipeline active");
-    }
-
-    #endregion
-
     /// <summary>
     /// Logs retroactive discovery/binding/translation trace for a single site.
     /// Called from ChainAnalyzer when a traced chain is detected, reconstructing

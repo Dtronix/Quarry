@@ -176,9 +176,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// <summary>
     /// Processes translated call sites into per-file output groups.
     /// The new pipeline (Stages 2-4) has already performed discovery, binding, and
-    /// translation. This method converts TranslatedCallSite to UsageSiteInfo at the
-    /// boundary for ChainAnalyzer and emitter compatibility, then delegates to
-    /// PipelineOrchestrator for chain analysis and file grouping.
+    /// translation. This method delegates to PipelineOrchestrator for chain analysis
+    /// and file grouping.
     /// No re-enrichment occurs — the data is already fully enriched.
     /// </summary>
     // Old GroupByFileAndProcessTranslated removed — pipeline calls
@@ -811,53 +810,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 return true;
         }
         return false;
-    }
-
-
-    /// <summary>
-    /// Resolves the joined entity type name for a navigation join by extracting the
-    /// navigation property name from the lambda syntax and looking it up in entity metadata.
-    /// For example, u => u.Orders → NavigationInfo.PropertyName == "Orders" → RelatedEntityName == "Order".
-    /// </summary>
-    private static string? ResolveNavigationJoinEntityType(
-        UsageSiteInfo site,
-        EntityInfo leftEntity,
-        IR.EntityRegistry registry)
-    {
-        // Extract navigation property name from the lambda: u => u.Orders → "Orders"
-        if (site.InvocationSyntax is not Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax invocation)
-            return null;
-
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return null;
-
-        var arg = invocation.ArgumentList.Arguments[0].Expression;
-        string? navPropertyName = null;
-
-        if (arg is Microsoft.CodeAnalysis.CSharp.Syntax.SimpleLambdaExpressionSyntax simpleLambda
-            && simpleLambda.Body is Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax memberAccess)
-        {
-            navPropertyName = memberAccess.Name.Identifier.Text;
-        }
-        else if (arg is Microsoft.CodeAnalysis.CSharp.Syntax.ParenthesizedLambdaExpressionSyntax parenLambda
-            && parenLambda.Body is Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax parenMemberAccess)
-        {
-            navPropertyName = parenMemberAccess.Name.Identifier.Text;
-        }
-
-        if (navPropertyName == null)
-            return null;
-
-        // Find matching navigation in entity metadata
-        var nav = leftEntity.Navigations.FirstOrDefault(n => n.PropertyName == navPropertyName);
-        if (nav == null)
-            return null;
-
-        // Verify the related entity exists in the registry
-        if (registry.Contains(nav.RelatedEntityName))
-            return nav.RelatedEntityName;
-
-        return null;
     }
 
 

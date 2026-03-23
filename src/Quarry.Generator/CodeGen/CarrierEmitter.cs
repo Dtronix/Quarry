@@ -756,7 +756,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (CarrierClassBuilder.IsNonNullableValueType(param.ClrType))
+                else if (IsNonNullableValueType(param.ClrType))
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -1057,4 +1057,32 @@ internal static class CarrierEmitter
             _ => $"(SqlDialect){(int)dialect}"
         };
     }
+
+    /// <summary>
+    /// Checks if the given CLR type name is a non-nullable value type.
+    /// Used by the logging emitter to decide between .ToString() and ?.ToString() ?? "null".
+    /// </summary>
+    private static bool IsNonNullableValueType(string typeName)
+    {
+        if (typeName.EndsWith("?"))
+            return false;
+        if (ValueTypes.Contains(typeName))
+            return true;
+        // Enum types (PascalCase, no dots/generics) are value types
+        if (!typeName.Contains('<') && !typeName.Contains('[') && !typeName.Contains('.'))
+            return false; // Could be a class name — treat conservatively as reference
+        return false;
+    }
+
+    /// <summary>
+    /// Known value types that don't need nullable annotation.
+    /// </summary>
+    private static readonly HashSet<string> ValueTypes = new(System.StringComparer.Ordinal)
+    {
+        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
+        "float", "double", "decimal", "bool", "char",
+        "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DateOnly", "TimeOnly",
+        "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
+        "Single", "Double", "Decimal", "Boolean", "Char"
+    };
 }

@@ -1,64 +1,7 @@
 using System;
-using System.Collections.Generic;
 using Microsoft.CodeAnalysis;
 
 namespace Quarry.Generators.Translation;
-
-/// <summary>
-/// Represents the result of translating a C# expression to SQL.
-/// </summary>
-internal sealed class ExpressionTranslationResult
-{
-    /// <summary>
-    /// Indicates successful translation with SQL output.
-    /// </summary>
-    public static ExpressionTranslationResult Success(string sql) =>
-        new(sql, true, null);
-
-    /// <summary>
-    /// Indicates successful translation with SQL output and parameters.
-    /// </summary>
-    public static ExpressionTranslationResult Success(string sql, IReadOnlyList<ParameterInfo> parameters) =>
-        new(sql, true, null, parameters);
-
-    /// <summary>
-    /// Indicates failed translation with an error message.
-    /// </summary>
-    public static ExpressionTranslationResult Failure(string error) =>
-        new(null, false, error);
-
-    private ExpressionTranslationResult(
-        string? sql,
-        bool isSuccess,
-        string? errorMessage,
-        IReadOnlyList<ParameterInfo>? parameters = null)
-    {
-        Sql = sql;
-        IsSuccess = isSuccess;
-        ErrorMessage = errorMessage;
-        Parameters = parameters ?? System.Array.Empty<ParameterInfo>();
-    }
-
-    /// <summary>
-    /// Gets the translated SQL fragment, or null if translation failed.
-    /// </summary>
-    public string? Sql { get; }
-
-    /// <summary>
-    /// Gets whether the translation was successful.
-    /// </summary>
-    public bool IsSuccess { get; }
-
-    /// <summary>
-    /// Gets the error message if translation failed.
-    /// </summary>
-    public string? ErrorMessage { get; }
-
-    /// <summary>
-    /// Gets the parameters extracted from the expression.
-    /// </summary>
-    public IReadOnlyList<ParameterInfo> Parameters { get; }
-}
 
 /// <summary>
 /// Represents a parameter extracted from an expression.

@@ -118,44 +118,6 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Discovers a usage site from an invocation expression, returning a UsageSiteInfo.
-    /// Used by analyzers. Internally delegates to DiscoverRawCallSite and converts the result.
-    /// </summary>
-    public static UsageSiteInfo? DiscoverUsageSite(
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken)
-    {
-        var raw = DiscoverRawCallSite(invocation, semanticModel, cancellationToken);
-        if (raw == null)
-            return null;
-
-        return new UsageSiteInfo(
-            methodName: raw.MethodName,
-            filePath: raw.FilePath,
-            line: raw.Line,
-            column: raw.Column,
-            builderTypeName: raw.BuilderTypeName ?? "",
-            entityTypeName: raw.EntityTypeName,
-            isAnalyzable: raw.IsAnalyzable,
-            kind: raw.Kind,
-            invocationSyntax: invocation,
-            uniqueId: raw.UniqueId,
-            resultTypeName: raw.ResultTypeName,
-            nonAnalyzableReason: raw.NonAnalyzableReason,
-            contextClassName: raw.ContextClassName,
-            projectionInfo: raw.ProjectionInfo,
-            interceptableLocationData: raw.InterceptableLocationData,
-            interceptableLocationVersion: raw.InterceptableLocationVersion,
-            joinedEntityTypeName: raw.JoinedEntityTypeName,
-            joinedEntityTypeNames: raw.JoinedEntityTypeNames as System.Collections.Generic.IReadOnlyList<string>,
-            rawSqlTypeInfo: raw.RawSqlTypeInfo,
-            isNavigationJoin: raw.IsNavigationJoin,
-            constantIntValue: raw.ConstantIntValue,
-            builderKind: raw.BuilderKind);
-    }
-
-    /// <summary>
     /// Discovers a raw call site from an invocation expression, returning a RawCallSite
     /// suitable for the incremental pipeline. This method is self-contained:
     /// - Resolves method symbols with CandidateSymbols fallback
@@ -247,43 +209,7 @@ internal static class UsageSiteDiscovery
         else
         {
             // No candidates at all — try syntactic-only discovery for execution methods
-            var syntacticSite = TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
-            if (syntacticSite != null)
-            {
-                var sIsInsideLoop = DetectLoopAncestor(invocation);
-                var sIsInsideTryCatch = DetectTryCatchAncestor(invocation);
-                var sIsCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-                var sConditionalInfo = DetectConditionalAncestor(invocation);
-                var sChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
-                var (sIsPassedAsArgument, sIsAssignedFromNonQuarryMethod) =
-                    DetectVariableDisqualifiers(invocation, semanticModel);
-
-                return new RawCallSite(
-                    methodName: syntacticSite.MethodName,
-                    filePath: syntacticSite.FilePath,
-                    line: syntacticSite.Line,
-                    column: syntacticSite.Column,
-                    uniqueId: syntacticSite.UniqueId,
-                    kind: syntacticSite.Kind,
-                    builderKind: syntacticSite.BuilderKind,
-                    entityTypeName: syntacticSite.EntityTypeName,
-                    resultTypeName: syntacticSite.ResultTypeName,
-                    isAnalyzable: syntacticSite.IsAnalyzable,
-                    nonAnalyzableReason: syntacticSite.NonAnalyzableReason,
-                    interceptableLocationData: syntacticSite.InterceptableLocationData,
-                    interceptableLocationVersion: syntacticSite.InterceptableLocationVersion,
-                    location: new DiagnosticLocation(syntacticSite.FilePath, syntacticSite.Line, syntacticSite.Column, invocation.Span),
-                    contextClassName: syntacticSite.ContextClassName,
-                    builderTypeName: syntacticSite.BuilderTypeName,
-                    isInsideLoop: sIsInsideLoop,
-                    isInsideTryCatch: sIsInsideTryCatch,
-                    isCapturedInLambda: sIsCapturedInLambda,
-                    isPassedAsArgument: sIsPassedAsArgument,
-                    isAssignedFromNonQuarryMethod: sIsAssignedFromNonQuarryMethod,
-                    conditionalInfo: sConditionalInfo,
-                    chainId: sChainId);
-            }
-            return null;
+            return TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
         }
 
         // ── Step 2: Containing type check ──────────────────────────────────
@@ -296,39 +222,7 @@ internal static class UsageSiteDiscovery
         // ── Step 3: RawSql detection ───────────────────────────────────────
         if (RawSqlMethods.TryGetValue(methodName, out var rawSqlKind) && IsQuarryContextType(containingType))
         {
-            var rawSqlSite = DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
-            if (rawSqlSite == null)
-                return null;
-
-            var rsIsInsideLoop = DetectLoopAncestor(invocation);
-            var rsIsInsideTryCatch = DetectTryCatchAncestor(invocation);
-            var rsIsCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-            var rsConditionalInfo = DetectConditionalAncestor(invocation);
-            var rsChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
-
-            return new RawCallSite(
-                methodName: rawSqlSite.MethodName,
-                filePath: rawSqlSite.FilePath,
-                line: rawSqlSite.Line,
-                column: rawSqlSite.Column,
-                uniqueId: rawSqlSite.UniqueId,
-                kind: rawSqlSite.Kind,
-                builderKind: rawSqlSite.BuilderKind,
-                entityTypeName: rawSqlSite.EntityTypeName,
-                resultTypeName: rawSqlSite.ResultTypeName,
-                isAnalyzable: rawSqlSite.IsAnalyzable,
-                nonAnalyzableReason: rawSqlSite.NonAnalyzableReason,
-                interceptableLocationData: rawSqlSite.InterceptableLocationData,
-                interceptableLocationVersion: rawSqlSite.InterceptableLocationVersion,
-                location: new DiagnosticLocation(rawSqlSite.FilePath, rawSqlSite.Line, rawSqlSite.Column, invocation.Span),
-                contextClassName: rawSqlSite.ContextClassName,
-                builderTypeName: rawSqlSite.BuilderTypeName,
-                rawSqlTypeInfo: rawSqlSite.RawSqlTypeInfo,
-                isInsideLoop: rsIsInsideLoop,
-                isInsideTryCatch: rsIsInsideTryCatch,
-                isCapturedInLambda: rsIsCapturedInLambda,
-                conditionalInfo: rsConditionalInfo,
-                chainId: rsChainId);
+            return DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
         }
 
         // ── Step 4: Chain root detection ───────────────────────────────────
@@ -1895,7 +1789,7 @@ internal static class UsageSiteDiscovery
     /// (no symbol, no candidates). This happens when generated entity types make the entire
     /// receiver chain unresolvable.
     /// </summary>
-    private static UsageSiteInfo? TryDiscoverExecutionSiteSyntactically(
+    private static RawCallSite? TryDiscoverExecutionSiteSyntactically(
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
@@ -1966,22 +1860,39 @@ internal static class UsageSiteDiscovery
         if (contextClassName == null)
             contextClassName = ResolveContextFromCallSite(invocation, semanticModel, cancellationToken);
 
-        return new UsageSiteInfo(
+        // Detect disqualifiers
+        var isInsideLoop = DetectLoopAncestor(invocation);
+        var isInsideTryCatch = DetectTryCatchAncestor(invocation);
+        var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
+        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+        var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
+            DetectVariableDisqualifiers(invocation, semanticModel);
+
+        return new RawCallSite(
             methodName: methodName,
             filePath: filePath,
             line: line,
             column: column,
-            builderTypeName: builderKind,
-            entityTypeName: entityTypeName,
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: invocation,
             uniqueId: uniqueId,
+            kind: kind,
+            builderKind: ClassifyBuilderKind(builderKind),
+            entityTypeName: entityTypeName,
             resultTypeName: null,
-            contextClassName: contextClassName,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
             interceptableLocationData: interceptableLocationData,
             interceptableLocationVersion: interceptableLocationVersion ?? 1,
-            builderKind: ClassifyBuilderKind(builderKind));
+            location: new DiagnosticLocation(filePath, line, column, invocation.Span),
+            contextClassName: contextClassName,
+            builderTypeName: builderKind,
+            isInsideLoop: isInsideLoop,
+            isInsideTryCatch: isInsideTryCatch,
+            isCapturedInLambda: isCapturedInLambda,
+            isPassedAsArgument: isPassedAsArgument,
+            isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
+            conditionalInfo: conditionalInfo,
+            chainId: chainId);
     }
 
     /// <summary>
@@ -2630,7 +2541,7 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Discovers a RawSql usage site (RawSqlAsync/RawSqlScalarAsync on QuarryContext).
     /// </summary>
-    private static UsageSiteInfo? DiscoverRawSqlUsageSite(
+    private static RawCallSite? DiscoverRawSqlUsageSite(
         InvocationExpressionSyntax invocation,
         IMethodSymbol methodSymbol,
         INamedTypeSymbol containingType,
@@ -2703,22 +2614,36 @@ internal static class UsageSiteDiscovery
 
         var resultTypeName = typeArgSymbol.ToFullyQualifiedDisplayString();
 
-        return new UsageSiteInfo(
+        // Detect disqualifiers
+        var isInsideLoop = DetectLoopAncestor(invocation);
+        var isInsideTryCatch = DetectTryCatchAncestor(invocation);
+        var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
+        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+
+        return new RawCallSite(
             methodName: methodName,
             filePath: filePath,
             line: line,
             column: column,
-            builderTypeName: containingType.Name,
-            entityTypeName: resultTypeName, // For RawSql, "entity type" is the result type T
-            isAnalyzable: true,
-            kind: kind,
-            invocationSyntax: invocation,
             uniqueId: uniqueId,
+            kind: kind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: resultTypeName, // For RawSql, "entity type" is the result type T
             resultTypeName: resultTypeName,
-            contextClassName: contextClassName,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
             interceptableLocationData: interceptableLocationData,
             interceptableLocationVersion: interceptableLocationVersion,
-            rawSqlTypeInfo: rawSqlTypeInfo);
+            location: new DiagnosticLocation(filePath, line, column, invocation.Span),
+            contextClassName: contextClassName,
+            builderTypeName: containingType.Name,
+            rawSqlTypeInfo: rawSqlTypeInfo,
+            isInsideLoop: isInsideLoop,
+            isInsideTryCatch: isInsideTryCatch,
+            isCapturedInLambda: isCapturedInLambda,
+            conditionalInfo: conditionalInfo,
+            chainId: chainId);
     }
 
     /// <summary>
