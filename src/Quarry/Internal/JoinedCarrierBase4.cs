@@ -41,8 +41,8 @@ public abstract class JoinedCarrierBase4<T1, T2, T3, T4> : IEntityAccessor<T1>, 
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T1> IEntityAccessor<T1>.Insert(T1 entity)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IInsertBuilder<T1> IEntityAccessor<T1>.InsertMany(IEnumerable<T1> entities)
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T1> IEntityAccessor<T1>.InsertBatch<TColumns>(Func<T1, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryPlan IEntityAccessor<T1>.ToQueryPlan()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -244,8 +244,8 @@ public abstract class JoinedCarrierBase4<T1, T2, T3, T4, TResult> : IEntityAcces
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Update is not intercepted in this optimized chain. This indicates a code generation bug.");
     IInsertBuilder<T1> IEntityAccessor<T1>.Insert(T1 entity)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IInsertBuilder<T1> IEntityAccessor<T1>.InsertMany(IEnumerable<T1> entities)
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.InsertMany is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T1> IEntityAccessor<T1>.InsertBatch<TColumns>(Func<T1, TColumns> columnSelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.Insert(columnSelector) is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryPlan IEntityAccessor<T1>.ToQueryPlan()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToQueryPlan is not intercepted in this optimized chain. This indicates a code generation bug.");

@@ -664,4 +664,169 @@ internal static class TerminalBodyEmitter
 
         sb.AppendLine($"    }}");
     }
+
+    // ── Batch Insert Terminals ──
+
+    /// <summary>
+    /// Emits a batch insert ExecuteNonQueryAsync terminal.
+    /// </summary>
+    public static void EmitBatchInsertNonQueryTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static Task<int> {methodName}(");
+        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder,");
+        sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null && chain != null)
+        {
+            EmitBatchInsertCarrierTerminal(sb, carrier, chain, "ExecuteCarrierNonQueryWithCommandAsync", entityType);
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a batch insert ExecuteScalarAsync terminal.
+    /// </summary>
+    public static void EmitBatchInsertScalarTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
+        sb.AppendLine($"        this IExecutableBatchInsert<T> builder,");
+        sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null && chain != null)
+        {
+            EmitBatchInsertCarrierTerminal(sb, carrier, chain, "ExecuteCarrierScalarWithCommandAsync<TKey>", entityType);
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a batch insert ToDiagnostics terminal.
+    /// </summary>
+    public static void EmitBatchInsertDiagnosticsTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
+        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder)");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
+        {
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+
+            // Build SQL with a single preview row
+            var sqlPrefix = chain.SqlVariants.Values.First().Sql;
+            var escapedPrefix = InterceptorCodeGenerator.EscapeStringLiteral(sqlPrefix);
+            var returningSuffix = chain.BatchInsertReturningSuffix != null
+                ? $"@\"{InterceptorCodeGenerator.EscapeStringLiteral(chain.BatchInsertReturningSuffix)}\""
+                : "null";
+
+            sb.AppendLine($"        var sql = Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", 1, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
+            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, true);");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a batch insert ToSql terminal.
+    /// </summary>
+    public static void EmitBatchInsertToSqlTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
+        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        sb.AppendLine($"    public static string {methodName}(");
+        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder)");
+        sb.AppendLine($"    {{");
+
+        if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
+        {
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+
+            var sqlPrefix = chain.SqlVariants.Values.First().Sql;
+            var escapedPrefix = InterceptorCodeGenerator.EscapeStringLiteral(sqlPrefix);
+            var returningSuffix = chain.BatchInsertReturningSuffix != null
+                ? $"@\"{InterceptorCodeGenerator.EscapeStringLiteral(chain.BatchInsertReturningSuffix)}\""
+                : "null";
+
+            sb.AppendLine($"        var __entities = __c.BatchEntities as System.Collections.ICollection ?? System.Linq.Enumerable.ToList(__c.BatchEntities!);");
+            sb.AppendLine($"        return Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", __entities.Count, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
+        }
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Shared helper that emits the carrier execution terminal body for batch insert NonQuery/Scalar.
+    /// </summary>
+    private static void EmitBatchInsertCarrierTerminal(
+        StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
+        string executorMethod, string entityType)
+    {
+        var insertInfo = chain.ExecutionSite.InsertInfo;
+        if (insertInfo == null || insertInfo.Columns.Count == 0) return;
+
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        sb.AppendLine("        var __opId = OpId.Next();");
+
+        // Materialize entities
+        sb.AppendLine($"        var __entities = System.Linq.Enumerable.ToList(__c.BatchEntities!);");
+        sb.AppendLine($"        var __entityCount = __entities.Count;");
+
+        // Build SQL from prefix template
+        var sqlPrefix = chain.SqlVariants.Values.First().Sql;
+        var escapedPrefix = InterceptorCodeGenerator.EscapeStringLiteral(sqlPrefix);
+        var returningSuffix = chain.BatchInsertReturningSuffix != null
+            ? $"@\"{InterceptorCodeGenerator.EscapeStringLiteral(chain.BatchInsertReturningSuffix)}\""
+            : "null";
+
+        sb.AppendLine($"        var sql = Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", __entityCount, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
+
+        // SQL logging
+        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
+
+        // Command creation and parameter binding
+        var timeoutExpr = carrier.Fields.Any(f => f.Role == FieldRole.Timeout)
+            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
+            : "__c.Ctx!.DefaultTimeout";
+        sb.AppendLine("        var __cmd = __c.Ctx!.Connection.CreateCommand();");
+        sb.AppendLine("        __cmd.CommandText = sql;");
+        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+
+        // Bind parameters from entities
+        sb.AppendLine("        var __paramIdx = 0;");
+        sb.AppendLine("        for (int __row = 0; __row < __entityCount; __row++)");
+        sb.AppendLine("        {");
+        sb.AppendLine($"            var __entity = __entities[__row];");
+
+        for (int i = 0; i < insertInfo.Columns.Count; i++)
+        {
+            var col = insertInfo.Columns[i];
+            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass);
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                var __p = __cmd.CreateParameter();");
+            sb.AppendLine($"                __p.ParameterName = \"@p\" + __paramIdx;");
+            sb.AppendLine($"                __p.Value = (object?){valueExpr} ?? DBNull.Value;");
+            sb.AppendLine($"                __cmd.Parameters.Add(__p);");
+            sb.AppendLine($"                __paramIdx++;");
+            sb.AppendLine($"            }}");
+        }
+
+        sb.AppendLine("        }");
+
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
+    }
 }

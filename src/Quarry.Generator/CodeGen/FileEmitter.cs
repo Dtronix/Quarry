@@ -416,7 +416,9 @@ internal sealed class FileEmitter
         }
 
         // Transitions: carrier-only
-        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition or InterceptorKind.InsertTransition)
+        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition
+            or InterceptorKind.InsertTransition or InterceptorKind.BatchInsertColumnSelector
+            or InterceptorKind.BatchInsertValues)
         {
             if (!isCarrierSite)
                 return;
@@ -705,6 +707,44 @@ internal sealed class FileEmitter
             case InterceptorKind.InsertTransition:
                 if (carrierInfo != null)
                     TransitionBodyEmitter.EmitInsertTransition(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.BatchInsertColumnSelector:
+                if (carrierInfo != null)
+                    TransitionBodyEmitter.EmitBatchInsertColumnSelector(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.BatchInsertValues:
+                if (carrierInfo != null)
+                    TransitionBodyEmitter.EmitBatchInsertValues(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.BatchInsertExecuteNonQuery:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var batchInsertChain);
+                    TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, batchInsertChain, carrierInfo);
+                }
+                break;
+
+            case InterceptorKind.BatchInsertExecuteScalar:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var batchInsertScalarChain);
+                    TerminalBodyEmitter.EmitBatchInsertScalarTerminal(sb, site, methodName, batchInsertScalarChain, carrierInfo);
+                }
+                break;
+
+            case InterceptorKind.BatchInsertToDiagnostics:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var batchInsertDiagChain);
+                    TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, batchInsertDiagChain, carrierInfo);
+                }
+                break;
+
+            case InterceptorKind.BatchInsertToSql:
+                {
+                    chainLookup.TryGetValue(site.UniqueId, out var batchInsertSqlChain);
+                    TerminalBodyEmitter.EmitBatchInsertToSqlTerminal(sb, site, methodName, batchInsertSqlChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.AllTransition:

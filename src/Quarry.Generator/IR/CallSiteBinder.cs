@@ -74,6 +74,24 @@ internal static class CallSiteBinder
             insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialect, propNames);
         }
 
+        // Build InsertInfo for batch insert sites (column names come from lambda selector)
+        if (raw.Kind is InterceptorKind.BatchInsertColumnSelector
+            or InterceptorKind.BatchInsertExecuteNonQuery
+            or InterceptorKind.BatchInsertExecuteScalar
+            or InterceptorKind.BatchInsertToDiagnostics
+            or InterceptorKind.BatchInsertToSql
+            && entry != null)
+        {
+            HashSet<string>? propNames = null;
+            if (raw.BatchInsertColumnNames.HasValue)
+            {
+                propNames = new HashSet<string>(System.StringComparer.Ordinal);
+                foreach (var name in raw.BatchInsertColumnNames.Value)
+                    propNames.Add(name);
+            }
+            insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialect, propNames);
+        }
+
         // Build UpdateInfo for UpdateSetPoco
         InsertInfo? updateInfo = null;
         if (raw.Kind == InterceptorKind.UpdateSetPoco && entry != null)

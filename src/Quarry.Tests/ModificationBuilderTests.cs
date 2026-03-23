@@ -32,37 +32,8 @@ public class ModificationBuilderTests
         Assert.That(sql, Is.EqualTo("INSERT INTO \"public\".\"users\" (\"id\", \"name\")"));
     }
 
-    [Test]
-    public void InsertBuilder_Values_AddEntityToBuilder()
-    {
-        var builder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
-        var entity = new TestEntity { Id = 1, Name = "Test" };
-
-        var result = builder.Values(entity);
-
-        Assert.That(result, Is.SameAs(builder)); // Mutable pattern
-        Assert.That(builder.Entities, Has.Count.EqualTo(1));
-    }
-
-    [Test]
-    public void InsertBuilder_Values_SupportsMultipleEntities()
-    {
-        var builder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
-
-        builder.Values(new TestEntity { Id = 1, Name = "One" });
-        builder.Values(new TestEntity { Id = 2, Name = "Two" });
-        builder.Values(new TestEntity { Id = 3, Name = "Three" });
-
-        Assert.That(builder.Entities, Has.Count.EqualTo(3));
-    }
-
-    [Test]
-    public void InsertBuilder_Values_ThrowsOnNull()
-    {
-        var builder = new InsertBuilder<TestEntity>(SqlDialect.PostgreSQL, "users", null);
-
-        Assert.Throws<ArgumentNullException>(() => builder.Values(null!));
-    }
+    // Values() tests removed: InsertBuilder is now single-entity only.
+    // Batch inserts use the column-selector API on IEntityAccessor.
 
     [Test]
     public void InsertBuilder_WithTimeout_ReturnsSameInstance()

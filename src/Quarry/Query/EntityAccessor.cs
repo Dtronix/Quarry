@@ -73,13 +73,10 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
     public IInsertBuilder<T> Insert(T entity)
         => new InsertBuilder<T>(_dialect, _tableName, _schemaName, _ctx, entity);
 
-    public IInsertBuilder<T> InsertMany(IEnumerable<T> entities)
-    {
-        var builder = new InsertBuilder<T>(_dialect, _tableName, _schemaName, _ctx);
-        foreach (var entity in entities)
-            builder.Values(entity);
-        return builder;
-    }
+    public IBatchInsertBuilder<T> InsertBatch<TColumns>(Func<T, TColumns> columnSelector)
+        => throw new InvalidOperationException(
+            "Batch insert with column selector requires source generation. " +
+            "Ensure the Quarry source generator is referenced in your project.");
 
     public QueryPlan ToQueryPlan()
         => new QueryPlan(CreateQueryBuilder().ToSql(), QueryPlanTier.RuntimeBuild, _dialect);

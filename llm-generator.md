@@ -85,6 +85,7 @@ db.Users().Trace()  // requires QUARRY_TRACE preprocessor symbol
 - `IQueryBuilder<T>` / `IQueryBuilder<T, TResult>` — SELECT chain
 - `IJoinedQueryBuilder<T1,T2>` / `<T1,T2,T3>` / `<T1,T2,T3,T4>` — joined chains
 - `IDeleteBuilder<T>` / `IUpdateBuilder<T>` / `IInsertBuilder<T>` — mutation chains
+- `IBatchInsertBuilder<T>` / `IExecutableBatchInsert<T>` — batch insert chains (column-selector → values → terminal)
 
 ### Execution Terminals
 `ExecuteFetchAllAsync`, `ExecuteFetchFirstAsync`, `ExecuteFetchFirstOrDefaultAsync`, `ExecuteFetchSingleAsync`, `ExecuteNonQueryAsync`, `ExecuteScalarAsync<T>`, `ToAsyncEnumerable`
@@ -112,6 +113,7 @@ RawCallSite ──────→ BoundCallSite ──────→ Translated
 | `ContextParser` | Parses `[QuarryContext]` classes → `ContextInfo` (dialect, schema, entity list) |
 | `SchemaParser` | Finds `{Entity}Schema : Schema` → `EntityInfo` (columns, navigations, indexes, keys, custom reader) |
 | `UsageSiteDiscovery` | Identifies Quarry builder method invocations → `RawCallSite` |
+| `VariableTracer` | Traces through variable declarations to unify chains split across locals (up to 2 hops) |
 | `AnalyzabilityChecker` | Validates chain is compile-time analyzable (no cross-method, no dynamic capture, no loops) |
 | `NamingConventions` | Delegates property→column naming (Exact/SnakeCase/CamelCase/LowerCase) |
 
@@ -232,8 +234,8 @@ Dialect-agnostic expression tree for SQL fragments.
 ### Enums
 | Enum | Values |
 |---|---|
-| `InterceptorKind` | 48 values: Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, Join, LeftJoin, RightJoin, Execute*, Insert*, Delete*, Update*, RawSql*, Limit, Offset, Distinct, WithTimeout, Trace, transitions, Unknown |
-| `BuilderKind` | Query, Delete, ExecutableDelete, Update, ExecutableUpdate, JoinedQuery, EntityAccessor |
+| `InterceptorKind` | 54+ values: Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, Join, LeftJoin, RightJoin, Execute*, Insert*, BatchInsert* (ColumnSelector, Values, ExecuteNonQuery, ExecuteScalar, ToSql, ToDiagnostics), Delete*, Update*, RawSql*, Limit, Offset, Distinct, WithTimeout, Trace, transitions, Unknown |
+| `BuilderKind` | Query, Delete, ExecutableDelete, Update, ExecutableUpdate, JoinedQuery, EntityAccessor, BatchInsert, ExecutableBatchInsert |
 | `QueryKind` | Select, Delete, Update, Insert |
 | `OptimizationTier` | PrebuiltDispatch, PrequotedFragments, RuntimeBuild |
 | `ClauseKind` | Where, OrderBy, GroupBy, Having, Set, Join |
@@ -323,5 +325,6 @@ Dialect-agnostic expression tree for SQL fragments.
 3. **Carrier optimization**: eligible chains get zero-alloc sealed classes using `Unsafe.As` casts between builder interfaces
 4. **Conditional dispatch**: ≤4 conditional clauses → enumerate all 2^N SQL variants; >4 → fragment composition
 5. **SqlExpr is dialect-agnostic** — dialect applied only at render time
-6. **Graceful degradation**: non-analyzable chains fall back to runtime `QueryBuilder` with `QRY001` warning
+6. **Graceful degradation**: non-analyzable chains fall back to runtime `QueryBuilder` with `QRY001` warning. `EmitFileInterceptors` catches exceptions and emits `QRY900` diagnostic instead of crashing the generator.
 7. **No SemanticModel in IR** — `EntityRegistry` + metadata-only types enable pure data transforms after Stage 1
+8. **Variable-walking chain unification**: `VariableTracer.TraceToChainRoot` traces through builder-type variable declarations (up to 2 hops) so chains split across locals share the same `ChainId`. Only traces builder types to avoid collapsing independent chains from the same context variable.

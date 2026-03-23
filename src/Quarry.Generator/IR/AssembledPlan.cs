@@ -27,7 +27,9 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         bool isTraced = false,
         ProjectionInfo? projectionInfo = null,
         IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null,
-        IReadOnlyList<string>? traceLines = null)
+        IReadOnlyList<string>? traceLines = null,
+        string? batchInsertReturningSuffix = null,
+        int batchInsertColumnsPerRow = 0)
     {
         Plan = plan;
         SqlVariants = sqlVariants;
@@ -43,6 +45,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         ProjectionInfo = projectionInfo;
         JoinedTableInfos = joinedTableInfos;
         TraceLines = traceLines;
+        BatchInsertReturningSuffix = batchInsertReturningSuffix;
+        BatchInsertColumnsPerRow = batchInsertColumnsPerRow;
     }
 
     public QueryPlan Plan { get; }
@@ -67,6 +71,12 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
 
     /// <summary>Trace comment lines for this chain (non-null only when traced with QUARRY_TRACE).</summary>
     public IReadOnlyList<string>? TraceLines { get; set; }
+
+    /// <summary>For batch inserts: the RETURNING/OUTPUT suffix to append after row expansion.</summary>
+    public string? BatchInsertReturningSuffix { get; }
+
+    /// <summary>For batch inserts: the number of columns per row (for parameter index calculation).</summary>
+    public int BatchInsertColumnsPerRow { get; }
 
     // Convenience accessors that mirror PrebuiltChainInfo property names
     public QueryKind QueryKind => Plan.Kind;

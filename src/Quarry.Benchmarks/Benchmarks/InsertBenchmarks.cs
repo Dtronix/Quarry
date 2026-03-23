@@ -134,6 +134,6 @@ public class InsertBenchmarks : BenchmarkBase
             IsActive = true,
             CreatedAt = DateTime.UtcNow
         });
-        return await QuarryDb.Users().InsertMany(users).ExecuteNonQueryAsync();
+        return await QuarryDb.Users().InsertBatch(u => (u.UserName, u.Email, u.IsActive, u.CreatedAt)).Values(users).ExecuteNonQueryAsync();
     }
 }

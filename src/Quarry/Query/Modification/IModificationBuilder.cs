@@ -55,12 +55,33 @@ public interface IExecutableUpdateBuilder<T> where T : class
 }
 
 /// <summary>
-/// Interface for constructing INSERT operations.
+/// Interface for constructing single-entity INSERT operations.
 /// </summary>
 public interface IInsertBuilder<T> where T : class
 {
-    IInsertBuilder<T> Values(T entity);
     IInsertBuilder<T> WithTimeout(TimeSpan timeout);
+    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
+    Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
+    string ToSql();
+    QueryDiagnostics ToDiagnostics();
+}
+
+/// <summary>
+/// Interface for constructing batch INSERT operations after column selection.
+/// Returned by the column-selector <c>InsertBatch(lambda)</c> overload.
+/// </summary>
+public interface IBatchInsertBuilder<T> where T : class
+{
+    IExecutableBatchInsert<T> Values(IEnumerable<T> entities);
+    IBatchInsertBuilder<T> WithTimeout(TimeSpan timeout);
+}
+
+/// <summary>
+/// Terminal interface for batch INSERT operations after <c>Values()</c>.
+/// Supports execution and diagnostics.
+/// </summary>
+public interface IExecutableBatchInsert<T> where T : class
+{
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
     string ToSql();

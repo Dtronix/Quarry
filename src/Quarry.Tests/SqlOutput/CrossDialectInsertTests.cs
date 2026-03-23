@@ -25,9 +25,8 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
             ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
     }
 
-    // Batch insert SQL preview tests removed: batch SQL was only correct with the InsertToSql
-    // interceptor (which set up columns via SetColumns). Batch insert execution is tested via
-    // ExecuteNonQueryAsync_BatchUsers and ExecuteNonQueryAsync_InsertMany_Users.
+    // Batch insert tests removed: old Values()/InsertMany() API has been replaced
+    // by the column-selector batch API.
 
     #endregion
 
@@ -95,49 +94,8 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
             ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2)");
     }
 
-    [Test]
-    public async Task ExecuteNonQueryAsync_BatchUsers()
-    {
-        await Lite.Users().Insert(new User { UserName = "x" }).Values(new User { UserName = "y" }).ExecuteNonQueryAsync();
-        var liteSql = Connection.LastCommand!.CommandText;
-
-        await Pg.Users().Insert(new Pg.User { UserName = "x" }).Values(new Pg.User { UserName = "y" }).ExecuteNonQueryAsync();
-        var pgSql = Connection.LastCommand!.CommandText;
-
-        await My.Users().Insert(new My.User { UserName = "x" }).Values(new My.User { UserName = "y" }).ExecuteNonQueryAsync();
-        var mySql = Connection.LastCommand!.CommandText;
-
-        await Ss.Users().Insert(new Ss.User { UserName = "x" }).Values(new Ss.User { UserName = "y" }).ExecuteNonQueryAsync();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        AssertDialects(liteSql, pgSql, mySql, ssSql,
-            sqlite: "INSERT INTO \"users\" (\"UserName\") VALUES (@p0), (@p1)",
-            pg:     "INSERT INTO \"users\" (\"UserName\") VALUES ($1), ($2)",
-            mysql:  "INSERT INTO `users` (`UserName`) VALUES (?), (?)",
-            ss:     "INSERT INTO [users] ([UserName]) VALUES (@p0), (@p1)");
-    }
-
-    [Test]
-    public async Task ExecuteNonQueryAsync_InsertMany_Users()
-    {
-        await Lite.Users().InsertMany(new[] { new User { UserName = "a" }, new User { UserName = "b" }, new User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var liteSql = Connection.LastCommand!.CommandText;
-
-        await Pg.Users().InsertMany(new[] { new Pg.User { UserName = "a" }, new Pg.User { UserName = "b" }, new Pg.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var pgSql = Connection.LastCommand!.CommandText;
-
-        await My.Users().InsertMany(new[] { new My.User { UserName = "a" }, new My.User { UserName = "b" }, new My.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var mySql = Connection.LastCommand!.CommandText;
-
-        await Ss.Users().InsertMany(new[] { new Ss.User { UserName = "a" }, new Ss.User { UserName = "b" }, new Ss.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        AssertDialects(liteSql, pgSql, mySql, ssSql,
-            sqlite: "INSERT INTO \"users\" (\"UserName\") VALUES (@p0), (@p1), (@p2)",
-            pg:     "INSERT INTO \"users\" (\"UserName\") VALUES ($1), ($2), ($3)",
-            mysql:  "INSERT INTO `users` (`UserName`) VALUES (?), (?), (?)",
-            ss:     "INSERT INTO [users] ([UserName]) VALUES (@p0), (@p1), (@p2)");
-    }
+    // Batch insert tests (ExecuteNonQueryAsync_BatchUsers, ExecuteNonQueryAsync_InsertMany_Users)
+    // removed: old Values()/InsertMany() API has been replaced by column-selector batch API.
 
     [Test]
     public async Task ExecuteNonQueryAsync_SingleOrder()

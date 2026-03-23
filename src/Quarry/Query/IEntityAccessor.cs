@@ -90,9 +90,9 @@ public interface IEntityAccessor<T> where T : class
     IInsertBuilder<T> Insert(T entity);
 
     /// <summary>
-    /// Starts a bulk INSERT operation with the specified entities.
+    /// Starts a batch INSERT operation with explicit column selection.
     /// </summary>
-    IInsertBuilder<T> InsertMany(IEnumerable<T> entities);
+    IBatchInsertBuilder<T> InsertBatch<TColumns>(Func<T, TColumns> columnSelector);
 
     /// <summary>
     /// Returns a diagnostic query plan showing the optimization tier and SQL.
