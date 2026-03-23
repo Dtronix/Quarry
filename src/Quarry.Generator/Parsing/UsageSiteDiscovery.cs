@@ -118,118 +118,220 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Discovers a usage site from an invocation expression.
-    /// Returns null if the invocation is not a Quarry builder method call.
+    /// Discovers a usage site from an invocation expression, returning a UsageSiteInfo.
+    /// Used by analyzers. Internally delegates to DiscoverRawCallSite and converts the result.
     /// </summary>
     public static UsageSiteInfo? DiscoverUsageSite(
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
     {
-        // Get method symbol
+        var raw = DiscoverRawCallSite(invocation, semanticModel, cancellationToken);
+        if (raw == null)
+            return null;
+
+        return new UsageSiteInfo(
+            methodName: raw.MethodName,
+            filePath: raw.FilePath,
+            line: raw.Line,
+            column: raw.Column,
+            builderTypeName: raw.BuilderTypeName ?? "",
+            entityTypeName: raw.EntityTypeName,
+            isAnalyzable: raw.IsAnalyzable,
+            kind: raw.Kind,
+            invocationSyntax: invocation,
+            uniqueId: raw.UniqueId,
+            resultTypeName: raw.ResultTypeName,
+            nonAnalyzableReason: raw.NonAnalyzableReason,
+            contextClassName: raw.ContextClassName,
+            projectionInfo: raw.ProjectionInfo,
+            interceptableLocationData: raw.InterceptableLocationData,
+            interceptableLocationVersion: raw.InterceptableLocationVersion,
+            joinedEntityTypeName: raw.JoinedEntityTypeName,
+            joinedEntityTypeNames: raw.JoinedEntityTypeNames as System.Collections.Generic.IReadOnlyList<string>,
+            rawSqlTypeInfo: raw.RawSqlTypeInfo,
+            isNavigationJoin: raw.IsNavigationJoin,
+            constantIntValue: raw.ConstantIntValue,
+            builderKind: raw.BuilderKind);
+    }
+
+    /// <summary>
+    /// Discovers a raw call site from an invocation expression, returning a RawCallSite
+    /// suitable for the incremental pipeline. This method is self-contained:
+    /// - Resolves method symbols with CandidateSymbols fallback
+    /// - Classifies InterceptorKind and extracts entity types
+    /// - Parses clause expressions to SqlExpr via SqlExprParser.ParseWithPathTracking()
+    /// - Extracts SetAction assignments directly (no ClauseTranslator)
+    /// - Detects disqualifying patterns (loop, try/catch, lambda capture, conditional)
+    /// - Computes a ChainId for chain grouping
+    /// </summary>
+    public static RawCallSite? DiscoverRawCallSite(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        // ── Step 1: Symbol resolution ──────────────────────────────────────
         var symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
-        // When a generated entity type is invisible, generic methods like Set<TValue>()
-        // may fail to resolve (TValue inference fails). Fall back to CandidateSymbols.
-        if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
+        IMethodSymbol methodSymbol;
+        if (symbolInfo.Symbol is IMethodSymbol resolved)
         {
-            if (symbolInfo.CandidateSymbols.Length == 1
-                && symbolInfo.CandidateSymbols[0] is IMethodSymbol candidate)
+            methodSymbol = resolved;
+        }
+        else if (symbolInfo.CandidateSymbols.Length == 1
+                 && symbolInfo.CandidateSymbols[0] is IMethodSymbol candidate)
+        {
+            methodSymbol = candidate;
+        }
+        else if (symbolInfo.CandidateSymbols.Length > 1)
+        {
+            var argCount = invocation.ArgumentList.Arguments.Count;
+            IMethodSymbol? matched = null;
+            int matchCount = 0;
+            foreach (var sym in symbolInfo.CandidateSymbols)
             {
-                methodSymbol = candidate;
+                if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                {
+                    matched = ms;
+                    matchCount++;
+                }
             }
-            else if (symbolInfo.CandidateSymbols.Length > 1)
+            if (matchCount == 1 && matched != null)
             {
-                // Multiple candidates — disambiguate by matching argument count to parameter count.
-                // This handles overloads like Set(T entity) vs Set<TValue>(Expression, TValue)
-                // when generated entity types make the type parameter invisible.
-                var argCount = invocation.ArgumentList.Arguments.Count;
-                IMethodSymbol? matched = null;
-                int matchCount = 0;
-                foreach (var sym in symbolInfo.CandidateSymbols)
+                methodSymbol = matched;
+            }
+            else if (matchCount > 1)
+            {
+                var lambdaParamCount = GetLambdaParameterCount(invocation);
+                if (lambdaParamCount > 0)
                 {
-                    if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                    matched = null;
+                    matchCount = 0;
+                    foreach (var sym in symbolInfo.CandidateSymbols)
                     {
-                        matched = ms;
-                        matchCount++;
-                    }
-                }
-                if (matchCount == 1 && matched != null)
-                {
-                    methodSymbol = matched;
-                }
-                else if (matchCount > 1)
-                {
-                    // Still ambiguous after argument count — try lambda parameter count.
-                    // Disambiguates Join(u => u.Nav) [1-param] from Join<T>((a,b) => cond) [2-param].
-                    var lambdaParamCount = GetLambdaParameterCount(invocation);
-                    if (lambdaParamCount > 0)
-                    {
-                        matched = null;
-                        matchCount = 0;
-                        foreach (var sym in symbolInfo.CandidateSymbols)
+                        if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount
+                            && GetExpressionLambdaParameterCount(ms) == lambdaParamCount)
                         {
-                            if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount
-                                && GetExpressionLambdaParameterCount(ms) == lambdaParamCount)
-                            {
-                                matched = ms;
-                                matchCount++;
-                            }
+                            matched = ms;
+                            matchCount++;
                         }
-                        if (matchCount == 1 && matched != null)
-                            methodSymbol = matched;
-                        else
-                            return null;
                     }
+                    if (matchCount == 1 && matched != null)
+                        methodSymbol = matched;
                     else
-                    {
-                        // Non-lambda argument with multiple candidate overloads.
-                        // Disambiguate Set(T entity) from Set(Action<T>) by excluding
-                        // candidates whose first parameter is a delegate type.
-                        matched = null;
-                        matchCount = 0;
-                        foreach (var sym in symbolInfo.CandidateSymbols)
-                        {
-                            if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount
-                                && !IsDelegateParameterType(ms.Parameters[0].Type))
-                            {
-                                matched = ms;
-                                matchCount++;
-                            }
-                        }
-                        if (matchCount == 1 && matched != null)
-                            methodSymbol = matched;
-                        else
-                            return null;
-                    }
+                        return null;
                 }
                 else
                 {
-                    return null;
+                    matched = null;
+                    matchCount = 0;
+                    foreach (var sym in symbolInfo.CandidateSymbols)
+                    {
+                        if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount
+                            && !IsDelegateParameterType(ms.Parameters[0].Type))
+                        {
+                            matched = ms;
+                            matchCount++;
+                        }
+                    }
+                    if (matchCount == 1 && matched != null)
+                        methodSymbol = matched;
+                    else
+                        return null;
                 }
             }
             else
             {
-                // No candidates at all — try syntactic-only discovery for execution methods
-                // on Update/Delete builders where generated entity types make the entire
-                // receiver chain unresolvable.
-                return TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
+                return null;
             }
         }
+        else
+        {
+            // No candidates at all — try syntactic-only discovery for execution methods
+            var syntacticSite = TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
+            if (syntacticSite != null)
+            {
+                var sIsInsideLoop = DetectLoopAncestor(invocation);
+                var sIsInsideTryCatch = DetectTryCatchAncestor(invocation);
+                var sIsCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
+                var sConditionalInfo = DetectConditionalAncestor(invocation);
+                var sChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+                var (sIsPassedAsArgument, sIsAssignedFromNonQuarryMethod) =
+                    DetectVariableDisqualifiers(invocation, semanticModel);
 
-        // Check if the method is on a Quarry builder type or QuarryContext (for RawSql methods)
+                return new RawCallSite(
+                    methodName: syntacticSite.MethodName,
+                    filePath: syntacticSite.FilePath,
+                    line: syntacticSite.Line,
+                    column: syntacticSite.Column,
+                    uniqueId: syntacticSite.UniqueId,
+                    kind: syntacticSite.Kind,
+                    builderKind: syntacticSite.BuilderKind,
+                    entityTypeName: syntacticSite.EntityTypeName,
+                    resultTypeName: syntacticSite.ResultTypeName,
+                    isAnalyzable: syntacticSite.IsAnalyzable,
+                    nonAnalyzableReason: syntacticSite.NonAnalyzableReason,
+                    interceptableLocationData: syntacticSite.InterceptableLocationData,
+                    interceptableLocationVersion: syntacticSite.InterceptableLocationVersion,
+                    location: new DiagnosticLocation(syntacticSite.FilePath, syntacticSite.Line, syntacticSite.Column, invocation.Span),
+                    contextClassName: syntacticSite.ContextClassName,
+                    builderTypeName: syntacticSite.BuilderTypeName,
+                    isInsideLoop: sIsInsideLoop,
+                    isInsideTryCatch: sIsInsideTryCatch,
+                    isCapturedInLambda: sIsCapturedInLambda,
+                    isPassedAsArgument: sIsPassedAsArgument,
+                    isAssignedFromNonQuarryMethod: sIsAssignedFromNonQuarryMethod,
+                    conditionalInfo: sConditionalInfo,
+                    chainId: sChainId);
+            }
+            return null;
+        }
+
+        // ── Step 2: Containing type check ──────────────────────────────────
         var containingType = methodSymbol.ContainingType;
         if (containingType == null)
             return null;
 
         var methodName = methodSymbol.Name;
 
-        // Check for RawSql methods on QuarryContext first
+        // ── Step 3: RawSql detection ───────────────────────────────────────
         if (RawSqlMethods.TryGetValue(methodName, out var rawSqlKind) && IsQuarryContextType(containingType))
         {
-            return DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
+            var rawSqlSite = DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
+            if (rawSqlSite == null)
+                return null;
+
+            var rsIsInsideLoop = DetectLoopAncestor(invocation);
+            var rsIsInsideTryCatch = DetectTryCatchAncestor(invocation);
+            var rsIsCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
+            var rsConditionalInfo = DetectConditionalAncestor(invocation);
+            var rsChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+
+            return new RawCallSite(
+                methodName: rawSqlSite.MethodName,
+                filePath: rawSqlSite.FilePath,
+                line: rawSqlSite.Line,
+                column: rawSqlSite.Column,
+                uniqueId: rawSqlSite.UniqueId,
+                kind: rawSqlSite.Kind,
+                builderKind: rawSqlSite.BuilderKind,
+                entityTypeName: rawSqlSite.EntityTypeName,
+                resultTypeName: rawSqlSite.ResultTypeName,
+                isAnalyzable: rawSqlSite.IsAnalyzable,
+                nonAnalyzableReason: rawSqlSite.NonAnalyzableReason,
+                interceptableLocationData: rawSqlSite.InterceptableLocationData,
+                interceptableLocationVersion: rawSqlSite.InterceptableLocationVersion,
+                location: new DiagnosticLocation(rawSqlSite.FilePath, rawSqlSite.Line, rawSqlSite.Column, invocation.Span),
+                contextClassName: rawSqlSite.ContextClassName,
+                builderTypeName: rawSqlSite.BuilderTypeName,
+                rawSqlTypeInfo: rawSqlSite.RawSqlTypeInfo,
+                isInsideLoop: rsIsInsideLoop,
+                isInsideTryCatch: rsIsInsideTryCatch,
+                isCapturedInLambda: rsIsCapturedInLambda,
+                conditionalInfo: rsConditionalInfo,
+                chainId: rsChainId);
         }
 
-        // Check for chain root: entity set factory methods on QuarryContext (e.g., db.Users())
+        // ── Step 4: Chain root detection ───────────────────────────────────
         if (IsQuarryContextType(containingType)
             && methodSymbol.Parameters.Length == 0
             && methodSymbol.ReturnType is INamedTypeSymbol returnType
@@ -239,7 +341,6 @@ internal static class UsageSiteDiscovery
             var rootEntityType = returnType.TypeArguments[0];
             var rootEntityTypeName = rootEntityType.ToFullyQualifiedDisplayString();
 
-            // Get interceptable location data
             string? rootLocationData = null;
             int rootLocationVersion = 1;
 #if QUARRY_GENERATOR
@@ -265,32 +366,37 @@ internal static class UsageSiteDiscovery
             var rootColumn = rootLineSpan.StartLinePosition.Character + 1;
             var rootUniqueId = GenerateUniqueId(rootFilePath, rootLine, rootColumn, methodName);
 
-            // Resolve context class name and namespace for the interceptor signature
             var contextClassName = containingType.Name;
             var contextNamespace = containingType.ContainingNamespace?.IsGlobalNamespace == false
                 ? containingType.ContainingNamespace.ToDisplayString()
                 : null;
 
-            return new UsageSiteInfo(
+            var crChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+
+            return new RawCallSite(
                 methodName: methodName,
                 filePath: rootFilePath,
                 line: rootLine,
                 column: rootColumn,
-                builderTypeName: "IQueryBuilder",
-                entityTypeName: rootEntityTypeName,
-                isAnalyzable: true,
-                kind: InterceptorKind.ChainRoot,
-                invocationSyntax: invocation,
                 uniqueId: rootUniqueId,
+                kind: InterceptorKind.ChainRoot,
+                builderKind: BuilderKind.Query,
+                entityTypeName: rootEntityTypeName,
+                resultTypeName: null,
+                isAnalyzable: true,
+                nonAnalyzableReason: null,
+                interceptableLocationData: rootLocationData,
+                interceptableLocationVersion: rootLocationVersion,
+                location: new DiagnosticLocation(rootFilePath, rootLine, rootColumn, invocation.Span),
                 contextClassName: contextClassName,
                 contextNamespace: contextNamespace,
-                interceptableLocationData: rootLocationData,
-                interceptableLocationVersion: rootLocationVersion);
+                builderTypeName: "IQueryBuilder",
+                chainId: crChainId);
         }
 
+        // ── Step 5: Builder type / extension method check ──────────────────
         if (!IsQuarryBuilderType(containingType))
         {
-            // For extension methods (e.g., .Trace()), resolve the receiver type
             if (methodSymbol.IsExtensionMethod
                 && InterceptableMethods.ContainsKey(methodName)
                 && methodSymbol.ReceiverType is INamedTypeSymbol receiverType
@@ -304,7 +410,7 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // Get the method name and kind
+        // ── Step 6: InterceptorKind classification ─────────────────────────
         if (!InterceptableMethods.TryGetValue(methodName, out var kind))
         {
             if (methodName == "ToDiagnostics" && IsInsertBuilderType(containingType.Name))
@@ -313,7 +419,6 @@ internal static class UsageSiteDiscovery
                 return null;
         }
 
-        // Check if this is an InsertBuilder execution method - use special kinds
         if (IsInsertBuilderType(containingType.Name) && InsertBuilderMethods.Contains(methodName))
         {
             kind = methodName switch
@@ -325,7 +430,6 @@ internal static class UsageSiteDiscovery
             };
         }
 
-        // Extract initialized property names for insert interceptors
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
@@ -334,22 +438,15 @@ internal static class UsageSiteDiscovery
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
         }
 
-        // Check if this is a Where() call on DeleteBuilder or ExecutableDeleteBuilder
-        if (methodName == "Where" &&
-            (containingType.Name.Contains("DeleteBuilder")))
+        if (methodName == "Where" && containingType.Name.Contains("DeleteBuilder"))
         {
             kind = InterceptorKind.DeleteWhere;
         }
 
-        // Check if this is a Set() or Where() call on UpdateBuilder or ExecutableUpdateBuilder
-        if (methodName == "Set" &&
-            (containingType.Name.Contains("UpdateBuilder")))
+        if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder"))
         {
-            // Distinguish Set(T entity) (1 arg, POCO) / Set(Action<T>) / Set<TValue>(lambda, value)
             if (invocation.ArgumentList.Arguments.Count == 1 && !methodSymbol.IsGenericMethod)
             {
-                // 1-arg non-generic: Set(T entity) or Set(Action<T>).
-                // If the argument is a lambda expression, it's Set(Action<T>).
                 var singleArg = invocation.ArgumentList.Arguments[0].Expression;
                 if (singleArg is LambdaExpressionSyntax)
                 {
@@ -366,26 +463,24 @@ internal static class UsageSiteDiscovery
                 kind = InterceptorKind.UpdateSet;
             }
         }
-        if (methodName == "Where" &&
-            (containingType.Name.Contains("UpdateBuilder")))
+        if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
         {
             kind = InterceptorKind.UpdateWhere;
         }
 
-        // Get location information
+        // ── Step 7: Location + interceptable location ──────────────────────
         var location = GetMethodLocation(invocation);
         if (location == null)
             return null;
 
         var (filePath, line, column) = location.Value;
 
-        // Get the InterceptableLocation for the new attribute format
         string? interceptableLocationData = null;
         int interceptableLocationVersion = 1;
 #if QUARRY_GENERATOR
         try
         {
-#pragma warning disable RSEXPERIMENTAL002 // GetInterceptableLocation is experimental
+#pragma warning disable RSEXPERIMENTAL002
             var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
 #pragma warning restore RSEXPERIMENTAL002
             if (interceptableLocation != null)
@@ -394,26 +489,18 @@ internal static class UsageSiteDiscovery
                 interceptableLocationVersion = interceptableLocation.Version;
             }
         }
-        catch
-        {
-            // If GetInterceptableLocation fails, we'll fall back to old behavior
-            // This can happen with older Roslyn versions
-        }
+        catch { }
 #endif
 
-        // Extract entity type from the builder
+        // ── Step 8: Entity type extraction ─────────────────────────────────
         var (entityTypeName, resultTypeName) = ExtractTypeArguments(containingType);
         if (entityTypeName == null)
             return null;
 
-        // When the builder comes from a generic method return (e.g. base Insert<T>),
-        // the type argument may be an unsubstituted type parameter because the entity
-        // types are generated by Phase 1 and invisible to Phase 2's semantic model.
         var resolvedSyntactically = false;
         if (containingType.TypeArguments.Length > 0 && containingType.TypeArguments[0].TypeKind == TypeKind.TypeParameter
             && invocation.Expression is MemberAccessExpressionSyntax memberAccessForType)
         {
-            // Try semantic resolution first (works when entity types are from referenced assemblies)
             var concreteType = ResolveTypeParameterFromReceiverChain(
                 memberAccessForType.Expression, semanticModel, cancellationToken);
             if (concreteType != null)
@@ -425,8 +512,6 @@ internal static class UsageSiteDiscovery
             }
             else
             {
-                // Semantic resolution failed (entity types are generated and invisible).
-                // Extract the type name syntactically from the Insert/InsertMany argument.
                 var syntacticTypeName = ExtractEntityTypeNameFromChain(memberAccessForType.Expression);
                 if (syntacticTypeName != null)
                 {
@@ -436,20 +521,17 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // If the entity type is still an unresolved type parameter after all resolution attempts,
-        // skip this site — generating an interceptor with a type parameter would cause CS0246.
         if (!resolvedSyntactically
             && containingType.TypeArguments.Length > 0
             && containingType.TypeArguments[0].TypeKind == TypeKind.TypeParameter)
             return null;
 
-        // Check analyzability
+        // ── Step 9: Analyzability check ────────────────────────────────────
         var (isAnalyzable, reason) = AnalyzabilityChecker.CheckAnalyzability(invocation, semanticModel);
 
-        // Generate unique ID
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
-        // For Select() calls, analyze the projection
+        // ── Step 10: Projection analysis ───────────────────────────────────
         ProjectionInfo? projectionInfo = null;
         if (kind == InterceptorKind.Select && isAnalyzable)
         {
@@ -458,7 +540,6 @@ internal static class UsageSiteDiscovery
             {
                 if (isOnJoinedBuilderForSelect)
                 {
-                    // Syntax-only analysis for joined builders — types enriched later with EntityRef columns
                     var entityCount = containingType.TypeArguments.Length;
                     projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
                         invocation,
@@ -468,7 +549,6 @@ internal static class UsageSiteDiscovery
                 else
                 {
                     var entityType = containingType.TypeArguments[0];
-                    // Use default dialect for now - will be refined later when context info is available
                     projectionInfo = ProjectionAnalyzer.AnalyzeFromTypeSymbol(
                         invocation,
                         semanticModel,
@@ -478,52 +558,53 @@ internal static class UsageSiteDiscovery
             }
             catch
             {
-                // If projection analysis fails, mark as non-analyzable
                 isAnalyzable = false;
                 reason = "Failed to analyze Select() projection";
             }
         }
 
-        // For clause methods (Where, OrderBy, GroupBy, Having, Set), analyze the expression.
-        // Clause analysis is allowed even for conditional sites — the lambda expression itself
-        // is analyzable, enabling lightweight interceptors for ChainAnalyzer Tier 1/2 chains.
-        ClauseInfo? clauseInfo = null;
-        PendingClauseInfo? pendingClauseInfo = null;
+        // ── Step 11: SqlExpr parsing for clause methods ────────────────────
+        SqlExpr? expression = null;
+        ClauseKind? clauseKind = null;
+        bool isDescending = false;
+
         var isOnJoinedBuilder = containingType.Name.Contains("JoinedQueryBuilder");
         var clauseAnalyzable = isAnalyzable || AnalyzabilityChecker.IsClauseAnalyzable(invocation, semanticModel);
-        if (clauseAnalyzable && IsClauseMethod(kind) && !isOnJoinedBuilder)
+        if (clauseAnalyzable && IsClauseMethod(kind))
         {
-            try
+            var parsed = TryParseLambdaToSqlExpr(kind, invocation, semanticModel);
+            if (parsed != null)
             {
-                var entityType = containingType.TypeArguments[0];
-                var (clause, pending) = AnalyzeClause(kind, invocation, semanticModel, entityType);
-                clauseInfo = clause;
-                pendingClauseInfo = pending;
-
-                // If we have neither successful clause nor pending clause, mark as non-analyzable
-                if (clauseInfo == null && pendingClauseInfo == null)
-                {
-                    isAnalyzable = false;
-                    reason = $"Failed to analyze {methodName}() clause expression";
-                }
-                else if (clauseInfo != null && !clauseInfo.IsSuccess)
-                {
-                    // Semantic analysis returned an error and we have no pending fallback
-                    isAnalyzable = false;
-                    reason = clauseInfo.ErrorMessage ?? "Failed to analyze clause expression";
-                    clauseInfo = null;
-                }
-                // Note: if pendingClauseInfo is set, we keep isAnalyzable=true for deferred translation
+                expression = parsed.Value.Expression;
+                clauseKind = parsed.Value.ClauseKind;
+                isDescending = parsed.Value.IsDescending;
             }
-            catch
+            else if (!isOnJoinedBuilder)
             {
-                // If clause analysis fails, mark as non-analyzable
+                // Only mark non-analyzable for non-joined builders.
+                // Joined builder clause methods may have multi-param lambdas that
+                // TryParseLambdaToSqlExpr handles; if it fails, keep analyzable
+                // so the chain still gets an interceptor.
                 isAnalyzable = false;
-                reason = $"Failed to analyze {methodName}() clause";
+                reason = $"Failed to analyze {methodName}() clause expression";
             }
         }
 
-        // For Join/LeftJoin/RightJoin, extract the joined entity type and analyze the join condition
+        // ── Step 12: SetAction handling ────────────────────────────────────
+        IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null;
+        IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null;
+
+        if (kind == InterceptorKind.UpdateSetAction)
+        {
+            var setResult = ExtractSetActionAssignments(invocation, semanticModel);
+            if (setResult != null)
+            {
+                setActionAssignments = setResult.Value.Assignments;
+                setActionParameters = setResult.Value.Parameters;
+            }
+        }
+
+        // ── Step 13: Join entity extraction ────────────────────────────────
         string? joinedEntityTypeName = null;
         bool isNavigationJoin = false;
         if (kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
@@ -532,43 +613,24 @@ internal static class UsageSiteDiscovery
             var joinedType = methodSymbol.TypeArguments[0];
             joinedEntityTypeName = joinedType.ToFullyQualifiedDisplayString();
 
-            // Detect navigation overload: single-parameter lambda like u => u.Orders
             isNavigationJoin = IsNavigationJoinLambda(invocation, semanticModel);
 
-            if (isAnalyzable && clauseInfo == null && !isNavigationJoin)
+            // Parse join lambda to SqlExpr if not already parsed above
+            if (expression == null)
             {
-                try
+                var parsed = TryParseLambdaToSqlExpr(kind, invocation, semanticModel);
+                if (parsed != null)
                 {
-                    var entityType = containingType.TypeArguments[0];
-                    var joinClauseKind = kind switch
-                    {
-                        InterceptorKind.LeftJoin => JoinClauseKind.Left,
-                        InterceptorKind.RightJoin => JoinClauseKind.Right,
-                        _ => JoinClauseKind.Inner
-                    };
-                    // Use default dialect for now
-                    clauseInfo = ClauseTranslator.TranslateJoin(
-                        invocation, semanticModel, entityType, joinedType,
-                        DefaultDiscoveryDialect, joinClauseKind);
-
-                    if (clauseInfo != null && !clauseInfo.IsSuccess)
-                    {
-                        // Join analysis failed — clear clauseInfo but keep isAnalyzable
-                        // so the fallback interceptor with concrete types is still emitted
-                        clauseInfo = null;
-                    }
-                }
-                catch
-                {
-                    // Join analysis failed - will use fallback
+                    expression = parsed.Value.Expression;
+                    clauseKind = parsed.Value.ClauseKind;
+                    isDescending = parsed.Value.IsDescending;
                 }
             }
         }
 
-        // Extract all entity type names from joined builder types
         var joinedEntityTypeNames = ExtractJoinedEntityTypeNames(containingType);
 
-        // Capture resolved key type for OrderBy/ThenBy/GroupBy methods
+        // ── Step 14: Key type / constant value extraction ──────────────────
         string? keyTypeName = null;
         if (kind is InterceptorKind.OrderBy or InterceptorKind.ThenBy or InterceptorKind.GroupBy
             && methodSymbol.TypeArguments.Length > 0)
@@ -580,8 +642,6 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // Capture constant integer value for Limit/Offset calls.
-        // Used by ToDiagnostics prebuilt chains to inline literal pagination values.
         int? constantIntValue = null;
         if (kind is InterceptorKind.Limit or InterceptorKind.Offset
             && invocation.ArgumentList.Arguments.Count > 0)
@@ -592,127 +652,28 @@ internal static class UsageSiteDiscovery
                 constantIntValue = intVal;
         }
 
-        return new UsageSiteInfo(
-            methodName: methodName,
-            filePath: filePath,
-            line: line,
-            column: column,
-            builderTypeName: containingType.Name,
-            entityTypeName: entityTypeName,
-            isAnalyzable: isAnalyzable,
-            kind: kind,
-            invocationSyntax: invocation,
-            uniqueId: uniqueId,
-            resultTypeName: resultTypeName,
-            nonAnalyzableReason: reason,
-            contextClassName: ResolveContextFromCallSite(invocation, semanticModel, cancellationToken),
-            projectionInfo: projectionInfo,
-            clauseInfo: clauseInfo,
-            interceptableLocationData: interceptableLocationData,
-            interceptableLocationVersion: interceptableLocationVersion,
-            pendingClauseInfo: pendingClauseInfo,
-            joinedEntityTypeName: joinedEntityTypeName,
-            joinedEntityTypeNames: joinedEntityTypeNames,
-            initializedPropertyNames: initializedPropertyNames,
-            keyTypeName: keyTypeName,
-            isNavigationJoin: isNavigationJoin,
-            constantIntValue: constantIntValue,
-            builderKind: ClassifyBuilderKind(containingType.Name));
-    }
-
-    /// <summary>
-    /// Discovers a raw call site from an invocation expression, returning a RawCallSite
-    /// suitable for the incremental pipeline. Unlike DiscoverUsageSite, this method:
-    /// - Does NOT perform semantic clause translation (no ClauseTranslator calls)
-    /// - Parses clause expressions to SqlExpr via SqlExprParser.ParseWithPathTracking()
-    /// - Detects disqualifying patterns (loop, try/catch, lambda capture, conditional)
-    /// - Computes a ChainId for chain grouping without syntax tree re-walking
-    /// </summary>
-    public static RawCallSite? DiscoverRawCallSite(
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel,
-        CancellationToken cancellationToken)
-    {
-        // Reuse the existing discovery for method resolution, type extraction, analyzability.
-        // This delegates all the complex symbol resolution and type parameter inference.
-        var usageSite = DiscoverUsageSite(invocation, semanticModel, cancellationToken);
-        if (usageSite == null)
-            return null;
-
-        // Parse clause expression to SqlExpr (replacing ClauseTranslator semantic translation)
-        SqlExpr? expression = null;
-        ClauseKind? clauseKind = null;
-        bool isDescending = false;
-
-        // If the existing discovery produced a PendingClauseInfo, use its already-parsed SqlExpr
-        if (usageSite.PendingClauseInfo != null)
-        {
-            expression = usageSite.PendingClauseInfo.Expression;
-            clauseKind = usageSite.PendingClauseInfo.Kind;
-            isDescending = usageSite.PendingClauseInfo.IsDescending;
-        }
-        else if (usageSite.ClauseInfo != null && usageSite.ClauseInfo.IsSuccess)
-        {
-            // Semantic analysis succeeded — we still need the SqlExpr for the new pipeline.
-            // Re-parse the lambda to get the SqlExpr tree.
-            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
-            if (parsed != null)
-            {
-                expression = parsed.Value.Expression;
-                clauseKind = parsed.Value.ClauseKind;
-                isDescending = parsed.Value.IsDescending;
-            }
-        }
-        else if (IsClauseMethod(usageSite.Kind) && usageSite.IsAnalyzable)
-        {
-            // Neither ClauseInfo nor PendingClauseInfo — try direct SqlExpr parsing
-            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
-            if (parsed != null)
-            {
-                expression = parsed.Value.Expression;
-                clauseKind = parsed.Value.ClauseKind;
-                isDescending = parsed.Value.IsDescending;
-            }
-        }
-
-        // For join sites without a clause, parse the join lambda to SqlExpr.
-        // Navigation joins need this so CallSiteBinder can extract the navigation property name.
-        // Non-navigation joins need this for join condition translation.
-        if (usageSite.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
-            && expression == null)
-        {
-            var parsed = TryParseLambdaToSqlExpr(usageSite.Kind, invocation, semanticModel);
-            if (parsed != null)
-            {
-                expression = parsed.Value.Expression;
-                clauseKind = parsed.Value.ClauseKind;
-                isDescending = parsed.Value.IsDescending;
-            }
-        }
-
-        // Detect disqualifying patterns from syntax tree context
+        // ── Step 15: Disqualifiers + ChainId ───────────────────────────────
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
         var conditionalInfo = DetectConditionalAncestor(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
-        // Variable-level disqualifier detection for variable-based chains
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
             DetectVariableDisqualifiers(invocation, semanticModel);
 
         // Convert InitializedPropertyNames from HashSet to sorted ImmutableArray
         ImmutableArray<string>? sortedPropertyNames = null;
-        if (usageSite.InitializedPropertyNames != null && usageSite.InitializedPropertyNames.Count > 0)
+        if (initializedPropertyNames != null && initializedPropertyNames.Count > 0)
         {
-            var sorted = new List<string>(usageSite.InitializedPropertyNames);
+            var sorted = new List<string>(initializedPropertyNames);
             sorted.Sort(StringComparer.Ordinal);
             sortedPropertyNames = ImmutableArray.CreateRange(sorted);
         }
 
         // For join sites, extract ordered lambda parameter names for multi-entity resolution
         ImmutableArray<string>? lambdaParamNames = null;
-        if (expression != null && usageSite.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+        if (expression != null && kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
         {
             if (invocation.ArgumentList.Arguments.Count > 0
                 && invocation.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax joinLambda)
@@ -724,36 +685,36 @@ internal static class UsageSiteDiscovery
         }
 
         // Detect batch insert chains (Values() or InsertMany() in receiver chain)
-        var isBatchInsert = usageSite.Kind is InterceptorKind.InsertExecuteNonQuery
+        var isBatchInsert = kind is InterceptorKind.InsertExecuteNonQuery
                 or InterceptorKind.InsertExecuteScalar
                 or InterceptorKind.InsertToDiagnostics
             && DetectBatchInsertInChain(invocation);
 
+        // ── Step 16: Build RawCallSite directly ────────────────────────────
         return new RawCallSite(
-            methodName: usageSite.MethodName,
-            filePath: usageSite.FilePath,
-            line: usageSite.Line,
-            column: usageSite.Column,
-            uniqueId: usageSite.UniqueId,
-            kind: usageSite.Kind,
-            builderKind: usageSite.BuilderKind,
-            entityTypeName: usageSite.EntityTypeName,
-            resultTypeName: usageSite.ResultTypeName,
-            isAnalyzable: usageSite.IsAnalyzable,
-            nonAnalyzableReason: usageSite.NonAnalyzableReason,
-            interceptableLocationData: usageSite.InterceptableLocationData,
-            interceptableLocationVersion: usageSite.InterceptableLocationVersion,
-            location: new DiagnosticLocation(usageSite.FilePath, usageSite.Line, usageSite.Column, invocation.Span),
+            methodName: methodName,
+            filePath: filePath,
+            line: line,
+            column: column,
+            uniqueId: uniqueId,
+            kind: kind,
+            builderKind: ClassifyBuilderKind(containingType.Name),
+            entityTypeName: entityTypeName,
+            resultTypeName: resultTypeName,
+            isAnalyzable: isAnalyzable,
+            nonAnalyzableReason: reason,
+            interceptableLocationData: interceptableLocationData,
+            interceptableLocationVersion: interceptableLocationVersion,
+            location: new DiagnosticLocation(filePath, line, column, invocation.Span),
             expression: expression,
             clauseKind: clauseKind,
             isDescending: isDescending,
-            projectionInfo: usageSite.ProjectionInfo,
-            joinedEntityTypeName: usageSite.JoinedEntityTypeName,
+            projectionInfo: projectionInfo,
+            joinedEntityTypeName: joinedEntityTypeName,
             initializedPropertyNames: sortedPropertyNames,
-            constantIntValue: usageSite.ConstantIntValue,
-            isNavigationJoin: usageSite.IsNavigationJoin,
-            contextClassName: usageSite.ContextClassName,
-            contextNamespace: usageSite.ContextNamespace,
+            constantIntValue: constantIntValue,
+            isNavigationJoin: isNavigationJoin,
+            contextClassName: ResolveContextFromCallSite(invocation, semanticModel, cancellationToken),
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
@@ -761,11 +722,10 @@ internal static class UsageSiteDiscovery
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
             conditionalInfo: conditionalInfo,
             chainId: chainId,
-            builderTypeName: usageSite.BuilderTypeName,
-            joinedEntityTypeNames: usageSite.JoinedEntityTypeNames,
-            rawSqlTypeInfo: usageSite.RawSqlTypeInfo,
-            setActionAssignments: usageSite.ClauseInfo is SetActionClauseInfo setAction ? setAction.Assignments : null,
-            setActionParameters: usageSite.ClauseInfo is SetActionClauseInfo setAction2 ? setAction2.Parameters : null,
+            builderTypeName: containingType.Name,
+            joinedEntityTypeNames: joinedEntityTypeNames,
+            setActionAssignments: setActionAssignments,
+            setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
             isBatchInsert: isBatchInsert);
     }
@@ -860,11 +820,15 @@ internal static class UsageSiteDiscovery
             if (!InterceptableMethods.TryGetValue(methodName, out var kind))
                 break;
 
-            // Check if this site was already discovered by the normal path
-            var normalDiscovery = DiscoverUsageSite(parentInvoc, semanticModel, cancellationToken);
-            if (normalDiscovery != null)
+            // Check if normal discovery can resolve this invocation (lightweight symbol check)
+            var parentSymbolInfo = semanticModel.GetSymbolInfo(parentInvoc, cancellationToken);
+            var parentResolved = parentSymbolInfo.Symbol is IMethodSymbol pms && IsQuarryBuilderType(pms.ContainingType);
+            if (!parentResolved && parentSymbolInfo.CandidateSymbols.Length == 1
+                && parentSymbolInfo.CandidateSymbols[0] is IMethodSymbol pc)
+                parentResolved = IsQuarryBuilderType(pc.ContainingType);
+            if (parentResolved)
             {
-                // Normal discovery succeeded — no need for synthetic site.
+                // Normal discovery would succeed — no need for synthetic site.
                 // Continue walking in case later sites in the chain fail.
                 currentInvoc = parentInvoc;
                 continue;
@@ -1508,114 +1472,156 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Analyzes a clause expression based on its kind.
-    /// Returns a tuple of (ClauseInfo, PendingClauseInfo) where one will be non-null.
+    /// Extracts SetAction assignments directly from the lambda body without ClauseTranslator.
+    /// Returns assignments and parameters for Set(Action&lt;T&gt;) patterns.
     /// </summary>
-    private static (ClauseInfo? Clause, PendingClauseInfo? Pending) AnalyzeClause(
-        InterceptorKind kind,
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel,
-        ITypeSymbol entityType)
+    private static (IReadOnlyList<Models.SetActionAssignment> Assignments, IReadOnlyList<Translation.ParameterInfo> Parameters)?
+        ExtractSetActionAssignments(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
     {
-        var dialect = DefaultDiscoveryDialect;
+        if (invocation.ArgumentList.Arguments.Count < 1)
+            return null;
 
-        // First try semantic analysis
-        var clauseInfo = kind switch
-        {
-            InterceptorKind.Where => ClauseTranslator.TranslateWhere(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.DeleteWhere => ClauseTranslator.TranslateWhere(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.UpdateWhere => ClauseTranslator.TranslateWhere(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.UpdateSet => ClauseTranslator.TranslateSet(invocation, semanticModel, entityType, dialect, existingParameterCount: 0),
-            InterceptorKind.UpdateSetAction => ClauseTranslator.TranslateSetAction(invocation, semanticModel, entityType, dialect, existingParameterCount: 0),
-            InterceptorKind.OrderBy => ClauseTranslator.TranslateOrderBy(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.ThenBy => ClauseTranslator.TranslateOrderBy(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.GroupBy => ClauseTranslator.TranslateGroupBy(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.Having => ClauseTranslator.TranslateHaving(invocation, semanticModel, entityType, dialect),
-            InterceptorKind.Set => ClauseTranslator.TranslateSet(invocation, semanticModel, entityType, dialect, existingParameterCount: 0),
-            _ => null
-        };
+        var lambdaArg = invocation.ArgumentList.Arguments[0].Expression;
+        if (lambdaArg is not LambdaExpressionSyntax lambda)
+            return null;
 
-        // If semantic analysis succeeded, return it
-        if (clauseInfo != null && clauseInfo.IsSuccess)
+        // Extract the lambda parameter name
+        string parameterName;
+        if (lambda is SimpleLambdaExpressionSyntax simpleLambda)
+            parameterName = simpleLambda.Parameter.Identifier.Text;
+        else if (lambda is ParenthesizedLambdaExpressionSyntax parenLambda && parenLambda.ParameterList.Parameters.Count > 0)
+            parameterName = parenLambda.ParameterList.Parameters[0].Identifier.Text;
+        else
+            return null;
+
+        // Collect assignment expressions from the lambda body
+        var assignmentExprs = new List<AssignmentExpressionSyntax>();
+        if (lambda.Body is AssignmentExpressionSyntax singleAssignment)
         {
-            return (clauseInfo, null);
+            assignmentExprs.Add(singleAssignment);
+        }
+        else if (lambda.Body is BlockSyntax block)
+        {
+            foreach (var statement in block.Statements)
+            {
+                if (statement is ExpressionStatementSyntax exprStmt
+                    && exprStmt.Expression is AssignmentExpressionSyntax assignment)
+                {
+                    assignmentExprs.Add(assignment);
+                }
+                else
+                {
+                    return null; // Non-assignment statement — bail out
+                }
+            }
+        }
+        else
+        {
+            return null;
         }
 
-        // Semantic analysis failed - try syntactic fallback for deferred translation
-        var pendingClause = TrySyntacticAnalysis(kind, invocation, semanticModel);
-        if (pendingClause != null)
+        if (assignmentExprs.Count == 0)
+            return null;
+
+        var assignments = new List<Models.SetActionAssignment>();
+        var parameters = new List<Translation.ParameterInfo>();
+
+        for (int i = 0; i < assignmentExprs.Count; i++)
         {
-            return (null, pendingClause);
+            var asgn = assignmentExprs[i];
+
+            // Left side: u.PropertyName → column name (unquoted — quoted during enrichment)
+            if (asgn.Left is not MemberAccessExpressionSyntax memberAccess)
+                return null;
+
+            var propertyName = memberAccess.Name.Identifier.Text;
+            var columnSql = propertyName;
+
+            // Right side: value expression
+            var valueExpr = asgn.Right;
+            var typeInfo = semanticModel.GetTypeInfo(valueExpr);
+            var valueType = typeInfo.Type?.ToDisplayString() ?? "object";
+            var valueExpression = valueExpr.ToFullString().Trim();
+
+            // Check if the value is a compile-time constant that can be inlined into SQL
+            var constantValue = semanticModel.GetConstantValue(valueExpr);
+            if (constantValue.HasValue)
+            {
+                var inlinedSql = FormatConstantAsSqlLiteralSimple(constantValue.Value);
+                if (inlinedSql != null)
+                {
+                    assignments.Add(new Models.SetActionAssignment(
+                        columnSql, valueTypeName: null, customTypeMappingClass: null,
+                        inlinedSqlValue: inlinedSql, inlinedCSharpExpression: valueExpression));
+                    continue;
+                }
+            }
+
+            var paramIndex = parameters.Count;
+            var isCaptured = IsSetActionCapturedVariable(valueExpr, parameterName);
+
+            // Only simple identifiers can be extracted via closure field lookup
+            if (isCaptured && valueExpr is not IdentifierNameSyntax)
+                isCaptured = false;
+
+            var paramInfo = new Translation.ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
+                isCaptured: isCaptured,
+                expressionPath: isCaptured ? valueExpression : null);
+
+            parameters.Add(paramInfo);
+
+            assignments.Add(new Models.SetActionAssignment(
+                columnSql, valueTypeName: null, customTypeMappingClass: null));
         }
 
-        // Both analyses failed - return the original failure
-        return (clauseInfo, null);
+        return (assignments, parameters);
     }
 
     /// <summary>
-    /// Attempts syntactic analysis when semantic analysis fails.
-    /// Returns a PendingClauseInfo for deferred translation during enrichment.
+    /// Formats a compile-time constant value as a SQL literal without requiring a translation context.
+    /// Uses PostgreSQL boolean format (TRUE/FALSE) matching DefaultDiscoveryDialect.
     /// </summary>
-    private static PendingClauseInfo? TrySyntacticAnalysis(
-        InterceptorKind kind,
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
+    private static string? FormatConstantAsSqlLiteralSimple(object? value)
     {
-        // Get the first argument (the lambda expression)
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return null;
-
-        var argument = invocation.ArgumentList.Arguments[0].Expression;
-        if (argument is not LambdaExpressionSyntax lambda)
-            return null;
-
-        // Get lambda body and parameter names
-        var body = IR.SqlExprParser.GetLambdaBody(lambda);
-        if (body == null)
-            return null;
-
-        var parameterNames = IR.SqlExprParser.GetLambdaParameterNames(lambda);
-        if (parameterNames.Count == 0)
-            return null;
-
-        // Parse the expression directly to SqlExpr with path tracking for captured variables
-        var sqlExpr = IR.SqlExprParser.ParseWithPathTracking(body, parameterNames);
-
-        // Annotate captured variable types using semantic model (needed for collection IN expansion)
-        sqlExpr = IR.SqlExprAnnotator.AnnotateCapturedTypes(sqlExpr, body, semanticModel);
-
-        // Inline constant collection arrays (e.g., new[] { "a", "b" }.Contains(x) → IN ('a', 'b'))
-        sqlExpr = IR.SqlExprAnnotator.InlineConstantCollections(sqlExpr, body, semanticModel);
-
-        // Determine if this is descending order (for OrderBy/ThenBy)
-        var isDescending = false;
-        if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
-            invocation.ArgumentList.Arguments.Count >= 2)
+        return value switch
         {
-            var directionArg = invocation.ArgumentList.Arguments[1].Expression;
-            isDescending = IsDescendingDirection(directionArg, semanticModel);
-        }
-
-        // Map interceptor kind to clause kind
-        var clauseKind = kind switch
-        {
-            InterceptorKind.Where => ClauseKind.Where,
-            InterceptorKind.DeleteWhere => ClauseKind.Where,
-            InterceptorKind.UpdateWhere => ClauseKind.Where,
-            InterceptorKind.UpdateSet => ClauseKind.Set,
-            InterceptorKind.UpdateSetAction => ClauseKind.Set,
-            InterceptorKind.OrderBy => ClauseKind.OrderBy,
-            InterceptorKind.ThenBy => ClauseKind.OrderBy,
-            InterceptorKind.GroupBy => ClauseKind.GroupBy,
-            InterceptorKind.Having => ClauseKind.Having,
-            InterceptorKind.Set => ClauseKind.Set,
-            _ => ClauseKind.Where
+            null => "NULL",
+            int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            short s => s.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            byte b => b.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            sbyte sb => sb.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            uint ui => ui.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ulong ul => ul.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ushort us => us.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            decimal m => m.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            bool bv => bv ? "TRUE" : "FALSE", // PostgreSQL format (DefaultDiscoveryDialect)
+            char c => $"'{c.ToString().Replace("'", "''")}'",
+            string str => $"'{str.Replace("'", "''")}'",
+            _ => null
         };
+    }
 
-        // Get the first parameter name
-        var parameterName = parameterNames.First();
-
-        return new PendingClauseInfo(clauseKind, parameterName, sqlExpr, isDescending);
+    /// <summary>
+    /// Checks if an expression in a SetAction lambda is a captured variable.
+    /// </summary>
+    private static bool IsSetActionCapturedVariable(ExpressionSyntax expr, string lambdaParamName)
+    {
+        if (expr is LiteralExpressionSyntax)
+            return false;
+        if (expr is DefaultExpressionSyntax)
+            return false;
+        if (expr is TypeOfExpressionSyntax)
+            return false;
+        if (expr is IdentifierNameSyntax id && id.Identifier.Text == lambdaParamName)
+            return false;
+        if (expr is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression is IdentifierNameSyntax memberId
+            && memberId.Identifier.Text == lambdaParamName)
+            return false;
+        return true;
     }
 
     /// <summary>
