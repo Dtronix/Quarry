@@ -10,18 +10,19 @@ namespace Quarry.Internal;
 internal static class BatchInsertSqlBuilder
 {
     /// <summary>
-    /// Builds a complete batch INSERT SQL string from a pre-assembled prefix,
-    /// row template, and entity count.
+    /// Maximum number of parameters allowed in a single batch insert statement.
+    /// Most databases impose limits (SQL Server: 2100, SQLite: 999 default, MySQL: no hard limit,
+    /// PostgreSQL: 65535). We use a conservative default that works across all dialects.
+    /// </summary>
+    internal const int MaxParameterCount = 2100;
+
+    /// <summary>
+    /// Builds a complete batch INSERT SQL string from a pre-assembled prefix
+    /// and entity count.
     /// </summary>
     /// <param name="sqlPrefix">
     /// The compile-time prefix including INSERT INTO table (columns) VALUES.
     /// e.g., <c>INSERT INTO "users" ("UserName", "Password") VALUES </c>
-    /// </param>
-    /// <param name="rowTemplate">
-    /// The per-row parameter template with relative column indices.
-    /// e.g., <c>(@p{0}, @p{1})</c> for SQLite/SqlServer,
-    ///       <c>(${0}, ${1})</c> for PostgreSQL,
-    ///       <c>(?, ?)</c> for MySQL.
     /// </param>
     /// <param name="entityCount">Number of entities to insert.</param>
     /// <param name="columnsPerRow">Number of columns per row.</param>
@@ -30,6 +31,7 @@ internal static class BatchInsertSqlBuilder
     /// Optional RETURNING/OUTPUT suffix for identity retrieval.
     /// e.g., <c> RETURNING "UserId"</c>
     /// </param>
+    /// <exception cref="ArgumentException">Thrown when entityCount is zero or the total parameter count exceeds <see cref="MaxParameterCount"/>.</exception>
     public static string Build(
         string sqlPrefix,
         int entityCount,
@@ -38,7 +40,14 @@ internal static class BatchInsertSqlBuilder
         string? returningSuffix)
     {
         if (entityCount == 0)
-            return sqlPrefix;
+            throw new ArgumentException("Batch insert requires at least one entity.", nameof(entityCount));
+
+        var totalParams = entityCount * columnsPerRow;
+        if (totalParams > MaxParameterCount)
+            throw new ArgumentException(
+                $"Batch insert would generate {totalParams} parameters ({entityCount} entities x {columnsPerRow} columns), " +
+                $"which exceeds the maximum of {MaxParameterCount}. Split the batch into smaller chunks.",
+                nameof(entityCount));
 
         var sb = new StringBuilder(sqlPrefix.Length + entityCount * (columnsPerRow * 5 + 4) + (returningSuffix?.Length ?? 0));
         sb.Append(sqlPrefix);

@@ -124,6 +124,16 @@ public class InsertBenchmarks : BenchmarkBase
         return await _iterationEfContext.SaveChangesAsync();
     }
 
-    // Quarry_BatchInsert10 removed: old InsertMany() API has been replaced by column-selector batch API.
-    // TODO: Re-add benchmark once column-selector batch insert is wired up.
+    [Benchmark]
+    public async Task<int> Quarry_BatchInsert10()
+    {
+        var users = Enumerable.Range(0, 10).Select(i => new User
+        {
+            UserName = $"BatchUser{i}",
+            Email = $"batch{i}@example.com",
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        });
+        return await QuarryDb.Users().InsertBatch(u => (u.UserName, u.Email, u.IsActive, u.CreatedAt)).Values(users).ExecuteNonQueryAsync();
+    }
 }

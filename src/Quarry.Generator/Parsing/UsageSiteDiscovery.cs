@@ -356,7 +356,7 @@ internal static class UsageSiteDiscovery
             };
         }
 
-        // Remap methods on IExecutableBatchInsert to batch insert kinds
+        // Remap generic InterceptableMethods kinds to batch insert kinds when on batch insert types
         if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
         {
             kind = methodName switch
@@ -369,12 +369,10 @@ internal static class UsageSiteDiscovery
             };
         }
 
-        // Remap Values on IBatchInsertBuilder
         if (IsBatchInsertBuilderType(containingType.Name) && methodName == "Values")
         {
             kind = InterceptorKind.BatchInsertValues;
         }
-
 
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
@@ -632,12 +630,6 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // Detect batch insert chains (Values() or InsertMany() in receiver chain)
-        var isBatchInsert = kind is InterceptorKind.InsertExecuteNonQuery
-                or InterceptorKind.InsertExecuteScalar
-                or InterceptorKind.InsertToDiagnostics
-            && DetectBatchInsertInChain(invocation);
-
         // Extract batch insert column names from column selector lambda
         ImmutableArray<string>? batchInsertColumnNames = null;
         if (kind == InterceptorKind.BatchInsertColumnSelector)
@@ -690,7 +682,6 @@ internal static class UsageSiteDiscovery
             setActionAssignments: setActionAssignments,
             setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
-            isBatchInsert: isBatchInsert,
             batchInsertColumnNames: batchInsertColumnNames);
     }
 
@@ -959,29 +950,6 @@ internal static class UsageSiteDiscovery
         };
 
         return (sqlExpr, clauseKind, isDescending);
-    }
-
-    /// <summary>
-    /// Detects if an insert terminal's receiver chain contains Values() or InsertMany(),
-    /// indicating a batch insert that cannot be carrier-optimized.
-    /// </summary>
-    private static bool DetectBatchInsertInChain(InvocationExpressionSyntax terminal)
-    {
-        // Walk the receiver chain from the terminal backwards
-        var current = terminal.Expression;
-        while (current is MemberAccessExpressionSyntax ma)
-        {
-            var name = ma.Name.Identifier.ValueText;
-            if (name == "Values" || name == "InsertMany")
-                return true;
-
-            // Walk deeper into the receiver
-            if (ma.Expression is InvocationExpressionSyntax invoc)
-                current = invoc.Expression;
-            else
-                break;
-        }
-        return false;
     }
 
     /// <summary>
@@ -1713,12 +1681,6 @@ internal static class UsageSiteDiscovery
 
 
     /// <summary>
-    /// Walks backward from the terminal invocation through the fluent chain,
-    /// finds all Insert/InsertMany/Values calls, and collects property names
-    /// from their object initializers into a union set.
-    /// Returns null if any argument is non-analyzable or if the union is empty.
-    /// </summary>
-    /// <summary>
     /// Extracts initialized property names from a Set(entity) call's single argument.
     /// Returns null if the argument is not an analyzable object initializer.
     /// </summary>
@@ -1752,14 +1714,9 @@ internal static class UsageSiteDiscovery
                 next = ma.Expression;
             }
 
-            if (calledMethod == "Insert" || calledMethod == "Values")
+            if (calledMethod == "Insert")
             {
                 if (!TryExtractPropertyNamesFromArgument(invoc, result))
-                    return null;
-            }
-            else if (calledMethod == "InsertMany")
-            {
-                if (!TryExtractPropertyNamesFromInsertManyArgument(invoc, result))
                     return null;
             }
 
@@ -1824,65 +1781,9 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Handles InsertMany() arguments: ImplicitArrayCreationExpressionSyntax,
-    /// ArrayCreationExpressionSyntax, and CollectionExpressionSyntax.
-    /// Returns false if non-analyzable.
-    /// </summary>
-    private static bool TryExtractPropertyNamesFromInsertManyArgument(InvocationExpressionSyntax invocation, HashSet<string> result)
-    {
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return false;
-
-        var argExpr = invocation.ArgumentList.Arguments[0].Expression;
-
-        if (argExpr is ImplicitArrayCreationExpressionSyntax implicitArray && implicitArray.Initializer != null)
-        {
-            return ExtractFromArrayElements(implicitArray.Initializer.Expressions, result);
-        }
-
-        if (argExpr is ArrayCreationExpressionSyntax arrayCreation && arrayCreation.Initializer != null)
-        {
-            return ExtractFromArrayElements(arrayCreation.Initializer.Expressions, result);
-        }
-
-        if (argExpr is CollectionExpressionSyntax collectionExpr)
-        {
-            foreach (var element in collectionExpr.Elements)
-            {
-                if (element is ExpressionElementSyntax exprElement)
-                {
-                    if (!TryExtractPropertyNamesFromExpression(exprElement.Expression, result))
-                        return false;
-                }
-                else
-                {
-                    return false; // Spread or other non-analyzable element
-                }
-            }
-            return true;
-        }
-
-        // Non-analyzable: variable, method call, etc.
-        return false;
-    }
-
-    /// <summary>
-    /// Helper to iterate array initializer elements and extract property names.
-    /// </summary>
-    private static bool ExtractFromArrayElements(SeparatedSyntaxList<ExpressionSyntax> elements, HashSet<string> result)
-    {
-        foreach (var element in elements)
-        {
-            if (!TryExtractPropertyNamesFromExpression(element, result))
-                return false;
-        }
-        return true;
-    }
-
-    /// <summary>
-    /// Walks the receiver invocation chain to find an Insert/InsertMany call and extracts
+    /// Walks the receiver invocation chain to find an Insert call and extracts
     /// the entity type name syntactically from its argument expression.
-    /// For example, in <c>ctx.Insert(new User{}).Values(...).ToDiagnostics()</c>, this finds
+    /// For example, in <c>ctx.Insert(new User{}).ToDiagnostics()</c>, this finds
     /// <c>Insert(new User{})</c> and returns "User".
     /// </summary>
     private static string? ExtractEntityTypeNameFromChain(ExpressionSyntax receiverExpression)
@@ -1903,7 +1804,7 @@ internal static class UsageSiteDiscovery
                 // Prepare for next iteration (walk deeper)
                 var next = ma.Expression;
 
-                if (calledMethod == "Insert" || calledMethod == "InsertMany")
+                if (calledMethod == "Insert")
                 {
                     if (invoc.ArgumentList.Arguments.Count > 0)
                     {
@@ -2190,8 +2091,8 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Resolves the entity type name from an identifier by tracing to its variable declaration
     /// and inspecting the initializer expression. Handles patterns like:
-    /// <c>var users = new[] { new User{} }; db.InsertMany(users)...</c>
-    /// <c>var users = items.Select(i => new User{...}); db.InsertMany(users)...</c>
+    /// <c>var users = new[] { new User{} }; db.InsertBatch(u => u.Name).Values(users)...</c>
+    /// <c>var users = items.Select(i => new User{...}); db.InsertBatch(u => u.Name).Values(users)...</c>
     /// </summary>
     private static string? ExtractTypeNameFromIdentifierInitializer(ExpressionSyntax expression)
     {
@@ -2361,7 +2262,7 @@ internal static class UsageSiteDiscovery
                         && argType.TypeKind != TypeKind.TypeParameter
                         && argType.TypeKind != TypeKind.Error)
                     {
-                        // For InsertMany(IEnumerable<T>), unwrap the element type
+                        // For InsertBatch(Func<T, TColumns>), unwrap the element type
                         if (argType.IsGenericType && chainedMethod.Parameters.Length > 0)
                         {
                             var paramType = chainedMethod.Parameters[0].Type;

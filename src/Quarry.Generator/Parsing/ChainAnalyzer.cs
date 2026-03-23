@@ -258,11 +258,8 @@ internal static class ChainAnalyzer
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
         // But we track Limit/Offset/Distinct/WithTimeout which have no clause translation.
-        // Old batch insert chains (Values/InsertMany on IInsertBuilder) had unmatched methods.
         // New batch insert chains (BatchInsertColumnSelector → Values → terminal) are fully tracked.
         IReadOnlyList<string>? unmatchedMethodNames = null;
-        if (executionSite.Bound.Raw.IsBatchInsert)
-            unmatchedMethodNames = new[] { "Values" };
 
         // Build QueryPlan terms from TranslatedClause data
         var whereTerms = new List<WhereTerm>();

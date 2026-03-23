@@ -127,4 +127,58 @@ internal class CrossDialectBatchInsertTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Batch Insert ToSql
+
+    [Test]
+    public void BatchInsert_ToSql_SingleEntity()
+    {
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).ToSql();
+        var pgSql = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ToSql();
+        var mySql = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ToSql();
+        var ssSql = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ToSql();
+
+        AssertDialects(liteSql, pgSql, mySql, ssSql,
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
+    }
+
+    [Test]
+    public void BatchInsert_ToSql_MultipleEntities()
+    {
+        var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToSql();
+
+        Assert.That(liteSql, Is.EqualTo(
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3) RETURNING \"UserId\""));
+    }
+
+    #endregion
+
+    #region Batch Insert Empty Collection
+
+    [Test]
+    public void BatchInsert_EmptyCollection_ThrowsArgumentException()
+    {
+        var builder = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(Array.Empty<User>());
+
+        Assert.Throws<ArgumentException>(() => builder.ToSql());
+    }
+
+    #endregion
+
+    #region Batch Insert Runtime Fallback
+
+    [Test]
+    public void InsertBatch_WithoutGenerator_ThrowsInvalidOperationException()
+    {
+        // EntityAccessor.InsertBatch throws because batch insert requires source generation
+        var accessor = new Quarry.EntityAccessor<User>(SqlDialect.SQLite, "users", null, null!);
+
+        Assert.Throws<InvalidOperationException>(() => accessor.InsertBatch(u => u.UserName));
+    }
+
+    #endregion
 }
