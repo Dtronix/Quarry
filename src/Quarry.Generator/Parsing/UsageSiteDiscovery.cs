@@ -2571,43 +2571,11 @@ internal static class UsageSiteDiscovery
         if (receiver == null)
             return null;
 
-        // Recursively unwrap fluent chain: while receiver is an invocation, drill into its receiver
-        while (receiver is InvocationExpressionSyntax chainedInvocation)
-        {
-            if (chainedInvocation.Expression is MemberAccessExpressionSyntax chainedMember)
-            {
-                receiver = chainedMember.Expression;
-            }
-            else
-            {
-                break;
-            }
-        }
-
-        // If receiver is a local variable, trace through its initializer to find the context.
-        // This handles patterns like: var del = _db.Delete<T>().Where(...); del.ExecuteNonQueryAsync()
-        if (receiver is IdentifierNameSyntax identifier)
-        {
-            var symbol = semanticModel.GetSymbolInfo(identifier, cancellationToken).Symbol;
-            if (symbol is ILocalSymbol local && local.DeclaringSyntaxReferences.Length == 1)
-            {
-                var declSyntax = local.DeclaringSyntaxReferences[0].GetSyntax();
-                if (declSyntax is VariableDeclaratorSyntax declarator && declarator.Initializer?.Value != null)
-                {
-                    // Create a synthetic invocation-like wrapper to reuse our chain-walking logic
-                    var initExpr = declarator.Initializer.Value;
-                    // Walk the initializer's fluent chain to find the root
-                    while (initExpr is InvocationExpressionSyntax initInvoc)
-                    {
-                        if (initInvoc.Expression is MemberAccessExpressionSyntax initMember)
-                            initExpr = initMember.Expression;
-                        else
-                            break;
-                    }
-                    receiver = initExpr;
-                }
-            }
-        }
+        // Walk the fluent chain to the syntactic root, then trace through variable
+        // assignments (up to 2 hops) to find the original chain origin.
+        receiver = VariableTracer.WalkFluentChainRoot(receiver);
+        var traceResult = VariableTracer.TraceToChainRoot(receiver, semanticModel, cancellationToken, maxHops: 2);
+        receiver = traceResult.Root;
 
         // Now receiver should be the root (e.g., `db.Users` or `db` or `variable`)
         // For property access like db.Users, we want the type of db (the left side)

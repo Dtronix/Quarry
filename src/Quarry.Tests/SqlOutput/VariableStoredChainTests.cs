@@ -62,12 +62,12 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     }
 
     [Test]
-    public void BatchInsert_TwoHopVariable_ExecuteNonQueryAsync_ToDiagnostics()
+    public void BatchInsert_TwoHopVariable_MultiRow_ToSql()
     {
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
         var exec = batch.Values(users);
-        var sql = exec.ToDiagnostics().Sql;
+        var sql = exec.ToSql();
 
         Assert.That(sql, Is.EqualTo(
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3) RETURNING \"UserId\""));

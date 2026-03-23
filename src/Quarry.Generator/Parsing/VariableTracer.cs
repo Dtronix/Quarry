@@ -93,9 +93,10 @@ internal static class VariableTracer
             if (initializer == null)
                 break;
 
-            // Record the first variable name we trace through
-            if (firstVariableName == null)
-                firstVariableName = declarator.Identifier.Text;
+            // Record the deepest variable name (closest to the chain origin).
+            // For exec → batch → Lite, this yields "batch" — matching the
+            // ChainId that GetAssignedVariableName produces for the root statement.
+            firstVariableName = declarator.Identifier.Text;
 
             root = WalkFluentChainRoot(initializer);
             hops++;
