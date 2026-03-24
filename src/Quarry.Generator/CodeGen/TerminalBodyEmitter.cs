@@ -31,7 +31,7 @@ internal static class TerminalBodyEmitter
         TranslatedCallSite site,
         string methodName,
         AssembledPlan chain,
-        CarrierPlan? carrier = null)
+        CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
@@ -92,7 +92,7 @@ internal static class TerminalBodyEmitter
             _ => ""
         };
         var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
-        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier!, chain, readerCode, carrierExecutorMethod);
+        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         sb.AppendLine($"    }}");
     }
 
@@ -104,7 +104,7 @@ internal static class TerminalBodyEmitter
         TranslatedCallSite site,
         string methodName,
         AssembledPlan chain,
-        CarrierPlan? carrier = null)
+        CarrierPlan carrier)
     {
         var joinedNames = chain.JoinedEntityTypeNames!;
         var entityCount = joinedNames.Count;
@@ -158,7 +158,7 @@ internal static class TerminalBodyEmitter
             InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
             _ => ""
         };
-        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier!, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
         sb.AppendLine($"    }}");
     }
 
@@ -170,7 +170,7 @@ internal static class TerminalBodyEmitter
         TranslatedCallSite site,
         string methodName,
         AssembledPlan chain,
-        CarrierPlan? carrier = null)
+        CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
@@ -205,7 +205,7 @@ internal static class TerminalBodyEmitter
         }
         sb.AppendLine($"    {{");
 
-        CarrierEmitter.EmitCarrierNonQueryTerminal(sb, carrier!, chain);
+        CarrierEmitter.EmitCarrierNonQueryTerminal(sb, carrier, chain);
         sb.AppendLine($"    }}");
     }
 
@@ -218,7 +218,7 @@ internal static class TerminalBodyEmitter
         TranslatedCallSite site,
         string methodName,
         AssembledPlan chain,
-        CarrierPlan? carrier = null)
+        CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
         var thisType = site.BuilderTypeName;
@@ -307,7 +307,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
 
-        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier!, chain, diagnosticKind, isCarrierOptimized);
+        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
         sb.AppendLine($"    }}");
     }
 
@@ -315,7 +315,7 @@ internal static class TerminalBodyEmitter
     /// Emits an InsertBuilder ExecuteNonQueryAsync() interceptor.
     /// </summary>
     public static void EmitInsertNonQueryTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? prebuiltChain = null, CarrierPlan? carrier = null)
+        AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo ?? prebuiltChain?.PrepareSite?.InsertInfo;
@@ -329,10 +329,14 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
-        if (insertInfo != null && insertInfo.Columns.Count > 0 && carrier != null && prebuiltChain != null)
+        if (insertInfo != null && insertInfo.Columns.Count > 0 && prebuiltChain != null)
         {
             CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
                 "ExecuteCarrierNonQueryWithCommandAsync");
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Insert interceptor not generated — missing column analysis.\");");
         }
 
         sb.AppendLine($"    }}");
@@ -342,7 +346,7 @@ internal static class TerminalBodyEmitter
     /// Emits an InsertBuilder ExecuteScalarAsync() interceptor for identity return.
     /// </summary>
     public static void EmitInsertScalarTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? prebuiltChain = null, CarrierPlan? carrier = null)
+        AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var insertInfo = site.InsertInfo;
@@ -355,10 +359,14 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
         sb.AppendLine($"    {{");
 
-        if (insertInfo != null && insertInfo.Columns.Count > 0 && carrier != null && prebuiltChain != null)
+        if (insertInfo != null && insertInfo.Columns.Count > 0 && prebuiltChain != null)
         {
             CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
                 "ExecuteCarrierScalarWithCommandAsync<TKey>", isScalar: true);
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Insert scalar interceptor not generated — missing column analysis.\");");
         }
 
         sb.AppendLine($"    }}");
@@ -372,18 +380,21 @@ internal static class TerminalBodyEmitter
         TranslatedCallSite site,
         string methodName,
         AssembledPlan? chain,
-        CarrierPlan? carrier = null)
+        CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var isCarrierOptimized = carrier != null ? "true" : "false";
 
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
         sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
         sb.AppendLine($"    {{");
 
-        if (chain != null && chain.SqlVariants.Count > 0 && carrier != null)
+        if (chain != null && chain.SqlVariants.Count > 0)
         {
             CarrierEmitter.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Insert diagnostics interceptor not generated — missing chain analysis.\");");
         }
 
         sb.AppendLine($"    }}");
@@ -395,7 +406,7 @@ internal static class TerminalBodyEmitter
     /// Emits a batch insert ExecuteNonQueryAsync terminal.
     /// </summary>
     public static void EmitBatchInsertNonQueryTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+        AssembledPlan? chain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -408,9 +419,13 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
-        if (carrier != null && chain != null)
+        if (chain != null)
         {
             EmitBatchInsertCarrierTerminal(sb, carrier, chain, "ExecuteCarrierNonQueryWithCommandAsync", entityType);
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Batch insert interceptor not generated — missing chain analysis.\");");
         }
 
         sb.AppendLine($"    }}");
@@ -420,7 +435,7 @@ internal static class TerminalBodyEmitter
     /// Emits a batch insert ExecuteScalarAsync terminal.
     /// </summary>
     public static void EmitBatchInsertScalarTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+        AssembledPlan? chain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -429,9 +444,13 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
         sb.AppendLine($"    {{");
 
-        if (carrier != null && chain != null)
+        if (chain != null)
         {
             EmitBatchInsertCarrierTerminal(sb, carrier, chain, "ExecuteCarrierScalarWithCommandAsync<TKey>", entityType);
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Batch insert scalar interceptor not generated — missing chain analysis.\");");
         }
 
         sb.AppendLine($"    }}");
@@ -441,7 +460,7 @@ internal static class TerminalBodyEmitter
     /// Emits a batch insert ToDiagnostics terminal.
     /// </summary>
     public static void EmitBatchInsertDiagnosticsTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? chain = null, CarrierPlan? carrier = null)
+        AssembledPlan? chain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -453,7 +472,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
 
-        if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
+        if (chain != null && chain.SqlVariants.Count > 0)
         {
             sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
@@ -466,6 +485,10 @@ internal static class TerminalBodyEmitter
 
             sb.AppendLine($"        var sql = Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", 1, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
             sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, true);");
+        }
+        else
+        {
+            sb.AppendLine($"        throw new NotSupportedException(\"Batch insert diagnostics interceptor not generated — missing chain analysis.\");");
         }
 
         sb.AppendLine($"    }}");

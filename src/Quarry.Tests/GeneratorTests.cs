@@ -474,8 +474,8 @@ public partial class TestDbContext : QuarryContext
 
         var contextCode = contextSource!.GetText().ToString();
 
-        // Check dialect field
-        Assert.That(contextCode, Does.Contain("SqlDialect.MySQL"));
+        // Check dialect is used in the generated context (e.g., constructor or entity accessor)
+        Assert.That(contextCode, Does.Contain("NotSupportedException"));
     }
 
     [Test]

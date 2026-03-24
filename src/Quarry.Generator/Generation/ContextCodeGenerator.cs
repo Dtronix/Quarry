@@ -45,11 +45,6 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"{access} partial class {context.ClassName}");
         sb.AppendLine("{");
 
-        // Dialect field
-        var dialectField = GetDialectField(context.Dialect);
-        sb.AppendLine($"    private static readonly SqlDialect _dialect = {dialectField};");
-        sb.AppendLine();
-
         // Schema name constant (if any)
         if (!string.IsNullOrEmpty(context.Schema))
         {
@@ -126,21 +121,6 @@ internal static class ContextCodeGenerator
     }
 
     /// <summary>
-    /// Gets the dialect field expression for the specified dialect.
-    /// </summary>
-    private static string GetDialectField(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.SQLite => "SqlDialect.SQLite",
-            SqlDialect.PostgreSQL => "SqlDialect.PostgreSQL",
-            SqlDialect.MySQL => "SqlDialect.MySQL",
-            SqlDialect.SqlServer => "SqlDialect.SqlServer",
-            _ => "SqlDialect.SQLite"
-        };
-    }
-
-
     /// <summary>
     /// Generates an Update method for an entity.
     /// </summary>
