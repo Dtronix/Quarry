@@ -361,9 +361,9 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_EntityAccessorToDiagnostics_NoPrebuiltDispatch()
+    public void CarrierGeneration_EntityAccessorToDiagnostics_ProducesCarrier()
     {
-        // Bare db.Users().ToDiagnostics().Sql should NOT produce PrebuiltDispatch — no clauses to optimize.
+        // Bare db.Users().ToDiagnostics().Sql now produces a carrier after trivial gate removal.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
@@ -387,15 +387,13 @@ public static class Queries
         var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
         Assert.That(qryErrors, Is.Empty, "Bare IEntityAccessor ToDiagnostics should not produce errors");
 
-        // Verify no carrier class was generated for this trivial chain
+        // Verify a carrier class IS generated — all PrebuiltDispatch chains now get carriers
         var interceptorsTree = result.GeneratedTrees
             .FirstOrDefault(t => t.FilePath.Contains("Interceptors") && t.FilePath.EndsWith(".g.cs"));
-        if (interceptorsTree != null)
-        {
-            var code = interceptorsTree.GetText().ToString();
-            Assert.That(code, Does.Not.Contain("file sealed class Chain_"),
-                "Bare IEntityAccessor ToDiagnostics should not produce carrier class");
-        }
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptor file");
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("file sealed class Chain_"),
+            "Bare IEntityAccessor ToDiagnostics should now produce carrier class");
     }
 
     [Test]

@@ -316,8 +316,9 @@ internal static class ChainAnalyzer
                 var clause = site.Clause;
                 var expr = clause.ResolvedExpression;
 
-                // Remap parameters
+                // Remap parameters and enrich with column metadata (IsEnum, IsSensitive)
                 var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex);
+                EnrichParametersFromColumns(clauseParams, expr, executionSite.Bound.Entity, resolvedJoinEntities);
                 parameters.AddRange(clauseParams);
 
                 switch (clause.Kind)
@@ -620,6 +621,206 @@ internal static class ChainAnalyzer
                 collectionAccessExpression: null)); // Computed during carrier analysis
         }
         return result;
+    }
+
+    /// <summary>
+    /// Enriches clause parameters with column metadata (IsEnum, IsSensitive, EnumUnderlyingType)
+    /// by walking the resolved expression tree to find column-parameter pairs, then looking up
+    /// column metadata from the entity definition.
+    /// </summary>
+    private static void EnrichParametersFromColumns(
+        List<QueryParameter> clauseParams,
+        SqlExpr? expression,
+        EntityRef? entity,
+        IReadOnlyList<EntityRef>? joinedEntities)
+    {
+        if (expression == null || clauseParams.Count == 0)
+            return;
+
+        // Build column lookup by unquoted column name from all available entities
+        var columnLookup = new Dictionary<string, ColumnInfo>(StringComparer.OrdinalIgnoreCase);
+        if (entity != null)
+        {
+            foreach (var col in entity.Columns)
+                columnLookup[col.ColumnName] = col;
+        }
+        if (joinedEntities != null)
+        {
+            foreach (var je in joinedEntities)
+            {
+                foreach (var col in je.Columns)
+                {
+                    // Don't overwrite — primary entity columns take precedence
+                    if (!columnLookup.ContainsKey(col.ColumnName))
+                        columnLookup[col.ColumnName] = col;
+                }
+            }
+        }
+
+        if (columnLookup.Count == 0)
+            return;
+
+        // Walk expression tree to find column-param pairs
+        var paramColumnMap = new Dictionary<int, ColumnInfo>();
+        WalkExprForColumnParamPairs(expression, columnLookup, paramColumnMap);
+
+        if (paramColumnMap.Count == 0)
+            return;
+
+        // Enrich parameters with column metadata
+        for (int i = 0; i < clauseParams.Count; i++)
+        {
+            var p = clauseParams[i];
+            // ParamSlotExpr local indices correspond to clause-local ordering (0, 1, 2...).
+            // clauseParams[i] was created from clauseParams[i] in RemapParameters, so
+            // the local index is just i.
+            if (!paramColumnMap.TryGetValue(i, out var col))
+                continue;
+
+            var isEnum = col.IsEnum || p.IsEnum;
+            var isSensitive = col.Modifiers.IsSensitive || p.IsSensitive;
+
+            // Skip if nothing changed
+            if (isEnum == p.IsEnum && isSensitive == p.IsSensitive)
+                continue;
+
+            clauseParams[i] = new QueryParameter(
+                globalIndex: p.GlobalIndex,
+                clrType: p.ClrType,
+                valueExpression: p.ValueExpression,
+                isCaptured: p.IsCaptured,
+                expressionPath: p.ExpressionPath,
+                isCollection: p.IsCollection,
+                elementTypeName: p.ElementTypeName,
+                typeMappingClass: p.TypeMappingClass,
+                isEnum: isEnum,
+                enumUnderlyingType: p.EnumUnderlyingType,
+                isSensitive: isSensitive,
+                entityPropertyExpression: p.EntityPropertyExpression,
+                needsFieldInfoCache: p.NeedsFieldInfoCache,
+                isDirectAccessible: p.IsDirectAccessible,
+                collectionAccessExpression: p.CollectionAccessExpression);
+        }
+    }
+
+    /// <summary>
+    /// Recursively walks an expression tree to find BinaryOpExpr/InExpr/LikeExpr nodes
+    /// where one side is a ResolvedColumnExpr and the other contains a ParamSlotExpr.
+    /// Records the mapping from param local index to the matched ColumnInfo.
+    /// </summary>
+    private static void WalkExprForColumnParamPairs(
+        SqlExpr expr,
+        Dictionary<string, ColumnInfo> columnLookup,
+        Dictionary<int, ColumnInfo> paramColumnMap)
+    {
+        switch (expr)
+        {
+            case BinaryOpExpr bin:
+                // Check if this is a column = param or param = column comparison
+                TryMatchColumnParam(bin.Left, bin.Right, columnLookup, paramColumnMap);
+                TryMatchColumnParam(bin.Right, bin.Left, columnLookup, paramColumnMap);
+                // Recurse into both sides for nested expressions (e.g., AND/OR)
+                WalkExprForColumnParamPairs(bin.Left, columnLookup, paramColumnMap);
+                WalkExprForColumnParamPairs(bin.Right, columnLookup, paramColumnMap);
+                break;
+
+            case InExpr inExpr:
+                // IN clause: operand is the column, values contain params
+                if (inExpr.Operand is ResolvedColumnExpr inCol)
+                {
+                    var colInfo = LookupColumn(inCol, columnLookup);
+                    if (colInfo != null)
+                    {
+                        foreach (var val in inExpr.Values)
+                        {
+                            if (val is ParamSlotExpr paramSlot)
+                                paramColumnMap[paramSlot.LocalIndex] = colInfo;
+                        }
+                    }
+                }
+                break;
+
+            case LikeExpr like:
+                // LIKE: operand is the column, pattern contains param
+                if (like.Operand is ResolvedColumnExpr likeCol)
+                {
+                    var colInfo = LookupColumn(likeCol, columnLookup);
+                    if (colInfo != null && like.Pattern is ParamSlotExpr likeParam)
+                        paramColumnMap[likeParam.LocalIndex] = colInfo;
+                }
+                break;
+
+            case UnaryOpExpr unary:
+                WalkExprForColumnParamPairs(unary.Operand, columnLookup, paramColumnMap);
+                break;
+
+            case FunctionCallExpr func:
+                foreach (var arg in func.Arguments)
+                    WalkExprForColumnParamPairs(arg, columnLookup, paramColumnMap);
+                break;
+
+            case IsNullCheckExpr isNull:
+                WalkExprForColumnParamPairs(isNull.Operand, columnLookup, paramColumnMap);
+                break;
+        }
+    }
+
+    /// <summary>
+    /// If columnSide is a ResolvedColumnExpr and paramSide is (or contains) a ParamSlotExpr,
+    /// records the column-param mapping.
+    /// </summary>
+    private static void TryMatchColumnParam(
+        SqlExpr columnSide,
+        SqlExpr paramSide,
+        Dictionary<string, ColumnInfo> columnLookup,
+        Dictionary<int, ColumnInfo> paramColumnMap)
+    {
+        if (columnSide is not ResolvedColumnExpr colExpr)
+            return;
+
+        var colInfo = LookupColumn(colExpr, columnLookup);
+        if (colInfo == null)
+            return;
+
+        // Direct param
+        if (paramSide is ParamSlotExpr paramSlot)
+        {
+            paramColumnMap[paramSlot.LocalIndex] = colInfo;
+            return;
+        }
+
+        // Param wrapped in function call (e.g., LOWER(@p0))
+        if (paramSide is FunctionCallExpr funcExpr)
+        {
+            foreach (var arg in funcExpr.Arguments)
+            {
+                if (arg is ParamSlotExpr funcParam)
+                    paramColumnMap[funcParam.LocalIndex] = colInfo;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Strips dialect-specific quotes from a column name and looks it up in the column dictionary.
+    /// </summary>
+    private static ColumnInfo? LookupColumn(ResolvedColumnExpr colExpr, Dictionary<string, ColumnInfo> columnLookup)
+    {
+        var quoted = colExpr.QuotedColumnName;
+        if (quoted.Length < 2)
+            return null;
+
+        // Strip quotes: "col" → col, `col` → col, [col] → col
+        var first = quoted[0];
+        string unquoted;
+        if (first == '[')
+            unquoted = quoted.Substring(1, quoted.Length - 2); // [col]
+        else if (first == '"' || first == '`')
+            unquoted = quoted.Substring(1, quoted.Length - 2); // "col" or `col`
+        else
+            unquoted = quoted;
+
+        columnLookup.TryGetValue(unquoted, out var col);
+        return col;
     }
 
     /// <summary>
@@ -972,8 +1173,7 @@ internal static class ChainAnalyzer
 
         if (kind == InterceptorKind.BatchInsertExecuteNonQuery ||
             kind == InterceptorKind.BatchInsertExecuteScalar ||
-            kind == InterceptorKind.BatchInsertToDiagnostics ||
-            kind == InterceptorKind.BatchInsertToSql)
+            kind == InterceptorKind.BatchInsertToDiagnostics)
             return QueryKind.BatchInsert;
 
         return builderKind switch
@@ -1165,8 +1365,7 @@ internal static class ChainAnalyzer
             or InterceptorKind.InsertToDiagnostics
             or InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
-            or InterceptorKind.BatchInsertToDiagnostics
-            or InterceptorKind.BatchInsertToSql;
+            or InterceptorKind.BatchInsertToDiagnostics;
     }
 
     /// <summary>

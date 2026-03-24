@@ -52,13 +52,8 @@ public sealed class UpdateBuilder<T> : IUpdateBuilder<T> where T : class
         return this;
     }
 
-    public string ToSql()
-    {
-        return SqlModificationBuilder.BuildUpdateSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlModificationBuilder.BuildUpdateSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Update,
         _state.Dialect,
@@ -184,13 +179,8 @@ public sealed class ExecutableUpdateBuilder<T> : IExecutableUpdateBuilder<T> whe
         return ModificationExecutor.ExecuteUpdateNonQueryAsync(_state, cancellationToken);
     }
 
-    public string ToSql()
-    {
-        return SqlModificationBuilder.BuildUpdateSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlModificationBuilder.BuildUpdateSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Update,
         _state.Dialect,

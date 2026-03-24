@@ -37,9 +37,6 @@ public abstract class CarrierBase<T> : IEntityAccessor<T>, IQueryBuilder<T>
     IQueryBuilder<T> IEntityAccessor<T>.WithTimeout(TimeSpan timeout)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    string IEntityAccessor<T>.ToSql()
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
-
     QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -106,9 +103,6 @@ public abstract class CarrierBase<T> : IEntityAccessor<T>, IQueryBuilder<T>
     IJoinedQueryBuilder<T, TJoined> IQueryBuilder<T>.LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    string IQueryBuilder<T>.ToSql()
-        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
-
     QueryDiagnostics IQueryBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
@@ -138,8 +132,6 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Distinct is not intercepted in this optimized chain. This indicates a code generation bug.");
     IQueryBuilder<T> IEntityAccessor<T>.WithTimeout(TimeSpan timeout)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
-    string IEntityAccessor<T>.ToSql()
-        => throw new InvalidOperationException("Carrier method IEntityAccessor.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
     QueryDiagnostics IEntityAccessor<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
     IDeleteBuilder<T> IEntityAccessor<T>.Delete()
@@ -201,9 +193,6 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
     IJoinedQueryBuilder<T, TJoined> IQueryBuilder<T>.LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    string IQueryBuilder<T>.ToSql()
-        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
-
     QueryDiagnostics IQueryBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -253,9 +242,6 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
 
     IAsyncEnumerable<TResult> IQueryBuilder<T, TResult>.ToAsyncEnumerable(CancellationToken cancellationToken)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToAsyncEnumerable is not intercepted in this optimized chain. This indicates a code generation bug.");
-
-    string IQueryBuilder<T, TResult>.ToSql()
-        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToSql is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics IQueryBuilder<T, TResult>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");

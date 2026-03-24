@@ -20,7 +20,7 @@ public interface IJoinedQueryBuilder<T1, T2>
     IJoinedQueryBuilder3<T1, T2, T3> Join<T3>(Expression<Func<T1, T2, T3, bool>> condition) where T3 : class;
     IJoinedQueryBuilder3<T1, T2, T3> LeftJoin<T3>(Expression<Func<T1, T2, T3, bool>> condition) where T3 : class;
     IJoinedQueryBuilder3<T1, T2, T3> RightJoin<T3>(Expression<Func<T1, T2, T3, bool>> condition) where T3 : class;
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -42,7 +42,7 @@ public interface IJoinedQueryBuilder<T1, T2, TResult>
     Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken cancellationToken = default);
     Task<TResult> ExecuteFetchSingleAsync(CancellationToken cancellationToken = default);
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -64,7 +64,7 @@ public interface IJoinedQueryBuilder3<T1, T2, T3>
     IJoinedQueryBuilder4<T1, T2, T3, T4> Join<T4>(Expression<Func<T1, T2, T3, T4, bool>> condition) where T4 : class;
     IJoinedQueryBuilder4<T1, T2, T3, T4> LeftJoin<T4>(Expression<Func<T1, T2, T3, T4, bool>> condition) where T4 : class;
     IJoinedQueryBuilder4<T1, T2, T3, T4> RightJoin<T4>(Expression<Func<T1, T2, T3, T4, bool>> condition) where T4 : class;
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -87,7 +87,7 @@ public interface IJoinedQueryBuilder3<T1, T2, T3, TResult>
     Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken cancellationToken = default);
     Task<TResult> ExecuteFetchSingleAsync(CancellationToken cancellationToken = default);
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -108,7 +108,7 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4>
     IJoinedQueryBuilder4<T1, T2, T3, T4> Offset(int count);
     IJoinedQueryBuilder4<T1, T2, T3, T4> Limit(int count);
     IJoinedQueryBuilder4<T1, T2, T3, T4> Distinct();
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -132,6 +132,6 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4, TResult>
     Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken cancellationToken = default);
     Task<TResult> ExecuteFetchSingleAsync(CancellationToken cancellationToken = default);
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }

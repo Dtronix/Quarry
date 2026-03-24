@@ -57,10 +57,8 @@ public sealed class JoinedQueryBuilder<T1, T2> : IJoinedQueryBuilder<T1, T2>
     public IJoinedQueryBuilder<T1, T2> Distinct()
         => new JoinedQueryBuilder<T1, T2>(_state.WithDistinct());
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,
@@ -230,10 +228,8 @@ public sealed class JoinedQueryBuilder<T1, T2, TResult> : IJoinedQueryBuilder<T1
     public IJoinedQueryBuilder<T1, T2, TResult> Distinct()
         => new JoinedQueryBuilder<T1, T2, TResult>(_state.WithDistinct(), _selector, _reader);
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,
@@ -438,10 +434,8 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3> : IJoinedQueryBuilder3<T1, T
     public IJoinedQueryBuilder3<T1, T2, T3> Distinct()
         => new JoinedQueryBuilder3<T1, T2, T3>(_state.WithDistinct());
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,
@@ -608,10 +602,8 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3, TResult> : IJoinedQueryBuild
     public IJoinedQueryBuilder3<T1, T2, T3, TResult> Distinct()
         => new JoinedQueryBuilder3<T1, T2, T3, TResult>(_state.WithDistinct(), _selector, _reader);
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,
@@ -816,10 +808,8 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4> : IJoinedQueryBuilder4<T
     public IJoinedQueryBuilder4<T1, T2, T3, T4> Distinct()
         => new JoinedQueryBuilder4<T1, T2, T3, T4>(_state.WithDistinct());
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,
@@ -946,10 +936,8 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4, TResult> : IJoinedQueryB
     public IJoinedQueryBuilder4<T1, T2, T3, T4, TResult> Distinct()
         => new JoinedQueryBuilder4<T1, T2, T3, T4, TResult>(_state.WithDistinct(), _selector, _reader);
 
-    public string ToSql() => SqlBuilder.BuildSelectSql(_state);
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Select,
         _state.Dialect,

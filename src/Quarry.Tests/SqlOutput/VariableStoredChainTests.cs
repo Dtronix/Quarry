@@ -22,7 +22,7 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     public void BatchInsert_VariableStored_ToSql()
     {
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
-        var sql = batch.Values(new[] { new User { UserName = "a", IsActive = true } }).ToSql();
+        var sql = batch.Values(new[] { new User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\""));
@@ -45,7 +45,7 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     {
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
         var exec = batch.Values(new[] { new User { UserName = "a", IsActive = true } });
-        var sql = exec.ToSql();
+        var sql = exec.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\""));
@@ -62,15 +62,16 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     }
 
     [Test]
-    public void BatchInsert_TwoHopVariable_MultiRow_ToSql()
+    public void BatchInsert_TwoHopVariable_MultiRow_ToDiagnostics()
     {
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
         var batch = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive));
         var exec = batch.Values(users);
-        var sql = exec.ToSql();
+        var sql = exec.ToDiagnostics().Sql;
 
+        // ToDiagnostics returns single-row template SQL
         Assert.That(sql, Is.EqualTo(
-            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3) RETURNING \"UserId\""));
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\""));
     }
 
     #endregion

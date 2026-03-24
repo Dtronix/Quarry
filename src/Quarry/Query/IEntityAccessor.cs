@@ -62,11 +62,6 @@ public interface IEntityAccessor<T> where T : class
     IQueryBuilder<T> WithTimeout(TimeSpan timeout);
 
     /// <summary>
-    /// Returns the generated SQL without executing the query.
-    /// </summary>
-    string ToSql();
-
-    /// <summary>
     /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
     /// bound parameters, and optimization metadata for this query chain.
     /// </summary>

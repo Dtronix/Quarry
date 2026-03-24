@@ -419,20 +419,8 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
 
     #endregion
 
-    /// <summary>
-    /// Returns the generated SQL without executing the query.
-    /// </summary>
-    /// <returns>The SQL that would be executed.</returns>
-    /// <remarks>
-    /// This is useful for debugging and logging. Parameter placeholders are included.
-    /// </remarks>
-    public string ToSql()
-    {
-        return SqlBuilder.BuildSelectSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(State.Parameters),
         DiagnosticQueryKind.Select,
         State.Dialect,
@@ -777,17 +765,8 @@ public sealed class QueryBuilder<TEntity, TResult> : IQueryBuilder<TEntity, TRes
 
     #endregion
 
-    /// <summary>
-    /// Returns the generated SQL without executing the query.
-    /// </summary>
-    /// <returns>The SQL that would be executed.</returns>
-    public string ToSql()
-    {
-        return SqlBuilder.BuildSelectSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlBuilder.BuildSelectSql(_state),
         DiagnosticsHelper.ConvertParameters(State.Parameters),
         DiagnosticQueryKind.Select,
         State.Dialect,

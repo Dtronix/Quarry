@@ -10,7 +10,7 @@ public interface IDeleteBuilder<T> where T : class
     IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableDeleteBuilder<T> All();
     IDeleteBuilder<T> WithTimeout(TimeSpan timeout);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -22,7 +22,7 @@ public interface IExecutableDeleteBuilder<T> where T : class
     IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableDeleteBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -36,7 +36,7 @@ public interface IUpdateBuilder<T> where T : class
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableUpdateBuilder<T> All();
     IUpdateBuilder<T> WithTimeout(TimeSpan timeout);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -50,7 +50,7 @@ public interface IExecutableUpdateBuilder<T> where T : class
     IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
     IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -62,7 +62,7 @@ public interface IInsertBuilder<T> where T : class
     IInsertBuilder<T> WithTimeout(TimeSpan timeout);
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
 
@@ -84,6 +84,6 @@ public interface IExecutableBatchInsert<T> where T : class
 {
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
-    string ToSql();
+
     QueryDiagnostics ToDiagnostics();
 }
