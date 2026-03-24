@@ -78,7 +78,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
             .Select(u => (u.UserId, u.UserName))
             .Prepare();
 
-        var sql = prepared.ToSql();
+        var sql = prepared.ToDiagnostics().Sql;
         var results = await prepared.ExecuteFetchAllAsync();
 
         Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\""));
@@ -94,7 +94,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
             .Prepare();
 
         var diag = prepared.ToDiagnostics();
-        var sql = prepared.ToSql();
+        var sql = prepared.ToDiagnostics().Sql;
 
         Assert.That(sql, Is.EqualTo(diag.Sql));
     }
@@ -156,13 +156,12 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
             .Prepare();
 
         var diag = prepared.ToDiagnostics();
-        var sql = prepared.ToSql();
+        var sql = prepared.ToDiagnostics().Sql;
 
         Assert.That(diag.Sql, Is.EqualTo(
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\""));
-        // ToSql returns the SQL prefix (VALUES clause filled at runtime for batch insert)
-        Assert.That(sql, Is.EqualTo(
-            "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES "));
+        // Both calls return the same full SQL via ToDiagnostics()
+        Assert.That(sql, Is.EqualTo(diag.Sql));
     }
 
     #endregion

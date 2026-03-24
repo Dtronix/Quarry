@@ -93,7 +93,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
@@ -201,7 +201,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql),
             "Multi-terminal ToDiagnostics should produce same SQL as direct chain");
@@ -214,7 +214,7 @@ internal class PrepareTests : CrossDialectTestBase
     {
         var litePrepared = Lite.Users().Select(u => (u.UserName, u.UserId)).Prepare();
         var liteDiag = litePrepared.ToDiagnostics();
-        var liteSql = litePrepared.ToSql();
+        var liteSql = litePrepared.ToDiagnostics().Sql;
 
         Assert.That(liteDiag.Sql, Is.EqualTo("SELECT \"UserName\", \"UserId\" FROM \"users\""));
         Assert.That(liteSql, Is.EqualTo("SELECT \"UserName\", \"UserId\" FROM \"users\""));
@@ -236,7 +236,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
@@ -281,7 +281,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
@@ -303,7 +303,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
@@ -348,7 +348,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
@@ -397,7 +397,7 @@ internal class PrepareTests : CrossDialectTestBase
             .Prepare();
 
         var preparedDiag = prepared.ToDiagnostics();
-        var preparedSql = prepared.ToSql();
+        var preparedSql = prepared.ToDiagnostics().Sql;
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));

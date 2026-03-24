@@ -509,7 +509,7 @@ internal sealed class FileEmitter
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToDiagnostics or InterceptorKind.ToSql)
+        else if (site.Kind is InterceptorKind.ToDiagnostics)
         {
             if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
                 && diagChain.UnmatchedMethodNames != null)
@@ -654,11 +654,6 @@ internal sealed class FileEmitter
                 }
                 else
                     TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
-                break;
-
-            case InterceptorKind.ToSql:
-                if (chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
-                    TerminalBodyEmitter.EmitToSqlTerminal(sb, site, methodName, toSqlChain);
                 break;
 
             case InterceptorKind.DeleteWhere:

@@ -1446,7 +1446,6 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable
             or InterceptorKind.ToDiagnostics
-            or InterceptorKind.ToSql
             or InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
             or InterceptorKind.InsertToDiagnostics

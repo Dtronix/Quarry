@@ -229,11 +229,6 @@ internal enum InterceptorKind
     BatchInsertToDiagnostics,
 
     /// <summary>
-    /// ToSql() method - returns the pre-built SQL string for the query chain.
-    /// </summary>
-    ToSql,
-
-    /// <summary>
     /// .Prepare() method - freezes the builder chain into a PreparedQuery&lt;TResult&gt; for multi-terminal use.
     /// When only one terminal is observed on the prepared variable, the Prepare call is elided (zero overhead).
     /// When N>1 terminals are observed, a carrier covering only the observed terminals is emitted.
