@@ -789,6 +789,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
         // Bind parameters from entities
+        var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);
         sb.AppendLine("        var __paramIdx = 0;");
         sb.AppendLine("        for (int __row = 0; __row < __entityCount; __row++)");
         sb.AppendLine("        {");
@@ -797,11 +798,14 @@ internal static class TerminalBodyEmitter
         for (int i = 0; i < insertInfo.Columns.Count; i++)
         {
             var col = insertInfo.Columns[i];
-            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass);
+            var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
+            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
             sb.AppendLine($"            {{");
             sb.AppendLine($"                var __p = __cmd.CreateParameter();");
             sb.AppendLine($"                __p.ParameterName = \"@p\" + __paramIdx;");
             sb.AppendLine($"                __p.Value = (object?){valueExpr} ?? DBNull.Value;");
+            if (needsIntType)
+                sb.AppendLine($"                __p.DbType = System.Data.DbType.Int32;");
             sb.AppendLine($"                __cmd.Parameters.Add(__p);");
             sb.AppendLine($"                __paramIdx++;");
             sb.AppendLine($"            }}");
