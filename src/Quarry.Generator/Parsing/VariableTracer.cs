@@ -83,7 +83,7 @@ internal static class VariableTracer
             // (e.g., context variables like `db`) must not be traced — doing so
             // would collapse independent chains from the same context into one.
             var symbol = semanticModel.GetSymbolInfo(ident, ct).Symbol;
-            if (symbol is not ILocalSymbol local || !IsBuilderType(local.Type.ToDisplayString()))
+            if (symbol is not ILocalSymbol local || !IsBuilderType(local.Type))
                 break;
 
             var declarator = TryResolveDeclarator(ident, semanticModel, ct);
@@ -110,20 +110,15 @@ internal static class VariableTracer
     }
 
     /// <summary>
-    /// Checks if a type display string is a known Quarry builder type.
-    /// Use for ILocalSymbol.Type.ToDisplayString() checks where generic forms appear.
+    /// Checks if a type symbol is a known Quarry builder type.
+    /// Matches on the short name via <see cref="IsBuilderTypeName"/> to avoid
+    /// false positives from substring matching on display strings.
     /// </summary>
-    internal static bool IsBuilderType(string typeName)
+    internal static bool IsBuilderType(ITypeSymbol type)
     {
-        return typeName.Contains("IQueryBuilder") || typeName.Contains("QueryBuilder<")
-            || typeName.Contains("IEntityAccessor") || typeName.Contains("EntityAccessor<")
-            || typeName.Contains("IDeleteBuilder") || typeName.Contains("IExecutableDeleteBuilder")
-            || typeName.Contains("DeleteBuilder<")
-            || typeName.Contains("IUpdateBuilder") || typeName.Contains("IExecutableUpdateBuilder")
-            || typeName.Contains("UpdateBuilder<")
-            || typeName.Contains("IInsertBuilder")
-            || typeName.Contains("IBatchInsertBuilder") || typeName.Contains("IExecutableBatchInsert")
-            || typeName.Contains("InsertBuilder<");
+        if (type is INamedTypeSymbol named)
+            return IsBuilderTypeName(named.Name);
+        return false;
     }
 
     /// <summary>
