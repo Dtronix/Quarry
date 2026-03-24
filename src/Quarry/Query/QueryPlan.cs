@@ -35,9 +35,6 @@ public enum QueryPlanTier
     /// <summary>No optimization — runtime SQL builder constructs the query.</summary>
     RuntimeBuild,
 
-    /// <summary>Pre-quoted fragments assembled at runtime (tier 2).</summary>
-    PrequotedFragments,
-
     /// <summary>Fully pre-built SQL dispatched by clause mask (tier 1).</summary>
     PrebuiltDispatch,
 

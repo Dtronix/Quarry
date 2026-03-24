@@ -525,14 +525,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                             new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
                         locationDisplay, assembled.Plan.PossibleMasks.Count.ToString()));
                     break;
-                case OptimizationTier.PrequotedFragments:
-                    spc.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier2,
-                        Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
-                            new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
-                        locationDisplay, assembled.Plan.ConditionalTerms.Count.ToString()));
-                    break;
                 case OptimizationTier.RuntimeBuild:
                     if (assembled.Plan.ForkedVariableName != null)
                     {
@@ -606,7 +598,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.UnboundParameterPlaceholder,
         DiagnosticDescriptors.ClauseNotTranslatable,
         DiagnosticDescriptors.ChainOptimizedTier1,
-        DiagnosticDescriptors.ChainOptimizedTier2,
         DiagnosticDescriptors.ChainNotAnalyzable,
         DiagnosticDescriptors.ForkedQueryChain,
         DiagnosticDescriptors.SqlRawPlaceholderMismatch,

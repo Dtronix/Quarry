@@ -28,10 +28,10 @@ internal static class ChainAnalyzer
     internal static List<AnalyzedChain>? TestCapturedChains;
 
     /// <summary>
-    /// Maximum number of conditional bits before downgrading from tier 1 to tier 2.
-    /// 4 bits = up to 16 dispatch variants.
+    /// Maximum number of conditional bits for PrebuiltDispatch.
+    /// 8 bits = up to 256 dispatch variants. Beyond this, classify as RuntimeBuild (compile error).
     /// </summary>
-    private const int MaxTier1Bits = 4;
+    private const int MaxTier1Bits = 8;
 
     /// <summary>
     /// Maximum nesting depth of if-blocks before abandoning analysis.
@@ -313,7 +313,7 @@ internal static class ChainAnalyzer
         if (totalBits <= MaxTier1Bits)
             tier = OptimizationTier.PrebuiltDispatch;
         else
-            tier = OptimizationTier.PrequotedFragments;
+            tier = OptimizationTier.RuntimeBuild;
 
         ct.ThrowIfCancellationRequested();
 

@@ -432,20 +432,6 @@ internal static class DiagnosticDescriptors
                      "A pre-built SQL dispatch table will be emitted with zero runtime string work.");
 
     /// <summary>
-    /// QRY031: Query chain analyzed, tier 2 applied.
-    /// Severity: Info
-    /// </summary>
-    public static readonly DiagnosticDescriptor ChainOptimizedTier2 = new(
-        id: "QRY031",
-        title: "Query chain optimized (tier 2)",
-        messageFormat: "Query chain analyzed at {0}: tier 2 applied ({1} conditional clauses exceed dispatch threshold)",
-        category: Category,
-        defaultSeverity: DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: "The query chain was analyzed but has too many conditional clause combinations for a dispatch table. " +
-                     "Pre-quoted fragment concatenation will be used instead.");
-
-    /// <summary>
     /// QRY032: Query chain not analyzable for pre-built SQL.
     /// Severity: Info
     /// </summary>
