@@ -65,6 +65,10 @@ public sealed class JoinedQueryBuilder<T1, T2> : IJoinedQueryBuilder<T1, T2>
         _state.TableName,
         rawState: _state);
 
+    /// <inheritdoc />
+    public PreparedQuery<(T1, T2)> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     internal QueryState State => _state;
 
     #region Join Chaining (2-table → 3-table)
@@ -235,6 +239,10 @@ public sealed class JoinedQueryBuilder<T1, T2, TResult> : IJoinedQueryBuilder<T1
         _state.Dialect,
         _state.TableName,
         rawState: _state);
+
+    /// <inheritdoc />
+    public PreparedQuery<TResult> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
 
     #region Execution Methods
 
@@ -442,6 +450,10 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3> : IJoinedQueryBuilder3<T1, T
         _state.TableName,
         rawState: _state);
 
+    /// <inheritdoc />
+    public PreparedQuery<(T1, T2, T3)> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     internal QueryState State => _state;
 
     #region Join Chaining (3-table → 4-table)
@@ -609,6 +621,10 @@ public sealed class JoinedQueryBuilder3<T1, T2, T3, TResult> : IJoinedQueryBuild
         _state.Dialect,
         _state.TableName,
         rawState: _state);
+
+    /// <inheritdoc />
+    public PreparedQuery<TResult> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
 
     #region Execution Methods
 
@@ -816,6 +832,10 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4> : IJoinedQueryBuilder4<T
         _state.TableName,
         rawState: _state);
 
+    /// <inheritdoc />
+    public PreparedQuery<(T1, T2, T3, T4)> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     internal QueryState State => _state;
 
     #region Internal Methods for Interceptors
@@ -943,6 +963,10 @@ public sealed class JoinedQueryBuilder4<T1, T2, T3, T4, TResult> : IJoinedQueryB
         _state.Dialect,
         _state.TableName,
         rawState: _state);
+
+    /// <inheritdoc />
+    public PreparedQuery<TResult> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
 
     #region Execution Methods
 

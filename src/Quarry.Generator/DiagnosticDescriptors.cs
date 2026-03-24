@@ -489,6 +489,37 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
 
+    // ─── PreparedQuery diagnostics (QRY035–QRY036) ────────────────────
+
+    /// <summary>
+    /// QRY035: PreparedQuery escapes scope.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor PreparedQueryEscapesScope = new(
+        id: "QRY035",
+        title: "PreparedQuery escapes scope",
+        messageFormat: "PreparedQuery variable '{0}' escapes the declaring method scope ({1}). Keep .Prepare() and its terminals in the same method body.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A PreparedQuery variable must not be returned from a method, passed as an argument, " +
+                     "captured in a lambda, or assigned to a field. The source generator requires all terminal " +
+                     "calls to be visible in the same method body.");
+
+    /// <summary>
+    /// QRY036: PreparedQuery has no terminals.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor PreparedQueryNoTerminals = new(
+        id: "QRY036",
+        title: "PreparedQuery has no terminals",
+        messageFormat: ".Prepare() called at {0} but no terminal methods (.ToDiagnostics(), .ExecuteFetchAllAsync(), etc.) are invoked on the resulting variable. Remove the unused .Prepare() call.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "A .Prepare() call that produces a PreparedQuery with no terminal invocations is dead code. " +
+                     "Either invoke at least one terminal on the prepared variable, or remove the .Prepare() call.");
+
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 
     /// <summary>

@@ -133,7 +133,8 @@ internal static class VariableTracer
             or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "DeleteBuilder"
             or "IUpdateBuilder" or "IExecutableUpdateBuilder" or "UpdateBuilder"
             or "IInsertBuilder" or "InsertBuilder"
-            or "IBatchInsertBuilder" or "IExecutableBatchInsert";
+            or "IBatchInsertBuilder" or "IExecutableBatchInsert"
+            or "PreparedQuery";
     }
 
     /// <summary>

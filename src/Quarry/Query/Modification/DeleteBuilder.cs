@@ -49,6 +49,10 @@ public sealed class DeleteBuilder<T> : IDeleteBuilder<T> where T : class
         _state.TableName,
         rawState: _state);
 
+    /// <inheritdoc />
+    public PreparedQuery<int> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     internal DeleteState State => _state;
 
     #region Generated Code Methods
@@ -143,6 +147,10 @@ public sealed class ExecutableDeleteBuilder<T> : IExecutableDeleteBuilder<T> whe
         _state.Dialect,
         _state.TableName,
         rawState: _state);
+
+    /// <inheritdoc />
+    public PreparedQuery<int> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
 
     public ulong ClauseMask => _state.ClauseMask;
 

@@ -69,6 +69,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public DiagnosticLocation Location => Bound.Raw.Location;
     public string BuilderTypeName => Bound.Raw.BuilderTypeName ?? Bound.Entity?.EntityName ?? Bound.Raw.EntityTypeName;
     public System.Collections.Immutable.ImmutableArray<string>? InitializedPropertyNames => Bound.Raw.InitializedPropertyNames;
+    public bool IsPreparedTerminal => Bound.Raw.IsPreparedTerminal;
 
     /// <summary>
     /// Creates a copy with updated JoinedEntityTypeNames and JoinedEntities.

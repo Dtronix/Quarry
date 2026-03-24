@@ -85,8 +85,14 @@ internal static class TerminalBodyEmitter
         var thisType = site.BuilderTypeName;
         var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(thisType);
 
-        // Method signature
-        if (site.Kind == InterceptorKind.ExecuteScalar)
+        // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static {returnType} {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
             sb.AppendLine($"    public static {returnType} {methodName}<TEntity, TResult, TScalar>(");
             sb.AppendLine($"        this {thisType}<TEntity, TResult> builder,");
@@ -313,9 +319,19 @@ internal static class TerminalBodyEmitter
                 return;
         }
 
-        sb.AppendLine($"    public static Task<int> {methodName}(");
-        sb.AppendLine($"        this {thisBuilderTypeName} builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        // Method signature — use PreparedQuery<int> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static Task<int> {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<int> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            sb.AppendLine($"    public static Task<int> {methodName}(");
+            sb.AppendLine($"        this {thisBuilderTypeName} builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
         sb.AppendLine($"    {{");
 
         if (carrier != null && CarrierEmitter.CanEmitNonQueryTerminal(chain))
@@ -392,6 +408,14 @@ internal static class TerminalBodyEmitter
         {
             thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
         }
+        else if (chain.QueryKind == QueryKind.Insert)
+        {
+            thisParamType = $"IInsertBuilder<{entityType}>";
+        }
+        else if (chain.QueryKind == QueryKind.BatchInsert)
+        {
+            thisParamType = $"IExecutableBatchInsert<{entityType}>";
+        }
         else
         {
             return;
@@ -402,6 +426,7 @@ internal static class TerminalBodyEmitter
             QueryKind.Select => "DiagnosticQueryKind.Select",
             QueryKind.Delete => "DiagnosticQueryKind.Delete",
             QueryKind.Update => "DiagnosticQueryKind.Update",
+            QueryKind.Insert or QueryKind.BatchInsert => "DiagnosticQueryKind.Insert",
             _ => "DiagnosticQueryKind.Select"
         };
 
@@ -413,6 +438,20 @@ internal static class TerminalBodyEmitter
         {
             EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
             return;
+        }
+
+        // Override receiver type for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            var prepResultType = chain.ResultTypeName != null
+                ? InterceptorCodeGenerator.GetShortTypeName(
+                    InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName)
+                : entityType;
+            if (chain.QueryKind is QueryKind.Delete or QueryKind.Update or QueryKind.Insert or QueryKind.BatchInsert)
+                thisParamType = "PreparedQuery<int>";
+            else
+                thisParamType = $"PreparedQuery<{prepResultType}>";
         }
 
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
@@ -490,10 +529,14 @@ internal static class TerminalBodyEmitter
         AssembledPlan? prebuiltChain = null, CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo;
+        var insertInfo = site.InsertInfo ?? prebuiltChain?.PrepareSite?.InsertInfo;
+
+        string receiverType = site.IsPreparedTerminal
+            ? "PreparedQuery<int>"
+            : $"IInsertBuilder<{entityType}>";
 
         sb.AppendLine($"    public static Task<int> {methodName}(");
-        sb.AppendLine($"        this IInsertBuilder<{entityType}> builder,");
+        sb.AppendLine($"        this {receiverType} builder,");
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
@@ -634,8 +677,12 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
+        string receiverType = site.IsPreparedTerminal
+            ? "PreparedQuery<int>"
+            : $"IExecutableBatchInsert<{entityType}>";
+
         sb.AppendLine($"    public static Task<int> {methodName}(");
-        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder,");
+        sb.AppendLine($"        this {receiverType} builder,");
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
@@ -676,8 +723,12 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
+        string receiverType = site.IsPreparedTerminal
+            ? "PreparedQuery<int>"
+            : $"IExecutableBatchInsert<{entityType}>";
+
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
-        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder)");
+        sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
 
         if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
@@ -706,7 +757,7 @@ internal static class TerminalBodyEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string executorMethod, string entityType)
     {
-        var insertInfo = chain.ExecutionSite.InsertInfo;
+        var insertInfo = chain.ExecutionSite.InsertInfo ?? chain.PrepareSite?.InsertInfo;
         if (insertInfo == null || insertInfo.Columns.Count == 0) return;
 
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
@@ -759,5 +810,201 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        }");
 
         sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
+    }
+
+    /// <summary>
+    /// Emits a .ToSql() interceptor that returns the pre-built SQL string.
+    /// </summary>
+    public static void EmitToSqlTerminal(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        AssembledPlan chain)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+
+        // Determine receiver type
+        string thisParamType;
+        string concreteType;
+
+        if (site.IsPreparedTerminal)
+        {
+            var prepResultType = chain.ResultTypeName != null
+                ? InterceptorCodeGenerator.GetShortTypeName(
+                    InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName)
+                : entityType;
+            if (chain.QueryKind is QueryKind.Delete or QueryKind.Update or QueryKind.Insert or QueryKind.BatchInsert)
+                thisParamType = "PreparedQuery<int>";
+            else
+                thisParamType = $"PreparedQuery<{prepResultType}>";
+        }
+        else if (chain.QueryKind == QueryKind.Delete)
+        {
+            thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
+        }
+        else if (chain.QueryKind == QueryKind.Update)
+        {
+            thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
+        }
+        else if (chain.IsJoinChain && chain.JoinedEntityTypeNames != null)
+        {
+            var joinTypeArgs = string.Join(", ",
+                chain.JoinedEntityTypeNames.Select(InterceptorCodeGenerator.GetShortTypeName));
+            if (chain.ResultTypeName != null)
+            {
+                var resultType = InterceptorCodeGenerator.GetShortTypeName(
+                    InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName);
+                thisParamType = $"{site.BuilderTypeName}<{joinTypeArgs}, {resultType}>";
+            }
+            else
+            {
+                thisParamType = $"{site.BuilderTypeName}<{joinTypeArgs}>";
+            }
+        }
+        else if (chain.ResultTypeName != null)
+        {
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(
+                InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                ?? chain.ResultTypeName);
+            thisParamType = $"{site.BuilderTypeName}<{entityType}, {resultType}>";
+        }
+        else
+        {
+            thisParamType = $"{site.BuilderTypeName}<{entityType}>";
+        }
+
+        // Determine concrete builder type for Unsafe.As cast
+        switch (chain.QueryKind)
+        {
+            case QueryKind.Delete:
+                concreteType = $"ExecutableDeleteBuilder<{entityType}>";
+                break;
+            case QueryKind.Update:
+                concreteType = $"ExecutableUpdateBuilder<{entityType}>";
+                break;
+            case QueryKind.Insert:
+                concreteType = $"InsertBuilder<{entityType}>";
+                break;
+            case QueryKind.BatchInsert:
+                // No concrete BatchInsertBuilder class — use InsertBuilder as placeholder.
+                // For batch insert, the SQL dispatch table is a single const string (no ClauseMask access).
+                concreteType = $"InsertBuilder<{entityType}>";
+                break;
+            default:
+                if (chain.ResultTypeName != null)
+                {
+                    var resultType = InterceptorCodeGenerator.GetShortTypeName(
+                        InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                        ?? chain.ResultTypeName);
+                    concreteType = $"QueryBuilder<{entityType}, {resultType}>";
+                }
+                else
+                {
+                    concreteType = $"QueryBuilder<{entityType}>";
+                }
+                break;
+        }
+
+        sb.AppendLine($"    public static string {methodName}(");
+        sb.AppendLine($"        this {thisParamType} builder)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __b = Unsafe.As<{concreteType}>(builder);");
+
+        // Generate SQL dispatch table
+        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, "__b");
+        sb.AppendLine($"        return sql;");
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a .Prepare() interceptor.
+    /// For single-terminal collapse (most common case), this simply Unsafe.As casts the builder
+    /// to PreparedQuery&lt;TResult&gt; — the terminal interceptor casts it back, resulting in zero overhead.
+    /// </summary>
+    public static void EmitPrepareInterceptor(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        AssembledPlan? chain = null,
+        CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        // Use chain's resolved result type if available (handles tuple element names correctly)
+        var rawResultType = chain != null
+            ? InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+            : site.ResultTypeName;
+        var resultType = !string.IsNullOrEmpty(rawResultType)
+            ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
+            : entityType;
+
+        // Determine the builder interface type for the receiver
+        var thisType = site.BuilderTypeName;
+
+        // Determine the PreparedQuery result type and receiver signature based on builder kind
+        string preparedResultType;
+        string receiverType;
+
+        switch (site.BuilderKind)
+        {
+            case BuilderKind.Delete:
+            case BuilderKind.ExecutableDelete:
+                preparedResultType = "int";
+                receiverType = $"{thisType}<{entityType}>";
+                break;
+            case BuilderKind.Update:
+            case BuilderKind.ExecutableUpdate:
+                preparedResultType = "int";
+                receiverType = $"{thisType}<{entityType}>";
+                break;
+            case BuilderKind.Insert:
+            case BuilderKind.BatchInsert:
+            case BuilderKind.ExecutableBatchInsert:
+                preparedResultType = "int";
+                receiverType = $"{thisType}<{entityType}>";
+                break;
+            case BuilderKind.JoinedQuery:
+                if (chain != null && chain.JoinedEntityTypeNames != null)
+                {
+                    var joinTypeArgs = string.Join(", ",
+                        chain.JoinedEntityTypeNames.Select(InterceptorCodeGenerator.GetShortTypeName));
+                    if (site.ResultTypeName != null)
+                    {
+                        preparedResultType = resultType;
+                        receiverType = $"{thisType}<{joinTypeArgs}, {resultType}>";
+                    }
+                    else
+                    {
+                        preparedResultType = resultType;
+                        receiverType = $"{thisType}<{joinTypeArgs}>";
+                    }
+                }
+                else
+                {
+                    preparedResultType = resultType;
+                    receiverType = $"{thisType}<{entityType}>";
+                }
+                break;
+            default:
+                preparedResultType = resultType;
+                if (site.ResultTypeName != null)
+                    receiverType = $"{thisType}<{entityType}, {resultType}>";
+                else
+                    receiverType = $"{thisType}<{entityType}>";
+                break;
+        }
+
+        sb.AppendLine($"    public static PreparedQuery<{preparedResultType}> {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder)");
+        sb.AppendLine($"    {{");
+
+        // Zero-overhead: cast builder to PreparedQuery<TResult> via Unsafe.As.
+        // The prepared terminal interceptor casts it back to the concrete builder type.
+        sb.AppendLine($"        return Unsafe.As<PreparedQuery<{preparedResultType}>>(builder);");
+
+        sb.AppendLine($"    }}");
     }
 }

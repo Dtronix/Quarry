@@ -46,6 +46,7 @@ internal static class InterceptorRouter
             case InterceptorKind.InsertExecuteNonQuery:
             case InterceptorKind.InsertExecuteScalar:
             case InterceptorKind.ToDiagnostics:
+            case InterceptorKind.ToSql:
             case InterceptorKind.InsertToDiagnostics:
                 return EmitterCategory.Terminal;
 
@@ -54,6 +55,10 @@ internal static class InterceptorRouter
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
                 return EmitterCategory.Join;
+
+            // Prepare terminal
+            case InterceptorKind.Prepare:
+                return EmitterCategory.Terminal;
 
             // Transition methods
             case InterceptorKind.DeleteTransition:
