@@ -385,7 +385,7 @@ Key type: `RawSqlTypeInfo` (`Models/RawSqlTypeInfo.cs`) — `RawSqlTypeKind`, `R
 **Solution:** `VariableTracer` (`Parsing/VariableTracer.cs`) provides reusable primitives:
 - `WalkFluentChainRoot(expr)` — walks nested invocations to the deepest non-invocation receiver
 - `TraceToChainRoot(receiver, semanticModel, ct, maxHops=2)` — traces through builder-type variable declarations to find the original chain origin. Only traces through variables whose type is a known Quarry builder (prevents context variable collapse).
-- `IsBuilderType(displayString)` / `IsBuilderTypeName(shortName)` — consolidated builder type checks
+- `IsBuilderType(ITypeSymbol)` / `IsBuilderTypeName(shortName)` — consolidated builder type checks
 
 **Consumers:** `ComputeChainId` (chain grouping), `ExtractBatchInsertColumnNamesFromChain` (column name extraction), `ResolveContextFromCallSite` (context resolution), `AnalyzabilityChecker.HasAnalyzableInitializer` (QRY001 suppression).
 
