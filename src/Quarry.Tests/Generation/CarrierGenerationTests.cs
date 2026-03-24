@@ -663,4 +663,221 @@ public class Queries
         Assert.That(code, Does.Contain("UPDATE"));
         Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
     }
+
+    [Test]
+    public void CarrierGeneration_InsertBoolColumn_SQLite_EmitsBoolToIntConversion()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // SQLite: bool should be converted to 0/1 integer
+        Assert.That(code, Does.Contain("IsActive ? 1 : 0"),
+            "SQLite carrier insert should convert bool to int (? 1 : 0)");
+        // SQLite: DbType.Int32 should be set for bool columns
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "SQLite carrier insert should set DbType.Int32 for bool columns");
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertBoolColumn_PostgreSQL_DoesNotConvertBoolToInt()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Col<bool> IsActive { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // PostgreSQL: bool should NOT be converted — native bool support
+        Assert.That(code, Does.Not.Contain("IsActive ? 1 : 0"),
+            "PostgreSQL carrier insert should NOT convert bool to int");
+        // Still has the entity property access
+        Assert.That(code, Does.Contain("__c.Entity!.IsActive"),
+            "PostgreSQL carrier insert should access bool property directly");
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertEnumColumn_SQLite_EmitsEnumToIntCast()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+
+public enum Priority { Low, Normal, High }
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<Priority> Priority { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders().Insert(new Order { Priority = Priority.High }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Enum should be cast to int for all dialects
+        Assert.That(code, Does.Contain("(int)").And.Contain("Priority"),
+            "Carrier insert should cast enum to int");
+        // DbType.Int32 should be set for enum columns
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "Carrier insert should set DbType.Int32 for enum columns");
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertBoolColumn_MySQL_EmitsBoolToIntConversion()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Col<bool> IsActive { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.MySQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // MySQL: bool should be converted to 0/1 integer (same as SQLite)
+        Assert.That(code, Does.Contain("IsActive ? 1 : 0"),
+            "MySQL carrier insert should convert bool to int (? 1 : 0)");
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "MySQL carrier insert should set DbType.Int32 for bool columns");
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertEnumColumn_PostgreSQL_EmitsEnumToIntCast()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+
+public enum Priority { Low, Normal, High }
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<Priority> Priority { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders().Insert(new Order { Priority = Priority.High }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Enum-to-int cast applies to ALL dialects (enums are never a native DB type)
+        Assert.That(code, Does.Contain("(int)").And.Contain("Priority"),
+            "PostgreSQL carrier insert should also cast enum to int");
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "PostgreSQL carrier insert should set DbType.Int32 for enum columns");
+    }
 }
