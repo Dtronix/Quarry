@@ -334,17 +334,20 @@ internal static partial class InterceptorCodeGenerator
             valueExpr = $"{GetMappingFieldName(customTypeMappingClass)}.ToDb({valueExpr})";
         else if (isBoolean && convertBoolToInt)
         {
-            // SQLite and MySQL reject boxed System.Boolean — convert to 0/1 integer
+            // SQLite and MySQL reject boxed System.Boolean — convert to 0/1 integer.
+            // Nullable path returns null (not DBNull.Value) so the caller's
+            // standard "(object?)expr ?? DBNull.Value" wrapper handles null uniformly.
             if (isNullable)
-                valueExpr = $"({valueExpr} != null ? (object)({valueExpr}.Value ? 1 : 0) : DBNull.Value)";
+                valueExpr = $"({valueExpr} != null ? (object)({valueExpr}.Value ? 1 : 0) : null)";
             else
                 valueExpr = $"({valueExpr} ? 1 : 0)";
         }
         else if (isEnum)
         {
-            // All dialects: enums must be cast to their underlying integer type
+            // All dialects: enums must be cast to their underlying integer type.
+            // Same nullable convention as bool — return null, let caller wrap with DBNull.
             if (isNullable)
-                valueExpr = $"({valueExpr} != null ? (object)(int){valueExpr}.Value : DBNull.Value)";
+                valueExpr = $"({valueExpr} != null ? (object)(int){valueExpr}.Value : null)";
             else
                 valueExpr = $"(int){valueExpr}";
         }

@@ -880,4 +880,105 @@ public static class Queries
         Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
             "PostgreSQL carrier insert should set DbType.Int32 for enum columns");
     }
+
+    [Test]
+    public void CarrierGeneration_InsertNullableBoolColumn_SQLite_EmitsNullSafeConversion()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+public class ProfileSchema : Schema
+{
+    public static string Table => ""profiles"";
+    public Key<int> ProfileId => Identity();
+    public Col<string> Name => Length(100);
+    public Col<bool?> IsVerified { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Profile> Profiles();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Profiles().Insert(new Profile { Name = ""x"", IsVerified = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Nullable bool on SQLite: null-safe ternary with int conversion
+        Assert.That(code, Does.Contain("IsVerified != null"),
+            "Nullable bool should emit null check");
+        Assert.That(code, Does.Contain(".Value ? 1 : 0"),
+            "Nullable bool should convert .Value to 0/1");
+        // The nullable path returns null for the false branch, letting the
+        // caller's (object?)expr ?? DBNull.Value handle null→DBNull uniformly
+        Assert.That(code, Does.Not.Match(@"DBNull\.Value\).*\?\?.*DBNull\.Value"),
+            "Nullable bool should not double-wrap with DBNull.Value");
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "Nullable bool should still set DbType.Int32");
+    }
+
+    [Test]
+    public void CarrierGeneration_InsertNullableEnumColumn_SQLite_EmitsNullSafeIntCast()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+
+public enum Priority { Low, Normal, High }
+
+public class TaskSchema : Schema
+{
+    public static string Table => ""tasks"";
+    public Key<int> TaskId => Identity();
+    public Col<string> Title => Length(200);
+    public Col<Priority?> Priority { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Task> Tasks();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Tasks().Insert(new Task { Title = ""x"", Priority = Priority.High }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Nullable enum: null-safe ternary with int cast
+        Assert.That(code, Does.Contain("Priority != null"),
+            "Nullable enum should emit null check");
+        Assert.That(code, Does.Contain("(int)").And.Contain(".Value"),
+            "Nullable enum should cast .Value to int");
+        Assert.That(code, Does.Not.Match(@"DBNull\.Value\).*\?\?.*DBNull\.Value"),
+            "Nullable enum should not double-wrap with DBNull.Value");
+        Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
+            "Nullable enum should still set DbType.Int32");
+    }
 }
