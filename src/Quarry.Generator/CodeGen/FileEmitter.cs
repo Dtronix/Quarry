@@ -760,8 +760,11 @@ internal sealed class FileEmitter
                 break;
 
             case InterceptorKind.Prepare:
-                // Prepare interceptor: cast builder to PreparedQuery<TResult> (zero-overhead for single-terminal collapse)
-                TerminalBodyEmitter.EmitPrepareInterceptor(sb, site, methodName, carrierInfo);
+                {
+                    // Prepare interceptor: cast builder to PreparedQuery<TResult> (zero-overhead for single-terminal collapse)
+                    chainLookup.TryGetValue(site.UniqueId, out var prepareChain);
+                    TerminalBodyEmitter.EmitPrepareInterceptor(sb, site, methodName, prepareChain, carrierInfo);
+                }
                 break;
 
             default:

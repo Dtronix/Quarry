@@ -150,10 +150,10 @@ internal static class ChainAnalyzer
             if (preparedTerminals.Count == 1)
             {
                 // Single-terminal collapse: treat as if .Prepare() didn't exist
+                // Keep prepareSite so the emitter can generate a pass-through interceptor
                 executionSite = preparedTerminals[0];
                 executionCount = 1;
                 preparedTerminals.Clear();
-                prepareSite = null;
                 // Fall through to normal single-terminal processing
             }
             else

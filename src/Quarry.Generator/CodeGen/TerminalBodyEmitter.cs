@@ -800,11 +800,17 @@ internal static class TerminalBodyEmitter
         StringBuilder sb,
         TranslatedCallSite site,
         string methodName,
+        AssembledPlan? chain = null,
         CarrierPlan? carrier = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var resultType = site.ResultTypeName != null
-            ? InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)
+
+        // Use chain's resolved result type if available (handles tuple element names correctly)
+        var rawResultType = chain != null
+            ? InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+            : site.ResultTypeName;
+        var resultType = !string.IsNullOrEmpty(rawResultType)
+            ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityType;
 
         // Determine the builder interface type for the receiver
