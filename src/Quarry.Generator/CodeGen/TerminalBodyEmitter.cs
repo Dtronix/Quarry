@@ -792,6 +792,89 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
+    /// Emits a .ToSql() interceptor that returns the pre-built SQL string.
+    /// </summary>
+    public static void EmitToSqlTerminal(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        AssembledPlan chain)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+
+        // Determine receiver type
+        string thisParamType;
+        string concreteType;
+
+        if (site.IsPreparedTerminal)
+        {
+            var prepResultType = chain.ResultTypeName != null
+                ? InterceptorCodeGenerator.GetShortTypeName(
+                    InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName)
+                : entityType;
+            if (chain.QueryKind is QueryKind.Delete or QueryKind.Update)
+                thisParamType = "PreparedQuery<int>";
+            else
+                thisParamType = $"PreparedQuery<{prepResultType}>";
+        }
+        else if (chain.QueryKind == QueryKind.Delete)
+        {
+            thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
+        }
+        else if (chain.QueryKind == QueryKind.Update)
+        {
+            thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
+        }
+        else if (chain.ResultTypeName != null)
+        {
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(
+                InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                ?? chain.ResultTypeName);
+            thisParamType = $"{site.BuilderTypeName}<{entityType}, {resultType}>";
+        }
+        else
+        {
+            thisParamType = $"{site.BuilderTypeName}<{entityType}>";
+        }
+
+        // Determine concrete builder type for Unsafe.As cast
+        switch (chain.QueryKind)
+        {
+            case QueryKind.Delete:
+                concreteType = $"ExecutableDeleteBuilder<{entityType}>";
+                break;
+            case QueryKind.Update:
+                concreteType = $"ExecutableUpdateBuilder<{entityType}>";
+                break;
+            default:
+                if (chain.ResultTypeName != null)
+                {
+                    var resultType = InterceptorCodeGenerator.GetShortTypeName(
+                        InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                        ?? chain.ResultTypeName);
+                    concreteType = $"QueryBuilder<{entityType}, {resultType}>";
+                }
+                else
+                {
+                    concreteType = $"QueryBuilder<{entityType}>";
+                }
+                break;
+        }
+
+        sb.AppendLine($"    public static string {methodName}(");
+        sb.AppendLine($"        this {thisParamType} builder)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __b = Unsafe.As<{concreteType}>(builder);");
+
+        // Generate SQL dispatch table
+        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, "__b");
+        sb.AppendLine($"        return sql;");
+
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Emits a .Prepare() interceptor.
     /// For single-terminal collapse (most common case), this simply Unsafe.As casts the builder
     /// to PreparedQuery&lt;TResult&gt; — the terminal interceptor casts it back, resulting in zero overhead.

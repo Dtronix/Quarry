@@ -156,6 +156,13 @@ internal sealed class FileEmitter
                 carrierIndex++;
 
                 carrierLookup[chain.ExecutionSite.UniqueId] = (carrierPlan, chain);
+                if (chain.PreparedTerminals != null)
+                {
+                    foreach (var pt in chain.PreparedTerminals)
+                        carrierLookup[pt.UniqueId] = (carrierPlan, chain);
+                }
+                if (chain.PrepareSite != null)
+                    carrierLookup[chain.PrepareSite.UniqueId] = (carrierPlan, chain);
                 foreach (var clause in clauses)
                 {
                     carrierClauseLookup[clause.Site.UniqueId] = (carrierPlan, chain);
@@ -502,7 +509,7 @@ internal sealed class FileEmitter
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToDiagnostics)
+        else if (site.Kind is InterceptorKind.ToDiagnostics or InterceptorKind.ToSql)
         {
             if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
                 && diagChain.UnmatchedMethodNames != null)
@@ -635,6 +642,11 @@ internal sealed class FileEmitter
                     TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
                 else
                     TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
+                break;
+
+            case InterceptorKind.ToSql:
+                if (chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
+                    TerminalBodyEmitter.EmitToSqlTerminal(sb, site, methodName, toSqlChain);
                 break;
 
             case InterceptorKind.DeleteWhere:

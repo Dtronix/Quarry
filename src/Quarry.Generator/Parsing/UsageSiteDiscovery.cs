@@ -66,6 +66,7 @@ internal static class UsageSiteDiscovery
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
         ["ToDiagnostics"] = InterceptorKind.ToDiagnostics,
+        ["ToSql"] = InterceptorKind.ToSql,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
         ["Distinct"] = InterceptorKind.Distinct,

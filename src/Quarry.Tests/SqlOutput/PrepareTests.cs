@@ -99,4 +99,85 @@ internal class PrepareTests : CrossDialectTestBase
     }
 
     #endregion
+
+    #region Multi-Terminal — Select
+
+    [Test]
+    public void Prepare_MultiTerminal_ToDiagnosticsAndToSql_ProduceSameSql()
+    {
+        var directDiag = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, u.Email))
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, u.Email))
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql),
+            "Multi-terminal ToDiagnostics should produce same SQL as direct chain");
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql),
+            "Multi-terminal ToSql should produce same SQL as direct chain");
+    }
+
+    [Test]
+    public void Prepare_MultiTerminal_CrossDialect_ProducesCorrectSql()
+    {
+        var litePrepared = Lite.Users().Select(u => (u.UserName, u.UserId)).Prepare();
+        var liteDiag = litePrepared.ToDiagnostics();
+        var liteSql = litePrepared.ToSql();
+
+        Assert.That(liteDiag.Sql, Is.EqualTo("SELECT \"UserName\", \"UserId\" FROM \"users\""));
+        Assert.That(liteSql, Is.EqualTo("SELECT \"UserName\", \"UserId\" FROM \"users\""));
+    }
+
+    #endregion
+
+    #region Multi-Terminal — Delete
+
+    [Test]
+    public void Prepare_Delete_MultiTerminal_ProducesCorrectSql()
+    {
+        var directDiag = Lite.Users()
+            .Delete().Where(u => u.IsActive)
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Delete().Where(u => u.IsActive)
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Multi-Terminal — Update
+
+    [Test]
+    public void Prepare_Update_MultiTerminal_ProducesCorrectSql()
+    {
+        var directDiag = Lite.Users()
+            .Update().Set(u => u.IsActive = false).Where(u => u.UserId == 1)
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Update().Set(u => u.IsActive = false).Where(u => u.UserId == 1)
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
 }
