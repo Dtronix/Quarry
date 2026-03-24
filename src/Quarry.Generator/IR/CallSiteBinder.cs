@@ -79,7 +79,6 @@ internal static class CallSiteBinder
             or InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
             or InterceptorKind.BatchInsertToDiagnostics
-            or InterceptorKind.BatchInsertToSql
             && entry != null)
         {
             HashSet<string>? propNames = null;

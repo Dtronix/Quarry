@@ -740,13 +740,6 @@ internal sealed class FileEmitter
                 }
                 break;
 
-            case InterceptorKind.BatchInsertToSql:
-                {
-                    chainLookup.TryGetValue(site.UniqueId, out var batchInsertSqlChain);
-                    TerminalBodyEmitter.EmitBatchInsertToSqlTerminal(sb, site, methodName, batchInsertSqlChain, carrierInfo);
-                }
-                break;
-
             case InterceptorKind.AllTransition:
                 TransitionBodyEmitter.EmitAllTransition(sb, site, methodName, carrierInfo);
                 break;

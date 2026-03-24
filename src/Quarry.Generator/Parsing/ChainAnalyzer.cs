@@ -972,8 +972,7 @@ internal static class ChainAnalyzer
 
         if (kind == InterceptorKind.BatchInsertExecuteNonQuery ||
             kind == InterceptorKind.BatchInsertExecuteScalar ||
-            kind == InterceptorKind.BatchInsertToDiagnostics ||
-            kind == InterceptorKind.BatchInsertToSql)
+            kind == InterceptorKind.BatchInsertToDiagnostics)
             return QueryKind.BatchInsert;
 
         return builderKind switch
@@ -1165,8 +1164,7 @@ internal static class ChainAnalyzer
             or InterceptorKind.InsertToDiagnostics
             or InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
-            or InterceptorKind.BatchInsertToDiagnostics
-            or InterceptorKind.BatchInsertToSql;
+            or InterceptorKind.BatchInsertToDiagnostics;
     }
 
     /// <summary>

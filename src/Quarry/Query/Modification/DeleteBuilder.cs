@@ -41,13 +41,8 @@ public sealed class DeleteBuilder<T> : IDeleteBuilder<T> where T : class
         return this;
     }
 
-    public string ToSql()
-    {
-        return SqlModificationBuilder.BuildDeleteSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlModificationBuilder.BuildDeleteSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Delete,
         _state.Dialect,
@@ -141,13 +136,8 @@ public sealed class ExecutableDeleteBuilder<T> : IExecutableDeleteBuilder<T> whe
         return ModificationExecutor.ExecuteDeleteNonQueryAsync(_state, cancellationToken);
     }
 
-    public string ToSql()
-    {
-        return SqlModificationBuilder.BuildDeleteSql(_state);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlModificationBuilder.BuildDeleteSql(_state),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Delete,
         _state.Dialect,

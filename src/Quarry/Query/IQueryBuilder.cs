@@ -86,11 +86,6 @@ public interface IQueryBuilder<T> where T : class
     IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class;
 
     /// <summary>
-    /// Returns the generated SQL without executing the query.
-    /// </summary>
-    string ToSql();
-
-    /// <summary>
     /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
     /// bound parameters, and optimization metadata for this query chain.
     /// </summary>
@@ -179,11 +174,6 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// Executes the query and returns results as an async enumerable for streaming.
     /// </summary>
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// Returns the generated SQL without executing the query.
-    /// </summary>
-    string ToSql();
 
     /// <summary>
     /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,

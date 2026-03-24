@@ -739,34 +739,6 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"    }}");
     }
 
-    /// <summary>
-    /// Emits a batch insert ToSql terminal.
-    /// </summary>
-    public static void EmitBatchInsertToSqlTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? chain = null, CarrierPlan? carrier = null)
-    {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-
-        sb.AppendLine($"    public static string {methodName}(");
-        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder)");
-        sb.AppendLine($"    {{");
-
-        if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
-            var sqlPrefix = chain.SqlVariants.Values.First().Sql;
-            var escapedPrefix = InterceptorCodeGenerator.EscapeStringLiteral(sqlPrefix);
-            var returningSuffix = chain.BatchInsertReturningSuffix != null
-                ? $"@\"{InterceptorCodeGenerator.EscapeStringLiteral(chain.BatchInsertReturningSuffix)}\""
-                : "null";
-
-            sb.AppendLine($"        var __entities = __c.BatchEntities as System.Collections.ICollection ?? System.Linq.Enumerable.ToList(__c.BatchEntities!);");
-            sb.AppendLine($"        return Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", __entities.Count, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
-        }
-
-        sb.AppendLine($"    }}");
-    }
 
     /// <summary>
     /// Shared helper that emits the carrier execution terminal body for batch insert NonQuery/Scalar.

@@ -53,24 +53,14 @@ public sealed class InsertBuilder<T> : IInsertBuilder<T> where T : class
         return ModificationExecutor.ExecuteInsertScalarAsync<T, TKey>(_state, _entities[0], cancellationToken);
     }
 
-    public string ToSql()
-    {
-        return SqlModificationBuilder.BuildInsertSql(_state, _entities.Count);
-    }
-
     public QueryDiagnostics ToDiagnostics() => new(
-        ToSql(),
+        SqlModificationBuilder.BuildInsertSql(_state, _entities.Count),
         DiagnosticsHelper.ConvertParameters(_state.Parameters),
         DiagnosticQueryKind.Insert,
         _state.Dialect,
         _state.TableName,
         rawState: _state,
         insertRowCount: _entities.Count);
-
-    internal string ToSqlDirect()
-    {
-        return SqlModificationBuilder.BuildInsertSql(_state, _entities.Count);
-    }
 
     public InsertState State => _state;
 

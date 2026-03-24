@@ -98,8 +98,7 @@ internal static class UsageSiteDiscovery
     {
         "ExecuteNonQueryAsync",
         "ExecuteScalarAsync",
-        "ToDiagnostics",
-        "ToSql"
+        "ToDiagnostics"
     };
 
     // RawSql methods on QuarryContext that we intercept
@@ -125,8 +124,7 @@ internal static class UsageSiteDiscovery
 
         // Check if this is an interceptable method
         if (InterceptableMethods.ContainsKey(methodName)
-            || RawSqlMethods.ContainsKey(methodName)
-            || methodName == "ToSql")
+            || RawSqlMethods.ContainsKey(methodName))
             return true;
 
         // Could be a context entity factory method (Users(), Orders(), Delete<T>(), Update<T>())
@@ -338,7 +336,6 @@ internal static class UsageSiteDiscovery
                     "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
                     "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
                     "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
-                    "ToSql" => InterceptorKind.BatchInsertToSql,
                     _ => InterceptorKind.Unknown
                 };
             else
@@ -364,7 +361,6 @@ internal static class UsageSiteDiscovery
                 "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
                 "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
                 "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
-                "ToSql" => InterceptorKind.BatchInsertToSql,
                 _ => kind
             };
         }
@@ -639,8 +635,7 @@ internal static class UsageSiteDiscovery
         // For batch insert terminals, walk the chain to find the column selector and extract column names
         if (kind is InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
-            or InterceptorKind.BatchInsertToDiagnostics
-            or InterceptorKind.BatchInsertToSql)
+            or InterceptorKind.BatchInsertToDiagnostics)
         {
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }

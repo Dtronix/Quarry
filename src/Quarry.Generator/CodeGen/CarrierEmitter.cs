@@ -178,7 +178,7 @@ internal static class CarrierEmitter
                 or InterceptorKind.InsertToDiagnostics
                 => CanEmitInsertTerminal(chain),
             InterceptorKind.BatchInsertExecuteNonQuery or InterceptorKind.BatchInsertExecuteScalar
-                or InterceptorKind.BatchInsertToDiagnostics or InterceptorKind.BatchInsertToSql
+                or InterceptorKind.BatchInsertToDiagnostics
                 => true, // Batch insert terminals are always emittable
             _ => true
         };
