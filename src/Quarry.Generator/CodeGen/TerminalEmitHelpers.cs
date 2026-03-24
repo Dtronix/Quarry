@@ -371,7 +371,139 @@ internal static class TerminalEmitHelpers
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
         string diagnosticKind, string isCarrierOptimized)
     {
-        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
+        var plan = chain.Plan;
+        var esc = InterceptorCodeGenerator.EscapeStringLiteral;
+
+        // Tier reason
+        string tierReasonLiteral;
+        if (plan.Tier == OptimizationTier.RuntimeBuild)
+            tierReasonLiteral = plan.NotAnalyzableReason != null
+                ? $"\"{esc(plan.NotAnalyzableReason)}\""
+                : "\"runtime build\"";
+        else if (plan.ConditionalTerms.Count > 0)
+            tierReasonLiteral = $"\"{plan.ConditionalTerms.Count} conditional bits, {chain.SqlVariants.Count} mask variants\"";
+        else
+            tierReasonLiteral = "\"unconditional chain, single SQL variant\"";
+
+        var disqualifyLiteral = plan.NotAnalyzableReason != null
+            ? $"\"{esc(plan.NotAnalyzableReason)}\""
+            : "null";
+
+        // SqlVariants dictionary
+        var hasVariants = chain.SqlVariants.Count > 0;
+        if (hasVariants)
+        {
+            sb.AppendLine("        var __variants = new System.Collections.Generic.Dictionary<ulong, SqlVariantDiagnostic>");
+            sb.AppendLine("        {");
+            foreach (var kvp in chain.SqlVariants)
+            {
+                sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic(@\"{esc(kvp.Value.Sql)}\", {kvp.Value.ParameterCount}) }},");
+            }
+            sb.AppendLine("        };");
+        }
+
+        // Projection columns
+        var projInfo = chain.ProjectionInfo;
+        var hasProjection = projInfo != null && projInfo.Columns.Count > 0;
+        if (hasProjection)
+        {
+            sb.AppendLine("        var __projCols = new ProjectionColumnDiagnostic[]");
+            sb.AppendLine("        {");
+            foreach (var col in projInfo!.Columns)
+            {
+                var typeMappingArg = col.CustomTypeMapping != null ? $", typeMappingClass: \"{esc(col.CustomTypeMapping)}\"" : "";
+                var fkArgs = col.IsForeignKey ? $", isForeignKey: true, foreignKeyEntityName: \"{esc(col.ForeignKeyEntityName!)}\"" : "";
+                var enumArg = col.IsEnum ? ", isEnum: true" : "";
+                sb.AppendLine($"            new(\"{esc(col.PropertyName)}\", \"{esc(col.ColumnName)}\", \"{esc(col.ClrType)}\", {col.Ordinal}, isNullable: {(col.IsNullable ? "true" : "false")}{typeMappingArg}{fkArgs}{enumArg}),");
+            }
+            sb.AppendLine("        };");
+        }
+
+        // Joins
+        var joins = plan.Joins;
+        var hasJoins = joins.Count > 0;
+        if (hasJoins)
+        {
+            sb.AppendLine("        var __joins = new JoinDiagnostic[]");
+            sb.AppendLine("        {");
+            foreach (var join in joins)
+            {
+                var schemaArg = join.Table.SchemaName != null ? $"\"{esc(join.Table.SchemaName)}\"" : "null";
+                var alias = join.Table.Alias ?? join.Table.TableName;
+                var onSql = Quarry.Generators.IR.SqlExprRenderer.Render(join.OnCondition, chain.Dialect);
+                sb.AppendLine($"            new(\"{esc(join.Table.TableName)}\", {schemaArg}, \"{join.Kind}\", \"{esc(alias)}\", @\"{esc(onSql)}\"),");
+            }
+            sb.AppendLine("        };");
+        }
+
+        // Pagination
+        var pagination = plan.Pagination;
+        string limitArg = "null";
+        string offsetArg = "null";
+        if (pagination != null)
+        {
+            if (pagination.LiteralLimit.HasValue)
+                limitArg = pagination.LiteralLimit.Value.ToString();
+            else if (pagination.LimitParamIndex.HasValue)
+                limitArg = "(int)__pValL";
+            if (pagination.LiteralOffset.HasValue)
+                offsetArg = pagination.LiteralOffset.Value.ToString();
+            else if (pagination.OffsetParamIndex.HasValue)
+                offsetArg = "(int)__pValO";
+        }
+
+        // Identity column
+        var insertInfo = chain.ExecutionSite.InsertInfo;
+        var identityLiteral = insertInfo?.IdentityColumnName != null
+            ? $"\"{esc(insertInfo.IdentityColumnName)}\""
+            : "null";
+
+        // Unmatched method names
+        var unmatchedNames = plan.UnmatchedMethodNames;
+        var hasUnmatched = unmatchedNames != null && unmatchedNames.Count > 0;
+        if (hasUnmatched)
+        {
+            sb.Append("        var __unmatched = new string[] { ");
+            sb.Append(string.Join(", ", unmatchedNames!.Select(n => $"\"{esc(n)}\"")));
+            sb.AppendLine(" };");
+        }
+
+        // Schema
+        var schemaLiteral = chain.ExecutionSite.SchemaName != null
+            ? $"\"{esc(chain.ExecutionSite.SchemaName)}\""
+            : "null";
+
+        // Active mask
+        var maskExpr = plan.ConditionalTerms.Count > 0 ? "(ulong)__c.Mask" : "0UL";
+
+        // Projection kind
+        var projKindLiteral = projInfo != null ? $"\"{projInfo.Kind}\"" : "null";
+        var projNonOptLiteral = projInfo != null && projInfo.NonOptimalReason != null
+            ? $"\"{esc(projInfo.NonOptimalReason)}\""
+            : "null";
+
+        // Construct the QueryDiagnostics
+        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{esc(chain.TableName)}\",");
+        sb.AppendLine($"            tier: DiagnosticOptimizationTier.PrebuiltDispatch,");
+        sb.AppendLine($"            isCarrierOptimized: {isCarrierOptimized},");
+        sb.AppendLine($"            clauses: __clauses,");
+        sb.AppendLine($"            tierReason: {tierReasonLiteral},");
+        sb.AppendLine($"            disqualifyReason: {disqualifyLiteral},");
+        sb.AppendLine($"            activeMask: {maskExpr},");
+        sb.AppendLine($"            conditionalBitCount: {plan.ConditionalTerms.Count},");
+        sb.AppendLine($"            sqlVariants: {(hasVariants ? "__variants" : "null")},");
+        sb.AppendLine($"            allParameters: __params,");
+        sb.AppendLine($"            projectionColumns: {(hasProjection ? "__projCols" : "null")},");
+        sb.AppendLine($"            projectionKind: {projKindLiteral},");
+        sb.AppendLine($"            projectionNonOptimalReason: {projNonOptLiteral},");
+        sb.AppendLine($"            carrierClassName: \"{esc(carrier.ClassName)}\",");
+        sb.AppendLine($"            schemaName: {schemaLiteral},");
+        sb.AppendLine($"            joins: {(hasJoins ? "__joins" : "null")},");
+        sb.AppendLine($"            isDistinct: {(plan.IsDistinct ? "true" : "false")},");
+        sb.AppendLine($"            limit: {limitArg},");
+        sb.AppendLine($"            offset: {offsetArg},");
+        sb.AppendLine($"            identityColumnName: {identityLiteral},");
+        sb.AppendLine($"            unmatchedMethodNames: {(hasUnmatched ? "__unmatched" : "null")});");
     }
 
     /// <summary>
