@@ -407,11 +407,19 @@ internal static class TerminalBodyEmitter
 
         var isCarrierOptimized = carrier != null ? "true" : "false";
 
+        // If carrier is null (e.g., chain was carrier-ineligible due to unmatched methods
+        // or empty SQL variants), fall back to the runtime diagnostics path.
+        if (carrier == null)
+        {
+            EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
+            return;
+        }
+
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
 
-        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier!, chain, diagnosticKind, isCarrierOptimized);
+        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
         sb.AppendLine($"    }}");
     }
 

@@ -636,7 +636,7 @@ internal static class TerminalEmitHelpers
         if (param.EntityPropertyExpression != null)
         {
             if (param.TypeMappingClass != null)
-                return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
+                return $"(object?){InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass)}.ToDb({param.EntityPropertyExpression}) ?? DBNull.Value";
             return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
         }
 
