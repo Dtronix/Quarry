@@ -44,46 +44,20 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityType;
 
-        // Determine return type and executor method from the execution kind.
-        var usePrebuiltParams = chain.MaxParameterCount > 0;
-        string returnType;
-        string executorMethod;
-        bool hasReader = true;
-
-        switch (site.Kind)
+        // Determine return type from the execution kind.
+        string returnType = site.Kind switch
         {
-            case InterceptorKind.ExecuteFetchAll:
-                returnType = $"Task<List<{resultType}>>";
-                executorMethod = usePrebuiltParams ? "ExecuteWithPrebuiltParamsAsync" : "ExecuteWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchFirst:
-                returnType = $"Task<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ExecuteFirstWithPrebuiltParamsAsync" : "ExecuteFirstWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchFirstOrDefault:
-                returnType = $"Task<{resultType}?>";
-                executorMethod = usePrebuiltParams ? "ExecuteFirstOrDefaultWithPrebuiltParamsAsync" : "ExecuteFirstOrDefaultWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchSingle:
-                returnType = $"Task<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ExecuteSingleWithPrebuiltParamsAsync" : "ExecuteSingleWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteScalar:
-                // ExecuteScalar has a type parameter TScalar
-                returnType = $"Task<TScalar>";
-                executorMethod = usePrebuiltParams ? "ExecuteScalarWithPrebuiltParamsAsync<TScalar>" : "ExecuteScalarWithPrebuiltSqlAsync<TScalar>";
-                hasReader = false;
-                break;
-            case InterceptorKind.ToAsyncEnumerable:
-                returnType = $"IAsyncEnumerable<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ToAsyncEnumerableWithPrebuiltParams" : "ToAsyncEnumerableWithPrebuiltSql";
-                break;
-            default:
-                return;
-        }
+            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
+            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
+            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"Task<TScalar>",
+            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
+            _ => ""
+        };
+        if (string.IsNullOrEmpty(returnType)) return;
 
         var thisType = site.BuilderTypeName;
-        var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(thisType);
 
         // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
         if (site.IsPreparedTerminal)
@@ -107,60 +81,18 @@ internal static class TerminalBodyEmitter
 
         sb.AppendLine($"    {{");
 
-        if (carrier != null)
+        var carrierExecutorMethod = site.Kind switch
         {
-            var canEmit = site.Kind == InterceptorKind.ExecuteScalar
-                ? CarrierEmitter.CanEmitScalarTerminal(chain)
-                : CarrierEmitter.CanEmitReaderTerminal(chain);
-
-            if (canEmit)
-            {
-                var carrierExecutorMethod = site.Kind switch
-                {
-                    InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
-                    InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
-                    InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
-                    InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                    InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
-                    InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
-                    _ => ""
-                };
-                var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
-                CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
-                sb.AppendLine($"    }}");
-                return;
-            }
-        }
-
-        // Cast to concrete type (receiver is always an interface)
-        if (site.Kind == InterceptorKind.ExecuteScalar)
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<TEntity, TResult>>(builder);");
-        }
-        else
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteType}<{entityType}, {resultType}>>(builder);");
-        }
-        var builderVar = "__b";
-
-        // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
-
-        // Call the executor
-        if (hasReader && chain.ReaderDelegateCode != null)
-        {
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, {chain.ReaderDelegateCode}, cancellationToken);");
-        }
-        else if (hasReader)
-        {
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, cancellationToken);");
-        }
-        else
-        {
-            // ExecuteScalar: no reader delegate
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, cancellationToken);");
-        }
-
+            InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
+            InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
+            _ => ""
+        };
+        var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
+        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier!, chain, readerCode, carrierExecutorMethod);
         sb.AppendLine($"    }}");
     }
 
@@ -189,41 +121,17 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityTypes[0];
 
-        var usePrebuiltParams = chain.MaxParameterCount > 0;
-        string returnType;
-        string executorMethod;
-        bool hasReader = true;
-
-        switch (site.Kind)
+        string returnType = site.Kind switch
         {
-            case InterceptorKind.ExecuteFetchAll:
-                returnType = $"Task<List<{resultType}>>";
-                executorMethod = usePrebuiltParams ? "ExecuteWithPrebuiltParamsAsync" : "ExecuteWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchFirst:
-                returnType = $"Task<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ExecuteFirstWithPrebuiltParamsAsync" : "ExecuteFirstWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchFirstOrDefault:
-                returnType = $"Task<{resultType}?>";
-                executorMethod = usePrebuiltParams ? "ExecuteFirstOrDefaultWithPrebuiltParamsAsync" : "ExecuteFirstOrDefaultWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteFetchSingle:
-                returnType = $"Task<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ExecuteSingleWithPrebuiltParamsAsync" : "ExecuteSingleWithPrebuiltSqlAsync";
-                break;
-            case InterceptorKind.ExecuteScalar:
-                returnType = $"Task<TScalar>";
-                executorMethod = usePrebuiltParams ? "ExecuteScalarWithPrebuiltParamsAsync<TScalar>" : "ExecuteScalarWithPrebuiltSqlAsync<TScalar>";
-                hasReader = false;
-                break;
-            case InterceptorKind.ToAsyncEnumerable:
-                returnType = $"IAsyncEnumerable<{resultType}>";
-                executorMethod = usePrebuiltParams ? "ToAsyncEnumerableWithPrebuiltParams" : "ToAsyncEnumerableWithPrebuiltSql";
-                break;
-            default:
-                return;
-        }
+            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
+            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
+            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"Task<TScalar>",
+            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
+            _ => ""
+        };
+        if (string.IsNullOrEmpty(returnType)) return;
 
         // Method signature with joined builder receiver type
         if (site.Kind == InterceptorKind.ExecuteScalar)
@@ -241,50 +149,16 @@ internal static class TerminalBodyEmitter
 
         sb.AppendLine($"    {{");
 
-        if (carrier != null && CarrierEmitter.CanEmitReaderTerminal(chain))
+        var carrierExecutorMethod = site.Kind switch
         {
-            var carrierExecutorMethod = site.Kind switch
-            {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
-                _ => ""
-            };
-            CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        // Cast to concrete type (receiver is always an interface)
-        if (site.Kind == InterceptorKind.ExecuteScalar)
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{entityTypeArgs}, TResult>>(builder);");
-        }
-        else
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderName}<{entityTypeArgs}, {resultType}>>(builder);");
-        }
-        var builderVar = "__b";
-
-        // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
-
-        // Call the executor
-        if (hasReader && chain.ReaderDelegateCode != null)
-        {
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, {chain.ReaderDelegateCode}, cancellationToken);");
-        }
-        else if (hasReader)
-        {
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, cancellationToken);");
-        }
-        else
-        {
-            sb.AppendLine($"        return {builderVar}.{executorMethod}(sql, cancellationToken);");
-        }
-
+            InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+            InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
+            _ => ""
+        };
+        CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier!, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
         sb.AppendLine($"    }}");
     }
 
@@ -303,16 +177,13 @@ internal static class TerminalBodyEmitter
         var thisType = site.BuilderTypeName;
 
         // Determine builder type name based on query kind
-        string concreteBuilderTypeName;
         string thisBuilderTypeName;
         switch (chain.QueryKind)
         {
             case QueryKind.Delete:
-                concreteBuilderTypeName = $"ExecutableDeleteBuilder<{entityType}>";
                 thisBuilderTypeName = $"IExecutableDeleteBuilder<{entityType}>";
                 break;
             case QueryKind.Update:
-                concreteBuilderTypeName = $"ExecutableUpdateBuilder<{entityType}>";
                 thisBuilderTypeName = $"IExecutableUpdateBuilder<{entityType}>";
                 break;
             default:
@@ -334,21 +205,7 @@ internal static class TerminalBodyEmitter
         }
         sb.AppendLine($"    {{");
 
-        if (carrier != null && CarrierEmitter.CanEmitNonQueryTerminal(chain))
-        {
-            CarrierEmitter.EmitCarrierNonQueryTerminal(sb, carrier, chain);
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        // Cast to concrete type (receiver is always an interface)
-        sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderTypeName}>(builder);");
-        var builderVar = "__b";
-
-        // Dispatch table: switch on ClauseMask
-        InterceptorCodeGenerator.GenerateDispatchTable(sb, chain.SqlVariants, builderVar);
-
-        sb.AppendLine($"        return {builderVar}.ExecuteWithPrebuiltSqlAsync(sql, cancellationToken);");
+        CarrierEmitter.EmitCarrierNonQueryTerminal(sb, carrier!, chain);
         sb.AppendLine($"    }}");
     }
 
@@ -430,15 +287,7 @@ internal static class TerminalBodyEmitter
             _ => "DiagnosticQueryKind.Select"
         };
 
-        var isCarrierOptimized = carrier != null ? "true" : "false";
-
-        // If carrier is null (e.g., chain was carrier-ineligible due to unmatched methods
-        // or empty SQL variants), fall back to the runtime diagnostics path.
-        if (carrier == null)
-        {
-            EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
-            return;
-        }
+        var isCarrierOptimized = "true";
 
         // Override receiver type for prepared terminals
         if (site.IsPreparedTerminal)
@@ -458,67 +307,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
 
-        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
-        sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Emits a runtime-delegating ToDiagnostics interceptor when no prebuilt chain exists.
-    /// Casts to the concrete builder and calls its runtime ToDiagnostics() implementation.
-    /// </summary>
-    public static void EmitRuntimeDiagnosticsTerminal(
-        StringBuilder sb,
-        TranslatedCallSite site,
-        string methodName)
-    {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var thisType = site.BuilderTypeName;
-        var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(thisType);
-
-        // Determine the full this-parameter type and concrete type
-        string thisParamType;
-        string concreteParamType;
-
-        if (site.JoinedEntityTypeNames != null && site.JoinedEntityTypeNames.Count >= 2)
-        {
-            var joinTypeArgs = string.Join(", ", site.JoinedEntityTypeNames.Select(InterceptorCodeGenerator.GetShortTypeName));
-            thisParamType = $"{thisType}<{joinTypeArgs}>";
-            concreteParamType = $"{concreteType}<{joinTypeArgs}>";
-        }
-        else if (InterceptorCodeGenerator.IsEntityAccessorType(thisType))
-        {
-            thisParamType = $"{thisType}<{entityType}>";
-            concreteParamType = $"{concreteType}<{entityType}>";
-        }
-        else if (site.BuilderKind is BuilderKind.Delete or BuilderKind.ExecutableDelete)
-        {
-            thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
-            concreteParamType = $"ExecutableDeleteBuilder<{entityType}>";
-        }
-        else if (site.BuilderKind is BuilderKind.Update or BuilderKind.ExecutableUpdate)
-        {
-            thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
-            concreteParamType = $"ExecutableUpdateBuilder<{entityType}>";
-        }
-        else
-        {
-            thisParamType = $"{thisType}<{entityType}>";
-            concreteParamType = $"{concreteType}<{entityType}>";
-        }
-
-        sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
-        sb.AppendLine($"        this {thisParamType} builder)");
-        sb.AppendLine($"    {{");
-
-        if (InterceptorCodeGenerator.IsEntityAccessorType(thisType))
-        {
-            sb.AppendLine($"        return ((EntityAccessor<{entityType}>)(object)builder).ToDiagnostics();");
-        }
-        else
-        {
-            sb.AppendLine($"        return Unsafe.As<{concreteParamType}>(builder).ToDiagnostics();");
-        }
-
+        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier!, chain, diagnosticKind, isCarrierOptimized);
         sb.AppendLine($"    }}");
     }
 
@@ -540,34 +329,10 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default)");
         sb.AppendLine($"    {{");
 
-        if (insertInfo != null && insertInfo.Columns.Count > 0)
+        if (insertInfo != null && insertInfo.Columns.Count > 0 && carrier != null && prebuiltChain != null)
         {
-            // Carrier-optimized path
-            if (carrier != null && prebuiltChain != null)
-            {
-                CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
-                    "ExecuteCarrierNonQueryWithCommandAsync");
-                sb.AppendLine($"    }}");
-                return;
-            }
-
-            sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<{entityType}>>(builder);");
-
-            InterceptorCodeGenerator.EmitInsertColumnSetup(sb, insertInfo);
-
-            // Extract values from each entity
-            sb.AppendLine($"        foreach (var entity in __b.Entities)");
-            sb.AppendLine($"        {{");
-            InterceptorCodeGenerator.EmitInsertEntityBindings(sb, insertInfo, "entity", "__b", "            ");
-            sb.AppendLine($"        }}");
-            sb.AppendLine();
-
-            sb.AppendLine($"        return Quarry.Internal.ModificationExecutor.ExecuteInsertNonQueryAsync(__b.State, __b.Entities, cancellationToken);");
-        }
-        else
-        {
-            // Non-translatable — skip interceptor entirely so the original method runs
-            return;
+            CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                "ExecuteCarrierNonQueryWithCommandAsync");
         }
 
         sb.AppendLine($"    }}");
@@ -590,48 +355,10 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
         sb.AppendLine($"    {{");
 
-        if (insertInfo != null && insertInfo.Columns.Count > 0)
+        if (insertInfo != null && insertInfo.Columns.Count > 0 && carrier != null && prebuiltChain != null)
         {
-            // Carrier-optimized path
-            if (carrier != null && prebuiltChain != null)
-            {
-                CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
-                    "ExecuteCarrierScalarWithCommandAsync<TKey>", isScalar: true);
-                sb.AppendLine($"    }}");
-                return;
-            }
-
-            sb.AppendLine($"        var __b = Unsafe.As<InsertBuilder<T>>(builder);");
-
-            InterceptorCodeGenerator.EmitInsertColumnSetup(sb, insertInfo);
-
-            // Set identity column if present
-            if (!string.IsNullOrEmpty(insertInfo.IdentityColumnName))
-            {
-                sb.AppendLine($"        __b.SetIdentityColumn(@\"{InterceptorCodeGenerator.EscapeStringLiteral(insertInfo.IdentityColumnName!)}\");");
-                sb.AppendLine();
-            }
-
-            // Validate single entity insert
-            sb.AppendLine($"        if (__b.Entities.Count != 1)");
-            sb.AppendLine($"        {{");
-            sb.AppendLine($"            throw new InvalidOperationException(");
-            sb.AppendLine($"                \"ExecuteScalarAsync can only be used for single entity inserts. \" +");
-            sb.AppendLine($"                \"For batch inserts, use ExecuteNonQueryAsync() instead.\");");
-            sb.AppendLine($"        }}");
-            sb.AppendLine();
-
-            // Cast entity to concrete type for property access.
-            sb.AppendLine($"        var entity = Unsafe.As<{entityType}>(__b.Entities[0]);");
-            InterceptorCodeGenerator.EmitInsertEntityBindings(sb, insertInfo, "entity", "__b", "        ");
-            sb.AppendLine();
-
-            sb.AppendLine($"        return Quarry.Internal.ModificationExecutor.ExecuteInsertScalarAsync<T, TKey>(__b.State, __b.Entities[0], cancellationToken);");
-        }
-        else
-        {
-            // Non-translatable — skip interceptor entirely so the original method runs
-            return;
+            CarrierEmitter.EmitCarrierInsertTerminal(sb, carrier, prebuiltChain,
+                "ExecuteCarrierScalarWithCommandAsync<TKey>", isScalar: true);
         }
 
         sb.AppendLine($"    }}");
@@ -657,11 +384,6 @@ internal static class TerminalBodyEmitter
         if (chain != null && chain.SqlVariants.Count > 0 && carrier != null)
         {
             CarrierEmitter.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
-        }
-        else
-        {
-            // No prebuilt chain — fallback to runtime
-            sb.AppendLine($"        return Unsafe.As<InsertBuilder<{entityType}>>(builder).ToDiagnostics();");
         }
 
         sb.AppendLine($"    }}");

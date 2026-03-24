@@ -416,33 +416,10 @@ internal sealed class FileEmitter
             carrierChain = carrierClause.Chain;
         }
 
-        // Check for skippable Select sites BEFORE emitting the attribute
-        // Never skip carrier Select sites — they serve as cast entry points for carrier chains
-        if (site.Kind == InterceptorKind.Select && !isCarrierSite && InterceptorCodeGenerator.ShouldSkipSelectInterceptor(site))
+        // Carrier-only architecture: skip all non-carrier sites except RawSql
+        if (!isCarrierSite)
         {
-            return;
-        }
-
-        // Limit/Offset/Distinct/WithTimeout: carrier-only on non-carrier path
-        if (site.Kind is InterceptorKind.Limit or InterceptorKind.Offset or InterceptorKind.Distinct or InterceptorKind.WithTimeout)
-        {
-            if (!isCarrierSite)
-                return;
-        }
-
-        // ChainRoot: carrier-only
-        if (site.Kind is InterceptorKind.ChainRoot)
-        {
-            if (!isCarrierSite)
-                return;
-        }
-
-        // Transitions: carrier-only
-        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition
-            or InterceptorKind.InsertTransition or InterceptorKind.BatchInsertColumnSelector
-            or InterceptorKind.BatchInsertValues)
-        {
-            if (!isCarrierSite)
+            if (site.Kind is not (InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync))
                 return;
         }
 
@@ -516,12 +493,6 @@ internal sealed class FileEmitter
                 return;
             if (!chainLookup.ContainsKey(site.UniqueId) && site.ResultTypeName != null)
                 return;
-        }
-
-        // Skip non-translatable clauses on non-carrier path
-        if (!isCarrierSite && InterceptorCodeGenerator.ShouldSkipNonTranslatableClause(site))
-        {
-            return;
         }
 
         var methodName = $"{site.MethodName}_{site.UniqueId}";
@@ -652,8 +623,6 @@ internal sealed class FileEmitter
                     else
                         TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
                 }
-                else
-                    TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
                 break;
 
             case InterceptorKind.DeleteWhere:
