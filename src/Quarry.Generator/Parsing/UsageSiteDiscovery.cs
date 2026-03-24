@@ -383,6 +383,12 @@ internal static class UsageSiteDiscovery
         {
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
         }
+        // For .Prepare() on insert builders, extract InitializedPropertyNames from the chain
+        // so InsertInfo can be built during chain analysis
+        if (kind == InterceptorKind.Prepare && containingType.Name.Contains("InsertBuilder"))
+        {
+            initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
+        }
 
         if (methodName == "Where" && containingType.Name.Contains("DeleteBuilder"))
         {
@@ -652,6 +658,11 @@ internal static class UsageSiteDiscovery
         if (kind is InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
             or InterceptorKind.BatchInsertToDiagnostics)
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
+        }
+        // For .Prepare() on batch insert builders, also walk the chain for column names
+        if (kind == InterceptorKind.Prepare && containingType.Name.Contains("BatchInsert"))
         {
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
@@ -2649,6 +2660,7 @@ internal static class UsageSiteDiscovery
         if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
         if (typeName.Contains("ExecutableBatchInsert")) return BuilderKind.ExecutableBatchInsert;
         if (typeName.Contains("BatchInsertBuilder")) return BuilderKind.BatchInsert;
+        if (typeName.Contains("InsertBuilder")) return BuilderKind.Insert;
         if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
         if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
         if (typeName == "PreparedQuery") return BuilderKind.Query; // fallback — actual kind determined from chain

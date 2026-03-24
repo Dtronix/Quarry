@@ -350,8 +350,12 @@ internal static class ChainAnalyzer
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
 
-        // Determine query kind from execution site
-        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
+        // Determine query kind — for prepared terminals, use the Prepare site's builder kind
+        // since the prepared terminal's BuilderKind is always Query (from PreparedQuery type)
+        var effectiveBuilderKind = (prepareSite != null)
+            ? prepareSite.Bound.Raw.BuilderKind
+            : executionSite.Bound.Raw.BuilderKind;
+        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, effectiveBuilderKind);
 
         // Process clause sites to build terms
         var consumedConditionalTerms = new HashSet<int>();
@@ -602,10 +606,21 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Handle insert columns
-        if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && executionSite.Bound.InsertInfo != null)
+        // Handle insert columns — check execution site first, then clause sites and prepare site
+        // (for Prepare chains, the InsertInfo is on the insert transition clause, not the execution site)
+        InsertInfo? resolvedInsertInfo = executionSite.Bound.InsertInfo;
+        if (resolvedInsertInfo == null && (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert))
         {
-            var insertInfo = executionSite.Bound.InsertInfo;
+            foreach (var cs in clauseSites)
+            {
+                if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
+            }
+            if (resolvedInsertInfo == null && prepareSite?.Bound.InsertInfo != null)
+                resolvedInsertInfo = prepareSite.Bound.InsertInfo;
+        }
+        if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && resolvedInsertInfo != null)
+        {
+            var insertInfo = resolvedInsertInfo;
             for (int c = 0; c < insertInfo.Columns.Count; c++)
             {
                 var col = insertInfo.Columns[c];
@@ -1249,6 +1264,8 @@ internal static class ChainAnalyzer
         {
             BuilderKind.Delete or BuilderKind.ExecutableDelete => QueryKind.Delete,
             BuilderKind.Update or BuilderKind.ExecutableUpdate => QueryKind.Update,
+            BuilderKind.Insert => QueryKind.Insert,
+            BuilderKind.BatchInsert or BuilderKind.ExecutableBatchInsert => QueryKind.BatchInsert,
             _ => QueryKind.Select
         };
     }

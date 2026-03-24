@@ -1,3 +1,5 @@
+using Quarry.Tests.Samples;
+
 namespace Quarry.Tests.Integration;
 
 /// <summary>
@@ -136,6 +138,32 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
 
         Assert.That(diag.Sql, Does.Contain("UPDATE"));
         Assert.That(affected, Is.EqualTo(0));
+    }
+
+    #endregion
+
+    #region Multi-Terminal — Batch Insert
+
+    [Test]
+    public void Prepare_BatchInsert_MultiTerminal_DiagnosticsAndToSql()
+    {
+        var users = new List<User>
+        {
+            new() { UserName = "PrepBatch1", IsActive = true, CreatedAt = DateTime.UtcNow },
+            new() { UserName = "PrepBatch2", IsActive = false, CreatedAt = DateTime.UtcNow }
+        };
+
+        var prepared = Db.Users()
+            .InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(users)
+            .Prepare();
+
+        var diag = prepared.ToDiagnostics();
+        var sql = prepared.ToSql();
+
+        Assert.That(diag.Sql, Does.Contain("INSERT"));
+        Assert.That(diag.Sql, Does.Contain("VALUES"));
+        Assert.That(sql, Does.Contain("INSERT"));
     }
 
     #endregion

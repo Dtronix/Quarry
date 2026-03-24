@@ -159,20 +159,144 @@ internal class PrepareTests : CrossDialectTestBase
 
     #endregion
 
-    // NOTE: Join chain + .Prepare() tests are not included because the generator
-    // currently emits IJoinedQueryBuilder<T1, T2> receiver (without TResult type arg)
-    // for the .Prepare() interceptor on projected join chains. This causes CS0452
-    // because IJoinedQueryBuilder<T1, T2> has a class constraint that tuples violate.
-    // Fix requires handling JoinedQuery BuilderKind in EmitPrepareInterceptor to emit
-    // IJoinedQueryBuilder<T1, T2, TResult> when a projection is present.
+    #region Single-Terminal Collapse — Join
 
-    // NOTE: Insert/BatchInsert + .Prepare() tests are not included because the generator
-    // currently produces wrong PreparedQuery<TResult> type for insert builders — it emits
-    // PreparedQuery<User> instead of PreparedQuery<int>. The root cause is that
-    // ClassifyBuilderKind maps InsertBuilder to BuilderKind.Query (fallback),
-    // so EmitPrepareInterceptor doesn't recognize it as needing "int" result type.
-    // Fix requires adding BuilderKind.Insert and handling it in EmitPrepareInterceptor
-    // and in the prepared terminal receiver type resolution.
+    [Test]
+    public void Prepare_Join_SingleTerminal_ProducesSameSqlAsDirectChain()
+    {
+        var directDiag = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .ToDiagnostics();
+
+        var preparedDiag = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare()
+            .ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Multi-Terminal — Join
+
+    [Test]
+    public void Prepare_Join_MultiTerminal_ProducesCorrectSql()
+    {
+        var directDiag = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
+    [Test]
+    public void Prepare_Join_WithWhere_MultiTerminal_ProducesCorrectSql()
+    {
+        var directDiag = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total))
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Single-Terminal Collapse — Insert
+
+    [Test]
+    public void Prepare_Insert_SingleTerminal_ProducesSameSqlAsDirectChain()
+    {
+        var entity = new User { UserName = "x", IsActive = true, CreatedAt = default };
+
+        var directDiag = Lite.Users()
+            .Insert(entity)
+            .ToDiagnostics();
+
+        var preparedDiag = Lite.Users()
+            .Insert(entity)
+            .Prepare()
+            .ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Multi-Terminal — Insert
+
+    [Test]
+    public void Prepare_Insert_MultiTerminal_ProducesCorrectSql()
+    {
+        var entity = new User { UserName = "x", IsActive = true, CreatedAt = default };
+
+        var directDiag = Lite.Users()
+            .Insert(entity)
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Insert(entity)
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Batch Insert
+
+    [Test]
+    public void Prepare_BatchInsert_SingleTerminal_ProducesSameSqlAsDirectChain()
+    {
+        var users = new List<User>
+        {
+            new() { UserName = "x", IsActive = true, CreatedAt = default },
+            new() { UserName = "y", IsActive = false, CreatedAt = default }
+        };
+
+        var directDiag = Lite.Users()
+            .InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(users)
+            .ToDiagnostics();
+
+        var preparedDiag = Lite.Users()
+            .InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(users)
+            .Prepare()
+            .ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
 
     #region Multi-Terminal — Update
 

@@ -264,6 +264,7 @@ internal enum BuilderKind
     ExecutableUpdate,
     JoinedQuery,
     EntityAccessor,
+    Insert,
     BatchInsert,
     ExecutableBatchInsert,
 }

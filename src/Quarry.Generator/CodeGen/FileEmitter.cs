@@ -634,12 +634,24 @@ internal sealed class FileEmitter
 
             case InterceptorKind.ExecuteNonQuery:
                 if (chainLookup.TryGetValue(site.UniqueId, out var nonQueryChain))
-                    TerminalBodyEmitter.EmitNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                {
+                    if (nonQueryChain.QueryKind == QueryKind.BatchInsert)
+                        TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                    else if (nonQueryChain.QueryKind == QueryKind.Insert)
+                        TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                    else
+                        TerminalBodyEmitter.EmitNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.ToDiagnostics:
                 if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
-                    TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
+                {
+                    if (toDiagChain.QueryKind == QueryKind.BatchInsert)
+                        TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
+                    else
+                        TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
+                }
                 else
                     TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
                 break;

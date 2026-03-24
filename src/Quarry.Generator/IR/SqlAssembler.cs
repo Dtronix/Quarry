@@ -57,7 +57,8 @@ internal static class SqlAssembler
         // Build SQL for each mask
         // Only include identity RETURNING/OUTPUT clause for ExecuteScalar (which returns the identity).
         // ExecuteNonQuery does not need it.
-        var insertInfo = executionSite.Bound.InsertInfo;
+        // For Prepare chains, InsertInfo is on the Prepare site rather than the execution terminal.
+        var insertInfo = executionSite.Bound.InsertInfo ?? chain.PrepareSite?.Bound.InsertInfo;
         var needsIdentityReturning = executionSite.Bound.Raw.Kind is not InterceptorKind.InsertExecuteNonQuery
             and not InterceptorKind.BatchInsertExecuteNonQuery;
         if (insertInfo != null && !needsIdentityReturning)
