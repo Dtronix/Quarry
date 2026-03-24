@@ -50,7 +50,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
         ImmutableArray<string>? lambdaParameterNames = null,
-        ImmutableArray<string>? batchInsertColumnNames = null)
+        ImmutableArray<string>? batchInsertColumnNames = null,
+        bool isPreparedTerminal = false)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -90,6 +91,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         SetActionParameters = setActionParameters;
         LambdaParameterNames = lambdaParameterNames;
         BatchInsertColumnNames = batchInsertColumnNames;
+        IsPreparedTerminal = isPreparedTerminal;
     }
 
     // Identity and location
@@ -158,6 +160,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Column names from batch insert column selector lambda (e.g., u => (u.Username, u.Password) → ["Username", "Password"])
     public ImmutableArray<string>? BatchInsertColumnNames { get; }
 
+    // True when this terminal is called on a PreparedQuery variable rather than directly on a builder
+    public bool IsPreparedTerminal { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -198,7 +203,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
             && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters)
             && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
-            && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames);
+            && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames)
+            && IsPreparedTerminal == other.IsPreparedTerminal;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);
