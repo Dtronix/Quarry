@@ -55,6 +55,10 @@ internal static class InterceptorRouter
             case InterceptorKind.RightJoin:
                 return EmitterCategory.Join;
 
+            // Prepare terminal
+            case InterceptorKind.Prepare:
+                return EmitterCategory.Terminal;
+
             // Transition methods
             case InterceptorKind.DeleteTransition:
             case InterceptorKind.UpdateTransition:

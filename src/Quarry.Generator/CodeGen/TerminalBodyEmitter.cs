@@ -85,8 +85,14 @@ internal static class TerminalBodyEmitter
         var thisType = site.BuilderTypeName;
         var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(thisType);
 
-        // Method signature
-        if (site.Kind == InterceptorKind.ExecuteScalar)
+        // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static {returnType} {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
             sb.AppendLine($"    public static {returnType} {methodName}<TEntity, TResult, TScalar>(");
             sb.AppendLine($"        this {thisType}<TEntity, TResult> builder,");
@@ -313,9 +319,19 @@ internal static class TerminalBodyEmitter
                 return;
         }
 
-        sb.AppendLine($"    public static Task<int> {methodName}(");
-        sb.AppendLine($"        this {thisBuilderTypeName} builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        // Method signature — use PreparedQuery<int> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static Task<int> {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<int> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            sb.AppendLine($"    public static Task<int> {methodName}(");
+            sb.AppendLine($"        this {thisBuilderTypeName} builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
         sb.AppendLine($"    {{");
 
         if (carrier != null && CarrierEmitter.CanEmitNonQueryTerminal(chain))
@@ -413,6 +429,20 @@ internal static class TerminalBodyEmitter
         {
             EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
             return;
+        }
+
+        // Override receiver type for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            var prepResultType = chain.ResultTypeName != null
+                ? InterceptorCodeGenerator.GetShortTypeName(
+                    InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
+                    ?? chain.ResultTypeName)
+                : entityType;
+            if (chain.QueryKind is QueryKind.Delete or QueryKind.Update)
+                thisParamType = "PreparedQuery<int>";
+            else
+                thisParamType = $"PreparedQuery<{prepResultType}>";
         }
 
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
@@ -759,5 +789,60 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        }");
 
         sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
+    }
+
+    /// <summary>
+    /// Emits a .Prepare() interceptor.
+    /// For single-terminal collapse (most common case), this simply Unsafe.As casts the builder
+    /// to PreparedQuery&lt;TResult&gt; — the terminal interceptor casts it back, resulting in zero overhead.
+    /// </summary>
+    public static void EmitPrepareInterceptor(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        CarrierPlan? carrier = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+        var resultType = site.ResultTypeName != null
+            ? InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)
+            : entityType;
+
+        // Determine the builder interface type for the receiver
+        var thisType = site.BuilderTypeName;
+
+        // Determine the PreparedQuery result type and receiver signature based on builder kind
+        string preparedResultType;
+        string receiverType;
+
+        switch (site.BuilderKind)
+        {
+            case BuilderKind.Delete:
+            case BuilderKind.ExecutableDelete:
+                preparedResultType = "int";
+                receiverType = $"{thisType}<{entityType}>";
+                break;
+            case BuilderKind.Update:
+            case BuilderKind.ExecutableUpdate:
+                preparedResultType = "int";
+                receiverType = $"{thisType}<{entityType}>";
+                break;
+            default:
+                preparedResultType = resultType;
+                if (site.ResultTypeName != null)
+                    receiverType = $"{thisType}<{entityType}, {resultType}>";
+                else
+                    receiverType = $"{thisType}<{entityType}>";
+                break;
+        }
+
+        sb.AppendLine($"    public static PreparedQuery<{preparedResultType}> {methodName}(");
+        sb.AppendLine($"        this {receiverType} builder)");
+        sb.AppendLine($"    {{");
+
+        // Zero-overhead: cast builder to PreparedQuery<TResult> via Unsafe.As.
+        // The prepared terminal interceptor casts it back to the concrete builder type.
+        sb.AppendLine($"        return Unsafe.As<PreparedQuery<{preparedResultType}>>(builder);");
+
+        sb.AppendLine($"    }}");
     }
 }

@@ -193,6 +193,21 @@ internal sealed class FileEmitter
             {
                 chainLookup[chain.ExecutionSite.UniqueId] = chain;
                 chainMemberIds.Add(chain.ExecutionSite.UniqueId);
+
+                // Register prepared terminals and .Prepare() site in chain lookup
+                if (chain.PreparedTerminals != null)
+                {
+                    foreach (var pt in chain.PreparedTerminals)
+                    {
+                        chainLookup[pt.UniqueId] = chain;
+                        chainMemberIds.Add(pt.UniqueId);
+                    }
+                }
+                if (chain.PrepareSite != null)
+                {
+                    chainLookup[chain.PrepareSite.UniqueId] = chain;
+                    chainMemberIds.Add(chain.PrepareSite.UniqueId);
+                }
                 foreach (var clause in chain.GetClauseEntries())
                 {
                     chainMemberIds.Add(clause.Site.UniqueId);
@@ -742,6 +757,11 @@ internal sealed class FileEmitter
 
             case InterceptorKind.AllTransition:
                 TransitionBodyEmitter.EmitAllTransition(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.Prepare:
+                // Prepare interceptor: cast builder to PreparedQuery<TResult> (zero-overhead for single-terminal collapse)
+                TerminalBodyEmitter.EmitPrepareInterceptor(sb, site, methodName, carrierInfo);
                 break;
 
             default:
