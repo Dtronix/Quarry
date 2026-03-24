@@ -1312,5 +1312,47 @@ public class Service
         Assert.That(qry036.Count, Is.EqualTo(0), "Should not report QRY036 when PreparedQuery has a terminal");
     }
 
+    [Test]
+    public void ChainAnalyzer_PrepareWithNoTerminals_EmitsQRY036()
+    {
+        // Construct a minimal chain with a Prepare site and no prepared terminals.
+        // This directly tests the ChainAnalyzer diagnostic emission path.
+        var prepareSiteRaw = new Generators.IR.RawCallSite(
+            methodName: "Prepare",
+            filePath: "Test.cs",
+            line: 10, column: 14,
+            uniqueId: "prepare_001",
+            kind: Generators.Models.InterceptorKind.Prepare,
+            builderKind: Generators.Models.BuilderKind.Query,
+            entityTypeName: "TestApp.User",
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: "fake",
+            interceptableLocationVersion: 1,
+            location: new Generators.Models.DiagnosticLocation("Test.cs", 10, 14, default),
+            chainId: "Test.cs:100:q");
+
+        var prepareSiteBound = new Generators.IR.BoundCallSite(
+            prepareSiteRaw, "TestDbContext", "TestApp",
+            Generators.Sql.SqlDialect.SQLite, "users", null,
+            Generators.IR.EntityRef.Empty("TestApp.User"));
+
+        var prepareSite = new Generators.IR.TranslatedCallSite(prepareSiteBound);
+
+        var sites = System.Collections.Immutable.ImmutableArray.Create(prepareSite);
+        var registry = Generators.IR.EntityRegistry.Build(
+            System.Collections.Immutable.ImmutableArray<Generators.Models.ContextInfo>.Empty,
+            System.Threading.CancellationToken.None);
+
+        var diagnostics = new System.Collections.Generic.List<Generators.Models.DiagnosticInfo>();
+        var chains = Generators.Parsing.ChainAnalyzer.Analyze(sites, registry, System.Threading.CancellationToken.None, diagnostics);
+
+        Assert.That(chains, Has.Count.EqualTo(0), "Chain with no terminals should not produce an analyzed chain");
+        var qry036 = diagnostics.Where(d => d.DiagnosticId == "QRY036").ToList();
+        Assert.That(qry036, Has.Count.EqualTo(1), "Should emit QRY036 for Prepare with no terminals");
+        Assert.That(qry036[0].MessageArgs[0], Does.Contain("Test.cs"));
+    }
+
     #endregion
 }

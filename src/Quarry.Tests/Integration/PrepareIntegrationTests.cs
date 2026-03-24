@@ -48,9 +48,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
 
         var diag = prepared.ToDiagnostics();
 
-        Assert.That(diag.Sql, Does.Contain("SELECT"));
-        Assert.That(diag.Sql, Does.Contain("WHERE"));
-        Assert.That(diag.Sql, Does.Contain("\"IsActive\""));
+        Assert.That(diag.Sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
     #endregion
@@ -68,8 +66,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
         var diag = prepared.ToDiagnostics();
         var results = await prepared.ExecuteFetchAllAsync();
 
-        Assert.That(diag.Sql, Does.Contain("SELECT"));
-        Assert.That(diag.Sql, Does.Contain("WHERE"));
+        Assert.That(diag.Sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1"));
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
@@ -84,7 +81,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
         var sql = prepared.ToSql();
         var results = await prepared.ExecuteFetchAllAsync();
 
-        Assert.That(sql, Does.Contain("SELECT"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\" FROM \"users\""));
         Assert.That(results, Has.Count.EqualTo(3));
     }
 
@@ -117,7 +114,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
         var diag = prepared.ToDiagnostics();
         var affected = await prepared.ExecuteNonQueryAsync();
 
-        Assert.That(diag.Sql, Does.Contain("DELETE"));
+        Assert.That(diag.Sql, Is.EqualTo("DELETE FROM \"users\" WHERE \"UserId\" = 999"));
         Assert.That(affected, Is.EqualTo(0));
     }
 
@@ -136,7 +133,7 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
         var diag = prepared.ToDiagnostics();
         var affected = await prepared.ExecuteNonQueryAsync();
 
-        Assert.That(diag.Sql, Does.Contain("UPDATE"));
+        Assert.That(diag.Sql, Is.EqualTo("UPDATE \"users\" SET \"UserName\" = 'Updated' WHERE \"UserId\" = 999"));
         Assert.That(affected, Is.EqualTo(0));
     }
 
@@ -161,9 +158,11 @@ internal class PrepareIntegrationTests : SqliteIntegrationTestBase
         var diag = prepared.ToDiagnostics();
         var sql = prepared.ToSql();
 
-        Assert.That(diag.Sql, Does.Contain("INSERT"));
-        Assert.That(diag.Sql, Does.Contain("VALUES"));
-        Assert.That(sql, Does.Contain("INSERT"));
+        Assert.That(diag.Sql, Is.EqualTo(
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\""));
+        // ToSql returns the SQL prefix (VALUES clause filled at runtime for batch insert)
+        Assert.That(sql, Is.EqualTo(
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES "));
     }
 
     #endregion

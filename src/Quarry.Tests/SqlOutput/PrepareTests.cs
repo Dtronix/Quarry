@@ -60,6 +60,45 @@ internal class PrepareTests : CrossDialectTestBase
         Assert.That(preparedLite.Sql, Is.EqualTo(directLite.Sql));
     }
 
+    [Test]
+    public void Prepare_WithLimitOffset_SingleTerminal_ProducesSameSqlAsDirectChain()
+    {
+        var directDiag = Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(10).Offset(5)
+            .ToDiagnostics();
+
+        var preparedDiag = Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(10).Offset(5)
+            .Prepare()
+            .ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedDiag.Sql, Does.Contain("LIMIT"));
+        Assert.That(preparedDiag.Sql, Does.Contain("OFFSET"));
+    }
+
+    [Test]
+    public void Prepare_WithLimitOffset_MultiTerminal_ProducesCorrectSql()
+    {
+        var directDiag = Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(10).Offset(5)
+            .ToDiagnostics();
+
+        var prepared = Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(10).Offset(5)
+            .Prepare();
+
+        var preparedDiag = prepared.ToDiagnostics();
+        var preparedSql = prepared.ToSql();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
+    }
+
     #endregion
 
     #region Single-Terminal Collapse — Delete
@@ -96,6 +135,52 @@ internal class PrepareTests : CrossDialectTestBase
             .ToDiagnostics();
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+    }
+
+    #endregion
+
+    #region Single-Terminal Collapse — Conditional Chain
+
+    [Test]
+    public void Prepare_ConditionalWhere_Active_ProducesSameSqlAsDirectChain()
+    {
+        IQueryBuilder<User> directQuery = Lite.Users().Where(u => true);
+        if (true)
+        {
+            directQuery = directQuery.Where(u => u.IsActive);
+        }
+        var directDiag = directQuery.ToDiagnostics();
+
+        IQueryBuilder<User> prepQuery = Lite.Users().Where(u => true);
+        if (true)
+        {
+            prepQuery = prepQuery.Where(u => u.IsActive);
+        }
+        var preparedDiag = prepQuery.Prepare().ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedDiag.Sql, Does.Contain("\"IsActive\""));
+    }
+
+    [Test]
+    public void Prepare_ConditionalWhere_Inactive_ProducesSameSqlAsDirectChain()
+    {
+        IQueryBuilder<User> directQuery = Lite.Users().Where(u => true);
+        if (false)
+        {
+            directQuery = directQuery.Where(u => u.IsActive);
+        }
+        var directDiag = directQuery.ToDiagnostics();
+
+        IQueryBuilder<User> prepQuery = Lite.Users().Where(u => true);
+        if (false)
+        {
+            prepQuery = prepQuery.Where(u => u.IsActive);
+        }
+        var preparedDiag = prepQuery.Prepare().ToDiagnostics();
+
+        Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));
+        Assert.That(preparedDiag.Sql, Does.Not.Contain("\"IsActive\""));
     }
 
     #endregion

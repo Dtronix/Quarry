@@ -385,7 +385,7 @@ internal static class UsageSiteDiscovery
         }
         // For .Prepare() on insert builders, extract InitializedPropertyNames from the chain
         // so InsertInfo can be built during chain analysis
-        if (kind == InterceptorKind.Prepare && containingType.Name.Contains("InsertBuilder"))
+        if (kind == InterceptorKind.Prepare && IsInsertBuilderType(containingType.Name))
         {
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
         }
@@ -662,7 +662,7 @@ internal static class UsageSiteDiscovery
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
         // For .Prepare() on batch insert builders, also walk the chain for column names
-        if (kind == InterceptorKind.Prepare && containingType.Name.Contains("BatchInsert"))
+        if (kind == InterceptorKind.Prepare && IsExecutableBatchInsertType(containingType.Name))
         {
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
