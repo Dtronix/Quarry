@@ -297,53 +297,6 @@ internal static partial class InterceptorCodeGenerator
         StringBuilder sb, AssembledPlan chain, CarrierPlan? carrier = null)
         => TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
 
-    /// <summary>
-    /// Emits a ClauseDiagnostic[] array for non-carrier prebuilt chains.
-    /// </summary>
-    internal static void EmitNonCarrierDiagnosticClauseArray(
-        StringBuilder sb, AssembledPlan chain, string concreteParamType)
-    {
-        var diagnosticClauses = chain.GetClauseEntries()
-            .Where(c => IsDiagnosticClauseRole(c.Role))
-            .ToList();
-
-        if (diagnosticClauses.Count == 0)
-        {
-            sb.AppendLine("        var __clauses = Array.Empty<ClauseDiagnostic>();");
-            return;
-        }
-
-        var hasConditional = diagnosticClauses.Any(c => c.IsConditional);
-        var needsMaskAccess = hasConditional && chain.SqlVariants.Count > 1;
-
-        sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
-        sb.AppendLine("        {");
-        foreach (var clause in diagnosticClauses)
-        {
-            var clauseType = clause.Role.ToString();
-            var sqlFragment = clause.Site.Clause?.SqlFragment ?? "";
-            var escapedFragment = EscapeStringLiteral(sqlFragment);
-            var isConditional = clause.IsConditional ? "true" : "false";
-
-            string isActive;
-            if (!clause.IsConditional)
-            {
-                isActive = "true";
-            }
-            else if (needsMaskAccess)
-            {
-                isActive = $"(__b.ClauseMask & {(1UL << clause.BitIndex!.Value)}UL) != 0";
-            }
-            else
-            {
-                isActive = "true";
-            }
-
-            sb.AppendLine($"            new(\"{clauseType}\", @\"{escapedFragment}\", isConditional: {isConditional}, isActive: {isActive}),");
-        }
-        sb.AppendLine("        };");
-    }
-
     #endregion
 
     #region Join Helpers
