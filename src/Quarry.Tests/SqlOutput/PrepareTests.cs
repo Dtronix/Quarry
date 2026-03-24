@@ -159,6 +159,14 @@ internal class PrepareTests : CrossDialectTestBase
 
     #endregion
 
+    // NOTE: Insert/BatchInsert + .Prepare() tests are not included because the generator
+    // currently produces wrong PreparedQuery<TResult> type for insert builders — it emits
+    // PreparedQuery<User> instead of PreparedQuery<int>. The root cause is that
+    // ClassifyBuilderKind maps InsertBuilder to BuilderKind.Query (fallback),
+    // so EmitPrepareInterceptor doesn't recognize it as needing "int" result type.
+    // Fix requires adding BuilderKind.Insert and handling it in EmitPrepareInterceptor
+    // and in the prepared terminal receiver type resolution.
+
     #region Multi-Terminal — Update
 
     [Test]
