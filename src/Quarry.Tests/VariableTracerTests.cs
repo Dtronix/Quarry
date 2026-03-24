@@ -72,6 +72,23 @@ namespace TestNs
     }
 
     [Test]
+    public void IsBuilderType_PreparedQuery_ReturnsTrue()
+    {
+        var compilation = CreateMinimalCompilation(@"
+namespace TestNs
+{
+    public class PreparedQuery<T> { }
+}");
+        Assert.That(VariableTracer.IsBuilderType(GetTypeSymbol(compilation, "TestNs.PreparedQuery`1")), Is.True);
+    }
+
+    [Test]
+    public void IsBuilderTypeName_PreparedQuery_ReturnsTrue()
+    {
+        Assert.That(VariableTracer.IsBuilderTypeName("PreparedQuery"), Is.True);
+    }
+
+    [Test]
     public void IsBuilderType_ArrayType_ReturnsFalse()
     {
         // Array types are IArrayTypeSymbol, not INamedTypeSymbol

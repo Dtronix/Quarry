@@ -839,7 +839,7 @@ internal static class CarrierEmitter
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
 
-        var insertInfo = chain.ExecutionSite.InsertInfo;
+        var insertInfo = chain.ExecutionSite.InsertInfo ?? chain.PrepareSite?.InsertInfo;
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
             sb.AppendLine("        var __params = new DiagnosticParameter[]");

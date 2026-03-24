@@ -22,6 +22,11 @@ public interface IJoinedQueryBuilder<T1, T2>
     IJoinedQueryBuilder3<T1, T2, T3> RightJoin<T3>(Expression<Func<T1, T2, T3, bool>> condition) where T3 : class;
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<(T1, T2)> Prepare();
 }
 
 /// <summary>
@@ -44,6 +49,11 @@ public interface IJoinedQueryBuilder<T1, T2, TResult>
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<TResult> Prepare();
 }
 
 /// <summary>
@@ -66,6 +76,11 @@ public interface IJoinedQueryBuilder3<T1, T2, T3>
     IJoinedQueryBuilder4<T1, T2, T3, T4> RightJoin<T4>(Expression<Func<T1, T2, T3, T4, bool>> condition) where T4 : class;
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<(T1, T2, T3)> Prepare();
 }
 
 /// <summary>
@@ -89,6 +104,11 @@ public interface IJoinedQueryBuilder3<T1, T2, T3, TResult>
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<TResult> Prepare();
 }
 
 /// <summary>
@@ -110,6 +130,11 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4>
     IJoinedQueryBuilder4<T1, T2, T3, T4> Distinct();
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<(T1, T2, T3, T4)> Prepare();
 }
 
 /// <summary>
@@ -134,4 +159,9 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4, TResult>
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<TResult> Prepare();
 }

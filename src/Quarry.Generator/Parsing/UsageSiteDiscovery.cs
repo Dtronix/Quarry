@@ -41,7 +41,8 @@ internal static class UsageSiteDiscovery
         "IBatchInsertBuilder",
         "IExecutableBatchInsert",
         "IEntityAccessor",
-        "EntityAccessor"
+        "EntityAccessor",
+        "PreparedQuery"
     };
 
     // Methods that can be intercepted (excluding builder-specific methods that need context)
@@ -65,6 +66,7 @@ internal static class UsageSiteDiscovery
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
         ["ToDiagnostics"] = InterceptorKind.ToDiagnostics,
+        ["ToSql"] = InterceptorKind.ToSql,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
         ["Distinct"] = InterceptorKind.Distinct,
@@ -75,7 +77,8 @@ internal static class UsageSiteDiscovery
         ["Insert"] = InterceptorKind.InsertTransition,
         ["InsertBatch"] = InterceptorKind.BatchInsertColumnSelector,
         ["Values"] = InterceptorKind.BatchInsertValues,
-        ["Trace"] = InterceptorKind.Trace
+        ["Trace"] = InterceptorKind.Trace,
+        ["Prepare"] = InterceptorKind.Prepare
     };
 
     // Methods on InsertBuilder that need special handling
@@ -370,10 +373,19 @@ internal static class UsageSiteDiscovery
             kind = InterceptorKind.BatchInsertValues;
         }
 
+        // ── Step 6b: PreparedQuery terminal detection ──────────────────────
+        bool isPreparedTerminal = containingType.Name == "PreparedQuery";
+
         HashSet<string>? initializedPropertyNames = null;
         if (kind is InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
             or InterceptorKind.InsertToDiagnostics)
+        {
+            initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
+        }
+        // For .Prepare() on insert builders, extract InitializedPropertyNames from the chain
+        // so InsertInfo can be built during chain analysis
+        if (kind == InterceptorKind.Prepare && IsInsertBuilderType(containingType.Name))
         {
             initializedPropertyNames = ExtractInitializedPropertyNames(invocation);
         }
@@ -433,6 +445,16 @@ internal static class UsageSiteDiscovery
 #endif
 
         // ── Step 8: Entity type extraction ─────────────────────────────────
+        // For PreparedQuery terminals, trace through the variable to find the originating builder's
+        // entity type, since PreparedQuery<TResult> only carries TResult, not the entity type.
+        if (isPreparedTerminal && invocation.Expression is MemberAccessExpressionSyntax preparedMa)
+        {
+            var originatingBuilderType = ResolvePreparedQueryOriginBuilderType(
+                preparedMa.Expression, semanticModel, cancellationToken);
+            if (originatingBuilderType != null)
+                containingType = originatingBuilderType;
+        }
+
         var (entityTypeName, resultTypeName) = ExtractTypeArguments(containingType);
         if (entityTypeName == null)
             return null;
@@ -639,6 +661,18 @@ internal static class UsageSiteDiscovery
         {
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
+        // For .Prepare() on batch insert builders, also walk the chain for column names
+        if (kind == InterceptorKind.Prepare && IsExecutableBatchInsertType(containingType.Name))
+        {
+            batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
+        }
+
+        // ── Step 15b: PreparedQuery escape detection ────────────────────────
+        string? preparedQueryEscapeReason = null;
+        if (kind == InterceptorKind.Prepare)
+        {
+            preparedQueryEscapeReason = DetectPreparedQueryEscape(invocation);
+        }
 
         // ── Step 16: Build RawCallSite directly ────────────────────────────
         return new RawCallSite(
@@ -677,7 +711,9 @@ internal static class UsageSiteDiscovery
             setActionAssignments: setActionAssignments,
             setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
-            batchInsertColumnNames: batchInsertColumnNames);
+            batchInsertColumnNames: batchInsertColumnNames,
+            isPreparedTerminal: isPreparedTerminal,
+            preparedQueryEscapeReason: preparedQueryEscapeReason);
     }
 
     /// <summary>
@@ -1224,8 +1260,102 @@ internal static class UsageSiteDiscovery
             or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
-            or "ToAsyncEnumerable" or "ToDiagnostics"
+            or "ToAsyncEnumerable" or "ToDiagnostics" or "ToSql" or "Prepare"
             or "Users" or "Orders" or "Accounts" or "Products" or "Projects";
+    }
+
+    /// <summary>
+    /// Detects if the result variable of a .Prepare() call escapes the declaring method scope.
+    /// Returns a reason string if escaped, null if contained.
+    /// Checks: returned from method, passed as argument, captured in lambda, assigned to field/property.
+    /// </summary>
+    internal static string? DetectPreparedQueryEscape(InvocationExpressionSyntax prepareInvocation)
+    {
+        // Find the variable the .Prepare() result is assigned to
+        string? varName = null;
+
+        // Case 1: var q = ...Prepare();
+        if (prepareInvocation.Parent is EqualsValueClauseSyntax evc
+            && evc.Parent is VariableDeclaratorSyntax vds)
+        {
+            varName = vds.Identifier.Text;
+        }
+        // Case 2: q = ...Prepare(); (reassignment)
+        else if (prepareInvocation.Parent is AssignmentExpressionSyntax asgn
+            && asgn.Left is IdentifierNameSyntax assignId)
+        {
+            varName = assignId.Identifier.Text;
+        }
+
+        if (varName == null)
+        {
+            // .Prepare() result not assigned — either chained directly (which is fine) or discarded
+            return null;
+        }
+
+        // Find the enclosing method body
+        SyntaxNode? methodBody = null;
+        foreach (var ancestor in prepareInvocation.Ancestors())
+        {
+            if (ancestor is MethodDeclarationSyntax method)
+            {
+                methodBody = method.Body ?? (SyntaxNode?)method.ExpressionBody;
+                break;
+            }
+            if (ancestor is LocalFunctionStatementSyntax localFunc)
+            {
+                methodBody = localFunc.Body ?? (SyntaxNode?)localFunc.ExpressionBody;
+                break;
+            }
+        }
+        if (methodBody == null)
+            return null;
+
+        foreach (var id in methodBody.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            if (id.Identifier.Text != varName) continue;
+
+            // Returned from method
+            if (id.Parent is ReturnStatementSyntax)
+                return "returned from method";
+
+            // Assigned to field, property, or other non-local target
+            if (id.Parent is AssignmentExpressionSyntax asgn && asgn.Right == id)
+            {
+                return "assigned to field or property";
+            }
+
+            // Passed as argument to non-PreparedQuery terminal method
+            if (id.Parent is ArgumentSyntax
+                && id.Parent.Parent is ArgumentListSyntax al
+                && al.Parent is InvocationExpressionSyntax ce)
+            {
+                var mn = ce.Expression switch
+                {
+                    MemberAccessExpressionSyntax m => m.Name.Identifier.Text,
+                    IdentifierNameSyntax i => i.Identifier.Text,
+                    _ => null
+                };
+                if (mn != null && !IsPreparedQueryTerminal(mn))
+                    return "passed as argument";
+            }
+
+            // Captured in lambda or local function
+            var cl = id.Ancestors().FirstOrDefault(a =>
+                a is LambdaExpressionSyntax or AnonymousMethodExpressionSyntax or LocalFunctionStatementSyntax);
+            if (cl != null && cl.Ancestors().Any(a => a == methodBody))
+                return "captured in lambda";
+        }
+
+        return null;
+    }
+
+    private static bool IsPreparedQueryTerminal(string name)
+    {
+        return name is "ToDiagnostics" or "ToSql"
+            or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
+            or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
+            or "ToAsyncEnumerable";
     }
 
     /// <summary>
@@ -2241,6 +2371,66 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
+    /// <summary>
+    /// Resolves the originating builder type from a PreparedQuery variable.
+    /// Traces through the variable assignment to find the .Prepare() call,
+    /// then gets the builder type from the .Prepare() method's containing type.
+    /// </summary>
+    private static INamedTypeSymbol? ResolvePreparedQueryOriginBuilderType(
+        ExpressionSyntax receiver,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        // Walk through the receiver to the chain root
+        var root = VariableTracer.WalkFluentChainRoot(receiver);
+
+        // Trace through variable declarations
+        var traceResult = VariableTracer.TraceToChainRoot(root, semanticModel, cancellationToken, maxHops: 2);
+
+        // Walk through the initializers to find the .Prepare() call
+        if (traceResult.Initializers != null)
+        {
+            foreach (var init in traceResult.Initializers)
+            {
+                if (init is InvocationExpressionSyntax initInvoc
+                    && initInvoc.Expression is MemberAccessExpressionSyntax initMa
+                    && initMa.Name.Identifier.Text == "Prepare")
+                {
+                    // Get the type of the receiver of .Prepare()
+                    var receiverTypeInfo = semanticModel.GetTypeInfo(initMa.Expression, cancellationToken);
+                    if (receiverTypeInfo.Type is INamedTypeSymbol builderType && IsQuarryBuilderType(builderType))
+                        return builderType;
+                }
+
+                // Also try walking the fluent chain inside the initializer
+                var current = init;
+                while (current is InvocationExpressionSyntax inv
+                    && inv.Expression is MemberAccessExpressionSyntax ma)
+                {
+                    if (ma.Name.Identifier.Text == "Prepare")
+                    {
+                        var receiverTypeInfo = semanticModel.GetTypeInfo(ma.Expression, cancellationToken);
+                        if (receiverTypeInfo.Type is INamedTypeSymbol bt && IsQuarryBuilderType(bt))
+                            return bt;
+                    }
+                    current = ma.Expression;
+                }
+            }
+        }
+
+        // Direct case: receiver is the .Prepare() invocation itself
+        if (receiver is InvocationExpressionSyntax directInvoc
+            && directInvoc.Expression is MemberAccessExpressionSyntax directMa
+            && directMa.Name.Identifier.Text == "Prepare")
+        {
+            var receiverTypeInfo = semanticModel.GetTypeInfo(directMa.Expression, cancellationToken);
+            if (receiverTypeInfo.Type is INamedTypeSymbol directBt && IsQuarryBuilderType(directBt))
+                return directBt;
+        }
+
+        return null;
+    }
+
     /// Walks the receiver invocation chain to find a method call with resolved type arguments.
     /// For example, in <c>ctx.Insert(new User{}).Values(...).ToDiagnostics()</c>, this walks from the
     /// <c>.ToDiagnostics()</c> receiver through <c>.Values()</c> to the <c>Insert()</c> call,
@@ -2470,8 +2660,10 @@ internal static class UsageSiteDiscovery
         if (typeName.Contains("UpdateBuilder")) return BuilderKind.Update;
         if (typeName.Contains("ExecutableBatchInsert")) return BuilderKind.ExecutableBatchInsert;
         if (typeName.Contains("BatchInsertBuilder")) return BuilderKind.BatchInsert;
+        if (typeName.Contains("InsertBuilder")) return BuilderKind.Insert;
         if (typeName.Contains("JoinedQueryBuilder")) return BuilderKind.JoinedQuery;
         if (typeName.Contains("EntityAccessor")) return BuilderKind.EntityAccessor;
+        if (typeName == "PreparedQuery") return BuilderKind.Query; // fallback — actual kind determined from chain
         return BuilderKind.Query;
     }
 

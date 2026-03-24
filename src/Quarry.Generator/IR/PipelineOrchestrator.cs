@@ -50,7 +50,7 @@ internal static class PipelineOrchestrator
         ct.ThrowIfCancellationRequested();
 
         // Chain analysis: TranslatedCallSite[] → AnalyzedChain[]
-        var analyzedChains = ChainAnalyzer.Analyze(translatedSites, registry, ct);
+        var analyzedChains = ChainAnalyzer.Analyze(translatedSites, registry, ct, diagnostics);
 
         ct.ThrowIfCancellationRequested();
 

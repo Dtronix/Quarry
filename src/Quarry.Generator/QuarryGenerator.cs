@@ -610,6 +610,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.ChainNotAnalyzable,
         DiagnosticDescriptors.ForkedQueryChain,
         DiagnosticDescriptors.SqlRawPlaceholderMismatch,
+        DiagnosticDescriptors.PreparedQueryEscapesScope,
+        DiagnosticDescriptors.PreparedQueryNoTerminals,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

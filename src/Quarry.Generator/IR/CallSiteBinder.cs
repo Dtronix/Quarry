@@ -56,11 +56,12 @@ internal static class CallSiteBinder
             schemaName = null;
         }
 
-        // Build InsertInfo for insert sites
+        // Build InsertInfo for insert sites (including Prepare on insert builders)
         InsertInfo? insertInfo = null;
-        if (raw.Kind is InterceptorKind.InsertExecuteNonQuery
+        if ((raw.Kind is InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
             or InterceptorKind.InsertToDiagnostics
+            || (raw.Kind == InterceptorKind.Prepare && raw.BuilderKind == BuilderKind.Insert))
             && entry != null)
         {
             // Convert ImmutableArray<string> back to HashSet for InsertInfo.FromEntityInfo
@@ -75,10 +76,11 @@ internal static class CallSiteBinder
         }
 
         // Build InsertInfo for batch insert sites (column names come from lambda selector)
-        if (raw.Kind is InterceptorKind.BatchInsertColumnSelector
+        if ((raw.Kind is InterceptorKind.BatchInsertColumnSelector
             or InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
             or InterceptorKind.BatchInsertToDiagnostics
+            || (raw.Kind == InterceptorKind.Prepare && raw.BuilderKind == BuilderKind.ExecutableBatchInsert))
             && entry != null)
         {
             HashSet<string>? propNames = null;

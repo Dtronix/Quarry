@@ -229,6 +229,18 @@ internal enum InterceptorKind
     BatchInsertToDiagnostics,
 
     /// <summary>
+    /// ToSql() method - returns the pre-built SQL string for the query chain.
+    /// </summary>
+    ToSql,
+
+    /// <summary>
+    /// .Prepare() method - freezes the builder chain into a PreparedQuery&lt;TResult&gt; for multi-terminal use.
+    /// When only one terminal is observed on the prepared variable, the Prepare call is elided (zero overhead).
+    /// When N>1 terminals are observed, a carrier covering only the observed terminals is emitted.
+    /// </summary>
+    Prepare,
+
+    /// <summary>
     /// .Trace() method - compile-time-only signal for chain tracing.
     /// No interceptor generated; marks the chain as traced for inline comment emission.
     /// </summary>
@@ -252,6 +264,7 @@ internal enum BuilderKind
     ExecutableUpdate,
     JoinedQuery,
     EntityAccessor,
+    Insert,
     BatchInsert,
     ExecutableBatchInsert,
 }

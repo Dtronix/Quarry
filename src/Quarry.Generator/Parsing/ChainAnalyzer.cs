@@ -46,7 +46,8 @@ internal static class ChainAnalyzer
     public static IReadOnlyList<AnalyzedChain> Analyze(
         ImmutableArray<TranslatedCallSite> sites,
         EntityRegistry registry,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<DiagnosticInfo>? diagnostics = null)
     {
         // Group sites by ChainId
         var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
@@ -80,7 +81,7 @@ internal static class ChainAnalyzer
 
             try
             {
-                var analyzed = AnalyzeChainGroup(chainSites, registry, ct);
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics);
                 if (analyzed != null)
                     results.Add(analyzed);
             }
@@ -100,17 +101,29 @@ internal static class ChainAnalyzer
     private static AnalyzedChain? AnalyzeChainGroup(
         List<TranslatedCallSite> chainSites,
         EntityRegistry registry,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<DiagnosticInfo>? diagnostics = null)
     {
-        // Find the execution terminal, detect .Trace(), and collect clause sites
+        // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
+        TranslatedCallSite? prepareSite = null;
         var clauseSites = new List<TranslatedCallSite>();
+        var preparedTerminals = new List<TranslatedCallSite>();
         bool isTraced = false;
         int executionCount = 0;
 
         foreach (var site in chainSites)
         {
-            if (IsExecutionKind(site.Bound.Raw.Kind))
+            if (site.Bound.Raw.Kind == InterceptorKind.Prepare)
+            {
+                prepareSite = site;
+            }
+            else if (site.Bound.Raw.IsPreparedTerminal)
+            {
+                // Terminal called on a PreparedQuery variable
+                preparedTerminals.Add(site);
+            }
+            else if (IsExecutionKind(site.Bound.Raw.Kind))
             {
                 executionSite = site;
                 executionCount++;
@@ -126,10 +139,64 @@ internal static class ChainAnalyzer
             }
         }
 
+        // Handle .Prepare() chains
+        if (prepareSite != null)
+        {
+            // QRY035: PreparedQuery escapes scope
+            var escapeReason = prepareSite.Bound.Raw.PreparedQueryEscapeReason;
+            if (escapeReason != null)
+            {
+                // Extract variable name from ChainId (format: "filepath:offset:varName")
+                var prepChainId = prepareSite.Bound.Raw.ChainId;
+                string varName = "prepared";
+                if (prepChainId != null)
+                {
+                    var lastColon = prepChainId.LastIndexOf(':');
+                    if (lastColon >= 0)
+                        varName = prepChainId.Substring(lastColon + 1);
+                }
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.PreparedQueryEscapesScope.Id,
+                    prepareSite.Bound.Raw.Location,
+                    varName, escapeReason));
+                return null;
+            }
+
+            if (preparedTerminals.Count == 0)
+            {
+                // QRY036: no terminals on PreparedQuery — dead code
+                var loc = prepareSite.Bound.Raw.Location;
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.PreparedQueryNoTerminals.Id,
+                    loc,
+                    $"{loc.FilePath}({loc.Line},{loc.Column})"));
+                return null;
+            }
+
+            if (preparedTerminals.Count == 1)
+            {
+                // Single-terminal collapse: treat as if .Prepare() didn't exist
+                // Keep prepareSite so the emitter can generate a pass-through interceptor
+                executionSite = preparedTerminals[0];
+                executionCount = 1;
+                preparedTerminals.Clear();
+                // Fall through to normal single-terminal processing
+            }
+            else
+            {
+                // Multi-terminal: use the first terminal as the execution site for plan building,
+                // but record all terminals for the emitter
+                executionSite = preparedTerminals[0];
+                executionCount = 1;
+                // Fall through to normal processing — PreparedTerminals will be set on AnalyzedChain
+            }
+        }
+
         if (executionSite == null)
             return null;
 
         // Detect forked chains (multiple execution terminals sharing one ChainId)
+        // Note: prepared multi-terminal chains are NOT forks — they're intentional
         if (executionCount > 1)
         {
             // Extract variable name from the ChainId (format: "filepath:offset:varName")
@@ -283,8 +350,12 @@ internal static class ChainAnalyzer
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
 
-        // Determine query kind from execution site
-        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, executionSite.Bound.Raw.BuilderKind);
+        // Determine query kind — for prepared terminals, use the Prepare site's builder kind
+        // since the prepared terminal's BuilderKind is always Query (from PreparedQuery type)
+        var effectiveBuilderKind = (prepareSite != null)
+            ? prepareSite.Bound.Raw.BuilderKind
+            : executionSite.Bound.Raw.BuilderKind;
+        var queryKind = DetermineQueryKind(executionSite.Bound.Raw.Kind, effectiveBuilderKind);
 
         // Process clause sites to build terms
         var consumedConditionalTerms = new HashSet<int>();
@@ -535,10 +606,21 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Handle insert columns
-        if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && executionSite.Bound.InsertInfo != null)
+        // Handle insert columns — check execution site first, then clause sites and prepare site
+        // (for Prepare chains, the InsertInfo is on the insert transition clause, not the execution site)
+        InsertInfo? resolvedInsertInfo = executionSite.Bound.InsertInfo;
+        if (resolvedInsertInfo == null && (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert))
         {
-            var insertInfo = executionSite.Bound.InsertInfo;
+            foreach (var cs in clauseSites)
+            {
+                if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
+            }
+            if (resolvedInsertInfo == null && prepareSite?.Bound.InsertInfo != null)
+                resolvedInsertInfo = prepareSite.Bound.InsertInfo;
+        }
+        if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && resolvedInsertInfo != null)
+        {
+            var insertInfo = resolvedInsertInfo;
             for (int c = 0; c < insertInfo.Columns.Count; c++)
             {
                 var col = insertInfo.Columns[c];
@@ -592,7 +674,9 @@ internal static class ChainAnalyzer
             LogChainTrace(chainUid, plan, executionSite);
         }
 
-        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced,
+            preparedTerminals: preparedTerminals.Count > 1 ? preparedTerminals : null,
+            prepareSite: prepareSite);
     }
 
     /// <summary>
@@ -1180,6 +1264,8 @@ internal static class ChainAnalyzer
         {
             BuilderKind.Delete or BuilderKind.ExecutableDelete => QueryKind.Delete,
             BuilderKind.Update or BuilderKind.ExecutableUpdate => QueryKind.Update,
+            BuilderKind.Insert => QueryKind.Insert,
+            BuilderKind.BatchInsert or BuilderKind.ExecutableBatchInsert => QueryKind.BatchInsert,
             _ => QueryKind.Select
         };
     }
@@ -1360,6 +1446,7 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable
             or InterceptorKind.ToDiagnostics
+            or InterceptorKind.ToSql
             or InterceptorKind.InsertExecuteNonQuery
             or InterceptorKind.InsertExecuteScalar
             or InterceptorKind.InsertToDiagnostics
@@ -1590,18 +1677,22 @@ internal sealed class AnalyzedChain
         QueryPlan plan,
         TranslatedCallSite executionSite,
         IReadOnlyList<TranslatedCallSite> clauseSites,
-        bool isTraced = false)
+        bool isTraced = false,
+        IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
+        TranslatedCallSite? prepareSite = null)
     {
         Plan = plan;
         ExecutionSite = executionSite;
         ClauseSites = clauseSites;
         IsTraced = isTraced;
+        PreparedTerminals = preparedTerminals;
+        PrepareSite = prepareSite;
     }
 
     /// <summary>The logical query plan.</summary>
     public QueryPlan Plan { get; }
 
-    /// <summary>The execution terminal site.</summary>
+    /// <summary>The execution terminal site (for single-terminal or collapsed single-prepared-terminal).</summary>
     public TranslatedCallSite ExecutionSite { get; }
 
     /// <summary>All clause sites in the chain (in source order).</summary>
@@ -1609,4 +1700,15 @@ internal sealed class AnalyzedChain
 
     /// <summary>Whether this chain has a .Trace() call and should emit trace comments.</summary>
     public bool IsTraced { get; }
+
+    /// <summary>
+    /// Terminal sites called on a PreparedQuery variable. Non-null only for multi-terminal chains (N>1).
+    /// When null or empty, this is a standard single-terminal chain.
+    /// </summary>
+    public IReadOnlyList<TranslatedCallSite>? PreparedTerminals { get; }
+
+    /// <summary>
+    /// The .Prepare() call site. Non-null only for multi-terminal chains.
+    /// </summary>
+    public TranslatedCallSite? PrepareSite { get; }
 }

@@ -69,6 +69,12 @@ public abstract class DeleteCarrierBase<T> : IEntityAccessor<T>, IDeleteBuilder<
 
     QueryDiagnostics IExecutableDeleteBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<int> IDeleteBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<int> IExecutableDeleteBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<T>, IExecutableUpdateBuilder<T>
@@ -147,8 +153,14 @@ public abstract class UpdateCarrierBase<T> : IEntityAccessor<T>, IUpdateBuilder<
     QueryDiagnostics IUpdateBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    PreparedQuery<int> IUpdateBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     QueryDiagnostics IExecutableUpdateBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<int> IExecutableUpdateBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<T>
@@ -203,6 +215,9 @@ public abstract class InsertCarrierBase<T> : IEntityAccessor<T>, IInsertBuilder<
 
     QueryDiagnostics IInsertBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IInsertBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<int> IInsertBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class BatchInsertCarrierBase<T> : IEntityAccessor<T>, IBatchInsertBuilder<T>, IExecutableBatchInsert<T>
@@ -262,4 +277,7 @@ public abstract class BatchInsertCarrierBase<T> : IEntityAccessor<T>, IBatchInse
 
     QueryDiagnostics IExecutableBatchInsert<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<int> IExecutableBatchInsert<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
