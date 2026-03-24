@@ -440,11 +440,10 @@ internal static class DiagnosticDescriptors
         title: "Query chain not analyzable",
         messageFormat: "Query chain at {0} not analyzable for pre-built SQL: {1}",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Info,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "The query chain could not be analyzed for pre-built SQL optimization. " +
-                     "The existing runtime SqlBuilder path will be used. This is not an error — " +
-                     "consider restructuring the query to enable optimization.");
+                     "Restructure the query to enable static analysis.");
 
     /// <summary>
     /// QRY033: Forked query chain — builder variable consumed by multiple execution paths.
