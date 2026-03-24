@@ -80,7 +80,9 @@ internal sealed class InsertInfo : IEquatable<InsertInfo>
                 isForeignKey: column.Modifiers.IsForeignKey,
                 foreignKeyEntityName: column.ReferencedEntityName,
                 customTypeMappingClass: column.CustomTypeMappingClass,
-                isSensitive: column.Modifiers.IsSensitive));
+                isSensitive: column.Modifiers.IsSensitive,
+                isEnum: column.IsEnum,
+                isBoolean: column.ClrType is "bool" or "Boolean"));
         }
 
         string? quotedIdentityColumnName = identityColumnName != null
@@ -185,6 +187,19 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
     /// </summary>
     public bool IsSensitive { get; }
 
+    /// <summary>
+    /// Gets whether the CLR type is an enum.
+    /// When true, carrier insert code must cast to the underlying integer type.
+    /// </summary>
+    public bool IsEnum { get; }
+
+    /// <summary>
+    /// Gets whether the CLR type is a boolean.
+    /// When true, carrier insert code must convert to 0/1 and set DbType.Int32
+    /// for providers (e.g. SQLite) that reject boxed booleans.
+    /// </summary>
+    public bool IsBoolean { get; }
+
     public InsertColumnInfo(
         string propertyName,
         string columnName,
@@ -196,7 +211,9 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
         bool isForeignKey = false,
         string? foreignKeyEntityName = null,
         string? customTypeMappingClass = null,
-        bool isSensitive = false)
+        bool isSensitive = false,
+        bool isEnum = false,
+        bool isBoolean = false)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -209,6 +226,8 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
         ForeignKeyEntityName = foreignKeyEntityName;
         CustomTypeMappingClass = customTypeMappingClass;
         IsSensitive = isSensitive;
+        IsEnum = isEnum;
+        IsBoolean = isBoolean;
     }
 
     public bool Equals(InsertColumnInfo? other)
@@ -225,7 +244,9 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
             && IsForeignKey == other.IsForeignKey
             && ForeignKeyEntityName == other.ForeignKeyEntityName
             && CustomTypeMappingClass == other.CustomTypeMappingClass
-            && IsSensitive == other.IsSensitive;
+            && IsSensitive == other.IsSensitive
+            && IsEnum == other.IsEnum
+            && IsBoolean == other.IsBoolean;
     }
 
     public override bool Equals(object? obj) => Equals(obj as InsertColumnInfo);
