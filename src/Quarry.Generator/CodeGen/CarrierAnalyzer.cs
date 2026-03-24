@@ -70,15 +70,6 @@ internal static class CarrierAnalyzer
         if (plan.UnmatchedMethodNames != null && plan.UnmatchedMethodNames.Count > 0)
             return CarrierPlan.Ineligible("chain has unmatched methods");
 
-        // Gate: Trivial ToDiagnostics chains with no parameters or conditions
-        // (e.g., db.Users().ToDiagnostics()) — carrier overhead is wasteful
-        if (assembled.ExecutionSite.Bound.Raw.Kind == InterceptorKind.ToDiagnostics
-            && plan.Parameters.Count == 0
-            && plan.ConditionalTerms.Count == 0
-            && plan.WhereTerms.Count == 0
-            && plan.SetTerms.Count == 0)
-            return CarrierPlan.Ineligible("trivial ToDiagnostics chain");
-
         // Gate: Empty SQL variants
         if (assembled.SqlVariants.Count == 0)
             return CarrierPlan.Ineligible("no SQL variants");
