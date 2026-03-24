@@ -29,7 +29,9 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         IReadOnlyList<(string TableName, string? SchemaName)>? joinedTableInfos = null,
         IReadOnlyList<string>? traceLines = null,
         string? batchInsertReturningSuffix = null,
-        int batchInsertColumnsPerRow = 0)
+        int batchInsertColumnsPerRow = 0,
+        IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
+        TranslatedCallSite? prepareSite = null)
     {
         Plan = plan;
         SqlVariants = sqlVariants;
@@ -47,6 +49,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         TraceLines = traceLines;
         BatchInsertReturningSuffix = batchInsertReturningSuffix;
         BatchInsertColumnsPerRow = batchInsertColumnsPerRow;
+        PreparedTerminals = preparedTerminals;
+        PrepareSite = prepareSite;
     }
 
     public QueryPlan Plan { get; }
@@ -77,6 +81,16 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
 
     /// <summary>For batch inserts: the number of columns per row (for parameter index calculation).</summary>
     public int BatchInsertColumnsPerRow { get; }
+
+    /// <summary>
+    /// Terminal sites called on a PreparedQuery variable. Non-null only for multi-terminal chains (N>1).
+    /// </summary>
+    public IReadOnlyList<TranslatedCallSite>? PreparedTerminals { get; }
+
+    /// <summary>
+    /// The .Prepare() call site. Non-null only for multi-terminal chains.
+    /// </summary>
+    public TranslatedCallSite? PrepareSite { get; }
 
     // Convenience accessors that mirror PrebuiltChainInfo property names
     public QueryKind QueryKind => Plan.Kind;

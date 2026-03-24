@@ -102,15 +102,26 @@ internal static class ChainAnalyzer
         EntityRegistry registry,
         CancellationToken ct)
     {
-        // Find the execution terminal, detect .Trace(), and collect clause sites
+        // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
+        TranslatedCallSite? prepareSite = null;
         var clauseSites = new List<TranslatedCallSite>();
+        var preparedTerminals = new List<TranslatedCallSite>();
         bool isTraced = false;
         int executionCount = 0;
 
         foreach (var site in chainSites)
         {
-            if (IsExecutionKind(site.Bound.Raw.Kind))
+            if (site.Bound.Raw.Kind == InterceptorKind.Prepare)
+            {
+                prepareSite = site;
+            }
+            else if (site.Bound.Raw.IsPreparedTerminal)
+            {
+                // Terminal called on a PreparedQuery variable
+                preparedTerminals.Add(site);
+            }
+            else if (IsExecutionKind(site.Bound.Raw.Kind))
             {
                 executionSite = site;
                 executionCount++;
@@ -126,10 +137,40 @@ internal static class ChainAnalyzer
             }
         }
 
+        // Handle .Prepare() chains
+        if (prepareSite != null)
+        {
+            if (preparedTerminals.Count == 0)
+            {
+                // QRY036: no terminals on PreparedQuery — dead code
+                // Still return null so the chain doesn't get an interceptor
+                return null;
+            }
+
+            if (preparedTerminals.Count == 1)
+            {
+                // Single-terminal collapse: treat as if .Prepare() didn't exist
+                executionSite = preparedTerminals[0];
+                executionCount = 1;
+                preparedTerminals.Clear();
+                prepareSite = null;
+                // Fall through to normal single-terminal processing
+            }
+            else
+            {
+                // Multi-terminal: use the first terminal as the execution site for plan building,
+                // but record all terminals for the emitter
+                executionSite = preparedTerminals[0];
+                executionCount = 1;
+                // Fall through to normal processing — PreparedTerminals will be set on AnalyzedChain
+            }
+        }
+
         if (executionSite == null)
             return null;
 
         // Detect forked chains (multiple execution terminals sharing one ChainId)
+        // Note: prepared multi-terminal chains are NOT forks — they're intentional
         if (executionCount > 1)
         {
             // Extract variable name from the ChainId (format: "filepath:offset:varName")
@@ -592,7 +633,9 @@ internal static class ChainAnalyzer
             LogChainTrace(chainUid, plan, executionSite);
         }
 
-        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced);
+        return new AnalyzedChain(plan, executionSite, clauseSites, isTraced,
+            preparedTerminals: preparedTerminals.Count > 1 ? preparedTerminals : null,
+            prepareSite: prepareSite);
     }
 
     /// <summary>
@@ -1590,18 +1633,22 @@ internal sealed class AnalyzedChain
         QueryPlan plan,
         TranslatedCallSite executionSite,
         IReadOnlyList<TranslatedCallSite> clauseSites,
-        bool isTraced = false)
+        bool isTraced = false,
+        IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
+        TranslatedCallSite? prepareSite = null)
     {
         Plan = plan;
         ExecutionSite = executionSite;
         ClauseSites = clauseSites;
         IsTraced = isTraced;
+        PreparedTerminals = preparedTerminals;
+        PrepareSite = prepareSite;
     }
 
     /// <summary>The logical query plan.</summary>
     public QueryPlan Plan { get; }
 
-    /// <summary>The execution terminal site.</summary>
+    /// <summary>The execution terminal site (for single-terminal or collapsed single-prepared-terminal).</summary>
     public TranslatedCallSite ExecutionSite { get; }
 
     /// <summary>All clause sites in the chain (in source order).</summary>
@@ -1609,4 +1656,15 @@ internal sealed class AnalyzedChain
 
     /// <summary>Whether this chain has a .Trace() call and should emit trace comments.</summary>
     public bool IsTraced { get; }
+
+    /// <summary>
+    /// Terminal sites called on a PreparedQuery variable. Non-null only for multi-terminal chains (N>1).
+    /// When null or empty, this is a standard single-terminal chain.
+    /// </summary>
+    public IReadOnlyList<TranslatedCallSite>? PreparedTerminals { get; }
+
+    /// <summary>
+    /// The .Prepare() call site. Non-null only for multi-terminal chains.
+    /// </summary>
+    public TranslatedCallSite? PrepareSite { get; }
 }

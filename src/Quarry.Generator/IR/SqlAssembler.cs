@@ -118,7 +118,9 @@ internal static class SqlAssembler
             entitySchemaNamespace: executionSite.Bound.Entity?.SchemaNamespace,
             isTraced: chain.IsTraced,
             batchInsertReturningSuffix: batchReturningSuffix,
-            batchInsertColumnsPerRow: batchColumnsPerRow);
+            batchInsertColumnsPerRow: batchColumnsPerRow,
+            preparedTerminals: chain.PreparedTerminals,
+            prepareSite: chain.PrepareSite);
     }
 
     /// <summary>
