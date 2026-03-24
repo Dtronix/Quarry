@@ -105,6 +105,9 @@ public abstract class CarrierBase<T> : IEntityAccessor<T>, IQueryBuilder<T>
 
     QueryDiagnostics IQueryBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<T> IQueryBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilder<T>, IQueryBuilder<T, TResult>
@@ -196,6 +199,9 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
     QueryDiagnostics IQueryBuilder<T>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    PreparedQuery<T> IQueryBuilder<T>.Prepare()
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // IQueryBuilder<T, TResult> explicit implementations
 
     IQueryBuilder<T, TResult> IQueryBuilder<T, TResult>.Where(Expression<Func<T, bool>> predicate)
@@ -245,4 +251,7 @@ public abstract class CarrierBase<T, TResult> : IEntityAccessor<T>, IQueryBuilde
 
     QueryDiagnostics IQueryBuilder<T, TResult>.ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    PreparedQuery<TResult> IQueryBuilder<T, TResult>.Prepare()
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }

@@ -427,6 +427,10 @@ public sealed class QueryBuilder<T> : IQueryBuilder<T> where T : class
         State.TableName,
         rawState: State);
 
+    /// <inheritdoc />
+    public PreparedQuery<T> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     /// <summary>
     /// Gets the internal state for use by generated code.
     /// </summary>
@@ -772,6 +776,10 @@ public sealed class QueryBuilder<TEntity, TResult> : IQueryBuilder<TEntity, TRes
         State.Dialect,
         State.TableName,
         rawState: State);
+
+    /// <inheritdoc />
+    public PreparedQuery<TResult> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
 
     #region Execution Methods
 

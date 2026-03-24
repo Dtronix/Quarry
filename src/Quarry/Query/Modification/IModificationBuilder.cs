@@ -12,6 +12,11 @@ public interface IDeleteBuilder<T> where T : class
     IDeleteBuilder<T> WithTimeout(TimeSpan timeout);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }
 
 /// <summary>
@@ -24,6 +29,11 @@ public interface IExecutableDeleteBuilder<T> where T : class
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }
 
 /// <summary>
@@ -38,6 +48,11 @@ public interface IUpdateBuilder<T> where T : class
     IUpdateBuilder<T> WithTimeout(TimeSpan timeout);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }
 
 /// <summary>
@@ -52,6 +67,11 @@ public interface IExecutableUpdateBuilder<T> where T : class
     Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }
 
 /// <summary>
@@ -64,6 +84,11 @@ public interface IInsertBuilder<T> where T : class
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }
 
 /// <summary>
@@ -86,4 +111,9 @@ public interface IExecutableBatchInsert<T> where T : class
     Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
 
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<int> Prepare();
 }

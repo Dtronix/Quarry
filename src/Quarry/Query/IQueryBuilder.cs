@@ -90,6 +90,11 @@ public interface IQueryBuilder<T> where T : class
     /// bound parameters, and optimization metadata for this query chain.
     /// </summary>
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<T> Prepare();
 }
 
 /// <summary>
@@ -180,4 +185,9 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// bound parameters, and optimization metadata for this query chain.
     /// </summary>
     QueryDiagnostics ToDiagnostics();
+
+    /// <summary>
+    /// Prepares this query chain for multiple terminal operations.
+    /// </summary>
+    PreparedQuery<TResult> Prepare();
 }

@@ -62,6 +62,10 @@ public sealed class InsertBuilder<T> : IInsertBuilder<T> where T : class
         rawState: _state,
         insertRowCount: _entities.Count);
 
+    /// <inheritdoc />
+    public PreparedQuery<int> Prepare()
+        => throw new NotSupportedException("Prepare() must be intercepted by the Quarry source generator.");
+
     public InsertState State => _state;
 
     public IReadOnlyList<T> Entities => _entities;
