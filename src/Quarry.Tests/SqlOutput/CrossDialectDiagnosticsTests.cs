@@ -352,4 +352,120 @@ internal class CrossDialectDiagnosticsTests
     }
 
     #endregion
+
+    #region Expanded DiagnosticParameter Metadata
+
+    [Test]
+    public void ToDiagnostics_ParameterHasTypeName()
+    {
+        var name = "john";
+        var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.TypeName, Is.Not.Null.And.Not.Empty);
+        Assert.That(param.TypeName, Does.Contain("string").IgnoreCase);
+    }
+
+    [Test]
+    public void ToDiagnostics_EnumParameter_HasIsEnumTrue()
+    {
+        var priority = OrderPriority.High;
+        var diag = _db.Orders().Where(o => o.Priority == priority).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsEnum, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_SensitiveParameter_HasIsSensitiveTrue()
+    {
+        var secret = "classified";
+        var diag = _db.Widgets().Where(w => w.Secret == secret).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsSensitive, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_NonConditionalParameter_IsConditionalFalse()
+    {
+        var name = "john";
+        var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsConditional, Is.False);
+        Assert.That(param.ConditionalBitIndex, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_ConditionalParameter_IsConditionalTrueWithBitIndex()
+    {
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
+        var name = "john";
+        if (true)
+        {
+            query = query.Where(u => u.UserName == name);
+        }
+        var diag = query.ToDiagnostics();
+
+        var conditionalParams = diag.AllParameters.Where(p => p.IsConditional).ToList();
+        Assert.That(conditionalParams, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(conditionalParams[0].ConditionalBitIndex, Is.Not.Null);
+    }
+
+    #endregion
+
+    #region Expanded ClauseDiagnostic Metadata
+
+    [Test]
+    public void ToDiagnostics_ClauseHasSourceLocation()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.SourceLocation, Is.Not.Null);
+        Assert.That(whereClause.SourceLocation!.FilePath, Is.Not.Null.And.Not.Empty);
+        Assert.That(whereClause.SourceLocation.Line, Is.GreaterThan(0));
+        Assert.That(whereClause.SourceLocation.Column, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void ToDiagnostics_ClauseSourceLocation_DoesNotContainAbsolutePath()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.SourceLocation, Is.Not.Null);
+        // Should be project-relative, not absolute — no drive letter or root slash
+        Assert.That(whereClause.SourceLocation!.FilePath, Does.Not.Match(@"^[A-Z]:\\"));
+        Assert.That(whereClause.SourceLocation.FilePath, Does.Not.StartWith("/"));
+    }
+
+    [Test]
+    public void ToDiagnostics_NonConditionalClause_BitIndexIsNull()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.ConditionalBitIndex, Is.Null);
+        Assert.That(whereClause.BranchKind, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_ConditionalClause_HasBitIndexAndBranchKind()
+    {
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
+        if (true)
+        {
+            query = query.Where(u => u.IsActive);
+        }
+        var diag = query.ToDiagnostics();
+
+        var conditionalClauses = diag.Clauses.Where(c => c.IsConditional).ToList();
+        Assert.That(conditionalClauses, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(conditionalClauses[0].ConditionalBitIndex, Is.Not.Null);
+        Assert.That(conditionalClauses[0].BranchKind, Is.Not.Null);
+    }
+
+    #endregion
 }
