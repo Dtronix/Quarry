@@ -1145,4 +1145,172 @@ public class Service
     }
 
     #endregion
+
+    #region QRY035 PreparedQuery Escapes Scope (Unit Tests)
+
+    private static Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax FindPrepareInvocation(string source)
+    {
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var root = tree.GetRoot();
+        return root.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>()
+            .First(inv =>
+            {
+                var name = inv.Expression switch
+                {
+                    Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
+                    _ => null
+                };
+                return name == "Prepare";
+            });
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_ReturnedFromMethod_ReturnsReason()
+    {
+        var source = @"
+class Service
+{
+    object GetPrepared()
+    {
+        var prepared = builder.Prepare();
+        return prepared;
+    }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.EqualTo("returned from method"));
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_PassedAsArgument_ReturnsReason()
+    {
+        var source = @"
+class Service
+{
+    void Test()
+    {
+        var prepared = builder.Prepare();
+        SomeMethod(prepared);
+    }
+    void SomeMethod(object o) { }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.EqualTo("passed as argument"));
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_CapturedInLambda_ReturnsReason()
+    {
+        var source = @"
+using System;
+class Service
+{
+    void Test()
+    {
+        var prepared = builder.Prepare();
+        Action a = () => { var x = prepared; };
+    }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.EqualTo("captured in lambda"));
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_AssignedToField_ReturnsReason()
+    {
+        var source = @"
+class Service
+{
+    object _field;
+    void Test()
+    {
+        var prepared = builder.Prepare();
+        _field = prepared;
+    }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.EqualTo("assigned to field or property"));
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_NotEscaped_ReturnsNull()
+    {
+        var source = @"
+class Service
+{
+    void Test()
+    {
+        var prepared = builder.Prepare();
+        var diag = prepared.ToDiagnostics();
+    }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.Null);
+    }
+
+    [Test]
+    public void DetectPreparedQueryEscape_FluentChain_ReturnsNull()
+    {
+        var source = @"
+class Service
+{
+    void Test()
+    {
+        builder.Prepare().ToDiagnostics();
+    }
+}";
+        var invocation = FindPrepareInvocation(source);
+        var reason = Generators.Parsing.UsageSiteDiscovery.DetectPreparedQueryEscape(invocation);
+        Assert.That(reason, Is.Null, "Fluent chain without variable assignment should not trigger escape detection");
+    }
+
+    #endregion
+
+    #region QRY036 PreparedQuery No Terminals (Negative Test)
+
+    [Test]
+    public void Generator_PreparedQuery_WithTerminal_NoQRY036()
+    {
+        var source = @"
+using Quarry;
+using Quarry.Query;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        var prepared = db.Users.Select(u => (u.UserId, u.UserName)).Prepare();
+        var diag = prepared.ToDiagnostics();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry036 = diagnostics.Where(d => d.Id == "QRY036").ToList();
+        Assert.That(qry036.Count, Is.EqualTo(0), "Should not report QRY036 when PreparedQuery has a terminal");
+    }
+
+    #endregion
 }

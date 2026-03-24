@@ -655,6 +655,13 @@ internal static class UsageSiteDiscovery
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
 
+        // ── Step 15b: PreparedQuery escape detection ────────────────────────
+        string? preparedQueryEscapeReason = null;
+        if (kind == InterceptorKind.Prepare)
+        {
+            preparedQueryEscapeReason = DetectPreparedQueryEscape(invocation);
+        }
+
         // ── Step 16: Build RawCallSite directly ────────────────────────────
         return new RawCallSite(
             methodName: methodName,
@@ -693,7 +700,8 @@ internal static class UsageSiteDiscovery
             setActionParameters: setActionParameters,
             lambdaParameterNames: lambdaParamNames,
             batchInsertColumnNames: batchInsertColumnNames,
-            isPreparedTerminal: isPreparedTerminal);
+            isPreparedTerminal: isPreparedTerminal,
+            preparedQueryEscapeReason: preparedQueryEscapeReason);
     }
 
     /// <summary>
@@ -1240,8 +1248,102 @@ internal static class UsageSiteDiscovery
             or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
-            or "ToAsyncEnumerable" or "ToDiagnostics"
+            or "ToAsyncEnumerable" or "ToDiagnostics" or "ToSql" or "Prepare"
             or "Users" or "Orders" or "Accounts" or "Products" or "Projects";
+    }
+
+    /// <summary>
+    /// Detects if the result variable of a .Prepare() call escapes the declaring method scope.
+    /// Returns a reason string if escaped, null if contained.
+    /// Checks: returned from method, passed as argument, captured in lambda, assigned to field/property.
+    /// </summary>
+    internal static string? DetectPreparedQueryEscape(InvocationExpressionSyntax prepareInvocation)
+    {
+        // Find the variable the .Prepare() result is assigned to
+        string? varName = null;
+
+        // Case 1: var q = ...Prepare();
+        if (prepareInvocation.Parent is EqualsValueClauseSyntax evc
+            && evc.Parent is VariableDeclaratorSyntax vds)
+        {
+            varName = vds.Identifier.Text;
+        }
+        // Case 2: q = ...Prepare(); (reassignment)
+        else if (prepareInvocation.Parent is AssignmentExpressionSyntax asgn
+            && asgn.Left is IdentifierNameSyntax assignId)
+        {
+            varName = assignId.Identifier.Text;
+        }
+
+        if (varName == null)
+        {
+            // .Prepare() result not assigned — either chained directly (which is fine) or discarded
+            return null;
+        }
+
+        // Find the enclosing method body
+        SyntaxNode? methodBody = null;
+        foreach (var ancestor in prepareInvocation.Ancestors())
+        {
+            if (ancestor is MethodDeclarationSyntax method)
+            {
+                methodBody = method.Body ?? (SyntaxNode?)method.ExpressionBody;
+                break;
+            }
+            if (ancestor is LocalFunctionStatementSyntax localFunc)
+            {
+                methodBody = localFunc.Body ?? (SyntaxNode?)localFunc.ExpressionBody;
+                break;
+            }
+        }
+        if (methodBody == null)
+            return null;
+
+        foreach (var id in methodBody.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            if (id.Identifier.Text != varName) continue;
+
+            // Returned from method
+            if (id.Parent is ReturnStatementSyntax)
+                return "returned from method";
+
+            // Assigned to field, property, or other non-local target
+            if (id.Parent is AssignmentExpressionSyntax asgn && asgn.Right == id)
+            {
+                return "assigned to field or property";
+            }
+
+            // Passed as argument to non-PreparedQuery terminal method
+            if (id.Parent is ArgumentSyntax
+                && id.Parent.Parent is ArgumentListSyntax al
+                && al.Parent is InvocationExpressionSyntax ce)
+            {
+                var mn = ce.Expression switch
+                {
+                    MemberAccessExpressionSyntax m => m.Name.Identifier.Text,
+                    IdentifierNameSyntax i => i.Identifier.Text,
+                    _ => null
+                };
+                if (mn != null && !IsPreparedQueryTerminal(mn))
+                    return "passed as argument";
+            }
+
+            // Captured in lambda or local function
+            var cl = id.Ancestors().FirstOrDefault(a =>
+                a is LambdaExpressionSyntax or AnonymousMethodExpressionSyntax or LocalFunctionStatementSyntax);
+            if (cl != null && cl.Ancestors().Any(a => a == methodBody))
+                return "captured in lambda";
+        }
+
+        return null;
+    }
+
+    private static bool IsPreparedQueryTerminal(string name)
+    {
+        return name is "ToDiagnostics" or "ToSql"
+            or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
+            or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
+            or "ToAsyncEnumerable";
     }
 
     /// <summary>

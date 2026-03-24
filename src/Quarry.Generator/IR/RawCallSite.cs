@@ -51,7 +51,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
         ImmutableArray<string>? lambdaParameterNames = null,
         ImmutableArray<string>? batchInsertColumnNames = null,
-        bool isPreparedTerminal = false)
+        bool isPreparedTerminal = false,
+        string? preparedQueryEscapeReason = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -92,6 +93,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         LambdaParameterNames = lambdaParameterNames;
         BatchInsertColumnNames = batchInsertColumnNames;
         IsPreparedTerminal = isPreparedTerminal;
+        PreparedQueryEscapeReason = preparedQueryEscapeReason;
     }
 
     // Identity and location
@@ -163,6 +165,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // True when this terminal is called on a PreparedQuery variable rather than directly on a builder
     public bool IsPreparedTerminal { get; }
 
+    // Non-null when a .Prepare() result variable escapes scope (returned, field-assigned, passed as arg, captured in lambda)
+    public string? PreparedQueryEscapeReason { get; }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;
@@ -204,7 +209,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters)
             && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
             && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames)
-            && IsPreparedTerminal == other.IsPreparedTerminal;
+            && IsPreparedTerminal == other.IsPreparedTerminal
+            && PreparedQueryEscapeReason == other.PreparedQueryEscapeReason;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

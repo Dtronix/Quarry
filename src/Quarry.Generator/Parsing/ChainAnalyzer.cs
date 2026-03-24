@@ -46,7 +46,8 @@ internal static class ChainAnalyzer
     public static IReadOnlyList<AnalyzedChain> Analyze(
         ImmutableArray<TranslatedCallSite> sites,
         EntityRegistry registry,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<DiagnosticInfo>? diagnostics = null)
     {
         // Group sites by ChainId
         var chains = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
@@ -80,7 +81,7 @@ internal static class ChainAnalyzer
 
             try
             {
-                var analyzed = AnalyzeChainGroup(chainSites, registry, ct);
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics);
                 if (analyzed != null)
                     results.Add(analyzed);
             }
@@ -100,7 +101,8 @@ internal static class ChainAnalyzer
     private static AnalyzedChain? AnalyzeChainGroup(
         List<TranslatedCallSite> chainSites,
         EntityRegistry registry,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<DiagnosticInfo>? diagnostics = null)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -140,10 +142,34 @@ internal static class ChainAnalyzer
         // Handle .Prepare() chains
         if (prepareSite != null)
         {
+            // QRY035: PreparedQuery escapes scope
+            var escapeReason = prepareSite.Bound.Raw.PreparedQueryEscapeReason;
+            if (escapeReason != null)
+            {
+                // Extract variable name from ChainId (format: "filepath:offset:varName")
+                var prepChainId = prepareSite.Bound.Raw.ChainId;
+                string varName = "prepared";
+                if (prepChainId != null)
+                {
+                    var lastColon = prepChainId.LastIndexOf(':');
+                    if (lastColon >= 0)
+                        varName = prepChainId.Substring(lastColon + 1);
+                }
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.PreparedQueryEscapesScope.Id,
+                    prepareSite.Bound.Raw.Location,
+                    varName, escapeReason));
+                return null;
+            }
+
             if (preparedTerminals.Count == 0)
             {
                 // QRY036: no terminals on PreparedQuery — dead code
-                // Still return null so the chain doesn't get an interceptor
+                var loc = prepareSite.Bound.Raw.Location;
+                diagnostics?.Add(new DiagnosticInfo(
+                    Quarry.Generators.DiagnosticDescriptors.PreparedQueryNoTerminals.Id,
+                    loc,
+                    $"{loc.FilePath}({loc.Line},{loc.Column})"));
                 return null;
             }
 
