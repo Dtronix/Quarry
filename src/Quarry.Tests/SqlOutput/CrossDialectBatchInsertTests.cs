@@ -172,14 +172,5 @@ internal class CrossDialectBatchInsertTests : CrossDialectTestBase
 
     #region Batch Insert Runtime Fallback
 
-    [Test]
-    public void InsertBatch_WithoutGenerator_ThrowsInvalidOperationException()
-    {
-        // EntityAccessor.InsertBatch throws because batch insert requires source generation
-        var accessor = new Quarry.EntityAccessor<User>(SqlDialect.SQLite, "users", null, null!);
-
-        Assert.Throws<InvalidOperationException>(() => accessor.InsertBatch(u => u.UserName));
-    }
-
     #endregion
 }

@@ -119,16 +119,8 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// Gets an entity accessor for the {entity.TableName} table.");
         sb.AppendLine($"    /// </summary>");
 
-        if (!string.IsNullOrEmpty(schemaName))
-        {
-            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
-        }
-        else
-        {
-            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
-        }
+        sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
+        sb.AppendLine($"        => throw new NotSupportedException(\"Entity accessor methods must be intercepted by the Quarry source generator.\");");
 
         sb.AppendLine();
     }
