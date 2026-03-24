@@ -24,10 +24,11 @@ internal static class AnalyzabilityChecker
     /// </summary>
     public static (bool IsAnalyzable, string? Reason) CheckAnalyzability(
         InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct = default)
     {
         // Check if the receiver is a variable (cross-method or stored query)
-        var receiverCheck = CheckReceiverAnalyzability(invocation, semanticModel);
+        var receiverCheck = CheckReceiverAnalyzability(invocation, semanticModel, ct);
         if (!receiverCheck.IsAnalyzable)
         {
             return receiverCheck;
@@ -52,7 +53,8 @@ internal static class AnalyzabilityChecker
     /// </summary>
     public static bool IsClauseAnalyzable(
         InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct = default)
     {
         // Dynamic lambda arguments prevent clause analysis
         if (HasDynamicLambdaArgument(invocation, semanticModel))
@@ -68,7 +70,8 @@ internal static class AnalyzabilityChecker
     /// </summary>
     private static (bool IsAnalyzable, string? Reason) CheckReceiverAnalyzability(
         InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct)
     {
         if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
         {
@@ -83,13 +86,13 @@ internal static class AnalyzabilityChecker
         {
             // This is a fluent chain like: query.Select(...).Where(...)
             // Continue checking up the chain
-            return CheckReceiverAnalyzability(receiverInvocation, semanticModel);
+            return CheckReceiverAnalyzability(receiverInvocation, semanticModel, ct);
         }
 
         // If receiver is an identifier, check if it's a context property or a variable
         if (receiver is IdentifierNameSyntax identifier)
         {
-            var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
+            var symbol = semanticModel.GetSymbolInfo(identifier, ct).Symbol;
 
             switch (symbol)
             {
@@ -98,7 +101,7 @@ internal static class AnalyzabilityChecker
                     if (IsQuarryContextType(local.Type))
                         return (true, null);
                     // Check if the local has a single, simple initializer we can trace
-                    if (HasAnalyzableInitializer(local, identifier, semanticModel))
+                    if (HasAnalyzableInitializer(local, identifier, semanticModel, ct))
                     {
                         return (true, null);
                     }
@@ -129,7 +132,7 @@ internal static class AnalyzabilityChecker
         // If receiver is a member access (like db.Users), check recursively
         if (receiver is MemberAccessExpressionSyntax nestedMemberAccess)
         {
-            var symbol = semanticModel.GetSymbolInfo(nestedMemberAccess).Symbol;
+            var symbol = semanticModel.GetSymbolInfo(nestedMemberAccess, ct).Symbol;
 
             if (symbol is IPropertySymbol propertySymbol && IsQueryBuilderProperty(propertySymbol))
             {
@@ -140,7 +143,7 @@ internal static class AnalyzabilityChecker
         // If receiver is an invocation (like db.Users()), check the method return type
         if (receiver is InvocationExpressionSyntax nestedInvocation)
         {
-            var invokedSymbol = semanticModel.GetSymbolInfo(nestedInvocation).Symbol;
+            var invokedSymbol = semanticModel.GetSymbolInfo(nestedInvocation, ct).Symbol;
             if (invokedSymbol is IMethodSymbol invokedMethod)
             {
                 if (invokedMethod.ContainingType != null && IsQuarryContextType(invokedMethod.ContainingType))
@@ -163,9 +166,10 @@ internal static class AnalyzabilityChecker
     private static bool HasAnalyzableInitializer(
         ILocalSymbol local,
         IdentifierNameSyntax usage,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct)
     {
-        var declarator = VariableTracer.TryResolveDeclarator(usage, semanticModel, CancellationToken.None);
+        var declarator = VariableTracer.TryResolveDeclarator(usage, semanticModel, ct);
         if (declarator == null)
             return false;
 
@@ -173,25 +177,25 @@ internal static class AnalyzabilityChecker
         if (initializer == null)
             return false;
 
-        if (CheckInitializerAnalyzability(initializer, semanticModel))
+        if (CheckInitializerAnalyzability(initializer, semanticModel, ct))
             return true;
 
         // If the initializer's chain root is a builder variable, trace through it
         var root = VariableTracer.WalkFluentChainRoot(initializer);
         if (root is IdentifierNameSyntax rootIdent)
         {
-            var traceResult = VariableTracer.TraceToChainRoot(rootIdent, semanticModel, CancellationToken.None, maxHops: 2);
+            var traceResult = VariableTracer.TraceToChainRoot(rootIdent, semanticModel, ct, maxHops: 2);
             if (traceResult.Traced)
             {
                 // Re-check analyzability from the traced origin's initializer
                 var tracedDeclarator = traceResult.Root is IdentifierNameSyntax tracedIdent
-                    ? VariableTracer.TryResolveDeclarator(tracedIdent, semanticModel, CancellationToken.None)
+                    ? VariableTracer.TryResolveDeclarator(tracedIdent, semanticModel, ct)
                     : null;
                 if (tracedDeclarator != null)
                 {
                     var tracedInit = VariableTracer.GetInitializerExpression(tracedDeclarator);
                     if (tracedInit != null)
-                        return CheckInitializerAnalyzability(tracedInit, semanticModel);
+                        return CheckInitializerAnalyzability(tracedInit, semanticModel, ct);
                 }
                 // Traced root is not a variable (e.g., context access) — analyzable
                 if (traceResult.Root is not IdentifierNameSyntax)
@@ -207,19 +211,20 @@ internal static class AnalyzabilityChecker
     /// </summary>
     private static bool CheckInitializerAnalyzability(
         ExpressionSyntax initializer,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct)
     {
         // Property access: db.Users
         if (initializer is MemberAccessExpressionSyntax memberAccess)
         {
-            var symbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
+            var symbol = semanticModel.GetSymbolInfo(memberAccess, ct).Symbol;
             if (symbol is IPropertySymbol prop && IsQueryBuilderProperty(prop))
                 return true;
         }
 
         // Fluent chain from a known source: db.Users.Where(...)
         if (initializer is InvocationExpressionSyntax initInvocation)
-            return CheckReceiverAnalyzability(initInvocation, semanticModel).IsAnalyzable;
+            return CheckReceiverAnalyzability(initInvocation, semanticModel, ct).IsAnalyzable;
 
         return false;
     }
@@ -305,7 +310,8 @@ internal static class AnalyzabilityChecker
     /// </summary>
     public static (bool IsAnalyzable, string? Reason) CheckFullChainAnalyzability(
         InvocationExpressionSyntax executionMethod,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        CancellationToken ct = default)
     {
         // Start from the execution method and walk back through the chain
         var current = executionMethod;
@@ -320,7 +326,7 @@ internal static class AnalyzabilityChecker
             }
 
             // Check this invocation
-            var (isAnalyzable, reason) = CheckAnalyzability(current, semanticModel);
+            var (isAnalyzable, reason) = CheckAnalyzability(current, semanticModel, ct);
             if (!isAnalyzable)
             {
                 return (false, reason);

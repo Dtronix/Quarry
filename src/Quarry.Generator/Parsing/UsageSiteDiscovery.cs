@@ -471,7 +471,7 @@ internal static class UsageSiteDiscovery
             return null;
 
         // ── Step 9: Analyzability check ────────────────────────────────────
-        var (isAnalyzable, reason) = AnalyzabilityChecker.CheckAnalyzability(invocation, semanticModel);
+        var (isAnalyzable, reason) = AnalyzabilityChecker.CheckAnalyzability(invocation, semanticModel, cancellationToken);
 
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
@@ -1314,7 +1314,7 @@ internal static class UsageSiteDiscovery
             var symbol = semanticModel.GetSymbolInfo(rootIdent, ct).Symbol;
             if (symbol is ILocalSymbol localSymbol)
             {
-                if (VariableTracer.IsBuilderType(localSymbol.Type.ToDisplayString()))
+                if (VariableTracer.IsBuilderType(localSymbol.Type))
                     rootIsBuilderLocal = true;
             }
         }
