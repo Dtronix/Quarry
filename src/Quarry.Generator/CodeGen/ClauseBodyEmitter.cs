@@ -250,15 +250,27 @@ internal static class ClauseBodyEmitter
 
         sb.AppendLine($"    {{");
 
-        // Carrier-optimized path (only with concrete key type)
-        if (carrier != null && prebuiltChain != null && keyType != null)
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
         {
-            var concreteBuilder = $"QueryBuilder<{entityType}>";
-            var retInterface = site.ResultTypeName != null
-                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
-                : $"IQueryBuilder<{entityType}>";
-            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+            if (keyType != null)
+            {
+                var concreteBuilder = $"QueryBuilder<{entityType}>";
+                var retInterface = site.ResultTypeName != null
+                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                    : $"IQueryBuilder<{entityType}>";
+                CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                    concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+            }
+            else
+            {
+                // Generic key type — emit passthrough with clause mask bit set
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                if (clauseBit.HasValue)
+                    sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
+                var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
+                sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+            }
             sb.AppendLine($"    }}");
             return;
         }
@@ -527,15 +539,27 @@ internal static class ClauseBodyEmitter
             return;
         }
 
-        // Carrier-optimized path (only with concrete key type)
-        if (carrier != null && prebuiltChain != null && keyType != null)
+        // Carrier-optimized path
+        if (carrier != null && prebuiltChain != null)
         {
-            var concreteBuilder = $"QueryBuilder<{entityType}>";
-            var retInterface = site.ResultTypeName != null
-                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
-                : $"IQueryBuilder<{entityType}>";
-            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+            if (keyType != null)
+            {
+                var concreteBuilder = $"QueryBuilder<{entityType}>";
+                var retInterface = site.ResultTypeName != null
+                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                    : $"IQueryBuilder<{entityType}>";
+                CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                    concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+            }
+            else
+            {
+                // Generic key type — emit passthrough with clause mask bit set
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                if (clauseBit.HasValue)
+                    sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
+                var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
+                sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+            }
             sb.AppendLine($"    }}");
             return;
         }

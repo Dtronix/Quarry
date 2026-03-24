@@ -570,7 +570,18 @@ internal static class JoinBodyEmitter
         sb.AppendLine($"    {{");
 
         // Carrier-optimized path: bypass concrete type cast entirely
-        // Only when concrete key type is available (open-generic fallback can't use carrier types)
+        if (carrier != null && prebuiltChain != null && keyType == null)
+        {
+            // Generic key type — emit passthrough with clause mask bit set
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
+            var allTypeP = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
+            var castTarget = site.ResultTypeName != null ? $"{builderName}<{allTypeP}, TResult>" : $"{builderName}<{allTypeP}>";
+            sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+            sb.AppendLine($"    }}");
+            return;
+        }
         if (carrier != null && prebuiltChain != null && keyType != null)
         {
             // Compute carrier site params

@@ -216,59 +216,6 @@ internal class TypeMappingIntegrationTests
 
     #endregion
 
-    #region Runtime Fallback Parameter Tests
-
-    [Test, Ignore("Runtime fallback path: no reader delegate without generator interception. Requires runtime Select to build reader from expression.")]
-    public async Task FallbackPath_MoneyWhereParameter_IsConvertedByRegistry()
-    {
-        // Bypass the Where interceptor by calling AddWhereClause directly with a raw Money value.
-        // This simulates the runtime fallback path: the Money struct goes into QueryState.Parameters
-        // unconverted, and NormalizeParameterValue must convert it via TypeMappingRegistry.
-        var results = await ((QueryBuilder<Account, (int AccountId, string AccountName, Money Balance)>)
-            _db.Accounts().Select(a => (a.AccountId, a.AccountName, a.Balance)))
-            .AddWhereClause("\"Balance\" = @p0", new Money(1000.50m))
-            .ExecuteFetchAllAsync();
-
-        Assert.That(results, Has.Count.EqualTo(1));
-        Assert.That(results[0].AccountId, Is.EqualTo(1));
-        Assert.That(results[0].AccountName, Is.EqualTo("Savings"));
-        Assert.That(results[0].Balance, Is.EqualTo(new Money(1000.50m)));
-    }
-
-    [Test, Ignore("Runtime fallback path: no reader delegate without generator interception. Requires runtime Select to build reader from expression.")]
-    public async Task FallbackPath_MultipleMappedParameters_AreConvertedByRegistry()
-    {
-        // Two Money parameters in a single WHERE clause, both unconverted.
-        // Seed data: Savings(1000.50, 5000), Checking(250.75, 1000), Savings(500, 2000)
-        // Balance >= 1000 AND credit_limit >= 5000 → only account 1
-        var results = await ((QueryBuilder<Account, (int AccountId, Money Balance, Money CreditLimit)>)
-            _db.Accounts().Select(a => (a.AccountId, a.Balance, a.CreditLimit)))
-            .AddWhereClause("\"Balance\" >= @p0 AND \"credit_limit\" >= @p1",
-                new Money(1000m), new Money(5000m))
-            .ExecuteFetchAllAsync();
-
-        Assert.That(results, Has.Count.EqualTo(1));
-        Assert.That(results[0].AccountId, Is.EqualTo(1));
-        Assert.That(results[0].Balance, Is.EqualTo(new Money(1000.50m)));
-        Assert.That(results[0].CreditLimit, Is.EqualTo(new Money(5000.00m)));
-    }
-
-    [Test, Ignore("Runtime fallback path: no reader delegate without generator interception. Requires runtime Select to build reader from expression.")]
-    public async Task FallbackPath_MixedMappedAndPrimitiveParameters_WorkCorrectly()
-    {
-        // Mix of Money (mapped) and int (primitive) parameters
-        var results = await ((QueryBuilder<Account, (int AccountId, string AccountName, Money Balance)>)
-            _db.Accounts().Select(a => (a.AccountId, a.AccountName, a.Balance)))
-            .AddWhereClause("\"Balance\" > @p0 AND \"UserId\" = @p1",
-                new Money(100m), 1)
-            .ExecuteFetchAllAsync();
-
-        Assert.That(results, Has.Count.EqualTo(2));
-        Assert.That(results.All(r => r.Balance.Amount > 100m), Is.True);
-    }
-
-    #endregion
-
     #region Round-Trip Tests
 
     [Test]
