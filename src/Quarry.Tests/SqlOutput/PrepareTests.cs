@@ -159,6 +159,13 @@ internal class PrepareTests : CrossDialectTestBase
 
     #endregion
 
+    // NOTE: Join chain + .Prepare() tests are not included because the generator
+    // currently emits IJoinedQueryBuilder<T1, T2> receiver (without TResult type arg)
+    // for the .Prepare() interceptor on projected join chains. This causes CS0452
+    // because IJoinedQueryBuilder<T1, T2> has a class constraint that tuples violate.
+    // Fix requires handling JoinedQuery BuilderKind in EmitPrepareInterceptor to emit
+    // IJoinedQueryBuilder<T1, T2, TResult> when a projection is present.
+
     // NOTE: Insert/BatchInsert + .Prepare() tests are not included because the generator
     // currently produces wrong PreparedQuery<TResult> type for insert builders — it emits
     // PreparedQuery<User> instead of PreparedQuery<int>. The root cause is that
