@@ -1022,20 +1022,12 @@ internal static class UsageSiteDiscovery
         if (root is IdentifierNameSyntax)
         {
             var traceResult = VariableTracer.TraceToChainRoot(root, semanticModel, ct, maxHops: 2);
-            if (traceResult.Traced)
+            if (traceResult.Traced && traceResult.Initializers != null)
             {
-                // Find the declarator of the first variable to get its full initializer
-                // (not just the root — we need the whole chain including InsertBatch)
-                var currentRoot = root;
-                for (int i = 0; i < traceResult.Hops; i++)
+                // Iterate the initializers already collected by TraceToChainRoot
+                // instead of re-resolving declarators.
+                foreach (var initializer in traceResult.Initializers)
                 {
-                    if (currentRoot is not IdentifierNameSyntax ident)
-                        break;
-                    var declarator = VariableTracer.TryResolveDeclarator(ident, semanticModel, ct);
-                    var initializer = declarator != null ? VariableTracer.GetInitializerExpression(declarator) : null;
-                    if (initializer == null)
-                        break;
-
                     // Try walking this initializer's chain for InsertBatch
                     if (initializer is InvocationExpressionSyntax initInvoc)
                     {
@@ -1051,8 +1043,6 @@ internal static class UsageSiteDiscovery
                             return ExtractBatchInsertColumnNames(initInvoc);
                         }
                     }
-
-                    currentRoot = VariableTracer.WalkFluentChainRoot(initializer);
                 }
             }
         }
