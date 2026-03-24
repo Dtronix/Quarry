@@ -376,7 +376,7 @@ Key type: `RawSqlTypeInfo` (`Models/RawSqlTypeInfo.cs`) — `RawSqlTypeKind`, `R
 
 **Code generation:** `BatchInsertCarrierBase<T>` carrier class stores `BatchEntities` field. Terminal interceptors call `BatchInsertSqlBuilder.Build()` which expands the compile-time SQL prefix with runtime entity count and parameter placeholders. `MaxParameterCount` (2100) guard prevents oversized batches.
 
-**Interceptor kinds:** `BatchInsertColumnSelector`, `BatchInsertValues`, `BatchInsertExecuteNonQuery`, `BatchInsertExecuteScalar`, `BatchInsertToSql`, `BatchInsertToDiagnostics`.
+**Interceptor kinds:** `BatchInsertColumnSelector`, `BatchInsertValues`, `BatchInsertExecuteNonQuery`, `BatchInsertExecuteScalar`, `BatchInsertToDiagnostics`.
 
 ### Variable-Walking Chain Unification
 
