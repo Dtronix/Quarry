@@ -105,6 +105,41 @@ internal static class TerminalEmitHelpers
     }
 
     /// <summary>
+    /// Builds a mapping from global parameter index to conditional metadata (isConditional, bitIndex).
+    /// </summary>
+    private static Dictionary<int, (bool IsConditional, int? BitIndex)> BuildParamConditionalMap(AssembledPlan chain)
+    {
+        var map = new Dictionary<int, (bool, int?)>();
+        var globalOffset = 0;
+        foreach (var clause in chain.GetClauseEntries())
+        {
+            var paramCount = clause.Site.Clause?.Parameters.Count ?? 0;
+            for (int i = 0; i < paramCount; i++)
+                map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
+            globalOffset += paramCount;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Formats the expanded metadata arguments for a DiagnosticParameter constructor call.
+    /// </summary>
+    private static string FormatParamMetadata(QueryParameter p, bool isConditional, int? bitIndex)
+    {
+        var esc = InterceptorCodeGenerator.EscapeStringLiteral;
+        var sb = new StringBuilder();
+        sb.Append($", typeName: \"{esc(p.ClrType)}\"");
+        if (p.TypeMappingClass != null)
+            sb.Append($", typeMappingClass: \"{esc(p.TypeMappingClass)}\"");
+        if (p.IsSensitive) sb.Append(", isSensitive: true");
+        if (p.IsEnum) sb.Append(", isEnum: true");
+        if (p.IsCollection) sb.Append(", isCollection: true");
+        if (isConditional) sb.Append(", isConditional: true");
+        if (bitIndex.HasValue) sb.Append($", conditionalBitIndex: {bitIndex.Value}");
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Emits DiagnosticParameter[] from carrier fields with full metadata.
     /// Handles scalar, collection, enum, sensitive, and conditional parameters.
     /// </summary>
@@ -116,6 +151,7 @@ internal static class TerminalEmitHelpers
         var hasLimitField = CarrierEmitter.HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = CarrierEmitter.HasCarrierField(carrier, FieldRole.Offset);
         var paginationBaseIdx = chain.ChainParameters.Count;
+        var condMap = BuildParamConditionalMap(chain);
 
         if (!hasScalar && !hasCollection && !hasLimitField && !hasOffsetField)
         {
@@ -127,13 +163,17 @@ internal static class TerminalEmitHelpers
         {
             var entries = new List<string>();
             foreach (var p in chain.ChainParameters.Where(p => !p.IsCollection))
-                entries.Add($"new(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex})");
+            {
+                condMap.TryGetValue(p.GlobalIndex, out var ci);
+                var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
+                entries.Add($"new(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}{meta})");
+            }
             if (hasLimitField)
-                entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL)");
+                entries.Add($"new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\")");
             if (hasOffsetField)
             {
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-                entries.Add($"new(\"@p{offsetIdx}\", __pValO)");
+                entries.Add($"new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\")");
             }
             sb.Append("        var __params = new DiagnosticParameter[] { ");
             sb.Append(string.Join(", ", entries));
@@ -155,26 +195,45 @@ internal static class TerminalEmitHelpers
 
         foreach (var p in chain.ChainParameters.OrderBy(p => p.GlobalIndex))
         {
+            condMap.TryGetValue(p.GlobalIndex, out var ci);
             if (p.IsCollection)
             {
+                var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
                 sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.GlobalIndex}Len; __pi++)");
-                sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.GlobalIndex}Parts[__pi], __col{p.GlobalIndex}[__pi]));");
+                sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.GlobalIndex}Parts[__pi], __col{p.GlobalIndex}[__pi]{meta}));");
             }
             else
             {
-                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}));");
+                var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
+                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}{meta}));");
             }
         }
 
         if (hasLimitField)
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{paginationBaseIdx}\", __pValL));");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\"));");
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{offsetIdx}\", __pValO));");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\"));");
         }
 
         sb.AppendLine("        var __params = __paramList.ToArray();");
+    }
+
+    /// <summary>
+    /// Gets the expanded metadata args string for a DiagnosticParameter given its global index.
+    /// Returns empty string if the parameter cannot be found.
+    /// </summary>
+    private static string GetParamMetadataByGlobalIndex(
+        AssembledPlan chain, int globalIdx, Dictionary<int, (bool IsConditional, int? BitIndex)> condMap)
+    {
+        if (globalIdx < chain.ChainParameters.Count)
+        {
+            var qp = chain.ChainParameters[globalIdx];
+            condMap.TryGetValue(globalIdx, out var ci);
+            return FormatParamMetadata(qp, ci.IsConditional, ci.BitIndex);
+        }
+        return "";
     }
 
     /// <summary>
@@ -186,6 +245,7 @@ internal static class TerminalEmitHelpers
         var diagnosticClauses = chain.GetClauseEntries()
             .Where(c => InterceptorCodeGenerator.IsDiagnosticClauseRole(c.Role))
             .ToList();
+        var condMap = BuildParamConditionalMap(chain);
 
         if (diagnosticClauses.Count == 0)
         {
@@ -272,9 +332,10 @@ internal static class TerminalEmitHelpers
             {
                 var collectionParam = clauseParams.First(p => p.IsCollection);
                 var globalIdx = offset + collectionParam.Index;
+                var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
                 sb.AppendLine($"        var __clauseParams{clauseIdx} = new DiagnosticParameter[__col{globalIdx}Len];");
                 sb.AppendLine($"        for (int __ci = 0; __ci < __col{globalIdx}Len; __ci++)");
-                sb.AppendLine($"            __clauseParams{clauseIdx}[__ci] = new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]);");
+                sb.AppendLine($"            __clauseParams{clauseIdx}[__ci] = new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]{meta});");
             }
             else
             {
@@ -288,14 +349,15 @@ internal static class TerminalEmitHelpers
                 foreach (var p in clauseParams.OrderBy(p => p.Index))
                 {
                     var globalIdx = offset + p.Index;
+                    var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
                     if (p.IsCollection)
                     {
                         sb.AppendLine($"        for (int __ci = 0; __ci < __col{globalIdx}Len; __ci++)");
-                        sb.AppendLine($"            __cpList{clauseIdx}.Add(new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]));");
+                        sb.AppendLine($"            __cpList{clauseIdx}.Add(new DiagnosticParameter(__col{globalIdx}Parts[__ci], __col{globalIdx}[__ci]{meta}));");
                     }
                     else
                     {
-                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter(\"@p{globalIdx}\", __pVal{globalIdx}));");
+                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter(\"@p{globalIdx}\", __pVal{globalIdx}{meta}));");
                     }
                 }
                 sb.AppendLine($"        var __clauseParams{clauseIdx} = __cpList{clauseIdx}.ToArray();");
@@ -336,12 +398,12 @@ internal static class TerminalEmitHelpers
             }
             else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL) }}";
+                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clause.Role == ClauseRole.Offset && hasOffsetField)
             {
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO) }}";
+                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clauseParamCount > 0)
             {
@@ -349,7 +411,9 @@ internal static class TerminalEmitHelpers
                 var paramEntries = new List<string>();
                 for (int i = 0; i < clauseParamCount; i++)
                 {
-                    paramEntries.Add($"new(\"@p{offset + i}\", __pVal{offset + i})");
+                    var globalIdx = offset + i;
+                    var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
+                    paramEntries.Add($"new(\"@p{globalIdx}\", __pVal{globalIdx}{meta})");
                 }
                 paramsArg = $", parameters: new DiagnosticParameter[] {{ {string.Join(", ", paramEntries)} }}";
             }
