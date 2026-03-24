@@ -221,4 +221,251 @@ internal class CrossDialectDiagnosticsTests
     }
 
     #endregion
+
+    #region Expanded Diagnostic Properties
+
+    [Test]
+    public void ToDiagnostics_PrebuiltChain_HasTierReason()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.TierReason, Is.Not.Null.And.Not.Empty);
+        Assert.That(diag.TierReason, Does.Contain("unconditional"));
+    }
+
+    [Test]
+    public void ToDiagnostics_PrebuiltChain_DisqualifyReasonIsNull()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.DisqualifyReason, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_PrebuiltChain_HasSqlVariants()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.SqlVariants, Is.Not.Null);
+        Assert.That(diag.SqlVariants!.Count, Is.GreaterThanOrEqualTo(1));
+        Assert.That(diag.SqlVariants.Values.First().Sql, Does.Contain("SELECT"));
+        Assert.That(diag.SqlVariants.Values.First().ParameterCount, Is.GreaterThanOrEqualTo(0));
+    }
+
+    [Test]
+    public void ToDiagnostics_ConditionalChain_HasMultipleSqlVariants()
+    {
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
+        if (true)
+        {
+            query = query.Where(u => u.IsActive);
+        }
+        var diag = query.ToDiagnostics();
+
+        Assert.That(diag.SqlVariants, Is.Not.Null);
+        Assert.That(diag.SqlVariants!.Count, Is.GreaterThanOrEqualTo(2));
+        Assert.That(diag.ConditionalBitCount, Is.GreaterThanOrEqualTo(1));
+        Assert.That(diag.TierReason, Does.Contain("conditional"));
+    }
+
+    [Test]
+    public void ToDiagnostics_PrebuiltChain_HasCarrierClassName()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.CarrierClassName, Is.Not.Null.And.Not.Empty);
+        Assert.That(diag.IsCarrierOptimized, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_UnconditionalChain_ActiveMaskIsZero()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.ActiveMask, Is.EqualTo(0UL));
+        Assert.That(diag.ConditionalBitCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void ToDiagnostics_BasicSelect_IsDistinctIsFalse()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.IsDistinct, Is.False);
+    }
+
+    [Test]
+    public void ToDiagnostics_WithDistinct_IsDistinctIsTrue()
+    {
+        var diag = _db.Users().Distinct().ToDiagnostics();
+
+        Assert.That(diag.IsDistinct, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_WithLimit_HasLimitValue()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).Limit(10).ToDiagnostics();
+
+        Assert.That(diag.Limit, Is.EqualTo(10));
+    }
+
+    [Test]
+    public void ToDiagnostics_WithOffset_HasOffsetValue()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).Offset(5).ToDiagnostics();
+
+        Assert.That(diag.Offset, Is.EqualTo(5));
+    }
+
+    [Test]
+    public void ToDiagnostics_NoLimitOrOffset_LimitAndOffsetAreNull()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        Assert.That(diag.Limit, Is.Null);
+        Assert.That(diag.Offset, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_BareToDiagnostics_HasBasicMetadata()
+    {
+        var diag = _db.Users().ToDiagnostics();
+
+        Assert.That(diag.Sql, Does.Contain("SELECT"));
+        Assert.That(diag.TableName, Is.EqualTo("users"));
+        Assert.That(diag.Kind, Is.EqualTo(DiagnosticQueryKind.Select));
+        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
+        Assert.That(diag.IsCarrierOptimized, Is.True);
+        Assert.That(diag.TierReason, Is.Not.Null);
+        Assert.That(diag.CarrierClassName, Is.Not.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_AllParametersContainsFullMetadata()
+    {
+        var name = "john";
+        var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
+
+        Assert.That(diag.AllParameters, Is.Not.Empty);
+        Assert.That(diag.AllParameters.Count, Is.GreaterThanOrEqualTo(1));
+    }
+
+    #endregion
+
+    #region Expanded DiagnosticParameter Metadata
+
+    [Test]
+    public void ToDiagnostics_ParameterHasTypeName()
+    {
+        var name = "john";
+        var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.TypeName, Is.Not.Null.And.Not.Empty);
+        Assert.That(param.TypeName, Does.Contain("string").IgnoreCase);
+    }
+
+    [Test]
+    public void ToDiagnostics_EnumParameter_HasIsEnumTrue()
+    {
+        var priority = OrderPriority.High;
+        var diag = _db.Orders().Where(o => o.Priority == priority).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsEnum, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_SensitiveParameter_HasIsSensitiveTrue()
+    {
+        var secret = "classified";
+        var diag = _db.Widgets().Where(w => w.Secret == secret).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsSensitive, Is.True);
+    }
+
+    [Test]
+    public void ToDiagnostics_NonConditionalParameter_IsConditionalFalse()
+    {
+        var name = "john";
+        var diag = _db.Users().Where(u => u.UserName == name).ToDiagnostics();
+
+        var param = diag.AllParameters.First();
+        Assert.That(param.IsConditional, Is.False);
+        Assert.That(param.ConditionalBitIndex, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_ConditionalParameter_IsConditionalTrueWithBitIndex()
+    {
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
+        var name = "john";
+        if (true)
+        {
+            query = query.Where(u => u.UserName == name);
+        }
+        var diag = query.ToDiagnostics();
+
+        var conditionalParams = diag.AllParameters.Where(p => p.IsConditional).ToList();
+        Assert.That(conditionalParams, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(conditionalParams[0].ConditionalBitIndex, Is.Not.Null);
+    }
+
+    #endregion
+
+    #region Expanded ClauseDiagnostic Metadata
+
+    [Test]
+    public void ToDiagnostics_ClauseHasSourceLocation()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.SourceLocation, Is.Not.Null);
+        Assert.That(whereClause.SourceLocation!.FilePath, Is.Not.Null.And.Not.Empty);
+        Assert.That(whereClause.SourceLocation.Line, Is.GreaterThan(0));
+        Assert.That(whereClause.SourceLocation.Column, Is.GreaterThan(0));
+    }
+
+    [Test]
+    public void ToDiagnostics_ClauseSourceLocation_DoesNotContainAbsolutePath()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.SourceLocation, Is.Not.Null);
+        // Should be project-relative, not absolute — no drive letter or root slash
+        Assert.That(whereClause.SourceLocation!.FilePath, Does.Not.Match(@"^[A-Z]:\\"));
+        Assert.That(whereClause.SourceLocation.FilePath, Does.Not.StartWith("/"));
+    }
+
+    [Test]
+    public void ToDiagnostics_NonConditionalClause_BitIndexIsNull()
+    {
+        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
+
+        var whereClause = diag.Clauses.First(c => c.ClauseType == "Where");
+        Assert.That(whereClause.ConditionalBitIndex, Is.Null);
+        Assert.That(whereClause.BranchKind, Is.Null);
+    }
+
+    [Test]
+    public void ToDiagnostics_ConditionalClause_HasBitIndexAndBranchKind()
+    {
+        IQueryBuilder<User> query = _db.Users().Where(u => true);
+        if (true)
+        {
+            query = query.Where(u => u.IsActive);
+        }
+        var diag = query.ToDiagnostics();
+
+        var conditionalClauses = diag.Clauses.Where(c => c.IsConditional).ToList();
+        Assert.That(conditionalClauses, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(conditionalClauses[0].ConditionalBitIndex, Is.Not.Null);
+        Assert.That(conditionalClauses[0].BranchKind, Is.Not.Null);
+    }
+
+    #endregion
 }

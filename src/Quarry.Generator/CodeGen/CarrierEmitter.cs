@@ -178,7 +178,7 @@ internal static class CarrierEmitter
                 or InterceptorKind.InsertToDiagnostics
                 => CanEmitInsertTerminal(chain),
             InterceptorKind.BatchInsertExecuteNonQuery or InterceptorKind.BatchInsertExecuteScalar
-                or InterceptorKind.BatchInsertToDiagnostics or InterceptorKind.BatchInsertToSql
+                or InterceptorKind.BatchInsertToDiagnostics
                 => true, // Batch insert terminals are always emittable
             _ => true
         };
@@ -616,24 +616,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCarrierParameterLocals(
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
-    {
-        var paramCount = chain.ChainParameters.Count;
-        var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
-        var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
-
-        for (int i = 0; i < paramCount; i++)
-        {
-            var param = chain.ChainParameters[i];
-            // Collection parameters are handled by EmitCollectionExpansion via __col* locals
-            if (param.IsCollection) continue;
-            sb.AppendLine($"        var __pVal{i} = {GetParameterValueExpression(param, i)};");
-        }
-
-        if (hasLimitField)
-            sb.AppendLine("        var __pValL = (object)__c.Limit;");
-        if (hasOffsetField)
-            sb.AppendLine("        var __pValO = (object)__c.Offset;");
-    }
+        => TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
 
     /// <summary>
     /// Emits DbCommand creation and binds __pVal* locals to parameters.
@@ -784,32 +767,7 @@ internal static class CarrierEmitter
     /// Gets the inline value expression for a parameter based on its type classification.
     /// </summary>
     private static string GetParameterValueExpression(QueryParameter param, int index)
-    {
-        // Entity-sourced parameter (SetPoco): read from Entity field, not P{n}
-        if (param.EntityPropertyExpression != null)
-        {
-            if (param.TypeMappingClass != null)
-                return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
-            return $"(object?){param.EntityPropertyExpression} ?? DBNull.Value";
-        }
-
-        // Mapped type: use ToDb() conversion
-        if (param.TypeMappingClass != null)
-            return $"(object?){InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass)}.ToDb(__c.P{index}) ?? DBNull.Value";
-
-        // Enum with known underlying type: inline cast to underlying integral type
-        if (param.IsEnum && param.EnumUnderlyingType != null)
-        {
-            if (!param.ClrType.EndsWith("?"))
-                return $"(object)({param.EnumUnderlyingType})__c.P{index}";
-
-            // Nullable enum: HasValue check + underlying cast
-            return $"__c.P{index}.HasValue ? (object)({param.EnumUnderlyingType})__c.P{index}.Value : DBNull.Value";
-        }
-
-        // Default: null-safe boxing
-        return $"(object?)__c.P{index} ?? DBNull.Value";
-    }
+        => TerminalEmitHelpers.GetParameterValueExpression(param, index);
 
     /// <summary>
     /// Emits a carrier insert execution terminal with inline per-parameter DbCommand binding.
@@ -910,10 +868,10 @@ internal static class CarrierEmitter
         string diagnosticKind, string isCarrierOptimized)
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
-        EmitCarrierParameterLocals(sb, chain, carrier);
-        InterceptorCodeGenerator.EmitDiagnosticClauseArray(sb, chain, carrier);
-        InterceptorCodeGenerator.EmitDiagnosticParameterArray(sb, chain, carrier);
-        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
+        TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
+        TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
+        TerminalEmitHelpers.EmitDiagnosticParameterArray(sb, chain, carrier);
+        TerminalEmitHelpers.EmitDiagnosticsConstruction(sb, chain, carrier, diagnosticKind, isCarrierOptimized);
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -959,69 +917,7 @@ internal static class CarrierEmitter
     }
 
     private static void EmitCarrierSqlDispatch(StringBuilder sb, AssembledPlan chain)
-    {
-        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
-
-        if (chain.SqlVariants.Count == 1)
-        {
-            foreach (var kvp in chain.SqlVariants)
-            {
-                if (hasCollections)
-                    sb.AppendLine($"        var sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
-                else
-                    sb.AppendLine($"        const string sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
-            }
-        }
-        else
-        {
-            sb.AppendLine("        var sql = __c.Mask switch");
-            sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlVariants)
-            {
-                sb.AppendLine($"            {kvp.Key} => @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\",");
-            }
-            sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
-            sb.AppendLine("        };");
-        }
-
-        // Emit collection parameter expansion code
-        if (hasCollections)
-        {
-            EmitCollectionExpansion(sb, chain);
-        }
-    }
-
-    /// <summary>
-    /// Emits code to expand collection parameter tokens in the SQL template.
-    /// </summary>
-    private static void EmitCollectionExpansion(StringBuilder sb, AssembledPlan chain)
-    {
-        foreach (var param in chain.ChainParameters)
-        {
-            if (!param.IsCollection) continue;
-
-            sb.AppendLine($"        var __col{param.GlobalIndex} = __c.P{param.GlobalIndex};");
-            sb.AppendLine($"        var __col{param.GlobalIndex}Len = __col{param.GlobalIndex}.Count;");
-
-            var dialectPrefix = chain.Dialect switch
-            {
-                SqlDialect.PostgreSQL => "$",
-                _ => "@p"
-            };
-            var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
-
-            var isMySQL = chain.Dialect == SqlDialect.MySQL;
-            sb.AppendLine($"        var __col{param.GlobalIndex}Parts = new string[__col{param.GlobalIndex}Len];");
-            sb.AppendLine($"        for (int __i = 0; __i < __col{param.GlobalIndex}Len; __i++)");
-            if (isMySQL)
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"?\";");
-            else if (isPostgres)
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"$\" + (__i + 1);");
-            else
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"{dialectPrefix}\" + __i;");
-            sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.GlobalIndex}__}}\", string.Join(\", \", __col{param.GlobalIndex}Parts));");
-        }
-    }
+        => TerminalEmitHelpers.EmitSqlDispatch(sb, chain);
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
     {

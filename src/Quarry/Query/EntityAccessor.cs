@@ -56,9 +56,6 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
     public IQueryBuilder<T> WithTimeout(TimeSpan timeout)
         => CreateQueryBuilder().WithTimeout(timeout);
 
-    public string ToSql()
-        => CreateQueryBuilder().ToSql();
-
     public QueryDiagnostics ToDiagnostics()
         => CreateQueryBuilder().ToDiagnostics();
 
@@ -79,5 +76,5 @@ public readonly struct EntityAccessor<T> : IEntityAccessor<T> where T : class
             "Ensure the Quarry source generator is referenced in your project.");
 
     public QueryPlan ToQueryPlan()
-        => new QueryPlan(CreateQueryBuilder().ToSql(), QueryPlanTier.RuntimeBuild, _dialect);
+        => new QueryPlan(CreateQueryBuilder().ToDiagnostics().Sql, QueryPlanTier.RuntimeBuild, _dialect);
 }

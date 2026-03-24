@@ -349,11 +349,9 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
         var thisType = site.BuilderTypeName;
-        var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(thisType);
 
         // Determine the full this-parameter type based on query kind and builder shape
         string thisParamType;
-        string concreteParamType;
 
         if (chain.IsJoinChain)
         {
@@ -366,12 +364,10 @@ internal static class TerminalBodyEmitter
                     InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
                     ?? chain.ResultTypeName);
                 thisParamType = $"{thisType}<{joinTypeArgs}, {resultType}>";
-                concreteParamType = $"{concreteType}<{joinTypeArgs}, {resultType}>";
             }
             else
             {
                 thisParamType = $"{thisType}<{joinTypeArgs}>";
-                concreteParamType = $"{concreteType}<{joinTypeArgs}>";
             }
         }
         else if (chain.QueryKind == QueryKind.Select)
@@ -382,23 +378,19 @@ internal static class TerminalBodyEmitter
                     InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
                     ?? chain.ResultTypeName);
                 thisParamType = $"{thisType}<{entityType}, {resultType}>";
-                concreteParamType = $"{concreteType}<{entityType}, {resultType}>";
             }
             else
             {
                 thisParamType = $"{thisType}<{entityType}>";
-                concreteParamType = $"{concreteType}<{entityType}>";
             }
         }
         else if (chain.QueryKind == QueryKind.Delete)
         {
             thisParamType = $"IExecutableDeleteBuilder<{entityType}>";
-            concreteParamType = $"ExecutableDeleteBuilder<{entityType}>";
         }
         else if (chain.QueryKind == QueryKind.Update)
         {
             thisParamType = $"IExecutableUpdateBuilder<{entityType}>";
-            concreteParamType = $"ExecutableUpdateBuilder<{entityType}>";
         }
         else
         {
@@ -415,44 +407,19 @@ internal static class TerminalBodyEmitter
 
         var isCarrierOptimized = carrier != null ? "true" : "false";
 
+        // If carrier is null (e.g., chain was carrier-ineligible due to unmatched methods
+        // or empty SQL variants), fall back to the runtime diagnostics path.
+        if (carrier == null)
+        {
+            EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
+            return;
+        }
+
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
 
-        if (carrier != null)
-        {
-            CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
-            sb.AppendLine($"    }}");
-            return;
-        }
-
-        // Non-carrier path: parameters aren't available in a structured way on the concrete builder,
-        // so emit empty params. Clause diagnostics are available from compile-time metadata.
-        if (chain.SqlVariants.Count == 1)
-        {
-            foreach (var kvp in chain.SqlVariants)
-            {
-                var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
-                sb.AppendLine($"        const string sql = @\"{escapedSql}\";");
-            }
-        }
-        else
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteParamType}>(builder);");
-            sb.AppendLine($"        var sql = __b.ClauseMask switch");
-            sb.AppendLine($"        {{");
-            foreach (var kvp in chain.SqlVariants.OrderBy(k => k.Key))
-            {
-                var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
-                sb.AppendLine($"            {kvp.Key}UL => @\"{escapedSql}\",");
-            }
-            sb.AppendLine($"            _ => throw new InvalidOperationException(\"Unexpected ClauseMask\")");
-            sb.AppendLine($"        }};");
-        }
-
-        InterceptorCodeGenerator.EmitNonCarrierDiagnosticClauseArray(sb, chain, concreteParamType);
-        sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized}, __clauses);");
-
+        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
         sb.AppendLine($"    }}");
     }
 
@@ -648,14 +615,6 @@ internal static class TerminalBodyEmitter
         {
             CarrierEmitter.EmitCarrierInsertToDiagnosticsTerminal(sb, carrier, chain);
         }
-        else if (chain != null && chain.SqlVariants.Count > 0)
-        {
-            foreach (var kvp in chain.SqlVariants)
-            {
-                var escapedSql = InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql);
-                sb.AppendLine($"        return new QueryDiagnostics(@\"{escapedSql}\", Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, {isCarrierOptimized});");
-            }
-        }
         else
         {
             // No prebuilt chain — fallback to runtime
@@ -739,34 +698,6 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"    }}");
     }
 
-    /// <summary>
-    /// Emits a batch insert ToSql terminal.
-    /// </summary>
-    public static void EmitBatchInsertToSqlTerminal(StringBuilder sb, TranslatedCallSite site, string methodName,
-        AssembledPlan? chain = null, CarrierPlan? carrier = null)
-    {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-
-        sb.AppendLine($"    public static string {methodName}(");
-        sb.AppendLine($"        this IExecutableBatchInsert<{entityType}> builder)");
-        sb.AppendLine($"    {{");
-
-        if (carrier != null && chain != null && chain.SqlVariants.Count > 0)
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
-            var sqlPrefix = chain.SqlVariants.Values.First().Sql;
-            var escapedPrefix = InterceptorCodeGenerator.EscapeStringLiteral(sqlPrefix);
-            var returningSuffix = chain.BatchInsertReturningSuffix != null
-                ? $"@\"{InterceptorCodeGenerator.EscapeStringLiteral(chain.BatchInsertReturningSuffix)}\""
-                : "null";
-
-            sb.AppendLine($"        var __entities = __c.BatchEntities as System.Collections.ICollection ?? System.Linq.Enumerable.ToList(__c.BatchEntities!);");
-            sb.AppendLine($"        return Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", __entities.Count, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
-        }
-
-        sb.AppendLine($"    }}");
-    }
 
     /// <summary>
     /// Shared helper that emits the carrier execution terminal body for batch insert NonQuery/Scalar.

@@ -113,7 +113,7 @@ internal static class AnalyzabilityChecker
                     return (false, "Query builder is a method parameter");
 
                 case IFieldSymbol field:
-                    // Field of QuarryContext-derived type is analyzable (e.g. db.Insert(x).ToSql())
+                    // Field of QuarryContext-derived type is analyzable (e.g. db.Insert(x).ToDiagnostics())
                     if (IsQuarryContextType(field.Type))
                         return (true, null);
                     return (false, "Query builder is stored in a field");

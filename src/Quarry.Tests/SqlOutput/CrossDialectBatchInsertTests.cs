@@ -133,10 +133,10 @@ internal class CrossDialectBatchInsertTests : CrossDialectTestBase
     [Test]
     public void BatchInsert_ToSql_SingleEntity()
     {
-        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).ToSql();
-        var pgSql = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ToSql();
-        var mySql = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ToSql();
-        var ssSql = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ToSql();
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql;
+        var pgSql = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql;
+        var mySql = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql;
+        var ssSql = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql;
 
         AssertDialects(liteSql, pgSql, mySql, ssSql,
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
@@ -146,13 +146,14 @@ internal class CrossDialectBatchInsertTests : CrossDialectTestBase
     }
 
     [Test]
-    public void BatchInsert_ToSql_MultipleEntities()
+    public void BatchInsert_ToDiagnostics_MultipleEntities_ShowsSingleRowTemplate()
     {
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
-        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToSql();
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToDiagnostics().Sql;
 
+        // ToDiagnostics returns the single-row template SQL, not the expanded multi-row SQL
         Assert.That(liteSql, Is.EqualTo(
-            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1), (@p2, @p3) RETURNING \"UserId\""));
+            "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\""));
     }
 
     #endregion
@@ -160,11 +161,11 @@ internal class CrossDialectBatchInsertTests : CrossDialectTestBase
     #region Batch Insert Empty Collection
 
     [Test]
-    public void BatchInsert_EmptyCollection_ThrowsArgumentException()
+    public void BatchInsert_EmptyCollection_ThrowsOnExecution()
     {
         var builder = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(Array.Empty<User>());
 
-        Assert.Throws<ArgumentException>(() => builder.ToSql());
+        Assert.ThrowsAsync<ArgumentException>(() => builder.ExecuteNonQueryAsync());
     }
 
     #endregion

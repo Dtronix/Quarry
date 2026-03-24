@@ -49,7 +49,7 @@ internal static class SqlModificationBuilder
         }
         else if (rowCount > 0 && state.HasColumns)
         {
-            // Generate placeholder VALUES for ToSql preview
+            // Generate placeholder VALUES for ToDiagnostics preview
             sb.Append(" VALUES ");
             int paramIdx = 0;
             for (int rowIdx = 0; rowIdx < rowCount; rowIdx++)
