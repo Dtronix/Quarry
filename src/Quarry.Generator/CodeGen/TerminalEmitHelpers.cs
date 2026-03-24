@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
@@ -102,6 +103,42 @@ internal static class TerminalEmitHelpers
                 sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"{dialectPrefix}\" + __i;");
             sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.GlobalIndex}__}}\", string.Join(\", \", __col{param.GlobalIndex}Parts));");
         }
+    }
+
+    /// <summary>
+    /// Computes the longest common directory prefix from a list of file paths.
+    /// Used to make source locations project-relative.
+    /// </summary>
+    private static string ComputeCommonDirectory(IReadOnlyList<string> paths)
+    {
+        if (paths.Count == 0) return "";
+        var first = paths[0].Replace('\\', '/');
+        var prefix = first.Substring(0, first.LastIndexOf('/') + 1);
+        for (int i = 1; i < paths.Count; i++)
+        {
+            var normalized = paths[i].Replace('\\', '/');
+            while (prefix.Length > 0 && !normalized.StartsWith(prefix))
+            {
+                var trimmed = prefix.TrimEnd('/');
+                var lastSlash = trimmed.LastIndexOf('/');
+                prefix = lastSlash >= 0 ? trimmed.Substring(0, lastSlash + 1) : "";
+            }
+        }
+        return prefix;
+    }
+
+    /// <summary>
+    /// Makes a file path relative to a common directory, using forward slashes.
+    /// Falls back to the file name if the path doesn't start with the base.
+    /// </summary>
+    private static string MakeProjectRelativePath(string absolutePath, string commonDir)
+    {
+        if (string.IsNullOrEmpty(commonDir))
+            return Path.GetFileName(absolutePath);
+        var normalized = absolutePath.Replace('\\', '/');
+        return normalized.StartsWith(commonDir)
+            ? normalized.Substring(commonDir.Length)
+            : Path.GetFileName(absolutePath);
     }
 
     /// <summary>
@@ -365,6 +402,9 @@ internal static class TerminalEmitHelpers
         }
 
         // Section 3: ClauseDiagnostic array construction
+        var allPaths = diagnosticClauses.Select(c => c.Site.FilePath).Distinct().ToList();
+        var commonDir = ComputeCommonDirectory(allPaths);
+
         sb.AppendLine("        var __clauses = new ClauseDiagnostic[]");
         sb.AppendLine("        {");
         foreach (var clause in diagnosticClauses)
@@ -422,7 +462,24 @@ internal static class TerminalEmitHelpers
                 paramsArg = "";
             }
 
-            sb.AppendLine($"            new(\"{clauseType}\", {clauseSqlExpr}, isConditional: {isConditional}, isActive: {isActive}{paramsArg}),");
+            // Source location — use project-relative path to avoid leaking user directory structure
+            var relPath = MakeProjectRelativePath(clause.Site.FilePath, commonDir).Replace("\\", "/");
+            var locationArg = $", sourceLocation: new ClauseSourceLocation(\"{InterceptorCodeGenerator.EscapeStringLiteral(relPath)}\", {clause.Site.Line}, {clause.Site.Column})";
+
+            // Conditional bit index and branch kind
+            var bitIndexArg = clause.BitIndex.HasValue
+                ? $", conditionalBitIndex: {clause.BitIndex.Value}"
+                : "";
+            var branchKindArg = "";
+            if (clause.IsConditional && clause.Site.Bound.Raw.ConditionalInfo != null)
+            {
+                var bk = clause.Site.Bound.Raw.ConditionalInfo.BranchKind == Models.BranchKind.MutuallyExclusive
+                    ? "DiagnosticBranchKind.MutuallyExclusive"
+                    : "DiagnosticBranchKind.Independent";
+                branchKindArg = $", branchKind: {bk}";
+            }
+
+            sb.AppendLine($"            new(\"{clauseType}\", {clauseSqlExpr}, isConditional: {isConditional}, isActive: {isActive}{paramsArg}{locationArg}{bitIndexArg}{branchKindArg}),");
         }
         sb.AppendLine("        };");
     }
