@@ -72,6 +72,7 @@ internal static class VariableTracer
         var root = receiver;
         string? firstVariableName = null;
         int hops = 0;
+        List<ExpressionSyntax>? initializers = null;
 
         for (int i = 0; i < maxHops; i++)
         {
@@ -98,11 +99,14 @@ internal static class VariableTracer
             // ChainId that GetAssignedVariableName produces for the root statement.
             firstVariableName = declarator.Identifier.Text;
 
+            initializers ??= new List<ExpressionSyntax>();
+            initializers.Add(initializer);
+
             root = WalkFluentChainRoot(initializer);
             hops++;
         }
 
-        return new TraceResult(root, hops, hops > 0, firstVariableName);
+        return new TraceResult(root, hops, hops > 0, firstVariableName, initializers);
     }
 
     /// <summary>
@@ -150,13 +154,21 @@ internal static class VariableTracer
         /// Used by ComputeChainId to link all sites in a variable-split chain.
         /// </summary>
         public string? FirstVariableName { get; }
+        /// <summary>
+        /// The initializer expressions encountered at each hop during tracing, in order.
+        /// Allows callers to inspect intermediate initializers without re-resolving declarators.
+        /// Null when no hops were taken.
+        /// </summary>
+        public IReadOnlyList<ExpressionSyntax>? Initializers { get; }
 
-        public TraceResult(ExpressionSyntax root, int hops, bool traced, string? firstVariableName)
+        public TraceResult(ExpressionSyntax root, int hops, bool traced, string? firstVariableName,
+            IReadOnlyList<ExpressionSyntax>? initializers = null)
         {
             Root = root;
             Hops = hops;
             Traced = traced;
             FirstVariableName = firstVariableName;
+            Initializers = initializers;
         }
     }
 }
