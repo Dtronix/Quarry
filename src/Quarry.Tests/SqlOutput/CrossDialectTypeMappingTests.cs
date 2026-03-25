@@ -9,16 +9,20 @@ namespace Quarry.Tests.SqlOutput;
 /// <summary>
 /// Layer 7: Cross-dialect SQL output tests for TypeMapping columns.
 /// Verifies insert/select SQL shape is correct when columns use Mapped&lt;&gt;.
+/// SQL-only verification — accounts table is not in the default harness schema.
 /// </summary>
 [TestFixture]
-internal class CrossDialectTypeMappingTests : CrossDialectTestBase
+internal class CrossDialectTypeMappingTests
 {
     #region Insert Tests
 
     [Test]
-    public void Insert_AccountWithMappedBalance_GeneratesCorrectSql()
+    public async Task Insert_AccountWithMappedBalance_GeneratesCorrectSql()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Accounts().Insert(new Account { UserId = 1, AccountName = "Savings", Balance = new Money(100m), CreditLimit = new Money(500m), IsActive = true }).ToDiagnostics().Sql,
             Pg.Accounts().Insert(new Pg.Account { UserId = 1, AccountName = "Savings", Balance = new Money(100m), CreditLimit = new Money(500m), IsActive = true }).ToDiagnostics().Sql,
             My.Accounts().Insert(new My.Account { UserId = 1, AccountName = "Savings", Balance = new Money(100m), CreditLimit = new Money(500m), IsActive = true }).ToDiagnostics().Sql,
@@ -30,9 +34,12 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Insert_AccountPartialInit_OnlyIncludesInitializedColumns()
+    public async Task Insert_AccountPartialInit_OnlyIncludesInitializedColumns()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Accounts().Insert(new Account { UserId = 1, AccountName = "Checking", Balance = new Money(0m) }).ToDiagnostics().Sql,
             Pg.Accounts().Insert(new Pg.Account { UserId = 1, AccountName = "Checking", Balance = new Money(0m) }).ToDiagnostics().Sql,
             My.Accounts().Insert(new My.Account { UserId = 1, AccountName = "Checking", Balance = new Money(0m) }).ToDiagnostics().Sql,
@@ -48,9 +55,12 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
     #region Select Tests (Strengthened to 4-dialect)
 
     [Test]
-    public void Select_TupleWithMappedColumn_GeneratesCorrectSql()
+    public async Task Select_TupleWithMappedColumn_GeneratesCorrectSql()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Accounts().Select(a => (a.AccountId, a.Balance)).ToDiagnostics(),
             Pg.Accounts().Select(a => (a.AccountId, a.Balance)).ToDiagnostics(),
             My.Accounts().Select(a => (a.AccountId, a.Balance)).ToDiagnostics(),
@@ -66,9 +76,12 @@ internal class CrossDialectTypeMappingTests : CrossDialectTestBase
     #region Where Tests (Strengthened to 4-dialect)
 
     [Test]
-    public void Where_OnNonMappedColumn_GeneratesStandardWhere()
+    public async Task Where_OnNonMappedColumn_GeneratesStandardWhere()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             Pg.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),
             My.Accounts().Where(a => a.IsActive == true).Select(a => (a.AccountId, a.AccountName)).ToDiagnostics(),

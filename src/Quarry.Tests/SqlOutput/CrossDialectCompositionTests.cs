@@ -13,14 +13,17 @@ namespace Quarry.Tests.SqlOutput;
 /// tested but not yet tested together. See issue #23.
 /// </summary>
 [TestFixture]
-internal class CrossDialectCompositionTests : CrossDialectTestBase
+internal class CrossDialectCompositionTests
 {
     #region 1. Join + WHERE + OrderBy(DESC) + LIMIT/OFFSET (join pagination)
 
     [Test]
-    public void Join_Where_OrderBy_Limit_Offset()
+    public async Task Join_Where_OrderBy_Limit_Offset()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
@@ -56,14 +59,19 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 2. Subquery + boolean WHERE + OrderBy + Select
 
     [Test]
-    public void Where_Boolean_Subquery_OrderBy_Select()
+    public async Task Where_Boolean_Subquery_OrderBy_Select()
     {
-        AssertDialects(
-            Lite.Users()
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
-                .ToDiagnostics(),
+                .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
@@ -83,6 +91,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
             mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `IsActive` AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 500)) ORDER BY `UserName` ASC",
             ss:     "SELECT [UserName], [Email] FROM [users] WHERE [IsActive] AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 500)) ORDER BY [UserName] ASC");
+
+        // No users have orders > 500 in seed data — 0 results
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -90,14 +102,19 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 3. Three-table join with WHERE on deepest table
 
     [Test]
-    public void ThreeTableJoin_Where_DeepestTable()
+    public async Task ThreeTableJoin_Where_DeepestTable()
     {
-        AssertDialects(
-            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
-                .ToDiagnostics(),
+                .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
@@ -117,6 +134,10 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Status\", \"t2\".\"ProductName\", \"t2\".\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
             mysql:  "SELECT `t0`.`UserName`, `t1`.`Status`, `t2`.`ProductName`, `t2`.`Quantity` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t2`.`UnitPrice` > 50.00",
             ss:     "SELECT [t0].[UserName], [t1].[Status], [t2].[ProductName], [t2].[Quantity] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] INNER JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] WHERE [t2].[UnitPrice] > 50.00");
+
+        // Seed: Widget UnitPrice=125 (>50) and Gadget UnitPrice=75.50 (>50), Widget UnitPrice=50 (NOT >50) — 2 results
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -124,9 +145,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 4. Multiple subqueries in WHERE (Any + All together)
 
     [Test]
-    public void Where_Any_And_All_MultipleSubqueries()
+    public async Task Where_Any_And_All_MultipleSubqueries()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
@@ -158,9 +182,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 5. String operation + null check + OrderBy(DESC) + LIMIT
 
     [Test]
-    public void Where_NullCheck_Contains_OrderBy_Limit()
+    public async Task Where_NullCheck_Contains_OrderBy_Limit()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
@@ -196,10 +223,13 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 6. IN clause within a join
 
     [Test]
-    public void Join_Where_InClause()
+    public async Task Join_Where_InClause()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var statuses = new[] { "pending", "processing", "shipped" };
-        AssertDialects(
+        QueryTestHarness.AssertDialects(
             Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
@@ -227,9 +257,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 7. Enum comparison with COUNT subquery
 
     [Test]
-    public void Where_CountSubquery_WithEnumPredicate()
+    public async Task Where_CountSubquery_WithEnumPredicate()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
@@ -257,9 +290,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 8. Aggregate with GROUP BY + HAVING
 
     [Test]
-    public void GroupBy_Having_Aggregates()
+    public async Task GroupBy_Having_Aggregates()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
@@ -295,9 +331,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 9. DISTINCT + Join + OrderBy + LIMIT
 
     [Test]
-    public void Join_Distinct_OrderBy_Limit()
+    public async Task Join_Distinct_OrderBy_Limit()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
@@ -337,9 +376,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 10. Nested 3-level subquery (Users -> Orders -> OrderItems)
 
     [Test]
-    public void Where_NestedThreeLevelSubquery()
+    public async Task Where_NestedThreeLevelSubquery()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
@@ -367,9 +409,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 12. Aggregate AVG/MIN/MAX in tuple projection (Issue #49)
 
     [Test]
-    public void GroupBy_Select_WithAvg()
+    public async Task GroupBy_Select_WithAvg()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
@@ -397,9 +442,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     }
 
     [Test]
-    public void GroupBy_Select_WithMin()
+    public async Task GroupBy_Select_WithMin()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
@@ -427,9 +475,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     }
 
     [Test]
-    public void GroupBy_Select_WithMax()
+    public async Task GroupBy_Select_WithMax()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
@@ -457,9 +508,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     }
 
     [Test]
-    public void GroupBy_Having_Select_AllAggregates()
+    public async Task GroupBy_Having_Select_AllAggregates()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
@@ -498,9 +552,12 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     private static readonly string[] _runtimeStatuses = new[] { "pending", "processing", "shipped" };
 
     [Test]
-    public void Where_ContainsRuntimeCollection()
+    public async Task Where_ContainsRuntimeCollection()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
                 .Select(o => (o.OrderId, o.Status))
                 .ToDiagnostics(),
@@ -520,8 +577,11 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_ContainsRuntimeCollection_DiagnosticParameters()
+    public async Task Where_ContainsRuntimeCollection_DiagnosticParameters()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var diag = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
             .Select(o => (o.OrderId, o.Status))
             .ToDiagnostics();
@@ -540,8 +600,11 @@ internal class CrossDialectCompositionTests : CrossDialectTestBase
     #region 10. Joined OrderBy carrier diagnostics
 
     [Test]
-    public void Join_Where_OrderBy_CarrierDiagnostics()
+    public async Task Join_Where_OrderBy_CarrierDiagnostics()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var diag = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 100 && u.IsActive)
             .OrderBy((u, o) => o.Total, Direction.Descending)
