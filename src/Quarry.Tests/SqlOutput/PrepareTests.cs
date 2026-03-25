@@ -166,17 +166,21 @@ internal class PrepareTests : CrossDialectTestBase
     public void Prepare_ConditionalWhere_Inactive_ProducesSameSqlAsDirectChain()
     {
         IQueryBuilder<User> directQuery = Lite.Users().Where(u => true);
+#pragma warning disable CS0162 // Unreachable code — intentional: tests inactive conditional branch
         if (false)
         {
             directQuery = directQuery.Where(u => u.IsActive);
         }
+#pragma warning restore CS0162
         var directDiag = directQuery.ToDiagnostics();
 
         IQueryBuilder<User> prepQuery = Lite.Users().Where(u => true);
+#pragma warning disable CS0162
         if (false)
         {
             prepQuery = prepQuery.Where(u => u.IsActive);
         }
+#pragma warning restore CS0162
         var preparedDiag = prepQuery.Prepare().ToDiagnostics();
 
         Assert.That(preparedDiag.Sql, Is.EqualTo(directDiag.Sql));

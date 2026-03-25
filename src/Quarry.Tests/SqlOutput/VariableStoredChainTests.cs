@@ -168,10 +168,12 @@ internal class VariableStoredChainTests : CrossDialectTestBase
     public void Query_VariableStored_ConditionalWhere_Inactive()
     {
         var query = Lite.Users().Where(u => true);
+#pragma warning disable CS0162 // Unreachable code — intentional: tests inactive conditional branch
         if (false)
         {
             query = query.Where(u => u.IsActive);
         }
+#pragma warning restore CS0162
         var diag = query.Select(u => u.UserName).ToDiagnostics();
 
         Assert.That(diag.Sql, Does.Not.Contain("\"IsActive\""));
