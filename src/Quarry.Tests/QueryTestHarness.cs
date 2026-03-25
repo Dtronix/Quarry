@@ -164,6 +164,18 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             )
             """);
 
+        await SqlAsync("""
+            CREATE TABLE "accounts" (
+                "AccountId" INTEGER PRIMARY KEY,
+                "UserId" INTEGER NOT NULL,
+                "AccountName" TEXT NOT NULL,
+                "Balance" REAL NOT NULL,
+                "credit_limit" REAL NOT NULL DEFAULT 0,
+                "IsActive" INTEGER NOT NULL DEFAULT 1,
+                FOREIGN KEY ("UserId") REFERENCES "users"("UserId")
+            )
+            """);
+
         // View to alias "orders" as "Order" for join table name compatibility.
         await SqlAsync("""
             CREATE VIEW "Order" AS SELECT * FROM "orders"
@@ -191,6 +203,13 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 (1, 1, 'Widget', 2, 125.00, 250.00),
                 (2, 2, 'Gadget', 1, 75.50,  75.50),
                 (3, 3, 'Widget', 3, 50.00,  150.00)
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "accounts" ("AccountId", "UserId", "AccountName", "Balance", "credit_limit", "IsActive") VALUES
+                (1, 1, 'Savings',  1000.50, 5000.00, 1),
+                (2, 1, 'Checking', 250.75,  1000.00, 1),
+                (3, 2, 'Savings',  500.00,  2000.00, 0)
             """);
     }
 }
