@@ -24,6 +24,10 @@ internal static class CarrierAnalyzer
     /// </summary>
     private static string NormalizeFieldType(string typeName)
     {
+        // Guard: unresolved types from the semantic model (error types display as "?")
+        if (typeName == "?" || typeName == "object")
+            return "object?";
+
         // Normalize Nullable<T> → T?
         if (typeName.StartsWith("System.Nullable<") || typeName.StartsWith("Nullable<"))
         {

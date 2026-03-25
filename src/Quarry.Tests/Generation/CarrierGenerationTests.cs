@@ -1064,4 +1064,51 @@ public static class Queries
         Assert.That(code, Does.Contain("using LogLevel = Quarry.Logging.LogLevel;"),
             "Generated interceptors should alias LogLevel to avoid ambiguity in ASP.NET Core projects");
     }
+
+    [Test]
+    public void CarrierGeneration_ByteArrayColumn_ReaderCastsGetValue()
+    {
+        var source = @"
+using System;
+using Quarry;
+namespace TestApp;
+
+public class FileSchema : Schema
+{
+    public static string Table => ""files"";
+    public Key<int> FileId => Identity();
+    public Col<string> Name => Length(255);
+    public Col<byte[]> Content { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<File> Files();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db)
+    {
+        await db.Files().Select(f => f).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null);
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // byte[] columns should use (byte[])r.GetValue(n), not bare r.GetValue(n)
+        Assert.That(code, Does.Contain("(byte[])r.GetValue("),
+            "byte[] columns should cast GetValue() result to byte[]");
+        Assert.That(code, Does.Not.Match(@"Content = r\.GetValue\(\d+\)[^)]"),
+            "byte[] columns should not assign GetValue() result without cast");
+    }
 }

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - Quarry Sample</title>
+    <link rel="stylesheet" href="~/css/site.css" />
+</head>
+<body>
+    <nav class="navbar">
+        <a class="brand" href="/">Quarry Sample</a>
+        <div class="nav-links">
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                @if (User.IsInRole("Admin"))
+                {
+                    <a href="/Admin/Dashboard">Dashboard</a>
+                    <a href="/Admin/Users">Users</a>
+                    <a href="/Admin/AuditLog">Audit Log</a>
+                    @if (((Microsoft.AspNetCore.Hosting.IWebHostEnvironment)Context.RequestServices
+                        .GetService(typeof(Microsoft.AspNetCore.Hosting.IWebHostEnvironment))!).IsDevelopment())
+                    {
+                        <a href="/Dev/Sql">SQL Inspector</a>
+                    }
+                }
+                <a href="/Account">@User.Identity.Name</a>
+                <form method="post" asp-page="/Logout" class="inline-form">
+                    <button type="submit" class="nav-button">Logout</button>
+                </form>
+            }
+            else
+            {
+                <a href="/Login">Login</a>
+                <a href="/Register">Register</a>
+            }
+        </div>
+    </nav>
+    <main class="container">
+        @if (TempData["Success"] is string success)
+        {
+            <div class="flash flash-success">@success</div>
+        }
+        @if (TempData["Error"] is string error)
+        {
+            <div class="flash flash-error">@error</div>
+        }
+        @RenderBody()
+    </main>
+</body>
+</html>

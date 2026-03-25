@@ -1,0 +1,50 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; color: #1a1a1a; background: #f5f5f5; }
+.container { max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+.navbar { display: flex; align-items: center; gap: 1rem; padding: 0.75rem 1.5rem; background: #1a1a2e; color: #fff; }
+.navbar .brand { font-weight: 700; font-size: 1.1rem; color: #fff; text-decoration: none; margin-right: auto; }
+.nav-links { display: flex; align-items: center; gap: 1rem; }
+.nav-links a { color: #ccc; text-decoration: none; font-size: 0.9rem; }
+.nav-links a:hover { color: #fff; }
+.nav-button { background: none; border: 1px solid #666; color: #ccc; padding: 0.25rem 0.75rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+.nav-button:hover { border-color: #fff; color: #fff; }
+.inline-form { display: inline; }
+h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+h2 { margin-bottom: 0.75rem; font-size: 1.25rem; }
+.card { background: #fff; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.form-group { margin-bottom: 1rem; }
+.form-group label { display: block; font-weight: 600; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.form-group input, .form-group select { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; font-size: 0.95rem; }
+.form-group input:focus, .form-group select:focus { outline: none; border-color: #4a90d9; box-shadow: 0 0 0 2px rgba(74,144,217,0.2); }
+.btn { display: inline-block; padding: 0.5rem 1.25rem; border: none; border-radius: 4px; font-size: 0.95rem; cursor: pointer; text-decoration: none; }
+.btn-primary { background: #4a90d9; color: #fff; }
+.btn-primary:hover { background: #357abd; }
+.btn-danger { background: #d9534f; color: #fff; }
+.btn-danger:hover { background: #c9302c; }
+.btn-sm { padding: 0.25rem 0.75rem; font-size: 0.85rem; }
+.validation-message { color: #d9534f; font-size: 0.85rem; margin-top: 0.25rem; }
+.flash { padding: 0.75rem 1rem; border-radius: 4px; margin-bottom: 1rem; }
+.flash-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+.flash-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid #e0e0e0; }
+th { font-weight: 600; font-size: 0.85rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+.badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+.badge-admin { background: #ffeeba; color: #856404; }
+.badge-user { background: #d1ecf1; color: #0c5460; }
+.badge-active { background: #d4edda; color: #155724; }
+.badge-inactive { background: #f8d7da; color: #721c24; }
+.pagination { display: flex; gap: 0.5rem; margin-top: 1rem; }
+.pagination a, .pagination span { padding: 0.25rem 0.75rem; border: 1px solid #ccc; border-radius: 4px; text-decoration: none; color: #333; font-size: 0.9rem; }
+.pagination span.current { background: #4a90d9; color: #fff; border-color: #4a90d9; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
+.stat-card { background: #fff; padding: 1rem; border-radius: 8px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.stat-card .value { font-size: 2rem; font-weight: 700; color: #4a90d9; }
+.stat-card .label { font-size: 0.85rem; color: #666; }
+pre.sql { background: #1a1a2e; color: #e0e0e0; padding: 1rem; border-radius: 6px; overflow-x: auto; font-size: 0.85rem; line-height: 1.5; }
+.diag-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem; margin-bottom: 0.75rem; font-size: 0.85rem; }
+.diag-meta dt { font-weight: 600; color: #666; }
+.diag-meta dd { margin: 0; }
+.filter-bar { display: flex; gap: 0.75rem; align-items: end; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.filter-bar .form-group { margin-bottom: 0; }
+.actions { display: flex; gap: 0.5rem; }
