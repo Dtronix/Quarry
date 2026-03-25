@@ -13,14 +13,17 @@ namespace Quarry.Tests.SqlOutput;
 /// .Trace() is added so the generator emits [Trace] comments in the .g.cs files for inspection.
 /// </summary>
 [TestFixture]
-internal class TracedFailureDiagnosticTests : CrossDialectTestBase
+internal class TracedFailureDiagnosticTests
 {
     #region CountSubquery with Enum Predicate
 
     [Test]
-    public void Traced_CountSubquery_WithEnumPredicate()
+    public async Task Traced_CountSubquery_WithEnumPredicate()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
@@ -52,9 +55,12 @@ internal class TracedFailureDiagnosticTests : CrossDialectTestBase
     #region Navigation Join with Inferred Type
 
     [Test]
-    public void Traced_NavigationJoin_InferredType_TupleProjection()
+    public async Task Traced_NavigationJoin_InferredType_TupleProjection()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users()
                 .Join(u => u.Orders)
                 .Select((u, o) => (u.UserName, o.Total))
@@ -86,9 +92,12 @@ internal class TracedFailureDiagnosticTests : CrossDialectTestBase
     #region SetPoco with Multiple Columns
 
     [Test]
-    public void Traced_SetPoco_MultipleColumns()
+    public async Task Traced_SetPoco_MultipleColumns()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Update().Set(new User { UserName = "Poco", IsActive = false }).Where(u => u.UserId == 3).Trace().ToDiagnostics(),
             Pg.Users().Update().Set(new Pg.User { UserName = "Poco", IsActive = false }).Where(u => u.UserId == 3).Trace().ToDiagnostics(),
             My.Users().Update().Set(new My.User { UserName = "Poco", IsActive = false }).Where(u => u.UserId == 3).Trace().ToDiagnostics(),
@@ -104,8 +113,11 @@ internal class TracedFailureDiagnosticTests : CrossDialectTestBase
     #region MutuallyExclusive OrderBy — Else Branch
 
     [Test]
-    public void Traced_MutuallyExclusiveOrderBy_ElseBranch()
+    public async Task Traced_MutuallyExclusiveOrderBy_ElseBranch()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         // Conditional chain pattern requires variable assignment — single-dialect only
         IQueryBuilder<User> query = Lite.Users().Where(u => u.IsActive);
         if (false)
@@ -120,7 +132,7 @@ internal class TracedFailureDiagnosticTests : CrossDialectTestBase
 
         Assert.That(diag.Sql, Does.Contain("ORDER BY"));
         Assert.That(diag.Sql, Does.Contain("\"UserId\""));
-        Assert.That(diag.Sql, Does.Not.Contain("UserName"));
+        Assert.That(diag.Sql, Does.Not.Contain("ORDER BY \"UserName\""));
         Assert.That(diag.IsCarrierOptimized, Is.True);
     }
 

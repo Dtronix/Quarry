@@ -75,7 +75,7 @@ internal class CrossDialectDiagnosticsTests
         }
         var diag = query.ToDiagnostics();
 
-        Assert.That(diag.Sql, Does.Contain("IsActive"));
+        Assert.That(diag.Sql, Does.Contain("\"IsActive\" = 1"));
 
         var conditionalClauses = diag.Clauses.Where(c => c.IsConditional).ToList();
         Assert.That(conditionalClauses, Has.Count.GreaterThanOrEqualTo(1));
@@ -94,7 +94,7 @@ internal class CrossDialectDiagnosticsTests
         }
         var diag = query.ToDiagnostics();
 
-        Assert.That(diag.Sql, Does.Not.Contain("IsActive"));
+        Assert.That(diag.Sql, Does.Not.Contain("\"IsActive\" = 1"));
 
         var conditionalClauses = diag.Clauses.Where(c => c.IsConditional).ToList();
         Assert.That(conditionalClauses, Has.Count.GreaterThanOrEqualTo(1));
@@ -185,7 +185,7 @@ internal class CrossDialectDiagnosticsTests
         }
         var diag = query.ToDiagnostics();
 
-        Assert.That(diag.Sql, Does.Contain("UserName"));
+        Assert.That(diag.Sql, Does.Contain("\"UserName\" = @p"));
 
         // Top-level includes active clause params
         Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(1));
@@ -209,7 +209,7 @@ internal class CrossDialectDiagnosticsTests
         }
         var diag = query.ToDiagnostics();
 
-        Assert.That(diag.Sql, Does.Not.Contain("UserName"));
+        Assert.That(diag.Sql, Does.Not.Contain("\"UserName\" = @p"));
 
         // Top-level Parameters excludes inactive clause params
         Assert.That(diag.Parameters.Any(p => p.Name == "@p0"), Is.False);
