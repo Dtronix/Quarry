@@ -167,7 +167,7 @@ internal class CrossDialectBatchInsertTests
     public async Task BatchInsert_ToDiagnostics_MultipleEntities_ShowsSingleRowTemplate()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var Lite = t.Lite;
+        var (Lite, Pg, My, Ss) = t;
 
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
         var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).Prepare();
@@ -185,7 +185,7 @@ internal class CrossDialectBatchInsertTests
     public async Task BatchInsert_EmptyCollection_ThrowsOnExecution()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var Lite = t.Lite;
+        var (Lite, Pg, My, Ss) = t;
 
         var builder = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(Array.Empty<User>());
 

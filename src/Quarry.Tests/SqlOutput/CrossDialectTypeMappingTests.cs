@@ -160,7 +160,7 @@ internal class CrossDialectTypeMappingTests
     public async Task RoundTrip_InsertThenSelect_PreservesMoneyValue()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var Lite = t.Lite;
+        var (Lite, Pg, My, Ss) = t;
 
         var money = new Money(42.42m);
         var creditLimit = new Money(100m);

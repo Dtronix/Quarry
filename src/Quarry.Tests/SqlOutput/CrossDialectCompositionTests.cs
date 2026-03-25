@@ -600,7 +600,7 @@ internal class CrossDialectCompositionTests
     public async Task Where_ContainsRuntimeCollection_DiagnosticParameters()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var Lite = t.Lite;
+        var (Lite, Pg, My, Ss) = t;
 
         var prepared = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status))
             .Select(o => (o.OrderId, o.Status))
@@ -625,7 +625,7 @@ internal class CrossDialectCompositionTests
     public async Task Join_Where_OrderBy_CarrierDiagnostics()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var Lite = t.Lite;
+        var (Lite, Pg, My, Ss) = t;
 
         var prepared = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 100 && u.IsActive)
