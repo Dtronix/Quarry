@@ -10,6 +10,9 @@
     <Description>Type-safe SQL builder and query reader for .NET 10 with AOT support</Description>
     <IsPackable>true</IsPackable>
     <PackageReadmeSource>$(MSBuildThisFileDirectory)../../README.md</PackageReadmeSource>
+
+    <!-- Logsmith: Abstraction mode for zero-dependency logging -->
+    <LogsmithMode>Abstraction</LogsmithMode>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,7 +24,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Logsmith" Version="0.4.2" />
+    <PackageReference Include="Logsmith" Version="0.5.0" PrivateAssets="all" />
   </ItemGroup>
 
   <!-- Shared project (compiled into this assembly) -->

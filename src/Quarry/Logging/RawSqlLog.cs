@@ -1,5 +1,3 @@
-using Logsmith;
-
 namespace Quarry.Logging;
 
 [LogCategory("Quarry.RawSql")]

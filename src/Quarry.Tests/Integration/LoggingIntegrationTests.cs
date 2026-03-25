@@ -1,6 +1,4 @@
 using System.Text.RegularExpressions;
-using Logsmith;
-using Logsmith.Sinks;
 using Microsoft.Data.Sqlite;
 using Quarry.Internal;
 using Quarry.Logging;
@@ -10,18 +8,18 @@ namespace Quarry.Tests.Integration;
 
 
 /// <summary>
-/// Integration tests for Logsmith logging.
+/// Integration tests for Logsmith abstraction-mode logging.
 /// </summary>
 /// <remarks>
-/// These tests are NonParallelizable because LogManager is a process-wide singleton.
-/// Each test clears the recording sink before execution.
+/// These tests are NonParallelizable because LogsmithOutput.Logger is a process-wide singleton.
+/// Each test clears the recording logger before execution.
 /// </remarks>
 [TestFixture]
 [NonParallelizable]
 internal partial class LoggingIntegrationTests
 {
     private SqliteConnection _connection = null!;
-    private RecordingSink _sink = null!;
+    private RecordingLogsmithLogger _logger = null!;
 
     [GeneratedRegex(@"\[(\d+)\]")]
     private static partial Regex OpIdPattern();
@@ -29,12 +27,8 @@ internal partial class LoggingIntegrationTests
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
-        _sink = new RecordingSink();
-        LogManager.Initialize(c =>
-        {
-            c.MinimumLevel = LogLevel.Trace;
-            c.AddSink(_sink);
-        });
+        _logger = new RecordingLogsmithLogger();
+        LogsmithOutput.Logger = _logger;
 
         _connection = new SqliteConnection("Data Source=:memory:");
         await _connection.OpenAsync();
@@ -80,15 +74,14 @@ internal partial class LoggingIntegrationTests
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
     {
-        LogManager.Reconfigure(c => c.ClearSinks());
-        _sink.Dispose();
+        LogsmithOutput.Logger = null;
         await _connection.DisposeAsync();
     }
 
     [SetUp]
     public void SetUp()
     {
-        _sink.Clear();
+        _logger.Clear();
     }
 
     private async Task ExecuteSqlAsync(string sql)
@@ -105,19 +98,22 @@ internal partial class LoggingIntegrationTests
         return long.Parse(match.Groups[1].Value);
     }
 
-    private void ReconfigureLogging(Action<LogConfigBuilder> configure)
+    private void ReconfigureLogger(LogLevel minimumLevel, Dictionary<string, LogLevel>? categoryOverrides = null)
     {
-        LogManager.Reconfigure(configure);
-        _sink.Clear();
+        _logger.MinimumLevel = minimumLevel;
+        _logger.CategoryOverrides.Clear();
+        if (categoryOverrides != null)
+        {
+            foreach (var kvp in categoryOverrides)
+                _logger.CategoryOverrides[kvp.Key] = kvp.Value;
+        }
+        _logger.Clear();
     }
 
-    private void ResetLogging()
+    private void ResetLogger()
     {
-        LogManager.Reconfigure(c =>
-        {
-            c.MinimumLevel = LogLevel.Trace;
-            c.AddSink(_sink);
-        });
+        _logger.MinimumLevel = LogLevel.Trace;
+        _logger.CategoryOverrides.Clear();
     }
 
     #region Query Logging (Quarry.Query)
@@ -131,7 +127,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => (u.UserId, u.UserName))
             .ExecuteFetchAllAsync();
 
-        var queryEntries = _sink.Entries
+        var queryEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Query")
             .ToList();
 
@@ -157,7 +153,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var queryEntries = _sink.Entries
+        var queryEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Query")
             .ToList();
 
@@ -175,7 +171,7 @@ internal partial class LoggingIntegrationTests
         await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
         await db.Users().Select(u => u.UserId).ExecuteFetchAllAsync();
 
-        var queryEntries = _sink.Entries
+        var queryEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Query")
             .ToList();
 
@@ -197,7 +193,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
 
-        var completionEntry = _sink.Entries
+        var completionEntry = _logger.Entries
             .FirstOrDefault(e => e.Category == "Quarry.Query" && e.Message.Contains("Fetched"));
 
         Assert.That(completionEntry, Is.Not.Null);
@@ -214,7 +210,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstOrDefaultAsync();
 
-        var completionEntry = _sink.Entries
+        var completionEntry = _logger.Entries
             .FirstOrDefault(e => e.Category == "Quarry.Query" && e.Message.Contains("Fetched"));
 
         Assert.That(completionEntry, Is.Not.Null);
@@ -230,7 +226,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => Sql.Count())
             .ExecuteScalarAsync<int>();
 
-        var scalarEntry = _sink.Entries
+        var scalarEntry = _logger.Entries
             .FirstOrDefault(e => e.Category == "Quarry.Query" && e.Message.Contains("Scalar result"));
 
         Assert.That(scalarEntry, Is.Not.Null);
@@ -250,7 +246,7 @@ internal partial class LoggingIntegrationTests
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2)",
             "TestInsertLog", 1, "2024-01-01 00:00:00");
 
-        var rawEntries = _sink.Entries
+        var rawEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.RawSql")
             .ToList();
 
@@ -273,7 +269,7 @@ internal partial class LoggingIntegrationTests
             "UPDATE \"users\" SET \"Email\" = @p0 WHERE \"UserId\" = @p1",
             "updated@test.com", 3);
 
-        var rawEntries = _sink.Entries
+        var rawEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.RawSql")
             .ToList();
 
@@ -292,14 +288,14 @@ internal partial class LoggingIntegrationTests
             INSERT INTO "users" ("UserId", "UserName", "IsActive", "CreatedAt")
             VALUES (100, 'ToDelete', 1, '2024-01-01 00:00:00')
             """);
-        _sink.Clear();
+        _logger.Clear();
 
         await using var db = new TestDbContext(_connection);
 
         await db.RawSqlNonQueryAsync(
             "DELETE FROM \"users\" WHERE \"UserId\" = @p0", 100);
 
-        var rawEntries = _sink.Entries
+        var rawEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.RawSql")
             .ToList();
 
@@ -319,7 +315,7 @@ internal partial class LoggingIntegrationTests
 
         await db.RawSqlNonQueryAsync("SELECT 1");
 
-        var rawEntries = _sink.Entries
+        var rawEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.RawSql")
             .ToList();
 
@@ -336,7 +332,7 @@ internal partial class LoggingIntegrationTests
 
         await db.RawSqlScalarAsync<int>("SELECT COUNT(*) FROM \"users\"");
 
-        var scalarEntry = _sink.Entries
+        var scalarEntry = _logger.Entries
             .FirstOrDefault(e => e.Category == "Quarry.RawSql" && e.Message.Contains("Scalar result"));
 
         Assert.That(scalarEntry, Is.Not.Null);
@@ -356,7 +352,7 @@ internal partial class LoggingIntegrationTests
 
         await db.RawSqlNonQueryAsync("SELECT 1");
 
-        var connectionEntries = _sink.Entries
+        var connectionEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Connection")
             .ToList();
 
@@ -373,7 +369,7 @@ internal partial class LoggingIntegrationTests
 
         await db.RawSqlNonQueryAsync("SELECT 1");
 
-        var openedEntries = _sink.Entries
+        var openedEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Connection" && e.Message.Contains("opened"))
             .ToList();
 
@@ -389,10 +385,10 @@ internal partial class LoggingIntegrationTests
 
         await db.RawSqlNonQueryAsync("SELECT 1");
 
-        _sink.Clear();
+        _logger.Clear();
         db.Dispose();
 
-        var closedEntries = _sink.Entries
+        var closedEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Connection" && e.Message.Contains("closed"))
             .ToList();
 
@@ -418,7 +414,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var paramEntries = _sink.Entries
+        var paramEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Parameters")
             .ToList();
 
@@ -437,7 +433,7 @@ internal partial class LoggingIntegrationTests
             "SELECT * FROM \"users\" WHERE \"UserId\" = @p0 AND \"UserName\" = @p1",
             1, "Alice");
 
-        var paramEntries = _sink.Entries
+        var paramEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Parameters")
             .ToList();
 
@@ -460,9 +456,9 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var queryEntry = _sink.Entries
+        var queryEntry = _logger.Entries
             .First(e => e.Category == "Quarry.Query" && e.Message.Contains("SQL:"));
-        var paramEntry = _sink.Entries
+        var paramEntry = _logger.Entries
             .First(e => e.Category == "Quarry.Parameters");
 
         var queryOpId = ExtractOpId(queryEntry.Message);
@@ -485,7 +481,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var slowEntries = _sink.Entries
+        var slowEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Execution" && e.Level == LogLevel.Warning)
             .ToList();
 
@@ -503,7 +499,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var slowEntries = _sink.Entries
+        var slowEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Execution")
             .ToList();
 
@@ -520,7 +516,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var slowEntries = _sink.Entries
+        var slowEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Execution")
             .ToList();
 
@@ -537,7 +533,7 @@ internal partial class LoggingIntegrationTests
             .Select(u => u.UserName)
             .ExecuteFetchAllAsync();
 
-        var slowEntry = _sink.Entries
+        var slowEntry = _logger.Entries
             .First(e => e.Category == "Quarry.Execution" && e.Level == LogLevel.Warning);
 
         Assert.That(slowEntry.Message, Does.Contain("ms"));
@@ -551,18 +547,14 @@ internal partial class LoggingIntegrationTests
     [Test]
     public async Task MinimumLevelWarning_SuppressesDebugLogs()
     {
-        ReconfigureLogging(c =>
-        {
-            c.MinimumLevel = LogLevel.Warning;
-            c.AddSink(_sink);
-        });
+        ReconfigureLogger(LogLevel.Warning);
 
         try
         {
             await using var db = new TestDbContext(_connection);
             await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
 
-            var debugEntries = _sink.Entries
+            var debugEntries = _logger.Entries
                 .Where(e => e.Level == LogLevel.Debug)
                 .ToList();
 
@@ -570,18 +562,16 @@ internal partial class LoggingIntegrationTests
         }
         finally
         {
-            ResetLogging();
+            ResetLogger();
         }
     }
 
     [Test]
     public async Task CategoryLevelNone_SuppressesQueryLogsOnly()
     {
-        ReconfigureLogging(c =>
+        ReconfigureLogger(LogLevel.Trace, new Dictionary<string, LogLevel>
         {
-            c.MinimumLevel = LogLevel.Trace;
-            c.SetMinimumLevel("Quarry.Query", LogLevel.None);
-            c.AddSink(_sink);
+            ["Quarry.Query"] = LogLevel.None
         });
 
         try
@@ -591,11 +581,11 @@ internal partial class LoggingIntegrationTests
 
             await db.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
 
-            var queryEntries = _sink.Entries
+            var queryEntries = _logger.Entries
                 .Where(e => e.Category == "Quarry.Query")
                 .ToList();
 
-            var executionEntries = _sink.Entries
+            var executionEntries = _logger.Entries
                 .Where(e => e.Category == "Quarry.Execution")
                 .ToList();
 
@@ -604,18 +594,14 @@ internal partial class LoggingIntegrationTests
         }
         finally
         {
-            ResetLogging();
+            ResetLogger();
         }
     }
 
     [Test]
     public async Task CategoryLevelDebug_SuppressesTraceParameterLogs()
     {
-        ReconfigureLogging(c =>
-        {
-            c.MinimumLevel = LogLevel.Debug;
-            c.AddSink(_sink);
-        });
+        ReconfigureLogger(LogLevel.Debug);
 
         try
         {
@@ -628,11 +614,11 @@ internal partial class LoggingIntegrationTests
                 .Select(u => u.UserName)
                 .ExecuteFetchAllAsync();
 
-            var paramEntries = _sink.Entries
+            var paramEntries = _logger.Entries
                 .Where(e => e.Category == "Quarry.Parameters")
                 .ToList();
 
-            var queryEntries = _sink.Entries
+            var queryEntries = _logger.Entries
                 .Where(e => e.Category == "Quarry.Query")
                 .ToList();
 
@@ -641,7 +627,7 @@ internal partial class LoggingIntegrationTests
         }
         finally
         {
-            ResetLogging();
+            ResetLogger();
         }
     }
 
@@ -660,7 +646,7 @@ internal partial class LoggingIntegrationTests
             count++;
         }
 
-        var queryEntries = _sink.Entries
+        var queryEntries = _logger.Entries
             .Where(e => e.Category == "Quarry.Query")
             .ToList();
 

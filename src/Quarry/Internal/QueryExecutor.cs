@@ -2,7 +2,6 @@ using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Logsmith;
 using Quarry.Logging;
 
 namespace Quarry.Internal;
@@ -48,7 +47,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
@@ -56,7 +55,7 @@ internal static class QueryExecutor
 
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
             QueryLog.FetchCompleted(opId, results.Count, elapsedMs);
 
         CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -82,7 +81,7 @@ internal static class QueryExecutor
             {
                 var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                     QueryLog.FetchCompleted(opId, 1, elapsedMs);
 
                 CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -92,7 +91,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
@@ -119,7 +118,7 @@ internal static class QueryExecutor
             {
                 var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                     QueryLog.FetchCompleted(opId, 1, elapsedMs);
 
                 CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -129,7 +128,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
@@ -137,7 +136,7 @@ internal static class QueryExecutor
 
         var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
             QueryLog.FetchCompleted(opId, 0, elapsed);
 
         CheckSlowQuery(opId, ctx, elapsed, command.CommandText);
@@ -169,7 +168,7 @@ internal static class QueryExecutor
 
             var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                 QueryLog.FetchCompleted(opId, 1, elapsedMs);
 
             CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -182,7 +181,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
@@ -209,7 +208,7 @@ internal static class QueryExecutor
 
             if (result is null or DBNull)
             {
-                if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                     QueryLog.ScalarResult(opId, "null");
 
                 if (default(TScalar) is null)
@@ -218,7 +217,7 @@ internal static class QueryExecutor
                 throw new InvalidOperationException("Query returned null but expected a non-nullable value.");
             }
 
-            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                 QueryLog.ScalarResult(opId, result.ToString() ?? "null");
 
             return (TScalar)Convert.ChangeType(result, Nullable.GetUnderlyingType(typeof(TScalar)) ?? typeof(TScalar));
@@ -229,7 +228,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error executing scalar query: {ex.Message}", command.CommandText, ex);
@@ -252,7 +251,7 @@ internal static class QueryExecutor
             var rowCount = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-            if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                 QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
 
             CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -261,7 +260,7 @@ internal static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error executing query: {ex.Message}", command.CommandText, ex);
@@ -291,7 +290,7 @@ internal static class QueryExecutor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (LogManager.IsEnabled(LogLevel.Error, QueryLog.CategoryName))
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                     QueryLog.QueryFailed(opId, ex);
 
                 throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
@@ -303,7 +302,7 @@ internal static class QueryExecutor
 
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
             QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
 
         CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
@@ -317,7 +316,7 @@ internal static class QueryExecutor
         var threshold = context.SlowQueryThreshold;
         if (threshold.HasValue && elapsedMs > threshold.Value.TotalMilliseconds)
         {
-            if (LogManager.IsEnabled(LogLevel.Warning, ExecutionLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Warning, ExecutionLog.CategoryName) == true)
                 ExecutionLog.SlowQuery(opId, elapsedMs, sql);
         }
     }
