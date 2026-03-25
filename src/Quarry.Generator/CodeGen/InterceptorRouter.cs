@@ -46,7 +46,6 @@ internal static class InterceptorRouter
             case InterceptorKind.InsertExecuteNonQuery:
             case InterceptorKind.InsertExecuteScalar:
             case InterceptorKind.ToDiagnostics:
-            case InterceptorKind.ToSql:
             case InterceptorKind.InsertToDiagnostics:
                 return EmitterCategory.Terminal;
 

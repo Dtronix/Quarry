@@ -432,20 +432,6 @@ internal static class DiagnosticDescriptors
                      "A pre-built SQL dispatch table will be emitted with zero runtime string work.");
 
     /// <summary>
-    /// QRY031: Query chain analyzed, tier 2 applied.
-    /// Severity: Info
-    /// </summary>
-    public static readonly DiagnosticDescriptor ChainOptimizedTier2 = new(
-        id: "QRY031",
-        title: "Query chain optimized (tier 2)",
-        messageFormat: "Query chain analyzed at {0}: tier 2 applied ({1} conditional clauses exceed dispatch threshold)",
-        category: Category,
-        defaultSeverity: DiagnosticSeverity.Info,
-        isEnabledByDefault: true,
-        description: "The query chain was analyzed but has too many conditional clause combinations for a dispatch table. " +
-                     "Pre-quoted fragment concatenation will be used instead.");
-
-    /// <summary>
     /// QRY032: Query chain not analyzable for pre-built SQL.
     /// Severity: Info
     /// </summary>
@@ -454,11 +440,10 @@ internal static class DiagnosticDescriptors
         title: "Query chain not analyzable",
         messageFormat: "Query chain at {0} not analyzable for pre-built SQL: {1}",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Info,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "The query chain could not be analyzed for pre-built SQL optimization. " +
-                     "The existing runtime SqlBuilder path will be used. This is not an error — " +
-                     "consider restructuring the query to enable optimization.");
+                     "Restructure the query to enable static analysis.");
 
     /// <summary>
     /// QRY033: Forked query chain — builder variable consumed by multiple execution paths.

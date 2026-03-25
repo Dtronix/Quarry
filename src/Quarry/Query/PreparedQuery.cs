@@ -29,12 +29,6 @@ public sealed class PreparedQuery<TResult>
         => throw new NotSupportedException("PreparedQuery methods must be intercepted by the Quarry source generator.");
 
     /// <summary>
-    /// Returns the generated SQL string for this query chain.
-    /// </summary>
-    public string ToSql()
-        => throw new NotSupportedException("PreparedQuery methods must be intercepted by the Quarry source generator.");
-
-    /// <summary>
     /// Executes the query and returns all results as a list.
     /// </summary>
     public Task<List<TResult>> ExecuteFetchAllAsync(CancellationToken cancellationToken = default)

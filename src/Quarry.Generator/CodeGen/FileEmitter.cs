@@ -416,33 +416,10 @@ internal sealed class FileEmitter
             carrierChain = carrierClause.Chain;
         }
 
-        // Check for skippable Select sites BEFORE emitting the attribute
-        // Never skip carrier Select sites — they serve as cast entry points for carrier chains
-        if (site.Kind == InterceptorKind.Select && !isCarrierSite && InterceptorCodeGenerator.ShouldSkipSelectInterceptor(site))
+        // Carrier-only architecture: skip all non-carrier sites except RawSql
+        if (!isCarrierSite)
         {
-            return;
-        }
-
-        // Limit/Offset/Distinct/WithTimeout: carrier-only on non-carrier path
-        if (site.Kind is InterceptorKind.Limit or InterceptorKind.Offset or InterceptorKind.Distinct or InterceptorKind.WithTimeout)
-        {
-            if (!isCarrierSite)
-                return;
-        }
-
-        // ChainRoot: carrier-only
-        if (site.Kind is InterceptorKind.ChainRoot)
-        {
-            if (!isCarrierSite)
-                return;
-        }
-
-        // Transitions: carrier-only
-        if (site.Kind is InterceptorKind.DeleteTransition or InterceptorKind.UpdateTransition
-            or InterceptorKind.InsertTransition or InterceptorKind.BatchInsertColumnSelector
-            or InterceptorKind.BatchInsertValues)
-        {
-            if (!isCarrierSite)
+            if (site.Kind is not (InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync))
                 return;
         }
 
@@ -509,19 +486,13 @@ internal sealed class FileEmitter
                 || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
                 return;
         }
-        else if (site.Kind is InterceptorKind.ToDiagnostics or InterceptorKind.ToSql)
+        else if (site.Kind is InterceptorKind.ToDiagnostics)
         {
             if (chainLookup.TryGetValue(site.UniqueId, out var diagChain)
                 && diagChain.UnmatchedMethodNames != null)
                 return;
             if (!chainLookup.ContainsKey(site.UniqueId) && site.ResultTypeName != null)
                 return;
-        }
-
-        // Skip non-translatable clauses on non-carrier path
-        if (!isCarrierSite && InterceptorCodeGenerator.ShouldSkipNonTranslatableClause(site))
-        {
-            return;
         }
 
         var methodName = $"{site.MethodName}_{site.UniqueId}";
@@ -626,9 +597,9 @@ internal sealed class FileEmitter
                 if (chainLookup.TryGetValue(site.UniqueId, out var selectChain))
                 {
                     if (selectChain.IsJoinChain)
-                        TerminalBodyEmitter.EmitJoinReaderTerminal(sb, site, methodName, selectChain, carrierInfo);
+                        TerminalBodyEmitter.EmitJoinReaderTerminal(sb, site, methodName, selectChain, carrierInfo!);
                     else
-                        TerminalBodyEmitter.EmitReaderTerminal(sb, site, methodName, selectChain, carrierInfo);
+                        TerminalBodyEmitter.EmitReaderTerminal(sb, site, methodName, selectChain, carrierInfo!);
                 }
                 break;
 
@@ -636,11 +607,11 @@ internal sealed class FileEmitter
                 if (chainLookup.TryGetValue(site.UniqueId, out var nonQueryChain))
                 {
                     if (nonQueryChain.QueryKind == QueryKind.BatchInsert)
-                        TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                        TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo!);
                     else if (nonQueryChain.QueryKind == QueryKind.Insert)
-                        TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                        TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo!);
                     else
-                        TerminalBodyEmitter.EmitNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo);
+                        TerminalBodyEmitter.EmitNonQueryTerminal(sb, site, methodName, nonQueryChain, carrierInfo!);
                 }
                 break;
 
@@ -648,17 +619,10 @@ internal sealed class FileEmitter
                 if (chainLookup.TryGetValue(site.UniqueId, out var toDiagChain))
                 {
                     if (toDiagChain.QueryKind == QueryKind.BatchInsert)
-                        TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
+                        TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo!);
                     else
-                        TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo);
+                        TerminalBodyEmitter.EmitDiagnosticsTerminal(sb, site, methodName, toDiagChain, carrierInfo!);
                 }
-                else
-                    TerminalBodyEmitter.EmitRuntimeDiagnosticsTerminal(sb, site, methodName);
-                break;
-
-            case InterceptorKind.ToSql:
-                if (chainLookup.TryGetValue(site.UniqueId, out var toSqlChain))
-                    TerminalBodyEmitter.EmitToSqlTerminal(sb, site, methodName, toSqlChain);
                 break;
 
             case InterceptorKind.DeleteWhere:
@@ -690,21 +654,21 @@ internal sealed class FileEmitter
             case InterceptorKind.InsertExecuteNonQuery:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertChain);
-                    TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, insertChain, carrierInfo);
+                    TerminalBodyEmitter.EmitInsertNonQueryTerminal(sb, site, methodName, insertChain, carrierInfo!);
                 }
                 break;
 
             case InterceptorKind.InsertExecuteScalar:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertScalarChain);
-                    TerminalBodyEmitter.EmitInsertScalarTerminal(sb, site, methodName, insertScalarChain, carrierInfo);
+                    TerminalBodyEmitter.EmitInsertScalarTerminal(sb, site, methodName, insertScalarChain, carrierInfo!);
                 }
                 break;
 
             case InterceptorKind.InsertToDiagnostics:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var insertDiagChain);
-                    TerminalBodyEmitter.EmitInsertDiagnosticsTerminal(sb, site, methodName, insertDiagChain, carrierInfo);
+                    TerminalBodyEmitter.EmitInsertDiagnosticsTerminal(sb, site, methodName, insertDiagChain, carrierInfo!);
                 }
                 break;
 
@@ -761,21 +725,21 @@ internal sealed class FileEmitter
             case InterceptorKind.BatchInsertExecuteNonQuery:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var batchInsertChain);
-                    TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, batchInsertChain, carrierInfo);
+                    TerminalBodyEmitter.EmitBatchInsertNonQueryTerminal(sb, site, methodName, batchInsertChain, carrierInfo!);
                 }
                 break;
 
             case InterceptorKind.BatchInsertExecuteScalar:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var batchInsertScalarChain);
-                    TerminalBodyEmitter.EmitBatchInsertScalarTerminal(sb, site, methodName, batchInsertScalarChain, carrierInfo);
+                    TerminalBodyEmitter.EmitBatchInsertScalarTerminal(sb, site, methodName, batchInsertScalarChain, carrierInfo!);
                 }
                 break;
 
             case InterceptorKind.BatchInsertToDiagnostics:
                 {
                     chainLookup.TryGetValue(site.UniqueId, out var batchInsertDiagChain);
-                    TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, batchInsertDiagChain, carrierInfo);
+                    TerminalBodyEmitter.EmitBatchInsertDiagnosticsTerminal(sb, site, methodName, batchInsertDiagChain, carrierInfo!);
                 }
                 break;
 
