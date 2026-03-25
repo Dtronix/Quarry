@@ -678,7 +678,7 @@ internal static class CarrierEmitter
         EmitCarrierPreamble(sb, carrier, chain);
 
         // SQL logging
-        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Parameter logging
@@ -704,7 +704,7 @@ internal static class CarrierEmitter
     {
         EmitCarrierPreamble(sb, carrier, chain);
 
-        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         EmitInlineParameterLogging(sb, chain, carrier);
@@ -731,7 +731,7 @@ internal static class CarrierEmitter
         if (totalParams == 0)
             return;
 
-        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName))");
+        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
         sb.AppendLine("        {");
         for (int i = 0; i < paramCount; i++)
         {
@@ -781,7 +781,7 @@ internal static class CarrierEmitter
         sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, chain);
 
-        sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Debug, QueryLog.CategoryName))");
+        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Command creation + inline parameter binding from entity properties
@@ -814,7 +814,7 @@ internal static class CarrierEmitter
             // Parameter logging
             if (insertInfo.Columns.Count > 0)
             {
-                sb.AppendLine("        if (LogManager.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName))");
+                sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
                 sb.AppendLine("        {");
                 for (int i = 0; i < insertInfo.Columns.Count; i++)
                 {

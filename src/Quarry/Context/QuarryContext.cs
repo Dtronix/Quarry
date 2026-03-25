@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
-using Logsmith;
 using Quarry.Internal;
 using Quarry.Logging;
 
@@ -101,7 +100,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-            if (LogManager.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
                 ConnectionLog.Opened();
         }
     }
@@ -151,7 +150,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var opId = OpId.Next();
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
@@ -207,7 +206,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.FetchCompleted(opId, results.Count, elapsedMs);
 
         CheckSlowQuery(opId, elapsedMs, sql);
@@ -244,7 +243,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var opId = OpId.Next();
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
@@ -268,7 +267,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         var rowCount = await command.ExecuteNonQueryAsync(cancellationToken);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.NonQueryCompleted(opId, rowCount, elapsedMs);
 
         CheckSlowQuery(opId, elapsedMs, sql);
@@ -307,7 +306,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var opId = OpId.Next();
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
@@ -331,7 +330,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         var result = await command.ExecuteScalarAsync(cancellationToken);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.ScalarResult(opId, result?.ToString() ?? "null");
 
         CheckSlowQuery(opId, elapsedMs, sql);
@@ -362,7 +361,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var opId = OpId.Next();
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
@@ -392,7 +391,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.FetchCompleted(opId, results.Count, elapsedMs);
 
         CheckSlowQuery(opId, elapsedMs, sql);
@@ -414,7 +413,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         var opId = OpId.Next();
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.SqlGenerated(opId, sql);
 
         LogRawParameters(opId, parameters);
@@ -437,7 +436,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         var result = await command.ExecuteScalarAsync(cancellationToken);
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogManager.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
             RawSqlLog.ScalarResult(opId, result?.ToString() ?? "null");
 
         CheckSlowQuery(opId, elapsedMs, sql);
@@ -457,7 +456,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
     /// </summary>
     private static void LogRawParameters(long opId, object?[] parameters)
     {
-        if (!LogManager.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName))
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) != true)
             return;
 
         for (int i = 0; i < parameters.Length; i++)
@@ -474,7 +473,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         var threshold = SlowQueryThreshold;
         if (threshold.HasValue && elapsedMs > threshold.Value.TotalMilliseconds)
         {
-            if (LogManager.IsEnabled(LogLevel.Warning, ExecutionLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Warning, ExecutionLog.CategoryName) == true)
                 ExecutionLog.SlowQuery(opId, elapsedMs, sql);
         }
     }
@@ -502,7 +501,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
             {
                 _connection.Close();
 
-                if (LogManager.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName))
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
                     ConnectionLog.Closed();
             }
         }
@@ -522,7 +521,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             await _connection.CloseAsync().ConfigureAwait(false);
 
-            if (LogManager.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName))
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
                 ConnectionLog.Closed();
         }
 

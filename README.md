@@ -1,6 +1,6 @@
 # <img src="./docs/images/logo-128.png" height="48"> Quarry
 
-Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit all SQL at compile time. AOT compatible. Structured logging via Logsmith.
+Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit all SQL at compile time. AOT compatible. Zero runtime dependencies. Structured logging via Logsmith Abstraction mode.
 
 ---
 
@@ -50,7 +50,7 @@ Quarry takes a different approach: the source generator reads your query call si
 | Reflection-free hot path | Yes | No | Partial (AOT mode) | No |
 | NativeAOT compatible | Yes | Partial | Partial | No |
 | Compile-time diagnostics | Yes | Limited | No | No |
-| Minimal dependencies | Yes (Logsmith only) | No | No | No |
+| No dependencies | Yes | No | No | No |
 | Type-safe schema definition | Yes | Yes (DbContext/model) | No | No |
 | Multi-dialect support | Yes (4 dialects) | Yes (providers) | Manual | Yes |
 | Join support | Up to 4 tables | Unlimited | Manual | Yes |
@@ -554,7 +554,7 @@ quarry scaffold -c "Server=localhost;Database=mydb" -d sqlserver -o Schemas --ni
 
 ## Logging
 
-Quarry uses [Logsmith](https://www.nuget.org/packages/Logsmith) for structured logging.
+Quarry uses [Logsmith](https://www.nuget.org/packages/Logsmith) in **Abstraction mode** for structured logging. All logging types are source-generated into the `Quarry.Logging` namespace — no Logsmith DLL ships with Quarry. Consumers wire logging by implementing a single interface.
 
 ### Log Categories
 
@@ -570,13 +570,25 @@ Quarry uses [Logsmith](https://www.nuget.org/packages/Logsmith) for structured l
 
 ### Setup
 
+Implement `ILogsmithLogger` and assign to `LogsmithOutput.Logger`:
+
 ```csharp
-LogManager.Initialize(c =>
+using Quarry.Logging;
+
+LogsmithOutput.Logger = new ConsoleLogger();
+
+sealed class ConsoleLogger : ILogsmithLogger
 {
-    c.MinimumLevel = LogLevel.Debug;
-    c.AddSink(new ConsoleSink());
-});
+    public bool IsEnabled(LogLevel level, string category) => level >= LogLevel.Debug;
+
+    public void Write(in LogEntry entry, ReadOnlySpan<byte> utf8Message)
+    {
+        Console.WriteLine($"[{entry.Level}] {entry.Category}: {Encoding.UTF8.GetString(utf8Message)}");
+    }
+}
 ```
+
+To disable logging, set `LogsmithOutput.Logger = null` (the default).
 
 ### Slow Query Detection
 
