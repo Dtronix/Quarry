@@ -15,10 +15,9 @@ public sealed class QueryDiagnostics
         DiagnosticQueryKind kind,
         SqlDialect dialect,
         string tableName,
-        DiagnosticOptimizationTier tier = DiagnosticOptimizationTier.RuntimeBuild,
+        DiagnosticOptimizationTier tier = DiagnosticOptimizationTier.PrebuiltDispatch,
         bool isCarrierOptimized = false,
         IReadOnlyList<ClauseDiagnostic>? clauses = null,
-        object? rawState = null,
         int insertRowCount = 0,
         // New parameters
         string? tierReason = null,
@@ -47,7 +46,6 @@ public sealed class QueryDiagnostics
         Tier = tier;
         IsCarrierOptimized = isCarrierOptimized;
         Clauses = clauses ?? [];
-        RawState = rawState;
         InsertRowCount = insertRowCount;
 
         // New properties
@@ -161,7 +159,6 @@ public sealed class QueryDiagnostics
 
     // ── Internal properties ──
 
-    internal object? RawState { get; }
     internal int InsertRowCount { get; }
 }
 
@@ -350,8 +347,6 @@ public enum DiagnosticBranchKind
 /// <summary>The optimization tier applied to a query chain at compile time.</summary>
 public enum DiagnosticOptimizationTier
 {
-    /// <summary>SQL is built at runtime by the query builder (no compile-time optimization).</summary>
-    RuntimeBuild,
     /// <summary>SQL is pre-built at compile time with a dispatch table for conditional clauses.</summary>
     PrebuiltDispatch
 }

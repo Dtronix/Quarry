@@ -647,65 +647,6 @@ internal partial class LoggingIntegrationTests
 
     #endregion
 
-    #region Sensitive Parameter Redaction
-
-    [Test]
-    public void ModificationParameter_IsSensitive_RedactsValue()
-    {
-        // Directly test the LogParameters redaction behavior
-        // by creating ModificationParameters and triggering logging
-        var parameters = new List<ModificationParameter>
-        {
-            new(0, "visible-value"),
-            new(1, "secret-value", isSensitive: true),
-            new(2, 42)
-        };
-
-        // Trigger parameter logging
-        foreach (var param in parameters)
-        {
-            var displayValue = param.IsSensitive ? "***" : (param.Value?.ToString() ?? "null");
-            ParameterLog.Bound(0, param.Index, displayValue);
-        }
-
-        var paramEntries = _sink.Entries
-            .Where(e => e.Category == "Quarry.Parameters")
-            .ToList();
-
-        Assert.That(paramEntries, Has.Count.EqualTo(3));
-
-        // Non-sensitive parameter should show actual value
-        Assert.That(paramEntries[0].Message, Does.Contain("visible-value"));
-
-        // Sensitive parameter should show "***" instead of actual value
-        Assert.That(paramEntries[1].Message, Does.Contain("***"));
-        Assert.That(paramEntries[1].Message, Does.Not.Contain("secret-value"));
-
-        // Non-sensitive int parameter should show actual value
-        Assert.That(paramEntries[2].Message, Does.Contain("42"));
-    }
-
-    [Test]
-    public void ModificationParameter_NotSensitive_ShowsValue()
-    {
-        var param = new ModificationParameter(0, "plain-text");
-
-        Assert.That(param.IsSensitive, Is.False);
-
-        var displayValue = param.IsSensitive ? "***" : (param.Value?.ToString() ?? "null");
-        Assert.That(displayValue, Is.EqualTo("plain-text"));
-    }
-
-    [Test]
-    public void ModificationParameter_Sensitive_FlagIsSet()
-    {
-        var param = new ModificationParameter(0, "secret", isSensitive: true);
-
-        Assert.That(param.IsSensitive, Is.True);
-    }
-
-    #endregion
-
     #region Async Enumerable Logging
 
     [Test]

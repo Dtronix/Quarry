@@ -13,14 +13,8 @@ internal enum OptimizationTier
     PrebuiltDispatch,
 
     /// <summary>
-    /// Tier 2: Clauses are intercepted and pre-quoted, but too many combinations for a dispatch table.
-    /// A lightweight concat assembles the final SQL at runtime.
-    /// </summary>
-    PrequotedFragments,
-
-    /// <summary>
-    /// Tier 3: Dynamic/opaque composition. No execution interceptor emitted.
-    /// Current SqlBuilder path runs unchanged.
+    /// Chain cannot be analyzed statically. Produces a compile-time error
+    /// directing the user to restructure.
     /// </summary>
     RuntimeBuild
 }

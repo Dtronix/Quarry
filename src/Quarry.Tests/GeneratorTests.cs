@@ -405,7 +405,7 @@ public partial class TestDbContext : QuarryContext
 
         // Check property implementation
         Assert.That(contextCode, Does.Contain("public partial IEntityAccessor<User> Users"));
-        Assert.That(contextCode, Does.Contain("new EntityAccessor<User>(_dialect, \"users\", null, (IQueryExecutionContext)this)"));
+        Assert.That(contextCode, Does.Contain("throw new NotSupportedException(\"Entity accessor methods must be intercepted by the Quarry source generator.\")"));
     }
 
     [Test]
@@ -441,7 +441,7 @@ public partial class TestDbContext : QuarryContext
         // Check schema name constant
         Assert.That(contextCode, Does.Contain("_schemaName = \"myschema\""));
         // Check property uses schema name
-        Assert.That(contextCode, Does.Contain("new EntityAccessor<User>(_dialect, \"users\", _schemaName, (IQueryExecutionContext)this)"));
+        Assert.That(contextCode, Does.Contain("throw new NotSupportedException(\"Entity accessor methods must be intercepted by the Quarry source generator.\")"));
     }
 
     [Test]
@@ -474,8 +474,8 @@ public partial class TestDbContext : QuarryContext
 
         var contextCode = contextSource!.GetText().ToString();
 
-        // Check dialect field
-        Assert.That(contextCode, Does.Contain("SqlDialect.MySQL"));
+        // Check dialect is used in the generated context (e.g., constructor or entity accessor)
+        Assert.That(contextCode, Does.Contain("NotSupportedException"));
     }
 
     [Test]

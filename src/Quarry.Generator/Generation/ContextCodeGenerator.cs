@@ -45,11 +45,6 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"{access} partial class {context.ClassName}");
         sb.AppendLine("{");
 
-        // Dialect field
-        var dialectField = GetDialectField(context.Dialect);
-        sb.AppendLine($"    private static readonly SqlDialect _dialect = {dialectField};");
-        sb.AppendLine();
-
         // Schema name constant (if any)
         if (!string.IsNullOrEmpty(context.Schema))
         {
@@ -119,36 +114,13 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// Gets an entity accessor for the {entity.TableName} table.");
         sb.AppendLine($"    /// </summary>");
 
-        if (!string.IsNullOrEmpty(schemaName))
-        {
-            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", _schemaName, (IQueryExecutionContext)this);");
-        }
-        else
-        {
-            sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
-            sb.AppendLine($"        => new EntityAccessor<{entity.EntityName}>(_dialect, \"{EscapeString(entity.TableName)}\", null, (IQueryExecutionContext)this);");
-        }
+        sb.AppendLine($"    {access} partial IEntityAccessor<{entity.EntityName}> {propertyName}()");
+        sb.AppendLine($"        => throw new NotSupportedException(\"Entity accessor methods must be intercepted by the Quarry source generator.\");");
 
         sb.AppendLine();
     }
 
     /// <summary>
-    /// Gets the dialect field expression for the specified dialect.
-    /// </summary>
-    private static string GetDialectField(SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.SQLite => "SqlDialect.SQLite",
-            SqlDialect.PostgreSQL => "SqlDialect.PostgreSQL",
-            SqlDialect.MySQL => "SqlDialect.MySQL",
-            SqlDialect.SqlServer => "SqlDialect.SqlServer",
-            _ => "SqlDialect.SQLite"
-        };
-    }
-
-
     /// <summary>
     /// Generates an Update method for an entity.
     /// </summary>

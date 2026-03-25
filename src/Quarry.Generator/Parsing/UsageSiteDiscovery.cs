@@ -66,7 +66,6 @@ internal static class UsageSiteDiscovery
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
         ["ToDiagnostics"] = InterceptorKind.ToDiagnostics,
-        ["ToSql"] = InterceptorKind.ToSql,
         ["Limit"] = InterceptorKind.Limit,
         ["Offset"] = InterceptorKind.Offset,
         ["Distinct"] = InterceptorKind.Distinct,
@@ -1260,7 +1259,7 @@ internal static class UsageSiteDiscovery
             or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
-            or "ToAsyncEnumerable" or "ToDiagnostics" or "ToSql" or "Prepare"
+            or "ToAsyncEnumerable" or "ToDiagnostics" or "Prepare"
             or "Users" or "Orders" or "Accounts" or "Products" or "Projects";
     }
 
@@ -1352,7 +1351,7 @@ internal static class UsageSiteDiscovery
 
     private static bool IsPreparedQueryTerminal(string name)
     {
-        return name is "ToDiagnostics" or "ToSql"
+        return name is "ToDiagnostics"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
             or "ToAsyncEnumerable";

@@ -32,15 +32,9 @@ public sealed class QueryPlan
 /// </summary>
 public enum QueryPlanTier
 {
-    /// <summary>No optimization — runtime SQL builder constructs the query.</summary>
-    RuntimeBuild,
-
-    /// <summary>Pre-quoted fragments assembled at runtime (tier 2).</summary>
-    PrequotedFragments,
-
-    /// <summary>Fully pre-built SQL dispatched by clause mask (tier 1).</summary>
+    /// <summary>Fully pre-built SQL dispatched by clause mask.</summary>
     PrebuiltDispatch,
 
-    /// <summary>Carrier-optimized pre-built dispatch (tier 1 + carrier).</summary>
+    /// <summary>Carrier-optimized pre-built dispatch.</summary>
     CarrierOptimized
 }
