@@ -6,7 +6,7 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 
 # Quarry.Analyzers
 
-Compile-time SQL query analysis rules for Quarry. 18 Roslyn diagnostics detect performance issues, wasteful patterns, and dialect-specific problems in Quarry query call sites.
+Compile-time SQL query analysis rules for Quarry. 19 Roslyn diagnostics detect performance issues, wasteful patterns, and dialect-specific problems in Quarry query call sites. Analyzers run against the interceptor call sites discovered by `Quarry.Generator` and evaluate the rendered SQL at compile time.
 
 ## Packages
 
@@ -29,6 +29,22 @@ Compile-time SQL query analysis rules for Quarry. 18 Roslyn diagnostics detect p
 ```
 
 Requires `Quarry` and `Quarry.Generator` to be referenced in the same project.
+
+To also get automatic code fixes, add the CodeFixes package:
+
+```xml
+<PackageReference Include="Quarry.Analyzers.CodeFixes" Version="1.0.0"
+    OutputItemType="Analyzer"
+    ReferenceOutputAssembly="false" />
+```
+
+---
+
+## How It Works
+
+Quarry.Analyzers hooks into the Roslyn compilation pipeline alongside `Quarry.Generator`. When the generator discovers interceptor call sites (`.Where()`, `.Join()`, `.Select()`, etc.), the analyzer evaluates the rendered SQL expression for each site and runs all 19 diagnostic rules against it.
+
+All analysis happens at compile time — no runtime overhead.
 
 ---
 
@@ -61,7 +77,7 @@ All rules are enabled by default. Suppress individual rules via `#pragma`, `.edi
 
 | ID | Title | Severity | What it detects |
 |----|-------|----------|-----------------|
-| QRA301 | Leading wildcard LIKE | Info | `Contains()` → `LIKE '%…%'` prevents index usage |
+| QRA301 | Leading wildcard LIKE | Info | `Contains()` -> `LIKE '%...%'` prevents index usage |
 | QRA302 | Function on column in WHERE | Info | `LOWER()`, `UPPER()`, `TRIM()`, etc. on columns in WHERE |
 | QRA303 | OR across different columns | Info | `col1 = x OR col2 = y` prevents single-index scan |
 | QRA304 | WHERE on non-indexed column | Info | Filter on column not covered by any declared index |
@@ -79,6 +95,18 @@ All rules are enabled by default. Suppress individual rules via `#pragma`, `.edi
 |----|-------|----------|-----------------|
 | QRA501 | Dialect optimization available | Info | PostgreSQL: suggest `ILIKE` over `LOWER() + LIKE`; SQLite: suggest `COLLATE NOCASE` |
 | QRA502 | Suboptimal for dialect | Warning | SQLite: `RIGHT JOIN` unsupported; SQL Server: `OFFSET` requires `ORDER BY` |
+
+---
+
+## Code Fixes
+
+Three rules include automatic code fix providers (via `Quarry.Analyzers.CodeFixes`). These appear as lightbulb suggestions in your IDE:
+
+| ID | Fix | What it does |
+|----|-----|--------------|
+| QRA101 | Count to Any | Rewrites `Count() > 0` to `Any()` and `Count() == 0` to `!Any()`. Handles async variants. |
+| QRA102 | Single-value IN to Equals | Converts `new[] { x }.Contains(col)` to `col == x`. |
+| QRA201 | Remove unused join | Removes the `.Join(...)` call when the joined table is unreferenced. |
 
 ---
 
@@ -123,4 +151,40 @@ Four rules default to **Warning** — these indicate likely bugs or significant 
 | QRA401 | Query inside loop (N+1) |
 | QRA502 | Suboptimal for dialect |
 
-The remaining 14 rules default to **Info** — suggestions that may or may not apply depending on context.
+The remaining 15 rules default to **Info** — suggestions that may or may not apply depending on context.
+
+---
+
+## Usage Examples
+
+Analyzers fire automatically on Quarry query chains. No configuration is needed beyond installation.
+
+```csharp
+// QRA101 fires: "Use Any() instead of Count() > 0"
+var hasUsers = await db.Users
+    .Where(u => u.IsActive)
+    .ExecuteCountAsync() > 0;
+
+// Fix: use Any()
+var hasUsers = await db.Users
+    .Where(u => u.IsActive)
+    .ExecuteAnyAsync();
+```
+
+```csharp
+// QRA201 fires: "Joined table 'Orders' is not referenced in SELECT, WHERE, or ORDER BY"
+var users = await db.Users
+    .Join(db.Orders, (u, o) => u.Id == o.UserId)
+    .Select(u => new { u.Name, u.Email })
+    .ExecuteFetchAllAsync();
+```
+
+```csharp
+// QRA401 fires: "Query execution inside loop — potential N+1 query"
+foreach (var userId in userIds)
+{
+    var orders = await db.Orders
+        .Where(o => o.UserId == userId)
+        .ExecuteFetchAllAsync();
+}
+```
