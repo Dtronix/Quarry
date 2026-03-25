@@ -478,20 +478,20 @@ internal static class TerminalEmitHelpers
         var hasVariants = chain.SqlVariants.Count > 0;
         if (hasVariants)
         {
-            sb.AppendLine("        var __variants = new System.Collections.Generic.Dictionary<ulong, SqlVariantDiagnostic>");
+            sb.AppendLine("        var __variants = new System.Collections.Generic.Dictionary<int, SqlVariantDiagnostic>");
             sb.AppendLine("        {");
             if (chain.SqlVariants.Count == 1)
             {
                 foreach (var kvp in chain.SqlVariants)
                 {
-                    sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic({carrier.ClassName}._sql, {kvp.Value.ParameterCount}) }},");
+                    sb.AppendLine($"            {{ {kvp.Key}, new SqlVariantDiagnostic({carrier.ClassName}._sql, {kvp.Value.ParameterCount}) }},");
                 }
             }
             else
             {
                 foreach (var kvp in chain.SqlVariants.OrderBy(kv => kv.Key))
                 {
-                    sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic({carrier.ClassName}._sql[{kvp.Key}], {kvp.Value.ParameterCount}) }},");
+                    sb.AppendLine($"            {{ {kvp.Key}, new SqlVariantDiagnostic({carrier.ClassName}._sql[{kvp.Key}], {kvp.Value.ParameterCount}) }},");
                 }
             }
             sb.AppendLine("        };");
@@ -569,7 +569,7 @@ internal static class TerminalEmitHelpers
             : "null";
 
         // Active mask
-        var maskExpr = plan.ConditionalTerms.Count > 0 ? "(ulong)__c.Mask" : "0UL";
+        var maskExpr = plan.ConditionalTerms.Count > 0 ? "(int)__c.Mask" : "0";
 
         // Projection kind
         var projKindLiteral = projInfo != null ? $"\"{projInfo.Kind}\"" : "null";
