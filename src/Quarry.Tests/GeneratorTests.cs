@@ -840,7 +840,6 @@ public partial class TestDbContext : QuarryContext
     }
 
     [Test]
-    [Ignore("EntityReader delegation not wired for identity projections in inline compilation — requires generator investigation")]
     public void Generator_WithValidEntityReader_EmitsReaderDelegation()
     {
         var source = @"
@@ -884,7 +883,7 @@ public static class Queries
 {
     public static async Task Test(TestDbContext db)
     {
-        await db.Users().ExecuteFetchAllAsync();
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
     }
 }
 ";
