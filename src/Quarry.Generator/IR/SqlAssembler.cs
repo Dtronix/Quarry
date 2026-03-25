@@ -35,7 +35,7 @@ internal static class SqlAssembler
         var dialect = executionSite.Bound.Dialect;
         var resultTypeName = ResolveResultTypeName(executionSite, plan);
 
-        var sqlVariants = new Dictionary<ulong, AssembledSqlVariant>();
+        var sqlVariants = new Dictionary<int, AssembledSqlVariant>();
 
         if (plan.Tier == OptimizationTier.RuntimeBuild)
         {
@@ -129,7 +129,7 @@ internal static class SqlAssembler
     /// <summary>
     /// Renders the complete SQL for a given mask value.
     /// </summary>
-    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         return plan.Kind switch
         {
@@ -142,7 +142,7 @@ internal static class SqlAssembler
         };
     }
 
-    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, ulong mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect)
     {
         var sb = new StringBuilder();
         var paramIndex = 0;
@@ -258,7 +258,7 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
-    private static AssembledSqlVariant RenderDeleteSql(QueryPlan plan, ulong mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderDeleteSql(QueryPlan plan, int mask, SqlDialect dialect)
     {
         var sb = new StringBuilder();
         var paramIndex = 0;
@@ -288,7 +288,7 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
-    private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, ulong mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, int mask, SqlDialect dialect)
     {
         var sb = new StringBuilder();
         var paramIndex = 0;
@@ -335,7 +335,7 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
-    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         var sb = new StringBuilder();
 
@@ -387,7 +387,7 @@ internal static class SqlAssembler
     /// so only the prefix (INSERT INTO table (columns) VALUES ) is rendered.
     /// The runtime BatchInsertSqlBuilder expands the row template per entity.
     /// </summary>
-    private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, ulong mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         var sb = new StringBuilder();
 
@@ -537,34 +537,34 @@ internal static class SqlAssembler
     /// <summary>
     /// Gets terms that are active for the given mask (unconditional terms + conditional terms whose bit is set).
     /// </summary>
-    private static List<WhereTerm> GetActiveTerms(IReadOnlyList<WhereTerm> terms, ulong mask)
+    private static List<WhereTerm> GetActiveTerms(IReadOnlyList<WhereTerm> terms, int mask)
     {
         var result = new List<WhereTerm>();
         foreach (var t in terms)
         {
-            if (t.BitIndex == null || (mask & (1UL << t.BitIndex.Value)) != 0)
+            if (t.BitIndex == null || (mask & (1 << t.BitIndex.Value)) != 0)
                 result.Add(t);
         }
         return result;
     }
 
-    private static List<OrderTerm> GetActiveTerms(IReadOnlyList<OrderTerm> terms, ulong mask)
+    private static List<OrderTerm> GetActiveTerms(IReadOnlyList<OrderTerm> terms, int mask)
     {
         var result = new List<OrderTerm>();
         foreach (var t in terms)
         {
-            if (t.BitIndex == null || (mask & (1UL << t.BitIndex.Value)) != 0)
+            if (t.BitIndex == null || (mask & (1 << t.BitIndex.Value)) != 0)
                 result.Add(t);
         }
         return result;
     }
 
-    private static List<SetTerm> GetActiveTerms(IReadOnlyList<SetTerm> terms, ulong mask)
+    private static List<SetTerm> GetActiveTerms(IReadOnlyList<SetTerm> terms, int mask)
     {
         var result = new List<SetTerm>();
         foreach (var t in terms)
         {
-            if (t.BitIndex == null || (mask & (1UL << t.BitIndex.Value)) != 0)
+            if (t.BitIndex == null || (mask & (1 << t.BitIndex.Value)) != 0)
                 result.Add(t);
         }
         return result;

@@ -120,18 +120,28 @@ public partial class TestDbContext : QuarryContext
     }
 
     /// <summary>
-    /// Asserts that the generated code contains exactly <paramref name="expectedCount"/> mask switch arms.
-    /// The carrier terminal emits: <c>var sql = __c.Mask switch { N =&gt; @"...", M =&gt; @"...", ... };</c>
-    /// Mutually-exclusive branches may skip mask value 0 (e.g., values 1 and 2 for an if/else pair).
+    /// Asserts that the generated code contains exactly <paramref name="expectedCount"/> SQL variant entries.
+    /// The carrier class emits: <c>internal static readonly string[] _sql = [ @"...", @"...", ... ];</c>
+    /// For single-variant chains, asserts a single static readonly string _sql field.
     /// </summary>
     private static void AssertMaskVariantCount(string code, int expectedCount)
     {
-        // Count lines matching the pattern "  N => @" in the switch expression
-        var armCount = code.Split('\n').Count(line => line.TrimStart().Length > 0
-            && char.IsDigit(line.TrimStart()[0])
-            && line.Contains("=> @\""));
-        Assert.That(armCount, Is.EqualTo(expectedCount),
-            $"Expected {expectedCount} mask switch arms but found {armCount}");
+        if (expectedCount == 1)
+        {
+            Assert.That(code, Does.Contain("static readonly string _sql = @\""),
+                "Single-variant chain should emit static readonly string _sql");
+            return;
+        }
+
+        // Count @"..." entries inside the _sql array initializer on the carrier class.
+        // Array entries are lines starting with @" after trimming (excludes gap entries like "").
+        var entryCount = code.Split('\n').Count(line =>
+        {
+            var trimmed = line.Trim();
+            return trimmed.StartsWith("@\"") && trimmed.EndsWith("\",");
+        });
+        Assert.That(entryCount, Is.EqualTo(expectedCount),
+            $"Expected {expectedCount} _sql array entries but found {entryCount}");
     }
 
     // ─────────────────────────────────────────────────────────────────
