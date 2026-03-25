@@ -454,6 +454,33 @@ internal static class UsageSiteDiscovery
                 containingType = originatingBuilderType;
         }
 
+        // ── Step 8b: Remap kind for prepared insert/batch-insert terminals ─
+        // After resolving the originating builder type, remap generic kinds to
+        // insert-specific kinds so FileEmitter dispatches correctly.
+        if (isPreparedTerminal)
+        {
+            if (IsInsertBuilderType(containingType.Name) && InsertBuilderMethods.Contains(methodName))
+            {
+                kind = methodName switch
+                {
+                    "ExecuteNonQueryAsync" => InterceptorKind.InsertExecuteNonQuery,
+                    "ExecuteScalarAsync" => InterceptorKind.InsertExecuteScalar,
+                    "ToDiagnostics" => InterceptorKind.InsertToDiagnostics,
+                    _ => kind
+                };
+            }
+            else if (IsExecutableBatchInsertType(containingType.Name) && ExecutableBatchInsertMethods.Contains(methodName))
+            {
+                kind = methodName switch
+                {
+                    "ExecuteNonQueryAsync" => InterceptorKind.BatchInsertExecuteNonQuery,
+                    "ExecuteScalarAsync" => InterceptorKind.BatchInsertExecuteScalar,
+                    "ToDiagnostics" => InterceptorKind.BatchInsertToDiagnostics,
+                    _ => kind
+                };
+            }
+        }
+
         var (entityTypeName, resultTypeName) = ExtractTypeArguments(containingType);
         if (entityTypeName == null)
             return null;

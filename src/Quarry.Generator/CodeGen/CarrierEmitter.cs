@@ -744,7 +744,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (IsNonNullableValueType(param.ClrType))
+                else if (IsNonNullableValueType(param.ClrType) || param.IsEnum)
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -793,7 +793,7 @@ internal static class CarrierEmitter
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
         // Bind entity properties as parameters using InsertInfo
-        var insertInfo = chain.ExecutionSite.InsertInfo;
+        var insertInfo = chain.InsertInfo;
         if (insertInfo != null)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
@@ -843,7 +843,7 @@ internal static class CarrierEmitter
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
 
-        var insertInfo = chain.ExecutionSite.InsertInfo ?? chain.PrepareSite?.InsertInfo;
+        var insertInfo = chain.InsertInfo;
         if (insertInfo != null && insertInfo.Columns.Count > 0)
         {
             var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);

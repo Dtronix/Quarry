@@ -344,7 +344,6 @@ internal static class ChainAnalyzer
         int? limitLiteral = null;
         int? offsetLiteral = null;
         bool isDistinct = false;
-        bool hasSelectClause = false;
         SelectProjection? projection = null;
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
@@ -544,7 +543,6 @@ internal static class ChainAnalyzer
             }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
-                hasSelectClause = true;
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
             }
         }
@@ -571,10 +569,11 @@ internal static class ChainAnalyzer
 
         // Enrich identity projections with entity columns so SqlAssembler renders
         // explicit column names instead of SELECT *.
-        // Only for chains that have an explicit Select clause (hasSelectClause flag).
-        // Discovery may produce wrong columns (e.g. computed properties like DisplayLabel),
-        // so we always use the authoritative entity column metadata from EntityRef.
-        if (hasSelectClause && projection.IsIdentity)
+        // Always enrich — even when no explicit Select clause — so the generated SQL
+        // is predictable and never contains SELECT *.
+        // Uses authoritative entity column metadata from EntityRef (not discovery-time
+        // column info which may include computed properties like DisplayLabel).
+        if (projection.IsIdentity)
         {
             var entityRef = executionSite.Bound.Entity;
             if (entityRef != null && entityRef.Columns.Count > 0)
@@ -606,18 +605,23 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Handle insert columns — check execution site first, then clause sites and prepare site
-        // (for Prepare chains, the InsertInfo is on the insert transition clause, not the execution site)
-        InsertInfo? resolvedInsertInfo = executionSite.Bound.InsertInfo;
-        if (resolvedInsertInfo == null && (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert))
+        // Handle insert columns — prefer prepare site (has initializer-derived columns),
+        // then clause sites, then execution site (which may have all-columns fallback for prepared terminals).
+        InsertInfo? resolvedInsertInfo = null;
+        if (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert)
         {
-            foreach (var cs in clauseSites)
-            {
-                if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
-            }
-            if (resolvedInsertInfo == null && prepareSite?.Bound.InsertInfo != null)
+            if (prepareSite?.Bound.InsertInfo != null)
                 resolvedInsertInfo = prepareSite.Bound.InsertInfo;
+
+            if (resolvedInsertInfo == null)
+            {
+                foreach (var cs in clauseSites)
+                {
+                    if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
+                }
+            }
         }
+        resolvedInsertInfo ??= executionSite.Bound.InsertInfo;
         if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && resolvedInsertInfo != null)
         {
             var insertInfo = resolvedInsertInfo;

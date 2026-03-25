@@ -7,15 +7,20 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectDeleteTests : CrossDialectTestBase
+internal class CrossDialectDeleteTests
 {
     #region Basic Where
 
     [Test]
-    public void Delete_Where_Equality()
+    public async Task Delete_Where_Equality()
     {
-        AssertDialects(
-            Lite.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Delete().Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId == 1).ToDiagnostics(),
@@ -23,13 +28,21 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"users\" WHERE \"UserId\" = 1",
             mysql:  "DELETE FROM `users` WHERE `UserId` = 1",
             ss:     "DELETE FROM [users] WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     [Test]
-    public void Delete_Where_GreaterThan()
+    public async Task Delete_Where_GreaterThan()
     {
-        AssertDialects(
-            Lite.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Delete().Where(u => u.UserId > 100).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId > 100).ToDiagnostics(),
@@ -37,6 +50,9 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"users\" WHERE \"UserId\" > 100",
             mysql:  "DELETE FROM `users` WHERE `UserId` > 100",
             ss:     "DELETE FROM [users] WHERE [UserId] > 100");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(0));
     }
 
     #endregion
@@ -44,10 +60,15 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     #region Boolean
 
     [Test]
-    public void Delete_Where_Boolean()
+    public async Task Delete_Where_Boolean()
     {
-        AssertDialects(
-            Lite.Users().Delete().Where(u => u.IsActive).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Delete().Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Delete().Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Delete().Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.IsActive).ToDiagnostics(),
@@ -55,13 +76,21 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"users\" WHERE \"IsActive\" = TRUE",
             mysql:  "DELETE FROM `users` WHERE `IsActive` = 1",
             ss:     "DELETE FROM [users] WHERE [IsActive] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(2)); // Alice and Bob are active
     }
 
     [Test]
-    public void Delete_Where_NegatedBoolean()
+    public async Task Delete_Where_NegatedBoolean()
     {
-        AssertDialects(
-            Lite.Users().Delete().Where(u => !u.IsActive).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Delete().Where(u => !u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Delete().Where(u => !u.IsActive).ToDiagnostics(),
             My.Users().Delete().Where(u => !u.IsActive).ToDiagnostics(),
             Ss.Users().Delete().Where(u => !u.IsActive).ToDiagnostics(),
@@ -69,6 +98,9 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
             mysql:  "DELETE FROM `users` WHERE NOT (`IsActive`)",
             ss:     "DELETE FROM [users] WHERE NOT ([IsActive])");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1)); // Only Charlie is inactive
     }
 
     #endregion
@@ -76,10 +108,15 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     #region Multiple Where (AND)
 
     [Test]
-    public void Delete_MultipleWhere()
+    public async Task Delete_MultipleWhere()
     {
-        AssertDialects(
-            Lite.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Delete().Where(u => u.UserId == 1).Where(u => u.IsActive).ToDiagnostics(),
@@ -87,6 +124,9 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"users\" WHERE (\"UserId\" = 1) AND (\"IsActive\" = TRUE)",
             mysql:  "DELETE FROM `users` WHERE (`UserId` = 1) AND (`IsActive` = 1)",
             ss:     "DELETE FROM [users] WHERE ([UserId] = 1) AND ([IsActive] = 1)");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1)); // Alice: UserId=1, IsActive=true
     }
 
     #endregion
@@ -94,10 +134,15 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
     #region Other Entities
 
     [Test]
-    public void Delete_Order_Where()
+    public async Task Delete_Order_Where()
     {
-        AssertDialects(
-            Lite.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Orders().Delete().Where(o => o.OrderId == 42).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
             My.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
             Ss.Orders().Delete().Where(o => o.OrderId == 42).ToDiagnostics(),
@@ -105,6 +150,9 @@ internal class CrossDialectDeleteTests : CrossDialectTestBase
             pg:     "DELETE FROM \"orders\" WHERE \"OrderId\" = 42",
             mysql:  "DELETE FROM `orders` WHERE `OrderId` = 42",
             ss:     "DELETE FROM [orders] WHERE [OrderId] = 42");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(0)); // No order with ID 42
     }
 
     #endregion

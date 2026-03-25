@@ -7,15 +7,20 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectUpdateTests : CrossDialectTestBase
+internal class CrossDialectUpdateTests
 {
     #region Update SetAction + Where
 
     [Test]
-    public void Update_SetAction_Where_Equality()
+    public async Task Update_SetAction_Where_Equality()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
@@ -23,13 +28,21 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     [Test]
-    public void Update_SetAction_Where_Boolean()
+    public async Task Update_SetAction_Where_Boolean()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
@@ -37,6 +50,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"IsActive\" = FALSE WHERE \"IsActive\" = TRUE",
             mysql:  "UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1",
             ss:     "UPDATE [users] SET [IsActive] = 0 WHERE [IsActive] = 1");
+
+        // Seed has 2 active users (Alice, Bob)
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(2));
     }
 
     #endregion
@@ -44,10 +61,15 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region UpdateSetPoco
 
     [Test]
-    public void Update_SetPoco()
+    public async Task Update_SetPoco()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(new User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(new User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(new Pg.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(new My.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(new Ss.User { UserName = "New", IsActive = false }).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -55,6 +77,9 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = $2 WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -62,10 +87,15 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Update with Multiple SetAction Calls
 
     [Test]
-    public void Update_MultipleSetAction()
+    public async Task Update_MultipleSetAction()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -73,6 +103,9 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -80,11 +113,16 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region UpdateWhere with Captured Parameter
 
     [Test]
-    public void Update_Where_CapturedParameter()
+    public async Task Update_Where_CapturedParameter()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var id = 5;
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName = "x").Where(u => u.UserId == id).ToDiagnostics(),
+        var lite = Lite.Users().Update().Set(u => u.UserName = "x").Where(u => u.UserId == id).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.UserName = "x").Where(u => u.UserId == id).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "x").Where(u => u.UserId == id).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "x").Where(u => u.UserId == id).ToDiagnostics(),
@@ -92,6 +130,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'x' WHERE \"UserId\" = $1",
             mysql:  "UPDATE `users` SET `UserName` = 'x' WHERE `UserId` = ?",
             ss:     "UPDATE [users] SET [UserName] = 'x' WHERE [UserId] = @p0");
+
+        // UserId 5 doesn't exist in seed data — 0 rows affected
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(0));
     }
 
     #endregion
@@ -99,10 +141,15 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Set(Action<T>) — Single Assignment
 
     [Test]
-    public void Update_SetAction_SingleAssignment_Literal()
+    public async Task Update_SetAction_SingleAssignment_Literal()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "NewName").Where(u => u.UserId == 1).ToDiagnostics(),
@@ -110,13 +157,21 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'NewName' WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = 'NewName' WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = 'NewName' WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     [Test]
-    public void Update_SetAction_SingleAssignment_Boolean()
+    public async Task Update_SetAction_SingleAssignment_Boolean()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.IsActive = false).Where(u => u.IsActive).ToDiagnostics(),
@@ -124,6 +179,10 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"IsActive\" = FALSE WHERE \"IsActive\" = TRUE",
             mysql:  "UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1",
             ss:     "UPDATE [users] SET [IsActive] = 0 WHERE [IsActive] = 1");
+
+        // 2 active users in seed
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(2));
     }
 
     #endregion
@@ -131,10 +190,15 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Set(Action<T>) — Multi-Assignment (Statement Lambda)
 
     [Test]
-    public void Update_SetAction_MultiAssignment()
+    public async Task Update_SetAction_MultiAssignment()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = "x"; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -142,6 +206,9 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -149,10 +216,15 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Set(Action<T>) — Chained with existing Set overloads
 
     [Test]
-    public void Update_SetAction_ChainedCalls()
+    public async Task Update_SetAction_ChainedCalls()
     {
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive = false).Where(u => u.UserId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive = false).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive = false).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive = false).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = "x").Set(u => u.IsActive = false).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -160,6 +232,9 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = 'x', \"IsActive\" = FALSE WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = 'x', [IsActive] = 0 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -167,11 +242,16 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Set(Action<T>) — Captured Variables
 
     [Test]
-    public void Update_SetAction_CapturedVariable()
+    public async Task Update_SetAction_CapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var name = "captured";
-        AssertDialects(
-            Lite.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
+        var lite = Lite.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => u.UserName = name).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -179,14 +259,22 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     [Test]
-    public void Update_SetAction_MultiAssignment_WithCapturedVariable()
+    public async Task Update_SetAction_MultiAssignment_WithCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var name = "captured";
-        AssertDialects(
-            Lite.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
+        var lite = Lite.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             My.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
             Ss.Users().Update().Set(u => { u.UserName = name; u.IsActive = false; }).Where(u => u.UserId == 1).ToDiagnostics(),
@@ -194,6 +282,9 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
             pg:     "UPDATE \"users\" SET \"UserName\" = $1, \"IsActive\" = FALSE WHERE \"UserId\" = 1",
             mysql:  "UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE `UserId` = 1",
             ss:     "UPDATE [users] SET [UserName] = @p0, [IsActive] = 0 WHERE [UserId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -201,9 +292,13 @@ internal class CrossDialectUpdateTests : CrossDialectTestBase
     #region Set(Action<T>) — Type-Mapped Column
 
     [Test]
-    public void Update_SetAction_TypeMappedColumn()
+    public async Task Update_SetAction_TypeMappedColumn()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // SQL-only verification — accounts table not in harness schema
+        QueryTestHarness.AssertDialects(
             Lite.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             Pg.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),
             My.Accounts().Update().Set(a => a.Balance = new Money(200m)).Where(a => a.AccountId == 1).ToDiagnostics(),

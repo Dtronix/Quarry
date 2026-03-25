@@ -574,7 +574,7 @@ internal static class TerminalEmitHelpers
         }
 
         // Identity column
-        var insertInfo = chain.ExecutionSite.InsertInfo;
+        var insertInfo = chain.InsertInfo;
         var identityLiteral = insertInfo?.IdentityColumnName != null
             ? $"\"{esc(insertInfo.IdentityColumnName)}\""
             : "null";

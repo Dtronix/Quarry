@@ -7,13 +7,18 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectSelectTests : CrossDialectTestBase
+internal class CrossDialectSelectTests
 {
     [Test]
-    public void Select_Tuple_TwoColumns()
+    public async Task Select_Tuple_TwoColumns()
     {
-        AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
             My.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
             Ss.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
@@ -21,13 +26,24 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName` FROM `users`",
             ss:     "SELECT [UserId], [UserName] FROM [users]");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+        Assert.That(results[2], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
-    public void Select_Tuple_ThreeColumns()
+    public async Task Select_Tuple_ThreeColumns()
     {
-        AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
             My.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
             Ss.Users().Select(u => (u.UserId, u.UserName, u.IsActive)).ToDiagnostics(),
@@ -35,12 +51,21 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users`",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users]");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice", true)));
+        Assert.That(results[1], Is.EqualTo((2, "Bob", true)));
+        Assert.That(results[2], Is.EqualTo((3, "Charlie", false)));
     }
 
     [Test]
-    public void Select_Dto_UserSummary()
+    public async Task Select_Dto_UserSummary()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Pg.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             My.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
@@ -49,12 +74,33 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users`",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users]");
+
+        var results = await Lite.Users()
+            .Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive })
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(3));
+
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].IsActive, Is.True);
+
+        Assert.That(results[1].UserId, Is.EqualTo(2));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[1].IsActive, Is.True);
+
+        Assert.That(results[2].UserId, Is.EqualTo(3));
+        Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
+        Assert.That(results[2].IsActive, Is.False);
     }
 
     [Test]
-    public void Select_Dto_UserWithEmail()
+    public async Task Select_Dto_UserWithEmail()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
             Pg.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
             My.Users().Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email }).ToDiagnostics(),
@@ -63,13 +109,33 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName`, `Email` FROM `users`",
             ss:     "SELECT [UserId], [UserName], [Email] FROM [users]");
+
+        var results = await Lite.Users()
+            .Select(u => new UserWithEmailDto { UserId = u.UserId, UserName = u.UserName, Email = u.Email })
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(3));
+
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+        Assert.That(results[0].Email, Is.EqualTo("alice@test.com"));
+
+        Assert.That(results[1].UserId, Is.EqualTo(2));
+        Assert.That(results[1].Email, Is.Null);
+
+        Assert.That(results[2].UserId, Is.EqualTo(3));
+        Assert.That(results[2].Email, Is.EqualTo("charlie@test.com"));
     }
 
     [Test]
-    public void Select_OrdersTable_Tuple()
+    public async Task Select_OrdersTable_Tuple()
     {
-        AssertDialects(
-            Lite.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Orders().Select(o => (o.OrderId, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
             My.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
             Ss.Orders().Select(o => (o.OrderId, o.Total)).ToDiagnostics(),
@@ -77,26 +143,38 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
             pg:     "SELECT \"OrderId\", \"Total\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, `Total` FROM `orders`",
             ss:     "SELECT [OrderId], [Total] FROM [orders]");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(results[1], Is.EqualTo((2, 75.50m)));
+        Assert.That(results[2], Is.EqualTo((3, 150.00m)));
     }
 
     [Test]
-    public void Select_Distinct()
+    public async Task Select_Distinct()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Distinct().ToDiagnostics(),
             Pg.Users().Distinct().ToDiagnostics(),
             My.Users().Distinct().ToDiagnostics(),
             Ss.Users().Distinct().ToDiagnostics(),
-            sqlite: "SELECT DISTINCT * FROM \"users\"",
-            pg:     "SELECT DISTINCT * FROM \"users\"",
-            mysql:  "SELECT DISTINCT * FROM `users`",
-            ss:     "SELECT DISTINCT * FROM [users]");
+            sqlite: "SELECT DISTINCT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
+            pg:     "SELECT DISTINCT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
+            mysql:  "SELECT DISTINCT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users`",
+            ss:     "SELECT DISTINCT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users]");
     }
 
     [Test]
-    public void Select_Entity_User_AllColumns()
+    public async Task Select_Entity_User_AllColumns()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Select(u => u).ToDiagnostics(),
             Pg.Users().Select(u => u).ToDiagnostics(),
             My.Users().Select(u => u).ToDiagnostics(),
@@ -108,9 +186,12 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Select_Entity_Order_WithForeignKey()
+    public async Task Select_Entity_Order_WithForeignKey()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders().Select(o => o).ToDiagnostics(),
             Pg.Orders().Select(o => o).ToDiagnostics(),
             My.Orders().Select(o => o).ToDiagnostics(),
@@ -122,30 +203,46 @@ internal class CrossDialectSelectTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Pagination_LimitOffset()
+    public async Task Pagination_LimitOffset()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
             Pg.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
             My.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
             Ss.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
-            pg:     "SELECT * FROM \"users\" LIMIT 10 OFFSET 20",
-            mysql:  "SELECT * FROM `users` LIMIT 10 OFFSET 20",
-            ss:     "SELECT * FROM [users] ORDER BY (SELECT NULL) OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 10 OFFSET 20",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 10 OFFSET 20",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` LIMIT 10 OFFSET 20",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY (SELECT NULL) OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY");
+
+        // Execution: skip 1, take 2 using Select tuple for verifiable results
+        var results = await Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(2).Offset(1)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+        Assert.That(results[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
-    public void Pagination_LimitOnly()
+    public async Task Pagination_LimitOnly()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => true).Limit(5).ToDiagnostics(),
             Pg.Users().Where(u => true).Limit(5).ToDiagnostics(),
             My.Users().Where(u => true).Limit(5).ToDiagnostics(),
             Ss.Users().Where(u => true).Limit(5).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" LIMIT 5",
-            pg:     "SELECT * FROM \"users\" LIMIT 5",
-            mysql:  "SELECT * FROM `users` LIMIT 5",
-            ss:     "SELECT * FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 5",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 5",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` LIMIT 5",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
     }
 }

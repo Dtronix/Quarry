@@ -7,30 +7,45 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectEnumTests : CrossDialectTestBase
+internal class CrossDialectEnumTests
 {
     [Test]
-    public void Where_EnumCapturedVariable()
+    public async Task Where_EnumCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var priority = OrderPriority.Urgent;
-        AssertDialects(
-            Lite.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            Pg.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            My.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            Ss.Orders().Where(o => o.Priority == priority).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"orders\" WHERE \"Priority\" = @p0",
-            pg:     "SELECT * FROM \"orders\" WHERE \"Priority\" = $1",
-            mysql:  "SELECT * FROM `orders` WHERE `Priority` = ?",
-            ss:     "SELECT * FROM [orders] WHERE [Priority] = @p0");
+
+        var lite = Lite.Orders().Where(o => o.Priority == priority).Select(o => (o.OrderId, o.Total)).Prepare();
+        var pg   = Pg.Orders().Where(o => o.Priority == priority).Select(o => (o.OrderId, o.Total)).Prepare();
+        var my   = My.Orders().Where(o => o.Priority == priority).Select(o => (o.OrderId, o.Total)).Prepare();
+        var ss   = Ss.Orders().Where(o => o.Priority == priority).Select(o => (o.OrderId, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Total\" FROM \"orders\" WHERE \"Priority\" = @p0",
+            pg:     "SELECT \"OrderId\", \"Total\" FROM \"orders\" WHERE \"Priority\" = $1",
+            mysql:  "SELECT `OrderId`, `Total` FROM `orders` WHERE `Priority` = ?",
+            ss:     "SELECT [OrderId], [Total] FROM [orders] WHERE [Priority] = @p0");
+
+        // Priority: Order1=2(High), Order2=1(Normal), Order3=3(Urgent) — only Order3 matches Urgent(3)
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, 150.00m)));
     }
 
     #region Boolean in INSERT
 
     [Test]
-    public void Insert_WithBooleanColumn()
+    public async Task Insert_WithBooleanColumn()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         // Boolean values are parameterized in INSERT, so no literal TRUE/1 difference
-        AssertDialects(
+        QueryTestHarness.AssertDialects(
             Lite.Users().Insert(new User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
             Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
             My.Users().Insert(new My.User { UserName = "x", IsActive = true }).ToDiagnostics().Sql,
@@ -46,9 +61,12 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     #region Enum in INSERT
 
     [Test]
-    public void Insert_WithEnumColumn()
+    public async Task Insert_WithEnumColumn()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
             Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
             My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).ToDiagnostics().Sql,
@@ -64,17 +82,26 @@ internal class CrossDialectEnumTests : CrossDialectTestBase
     #region Enum in UPDATE SET
 
     [Test]
-    public void Update_Set_EnumColumn()
+    public async Task Update_Set_EnumColumn()
     {
-        AssertDialects(
-            Lite.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            Pg.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            My.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
-            Ss.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).Prepare();
+        var pg   = Pg.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).Prepare();
+        var my   = My.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).Prepare();
+        var ss   = Ss.Orders().Update().Set(o => o.Priority = OrderPriority.High).Where(o => o.OrderId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
             pg:     "UPDATE \"orders\" SET \"Priority\" = 2 WHERE \"OrderId\" = 1",
             mysql:  "UPDATE `orders` SET `Priority` = 2 WHERE `OrderId` = 1",
             ss:     "UPDATE [orders] SET [Priority] = 2 WHERE [OrderId] = 1");
+
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
