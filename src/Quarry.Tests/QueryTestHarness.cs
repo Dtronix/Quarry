@@ -145,6 +145,7 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 "UserId" INTEGER NOT NULL,
                 "Total" REAL NOT NULL,
                 "Status" TEXT NOT NULL,
+                "Priority" INTEGER NOT NULL DEFAULT 1,
                 "OrderDate" TEXT NOT NULL,
                 "Notes" TEXT,
                 FOREIGN KEY ("UserId") REFERENCES "users"("UserId")
@@ -179,10 +180,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             """);
 
         await SqlAsync("""
-            INSERT INTO "orders" ("OrderId", "UserId", "Total", "Status", "OrderDate", "Notes") VALUES
-                (1, 1, 250.00, 'Shipped', '2024-06-01 00:00:00', 'Express'),
-                (2, 1, 75.50,  'Pending', '2024-06-15 00:00:00', NULL),
-                (3, 2, 150.00, 'Shipped', '2024-07-01 00:00:00', NULL)
+            INSERT INTO "orders" ("OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes") VALUES
+                (1, 1, 250.00, 'Shipped', 2, '2024-06-01 00:00:00', 'Express'),
+                (2, 1, 75.50,  'Pending', 1, '2024-06-15 00:00:00', NULL),
+                (3, 2, 150.00, 'Shipped', 3, '2024-07-01 00:00:00', NULL)
             """);
 
         await SqlAsync("""

@@ -7,36 +7,63 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectSubqueryTests : CrossDialectTestBase
+internal class CrossDialectSubqueryTests
 {
     #region Any (parameterless)
 
     [Test]
-    public void Where_Any_Parameterless()
+    public async Task Where_Any_Parameterless()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any()).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any()).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any()).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any()).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any()).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any()).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any()).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Alice has 2 orders, Bob has 1 order, Charlie has none
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
-    public void Where_NotAny_Parameterless()
+    public async Task Where_NotAny_Parameterless()
     {
-        AssertDialects(
-            Lite.Users().Where(u => !u.Orders.Any()).ToDiagnostics(),
-            Pg.Users().Where(u => !u.Orders.Any()).ToDiagnostics(),
-            My.Users().Where(u => !u.Orders.Any()).ToDiagnostics(),
-            Ss.Users().Where(u => !u.Orders.Any()).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE NOT (EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\"))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => !u.Orders.Any()).Prepare();
+        var my   = My.Users().Where(u => !u.Orders.Any()).Prepare();
+        var ss   = Ss.Users().Where(u => !u.Orders.Any()).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\"))",
             pg:     "SELECT * FROM \"users\" WHERE NOT (EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\"))",
             mysql:  "SELECT * FROM `users` WHERE NOT (EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`))",
             ss:     "SELECT * FROM [users] WHERE NOT (EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]))");
+
+        // Only Charlie has no orders
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -44,31 +71,57 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Any (with predicate)
 
     [Test]
-    public void Where_Any_WithPredicate()
+    public async Task Where_Any_WithPredicate()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 100))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 100))");
+
+        // Alice has order 250, Bob has order 150 — both > 100
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
-    public void Where_Any_WithStringPredicate()
+    public async Task Where_Any_WithStringPredicate()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid'))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid'))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid'))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` = 'paid'))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] = 'paid'))");
+
+        // No orders have status 'paid' (they're 'Shipped' and 'Pending')
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -76,17 +129,31 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region All
 
     [Test]
-    public void Where_All_WithPredicate()
+    public async Task Where_All_WithPredicate()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.All(o => o.Status == "paid")).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.All(o => o.Status == "paid")).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.All(o => o.Status == "paid")).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.All(o => o.Status == "paid")).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = 'paid'))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+        var my   = My.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = 'paid'))",
             pg:     "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = 'paid'))",
             mysql:  "SELECT * FROM `users` WHERE NOT EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND NOT (`sq0`.`Status` = 'paid'))",
             ss:     "SELECT * FROM [users] WHERE NOT EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND NOT ([sq0].[Status] = 'paid'))");
+
+        // All(status=="paid") is vacuously true for users with no orders (Charlie)
+        // Alice/Bob have non-paid orders, so they fail the All check
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -94,74 +161,138 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Count
 
     [Test]
-    public void Where_Count_GreaterThan()
+    public async Task Where_Count_GreaterThan()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Count() > 5).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Count() > 5).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Count() > 5).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Count() > 5).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 5",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Count() > 5).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Count() > 5).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Count() > 5).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Count() > 5).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 5",
             pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 5",
             mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > 5",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > 5");
+
+        // Max orders per user is 2 (Alice), nobody has > 5
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
-    public void Where_Count_EqualsZero()
+    public async Task Where_Count_EqualsZero()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Count() == 0).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Count() == 0).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Count() == 0).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Count() == 0).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") = 0",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Count() == 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Count() == 0).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Count() == 0).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Count() == 0).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") = 0",
             pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") = 0",
             mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) = 0",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) = 0");
+
+        // Only Charlie has zero orders
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
-    public void Where_Count_WithPredicate()
+    public async Task Where_Count_WithPredicate()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100)) > 2",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100)) > 2",
             pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 100)) > 2",
             mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 100)) > 2",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 100)) > 2");
+
+        // Alice has 1 order > 100 (250), Bob has 1 (150) — neither > 2
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
-    public void Where_Count_WithStringPredicate()
+    public async Task Where_Count_WithStringPredicate()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid')) >= 1",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid')) >= 1",
             pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'paid')) >= 1",
             mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` = 'paid')) >= 1",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] = 'paid')) >= 1");
+
+        // No orders have status 'paid'
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
-    public void Where_Count_WithCapturedVariable()
+    public async Task Where_Count_WithCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var minTotal = 50m;
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0)) > 0",
+
+        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0)) > 0",
             pg:     "SELECT * FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > $1)) > 0",
             mysql:  "SELECT * FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > ?)) > 0",
             ss:     "SELECT * FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0)) > 0");
+
+        // All 3 orders have Total > 50 — Alice and Bob both qualify
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -169,31 +300,59 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Nested Subqueries
 
     [Test]
-    public void Where_Nested_Any_Any()
+    public async Task Where_Nested_Any_Any()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND (\"sq1\".\"UnitPrice\" > 50))))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND (\"sq1\".\"UnitPrice\" > 50))))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND (\"sq1\".\"UnitPrice\" > 50))))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (EXISTS (SELECT 1 FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId` AND (`sq1`.`UnitPrice` > 50))))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId] AND ([sq1].[UnitPrice] > 50))))");
+
+        // Order1 has Widget UnitPrice=125 (>50), Order2 has Gadget UnitPrice=75.50 (>50) → Alice
+        // Order3 has Widget UnitPrice=50 (not >50) → Bob does NOT qualify
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
-    public void Where_Nested_Any_All()
+    public async Task Where_Nested_Any_All()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (NOT EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND NOT (\"sq1\".\"Quantity\" > 0))))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (NOT EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND NOT (\"sq1\".\"Quantity\" > 0))))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (NOT EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND NOT (\"sq1\".\"Quantity\" > 0))))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (NOT EXISTS (SELECT 1 FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId` AND NOT (`sq1`.`Quantity` > 0))))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (NOT EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId] AND NOT ([sq1].[Quantity] > 0))))");
+
+        // All order items have Quantity > 0 — Alice and Bob both have orders where All items have Quantity > 0
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -201,33 +360,60 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Captured Variables in Subquery Predicates
 
     [Test]
-    public void Where_Any_WithCapturedVariable()
+    public async Task Where_Any_WithCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var minAmount = 100m;
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0))",
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > @p0))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > $1))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > ?))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0))");
+
+        // Alice (250 > 100), Bob (150 > 100)
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
 
     [Test]
-    public void Where_All_WithCapturedVariable()
+    public async Task Where_All_WithCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var status = "paid";
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.All(o => o.Status == status)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = @p0))",
+
+        var lite = Lite.Users().Where(u => u.Orders.All(o => o.Status == status)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+        var my   = My.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = @p0))",
             pg:     "SELECT * FROM \"users\" WHERE NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq0\".\"Status\" = $1))",
             mysql:  "SELECT * FROM `users` WHERE NOT EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND NOT (`sq0`.`Status` = ?))",
             ss:     "SELECT * FROM [users] WHERE NOT EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND NOT ([sq0].[Status] = @p0))");
+
+        // No orders are 'paid' — vacuously true only for Charlie (no orders)
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -235,31 +421,56 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Subquery + Other Clauses
 
     [Test]
-    public void Where_Any_And_Boolean()
+    public async Task Where_Any_And_Boolean()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.IsActive && u.Orders.Any()).ToDiagnostics(),
-            Pg.Users().Where(u => u.IsActive && u.Orders.Any()).ToDiagnostics(),
-            My.Users().Where(u => u.IsActive && u.Orders.Any()).ToDiagnostics(),
-            Ss.Users().Where(u => u.IsActive && u.Orders.Any()).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.IsActive && u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+        var my   = My.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+        var ss   = Ss.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             pg:     "SELECT * FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             mysql:  "SELECT * FROM `users` WHERE `IsActive` AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
             ss:     "SELECT * FROM [users] WHERE [IsActive] AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Active users with orders: Alice and Bob
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
-    public void Where_Any_ThenSelect_Tuple()
+    public async Task Where_Any_ThenSelect_Tuple()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -267,73 +478,137 @@ internal class CrossDialectSubqueryTests : CrossDialectTestBase
     #region Additional coverage
 
     [Test]
-    public void Where_Any_Or_Boolean()
+    public async Task Where_Any_Or_Boolean()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any() || u.IsActive).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any() || u.IsActive).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any() || u.IsActive).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any() || u.IsActive).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") OR \"IsActive\"",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any() || u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") OR \"IsActive\"",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") OR \"IsActive\"",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) OR `IsActive`",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) OR [IsActive]");
+
+        // Has orders OR is active — all 3 users (Alice/Bob have orders, Alice/Bob are active, Charlie is neither but... wait Charlie is inactive and has no orders, so she fails)
+        // Alice: orders=yes → true. Bob: orders=yes → true. Charlie: orders=no, active=no → false.
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
 
     [Test]
-    public void Where_Multiple_Subqueries_Alias_Monotonicity()
+    public async Task Where_Multiple_Subqueries_Alias_Monotonicity()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\" AND (\"sq1\".\"Total\" > 100))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\" AND (\"sq1\".\"Total\" > 100))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\" AND (\"sq1\".\"Total\" > 100))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AND EXISTS (SELECT 1 FROM `orders` AS `sq1` WHERE `sq1`.`UserId` = `users`.`UserId` AND (`sq1`.`Total` > 100))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AND EXISTS (SELECT 1 FROM [orders] AS [sq1] WHERE [sq1].[UserId] = [users].[UserId] AND ([sq1].[Total] > 100))");
+
+        // Has any order AND has an order > 100: Alice (250), Bob (150)
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
 
     [Test]
-    public void Where_Three_Level_Nesting()
+    public async Task Where_Three_Level_Nesting()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any())).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any())).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Items.Any())).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any())).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (EXISTS (SELECT 1 FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])))");
+
+        // All orders have at least one item — Alice and Bob
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
-    public void Where_Any_StringPredicate_Contains()
+    public async Task Where_Any_StringPredicate_Contains()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || $1 || '%'))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', ?, '%')))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%' + @p0 + '%'))");
+
+        // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
 
     [Test]
-    public void Where_Any_StringPredicate_StartsWith()
+    public async Task Where_Any_StringPredicate_StartsWith()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
-            Pg.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
-            My.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
-            Ss.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE @p0 || '%'))",
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("P"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE @p0 || '%'))",
             pg:     "SELECT * FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE $1 || '%'))",
             mysql:  "SELECT * FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT(?, '%')))",
             ss:     "SELECT * FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE @p0 + '%'))");
+
+        // 'Pending' starts with 'P' — only Alice has a Pending order (order 2)
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion

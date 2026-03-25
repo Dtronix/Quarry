@@ -571,10 +571,11 @@ internal static class ChainAnalyzer
 
         // Enrich identity projections with entity columns so SqlAssembler renders
         // explicit column names instead of SELECT *.
-        // Only for chains that have an explicit Select clause (hasSelectClause flag).
-        // Discovery may produce wrong columns (e.g. computed properties like DisplayLabel),
-        // so we always use the authoritative entity column metadata from EntityRef.
-        if (hasSelectClause && projection.IsIdentity)
+        // Always enrich — even when no explicit Select clause — so the generated SQL
+        // is predictable and never contains SELECT *.
+        // Uses authoritative entity column metadata from EntityRef (not discovery-time
+        // column info which may include computed properties like DisplayLabel).
+        if (projection.IsIdentity)
         {
             var entityRef = executionSite.Bound.Entity;
             if (entityRef != null && entityRef.Columns.Count > 0)
