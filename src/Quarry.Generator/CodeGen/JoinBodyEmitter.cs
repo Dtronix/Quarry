@@ -95,7 +95,7 @@ internal static class JoinBodyEmitter
                 {
                     // For chained join first-in-chain, the incoming builder is the pre-join type
                     var preJoinBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(priorTypes.Length, priorTypes);
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
                 }
                 else
                 {
@@ -144,7 +144,7 @@ internal static class JoinBodyEmitter
             if (isFirstInChain)
             {
                 // For first join, the incoming builder is QueryBuilder<T>
-                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
             }
             else
             {
