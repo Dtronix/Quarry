@@ -79,6 +79,7 @@ internal sealed class FileEmitter
         sb.AppendLine("using Quarry;");
         sb.AppendLine("using Quarry.Internal;");
         sb.AppendLine("using Quarry.Logging;");
+        sb.AppendLine("using LogLevel = Quarry.Logging.LogLevel;");
 
         // Collect all unique entity type namespaces
         var entityNamespaces = _sites

@@ -1031,9 +1031,10 @@ internal static class CarrierEmitter
             return false;
         if (ValueTypes.Contains(typeName))
             return true;
-        // Enum types (PascalCase, no dots/generics) are value types
-        if (!typeName.Contains('<') && !typeName.Contains('[') && !typeName.Contains('.'))
-            return false; // Could be a class name — treat conservatively as reference
+        // Check unqualified name (e.g., "System.DateTime" → "DateTime")
+        var dotIndex = typeName.LastIndexOf('.');
+        if (dotIndex >= 0 && ValueTypes.Contains(typeName.Substring(dotIndex + 1)))
+            return true;
         return false;
     }
 

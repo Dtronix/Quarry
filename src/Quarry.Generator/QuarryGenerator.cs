@@ -1033,6 +1033,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 var source = MigrateAsyncCodeGenerator.Generate(
                     ctx.ClassName,
                     ctx.Namespace,
+                    ctx.Dialect.ToString(),
                     migrations.OrderBy(m => m.Version).ToList());
 
                 spc.AddSource($"{ctx.ClassName}.MigrateAsync.g.cs", source);

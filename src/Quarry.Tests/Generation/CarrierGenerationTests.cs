@@ -981,4 +981,87 @@ public static class Queries
         Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
             "Nullable enum should still set DbType.Int32");
     }
+
+    [Test]
+    public void CarrierGeneration_DateTimeParameter_NoNullConditional()
+    {
+        var source = @"
+using System;
+using Quarry;
+namespace TestApp;
+
+public class SessionSchema : Schema
+{
+    public static string Table => ""sessions"";
+    public Key<int> SessionId => Identity();
+    public Col<DateTime> ExpiresAt { get; }
+    public Col<string> Token => Length(64);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Session> Sessions();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // DateTime.UtcNow is captured as a System.DateTime parameter
+        await db.Sessions().Delete()
+            .Where(s => s.ExpiresAt < DateTime.UtcNow)
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null);
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // The DateTime parameter should use .ToString() not ?.ToString() since DateTime is a non-nullable value type
+        Assert.That(code, Does.Not.Contain("P0?.ToString()"),
+            "Non-nullable System.DateTime should not use null-conditional operator");
+        Assert.That(code, Does.Contain("P0.ToString()"),
+            "Non-nullable System.DateTime should use plain .ToString()");
+    }
+
+    [Test]
+    public void CarrierGeneration_InterceptorFile_HasLogLevelAlias()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null);
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // The generated file should alias LogLevel to avoid ambiguity with Microsoft.Extensions.Logging.LogLevel
+        Assert.That(code, Does.Contain("using LogLevel = Quarry.Logging.LogLevel;"),
+            "Generated interceptors should alias LogLevel to avoid ambiguity in ASP.NET Core projects");
+    }
 }
