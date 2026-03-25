@@ -17,7 +17,7 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         using var db = new Quarry.Tests.Samples.SchemaPg.SchemaPgDb(t.MockConnection);
         Assert.That(db.Users().ToDiagnostics().Sql,
-            Is.EqualTo("SELECT * FROM \"public\".\"users\""));
+            Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"public\".\"users\""));
     }
 
     [Test]
@@ -26,7 +26,7 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         using var db = new Quarry.Tests.Samples.SchemaMy.SchemaMyDb(t.MockConnection);
         Assert.That(db.Users().ToDiagnostics().Sql,
-            Is.EqualTo("SELECT * FROM `myapp`.`users`"));
+            Is.EqualTo("SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `myapp`.`users`"));
     }
 
     [Test]
@@ -35,7 +35,7 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         using var db = new Quarry.Tests.Samples.SchemaSs.SchemaSsDb(t.MockConnection);
         Assert.That(db.Users().ToDiagnostics().Sql,
-            Is.EqualTo("SELECT * FROM [dbo].[users]"));
+            Is.EqualTo("SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [dbo].[users]"));
     }
 
     #endregion
@@ -108,10 +108,10 @@ internal class CrossDialectSchemaTests
         QueryTestHarness.AssertDialects(
             lite.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT * FROM \"orders\" WHERE \"UserId\" = 5",
-            pg:     "SELECT * FROM \"orders\" WHERE \"UserId\" = 5",
-            mysql:  "SELECT * FROM `orders` WHERE `UserId` = 5",
-            ss:     "SELECT * FROM [orders] WHERE [UserId] = 5");
+            sqlite: "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"UserId\" = 5",
+            pg:     "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"UserId\" = 5",
+            mysql:  "SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `UserId` = 5",
+            ss:     "SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [UserId] = 5");
     }
 
     #endregion

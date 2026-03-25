@@ -22,10 +22,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             My.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE LOWER(\"UserName\") = @p0",
-            pg:     "SELECT * FROM \"users\" WHERE LOWER(\"UserName\") = $1",
-            mysql:  "SELECT * FROM `users` WHERE LOWER(`UserName`) = ?",
-            ss:     "SELECT * FROM [users] WHERE LOWER([UserName]) = @p0");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE LOWER(\"UserName\") = @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE LOWER(\"UserName\") = $1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE LOWER(`UserName`) = ?",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE LOWER([UserName]) = @p0");
     }
 
     #endregion
@@ -43,10 +43,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             My.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE UPPER(\"UserName\") = @p0",
-            pg:     "SELECT * FROM \"users\" WHERE UPPER(\"UserName\") = $1",
-            mysql:  "SELECT * FROM `users` WHERE UPPER(`UserName`) = ?",
-            ss:     "SELECT * FROM [users] WHERE UPPER([UserName]) = @p0");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE UPPER(\"UserName\") = @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE UPPER(\"UserName\") = $1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE UPPER(`UserName`) = ?",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE UPPER([UserName]) = @p0");
     }
 
     #endregion
@@ -64,10 +64,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             My.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE TRIM(\"UserName\") = @p0",
-            pg:     "SELECT * FROM \"users\" WHERE TRIM(\"UserName\") = $1",
-            mysql:  "SELECT * FROM `users` WHERE TRIM(`UserName`) = ?",
-            ss:     "SELECT * FROM [users] WHERE TRIM([UserName]) = @p0");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE TRIM(\"UserName\") = @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE TRIM(\"UserName\") = $1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE TRIM(`UserName`) = ?",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE TRIM([UserName]) = @p0");
     }
 
     #endregion
@@ -85,10 +85,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
             Ss.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE custom_func(\"UserId\")",
-            pg:     "SELECT * FROM \"users\" WHERE custom_func(\"UserId\")",
-            mysql:  "SELECT * FROM `users` WHERE custom_func(`UserId`)",
-            ss:     "SELECT * FROM [users] WHERE custom_func([UserId])");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE custom_func(\"UserId\")",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE custom_func(\"UserId\")",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE custom_func(`UserId`)",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE custom_func([UserId])");
     }
 
     [Test]
@@ -102,10 +102,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
             Ss.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
-            pg:     "SELECT * FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
-            mysql:  "SELECT * FROM `users` WHERE check_cols(`UserId`, `IsActive`)",
-            ss:     "SELECT * FROM [users] WHERE check_cols([UserId], [IsActive])");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE check_cols(\"UserId\", \"IsActive\")",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE check_cols(`UserId`, `IsActive`)",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE check_cols([UserId], [IsActive])");
     }
 
     [Test]
@@ -120,10 +120,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
             Ss.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE CONTAINS(\"UserName\", @p0)",
-            pg:     "SELECT * FROM \"users\" WHERE CONTAINS(\"UserName\", $1)",
-            mysql:  "SELECT * FROM `users` WHERE CONTAINS(`UserName`, ?)",
-            ss:     "SELECT * FROM [users] WHERE CONTAINS([UserName], @p0)");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE CONTAINS(\"UserName\", @p0)",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE CONTAINS(\"UserName\", $1)",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE CONTAINS(`UserName`, ?)",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE CONTAINS([UserName], @p0)");
     }
 
     [Test]
@@ -137,10 +137,10 @@ internal class CrossDialectMiscTests
             Pg.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
             Ss.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
-            sqlite: "SELECT * FROM \"users\" WHERE status_check(\"UserName\", 42)",
-            pg:     "SELECT * FROM \"users\" WHERE status_check(\"UserName\", 42)",
-            mysql:  "SELECT * FROM `users` WHERE status_check(`UserName`, 42)",
-            ss:     "SELECT * FROM [users] WHERE status_check([UserName], 42)");
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE status_check(\"UserName\", 42)",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE status_check(\"UserName\", 42)",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE status_check(`UserName`, 42)",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE status_check([UserName], 42)");
     }
 
     #endregion

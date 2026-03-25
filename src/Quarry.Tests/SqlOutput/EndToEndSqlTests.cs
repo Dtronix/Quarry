@@ -86,21 +86,21 @@ public class EndToEndSqlTests
     public void Where_BooleanProperty()
     {
         var sql = _db.Users().Where(u => u.IsActive).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE \"IsActive\" = 1"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1"));
     }
 
     [Test]
     public void Where_NegatedBooleanProperty()
     {
         var sql = _db.Users().Where(u => !u.IsActive).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE NOT (\"IsActive\")"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE NOT (\"IsActive\")"));
     }
 
     [Test]
     public void Where_Comparison_GreaterThan()
     {
         var sql = _db.Users().Where(u => u.UserId > 0).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE \"UserId\" > 0"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" > 0"));
     }
 
     [Test]
@@ -110,7 +110,7 @@ public class EndToEndSqlTests
             .Where(u => u.IsActive)
             .Where(u => u.UserId > 0)
             .ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)"));
     }
 
     #endregion
@@ -150,21 +150,21 @@ public class EndToEndSqlTests
     public void Limit()
     {
         var sql = _db.Users().Where(u => true).Limit(10).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 10"));
     }
 
     [Test]
     public void LimitAndOffset()
     {
         var sql = _db.Users().Where(u => true).Limit(10).Offset(20).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"users\" LIMIT 10 OFFSET 20"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" LIMIT 10 OFFSET 20"));
     }
 
     [Test]
     public void Distinct()
     {
         var sql = _db.Users().Distinct().ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT DISTINCT * FROM \"users\""));
+        Assert.That(sql, Is.EqualTo("SELECT DISTINCT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\""));
     }
 
     #endregion
@@ -200,7 +200,7 @@ public class EndToEndSqlTests
     public void Orders_Where()
     {
         var sql = _db.Orders().Where(o => o.OrderId > 0).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT * FROM \"orders\" WHERE \"OrderId\" > 0"));
+        Assert.That(sql, Is.EqualTo("SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"OrderId\" > 0"));
     }
 
     #endregion
