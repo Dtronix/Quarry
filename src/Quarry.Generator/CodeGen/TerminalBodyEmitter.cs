@@ -133,8 +133,14 @@ internal static class TerminalBodyEmitter
         };
         if (string.IsNullOrEmpty(returnType)) return;
 
-        // Method signature with joined builder receiver type
-        if (site.Kind == InterceptorKind.ExecuteScalar)
+        // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static {returnType} {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
             sb.AppendLine($"    public static {returnType} {methodName}<{entityTypeArgs}, TResult, TScalar>(");
             sb.AppendLine($"        this {thisBuilderName}<{entityTypeArgs}, TResult> builder,");
@@ -318,7 +324,7 @@ internal static class TerminalBodyEmitter
         AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo ?? prebuiltChain?.PrepareSite?.InsertInfo;
+        var insertInfo = prebuiltChain?.InsertInfo ?? site.InsertInfo;
 
         string receiverType = site.IsPreparedTerminal
             ? "PreparedQuery<int>"
@@ -349,14 +355,25 @@ internal static class TerminalBodyEmitter
         AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo;
+        var insertInfo = prebuiltChain?.InsertInfo ?? site.InsertInfo;
 
-        // ExecuteScalarAsync<TKey> is a generic method on generic class IInsertBuilder<T>.
-        // Interceptors must match the combined arity: <T, TKey> (CS9177).
-        // T is constrained to class to match IInsertBuilder<T> where T : class.
-        sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
-        sb.AppendLine($"        this IInsertBuilder<T> builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        if (site.IsPreparedTerminal)
+        {
+            // PreparedQuery<TResult>.ExecuteScalarAsync<TKey>() — arity 2 (CS9177):
+            // TResult from PreparedQuery<TResult>, TKey from ExecuteScalarAsync<TKey>.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<TResult, TKey>(");
+            sb.AppendLine($"        this PreparedQuery<TResult> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            // ExecuteScalarAsync<TKey> is a generic method on generic class IInsertBuilder<T>.
+            // Interceptors must match the combined arity: <T, TKey> (CS9177).
+            // T is constrained to class to match IInsertBuilder<T> where T : class.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
+            sb.AppendLine($"        this IInsertBuilder<T> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        }
         sb.AppendLine($"    {{");
 
         if (insertInfo != null && insertInfo.Columns.Count > 0 && prebuiltChain != null)
@@ -384,8 +401,12 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
+        string receiverType = site.IsPreparedTerminal
+            ? "PreparedQuery<int>"
+            : $"IInsertBuilder<{entityType}>";
+
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
-        sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
+        sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
 
         if (chain != null && chain.SqlVariants.Count > 0)
@@ -439,9 +460,20 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
-        sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
-        sb.AppendLine($"        this IExecutableBatchInsert<T> builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        if (site.IsPreparedTerminal)
+        {
+            // PreparedQuery<TResult>.ExecuteScalarAsync<TKey>() — arity 2 (CS9177):
+            // TResult from PreparedQuery<TResult>, TKey from ExecuteScalarAsync<TKey>.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<TResult, TKey>(");
+            sb.AppendLine($"        this PreparedQuery<TResult> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
+            sb.AppendLine($"        this IExecutableBatchInsert<T> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        }
         sb.AppendLine($"    {{");
 
         if (chain != null)
@@ -502,7 +534,7 @@ internal static class TerminalBodyEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string executorMethod, string entityType)
     {
-        var insertInfo = chain.ExecutionSite.InsertInfo ?? chain.PrepareSite?.InsertInfo;
+        var insertInfo = chain.InsertInfo;
         if (insertInfo == null || insertInfo.Columns.Count == 0) return;
 
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");

@@ -5,17 +5,21 @@ namespace Quarry.Tests.Integration;
 
 /// <summary>
 /// SQLite integration tests for RawSqlAsync and RawSqlScalarAsync.
-/// Executes against a real in-memory SQLite database.
+/// Executes against a real in-memory SQLite database via QueryTestHarness.
+/// Not cross-dialect — raw SQL bypasses the query builder and uses hand-written SQL strings.
 /// </summary>
 [TestFixture]
-internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
+internal class RawSqlIntegrationTests
 {
     #region RawSqlAsync<DTO> Tests
 
     [Test]
     public async Task RawSqlAsync_Dto_ReturnsPopulatedResults()
     {
-        var results = await Db.RawSqlAsync<UserWithEmailDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserWithEmailDto>(
             "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\"");
 
         Assert.That(results, Has.Count.EqualTo(3));
@@ -33,7 +37,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_Dto_UserSummary_ReturnsCorrectTypes()
     {
-        var results = await Db.RawSqlAsync<UserSummaryDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserSummaryDto>(
             "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" ORDER BY \"UserId\"");
 
         Assert.That(results, Has.Count.EqualTo(3));
@@ -48,7 +55,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_ScalarInt_ReturnsListOfIntegers()
     {
-        var results = await Db.RawSqlAsync<int>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<int>(
             "SELECT \"UserId\" FROM \"users\" ORDER BY \"UserId\"");
 
         Assert.That(results, Has.Count.EqualTo(3));
@@ -60,7 +70,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_ScalarString_ReturnsListOfStrings()
     {
-        var results = await Db.RawSqlAsync<string>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<string>(
             "SELECT \"UserName\" FROM \"users\" ORDER BY \"UserId\"");
 
         Assert.That(results, Has.Count.EqualTo(3));
@@ -76,7 +89,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_Int_ReturnsScalarValue()
     {
-        var count = await Db.RawSqlScalarAsync<int>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var count = await Lite.RawSqlScalarAsync<int>(
             "SELECT COUNT(*) FROM \"users\"");
 
         Assert.That(count, Is.EqualTo(3));
@@ -85,7 +101,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_String_ReturnsScalarValue()
     {
-        var name = await Db.RawSqlScalarAsync<string>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var name = await Lite.RawSqlScalarAsync<string>(
             "SELECT \"UserName\" FROM \"users\" WHERE \"UserId\" = @p0", 1);
 
         Assert.That(name, Is.EqualTo("Alice"));
@@ -94,7 +113,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_Long_ReturnsScalarValue()
     {
-        var count = await Db.RawSqlScalarAsync<long>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var count = await Lite.RawSqlScalarAsync<long>(
             "SELECT COUNT(*) FROM \"orders\"");
 
         Assert.That(count, Is.EqualTo(3L));
@@ -107,7 +129,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_Dto_NullableColumns_ReturnsCorrectNulls()
     {
-        var results = await Db.RawSqlAsync<UserWithEmailDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserWithEmailDto>(
             "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 2);
 
         Assert.That(results, Has.Count.EqualTo(1));
@@ -119,7 +144,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_ReturnsDefaultForNull()
     {
-        var result = await Db.RawSqlScalarAsync<int>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var result = await Lite.RawSqlScalarAsync<int>(
             "SELECT \"UserId\" FROM \"users\" WHERE \"UserId\" = -999");
 
         Assert.That(result, Is.EqualTo(default(int)));
@@ -128,7 +156,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_NullableString_ReturnsDefaultForNull()
     {
-        var result = await Db.RawSqlScalarAsync<string>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var result = await Lite.RawSqlScalarAsync<string>(
             "SELECT NULL");
 
         Assert.That(result, Is.Null);
@@ -141,7 +172,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_EmptyResultSet_ReturnsEmptyList()
     {
-        var results = await Db.RawSqlAsync<UserSummaryDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserSummaryDto>(
             "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE 1 = 0");
 
         Assert.That(results, Is.Not.Null);
@@ -155,7 +189,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_WithParameters_ReturnsFilteredResults()
     {
-        var results = await Db.RawSqlAsync<UserWithEmailDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserWithEmailDto>(
             "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 1);
 
         Assert.That(results, Has.Count.EqualTo(1));
@@ -166,7 +203,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlAsync_WithMultipleParameters_ReturnsFilteredResults()
     {
-        var results = await Db.RawSqlAsync<UserSummaryDto>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.RawSqlAsync<UserSummaryDto>(
             "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = @p0 AND \"UserId\" > @p1",
             1, 1);
 
@@ -178,7 +218,10 @@ internal class RawSqlIntegrationTests : SqliteIntegrationTestBase
     [Test]
     public async Task RawSqlScalarAsync_WithParameter_ReturnsFilteredScalar()
     {
-        var count = await Db.RawSqlScalarAsync<int>(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var count = await Lite.RawSqlScalarAsync<int>(
             "SELECT COUNT(*) FROM \"orders\" WHERE \"UserId\" = @p0", 1);
 
         Assert.That(count, Is.EqualTo(2));

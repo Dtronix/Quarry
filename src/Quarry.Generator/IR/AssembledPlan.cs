@@ -31,7 +31,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         string? batchInsertReturningSuffix = null,
         int batchInsertColumnsPerRow = 0,
         IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
-        TranslatedCallSite? prepareSite = null)
+        TranslatedCallSite? prepareSite = null,
+        Models.InsertInfo? insertInfo = null)
     {
         Plan = plan;
         SqlVariants = sqlVariants;
@@ -51,6 +52,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         BatchInsertColumnsPerRow = batchInsertColumnsPerRow;
         PreparedTerminals = preparedTerminals;
         PrepareSite = prepareSite;
+        InsertInfo = insertInfo;
     }
 
     public QueryPlan Plan { get; }
@@ -91,6 +93,13 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     /// The .Prepare() call site. Non-null only for multi-terminal chains.
     /// </summary>
     public TranslatedCallSite? PrepareSite { get; }
+
+    /// <summary>
+    /// Resolved insert column metadata. Non-null for Insert and BatchInsert chains.
+    /// Stored at top level because InsertInfo may originate from a clause site or
+    /// Prepare site rather than the execution terminal (e.g., Prepare chains).
+    /// </summary>
+    public Models.InsertInfo? InsertInfo { get; }
 
     // Convenience accessors that mirror PrebuiltChainInfo property names
     public QueryKind QueryKind => Plan.Kind;

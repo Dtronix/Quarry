@@ -7,64 +7,85 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectInsertTests : CrossDialectTestBase
+internal class CrossDialectInsertTests
 {
     #region User Inserts
 
     [Test]
-    public void Insert_SingleUser()
+    public async Task Insert_SingleUser()
     {
-        AssertDialects(
-            Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).ToDiagnostics().Sql,
-            Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).ToDiagnostics().Sql,
-            My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).ToDiagnostics().Sql,
-            Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).ToDiagnostics().Sql,
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var pg   = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var my   = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var ss   = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
-    }
 
-    // Batch insert tests removed: old Values()/InsertMany() API has been replaced
-    // by the column-selector batch API.
+        var newId = await lite.ExecuteScalarAsync<int>();
+        Assert.That(newId, Is.GreaterThan(0));
+    }
 
     #endregion
 
     #region Order Inserts
 
     [Test]
-    public void Insert_SingleOrder()
+    public async Task Insert_SingleOrder()
     {
-        AssertDialects(
-            Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ToDiagnostics().Sql,
-            Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ToDiagnostics().Sql,
-            My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ToDiagnostics().Sql,
-            Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ToDiagnostics().Sql,
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var pg   = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var my   = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var ss   = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\"",
             pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\"",
             mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]");
-    }
 
-    // Batch order insert SQL preview test removed: see Insert_BatchUsers comment above.
-    // Batch execution is tested via ExecuteNonQueryAsync tests.
+        var newId = await lite.ExecuteScalarAsync<int>();
+        Assert.That(newId, Is.GreaterThan(0));
+    }
 
     #endregion
 
     #region OrderItem Inserts
 
     [Test]
-    public void Insert_SingleOrderItem()
+    public async Task Insert_SingleOrderItem()
     {
-        AssertDialects(
-            Lite.OrderItems().Insert(new OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).ToDiagnostics().Sql,
-            Pg.OrderItems().Insert(new Pg.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).ToDiagnostics().Sql,
-            My.OrderItems().Insert(new My.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).ToDiagnostics().Sql,
-            Ss.OrderItems().Insert(new Ss.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).ToDiagnostics().Sql,
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.OrderItems().Insert(new OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).Prepare();
+        var pg   = Pg.OrderItems().Insert(new Pg.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).Prepare();
+        var my   = My.OrderItems().Insert(new My.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).Prepare();
+        var ss   = Ss.OrderItems().Insert(new Ss.OrderItem { OrderId = 1, ProductName = "x", Quantity = 0, UnitPrice = 0m, LineTotal = 0m }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"order_items\" (\"OrderId\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"LineTotal\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"OrderItemId\"",
             pg:     "INSERT INTO \"order_items\" (\"OrderId\", \"ProductName\", \"Quantity\", \"UnitPrice\", \"LineTotal\") VALUES ($1, $2, $3, $4, $5) RETURNING \"OrderItemId\"",
             mysql:  "INSERT INTO `order_items` (`OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [order_items] ([OrderId], [ProductName], [Quantity], [UnitPrice], [LineTotal]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderItemId]");
+
+        var newId = await lite.ExecuteScalarAsync<int>();
+        Assert.That(newId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -74,49 +95,47 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
     [Test]
     public async Task ExecuteNonQueryAsync_SingleUser()
     {
-        await Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteNonQueryAsync();
-        var liteSql = Connection.LastCommand!.CommandText;
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
 
-        await Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteNonQueryAsync();
-        var pgSql = Connection.LastCommand!.CommandText;
+        var lite = Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var pg   = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var my   = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var ss   = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
 
-        await My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteNonQueryAsync();
-        var mySql = Connection.LastCommand!.CommandText;
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
 
-        await Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteNonQueryAsync();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        // ExecuteNonQueryAsync does not set identity column, so no RETURNING/OUTPUT clause
-        AssertDialects(liteSql, pgSql, mySql, ssSql,
-            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2)",
-            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3)",
-            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?)",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2)");
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
-
-    // Batch insert tests (ExecuteNonQueryAsync_BatchUsers, ExecuteNonQueryAsync_InsertMany_Users)
-    // removed: old Values()/InsertMany() API has been replaced by column-selector batch API.
 
     [Test]
     public async Task ExecuteNonQueryAsync_SingleOrder()
     {
-        await Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteNonQueryAsync();
-        var liteSql = Connection.LastCommand!.CommandText;
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
 
-        await Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteNonQueryAsync();
-        var pgSql = Connection.LastCommand!.CommandText;
+        var lite = Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var pg   = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var my   = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var ss   = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
 
-        await My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteNonQueryAsync();
-        var mySql = Connection.LastCommand!.CommandText;
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\"",
+            pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\"",
+            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]");
 
-        await Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteNonQueryAsync();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        AssertDialects(liteSql, pgSql, mySql, ssSql,
-            sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3)",
-            pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4)",
-            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?)",
-            ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3)");
+        var affected = await lite.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
     }
 
     #endregion
@@ -126,62 +145,47 @@ internal class CrossDialectInsertTests : CrossDialectTestBase
     [Test]
     public async Task ExecuteScalarAsync_SingleUser_ReturnsIdentity()
     {
-        Connection.ScalarResult = 42;
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
 
-        await Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteScalarAsync<int>();
-        var liteSql = Connection.LastCommand!.CommandText;
+        var lite = Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var pg   = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var my   = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var ss   = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
 
-        await Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteScalarAsync<int>();
-        var pgSql = Connection.LastCommand!.CommandText;
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
 
-        // MySQL uses LAST_INSERT_ID() — LastCommand captures the second query
-        await My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteScalarAsync<int>();
-        var mySql = Connection.LastCommand!.CommandText;
-
-        await Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).ExecuteScalarAsync<int>();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(liteSql, Is.EqualTo(
-                "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\""), "SQLite");
-            Assert.That(pgSql, Is.EqualTo(
-                "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\""), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo(
-                "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()"), "MySQL");
-            Assert.That(ssSql, Is.EqualTo(
-                "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]"), "SqlServer");
-        });
+        var newId = await lite.ExecuteScalarAsync<int>();
+        Assert.That(newId, Is.GreaterThan(0));
     }
 
     [Test]
     public async Task ExecuteScalarAsync_SingleOrder_ReturnsIdentity()
     {
-        Connection.ScalarResult = 99;
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
 
-        await Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteScalarAsync<int>();
-        var liteSql = Connection.LastCommand!.CommandText;
+        var lite = Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var pg   = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var my   = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var ss   = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
 
-        await Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteScalarAsync<int>();
-        var pgSql = Connection.LastCommand!.CommandText;
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\"",
+            pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\"",
+            mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]");
 
-        await My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteScalarAsync<int>();
-        var mySql = Connection.LastCommand!.CommandText;
-
-        await Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).ExecuteScalarAsync<int>();
-        var ssSql = Connection.LastCommand!.CommandText;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(liteSql, Is.EqualTo(
-                "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3) RETURNING \"OrderId\""), "SQLite");
-            Assert.That(pgSql, Is.EqualTo(
-                "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"OrderDate\") VALUES ($1, $2, $3, $4) RETURNING \"OrderId\""), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo(
-                "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()"), "MySQL");
-            Assert.That(ssSql, Is.EqualTo(
-                "INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]"), "SqlServer");
-        });
+        var newId = await lite.ExecuteScalarAsync<int>();
+        Assert.That(newId, Is.GreaterThan(0));
     }
 
     #endregion
