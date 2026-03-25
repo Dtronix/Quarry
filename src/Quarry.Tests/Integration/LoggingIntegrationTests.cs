@@ -520,6 +520,33 @@ internal partial class LoggingIntegrationTests
             e => e.Message.Contains("super-secret-value")));
     }
 
+    [Test]
+    public async Task InsertSensitiveColumn_LogsRedactedValue()
+    {
+        await using var db = new TestDbContext(_connection);
+
+        var id = Guid.NewGuid();
+        await db.Widgets()
+            .Insert(new Widget { WidgetId = id, WidgetName = "TestWidget", Secret = "insert-secret-123" })
+            .ExecuteNonQueryAsync();
+
+        var paramEntries = _logger.Entries
+            .Where(e => e.Category == "Quarry.Parameters")
+            .ToList();
+
+        // The Secret column parameter should be redacted
+        Assert.That(paramEntries, Has.Some.Matches<RecordingLogsmithLogger.LogRecord>(
+            e => e.Message.Contains("SENSITIVE")));
+
+        // The actual secret value must not appear in any log entry
+        var allEntries = _logger.Entries;
+        Assert.That(allEntries, Has.None.Matches<RecordingLogsmithLogger.LogRecord>(
+            e => e.Message.Contains("insert-secret-123")));
+
+        // Clean up
+        await ExecuteSqlAsync($"DELETE FROM \"widgets\" WHERE \"WidgetId\" = '{id}'");
+    }
+
     #endregion
 
     #region Slow Query Detection (Quarry.Execution)
