@@ -57,10 +57,9 @@
 ## Open Questions
 - Should PrepareIntegrationTests/RawSqlIntegrationTests be migrated to harness in a follow-up?
 - Should the accounts table be added to QueryTestHarness to enable TypeMapping execution tests?
-- Should existing insert tests be refactored to use `.Prepare()` pattern now that the bug is fixed?
 
 ## Next Work (Priority Order)
-1. **Create PR** for `feature/unified-test-harness` → `master`
-2. **Optional**: Migrate PrepareIntegrationTests and RawSqlIntegrationTests to harness (would allow deleting SqliteIntegrationTestBase)
-3. **Optional**: Add accounts table to QueryTestHarness for TypeMapping execution tests
-4. **Optional**: Refactor insert tests to use `.Prepare()` pattern (now that the bug is fixed)
+1. **Refactor CrossDialectInsertTests + CrossDialectBatchInsertTests to use `.Prepare()` pattern** — now that the Prepare+Insert parameter binding bug is fixed, these tests should use the standard `.Prepare().ToDiagnostics()` pattern for SQL verification instead of the `MockConnection.LastCommand` workaround. This eliminates `t.MockConnection` usage from insert tests and makes them consistent with all other CrossDialect tests. The `ExecuteNonQueryAsync`/`ExecuteScalarAsync` tests should use `.Prepare()` on the Lite chain with real execution, and `.Prepare().ToDiagnostics()` on Pg/My/Ss for SQL verification.
+2. **Create PR** for `feature/unified-test-harness` → `master`
+3. **Optional**: Migrate PrepareIntegrationTests and RawSqlIntegrationTests to harness (would allow deleting SqliteIntegrationTestBase)
+4. **Optional**: Add accounts table to QueryTestHarness for TypeMapping execution tests
