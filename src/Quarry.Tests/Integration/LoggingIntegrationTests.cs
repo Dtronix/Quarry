@@ -57,6 +57,19 @@ internal partial class LoggingIntegrationTests
             """);
 
         await ExecuteSqlAsync("""
+            CREATE TABLE "widgets" (
+                "WidgetId" TEXT NOT NULL PRIMARY KEY,
+                "WidgetName" TEXT NOT NULL,
+                "Secret" TEXT NOT NULL
+            )
+            """);
+
+        await ExecuteSqlAsync("""
+            INSERT INTO "widgets" ("WidgetId", "WidgetName", "Secret") VALUES
+                ('00000000-0000-0000-0000-000000000001', 'Gizmo', 'super-secret-value')
+            """);
+
+        await ExecuteSqlAsync("""
             INSERT INTO "users" ("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES
                 (1, 'Alice',   'alice@test.com',   1, '2024-01-15 00:00:00', '2024-06-01 00:00:00'),
                 (2, 'Bob',     NULL,               1, '2024-02-20 00:00:00', NULL),
@@ -465,6 +478,46 @@ internal partial class LoggingIntegrationTests
         var paramOpId = ExtractOpId(paramEntry.Message);
 
         Assert.That(queryOpId, Is.EqualTo(paramOpId));
+    }
+
+    [Test]
+    public async Task SensitiveColumn_LogsRedactedValue()
+    {
+        await using var db = new TestDbContext(_connection);
+
+        var secret = "super-secret-value";
+        await db.Widgets()
+            .Where(w => w.Secret == secret)
+            .Select(w => w.WidgetName)
+            .ExecuteFetchAllAsync();
+
+        var paramEntries = _logger.Entries
+            .Where(e => e.Category == "Quarry.Parameters")
+            .ToList();
+
+        Assert.That(paramEntries, Has.Count.GreaterThanOrEqualTo(1));
+
+        // Sensitive parameter should be redacted — must not contain the actual value
+        var sensitiveEntry = paramEntries.First();
+        Assert.That(sensitiveEntry.Message, Does.Not.Contain("super-secret-value"));
+        Assert.That(sensitiveEntry.Message, Does.Contain("SENSITIVE"));
+    }
+
+    [Test]
+    public async Task SensitiveColumn_DoesNotLeakValueAtAnyLevel()
+    {
+        await using var db = new TestDbContext(_connection);
+
+        var secret = "super-secret-value";
+        await db.Widgets()
+            .Where(w => w.Secret == secret)
+            .Select(w => w.WidgetName)
+            .ExecuteFetchAllAsync();
+
+        // No log entry at any level should contain the actual secret value
+        var allEntries = _logger.Entries;
+        Assert.That(allEntries, Has.None.Matches<RecordingLogsmithLogger.LogRecord>(
+            e => e.Message.Contains("super-secret-value")));
     }
 
     #endregion
