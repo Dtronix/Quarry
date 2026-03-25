@@ -50,7 +50,7 @@ Quarry takes a different approach: the source generator reads your query call si
 | Reflection-free hot path | Yes | No | Partial (AOT mode) | No |
 | NativeAOT compatible | Yes | Partial | Partial | No |
 | Compile-time diagnostics | Yes | Limited | No | No |
-| Minimal dependencies | Yes (zero runtime) | No | No | No |
+| No dependencies | Yes | No | No | No |
 | Type-safe schema definition | Yes | Yes (DbContext/model) | No | No |
 | Multi-dialect support | Yes (4 dialects) | Yes (providers) | Manual | Yes |
 | Join support | Up to 4 tables | Unlimited | Manual | Yes |
