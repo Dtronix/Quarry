@@ -605,18 +605,23 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Handle insert columns — check execution site first, then clause sites and prepare site
-        // (for Prepare chains, the InsertInfo is on the insert transition clause, not the execution site)
-        InsertInfo? resolvedInsertInfo = executionSite.Bound.InsertInfo;
-        if (resolvedInsertInfo == null && (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert))
+        // Handle insert columns — prefer prepare site (has initializer-derived columns),
+        // then clause sites, then execution site (which may have all-columns fallback for prepared terminals).
+        InsertInfo? resolvedInsertInfo = null;
+        if (queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert)
         {
-            foreach (var cs in clauseSites)
-            {
-                if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
-            }
-            if (resolvedInsertInfo == null && prepareSite?.Bound.InsertInfo != null)
+            if (prepareSite?.Bound.InsertInfo != null)
                 resolvedInsertInfo = prepareSite.Bound.InsertInfo;
+
+            if (resolvedInsertInfo == null)
+            {
+                foreach (var cs in clauseSites)
+                {
+                    if (cs.Bound.InsertInfo != null) { resolvedInsertInfo = cs.Bound.InsertInfo; break; }
+                }
+            }
         }
+        resolvedInsertInfo ??= executionSite.Bound.InsertInfo;
         if ((queryKind == QueryKind.Insert || queryKind == QueryKind.BatchInsert) && resolvedInsertInfo != null)
         {
             var insertInfo = resolvedInsertInfo;

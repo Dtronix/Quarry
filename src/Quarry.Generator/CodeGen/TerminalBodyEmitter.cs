@@ -357,12 +357,23 @@ internal static class TerminalBodyEmitter
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var insertInfo = prebuiltChain?.InsertInfo ?? site.InsertInfo;
 
-        // ExecuteScalarAsync<TKey> is a generic method on generic class IInsertBuilder<T>.
-        // Interceptors must match the combined arity: <T, TKey> (CS9177).
-        // T is constrained to class to match IInsertBuilder<T> where T : class.
-        sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
-        sb.AppendLine($"        this IInsertBuilder<T> builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        if (site.IsPreparedTerminal)
+        {
+            // PreparedQuery<TResult>.ExecuteScalarAsync<TKey>() — arity 2 (CS9177):
+            // TResult from PreparedQuery<TResult>, TKey from ExecuteScalarAsync<TKey>.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<TResult, TKey>(");
+            sb.AppendLine($"        this PreparedQuery<TResult> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            // ExecuteScalarAsync<TKey> is a generic method on generic class IInsertBuilder<T>.
+            // Interceptors must match the combined arity: <T, TKey> (CS9177).
+            // T is constrained to class to match IInsertBuilder<T> where T : class.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
+            sb.AppendLine($"        this IInsertBuilder<T> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        }
         sb.AppendLine($"    {{");
 
         if (insertInfo != null && insertInfo.Columns.Count > 0 && prebuiltChain != null)
@@ -449,9 +460,20 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
-        sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
-        sb.AppendLine($"        this IExecutableBatchInsert<T> builder,");
-        sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        if (site.IsPreparedTerminal)
+        {
+            // PreparedQuery<TResult>.ExecuteScalarAsync<TKey>() — arity 2 (CS9177):
+            // TResult from PreparedQuery<TResult>, TKey from ExecuteScalarAsync<TKey>.
+            sb.AppendLine($"    public static Task<TKey> {methodName}<TResult, TKey>(");
+            sb.AppendLine($"        this PreparedQuery<TResult> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else
+        {
+            sb.AppendLine($"    public static Task<TKey> {methodName}<T, TKey>(");
+            sb.AppendLine($"        this IExecutableBatchInsert<T> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default) where T : class");
+        }
         sb.AppendLine($"    {{");
 
         if (chain != null)

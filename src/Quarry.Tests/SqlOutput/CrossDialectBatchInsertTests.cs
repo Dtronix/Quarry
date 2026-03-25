@@ -16,11 +16,14 @@ internal class CrossDialectBatchInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).Prepare();
+        var pg   = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).Prepare();
+        var my   = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).Prepare();
+        var ss   = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
@@ -33,11 +36,14 @@ internal class CrossDialectBatchInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lite = Lite.Users().InsertBatch(u => u.UserName).Values(new[] { new User { UserName = "a" } }).Prepare();
+        var pg   = Pg.Users().InsertBatch(u => u.UserName).Values(new[] { new Pg.User { UserName = "a" } }).Prepare();
+        var my   = My.Users().InsertBatch(u => u.UserName).Values(new[] { new My.User { UserName = "a" } }).Prepare();
+        var ss   = Ss.Users().InsertBatch(u => u.UserName).Values(new[] { new Ss.User { UserName = "a" } }).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().InsertBatch(u => u.UserName).Values(new[] { new User { UserName = "a" } }).ToDiagnostics().Sql,
-            Pg.Users().InsertBatch(u => u.UserName).Values(new[] { new Pg.User { UserName = "a" } }).ToDiagnostics().Sql,
-            My.Users().InsertBatch(u => u.UserName).Values(new[] { new My.User { UserName = "a" } }).ToDiagnostics().Sql,
-            Ss.Users().InsertBatch(u => u.UserName).Values(new[] { new Ss.User { UserName = "a" } }).ToDiagnostics().Sql,
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"users\" (\"UserName\") VALUES (@p0) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\") VALUES ($1) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`) VALUES (?); SELECT LAST_INSERT_ID()",
@@ -53,33 +59,27 @@ internal class CrossDialectBatchInsertTests
     {
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
-        var conn = t.MockConnection;
 
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
 
-        await Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new Pg.User { UserName = u.UserName, IsActive = u.IsActive })).ExecuteNonQueryAsync();
-        var pgSql = conn.LastCommand!.CommandText;
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).Prepare();
+        var pg      = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new Pg.User { UserName = u.UserName, IsActive = u.IsActive })).Prepare();
+        var my      = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new My.User { UserName = u.UserName, IsActive = u.IsActive })).Prepare();
+        var ss      = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new Ss.User { UserName = u.UserName, IsActive = u.IsActive })).Prepare();
 
-        await My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new My.User { UserName = u.UserName, IsActive = u.IsActive })).ExecuteNonQueryAsync();
-        var mySql = conn.LastCommand!.CommandText;
-
-        await Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users.Select(u => new Ss.User { UserName = u.UserName, IsActive = u.IsActive })).ExecuteNonQueryAsync();
-        var ssSql = conn.LastCommand!.CommandText;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(pgSql, Is.EqualTo(
-                "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2), ($3, $4)"), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo(
-                "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?), (?, ?)"), "MySQL");
-            Assert.That(ssSql, Is.EqualTo(
-                "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1), (@p2, @p3)"), "SqlServer");
-        });
+        QueryTestHarness.AssertDialects(
+            liteSql.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
 
         // Verify real execution against SQLite — include CreatedAt to satisfy NOT NULL constraint
         var now = DateTime.UtcNow;
         var liteUsers = new[] { new User { UserName = "a", IsActive = true, CreatedAt = now }, new User { UserName = "b", IsActive = false, CreatedAt = now } };
-        var affected = await Lite.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(liteUsers).ExecuteNonQueryAsync();
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(liteUsers).Prepare();
+        var affected = await lite.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2));
     }
 
@@ -88,31 +88,25 @@ internal class CrossDialectBatchInsertTests
     {
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
-        var conn = t.MockConnection;
 
-        await Pg.Users().InsertBatch(u => u.UserName).Values(new[] { new Pg.User { UserName = "a" }, new Pg.User { UserName = "b" }, new Pg.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var pgSql = conn.LastCommand!.CommandText;
+        var liteSql = Lite.Users().InsertBatch(u => u.UserName).Values(new[] { new User { UserName = "a" }, new User { UserName = "b" }, new User { UserName = "c" } }).Prepare();
+        var pg      = Pg.Users().InsertBatch(u => u.UserName).Values(new[] { new Pg.User { UserName = "a" }, new Pg.User { UserName = "b" }, new Pg.User { UserName = "c" } }).Prepare();
+        var my      = My.Users().InsertBatch(u => u.UserName).Values(new[] { new My.User { UserName = "a" }, new My.User { UserName = "b" }, new My.User { UserName = "c" } }).Prepare();
+        var ss      = Ss.Users().InsertBatch(u => u.UserName).Values(new[] { new Ss.User { UserName = "a" }, new Ss.User { UserName = "b" }, new Ss.User { UserName = "c" } }).Prepare();
 
-        await My.Users().InsertBatch(u => u.UserName).Values(new[] { new My.User { UserName = "a" }, new My.User { UserName = "b" }, new My.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var mySql = conn.LastCommand!.CommandText;
-
-        await Ss.Users().InsertBatch(u => u.UserName).Values(new[] { new Ss.User { UserName = "a" }, new Ss.User { UserName = "b" }, new Ss.User { UserName = "c" } }).ExecuteNonQueryAsync();
-        var ssSql = conn.LastCommand!.CommandText;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(pgSql, Is.EqualTo(
-                "INSERT INTO \"users\" (\"UserName\") VALUES ($1), ($2), ($3)"), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo(
-                "INSERT INTO `users` (`UserName`) VALUES (?), (?), (?)"), "MySQL");
-            Assert.That(ssSql, Is.EqualTo(
-                "INSERT INTO [users] ([UserName]) VALUES (@p0), (@p1), (@p2)"), "SqlServer");
-        });
+        QueryTestHarness.AssertDialects(
+            liteSql.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\") VALUES (@p0) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\") VALUES ($1) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`) VALUES (?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName]) VALUES (@p0) OUTPUT INSERTED.[UserId]");
 
         // Verify real execution against SQLite — include required columns
         var now = DateTime.UtcNow;
         var liteUsers = new[] { new User { UserName = "a", CreatedAt = now }, new User { UserName = "b", CreatedAt = now }, new User { UserName = "c", CreatedAt = now } };
-        var affected = await Lite.Users().InsertBatch(u => (u.UserName, u.CreatedAt)).Values(liteUsers).ExecuteNonQueryAsync();
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.CreatedAt)).Values(liteUsers).Prepare();
+        var affected = await lite.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(3));
     }
 
@@ -125,30 +119,23 @@ internal class CrossDialectBatchInsertTests
     {
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
-        var conn = t.MockConnection;
-        conn.ScalarResult = 42;
 
-        await Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ExecuteScalarAsync<int>();
-        var pgSql = conn.LastCommand!.CommandText;
+        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).Prepare();
+        var pg      = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).Prepare();
+        var my      = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).Prepare();
+        var ss      = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).Prepare();
 
-        await My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ExecuteScalarAsync<int>();
-        var mySql = conn.LastCommand!.CommandText;
-
-        await Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ExecuteScalarAsync<int>();
-        var ssSql = conn.LastCommand!.CommandText;
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(pgSql, Is.EqualTo(
-                "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\""), "PostgreSQL");
-            Assert.That(mySql, Is.EqualTo(
-                "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()"), "MySQL");
-            Assert.That(ssSql, Is.EqualTo(
-                "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]"), "SqlServer");
-        });
+        QueryTestHarness.AssertDialects(
+            liteSql.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
 
         // Verify real execution against SQLite — include CreatedAt to satisfy NOT NULL constraint
-        var newId = await Lite.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(new[] { new User { UserName = "a", IsActive = true, CreatedAt = DateTime.UtcNow } }).ExecuteScalarAsync<int>();
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(new[] { new User { UserName = "a", IsActive = true, CreatedAt = DateTime.UtcNow } }).Prepare();
+        var newId = await lite.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
     }
 
@@ -162,11 +149,14 @@ internal class CrossDialectBatchInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).Prepare();
+        var pg   = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).Prepare();
+        var my   = My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).Prepare();
+        var ss   = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            Pg.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Pg.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            My.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new My.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
-            Ss.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(new[] { new Ss.User { UserName = "a", IsActive = true } }).ToDiagnostics().Sql,
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
@@ -180,10 +170,10 @@ internal class CrossDialectBatchInsertTests
         var Lite = t.Lite;
 
         var users = new[] { new User { UserName = "a", IsActive = true }, new User { UserName = "b", IsActive = false } };
-        var liteSql = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToDiagnostics().Sql;
+        var lite = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).Prepare();
 
         // ToDiagnostics returns the single-row template SQL, not the expanded multi-row SQL
-        Assert.That(liteSql, Is.EqualTo(
+        Assert.That(lite.ToDiagnostics().Sql, Is.EqualTo(
             "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\""));
     }
 
