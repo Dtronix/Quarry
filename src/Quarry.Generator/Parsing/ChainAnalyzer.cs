@@ -344,7 +344,6 @@ internal static class ChainAnalyzer
         int? limitLiteral = null;
         int? offsetLiteral = null;
         bool isDistinct = false;
-        bool hasSelectClause = false;
         SelectProjection? projection = null;
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
@@ -544,7 +543,6 @@ internal static class ChainAnalyzer
             }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
-                hasSelectClause = true;
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
             }
         }
