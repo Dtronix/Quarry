@@ -16,13 +16,6 @@ public class IndexModel(AppDb db, PasswordHasher hasher, AuditService audit) : P
     [BindProperty]
     public InputModel Input { get; set; } = new();
 
-    public class ProfileDto
-    {
-        public string UserName { get; set; } = "";
-        public string Email { get; set; } = "";
-        public DateTime CreatedAt { get; set; }
-    }
-
     public class InputModel
     {
         [Required]

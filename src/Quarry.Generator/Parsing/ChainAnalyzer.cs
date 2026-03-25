@@ -412,6 +412,12 @@ internal static class ChainAnalyzer
                     case ClauseKind.Set:
                         if (clause.SetAssignments != null)
                         {
+                            // Enrich Set parameters with column metadata (IsEnum, IsSensitive)
+                            // that EnrichParametersFromColumns missed because Set assignments
+                            // use a different expression structure than Where comparisons.
+                            EnrichSetParametersFromColumns(clauseParams, clause.SetAssignments,
+                                executionSite.Bound.Entity, parameters);
+
                             // SetAction: multiple assignments. Parameters were remapped above,
                             // so walk backwards from paramGlobalIndex to assign each non-inlined
                             // assignment its correct parameter slot.
@@ -522,6 +528,7 @@ internal static class ChainAnalyzer
                         col.ClrType,
                         $"entity.{col.PropertyName}",
                         typeMappingClass: col.CustomTypeMappingClass,
+                        isEnum: col.IsEnum,
                         isSensitive: col.IsSensitive,
                         entityPropertyExpression: $"__c.Entity.{col.PropertyName}"));
                     paramGlobalIndex++;
@@ -543,6 +550,13 @@ internal static class ChainAnalyzer
             }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
+                // Disqualify chains with failed projections (e.g., anonymous types)
+                if (raw.ProjectionInfo.FailureReason != ProjectionFailureReason.None)
+                {
+                    return MakeRuntimeBuildChain(executionSite, clauseSites,
+                        raw.ProjectionInfo.NonOptimalReason ?? "Projection analysis failed",
+                        registry, isTraced);
+                }
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
             }
         }
@@ -792,6 +806,78 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
+    /// Enriches Set clause parameters with column metadata (IsEnum, IsSensitive) by matching
+    /// each non-inlined SetActionAssignment's ColumnSql (property name) to a column in the entity.
+    /// This handles the case that EnrichParametersFromColumns misses because Set assignments
+    /// use a different expression structure than Where/Having comparisons.
+    /// </summary>
+    private static void EnrichSetParametersFromColumns(
+        List<QueryParameter> clauseParams,
+        IReadOnlyList<SetActionAssignment> assignments,
+        EntityRef? entity,
+        List<QueryParameter> allParameters)
+    {
+        if (entity == null || clauseParams.Count == 0)
+            return;
+
+        // Build lookup by property name
+        var columnByProperty = new Dictionary<string, ColumnInfo>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (var col in entity.Columns)
+            columnByProperty[col.PropertyName] = col;
+
+        // Match each non-inlined assignment to its clause parameter (in order)
+        int paramIdx = 0;
+        foreach (var assignment in assignments)
+        {
+            if (assignment.IsInlined)
+                continue;
+
+            if (paramIdx >= clauseParams.Count)
+                break;
+
+            if (columnByProperty.TryGetValue(assignment.ColumnSql, out var colInfo))
+            {
+                var p = clauseParams[paramIdx];
+                var isEnum = colInfo.IsEnum || p.IsEnum;
+                var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
+
+                if (isEnum != p.IsEnum || isSensitive != p.IsSensitive)
+                {
+                    var enriched = new QueryParameter(
+                        globalIndex: p.GlobalIndex,
+                        clrType: p.ClrType,
+                        valueExpression: p.ValueExpression,
+                        isCaptured: p.IsCaptured,
+                        expressionPath: p.ExpressionPath,
+                        isCollection: p.IsCollection,
+                        elementTypeName: p.ElementTypeName,
+                        typeMappingClass: p.TypeMappingClass,
+                        isEnum: isEnum,
+                        enumUnderlyingType: p.EnumUnderlyingType,
+                        isSensitive: isSensitive,
+                        entityPropertyExpression: p.EntityPropertyExpression,
+                        needsFieldInfoCache: p.NeedsFieldInfoCache,
+                        isDirectAccessible: p.IsDirectAccessible,
+                        collectionAccessExpression: p.CollectionAccessExpression);
+                    clauseParams[paramIdx] = enriched;
+
+                    // Also update in allParameters if already added
+                    for (int i = 0; i < allParameters.Count; i++)
+                    {
+                        if (allParameters[i].GlobalIndex == p.GlobalIndex)
+                        {
+                            allParameters[i] = enriched;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            paramIdx++;
+        }
+    }
+
+    /// <summary>
     /// Recursively walks an expression tree to find BinaryOpExpr/InExpr/LikeExpr nodes
     /// where one side is a ResolvedColumnExpr and the other contains a ParamSlotExpr.
     /// Records the mapping from param local index to the matched ColumnInfo.
@@ -1005,8 +1091,8 @@ internal static class ChainAnalyzer
                         columns.Add(new ProjectedColumn(
                             propertyName: col.PropertyName,
                             columnName: entityCol.ColumnName,
-                            clrType: string.IsNullOrWhiteSpace(col.ClrType) ? entityCol.ClrType : col.ClrType,
-                            fullClrType: string.IsNullOrWhiteSpace(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            clrType: IsUnresolvedTypeName(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            fullClrType: IsUnresolvedTypeName(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
                             isNullable: entityCol.IsNullable,
                             ordinal: col.Ordinal,
                             alias: col.Alias,
@@ -1078,9 +1164,18 @@ internal static class ChainAnalyzer
     {
         // Aggregates have empty ColumnName by design — don't trigger enrichment for them
         if (col.IsAggregateFunction)
-            return string.IsNullOrWhiteSpace(col.ClrType);
-        return string.IsNullOrWhiteSpace(col.ClrType)
+            return IsUnresolvedTypeName(col.ClrType);
+        return IsUnresolvedTypeName(col.ClrType)
+            || IsUnresolvedTypeName(col.FullClrType)
             || string.IsNullOrWhiteSpace(col.ColumnName);
+    }
+
+    /// <summary>
+    /// Checks if a type name is unresolved (error type from semantic model, empty, or missing).
+    /// </summary>
+    private static bool IsUnresolvedTypeName(string? typeName)
+    {
+        return string.IsNullOrWhiteSpace(typeName) || typeName == "?" || typeName == "object";
     }
 
     /// <summary>

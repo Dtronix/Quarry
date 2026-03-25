@@ -1,0 +1,76 @@
+@page
+@model Quarry.Sample.WebApp.Pages.Admin.Users.IndexModel
+@{
+    ViewData["Title"] = "Users";
+    Layout = "_Layout";
+}
+
+<h1>Users</h1>
+
+<form method="get" class="filter-bar">
+    <div class="form-group">
+        <label>Search</label>
+        <input name="search" value="@Model.Search" placeholder="Name or email" />
+    </div>
+    <div class="form-group">
+        <label>Role</label>
+        <select name="roleFilter">
+            <option value="">All</option>
+            <option value="User" selected="@(Model.RoleFilter == UserRole.User)">User</option>
+            <option value="Admin" selected="@(Model.RoleFilter == UserRole.Admin)">Admin</option>
+        </select>
+    </div>
+    <div class="form-group">
+        <label>Status</label>
+        <select name="activeOnly">
+            <option value="">All</option>
+            <option value="true" selected="@(Model.ActiveOnly == true)">Active only</option>
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+</form>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Last Login</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var u in Model.Users)
+            {
+                <tr>
+                    <td>@u.UserName</td>
+                    <td>@u.Email</td>
+                    <td><span class="badge @(u.Role == UserRole.Admin ? "badge-admin" : "badge-user")">@u.Role</span></td>
+                    <td><span class="badge @(u.IsActive ? "badge-active" : "badge-inactive")">@(u.IsActive ? "Active" : "Inactive")</span></td>
+                    <td>@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm") ?? "Never")</td>
+                    <td><a href="/Admin/Users/@u.UserId" class="btn btn-sm btn-primary">Edit</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (Model.TotalPages > 1)
+    {
+        <div class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                if (i == Model.Page)
+                {
+                    <span class="current">@i</span>
+                }
+                else
+                {
+                    <a href="?page=@i&search=@Model.Search&roleFilter=@Model.RoleFilter&activeOnly=@Model.ActiveOnly">@i</a>
+                }
+            }
+        </div>
+    }
+</div>

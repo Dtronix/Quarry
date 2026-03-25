@@ -577,14 +577,17 @@ internal static class ClauseBodyEmitter
                 if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
                 var carrierParam = prebuiltChain.ChainParameters[globalIdx];
 
+                var castType = carrierParam.ClrType == "?" || carrierParam.ClrType == "object"
+                    ? "object?"
+                    : carrierParam.ClrType;
                 if (p.IsCaptured)
                 {
                     sb.AppendLine($"        {carrier.ClassName}.F{globalIdx} ??= action.Target!.GetType().GetField(\"{p.ValueExpression}\")!;");
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
                 }
                 else
                 {
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){p.ValueExpression}!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){p.ValueExpression}!;");
                 }
             }
 

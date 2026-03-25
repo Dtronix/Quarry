@@ -31,10 +31,19 @@ public sealed class SessionService(AppDb db, AuditService audit)
 
     public async Task<User?> ValidateSessionAsync(string token)
     {
-        return await db.Sessions()
-            .Join<User>((s, u) => s.UserId.Id == u.UserId)
-            .Where((s, u) => s.Token == token && s.ExpiresAt > DateTime.UtcNow && u.IsActive)
-            .Select((s, u) => u)
+        // Find the session's user ID, then load the user separately.
+        // Joined entity projection (.Select((s, u) => u)) is not yet supported;
+        // a two-query approach avoids the limitation.
+        var userId = await db.Sessions()
+            .Where(s => s.Token == token && s.ExpiresAt > DateTime.UtcNow)
+            .Select(s => s.UserId.Id)
+            .ExecuteFetchFirstOrDefaultAsync();
+
+        if (userId == 0) return null;
+
+        return await db.Users()
+            .Where(u => u.UserId == userId && u.IsActive)
+            .Select(u => u)
             .ExecuteFetchFirstOrDefaultAsync();
     }
 
