@@ -36,9 +36,19 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 
 ## Why Quarry Exists
 
-Most .NET data access libraries operate at runtime — parsing LINQ expressions, building SQL strings dynamically, or mapping results via reflection. This works well for many applications, but it means SQL correctness is only validated when the code runs, and the runtime cost of expression trees and reflection is unavoidable.
+In most .NET data access libraries, SQL is built at runtime. LINQ expressions are translated on every call, column mapping relies on reflection, and query errors only surface when the code executes. This makes runtime performance harder to predict and rules out scenarios like NativeAOT where reflection is restricted.
 
-Quarry takes a different approach: the source generator reads your query call sites at build time, translates C# expressions into SQL string literals, and emits interceptor methods that replace the original calls. Intercepted paths contain pre-built SQL and ordinal-based readers with no reflection and no expression tree evaluation. If a query can't be fully analyzed, you get a compile-time error — there is no runtime fallback.
+**Quarry is a compile-time SQL builder — not an ORM.** A Roslyn incremental source generator analyzes your C# query expressions at build time and emits pre-built SQL as string literals — no runtime translation, no reflection, no fallback. Queries that can't be statically analyzed produce a compile error, not a runtime surprise.
+
+Unlike an ORM, Quarry does not track entity state or generate change sets. You write explicit Insert, Update, and Delete calls, and the generator compiles each one into fixed SQL. The closest analogues outside .NET are [sqlc](https://sqlc.dev/) (Go) and [SQLDelight](https://cashapp.github.io/sqldelight/) (Kotlin).
+
+| | ORM (EF Core) | Compile-time SQL builder (Quarry) | Micro-ORM (Dapper) |
+|---|---|---|---|
+| Schema definition | Yes | Yes | No |
+| SQL authoring | Auto (LINQ → SQL at runtime) | Auto (C# → SQL at compile time) | Manual |
+| Object mapping | Reflection-based | Source-generated readers | Reflection / AOT |
+| Change tracking | Yes | No | No |
+| Migrations | Yes | Yes | No |
 
 ---
 
