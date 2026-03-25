@@ -15,6 +15,7 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 - [Schema Definition](#schema-definition)
 - [Context Definition](#context-definition)
 - [Querying](#querying)
+- [Prepared Queries](#prepared-queries)
 - [Modifications](#modifications)
 - [Raw SQL](#raw-sql)
 - [Migrations](#migrations)
@@ -37,7 +38,7 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 
 Most .NET data access libraries operate at runtime — parsing LINQ expressions, building SQL strings dynamically, or mapping results via reflection. This works well for many applications, but it means SQL correctness is only validated when the code runs, and the runtime cost of expression trees and reflection is unavoidable.
 
-Quarry takes a different approach: the source generator reads your query call sites at build time, translates C# expressions into SQL string literals, and emits interceptor methods that replace the original calls. Intercepted paths contain pre-built SQL and ordinal-based readers with no reflection and no expression tree evaluation. If a query can't be fully analyzed, you get a compiler diagnostic — and a runtime fallback path handles execution.
+Quarry takes a different approach: the source generator reads your query call sites at build time, translates C# expressions into SQL string literals, and emits interceptor methods that replace the original calls. Intercepted paths contain pre-built SQL and ordinal-based readers with no reflection and no expression tree evaluation. If a query can't be fully analyzed, you get a compile-time error — there is no runtime fallback.
 
 ---
 
@@ -46,7 +47,7 @@ Quarry takes a different approach: the source generator reads your query call si
 | Capability | Quarry | EF Core | Dapper | SqlKata |
 |---|---|---|---|---|
 | SQL generated at compile time | Yes | No (runtime LINQ translation) | No (hand-written SQL) | No (runtime builder) |
-| Reflection-free hot path | Yes (intercepted) | No | Partial (AOT mode) | No |
+| Reflection-free hot path | Yes | No | Partial (AOT mode) | No |
 | NativeAOT compatible | Yes | Partial | Partial | No |
 | Compile-time diagnostics | Yes | Limited | No | No |
 | Minimal dependencies | Yes (Logsmith only) | No | No | No |
@@ -58,7 +59,7 @@ Quarry takes a different approach: the source generator reads your query call si
 | Database scaffolding | Yes | Yes | No | No |
 | Change tracking | No | Yes | No | No |
 | Migrations | Yes (code-first) | Yes | No | No |
-| Expression flexibility | Fluent chain only | Full LINQ | N/A | Full builder |
+| Prepared multi-terminal queries | Yes | No | No | No |
 
 ---
 
@@ -66,23 +67,19 @@ Quarry takes a different approach: the source generator reads your query call si
 
 ### Compile-Time SQL Generation
 
-The Roslyn incremental source generator analyzes every query call site and emits SQL as string literals in interceptor methods. No SQL is built at runtime — what you see in the generated code is exactly what executes.
+The Roslyn incremental source generator analyzes every query call site and emits SQL as string literals in interceptor methods. No SQL is built at runtime — what you see in the generated code is exactly what executes. All SELECT queries emit explicit column lists (never `SELECT *`), making generated SQL predictable and immune to schema column-order drift.
+
+### Carrier-Only Architecture
+
+All query chains are compiled into **carrier classes** — generated abstract base classes that hold pre-built SQL, parameter arrays, and conditional dispatch logic. There is no runtime query builder; every chain must be fully analyzable at compile time. Chains that cannot be statically analyzed produce a compile-time error (QRY032).
 
 ### Execution Interceptors
 
-All terminal methods — `ExecuteFetchAllAsync`, `ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ToAsyncEnumerable`, and `ToDiagnostics` — are intercepted at compile time. The generator emits pre-built SQL, ordinal-based readers, and pre-allocated parameter arrays directly into the interceptor, bypassing the runtime query builder entirely.
-
-### Chain Analysis and Optimization Tiers
-
-The generator performs dataflow analysis on query chains to determine the best optimization strategy:
-
-- **Tier 1 — Pre-built dispatch:** The full chain is analyzed and all clause combinations are enumerated into a const SQL dispatch table. Zero runtime string work.
-- **Tier 2 — Pre-quoted fragments:** The chain has too many conditional paths for a dispatch table. Pre-quoted SQL fragments are concatenated at runtime with minimal overhead.
-- **Tier 3 — Runtime fallback:** The chain cannot be statically analyzed (e.g. dynamic expressions, loop assignments). The existing runtime `SqlBuilder` path is used.
+All terminal methods — `ExecuteFetchAllAsync`, `ExecuteNonQueryAsync`, `ExecuteScalarAsync`, `ToAsyncEnumerable`, and `ToDiagnostics` — are intercepted at compile time. The generator emits pre-built SQL, ordinal-based readers, and pre-allocated parameter arrays directly into the interceptor, bypassing any runtime translation.
 
 ### Conditional Branch Support
 
-Queries built with `if`/`else` branching are fully supported at compile time. The generator assigns each conditional clause a bit index and enumerates all possible clause combinations as a bitmask. Each combination maps to its own pre-built SQL variant, so conditional query construction has zero runtime SQL building cost.
+Queries built with `if`/`else` branching are fully supported at compile time. The generator assigns each conditional clause a bit index and enumerates all possible clause combinations as a bitmask (up to 256 variants with 8 conditional bits). Each combination maps to its own pre-built SQL variant, so conditional query construction has zero runtime SQL building cost.
 
 ```csharp
 var query = db.Users().Select(u => u);
@@ -98,9 +95,13 @@ if (sortByName)
 var results = await query.Limit(10).ExecuteFetchAllAsync();
 ```
 
+### Prepared Queries
+
+`.Prepare()` compiles a query chain once and returns a `PreparedQuery<T>` that supports multiple terminal operations — fetch, scalar, streaming, diagnostics — without rebuilding the chain. Available on all builder types (select, join, insert, update, delete, batch insert).
+
 ### Zero-Allocation Readers
 
-Intercepted query paths use ordinal-based `Func<DbDataReader, T>` delegates generated at compile time — no reflection and no dictionary lookups by column name. Non-intercepted fallback paths use runtime reflection for materialization.
+Intercepted query paths use ordinal-based `Func<DbDataReader, T>` delegates generated at compile time — no reflection and no dictionary lookups by column name.
 
 ### Multi-Dialect Support
 
@@ -313,6 +314,37 @@ db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2); // filtered COUNT
 
 ---
 
+## Prepared Queries
+
+`.Prepare()` compiles a query chain into a `PreparedQuery<T>` that supports multiple terminal operations on the same pre-built SQL. Available on all builder types.
+
+```csharp
+// Build once, execute multiple ways
+var prepared = db.Users()
+    .Where(u => u.IsActive)
+    .Select(u => (u.UserId, u.UserName))
+    .Prepare();
+
+var diag = prepared.ToDiagnostics();            // inspect SQL and metadata
+var all = await prepared.ExecuteFetchAllAsync(); // fetch all rows
+var first = await prepared.ExecuteFetchFirstAsync(); // fetch first row
+```
+
+Prepare works with modifications too:
+
+```csharp
+var prepared = db.Users()
+    .Insert(new User { UserName = "x", IsActive = true })
+    .Prepare();
+
+var diag = prepared.ToDiagnostics();
+var affected = await prepared.ExecuteNonQueryAsync();
+```
+
+When a single terminal is called after `.Prepare()`, the generator produces identical SQL to a direct chain — zero overhead.
+
+---
+
 ## Modifications
 
 ### Insert
@@ -324,21 +356,13 @@ var id = await db.Users().Insert(user).ExecuteScalarAsync<int>();  // returns ge
 
 // Batch insert — column-selector + data-provider pattern
 await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
-var sql = db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ToSql();
-
 ```
 
 ### Update
 
-Requires `Where()` or `All()` before execution. Three `Set` overloads:
+Requires `Where()` or `All()` before execution. Two `Set` overloads:
 
 ```csharp
-// Column + value form
-await db.Users().Update()
-    .Set(u => u.UserName, "New")
-    .Where(u => u.UserId == 1)
-    .ExecuteNonQueryAsync();
-
 // Assignment syntax — single or multiple columns in one lambda
 await db.Users().Update()
     .Set(u => u.UserName = "New")
@@ -382,8 +406,8 @@ await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 | `ExecuteScalarAsync<T>()` | `Task<T>` |
 | `ExecuteNonQueryAsync()` | `Task<int>` |
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
-| `ToDiagnostics()` | `QueryDiagnostics` (SQL, parameters, optimization tier, clause breakdown) |
-| `ToSql()` | `string` (preview SQL, expands batch insert rows) |
+| `ToDiagnostics()` | `QueryDiagnostics` (SQL, parameters, optimization metadata, clause breakdown) |
+| `Prepare()` | `PreparedQuery<T>` (reusable multi-terminal handle) |
 
 ### Query Diagnostics
 
@@ -396,10 +420,12 @@ var diag = db.Users()
     .Select(u => u)
     .ToDiagnostics();
 
-Console.WriteLine(diag.Sql);               // SELECT ... FROM "users" WHERE ...
-Console.WriteLine(diag.Dialect);           // SQLite
-Console.WriteLine(diag.Tier);             // PrebuiltDispatch
+Console.WriteLine(diag.Sql);                // SELECT ... FROM "users" WHERE ...
+Console.WriteLine(diag.Dialect);            // SQLite
+Console.WriteLine(diag.Tier);              // PrebuiltDispatch
 Console.WriteLine(diag.IsCarrierOptimized); // True
+Console.WriteLine(diag.Kind);              // Select
+Console.WriteLine(diag.TableName);         // users
 
 foreach (var p in diag.Parameters)
     Console.WriteLine($"{p.Name} = {p.Value}");
@@ -409,6 +435,20 @@ foreach (var clause in diag.Clauses)
 ```
 
 For conditional chains, each clause reports `IsConditional` and `IsActive` so you can inspect which branches were taken and verify the generated SQL for each path.
+
+Additional metadata available on `QueryDiagnostics`:
+
+| Property | Description |
+|---|---|
+| `SqlVariants` | All pre-built SQL variants keyed by conditional bitmask |
+| `ActiveMask` | Current runtime bitmask for conditional clauses |
+| `ConditionalBitCount` | Number of conditional bits in the chain |
+| `ProjectionColumns` | SELECT column breakdown with types and ordinals |
+| `ProjectionKind` | Entity, Dto, Tuple, or SingleColumn |
+| `Joins` | JOIN metadata (table, kind, alias, ON condition) |
+| `CarrierClassName` | Name of the generated carrier class |
+| `IdentityColumnName` | Identity column for INSERT chains |
+| `InsertRowCount` | Number of rows for batch inserts |
 
 ---
 
@@ -443,6 +483,11 @@ quarry migrate add-empty SeedData               # empty migration for custom SQL
 quarry migrate list                             # list all migrations
 quarry migrate validate                         # check version integrity
 quarry migrate remove                           # remove latest migration files
+quarry migrate diff                             # preview schema changes (no file generation)
+quarry migrate script                           # generate incremental migration SQL for a version range
+quarry migrate status -c <conn>                 # show applied vs pending status (requires connection)
+quarry migrate squash                           # collapse all migrations into a single baseline
+quarry migrate bundle                           # build a self-contained migration executable
 quarry create-scripts -d postgresql -o schema.sql  # generate full DDL
 ```
 
