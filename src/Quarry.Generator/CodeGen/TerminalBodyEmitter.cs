@@ -324,7 +324,7 @@ internal static class TerminalBodyEmitter
         AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo ?? prebuiltChain?.PrepareSite?.InsertInfo;
+        var insertInfo = prebuiltChain?.InsertInfo ?? site.InsertInfo;
 
         string receiverType = site.IsPreparedTerminal
             ? "PreparedQuery<int>"
@@ -355,7 +355,7 @@ internal static class TerminalBodyEmitter
         AssembledPlan? prebuiltChain, CarrierPlan carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var insertInfo = site.InsertInfo;
+        var insertInfo = prebuiltChain?.InsertInfo ?? site.InsertInfo;
 
         // ExecuteScalarAsync<TKey> is a generic method on generic class IInsertBuilder<T>.
         // Interceptors must match the combined arity: <T, TKey> (CS9177).
@@ -390,8 +390,12 @@ internal static class TerminalBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
+        string receiverType = site.IsPreparedTerminal
+            ? "PreparedQuery<int>"
+            : $"IInsertBuilder<{entityType}>";
+
         sb.AppendLine($"    public static QueryDiagnostics {methodName}(");
-        sb.AppendLine($"        this IInsertBuilder<{entityType}> builder)");
+        sb.AppendLine($"        this {receiverType} builder)");
         sb.AppendLine($"    {{");
 
         if (chain != null && chain.SqlVariants.Count > 0)
@@ -508,7 +512,7 @@ internal static class TerminalBodyEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string executorMethod, string entityType)
     {
-        var insertInfo = chain.ExecutionSite.InsertInfo ?? chain.PrepareSite?.InsertInfo;
+        var insertInfo = chain.InsertInfo;
         if (insertInfo == null || insertInfo.Columns.Count == 0) return;
 
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");

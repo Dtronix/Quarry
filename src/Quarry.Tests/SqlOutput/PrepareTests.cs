@@ -409,6 +409,35 @@ internal class PrepareTests
         Assert.That(preparedSql, Is.EqualTo(directDiag.Sql));
     }
 
+    [Test]
+    public async Task Prepare_Insert_ExecuteNonQueryAsync_BindsParameters()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var entity = new User { UserName = "PrepInsert", IsActive = true, CreatedAt = default };
+
+        var prepared = Lite.Users()
+            .Insert(entity)
+            .Prepare();
+
+        // Verify SQL is correct
+        var diag = prepared.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("INSERT INTO"));
+        Assert.That(diag.Sql, Does.Contain("VALUES"));
+
+        // Verify execution works (parameters are bound)
+        var affected = await prepared.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        // Verify the row was actually inserted
+        var results = await Lite.Users()
+            .Where(u => u.UserName == "PrepInsert")
+            .Select(u => u.UserName)
+            .ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+    }
+
     #endregion
 
     #region Batch Insert

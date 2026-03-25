@@ -121,7 +121,8 @@ internal static class SqlAssembler
             batchInsertReturningSuffix: batchReturningSuffix,
             batchInsertColumnsPerRow: batchColumnsPerRow,
             preparedTerminals: chain.PreparedTerminals,
-            prepareSite: chain.PrepareSite);
+            prepareSite: chain.PrepareSite,
+            insertInfo: insertInfo);
     }
 
     /// <summary>
