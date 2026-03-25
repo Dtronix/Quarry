@@ -15,42 +15,6 @@ namespace Quarry.Generators.CodeGen;
 internal static class TerminalEmitHelpers
 {
     /// <summary>
-    /// Emits SQL dispatch: either a const string (single variant) or a mask switch (multiple variants).
-    /// Also emits collection parameter expansion when needed.
-    /// </summary>
-    internal static void EmitSqlDispatch(StringBuilder sb, AssembledPlan chain)
-    {
-        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
-
-        if (chain.SqlVariants.Count == 1)
-        {
-            foreach (var kvp in chain.SqlVariants)
-            {
-                if (hasCollections)
-                    sb.AppendLine($"        var sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
-                else
-                    sb.AppendLine($"        const string sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
-            }
-        }
-        else
-        {
-            sb.AppendLine("        var sql = __c.Mask switch");
-            sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlVariants)
-            {
-                sb.AppendLine($"            {kvp.Key} => @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\",");
-            }
-            sb.AppendLine("            _ => throw new InvalidOperationException(\"Unexpected ClauseMask value.\")");
-            sb.AppendLine("        };");
-        }
-
-        if (hasCollections)
-        {
-            EmitCollectionExpansion(sb, chain);
-        }
-    }
-
-    /// <summary>
     /// Emits parameter value extraction into __pVal* local variables from carrier fields.
     /// </summary>
     internal static void EmitParameterLocals(
@@ -510,15 +474,25 @@ internal static class TerminalEmitHelpers
             ? $"\"{esc(plan.NotAnalyzableReason)}\""
             : "null";
 
-        // SqlVariants dictionary
+        // SqlVariants dictionary — references carrier's static _sql field
         var hasVariants = chain.SqlVariants.Count > 0;
         if (hasVariants)
         {
             sb.AppendLine("        var __variants = new System.Collections.Generic.Dictionary<ulong, SqlVariantDiagnostic>");
             sb.AppendLine("        {");
-            foreach (var kvp in chain.SqlVariants)
+            if (chain.SqlVariants.Count == 1)
             {
-                sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic(@\"{esc(kvp.Value.Sql)}\", {kvp.Value.ParameterCount}) }},");
+                foreach (var kvp in chain.SqlVariants)
+                {
+                    sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic({carrier.ClassName}._sql, {kvp.Value.ParameterCount}) }},");
+                }
+            }
+            else
+            {
+                foreach (var kvp in chain.SqlVariants.OrderBy(kv => kv.Key))
+                {
+                    sb.AppendLine($"            {{ {kvp.Key}UL, new SqlVariantDiagnostic({carrier.ClassName}._sql[{kvp.Key}], {kvp.Value.ParameterCount}) }},");
+                }
             }
             sb.AppendLine("        };");
         }

@@ -178,7 +178,7 @@ internal sealed class FileEmitter
                     carrierFirstClauseIds.Add(clauses[0].Site.UniqueId);
                 }
 
-                CarrierEmitter.EmitCarrierClass(sb, carrierPlan);
+                CarrierEmitter.EmitCarrierClass(sb, carrierPlan, chain);
             }
         }
 
