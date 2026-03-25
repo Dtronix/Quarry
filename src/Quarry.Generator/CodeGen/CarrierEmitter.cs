@@ -501,7 +501,7 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits the static _sql field on the carrier class.
     /// Single-variant chains get a static readonly string; multi-variant chains get a static readonly string[]
-    /// indexed by mask value. Gaps (e.g., mutually-exclusive branches that skip mask 0) are filled with empty strings.
+    /// indexed by mask value. Gaps (e.g., mutually-exclusive branches that skip mask 0) are filled with null! to surface routing bugs.
     /// </summary>
     private static void EmitCarrierSqlField(StringBuilder sb, AssembledPlan chain)
     {
@@ -515,17 +515,17 @@ internal static class CarrierEmitter
         else
         {
             // Multi-variant: emit string[] indexed by mask value.
-            // Array size = max mask value + 1. Gaps filled with empty strings (unreachable at runtime).
+            // Array size = max mask value + 1. Gaps filled with null! (unreachable at runtime; NRE if hit).
             var maxMask = chain.SqlVariants.Keys.Max();
-            var arraySize = (int)maxMask + 1;
+            var arraySize = maxMask + 1;
             sb.AppendLine("    internal static readonly string[] _sql =");
             sb.AppendLine("    [");
             for (int i = 0; i < arraySize; i++)
             {
-                if (chain.SqlVariants.TryGetValue((ulong)i, out var variant))
+                if (chain.SqlVariants.TryGetValue(i, out var variant))
                     sb.AppendLine($"        @\"{InterceptorCodeGenerator.EscapeStringLiteral(variant.Sql)}\",");
                 else
-                    sb.AppendLine("        \"\",");
+                    sb.AppendLine("        null!,");
             }
             sb.AppendLine("    ];");
         }

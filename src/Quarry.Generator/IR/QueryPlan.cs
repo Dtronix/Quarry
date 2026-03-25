@@ -29,7 +29,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         IReadOnlyList<SetTerm> setTerms,
         IReadOnlyList<InsertColumn> insertColumns,
         IReadOnlyList<ConditionalTerm> conditionalTerms,
-        IReadOnlyList<ulong> possibleMasks,
+        IReadOnlyList<int> possibleMasks,
         IReadOnlyList<QueryParameter> parameters,
         OptimizationTier tier,
         string? notAnalyzableReason = null,
@@ -70,7 +70,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public IReadOnlyList<SetTerm> SetTerms { get; }
     public IReadOnlyList<InsertColumn> InsertColumns { get; }
     public IReadOnlyList<ConditionalTerm> ConditionalTerms { get; }
-    public IReadOnlyList<ulong> PossibleMasks { get; }
+    public IReadOnlyList<int> PossibleMasks { get; }
     public IReadOnlyList<QueryParameter> Parameters { get; }
     public OptimizationTier Tier { get; }
     public string? NotAnalyzableReason { get; }
@@ -97,7 +97,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
             && EqualityHelpers.SqlExprSequenceEqual(GroupByExprs, other.GroupByExprs)
             && EqualityHelpers.SqlExprSequenceEqual(HavingExprs, other.HavingExprs)
-            && EqualityHelpers.UlongSequenceEqual(PossibleMasks, other.PossibleMasks)
+            && EqualityHelpers.SequenceEqual(PossibleMasks, other.PossibleMasks)
             && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames)
             && ForkedVariableName == other.ForkedVariableName;
     }

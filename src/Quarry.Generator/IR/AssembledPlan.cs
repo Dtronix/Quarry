@@ -15,7 +15,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
 {
     public AssembledPlan(
         QueryPlan plan,
-        Dictionary<ulong, AssembledSqlVariant> sqlVariants,
+        Dictionary<int, AssembledSqlVariant> sqlVariants,
         string? readerDelegateCode,
         int maxParameterCount,
         TranslatedCallSite executionSite,
@@ -56,7 +56,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     }
 
     public QueryPlan Plan { get; }
-    public Dictionary<ulong, AssembledSqlVariant> SqlVariants { get; }
+    public Dictionary<int, AssembledSqlVariant> SqlVariants { get; }
     public string? ReaderDelegateCode { get; set; }
     public int MaxParameterCount { get; }
     public TranslatedCallSite ExecutionSite { get; }
@@ -112,7 +112,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     public string? ForkedVariableName => Plan.ForkedVariableName;
     public IReadOnlyList<QueryParameter> ChainParameters => Plan.Parameters;
     public IReadOnlyList<ConditionalTerm> ConditionalTerms => Plan.ConditionalTerms;
-    public IReadOnlyList<ulong> PossibleMasks => Plan.PossibleMasks;
+    public IReadOnlyList<int> PossibleMasks => Plan.PossibleMasks;
     public string? NotAnalyzableReason => Plan.NotAnalyzableReason;
 
     /// <summary>

@@ -320,7 +320,7 @@ internal static class ChainAnalyzer
         // Compute possible masks
         var possibleMasks = tier == OptimizationTier.PrebuiltDispatch
             ? EnumerateMaskCombinations(conditionalTerms, branchGroups, clauseSites)
-            : Array.Empty<ulong>();
+            : Array.Empty<int>();
 
         // Collect unmatched method names (sites not in the chain that are tracked but not intercepted)
         // In the new pipeline, all sites in the chain are matched by ChainId — unmatched is N/A.
@@ -1277,13 +1277,13 @@ internal static class ChainAnalyzer
     /// <summary>
     /// Enumerates all possible ClauseMask values from conditional terms and branch groups.
     /// </summary>
-    private static IReadOnlyList<ulong> EnumerateMaskCombinations(
+    private static IReadOnlyList<int> EnumerateMaskCombinations(
         List<ConditionalTerm> conditionalTerms,
         Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>> branchGroups,
         List<TranslatedCallSite> clauseSites)
     {
         if (conditionalTerms.Count == 0)
-            return new[] { 0UL };
+            return new[] { 0 };
 
         var independentBits = new List<int>();
         var exclusiveGroups = new List<List<int>>();
@@ -1306,16 +1306,16 @@ internal static class ChainAnalyzer
         }
 
         // Build combinations
-        var masks = new List<ulong> { 0UL };
+        var masks = new List<int> { 0 };
 
         // Independent bits: each can be on or off
         foreach (var bit in independentBits)
         {
-            var newMasks = new List<ulong>(masks.Count * 2);
+            var newMasks = new List<int>(masks.Count * 2);
             foreach (var mask in masks)
             {
                 newMasks.Add(mask);                      // bit off
-                newMasks.Add(mask | (1UL << bit));       // bit on
+                newMasks.Add(mask | (1 << bit));         // bit on
             }
             masks = newMasks;
         }
@@ -1323,12 +1323,12 @@ internal static class ChainAnalyzer
         // Mutually exclusive groups: exactly one bit from the group is set
         foreach (var group in exclusiveGroups)
         {
-            var newMasks = new List<ulong>(masks.Count * group.Count);
+            var newMasks = new List<int>(masks.Count * group.Count);
             foreach (var mask in masks)
             {
                 foreach (var bit in group)
                 {
-                    newMasks.Add(mask | (1UL << bit));
+                    newMasks.Add(mask | (1 << bit));
                 }
             }
             masks = newMasks;
@@ -1390,7 +1390,7 @@ internal static class ChainAnalyzer
             setTerms: Array.Empty<SetTerm>(),
             insertColumns: Array.Empty<InsertColumn>(),
             conditionalTerms: Array.Empty<ConditionalTerm>(),
-            possibleMasks: Array.Empty<ulong>(),
+            possibleMasks: Array.Empty<int>(),
             parameters: Array.Empty<QueryParameter>(),
             tier: OptimizationTier.RuntimeBuild,
             notAnalyzableReason: reason,

@@ -154,8 +154,8 @@ public class QueryPlanTests
     [Test]
     public void QueryPlan_DifferentPossibleMasks_NotEqual()
     {
-        var plan1 = CreateSimpleSelectPlan(possibleMasks: new ulong[] { 0, 1 });
-        var plan2 = CreateSimpleSelectPlan(possibleMasks: new ulong[] { 0, 1, 2, 3 });
+        var plan1 = CreateSimpleSelectPlan(possibleMasks: new int[] { 0, 1 });
+        var plan2 = CreateSimpleSelectPlan(possibleMasks: new int[] { 0, 1, 2, 3 });
 
         Assert.That(plan1.Equals(plan2), Is.False);
     }
@@ -182,11 +182,11 @@ public class QueryPlanTests
         var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
         var site = new TranslatedCallSite(bound);
 
-        var variants1 = new Dictionary<ulong, AssembledSqlVariant>
+        var variants1 = new Dictionary<int, AssembledSqlVariant>
         {
             { 0, new AssembledSqlVariant("SELECT * FROM users", 0) }
         };
-        var variants2 = new Dictionary<ulong, AssembledSqlVariant>
+        var variants2 = new Dictionary<int, AssembledSqlVariant>
         {
             { 0, new AssembledSqlVariant("SELECT * FROM users WHERE age > 18", 1) }
         };
@@ -205,7 +205,7 @@ public class QueryPlanTests
         var entity = Generators.IR.EntityRef.FromEntityInfo(CreateTestEntity());
         var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
         var site = new TranslatedCallSite(bound);
-        var variants = new Dictionary<ulong, AssembledSqlVariant>();
+        var variants = new Dictionary<int, AssembledSqlVariant>();
 
         var a = new AssembledPlan(plan, variants, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL, entitySchemaNamespace: "App.Schema");
         var b = new AssembledPlan(plan, variants, null, 0, site, System.Array.Empty<TranslatedCallSite>(), "User", null, GenSqlDialect.PostgreSQL, entitySchemaNamespace: "App.Models");
@@ -264,7 +264,7 @@ public class QueryPlanTests
         string whereColumn = "age",
         IReadOnlyList<SqlExpr>? groupByExprs = null,
         IReadOnlyList<SqlExpr>? havingExprs = null,
-        IReadOnlyList<ulong>? possibleMasks = null,
+        IReadOnlyList<int>? possibleMasks = null,
         IReadOnlyList<string>? unmatchedMethodNames = null)
     {
         var table = new TableRef("users");
@@ -288,7 +288,7 @@ public class QueryPlanTests
             setTerms: System.Array.Empty<SetTerm>(),
             insertColumns: System.Array.Empty<InsertColumn>(),
             conditionalTerms: System.Array.Empty<ConditionalTerm>(),
-            possibleMasks: possibleMasks ?? System.Array.Empty<ulong>(),
+            possibleMasks: possibleMasks ?? System.Array.Empty<int>(),
             parameters: System.Array.Empty<QueryParameter>(),
             tier: Quarry.Generators.Models.OptimizationTier.PrebuiltDispatch,
             unmatchedMethodNames: unmatchedMethodNames);
