@@ -47,10 +47,10 @@ Quarry takes a different approach: the source generator reads your query call si
 | Capability | Quarry | EF Core | Dapper | SqlKata |
 |---|---|---|---|---|
 | SQL generated at compile time | Yes | No (runtime LINQ translation) | No (hand-written SQL) | No (runtime builder) |
-| Reflection-free hot path | Yes | No | Partial (AOT mode) | No |
+| Reflection-free hot path | Yes¹ | No | Partial (AOT mode) | No |
 | NativeAOT compatible | Yes | Partial | Partial | No |
 | Compile-time diagnostics | Yes | Limited | No | No |
-| No dependencies | Yes | No | No | No |
+| No dependencies | Yes | No | Yes | Yes |
 | Type-safe schema definition | Yes | Yes (DbContext/model) | No | No |
 | Multi-dialect support | Yes (4 dialects) | Yes (providers) | Manual | Yes |
 | Join support | Up to 4 tables | Unlimited | Manual | Yes |
@@ -60,6 +60,8 @@ Quarry takes a different approach: the source generator reads your query call si
 | Change tracking | No | Yes | No | No |
 | Migrations | Yes (code-first) | Yes | No | No |
 | Prepared multi-terminal queries | Yes | No | No | No |
+
+¹ Captured closure variables use a cached `FieldInfo` read per parameter; all SQL dispatch, binding, and row materialization is reflection-free.
 
 ---
 
