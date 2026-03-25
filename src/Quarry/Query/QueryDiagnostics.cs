@@ -22,9 +22,9 @@ public sealed class QueryDiagnostics
         // New parameters
         string? tierReason = null,
         string? disqualifyReason = null,
-        ulong activeMask = 0,
+        int activeMask = 0,
         int conditionalBitCount = 0,
-        IReadOnlyDictionary<ulong, SqlVariantDiagnostic>? sqlVariants = null,
+        IReadOnlyDictionary<int, SqlVariantDiagnostic>? sqlVariants = null,
         IReadOnlyList<DiagnosticParameter>? allParameters = null,
         IReadOnlyList<ProjectionColumnDiagnostic>? projectionColumns = null,
         string? projectionKind = null,
@@ -110,13 +110,13 @@ public sealed class QueryDiagnostics
     public string? DisqualifyReason { get; }
 
     /// <summary>The runtime mask value read from the carrier. Zero for unconditional chains.</summary>
-    public ulong ActiveMask { get; }
+    public int ActiveMask { get; }
 
     /// <summary>Number of conditional bits in the clause mask.</summary>
     public int ConditionalBitCount { get; }
 
     /// <summary>Complete map of all possible mask values to their SQL strings and parameter counts. Null for RuntimeBuild chains.</summary>
-    public IReadOnlyDictionary<ulong, SqlVariantDiagnostic>? SqlVariants { get; }
+    public IReadOnlyDictionary<int, SqlVariantDiagnostic>? SqlVariants { get; }
 
     /// <summary>Every parameter in the chain regardless of mask state, with full metadata.</summary>
     public IReadOnlyList<DiagnosticParameter> AllParameters { get; }

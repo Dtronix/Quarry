@@ -452,7 +452,7 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
     /// </summary>
-    internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info)
+    internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info, AssembledPlan chain)
     {
         sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");
@@ -469,6 +469,9 @@ internal static class CarrierEmitter
 
         sb.AppendLine();
         sb.AppendLine("{");
+
+        // Emit static SQL field: single string for single-variant, string[] for multi-variant
+        EmitCarrierSqlField(sb, chain);
 
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)
@@ -493,6 +496,39 @@ internal static class CarrierEmitter
 
         sb.AppendLine("}");
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits the static _sql field on the carrier class.
+    /// Single-variant chains get a static readonly string; multi-variant chains get a static readonly string[]
+    /// indexed by mask value. Gaps (e.g., mutually-exclusive branches that skip mask 0) are filled with null! to surface routing bugs.
+    /// </summary>
+    private static void EmitCarrierSqlField(StringBuilder sb, AssembledPlan chain)
+    {
+        if (chain.SqlVariants.Count == 1)
+        {
+            foreach (var kvp in chain.SqlVariants)
+            {
+                sb.AppendLine($"    internal static readonly string _sql = @\"{InterceptorCodeGenerator.EscapeStringLiteral(kvp.Value.Sql)}\";");
+            }
+        }
+        else
+        {
+            // Multi-variant: emit string[] indexed by mask value.
+            // Array size = max mask value + 1. Gaps filled with null! (unreachable at runtime; NRE if hit).
+            var maxMask = chain.SqlVariants.Keys.Max();
+            var arraySize = maxMask + 1;
+            sb.AppendLine("    internal static readonly string[] _sql =");
+            sb.AppendLine("    [");
+            for (int i = 0; i < arraySize; i++)
+            {
+                if (chain.SqlVariants.TryGetValue(i, out var variant))
+                    sb.AppendLine($"        @\"{InterceptorCodeGenerator.EscapeStringLiteral(variant.Sql)}\",");
+                else
+                    sb.AppendLine("        null!,");
+            }
+            sb.AppendLine("    ];");
+        }
     }
 
     /// <summary>
@@ -608,7 +644,7 @@ internal static class CarrierEmitter
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         if (emitOpId)
             sb.AppendLine("        var __opId = OpId.Next();");
-        EmitCarrierSqlDispatch(sb, chain);
+        EmitCarrierSqlDispatch(sb, carrier, chain);
     }
 
     /// <summary>
@@ -779,7 +815,7 @@ internal static class CarrierEmitter
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         sb.AppendLine("        var __opId = OpId.Next();");
-        EmitCarrierSqlDispatch(sb, chain);
+        EmitCarrierSqlDispatch(sb, carrier, chain);
 
         sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
@@ -921,8 +957,29 @@ internal static class CarrierEmitter
         }
     }
 
-    private static void EmitCarrierSqlDispatch(StringBuilder sb, AssembledPlan chain)
-        => TerminalEmitHelpers.EmitSqlDispatch(sb, chain);
+    /// <summary>
+    /// Emits SQL read from the carrier's static _sql field.
+    /// Single-variant: var sql = ClassName._sql; Multi-variant: var sql = ClassName._sql[__c.Mask];
+    /// Collection expansion tokens are still resolved at runtime in the terminal.
+    /// </summary>
+    private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
+    {
+        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
+
+        if (chain.SqlVariants.Count == 1)
+        {
+            sb.AppendLine($"        var sql = {carrier.ClassName}._sql;");
+        }
+        else
+        {
+            sb.AppendLine($"        var sql = {carrier.ClassName}._sql[__c.Mask];");
+        }
+
+        if (hasCollections)
+        {
+            TerminalEmitHelpers.EmitCollectionExpansion(sb, chain);
+        }
+    }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
     {

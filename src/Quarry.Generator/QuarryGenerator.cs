@@ -716,7 +716,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// The carrier terminal expands these tokens at runtime based on the actual collection size.
     /// </summary>
     private static void TokenizeCollectionParameters(
-        Dictionary<ulong, IR.AssembledSqlVariant> sqlMap,
+        Dictionary<int, IR.AssembledSqlVariant> sqlMap,
         IReadOnlyList<IR.QueryParameter> chainParams,
         SqlDialect dialect)
     {
@@ -732,7 +732,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Replace placeholders with tokens in all SQL variants.
         // Collect updates and apply after iteration to avoid allocating a key list copy.
-        var pendingUpdates = new List<(ulong Key, string Sql, int ParamCount)>();
+        var pendingUpdates = new List<(int Key, string Sql, int ParamCount)>();
         foreach (var kvp in sqlMap)
         {
             var sql = kvp.Value.Sql;

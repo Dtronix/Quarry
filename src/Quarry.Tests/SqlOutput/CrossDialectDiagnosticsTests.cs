@@ -282,7 +282,7 @@ internal class CrossDialectDiagnosticsTests
     {
         var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
 
-        Assert.That(diag.ActiveMask, Is.EqualTo(0UL));
+        Assert.That(diag.ActiveMask, Is.EqualTo(0));
         Assert.That(diag.ConditionalBitCount, Is.EqualTo(0));
     }
 

@@ -30,7 +30,7 @@ internal static class TestPlanHelper
             setTerms: Array.Empty<SetTerm>(),
             insertColumns: Array.Empty<InsertColumn>(),
             conditionalTerms: Array.Empty<ConditionalTerm>(),
-            possibleMasks: new ulong[] { 0 },
+            possibleMasks: new int[] { 0 },
             parameters: Array.Empty<QueryParameter>(),
             tier: OptimizationTier.PrebuiltDispatch);
     }
@@ -41,7 +41,7 @@ internal static class TestPlanHelper
     {
         var queryPlan = CreateQueryPlanWithProjection(null);
 
-        var sqlVariants = new Dictionary<ulong, AssembledSqlVariant>
+        var sqlVariants = new Dictionary<int, AssembledSqlVariant>
         {
             [0] = new AssembledSqlVariant("SELECT 1", 0)
         };
