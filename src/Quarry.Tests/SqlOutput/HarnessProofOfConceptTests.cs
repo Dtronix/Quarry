@@ -17,30 +17,22 @@ internal class HarnessProofOfConceptTests
     public async Task Select_Tuple_TwoColumns_SqlAndExecution()
     {
         await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
 
-        // Assign to locals so the generator sees direct context-typed variables
-        var Lite = t.Lite;
-        var Pg = t.Pg;
-        var My = t.My;
-        var Ss = t.Ss;
-
-        // Lite uses .Prepare() — enables both SQL verification and execution
         var lite = Lite.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var my   = My.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss   = Ss.Users().Select(u => (u.UserId, u.UserName)).Prepare();
 
-        // Pg/My/Ss use direct .ToDiagnostics() — only need SQL verification
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            My.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            Ss.Users().Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\"",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserId`, `UserName` FROM `users`",
             ss:     "SELECT [UserId], [UserName] FROM [users]");
 
-        // Execute against real SQLite (same lite instance that was already used for SQL verification)
         var results = await lite.ExecuteFetchAllAsync();
-
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));

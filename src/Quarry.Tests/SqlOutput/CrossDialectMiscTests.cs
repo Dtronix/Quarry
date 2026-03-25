@@ -7,14 +7,17 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectMiscTests : CrossDialectTestBase
+internal class CrossDialectMiscTests
 {
     #region String: ToLower
 
     [Test]
-    public void Where_ToLower()
+    public async Task Where_ToLower()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
             My.Users().Where(u => u.UserName.ToLower() == "john").ToDiagnostics(),
@@ -30,9 +33,12 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     #region String: ToUpper
 
     [Test]
-    public void Where_ToUpper()
+    public async Task Where_ToUpper()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
             My.Users().Where(u => u.UserName.ToUpper() == "JOHN").ToDiagnostics(),
@@ -48,9 +54,12 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     #region String: Trim
 
     [Test]
-    public void Where_Trim()
+    public async Task Where_Trim()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
             My.Users().Where(u => u.UserName.Trim() == "john").ToDiagnostics(),
@@ -66,9 +75,12 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     #region Sql.Raw with column reference
 
     [Test]
-    public void Where_SqlRaw_WithColumnReference()
+    public async Task Where_SqlRaw_WithColumnReference()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
             Pg.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("custom_func({0})", u.UserId)).ToDiagnostics(),
@@ -80,9 +92,12 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_SqlRaw_WithMultipleColumnReferences()
+    public async Task Where_SqlRaw_WithMultipleColumnReferences()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
             Pg.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("check_cols({0}, {1})", u.UserId, u.IsActive)).ToDiagnostics(),
@@ -94,10 +109,13 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_SqlRaw_WithCapturedVariable()
+    public async Task Where_SqlRaw_WithCapturedVariable()
     {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
         var searchTerm = "john";
-        AssertDialects(
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
             Pg.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("CONTAINS({0}, {1})", u.UserName, searchTerm)).ToDiagnostics(),
@@ -109,9 +127,12 @@ internal class CrossDialectMiscTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_SqlRaw_WithLiteralParameter()
+    public async Task Where_SqlRaw_WithLiteralParameter()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
             Pg.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),
             My.Users().Where(u => Sql.Raw<bool>("status_check({0}, {1})", u.UserName, 42)).ToDiagnostics(),

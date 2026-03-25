@@ -133,8 +133,14 @@ internal static class TerminalBodyEmitter
         };
         if (string.IsNullOrEmpty(returnType)) return;
 
-        // Method signature with joined builder receiver type
-        if (site.Kind == InterceptorKind.ExecuteScalar)
+        // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
+        if (site.IsPreparedTerminal)
+        {
+            sb.AppendLine($"    public static {returnType} {methodName}(");
+            sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default)");
+        }
+        else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
             sb.AppendLine($"    public static {returnType} {methodName}<{entityTypeArgs}, TResult, TScalar>(");
             sb.AppendLine($"        this {thisBuilderName}<{entityTypeArgs}, TResult> builder,");

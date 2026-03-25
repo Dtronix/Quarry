@@ -17,7 +17,6 @@ namespace Quarry.Tests;
 internal sealed class QueryTestHarness : IAsyncDisposable
 {
     private readonly SqliteConnection _sqliteConnection;
-    private readonly MockDbConnection _mockConnection;
 
     /// <summary>SQLite context on a real in-memory connection (SQL verification + execution).</summary>
     public TestDbContext Lite { get; }
@@ -31,10 +30,13 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// <summary>SQL Server context on MockDbConnection (SQL verification only).</summary>
     public Ss.SsDb Ss { get; }
 
+    /// <summary>The shared MockDbConnection backing Pg/My/Ss — exposed for tests that inspect executed SQL.</summary>
+    public MockDbConnection MockConnection { get; }
+
     private QueryTestHarness(SqliteConnection sqliteConnection, MockDbConnection mockConnection)
     {
         _sqliteConnection = sqliteConnection;
-        _mockConnection = mockConnection;
+        MockConnection = mockConnection;
         Lite = new TestDbContext(sqliteConnection);
         Pg = new Pg.PgDb(mockConnection);
         My = new My.MyDb(mockConnection);
@@ -52,6 +54,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         var mockConnection = new MockDbConnection();
         var harness = new QueryTestHarness(sqliteConnection, mockConnection);
 
+        // FK enforcement is off by default so DELETE tests don't need to worry about
+        // dependent-row ordering.  Tests that specifically verify FK behavior can enable
+        // it via SqlAsync("PRAGMA foreign_keys = ON").
+        await harness.SqlAsync("PRAGMA foreign_keys = OFF");
         await harness.CreateSchema();
         await harness.SeedData();
 
@@ -67,6 +73,30 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         await using var cmd = _sqliteConnection.CreateCommand();
         cmd.CommandText = sql;
         await cmd.ExecuteNonQueryAsync();
+    }
+
+    public void Deconstruct(out TestDbContext lite, out Pg.PgDb pg, out My.MyDb my, out Ss.SsDb ss)
+    {
+        lite = Lite;
+        pg = Pg;
+        my = My;
+        ss = Ss;
+    }
+
+    /// <summary>
+    /// Asserts exact SQL string equality for all 4 dialects. Reports all failures at once.
+    /// </summary>
+    public static void AssertDialects(
+        string sqliteActual, string pgActual, string mysqlActual, string ssActual,
+        string sqlite, string pg, string mysql, string ss)
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(sqliteActual, Is.EqualTo(sqlite), "SQLite");
+            Assert.That(pgActual, Is.EqualTo(pg), "PostgreSQL");
+            Assert.That(mysqlActual, Is.EqualTo(mysql), "MySQL");
+            Assert.That(ssActual, Is.EqualTo(ss), "SqlServer");
+        });
     }
 
     /// <summary>
@@ -92,7 +122,7 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         My.Dispose();
         Pg.Dispose();
         Lite.Dispose();
-        _mockConnection.Dispose();
+        MockConnection.Dispose();
         await _sqliteConnection.DisposeAsync();
     }
 

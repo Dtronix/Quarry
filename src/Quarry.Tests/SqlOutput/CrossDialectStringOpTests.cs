@@ -7,14 +7,17 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectStringOpTests : CrossDialectTestBase
+internal class CrossDialectStringOpTests
 {
     #region Contains
 
     [Test]
-    public void Where_Contains_LiteralString()
+    public async Task Where_Contains_LiteralString()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
             My.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
@@ -26,23 +29,35 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_Contains_WithSelect()
+    public async Task Where_Contains_WithSelect()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("test")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            Pg.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || $1 || '%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', ?, '%')",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%' + @p0 + '%'");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
 
     [Test]
-    public void Where_Contains_ChainedWithBoolean()
+    public async Task Where_Contains_ChainedWithBoolean()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
             My.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
@@ -58,9 +73,12 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     #region StartsWith
 
     [Test]
-    public void Where_StartsWith_LiteralString()
+    public async Task Where_StartsWith_LiteralString()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
             My.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
@@ -72,10 +90,15 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_StartsWith_WithSelect()
+    public async Task Where_StartsWith_WithSelect()
     {
-        AssertDialects(
-            Lite.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             My.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Ss.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
@@ -83,6 +106,10 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE $1 || '%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT(?, '%')",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE @p0 + '%'");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
 
     #endregion
@@ -90,9 +117,12 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     #region EndsWith
 
     [Test]
-    public void Where_EndsWith_LiteralString()
+    public async Task Where_EndsWith_LiteralString()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
             My.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
@@ -104,9 +134,12 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     }
 
     [Test]
-    public void Where_EndsWith_WithSelect()
+    public async Task Where_EndsWith_WithSelect()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
             My.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
@@ -122,9 +155,12 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     #region Nullable String Column
 
     [Test]
-    public void Where_Contains_NullableColumn()
+    public async Task Where_Contains_NullableColumn()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
             Pg.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
             My.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
@@ -140,9 +176,12 @@ internal class CrossDialectStringOpTests : CrossDialectTestBase
     #region Combined String Ops
 
     [Test]
-    public void Where_Contains_And_StartsWith_Chained()
+    public async Task Where_Contains_And_StartsWith_Chained()
     {
-        AssertDialects(
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        QueryTestHarness.AssertDialects(
             Lite.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
             Pg.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
             My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),

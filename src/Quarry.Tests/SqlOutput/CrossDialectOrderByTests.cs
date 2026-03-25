@@ -7,15 +7,20 @@ namespace Quarry.Tests.SqlOutput;
 
 
 [TestFixture]
-internal class CrossDialectOrderByTests : CrossDialectTestBase
+internal class CrossDialectOrderByTests
 {
     #region Single Entity OrderBy
 
     [Test]
-    public void OrderBy_SingleColumn_Asc()
+    public async Task OrderBy_SingleColumn_Asc()
     {
-        AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
             My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
             Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ToDiagnostics(),
@@ -23,13 +28,24 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC",
             ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserName] ASC");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+        Assert.That(results[2], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
-    public void OrderBy_SingleColumn_Desc()
+    public async Task OrderBy_SingleColumn_Desc()
     {
-        AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
             My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
             Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.CreatedAt, Direction.Descending).ToDiagnostics(),
@@ -37,6 +53,13 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"CreatedAt\" DESC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `CreatedAt` DESC",
             ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [CreatedAt] DESC");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        // Charlie created 2024-03-10, Bob 2024-02-20, Alice 2024-01-15
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+        Assert.That(results[2], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -44,10 +67,15 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     #region ThenBy
 
     [Test]
-    public void OrderBy_ThenBy_MultiColumn()
+    public async Task OrderBy_ThenBy_MultiColumn()
     {
-        AssertDialects(
-            Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
             My.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
             Ss.Users().Select(u => (u.UserId, u.UserName)).OrderBy(u => u.UserName).ThenBy(u => u.CreatedAt).ToDiagnostics(),
@@ -55,6 +83,12 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserName\" ASC, \"CreatedAt\" ASC",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC, `CreatedAt` ASC",
             ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY [UserName] ASC, [CreatedAt] ASC");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+        Assert.That(results[2], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -62,10 +96,15 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
     #region Joined OrderBy
 
     [Test]
-    public void OrderBy_Joined_RightTableColumn()
+    public async Task OrderBy_Joined_RightTableColumn()
     {
-        AssertDialects(
-            Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
             Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
             My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
             Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).OrderBy((u, o) => o.Total).ToDiagnostics(),
@@ -73,6 +112,14 @@ internal class CrossDialectOrderByTests : CrossDialectTestBase
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" ORDER BY \"t1\".\"Total\" ASC",
             mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`Total` ASC",
             ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] ORDER BY [t1].[Total] ASC");
+
+        // Join uses "Order" view which maps to "orders" table
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        // Ordered by Total ASC: 75.50, 150.00, 250.00
+        Assert.That(results[0], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+        Assert.That(results[2], Is.EqualTo(("Alice", 250.00m)));
     }
 
     #endregion
