@@ -31,9 +31,12 @@ public sealed class SessionService(AppDb db, AuditService audit)
 
     public async Task<User?> ValidateSessionAsync(string token)
     {
+        // Local variables for captured values in joined Where expressions
+        var sessionToken = token;
+        var now = DateTime.UtcNow;
         return await db.Sessions()
             .Join<User>((s, u) => s.UserId.Id == u.UserId)
-            .Where((s, u) => s.Token == token && s.ExpiresAt > DateTime.UtcNow && u.IsActive)
+            .Where((s, u) => s.Token == sessionToken && s.ExpiresAt > now && u.IsActive)
             .Select((s, u) => u)
             .ExecuteFetchFirstOrDefaultAsync();
     }

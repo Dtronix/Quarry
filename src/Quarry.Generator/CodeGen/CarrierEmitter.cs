@@ -561,7 +561,7 @@ internal static class CarrierEmitter
         sb.AppendLine(" };");
 
         // Bind parameters if this clause has any
-        EmitCarrierParamBindings(sb, siteParams, globalParamOffset);
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
 
         // Set clause bit if conditional
         if (bitIndex.HasValue)
@@ -581,7 +581,7 @@ internal static class CarrierEmitter
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        EmitCarrierParamBindings(sb, siteParams, globalParamOffset);
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
 
         if (bitIndex.HasValue)
         {
@@ -940,8 +940,26 @@ internal static class CarrierEmitter
     }
 
     private static void EmitCarrierParamBindings(
-        StringBuilder sb, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
+        // Emit FieldInfo-based extraction for captured closure variables.
+        // Captured variables (e.g., method parameters referenced in a joined Where lambda)
+        // are not in scope at the interceptor — they must be extracted from the expression tree.
+        var capturedFields = new List<InterceptorCodeGenerator.CachedExtractorField>();
+        for (int i = 0; i < siteParams.Count; i++)
+        {
+            var param = siteParams[i];
+            if (param.IsCaptured && param.ExpressionPath != null && !param.IsCollection)
+            {
+                var globalIdx = globalParamOffset + i;
+                capturedFields.Add(new InterceptorCodeGenerator.CachedExtractorField(
+                    $"{carrier.ClassName}.F{globalIdx}", "", i, param.ExpressionPath));
+            }
+        }
+        if (capturedFields.Count > 0)
+            InterceptorCodeGenerator.GenerateCachedExtraction(sb, capturedFields);
+
+        // Bind parameters to carrier fields
         for (int i = 0; i < siteParams.Count; i++)
         {
             var param = siteParams[i];
@@ -952,7 +970,9 @@ internal static class CarrierEmitter
             }
             else
             {
-                sb.AppendLine($"        __c.P{globalIdx} = {param.ValueExpression};");
+                var extractExpr = (param.IsCaptured && param.ExpressionPath != null)
+                    ? $"p{i}" : param.ValueExpression;
+                sb.AppendLine($"        __c.P{globalIdx} = ({param.ClrType}){extractExpr}!;");
             }
         }
     }
