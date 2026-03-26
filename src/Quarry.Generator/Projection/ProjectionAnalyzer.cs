@@ -135,53 +135,8 @@ internal static class ProjectionAnalyzer
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
 
-            // Entity projection from one side of the join: .Select((s, u) => u)
-            IdentifierNameSyntax ident when perParamLookup.ContainsKey(ident.Identifier.Text) =>
-                AnalyzeJoinedEntityProjection(ident.Identifier.Text, perParamLookup, resultType, dialect),
-
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
-    }
-
-    /// <summary>
-    /// Analyzes a joined entity projection where a single lambda parameter is selected:
-    /// .Select((s, u) => u) — selects all columns from the entity corresponding to parameter u.
-    /// </summary>
-    private static ProjectionInfo AnalyzeJoinedEntityProjection(
-        string parameterName,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string resultType,
-        SqlDialect dialect)
-    {
-        if (!perParamLookup.TryGetValue(parameterName, out var entry))
-            return ProjectionInfo.CreateFailed(resultType, $"Unknown parameter '{parameterName}' in joined entity projection");
-
-        var columns = new List<ProjectedColumn>();
-        var ordinal = 0;
-        foreach (var kvp in entry.Lookup)
-        {
-            var col = kvp.Value;
-            var quotedName = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(dialect, col.ColumnName);
-            columns.Add(new ProjectedColumn(
-                propertyName: col.PropertyName,
-                columnName: col.ColumnName,
-                clrType: col.ClrType,
-                fullClrType: col.FullClrType,
-                isNullable: col.IsNullable,
-                ordinal: ordinal++,
-                customTypeMapping: col.CustomTypeMappingClass,
-                isValueType: col.IsValueType,
-                readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
-                tableAlias: entry.Alias,
-                isForeignKey: col.Kind == ColumnKind.ForeignKey,
-                foreignKeyEntityName: col.ReferencedEntityName,
-                isEnum: col.IsEnum));
-        }
-
-        // Use Dto kind (not Entity) because entity identity projections assume the primary entity.
-        // For joined projections selecting a secondary entity, Dto ensures correct column-by-column
-        // materialization with the right entity type and table alias.
-        return new ProjectionInfo(ProjectionKind.Dto, resultType, columns);
     }
 
     private static ProjectionInfo AnalyzeJoinedTupleWithPlaceholders(
@@ -368,22 +323,8 @@ internal static class ProjectionAnalyzer
             perParamLookup[paramName] = (lookup, $"t{i}");
         }
 
-        // Infer result type from the lambda body syntax.
-        // For entity projections (e.g., .Select((s, u) => u)), resolve the entity name
-        // from the parameter-entity mapping instead of using "object".
+        // Infer result type from the lambda body syntax
         var resultType = InferResultTypeFromSyntax(body);
-        if (resultType == "object" && body is IdentifierNameSyntax bodyIdent)
-        {
-            var paramText = bodyIdent.Identifier.Text;
-            for (int i = 0; i < entities.Count; i++)
-            {
-                if (lambda.ParameterList.Parameters[i].Identifier.Text == paramText)
-                {
-                    resultType = entities[i].EntityName;
-                    break;
-                }
-            }
-        }
 
         // Analyze the body expression (no SemanticModel needed — uses EntityInfo column lookups)
         var result = AnalyzeJoinedExpression(body, null, perParamLookup, resultType, dialect);
@@ -411,7 +352,6 @@ internal static class ProjectionAnalyzer
             ObjectCreationExpressionSyntax objCreation => objCreation.Type.ToString(),
             ImplicitObjectCreationExpressionSyntax => "object", // Will be fixed during enrichment
             TupleExpressionSyntax => "object", // Will be rebuilt from columns
-            IdentifierNameSyntax => "object", // Entity projection from join param — enriched later
             _ => "object"
         };
     }
@@ -453,10 +393,6 @@ internal static class ProjectionAnalyzer
             // Aggregate function: (u, o) => Sql.Count()
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
-
-            // Entity projection from one side: (s, u) => u
-            IdentifierNameSyntax ident when perParamLookup.ContainsKey(ident.Identifier.Text) =>
-                AnalyzeJoinedEntityProjection(ident.Identifier.Text, perParamLookup, resultType, dialect),
 
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
