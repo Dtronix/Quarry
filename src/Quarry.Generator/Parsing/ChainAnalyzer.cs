@@ -1112,6 +1112,39 @@ internal static class ChainAnalyzer
             }
         }
 
+        // Joined entity projection: populate all columns from the entity at the given alias.
+        // At discovery time, the column lookup is empty (no EntityInfo available), so
+        // JoinedEntityAlias signals that we need to create the full column list here.
+        if (projInfo.JoinedEntityAlias != null && columns.Count == 0 && isJoined && perAliasLookup != null)
+        {
+            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.AsSpan(1));
+            if (aliasIndex >= 0 && aliasIndex < joinedEntityTypeNames!.Count)
+            {
+                var entry = registry.Resolve(joinedEntityTypeNames[aliasIndex]);
+                if (entry != null)
+                {
+                    var ordinal = 0;
+                    foreach (var col in EntityRef.FromEntityInfo(entry.Entity).Columns)
+                    {
+                        columns.Add(new ProjectedColumn(
+                            propertyName: col.PropertyName,
+                            columnName: col.ColumnName,
+                            clrType: col.ClrType,
+                            fullClrType: col.FullClrType,
+                            isNullable: col.IsNullable,
+                            ordinal: ordinal++,
+                            tableAlias: projInfo.JoinedEntityAlias,
+                            readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
+                            isValueType: col.IsValueType,
+                            customTypeMapping: col.CustomTypeMappingClass,
+                            isForeignKey: col.Kind == ColumnKind.ForeignKey,
+                            foreignKeyEntityName: col.ReferencedEntityName,
+                            isEnum: col.IsEnum));
+                    }
+                }
+            }
+        }
+
         // Rebuild result type name from enriched columns
         var resultTypeName = projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName;
         if (projInfo.Kind == ProjectionKind.Tuple && columns.Count > 0)
@@ -1131,8 +1164,15 @@ internal static class ChainAnalyzer
                 resultTypeName = colType;
             }
         }
+        // Resolve result type for joined entity projection from alias
+        if (IsUnresolvedTypeName(resultTypeName) && projInfo.JoinedEntityAlias != null && isJoined)
+        {
+            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.AsSpan(1));
+            if (aliasIndex >= 0 && aliasIndex < joinedEntityTypeNames!.Count)
+                resultTypeName = joinedEntityTypeNames[aliasIndex];
+        }
         // Fix unresolved "?" result type by checking enriched columns
-        if (resultTypeName == "?" && columns.Count > 0)
+        if (IsUnresolvedTypeName(resultTypeName) && columns.Count > 0)
         {
             if (columns.Count == 1)
             {
