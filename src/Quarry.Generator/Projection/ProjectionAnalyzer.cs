@@ -156,6 +156,11 @@ internal static class ProjectionAnalyzer
         if (!perParamLookup.TryGetValue(parameterName, out var entry))
             return ProjectionInfo.CreateFailed(resultType, $"Unknown parameter '{parameterName}' in joined entity projection");
 
+        // Placeholder path: column lookup is empty at discovery time (no EntityInfo available).
+        // Set JoinedEntityAlias so BuildProjection can populate columns from the registry later.
+        if (entry.Lookup.Count == 0)
+            return new ProjectionInfo(ProjectionKind.Dto, resultType, Array.Empty<ProjectedColumn>(), joinedEntityAlias: entry.Alias);
+
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
         foreach (var kvp in entry.Lookup)
