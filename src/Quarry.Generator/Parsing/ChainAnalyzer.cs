@@ -1117,7 +1117,7 @@ internal static class ChainAnalyzer
         // JoinedEntityAlias signals that we need to create the full column list here.
         if (projInfo.JoinedEntityAlias != null && columns.Count == 0 && isJoined && perAliasLookup != null)
         {
-            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.AsSpan(1));
+            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.Substring(1));
             if (aliasIndex >= 0 && aliasIndex < joinedEntityTypeNames!.Count)
             {
                 var entry = registry.Resolve(joinedEntityTypeNames[aliasIndex]);
@@ -1167,7 +1167,7 @@ internal static class ChainAnalyzer
         // Resolve result type for joined entity projection from alias
         if (IsUnresolvedTypeName(resultTypeName) && projInfo.JoinedEntityAlias != null && isJoined)
         {
-            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.AsSpan(1));
+            var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.Substring(1));
             if (aliasIndex >= 0 && aliasIndex < joinedEntityTypeNames!.Count)
                 resultTypeName = joinedEntityTypeNames[aliasIndex];
         }
