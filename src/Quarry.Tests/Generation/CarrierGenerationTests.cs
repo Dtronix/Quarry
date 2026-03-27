@@ -2,6 +2,11 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using NUnit.Framework;
 using Quarry.Generators;
+using Quarry.Generators.CodeGen;
+using Quarry.Generators.IR;
+using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
+using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests.Generation;
 
@@ -1274,5 +1279,89 @@ public static class Queries
         Assert.That(code, Does.Contain("IEntityAccessor<User>"));
         Assert.That(code, Does.Contain("IDeleteBuilder<User>"));
         Assert.That(code, Does.Contain("IExecutableDeleteBuilder<User>"));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_JoinedChain_ReturnsCorrectInterfaces()
+    {
+        // Directly test the interface resolution for a 2-table join chain.
+        // End-to-end join tests can't produce carrier interceptors in the unit test
+        // compilation context, so we test the resolution method directly.
+        var raw = new RawCallSite(
+            methodName: "ExecuteFetchAllAsync",
+            filePath: "test.cs",
+            line: 1, column: 1,
+            uniqueId: "join_test",
+            kind: InterceptorKind.ExecuteFetchAll,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: default);
+
+        var mods = new ColumnModifiers();
+        var entity = EntityRef.FromEntityInfo(new EntityInfo(
+            entityName: "User", schemaClassName: "UserSchema", schemaNamespace: "TestApp",
+            tableName: "users", namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[] { new ColumnInfo("UserId", "user_id", "int", "int", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
+            navigations: Array.Empty<NavigationInfo>(),
+            indexes: Array.Empty<IndexInfo>(),
+            location: Location.None));
+
+        var bound = new BoundCallSite(
+            raw, "Ctx", "App", GenSqlDialect.SQLite,
+            "users", null, entity,
+            joinedEntityTypeNames: new[] { "User", "Order" });
+
+        var site = new TranslatedCallSite(bound);
+
+        var joinPlan = new JoinPlan(
+            JoinClauseKind.Inner,
+            new TableRef("orders", null, "t1"),
+            new LiteralExpr("1", "int"));
+
+        var plan = new Quarry.Generators.IR.QueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("users", null, "t0"),
+            joins: new[] { joinPlan },
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: new SelectProjection(
+                ProjectionKind.Entity, "User",
+                Array.Empty<ProjectedColumn>(), isIdentity: true),
+            pagination: null, isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: new[] { 0 },
+            parameters: Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.PrebuiltDispatch);
+
+        var assembled = new AssembledPlan(
+            plan: plan,
+            sqlVariants: new Dictionary<int, AssembledSqlVariant>
+            {
+                [0] = new AssembledSqlVariant("SELECT 1", 0)
+            },
+            readerDelegateCode: null,
+            maxParameterCount: 0,
+            executionSite: site,
+            clauseSites: Array.Empty<TranslatedCallSite>(),
+            entityTypeName: "User",
+            resultTypeName: null,
+            dialect: GenSqlDialect.SQLite);
+
+        var interfaces = CarrierEmitter.ResolveCarrierInterfaceList(assembled);
+
+        Assert.That(interfaces, Does.Contain("IEntityAccessor<User>"));
+        Assert.That(interfaces, Does.Contain("IQueryBuilder<User>"));
+        Assert.That(interfaces, Does.Contain("IJoinedQueryBuilder<User, Order>"));
+        Assert.That(interfaces, Has.None.Contain("CarrierBase"));
+        Assert.That(interfaces, Has.None.Contain("JoinedCarrierBase"));
     }
 }
