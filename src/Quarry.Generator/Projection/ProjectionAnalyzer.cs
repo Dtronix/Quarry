@@ -135,6 +135,10 @@ internal static class ProjectionAnalyzer
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
 
+            // Whole entity: (s, u) => u
+            IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
+                AnalyzeJoinedEntityProjection(identifier.Identifier.Text, perParamLookup, resultType, dialect),
+
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
     }
@@ -439,6 +443,10 @@ internal static class ProjectionAnalyzer
             // Aggregate function: (u, o) => Sql.Count()
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
+
+            // Whole entity: (s, u) => u
+            IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
+                AnalyzeJoinedEntityProjection(identifier.Identifier.Text, perParamLookup, resultType, dialect),
 
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
