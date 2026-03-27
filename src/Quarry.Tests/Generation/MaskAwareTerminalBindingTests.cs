@@ -717,4 +717,89 @@ public class Svc
         Assert.That(terminalBody, Does.Contain("__c.Mask &"),
             "Non-query terminal should mask-gate conditional parameter binding");
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 13: Collection parameter (Contains/IN) in carrier execution
+    //  terminal — collection elements must be individually bound
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_CollectionParam_ElementsIndividuallyBound()
+    {
+        var code = GenerateInterceptors(@"
+using System.Collections.Generic;
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(List<int> userIds)
+    {
+        await _db.Users().Select(u => u)
+            .Where(u => userIds.Contains(u.UserId))
+            .ExecuteFetchAllAsync();
+    }
+}");
+        // If the generator produced carrier-optimized code, the collection
+        // parameter must be expanded into individual DbParameter bindings.
+        if (!code.Contains("file sealed class Chain_"))
+        {
+            Assert.Inconclusive("Collection Contains query did not produce carrier-optimized path");
+            return;
+        }
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // Collection elements must be bound in a loop, not as a single parameter.
+        // The expansion already created __col0, __col0Len, __col0Parts.
+        // The binding should iterate elements: for (__i = 0; __i < __col0Len; ...)
+        Assert.That(terminalBody, Does.Contain("__col0Len"),
+            "Terminal should bind collection elements in a loop using __col0Len, " +
+            "not as a single CreateParameter with the list object");
+
+        // Should NOT bind the collection as a single scalar parameter
+        // (i.e., __p0.Value = (object?)__c.P0 is wrong — P0 is IReadOnlyList)
+        Assert.That(terminalBody, Does.Not.Contain("__p0.Value = (object?)__c.P0"),
+            "Collection parameter must not be bound as a single scalar value");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 14: Mixed scalar + collection params — scalar bound normally,
+    //  collection expanded into individual elements
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_MixedScalarAndCollection_BothBoundCorrectly()
+    {
+        var code = GenerateInterceptors(@"
+using System.Collections.Generic;
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(string name, List<int> userIds)
+    {
+        await _db.Users().Select(u => u)
+            .Where(u => u.UserName == name)
+            .Where(u => userIds.Contains(u.UserId))
+            .ExecuteFetchAllAsync();
+    }
+}");
+        if (!code.Contains("file sealed class Chain_"))
+        {
+            Assert.Inconclusive("Mixed scalar+collection query did not produce carrier-optimized path");
+            return;
+        }
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // Scalar param @p0 should be bound normally
+        Assert.That(terminalBody, Does.Contain("Parameters.Add(__p0)"),
+            "Scalar @p0 should be bound to command");
+
+        // Collection param should be expanded, not bound as single value
+        Assert.That(terminalBody, Does.Contain("__col1"),
+            "Collection should be expanded using __col1 variable");
+    }
 }

@@ -701,19 +701,38 @@ internal static class CarrierEmitter
             }
 
             var indent = inConditionalBlock ? "            " : "        ";
-            var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
-            sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-            sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
-            sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
-
-            if (param.TypeMappingClass != null)
+            if (param.IsCollection)
             {
-                var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
-                sb.AppendLine($"{indent}({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+                // Collection parameters are expanded into N individual DbParameters.
+                // EmitCollectionExpansion (called in preamble) already declared:
+                //   __col{i} = __c.P{i}        (IReadOnlyList<T>)
+                //   __col{i}Len = count
+                //   __col{i}Parts = string[]    (parameter name per element)
+                sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
+                sb.AppendLine($"{indent}{{");
+                sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
+                sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
+                sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
+                sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
+                sb.AppendLine($"{indent}}}");
             }
+            else
+            {
+                var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
-            sb.AppendLine($"{indent}__cmd.Parameters.Add(__p{i});");
+                sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
+                sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
+                sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
+
+                if (param.TypeMappingClass != null)
+                {
+                    var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
+                    sb.AppendLine($"{indent}({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+                }
+
+                sb.AppendLine($"{indent}__cmd.Parameters.Add(__p{i});");
+            }
         }
 
         // Close any trailing conditional block
@@ -840,7 +859,21 @@ internal static class CarrierEmitter
 
             var indent = inConditionalBlock ? "                " : "            ";
 
-            if (param.IsSensitive)
+            if (param.IsCollection)
+            {
+                // Log each collection element individually
+                if (param.IsSensitive)
+                {
+                    sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
+                    sb.AppendLine($"{indent}    ParameterLog.BoundSensitive(__opId, {i});");
+                }
+                else
+                {
+                    sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
+                    sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
+                }
+            }
+            else if (param.IsSensitive)
             {
                 sb.AppendLine($"{indent}ParameterLog.BoundSensitive(__opId, {i});");
             }
