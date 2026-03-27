@@ -14,7 +14,7 @@ database so that the numbers reflect framework overhead rather than network or e
 | **Raw** (baseline) | Hand-written `SqliteCommand` with ordinal `DbDataReader` access. This is the theoretical minimum overhead and is marked as the baseline in every benchmark class. |
 | **Dapper** | Micro-ORM. Passes raw SQL strings and maps results via reflection/emit. |
 | **EF Core** | Full ORM with change tracking disabled (`AsNoTracking`). |
-| **SqlKata** | Query-builder that compiles a query object to SQL at runtime. Included in the Filter, Update, and Delete benchmarks. |
+| **SqlKata** | Query-builder that compiles a query object to SQL at runtime. Included in all benchmark classes. |
 | **Quarry** | Source-generated queries. SQL text and reader logic are emitted at compile time. |
 
 ## Benchmark categories
@@ -67,6 +67,27 @@ Tests single-row `DELETE` statements. Includes SqlKata for comparison.
 
 Tests composite operations that combine joins, filters, pagination, and aggregates in a single
 query, representing realistic application workloads.
+
+### ColdStartBenchmarks
+
+Measures first-query latency by creating a fresh context per iteration. Each benchmark method
+constructs a new context (or compiler, for SqlKata) and executes a single query. This isolates
+the one-time startup cost: EF Core's model compilation, Dapper's first-run reflection/IL emit,
+vs Quarry's zero-warmup pre-built interceptors.
+
+### ConditionalBranchBenchmarks
+
+Measures dynamic query building with conditional `WHERE`, `ORDER BY`, and `LIMIT` clauses
+controlled by runtime boolean flags. This highlights Quarry's bitmask dispatch (a single integer
+switch over pre-built SQL variants) vs runtime string concatenation in Raw/Dapper/SqlKata and
+conditional LINQ chains in EF Core.
+
+### ThroughputBenchmarks
+
+Runs a simple WHERE-by-ID query 1000 times per benchmark invocation, varying the ID to avoid
+caching bias. Measures sustained throughput and total allocations under load. Quarry uses
+`RawSqlAsync` in this benchmark because the source generator cannot analyze query chains inside
+loop bodies (QRY032).
 
 ## How to run
 
