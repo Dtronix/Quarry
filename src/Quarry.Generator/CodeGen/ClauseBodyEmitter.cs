@@ -124,7 +124,7 @@ internal static class ClauseBodyEmitter
             {
                 var isAccessor = InterceptorCodeGenerator.IsEntityAccessorType(thisType);
                 var genericReceiver = isAccessor ? $"{thisType}<T>" : $"{thisType}<T, TResult>";
-                var genericReturn = isAccessor ? $"{returnType}<T, TResult>" : $"{returnType}<T, TResult>";
+                var genericReturn = $"{returnType}<T, TResult>";
                 sb.AppendLine($"    public static {genericReturn} {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {genericReceiver} builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _,");

@@ -1079,7 +1079,10 @@ internal static class CarrierEmitter
             {
                 var extractExpr = (param.IsCaptured && param.ExpressionPath != null)
                     ? $"p{i}" : param.ValueExpression;
-                sb.AppendLine($"        __c.P{globalIdx} = ({param.ClrType}){extractExpr}!;");
+                var castType = param.ClrType == "?" || param.ClrType == "object"
+                    ? "object?"
+                    : param.ClrType;
+                sb.AppendLine($"        __c.P{globalIdx} = ({castType}){extractExpr}!;");
             }
         }
     }

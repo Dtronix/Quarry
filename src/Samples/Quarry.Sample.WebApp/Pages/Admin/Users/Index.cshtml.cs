@@ -32,17 +32,27 @@ public class IndexModel(AppDb db) : PageModel
             Role = u.Role, IsActive = u.IsActive, LastLoginAt = u.LastLoginAt
         });
 
+        // Count query applies the same filters as the data query
+        var countQuery = db.Users().Select(u => Sql.Count());
+
         if (!string.IsNullOrEmpty(Search))
+        {
             query = query.Where(u => u.UserName.Contains(Search) || u.Email.Contains(Search));
+            countQuery = countQuery.Where(u => u.UserName.Contains(Search) || u.Email.Contains(Search));
+        }
 
         if (RoleFilter.HasValue)
         {
             var role = RoleFilter.Value;
             query = query.Where(u => u.Role == role);
+            countQuery = countQuery.Where(u => u.Role == role);
         }
 
         if (ActiveOnly == true)
+        {
             query = query.Where(u => u.IsActive);
+            countQuery = countQuery.Where(u => u.IsActive);
+        }
 
         Users = await query
             .OrderBy(u => u.UserName)
@@ -50,10 +60,7 @@ public class IndexModel(AppDb db) : PageModel
             .Offset((Page - 1) * PageSize)
             .ExecuteFetchAllAsync();
 
-        // Total count for pagination
-        var totalCount = await db.Users()
-            .Select(u => Sql.Count())
-            .ExecuteScalarAsync<int>();
+        var totalCount = await countQuery.ExecuteScalarAsync<int>();
 
         TotalPages = (int)Math.Ceiling(totalCount / (double)PageSize);
     }

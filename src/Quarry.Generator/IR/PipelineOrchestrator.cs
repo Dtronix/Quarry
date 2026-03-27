@@ -215,15 +215,10 @@ internal static class PipelineOrchestrator
                         return true;
                 }
 
-                // Check if element has leading whitespace in the raw (unsplit) form.
-                // In a valid tuple like "(int OrderId, decimal Total)", elements after the first
-                // have a leading space from the comma separator. But the FIRST element in the inner
-                // string should not have a leading space. If it does, the type is missing.
-                // Additionally, if element starts with multiple spaces (e.g., "  Total"), that's
-                // one space from comma + one space from empty type — also unresolved.
             }
 
-            // Final check: if the inner string starts with a space, the first element's type is empty
+            // If the inner string starts with a space, the first element's type is empty
+            // e.g., "( OrderId, decimal Total)" → first element has no type
             if (inner.Length > 0 && inner[0] == ' ')
                 return true;
         }

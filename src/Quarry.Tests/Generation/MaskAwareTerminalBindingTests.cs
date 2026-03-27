@@ -764,7 +764,59 @@ public class Svc
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Test 14: Mixed scalar + collection params — scalar bound normally,
+    //  Test 14: Collection parameter inside conditional WHERE —
+    //  collection expansion must be mask-gated
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_CollectionParamInConditionalWhere_ExpansionIsMaskGated()
+    {
+        var code = GenerateInterceptors(@"
+using System.Collections.Generic;
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(List<int> userIds, bool applyFilter)
+    {
+        var q = _db.Users().Select(u => u);
+        if (applyFilter)
+            q = q.Where(u => userIds.Contains(u.UserId));
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        if (!code.Contains("file sealed class Chain_"))
+        {
+            Assert.Inconclusive("Conditional collection query did not produce carrier-optimized path");
+            return;
+        }
+
+        Assert.That(code, Does.Contain("Mask |="), "Should set mask bit for conditional WHERE");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // The collection expansion loop should be inside a mask-gated block
+        Assert.That(terminalBody, Does.Contain("__col0Len"),
+            "Terminal should expand collection elements using __col0Len");
+        Assert.That(terminalBody, Does.Contain("__c.Mask &"),
+            "Collection binding should be inside a mask-gated block for conditional WHERE");
+
+        // Verify the collection loop is inside the mask gate, not outside it
+        var lines = terminalBody.Split('\n');
+        for (int i = 0; i < lines.Length; i++)
+        {
+            if (lines[i].Contains("__col0Len"))
+            {
+                Assert.That(IsInsideMaskGatedBlock(lines, i),
+                    "Collection expansion loop (__col0Len) must be inside a mask-gated if block");
+                break;
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 15: Mixed scalar + collection params — scalar bound normally,
     //  collection expanded into individual elements
     // ─────────────────────────────────────────────────────────────────
 
