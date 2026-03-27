@@ -670,28 +670,70 @@ internal static class CarrierEmitter
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
 
+        var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+        var hasConditional = chain.ConditionalTerms.Count > 0;
+        var maskType = hasConditional ? GetMaskType(chain) : null;
+
+        int? currentBitIndex = null;
+        bool inConditionalBlock = false;
+
         for (int i = 0; i < paramCount; i++)
         {
             var param = chain.ChainParameters[i];
-            sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
-            sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
-            sb.AppendLine($"        __p{i}.Value = __pVal{i};");
+            condMap.TryGetValue(i, out var ci);
+
+            if (ci.IsConditional)
+            {
+                if (!inConditionalBlock || ci.BitIndex != currentBitIndex)
+                {
+                    // Close previous block if open
+                    if (inConditionalBlock)
+                        sb.AppendLine("        }");
+
+                    sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex!.Value}))) != 0)");
+                    sb.AppendLine("        {");
+                    inConditionalBlock = true;
+                    currentBitIndex = ci.BitIndex;
+                }
+            }
+            else
+            {
+                // Close any open conditional block
+                if (inConditionalBlock)
+                {
+                    sb.AppendLine("        }");
+                    inConditionalBlock = false;
+                    currentBitIndex = null;
+                }
+            }
+
+            var indent = inConditionalBlock ? "            " : "        ";
+            var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
+
+            sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
+            sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
+            sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
 
             if (param.TypeMappingClass != null)
             {
                 var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
-                sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+                sb.AppendLine($"{indent}({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
             }
 
-            sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
+            sb.AppendLine($"{indent}__cmd.Parameters.Add(__p{i});");
         }
 
+        // Close any trailing conditional block
+        if (inConditionalBlock)
+            sb.AppendLine("        }");
+
+        // Pagination parameters — always unconditional
         var nextIdx = paramCount;
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
             sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pL.Value = __pValL;");
+            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
             nextIdx++;
         }
@@ -699,7 +741,7 @@ internal static class CarrierEmitter
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
             sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pO.Value = __pValO;");
+            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
         }
     }
