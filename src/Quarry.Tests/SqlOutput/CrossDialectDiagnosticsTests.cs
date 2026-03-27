@@ -126,6 +126,20 @@ internal class CrossDialectDiagnosticsTests
     }
 
     [Test]
+    public void ToDiagnostics_WithPropertyChainCapturedParameter_ExtractsValue()
+    {
+        // Reproduces the bug where Input.Email (a property chain on a captured object)
+        // causes InvalidCastException at runtime because the extraction code assumes
+        // a single-hop FieldInfo but encounters a PropertyInfo chain.
+        var input = new PropertyChainTestInput { Email = "test@example.com" };
+        var diag = _db.Users().Where(u => u.Email == input.Email).ToDiagnostics();
+
+        Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(diag.Parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo("test@example.com"));
+    }
+
+    [Test]
     public void ToDiagnostics_WithMultipleParameters_AllParametersPresent()
     {
         var name = "john";
@@ -468,4 +482,13 @@ internal class CrossDialectDiagnosticsTests
     }
 
     #endregion
+}
+
+/// <summary>
+/// Helper class for testing property chain captured variable extraction.
+/// Simulates the pattern where Input.Email is used in a Where lambda.
+/// </summary>
+internal class PropertyChainTestInput
+{
+    public string Email { get; set; } = "";
 }
