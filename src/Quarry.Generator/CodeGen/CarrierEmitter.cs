@@ -648,14 +648,7 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
-    /// Emits parameter value extraction into __pVal* local variables.
-    /// </summary>
-    private static void EmitCarrierParameterLocals(
-        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
-        => TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
-
-    /// <summary>
-    /// Emits DbCommand creation and binds __pVal* locals to parameters.
+    /// Emits DbCommand creation and binds parameters with mask-gated conditional support.
     /// </summary>
     private static void EmitCarrierCommandBinding(
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
@@ -762,8 +755,7 @@ internal static class CarrierEmitter
         // Parameter logging
         EmitInlineParameterLogging(sb, chain, carrier);
 
-        // Parameter value extraction + command binding
-        EmitCarrierParameterLocals(sb, chain, carrier);
+        // Command binding
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
@@ -787,7 +779,6 @@ internal static class CarrierEmitter
 
         EmitInlineParameterLogging(sb, chain, carrier);
 
-        EmitCarrierParameterLocals(sb, chain, carrier);
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
