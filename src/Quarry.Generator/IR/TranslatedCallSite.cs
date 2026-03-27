@@ -96,6 +96,18 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
     }
 
+    /// <summary>
+    /// Creates a copy with a resolved ResultTypeName.
+    /// Used by PipelineOrchestrator to patch clause sites whose ResultTypeName was
+    /// unresolved during discovery (e.g., tuple types in reassigned query variables).
+    /// </summary>
+    internal TranslatedCallSite WithResolvedResultType(string resolvedResultTypeName)
+    {
+        var newRaw = Bound.Raw.WithResultTypeName(resolvedResultTypeName);
+        var newBound = Bound.WithRaw(newRaw);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+    }
+
     public bool Equals(TranslatedCallSite? other)
     {
         if (other is null) return false;
