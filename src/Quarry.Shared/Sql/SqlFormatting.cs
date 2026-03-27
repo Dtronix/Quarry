@@ -287,20 +287,4 @@ internal static partial class SqlFormatting
             _ => $"X'{hex}'" // SQLite, MySQL, SqlServer
         };
     }
-
-    /// <summary>
-    /// Gets the dialect-specific SQL type name for a CLR type.
-    /// Dispatches to per-dialect partial file implementations.
-    /// </summary>
-    public static string GetColumnTypeName(SqlDialect dialect, string clrType, int? maxLength, int? precision, int? scale)
-    {
-        return dialect switch
-        {
-            SqlDialect.SQLite => GetSQLiteColumnType(clrType, maxLength, precision, scale),
-            SqlDialect.PostgreSQL => GetPostgreSQLColumnType(clrType, maxLength, precision, scale),
-            SqlDialect.MySQL => GetMySQLColumnType(clrType, maxLength, precision, scale),
-            SqlDialect.SqlServer => GetSqlServerColumnType(clrType, maxLength, precision, scale),
-            _ => throw new ArgumentOutOfRangeException(nameof(dialect))
-        };
-    }
 }
