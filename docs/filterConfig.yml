@@ -1,0 +1,24 @@
+apiRules:
+  # Include public and protected APIs
+  - include:
+      uidRegex: ^Quarry
+      type: Namespace
+  - include:
+      uidRegex: ^Quarry\.
+      type: Type
+      hasAttribute:
+        not: true
+        uid: System.ComponentModel.EditorBrowsableAttribute
+  # Exclude internal/generated namespaces
+  - exclude:
+      uidRegex: ^Quarry\.Internal
+      type: Namespace
+  - exclude:
+      uidRegex: ^Quarry\.Generators
+      type: Namespace
+  - exclude:
+      uidRegex: ^Quarry\.Shared
+      type: Namespace
+  - exclude:
+      uidRegex: ^Quarry\.Logging
+      type: Namespace

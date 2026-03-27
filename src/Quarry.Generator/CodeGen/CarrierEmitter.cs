@@ -637,7 +637,7 @@ internal static class CarrierEmitter
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         if (emitOpId)
-            sb.AppendLine("        var __opId = OpId.Next();");
+            sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
         EmitCarrierSqlDispatch(sb, carrier, chain);
     }
 
@@ -875,7 +875,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (IsNonNullableValueType(param.ClrType) || param.IsEnum)
+                else if (IsNonNullableValueType(param.ClrType))
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");

@@ -2,6 +2,8 @@ using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -38,6 +40,22 @@ public class AggregateBenchmarks : BenchmarkBase
             .ExecuteScalarAsync<int>();
     }
 
+    [Benchmark]
+    public async Task<int> SqlKata_Count()
+    {
+        var query = new Query("users").AsCount();
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result);
+    }
+
     // --- SUM ---
 
     [Benchmark]
@@ -69,6 +87,22 @@ public class AggregateBenchmarks : BenchmarkBase
             .ExecuteScalarAsync<decimal>();
     }
 
+    [Benchmark]
+    public async Task<decimal> SqlKata_Sum()
+    {
+        var query = new Query("orders").AsSum("Total");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToDecimal(result);
+    }
+
     // --- AVG ---
 
     [Benchmark]
@@ -98,5 +132,21 @@ public class AggregateBenchmarks : BenchmarkBase
         return await QuarryDb.Orders()
             .Select(o => Sql.Avg(o.Total))
             .ExecuteScalarAsync<decimal>();
+    }
+
+    [Benchmark]
+    public async Task<decimal> SqlKata_Avg()
+    {
+        var query = new Query("orders").AsAverage("Total");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToDecimal(result);
     }
 }

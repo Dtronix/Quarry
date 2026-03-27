@@ -2,6 +2,8 @@
 
 Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit all SQL at compile time. AOT compatible. Zero runtime dependencies. Structured logging via Logsmith Abstraction mode.
 
+**[Documentation](https://dtronix.github.io/Quarry/)** | **[API Reference](https://dtronix.github.io/Quarry/api/)**
+
 ---
 
 ## Table of Contents
@@ -14,6 +16,7 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 - [Quick Start](#quick-start)
 - [Schema Definition](#schema-definition)
 - [Context Definition](#context-definition)
+- [Switching Database Targets](#switching-database-targets)
 - [Querying](#querying)
 - [Prepared Queries](#prepared-queries)
 - [Modifications](#modifications)
@@ -119,6 +122,32 @@ Intercepted query paths use ordinal-based `Func<DbDataReader, T>` delegates gene
 ### Multi-Dialect Support
 
 Four SQL dialects — `SQLite`, `PostgreSQL`, `MySQL`, and `SqlServer` — with correct quoting, parameter formatting, pagination, and identity/returning syntax. Multiple contexts with different dialects can coexist in the same project.
+
+### One-Line Dialect Switching
+
+Changing your database target is a one-line change. Update the `Dialect` on your context attribute and rebuild — the generator re-emits all SQL with correct syntax for the new dialect. Your query code, schema definitions, and business logic stay exactly the same.
+
+```csharp
+// Before: SQLite
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class AppDb : QuarryContext { /* ... */ }
+
+// After: PostgreSQL — change one enum value, rebuild
+[QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = "public")]
+public partial class AppDb : QuarryContext { /* ... */ }
+```
+
+The generator handles all dialect differences automatically:
+
+| Concern | SQLite | PostgreSQL | MySQL | SQL Server |
+|---|---|---|---|---|
+| Quoting | `"col"` | `"col"` | `` `col` `` | `[col]` |
+| Parameters | `@p0` | `$1` | `?` | `@p0` |
+| Booleans | `1`/`0` | `TRUE`/`FALSE` | `1`/`0` | `1`/`0` |
+| Pagination | `LIMIT/OFFSET` | `LIMIT/OFFSET` | `LIMIT/OFFSET` | `OFFSET/FETCH` |
+| Identity return | `RETURNING` | `RETURNING` | `LAST_INSERT_ID()` | `OUTPUT INSERTED` |
+
+You can also run multiple dialects side by side — for example, SQLite for local development and PostgreSQL for production — by defining two context classes that share the same schema definitions.
 
 ### Type-Safe Schema DSL
 
@@ -281,6 +310,26 @@ public partial class AppDb : QuarryContext
 Dialects: `SQLite`, `PostgreSQL`, `MySQL`, `SqlServer`.
 
 Multiple contexts with different dialects can coexist. Each generates its own interceptor file with dialect-correct SQL.
+
+---
+
+## Switching Database Targets
+
+Changing your database target is a one-line change — update the `Dialect` on your context and rebuild. The generator re-emits all SQL with correct syntax for the new dialect. Your query code, schema definitions, and business logic stay exactly the same.
+
+```csharp
+// Switch from SQLite to PostgreSQL — change one enum value, rebuild
+[QuarryContext(Dialect = SqlDialect.PostgreSQL, Schema = "public")]
+public partial class AppDb : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+```
+
+The generator automatically handles identifier quoting, parameter formatting, boolean literals, pagination syntax, identity/returning clauses, and schema qualification for each dialect. Run multiple dialects side by side — for example, SQLite for local development and PostgreSQL for production — by defining two context classes that share the same schema definitions.
+
+For full details, see the [Switching Dialects](https://dtronix.github.io/Quarry/articles/switching-dialects.html) documentation.
 
 ---
 

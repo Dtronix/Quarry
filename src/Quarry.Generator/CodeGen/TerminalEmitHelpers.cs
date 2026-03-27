@@ -618,13 +618,12 @@ internal static class TerminalEmitHelpers
         if (param.TypeMappingClass != null)
             return $"(object?){InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass)}.ToDb(__c.P{index}) ?? DBNull.Value";
 
-        // Enum with known underlying type: inline cast to underlying integral type
+        // Enum with known underlying type: inline cast to underlying integral type.
+        // Carrier fields for enum types are always nullable — NormalizeFieldType
+        // does not recognize enums as value types and appends '?'.
+        // Always emit the null-safe HasValue path to avoid CS8629.
         if (param.IsEnum && param.EnumUnderlyingType != null)
         {
-            if (!param.ClrType.EndsWith("?"))
-                return $"(object)({param.EnumUnderlyingType})__c.P{index}";
-
-            // Nullable enum: HasValue check + underlying cast
             return $"__c.P{index}.HasValue ? (object)({param.EnumUnderlyingType})__c.P{index}.Value : DBNull.Value";
         }
 

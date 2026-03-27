@@ -35,7 +35,7 @@
     <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
   </ItemGroup>
 
-  <ItemGroup>
+  <ItemGroup Condition="'$(BuildingDocs)' != 'true'">
     <ProjectReference Include="../Quarry.Generator/Quarry.Generator.csproj"
                       IncludeAssets="analyzers"
                       PrivateAssets="none" />
