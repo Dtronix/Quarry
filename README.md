@@ -123,7 +123,7 @@ Intercepted query paths use ordinal-based `Func<DbDataReader, T>` delegates gene
 
 Four SQL dialects — `SQLite`, `PostgreSQL`, `MySQL`, and `SqlServer` — with correct quoting, parameter formatting, pagination, and identity/returning syntax. Multiple contexts with different dialects can coexist in the same project.
 
-### Switching Database Targets
+### One-Line Dialect Switching
 
 Changing your database target is a one-line change. Update the `Dialect` on your context attribute and rebuild — the generator re-emits all SQL with correct syntax for the new dialect. Your query code, schema definitions, and business logic stay exactly the same.
 

@@ -30,8 +30,7 @@ via projection into a DTO.
 ### FilterBenchmarks
 
 Tests `WHERE` clause generation with several patterns: a simple boolean filter, a compound
-filter (`AND` with `IS NOT NULL`), and a point lookup by primary key. Includes SqlKata for
-comparison.
+filter (`AND` with `IS NOT NULL`), and a point lookup by primary key.
 
 ### JoinBenchmarks
 
@@ -57,11 +56,11 @@ Tests single-row inserts and batch inserts (10 rows) across all libraries.
 
 ### UpdateBenchmarks
 
-Tests single-row `UPDATE` statements. Includes SqlKata for comparison.
+Tests single-row `UPDATE` statements.
 
 ### DeleteBenchmarks
 
-Tests single-row `DELETE` statements. Includes SqlKata for comparison.
+Tests single-row `DELETE` statements.
 
 ### ComplexQueryBenchmarks
 
