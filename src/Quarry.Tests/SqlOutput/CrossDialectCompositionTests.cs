@@ -693,5 +693,79 @@ internal class CrossDialectCompositionTests
         Assert.That(results[0].OrderId, Is.EqualTo(1));
     }
 
+    [Test]
+    public async Task ConditionalOrderBy_OnTupleProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // OrderBy after Select with tuple projection + variable reassignment
+        var query = Lite.Orders().Select(o => (o.OrderId, o.Total));
+        query = query.OrderBy(o => o.Total);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: 3 orders — should be sorted by Total ascending
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].Total, Is.LessThanOrEqualTo(results[1].Total));
+        Assert.That(results[1].Total, Is.LessThanOrEqualTo(results[2].Total));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnEntityProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Entity projection (Select identity) with reassignment — should already work
+        // but this ensures the resolution doesn't regress entity-typed chains.
+        var query = Lite.Users().Select(u => u);
+        query = query.Where(u => u.IsActive);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: 2 active users, 1 inactive
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnSingleColumnProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Single column projection with reassignment
+        var query = Lite.Orders().Select(o => o.Total);
+        query = query.Where(o => o.Total > 100m);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: Order1(250), Order2(75.50), Order3(150) — 2 > 100
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnTupleProjection_FieldInfoCachingWorks()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+
+        // Execute the same query pattern twice to verify FieldInfo caching
+        // (the static F0 field should be populated on first call and reused)
+        var query1 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query1 = query1.Where(o => o.Priority == priority);
+        var results1 = await query1.ExecuteFetchAllAsync();
+
+        var query2 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query2 = query2.Where(o => o.Priority == priority);
+        var results2 = await query2.ExecuteFetchAllAsync();
+
+        Assert.That(results1, Has.Count.EqualTo(1));
+        Assert.That(results2, Has.Count.EqualTo(1));
+        Assert.That(results1[0].OrderId, Is.EqualTo(results2[0].OrderId));
+    }
+
     #endregion
 }

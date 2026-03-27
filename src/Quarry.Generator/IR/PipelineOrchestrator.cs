@@ -184,7 +184,7 @@ internal static class PipelineOrchestrator
     {
         if (resultTypeName == null)
             return false;
-        if (resultTypeName == "?" || resultTypeName == "object")
+        if (resultTypeName.Length == 0 || resultTypeName == "?" || resultTypeName == "object")
             return true;
 
         // Tuple types with unresolved elements: "object" type parts, "?" type parts,

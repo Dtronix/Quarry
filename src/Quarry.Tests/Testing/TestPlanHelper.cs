@@ -39,7 +39,15 @@ internal static class TestPlanHelper
         TranslatedCallSite executionSite,
         TranslatedCallSite[] clauseSites)
     {
-        var queryPlan = CreateQueryPlanWithProjection(null);
+        return CreateAssembledPlanWithProjection(executionSite, clauseSites, null);
+    }
+
+    public static AssembledPlan CreateAssembledPlanWithProjection(
+        TranslatedCallSite executionSite,
+        TranslatedCallSite[] clauseSites,
+        SelectProjection? projection)
+    {
+        var queryPlan = CreateQueryPlanWithProjection(projection);
 
         var sqlVariants = new Dictionary<int, AssembledSqlVariant>
         {
