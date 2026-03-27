@@ -7,16 +7,21 @@ namespace Quarry;
 /// </summary>
 public interface IDeleteBuilder<T> where T : class
 {
-    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate);
-    IExecutableDeleteBuilder<T> All();
-    IDeleteBuilder<T> WithTimeout(TimeSpan timeout);
+    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate)
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableDeleteBuilder<T> All()
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.All is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IDeleteBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IDeleteBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -24,16 +29,21 @@ public interface IDeleteBuilder<T> where T : class
 /// </summary>
 public interface IExecutableDeleteBuilder<T> where T : class
 {
-    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate);
-    IExecutableDeleteBuilder<T> WithTimeout(TimeSpan timeout);
-    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
+    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate)
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableDeleteBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.ExecuteNonQueryAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -41,18 +51,25 @@ public interface IExecutableDeleteBuilder<T> where T : class
 /// </summary>
 public interface IUpdateBuilder<T> where T : class
 {
-    IUpdateBuilder<T> Set(T entity);
-    IUpdateBuilder<T> Set(Action<T> assignment);
-    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
-    IExecutableUpdateBuilder<T> All();
-    IUpdateBuilder<T> WithTimeout(TimeSpan timeout);
+    IUpdateBuilder<T> Set(T entity)
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IUpdateBuilder<T> Set(Action<T> assignment)
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate)
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableUpdateBuilder<T> All()
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.All is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IUpdateBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IUpdateBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -60,18 +77,25 @@ public interface IUpdateBuilder<T> where T : class
 /// </summary>
 public interface IExecutableUpdateBuilder<T> where T : class
 {
-    IExecutableUpdateBuilder<T> Set(T entity);
-    IExecutableUpdateBuilder<T> Set(Action<T> assignment);
-    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate);
-    IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout);
-    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
+    IExecutableUpdateBuilder<T> Set(T entity)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableUpdateBuilder<T> Set(Action<T> assignment)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.ExecuteNonQueryAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -79,16 +103,21 @@ public interface IExecutableUpdateBuilder<T> where T : class
 /// </summary>
 public interface IInsertBuilder<T> where T : class
 {
-    IInsertBuilder<T> WithTimeout(TimeSpan timeout);
-    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
-    Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
+    IInsertBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.ExecuteNonQueryAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IInsertBuilder.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -97,8 +126,10 @@ public interface IInsertBuilder<T> where T : class
 /// </summary>
 public interface IBatchInsertBuilder<T> where T : class
 {
-    IExecutableBatchInsert<T> Values(IEnumerable<T> entities);
-    IBatchInsertBuilder<T> WithTimeout(TimeSpan timeout);
+    IExecutableBatchInsert<T> Values(IEnumerable<T> entities)
+        => throw new InvalidOperationException("Carrier method IBatchInsertBuilder.Values is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IBatchInsertBuilder<T> WithTimeout(TimeSpan timeout)
+        => throw new InvalidOperationException("Carrier method IBatchInsertBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
 }
 
 /// <summary>
@@ -107,13 +138,17 @@ public interface IBatchInsertBuilder<T> where T : class
 /// </summary>
 public interface IExecutableBatchInsert<T> where T : class
 {
-    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default);
-    Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default);
+    Task<int> ExecuteNonQueryAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ExecuteNonQueryAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<TKey> ExecuteScalarAsync<TKey>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
-    QueryDiagnostics ToDiagnostics();
+    QueryDiagnostics ToDiagnostics()
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Prepares this query chain for multiple terminal operations.
     /// </summary>
-    PreparedQuery<int> Prepare();
+    PreparedQuery<int> Prepare()
+        => throw new InvalidOperationException("Carrier method IExecutableBatchInsert.Prepare is not intercepted in this optimized chain. This indicates a code generation bug.");
 }

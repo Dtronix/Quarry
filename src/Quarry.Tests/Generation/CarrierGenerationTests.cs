@@ -121,8 +121,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Carrier class is emitted with CarrierBase<User, User> since Select(u => u) maps User -> User
-        Assert.That(code, Does.Contain("file sealed class Chain_0 : CarrierBase<"));
+        // Carrier class implements interfaces directly (no base class)
+        Assert.That(code, Does.Contain("file sealed class Chain_0 : IEntityAccessor<"));
         // Carrier-optimized chains don't use AllocatePrebuiltParams (that's the non-carrier path)
         Assert.That(code, Does.Not.Contain("AllocatePrebuiltParams"));
         // The carrier remark should indicate the optimization level
@@ -158,7 +158,7 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("file sealed class Chain_"));
-        Assert.That(code, Does.Contain("CarrierBase<"));
+        Assert.That(code, Does.Contain("IEntityAccessor<"));
         Assert.That(code, Does.Contain("__c.P0 ="));
     }
 
@@ -485,7 +485,7 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("CarrierBase<User, User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User, User>"));
     }
 
     [Test]
@@ -515,8 +515,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Insert carrier uses InsertCarrierBase
-        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        // Insert carrier implements interfaces directly
+        Assert.That(code, Does.Contain("IInsertBuilder<User>"));
         // Carrier should have Entity field
         Assert.That(code, Does.Contain("internal User? Entity;"));
         // Insert transition stores entity on carrier
@@ -558,7 +558,7 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         // Insert carrier with RETURNING clause
-        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        Assert.That(code, Does.Contain("IInsertBuilder<User>"));
         Assert.That(code, Does.Contain("RETURNING"));
         // Carrier scalar execution
         Assert.That(code, Does.Contain("ExecuteCarrierScalarWithCommandAsync"));
@@ -1199,5 +1199,80 @@ public static class Queries
         // IReadOnlyList<> carrier field is non-nullable reference type — must have = null! initializer
         Assert.That(code, Does.Match(@"internal System\.Collections\.Generic\.IReadOnlyList<int\??> P0 = null!;"),
             "IReadOnlyList carrier field should have = null! initializer to suppress CS8618");
+    }
+
+    [Test]
+    public void CarrierGeneration_NoBaseClass_UsesInterfacesDirectly()
+    {
+        // Verifies that generated carriers implement interfaces directly
+        // and do not inherit from any CarrierBase class (issue #86).
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // No CarrierBase inheritance — interfaces only
+        Assert.That(code, Does.Not.Contain("CarrierBase"));
+        Assert.That(code, Does.Not.Contain("JoinedCarrierBase"));
+        // Carrier class directly implements interfaces
+        Assert.That(code, Does.Contain("IEntityAccessor<User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User, User>"));
+        // Ctx field emitted directly on carrier
+        Assert.That(code, Does.Contain("internal IQueryExecutionContext? Ctx;"));
+    }
+
+    [Test]
+    public void CarrierGeneration_DeleteCarrier_UsesInterfacesDirectly()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var id = 42;
+        await db.Users().Delete().Where(u => u.UserId == id).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Delete carrier uses interfaces directly, not DeleteCarrierBase
+        Assert.That(code, Does.Not.Contain("DeleteCarrierBase"));
+        Assert.That(code, Does.Contain("IEntityAccessor<User>"));
+        Assert.That(code, Does.Contain("IDeleteBuilder<User>"));
+        Assert.That(code, Does.Contain("IExecutableDeleteBuilder<User>"));
     }
 }

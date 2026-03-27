@@ -148,11 +148,11 @@ internal sealed class FileEmitter
                 if (!CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
-                // Assign carrier class name, base class, and interfaces (deferred from CarrierAnalyzer)
+                // Assign carrier class name and interfaces (deferred from CarrierAnalyzer)
                 carrierPlan.ClassName = $"Chain_{carrierIndex}";
-                var resolvedBase = CarrierEmitter.ResolveCarrierBaseClass(chain);
-                carrierPlan.BaseClassName = resolvedBase;
-                carrierPlan.ImplementedInterfaces = new[] { resolvedBase };
+                var resolvedInterfaces = CarrierEmitter.ResolveCarrierInterfaceList(chain);
+                carrierPlan.BaseClassName = "";
+                carrierPlan.ImplementedInterfaces = resolvedInterfaces;
                 carrierIndex++;
 
                 carrierLookup[chain.ExecutionSite.UniqueId] = (carrierPlan, chain);
