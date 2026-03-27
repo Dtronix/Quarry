@@ -177,26 +177,55 @@ internal static class PipelineOrchestrator
     }
 
     /// <summary>
-    /// Determines whether a ResultTypeName is unresolved and needs patching.
+    /// Determines whether a non-null ResultTypeName is unresolved and needs patching.
+    /// A null ResultTypeName means "no result type" (entity-only query), which is valid.
     /// </summary>
     private static bool IsUnresolvedResultType(string? resultTypeName)
     {
-        if (resultTypeName == null || resultTypeName == "?" || resultTypeName == "object")
+        if (resultTypeName == null)
+            return false;
+        if (resultTypeName == "?" || resultTypeName == "object")
             return true;
 
-        // Tuple types containing "object" elements indicate unresolved generic type arguments
+        // Tuple types with unresolved elements: "object" type parts, "?" type parts,
+        // or missing type parts (e.g., "( OrderId,  Total)" where types are empty)
         if (resultTypeName.StartsWith("(") && resultTypeName.EndsWith(")"))
         {
             var inner = resultTypeName.Substring(1, resultTypeName.Length - 2);
             foreach (var element in inner.Split(','))
             {
                 var trimmed = element.Trim();
-                // Strip element name if present (e.g., "object Id" → "object")
-                var spaceIdx = trimmed.LastIndexOf(' ');
-                var typePart = spaceIdx >= 0 ? trimmed.Substring(0, spaceIdx).Trim() : trimmed;
-                if (typePart == "object" || typePart == "?")
+                if (trimmed.Length == 0)
                     return true;
+
+                // Named tuple element: "type name" format. Check the type part.
+                var spaceIdx = trimmed.LastIndexOf(' ');
+                if (spaceIdx >= 0)
+                {
+                    var typePart = trimmed.Substring(0, spaceIdx).Trim();
+                    // Empty type part means unresolved (e.g., " OrderId" → type is empty, name is "OrderId")
+                    if (typePart.Length == 0 || typePart == "object" || typePart == "?")
+                        return true;
+                }
+                else
+                {
+                    // Single token — no space. Could be a type-only element like "int"
+                    // or a bare "object"/"?" error type.
+                    if (trimmed == "object" || trimmed == "?")
+                        return true;
+                }
+
+                // Check if element has leading whitespace in the raw (unsplit) form.
+                // In a valid tuple like "(int OrderId, decimal Total)", elements after the first
+                // have a leading space from the comma separator. But the FIRST element in the inner
+                // string should not have a leading space. If it does, the type is missing.
+                // Additionally, if element starts with multiple spaces (e.g., "  Total"), that's
+                // one space from comma + one space from empty type — also unresolved.
             }
+
+            // Final check: if the inner string starts with a space, the first element's type is empty
+            if (inner.Length > 0 && inner[0] == ' ')
+                return true;
         }
 
         return false;

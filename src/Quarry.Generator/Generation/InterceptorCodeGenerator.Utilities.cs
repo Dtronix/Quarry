@@ -557,6 +557,21 @@ internal static partial class InterceptorCodeGenerator
         => builderTypeName is "IEntityAccessor" or "EntityAccessor";
 
     /// <summary>
+    /// Builds the receiver (this parameter) type string for an interceptor method.
+    /// IEntityAccessor only takes one type argument (the entity type), so when the
+    /// builder is an entity accessor, the result type is NOT included in the receiver.
+    /// For IQueryBuilder (2 type args), both entity and result are included.
+    /// </summary>
+    internal static string BuildReceiverType(string thisType, string entityType, string? resultType)
+    {
+        if (IsEntityAccessorType(thisType))
+            return $"{thisType}<{entityType}>";
+        if (resultType != null)
+            return $"{thisType}<{entityType}, {resultType}>";
+        return $"{thisType}<{entityType}>";
+    }
+
+    /// <summary>
     /// Returns the expression to convert a builder to a QueryBuilder when the receiver is IEntityAccessor.
     /// Unboxes the EntityAccessor struct and calls CreateQueryBuilder() to get a real QueryBuilder.
     /// </summary>

@@ -110,8 +110,9 @@ public class PipelineOrchestratorTests
         var method = typeof(PipelineOrchestrator).GetMethod(
             "PropagateChainUpdatedSites",
             BindingFlags.NonPublic | BindingFlags.Static)!;
+        var emptyPatches = new Dictionary<string, string>(StringComparer.Ordinal);
         return (ImmutableArray<TranslatedCallSite>)method.Invoke(null,
-            new object[] { allSites, assembledPlans })!;
+            new object[] { allSites, assembledPlans, emptyPatches })!;
     }
 
     #endregion
