@@ -133,8 +133,8 @@ internal static class CarrierAnalyzer
                     isSensitive: param.IsSensitive));
             }
 
-            // NeedsFieldInfoCache static fields no longer emitted — extraction
-            // now uses ExpressionHelper.ExtractMemberChainValue at runtime.
+            if (param.NeedsFieldInfoCache)
+                staticFields.Add(new Models.CarrierStaticField($"F{param.GlobalIndex}", "FieldInfo?", param.GlobalIndex));
         }
 
         // Mask field for conditional clauses
