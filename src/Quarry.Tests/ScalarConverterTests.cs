@@ -122,4 +122,16 @@ public class ScalarConverterTests
     [Test]
     public void Convert_String_FromBoxedString() =>
         Assert.That(ScalarConverter.Convert<string>((object)"hello"), Is.EqualTo("hello"));
+
+    // --- fallback path (uncommon types hitting Convert.ChangeType) ---
+
+    [Test]
+    public void Convert_DateTime_FallbackPath() =>
+        Assert.That(ScalarConverter.Convert<DateTime>((object)"2026-01-15"),
+            Is.EqualTo(new DateTime(2026, 1, 15)));
+
+    [Test]
+    public void Convert_NullableDateTime_FallbackPath() =>
+        Assert.That(ScalarConverter.Convert<DateTime?>((object)"2026-01-15"),
+            Is.EqualTo(new DateTime(2026, 1, 15)));
 }
