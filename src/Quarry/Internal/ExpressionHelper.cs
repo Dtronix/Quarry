@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
@@ -54,5 +55,51 @@ public static class ExpressionHelper
         // Fallback: compile and invoke the expression to extract the value
         var lambda = Expression.Lambda<Func<T>>(collectionExpr);
         return lambda.Compile().Invoke();
+    }
+
+    /// <summary>
+    /// Extracts a captured value from a member expression chain of arbitrary depth.
+    /// Walks inward from the outermost <c>MemberExpression</c> to the <c>ConstantExpression</c>
+    /// root, then evaluates outward through each member access.
+    /// </summary>
+    /// <remarks>
+    /// Handles single-hop captures (<c>name</c> → FieldInfo on closure), property chains
+    /// (<c>input.Email</c> → PropertyInfo on FieldInfo on closure), and deeper chains
+    /// (<c>input.Address.City</c>). Also handles static member access where
+    /// <c>Expression</c> is <c>null</c>.
+    /// </remarks>
+    [UnconditionalSuppressMessage("Trimming", "IL2075",
+        Justification = "Closure fields and properties are preserved by the expression tree that references them.")]
+    public static object? ExtractMemberChainValue(MemberExpression memberExpr)
+    {
+        // Walk inward collecting MemberExpressions until we hit ConstantExpression (or null for static)
+        var chain = new List<MemberExpression>(4);
+        var current = memberExpr;
+        while (current != null)
+        {
+            chain.Add(current);
+            if (current.Expression is ConstantExpression)
+                break;
+            current = current.Expression as MemberExpression;
+        }
+
+        // Determine the root object
+        object? value;
+        var innermost = chain[chain.Count - 1];
+        if (innermost.Expression is ConstantExpression constant)
+            value = constant.Value;
+        else
+            value = null; // static member access
+
+        // Walk outward (from innermost to outermost) extracting each member value
+        for (int i = chain.Count - 1; i >= 0; i--)
+        {
+            var member = chain[i].Member;
+            value = member is FieldInfo field
+                ? field.GetValue(value)
+                : ((PropertyInfo)member).GetValue(value);
+        }
+
+        return value;
     }
 }
