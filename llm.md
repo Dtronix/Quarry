@@ -1,18 +1,19 @@
 # Quarry
 
-Compile-time SQL builder for .NET 10. Roslyn source generators + C# 12 interceptors. All SQL pre-built. Zero reflection, AOT compatible. Logging via Logsmith.
+Compile-time SQL builder for .NET 10. Roslyn source generators + C# 12 interceptors. All SQL pre-built. Zero reflection, AOT compatible. Logging via Logsmith Abstraction mode (zero-dependency).
 
 **Architecture: Carrier-only.** All query chains must be statically analyzable. No runtime SQL builder fallback. Non-analyzable chains produce compile error QRY032.
 
 ## Packages
 
-- `Quarry` (net10.0) — Runtime: carrier base classes, interfaces, schema DSL, executor, migrations
+- `Quarry` (net10.0) — Runtime: carrier base classes, interfaces, schema DSL, executor, migrations. Logsmith 0.5.0 `<LogsmithMode>Abstraction</LogsmithMode>` (PrivateAssets=all)
 - `Quarry.Generator` (netstandard2.0) — Roslyn incremental generator: interceptor emission, entity/context codegen, migration codegen
 - `Quarry.Analyzers` (netstandard2.0) — 20 compile-time SQL analysis rules (QRA series) + code fixes
 - `Quarry.Tool` (net10.0) — CLI: `quarry migrate`, `quarry scaffold`, `quarry create-scripts`
 - `Quarry.Shared` — Shared source project (linked via MSBuild `<Import>`): SQL formatting, migration diffing/codegen, scaffold introspection. Conditional namespace: `QUARRY_GENERATOR` → `Quarry.Generators.Sql`, else `Quarry.Shared.Sql`
 - `Quarry.Tests` — NUnit tests using `QueryTestHarness` (4-dialect cross-dialect testing)
 - `Quarry.Benchmarks` (net10.0) — BenchmarkDotNet vs raw ADO.NET, Dapper, EF Core
+- `Quarry.Sample.WebApp` (net10.0) — Razor Pages + SQLite sample app demonstrating schema, context, queries, auth, migrations
 
 ## Usage
 
@@ -88,16 +89,17 @@ var users = await db.Users
     .Limit(10).Offset(20)
     .ExecuteFetchAllAsync();
 
-// Aggregates
+// Aggregates — GroupBy available on IEntityAccessor<T> and IQueryBuilder<T>
 db.Orders.GroupBy(o => o.Status)
     .Having(o => Sql.Count() > 5)
     .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)));
 
-// Joins (2/3/4-table, max 4)
+// Joins (2/3/4-table, max 4) — supports whole-entity projection from any alias
 db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Select((u, o) => (u.UserName, o.Total))
     .Where((u, o) => o.Total > 100);
 // Navigation: db.Users.Join(u => u.Orders)
+// Joined entity projection: .Select((u, o) => o) — projects full entity from alias
 // Also: LeftJoin, RightJoin
 
 // Subqueries on Many<T>
@@ -163,7 +165,7 @@ Source-generated typed readers — zero reflection.
 
 ### Diagnostics (QueryDiagnostics)
 
-`ToDiagnostics()` returns compile-time analysis: `Sql`, `Parameters` (active only), `AllParameters`, `Kind`, `Dialect`, `TableName`, `Tier`, `IsCarrierOptimized`, `Clauses` (per-clause SQL + params + source location + conditional info), `SqlVariants` (mask→SQL map), `ProjectionColumns`, `ProjectionKind`, `CarrierClassName`, `Joins`, `IsDistinct`, `Limit`, `Offset`, `IdentityColumnName`, `ActiveMask`, `ConditionalBitCount`, `TierReason`, `DisqualifyReason`, `CarrierIneligibleReason`, `UnmatchedMethodNames`.
+`ToDiagnostics()` returns compile-time analysis: `Sql`, `Parameters` (active only), `AllParameters`, `Kind`, `Dialect`, `TableName`, `Tier`, `IsCarrierOptimized`, `Clauses` (per-clause SQL + params + source location + conditional info), `SqlVariants` (`Dictionary<int, SqlVariantDiagnostic>` — mask→SQL map), `ProjectionColumns`, `ProjectionKind`, `CarrierClassName`, `Joins`, `IsDistinct`, `Limit`, `Offset`, `IdentityColumnName`, `ActiveMask` (int), `ConditionalBitCount`, `TierReason`, `DisqualifyReason`, `CarrierIneligibleReason`, `UnmatchedMethodNames`.
 
 ### Trace
 
@@ -175,7 +177,9 @@ Add `QUARRY_TRACE` to consumer `.csproj` + `.Trace()` to chain. Trace comments e
 
 ### Logging
 
-Logsmith source-generated. Categories: `Quarry.Connection` (Info), `Quarry.Query`/`Quarry.Modify`/`Quarry.RawSql` (Debug), `Quarry.Parameters` (Trace, sensitive columns redacted), `Quarry.Execution` (Warning: slow queries). `Sensitive()` modifier → parameter values displayed as `***` in logs. Per-operation `opId` via `OpId.Next()` correlates all log entries.
+Logsmith Abstraction mode — zero runtime dependency. Logsmith 0.5.0 with `<LogsmithMode>Abstraction</LogsmithMode>` + `PrivateAssets="all"` generates logging types directly into the Quarry assembly. No `using Logsmith;` — types are emitted into the assembly. Log checks use `LogsmithOutput.Logger?.IsEnabled(level, category) == true` pattern (null-safe for no-logger scenarios).
+
+Categories: `Quarry.Connection` (Info), `Quarry.Query`/`Quarry.Modify`/`Quarry.RawSql` (Debug), `Quarry.Parameters` (Trace, sensitive columns redacted), `Quarry.Execution` (Warning: slow queries). `Sensitive()` modifier → parameter values displayed as `***` in logs. Per-operation `opId` via `OpId.Next()` correlates all log entries.
 
 ## Architecture (Internals)
 
@@ -185,28 +189,33 @@ All runtime builder classes (QueryBuilder, JoinedQueryBuilder, DeleteBuilder, Up
 
 1. Generator analyzes each query chain at compile time
 2. Emits a `file sealed class Chain_N` carrier extending a base carrier class
-3. Each clause interceptor stores parameters on carrier fields, sets `ClauseMask` bits
-4. Terminal interceptor dispatches `ClauseMask` → pre-built SQL string literal
-5. `QueryExecutor` static methods execute the pre-built `DbCommand`
+3. Carrier owns SQL: single-variant → `static readonly string _sql`; multi-variant → `static readonly string[] _sql` (array indexed by mask, gaps filled with `null!` to surface routing bugs as NRE)
+4. Each clause interceptor stores parameters on carrier fields, sets `ClauseMask` bits (int)
+5. Terminal interceptor reads `_sql` (or `_sql[Mask]`) and binds parameters with mask-gated conditional support
+6. `QueryExecutor` static methods execute the pre-built `DbCommand`
 
 **Carrier base classes** (`Internal/`):
 - `CarrierBase<T>` / `CarrierBase<T,TResult>` — SELECT queries
 - `JoinedCarrierBase<T1,T2>` through `JoinedCarrierBase4<T1,T2,T3,T4>` (± TResult) — joins (max 4 tables)
 - `DeleteCarrierBase<T>`, `UpdateCarrierBase<T>`, `InsertCarrierBase<T>`, `BatchInsertCarrierBase<T>` — modifications
 
-All base class methods throw `NotSupportedException` — generator replaces them with actual implementations via interceptors.
+All base class methods throw `InvalidOperationException` — generator replaces them with actual implementations via interceptors.
 
-**Optimization tier:** Only `PrebuiltDispatch` exists. ≤4 conditional bits → up to 16 SQL variants as const strings. `ClauseMask` switch selects correct variant. Non-analyzable chains → compile error QRY032.
+**Optimization tier:** Only `PrebuiltDispatch` exists. ≤4 conditional bits → up to 16 SQL variants. Mask type is `int` (narrowed from `ulong`; max value 255 with 8-bit cap). Non-analyzable chains → compile error QRY032.
+
+**ExpressionHelper** (`Internal/ExpressionHelper.cs`): Runtime helper for extracting collection values and member chain values from expression trees. Used by generated interceptors when the collection receiver cannot be accessed directly (non-public, instance, local, or complex expression). Methods: `ExtractContainsCollection<T>(MethodCallExpression)`, `ExtractMemberChainValue(MemberExpression)`.
 
 ### Builder Interfaces
 
-**Query:** `IEntityAccessor<T>` (entry point) → `IQueryBuilder<T>` (no projection) → `IQueryBuilder<T,TResult>` (with projection, adds execution terminals). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder4<T1,T2,T3,T4>` (± TResult).
+**Query:** `IEntityAccessor<T>` (entry point, includes `GroupBy<TKey>()`) → `IQueryBuilder<T>` (no projection) → `IQueryBuilder<T,TResult>` (with projection, adds execution terminals). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder4<T1,T2,T3,T4>` (± TResult).
 **Modification:** `IDeleteBuilder<T>` → `IExecutableDeleteBuilder<T>` (via Where/All). `IUpdateBuilder<T>` → `IExecutableUpdateBuilder<T>`. `IInsertBuilder<T>`. `IBatchInsertBuilder<T>` → `IExecutableBatchInsert<T>` (via Values).
 **All** support `.Prepare()` → `PreparedQuery<TResult>`.
 
 ### Dialect System
 
-`SqlDialect` enum: `SQLite=0`, `PostgreSQL=1`, `MySQL=2`, `SqlServer=3`. `SqlFormatting` static class with `[AggressiveInlining]` switch expressions: `QuoteIdentifier`, `FormatTableName`, `FormatParameter`, `FormatBoolean`, `FormatReturningClause`, `FormatPagination`, etc. `SqlClauseJoining` assembles WHERE/HAVING with auto-parenthesization.
+`SqlDialect` enum: `SQLite=0`, `PostgreSQL=1`, `MySQL=2`, `SqlServer=3`. `SqlFormatting` static class with `[AggressiveInlining]` switch expressions: `QuoteIdentifier`, `FormatTableName`, `FormatParameter`, `FormatBoolean`, `FormatReturningClause`, `FormatMixedPagination`, etc. `SqlClauseJoining` assembles WHERE/HAVING with auto-parenthesization.
+
+`FormatMixedPagination(dialect, literalLimit, limitParamIndex, literalOffset, offsetParamIndex)` — handles any combination of literal and parameterized limit/offset values. Replaces former `FormatParameterizedPagination`.
 
 | | SQLite | PostgreSQL | MySQL | SqlServer |
 |---|---|---|---|---|
@@ -239,7 +248,7 @@ Stage 6: Emission      → C# interceptor source
 
 | Class | Role |
 |---|---|
-| `UsageSiteDiscovery` | Syntactic predicate (`IsQuarryMethodCandidate`) + semantic analysis → `RawCallSite` with method, kind, entity, SqlExpr, chain ID, conditional info, projection, Prepare detection |
+| `UsageSiteDiscovery` | Syntactic predicate (`IsQuarryMethodCandidate`) + semantic analysis → `RawCallSite` with method, kind, entity, SqlExpr, chain ID, conditional info, projection, Prepare detection. Object initializer chain differentiation: uses per-member `SpanStart` as scope key to prevent independent chains in `new Dto { A = db.X()..., B = db.Y()... }` from merging |
 | `VariableTracer` | Traces builder-type variable declarations (up to 2 hops) for chain unification |
 | `AnalyzabilityChecker` | Validates chain is compile-time analyzable (no cross-method, no dynamic, no loops) |
 | `ContextParser` | `[QuarryContext]` → `ContextInfo` |
@@ -262,28 +271,45 @@ Stage 6: Emission      → C# interceptor source
 
 **Multi-terminal handling:** Detects `.Prepare()` site + prepared terminals. Single-terminal → standard chain (Prepare elided). Multi-terminal → carrier covers all observed terminals.
 
+**Parameter enrichment:** `EnrichParametersFromColumns` matches Where/Having params to entity columns for IsEnum/IsSensitive metadata. `EnrichSetParametersFromColumns` does the same for Set clause assignments (different expression structure). Enum parameters without explicit underlying type default to `int`.
+
+**Projection failure handling:** Failed projections (e.g., anonymous types) → chain disqualified to RuntimeBuild with appropriate reason.
+
+**Joined entity projection:** `ProjectionInfo.JoinedEntityAlias` signals that `BuildProjection` should populate all columns from the entity at the given alias using the registry, since discovery-time column lookup is empty for joined entity projections (e.g., `.Select((u, o) => o)`).
+
+**Type resolution:** `IsUnresolvedTypeName(typeName)` detects error types (`"?"`, `"object"`, empty/null) from semantic model to trigger enrichment from entity metadata.
+
 ### Stage 5 — Assembly (`IR/SqlAssembler`)
 
-`SqlAssembler.Assemble(chain, registry)` → `AssembledPlan`. Renders SQL per mask variant, handles RETURNING/OUTPUT for identity inserts, dialect-specific pagination.
+`SqlAssembler.Assemble(chain, registry)` → `AssembledPlan`. Renders SQL per mask variant using `FormatMixedPagination` (supports literal + parameterized limit/offset), handles RETURNING/OUTPUT for identity inserts, dialect-specific pagination. WHERE parameter indexing uses global offsets across all terms (not just active ones) to prevent parameter slot mismatches in conditional variants. `RenderWhereCondition` uses base `paramIndex` for both AND/OR children since `ParamSlotExpr.LocalIndex` is clause-global.
 
 ### Stage 6 — Emission (`CodeGen/`)
 
-`PipelineOrchestrator` groups by context+file → `FileEmitter.Emit()`:
+`PipelineOrchestrator` groups by context+file → `FileEmitter.Emit()`. Also performs **result type patching**: `BuildResultTypePatches` scans assembled plans for unresolved result types (including tuple types with `object` elements like `(object, object)`) and patches them via `TranslatedCallSite.WithResolvedResultType()`. `IsUnresolvedResultType` detects `"?"`, `"object"`, tuples with unresolved elements, and empty type parts from Roslyn error rendering.
+
+Emitters:
 
 | Emitter | Handles |
 |---|---|
 | `CarrierAnalyzer` | Carrier eligibility, `CarrierPlan` |
-| `CarrierEmitter` | Carrier class declarations + method bodies |
+| `CarrierEmitter` | Carrier class declarations (including `_sql` field) + method bodies, mask-gated parameter binding and logging |
 | `ClauseBodyEmitter` | Where, OrderBy, Select, GroupBy, Having, Set |
 | `JoinBodyEmitter` | Join/LeftJoin/RightJoin + joined clauses |
 | `TerminalBodyEmitter` | FetchAll, FetchFirst, ExecuteNonQuery, ExecuteScalar, ToDiagnostics, Prepare |
 | `TransitionBodyEmitter` | Delete/Update/Insert transitions, ChainRoot, Limit/Offset/Distinct/WithTimeout |
 | `RawSqlBodyEmitter` | RawSqlAsync, RawSqlScalarAsync |
 | `InterceptorRouter` | Routes `InterceptorKind` → emitter category |
+| `TerminalEmitHelpers` | `BuildParamConditionalMap`, `GetParameterValueExpression`, shared terminal emission utilities |
+
+**Carrier SQL ownership:** `CarrierEmitter.EmitCarrierSqlField` emits SQL on the carrier class itself. Single-variant → `static readonly string _sql`; multi-variant → `static readonly string[] _sql` indexed by mask. Terminal emitters reference carrier's `_sql` field instead of inline SQL. Diagnostics `SqlVariantDiagnostic` entries reference the carrier's field.
+
+**Mask-aware parameter binding:** `EmitCarrierCommandBinding` groups conditional parameters by bit index, emitting `if ((Mask & (1 << bitIndex)) != 0)` blocks. Collection parameters (`IsCollection`) expanded into N individual DbParameters in a loop. Unconditional parameters and pagination parameters are always bound. No intermediate `__pVal*` locals — values read directly from carrier fields. Same mask-gating applies to inline parameter logging in `EmitInlineParameterLogging`. FieldInfo cache fields for captured closure variables live on the carrier class (not the interceptor class).
+
+**Receiver type construction:** `InterceptorCodeGenerator.BuildReceiverType` centralizes `this` parameter type building. `IEntityAccessor`/`EntityAccessor` take only entity type arg; `IQueryBuilder` takes entity + result type args. `IsEntityAccessorType` helper identifies accessor types.
 
 ### SqlExpr IR (`IR/SqlExpr*`)
 
-Dialect-agnostic expression tree. Pipeline: `SqlExprParser.Parse` (C# syntax → unresolved) → `SqlExprAnnotator.Annotate` (type enrichment) → `SqlExprBinder.Bind` (column resolution) → `SqlExprClauseTranslator.ExtractParameters` (captured values → param slots) → `SqlExprRenderer.Render` (dialect-specific SQL).
+Dialect-agnostic expression tree. Pipeline: `SqlExprParser.Parse` (C# syntax → unresolved) → `SqlExprAnnotator.Annotate` (type enrichment, error type guard, member-access expression type resolution) → `SqlExprBinder.Bind` (column resolution, boolean context propagation for AND/OR children → bare bool columns emit `col = 1`/`col = TRUE`) → `SqlExprClauseTranslator.ExtractParameters` (captured values → param slots) → `SqlExprRenderer.Render` (dialect-specific SQL).
 
 Nodes: `ColumnRefExpr`, `ResolvedColumnExpr`, `ParamSlotExpr`, `LiteralExpr`, `BinaryOpExpr`, `UnaryOpExpr`, `FunctionCallExpr`, `InExpr`, `IsNullCheckExpr`, `LikeExpr`, `CapturedValueExpr`, `SqlRawExpr`, `RawCallExpr`, `SubqueryExpr`.
 
@@ -292,15 +318,15 @@ Nodes: `ColumnRefExpr`, `ResolvedColumnExpr`, `ParamSlotExpr`, `LiteralExpr`, `B
 - `ContextInfo` — className, namespace, dialect, schema, entities
 - `EntityInfo` — entityName, tableName, namingStyle, columns, navigations, indexes, compositeKeyColumns, customEntityReaderClass
 - `ColumnInfo` — propertyName, columnName, clrType, isNullable, kind, modifiers, isEnum, customTypeMappingClass
-- `RawCallSite` — 60+ fields: method, kind, builderKind, entity, SqlExpr, chainId, conditionalInfo, projectionInfo, IsPreparedTerminal, PreparedQueryEscapeReason
-- `BoundCallSite` — raw + context, dialect, entity (EntityRef), joinedEntity, insertInfo, updateInfo
-- `TranslatedCallSite` — bound + translatedClause (resolvedExpr, parameters, sqlFragment)
-- `QueryPlan` (IR) — kind, tables, joins, where/order/group/having/set terms, projection, pagination, parameters, tier, conditional masks
-- `AssembledPlan` — plan + sqlVariants (mask→sql), PreparedTerminals, PrepareSite
+- `RawCallSite` — 60+ fields: method, kind, builderKind, entity, SqlExpr, chainId, conditionalInfo, projectionInfo, IsPreparedTerminal, PreparedQueryEscapeReason. `WithResultTypeName(string)` immutable copy for post-hoc type patching
+- `BoundCallSite` — raw + context, dialect, entity (EntityRef), joinedEntity, insertInfo, updateInfo. `WithRaw(RawCallSite)` immutable copy
+- `TranslatedCallSite` — bound + translatedClause (resolvedExpr, parameters, sqlFragment). `WithResolvedResultType(string)` chains Raw→Bound→Translated copy
+- `QueryPlan` (IR) — kind, tables, joins, where/order/group/having/set terms, projection, pagination, parameters, tier, conditional masks (`IReadOnlyList<int>`)
+- `AssembledPlan` — plan + sqlVariants (`Dictionary<int, AssembledSqlVariant>`), PreparedTerminals, PrepareSite
 - `CarrierPlan` — isEligible, className, fields, parameters, maskType, implementedInterfaces
 - `EntityRegistry` — multi-key entity index with ambiguity detection
 - `InsertInfo` — columns, identityColumnName, identityPropertyName
-- `ProjectionInfo` — kind (Entity/Anonymous/Dto/Tuple/SingleColumn), resultTypeName, columns
+- `ProjectionInfo` — kind (Entity/Anonymous/Dto/Tuple/SingleColumn), resultTypeName, columns, joinedEntityAlias, failureReason
 
 ### Enums
 
@@ -335,7 +361,7 @@ Single: `UsageSiteDiscovery` extracts `InitializedPropertyNames` from object ini
 
 ### Enum Handling
 
-`SchemaParser` sets `isEnum` flag → carrier parameter binding converts to underlying integral type → reader casts result back to enum.
+`SchemaParser` sets `isEnum` flag → `EnrichParametersFromColumns`/`EnrichSetParametersFromColumns` propagate IsEnum + default `EnumUnderlyingType` to `"int"` → carrier parameter binding converts to underlying integral type → reader casts result back to enum.
 
 ### RawSql Pipeline
 
@@ -348,8 +374,8 @@ Entity lookup: `Dictionary<string, List<(EntityInfo, ContextInfo)>>`. `TryResolv
 ### Generated Files
 
 - `{Namespace}.{Entity}.g.cs` — Entity class (FK as `EntityRef<T,K>`, nav as `NavigationList<T>`)
-- `{Context}.g.cs` — Context partial: constructors, properties, Insert/Update/Delete methods, MigrateAsync
-- `{Context}.Interceptors.g.cs` — `file static` class with `[InterceptsLocation]` methods + carrier classes
+- `{Context}.g.cs` — Context partial: constructors, properties, Insert/Update/Delete methods, MigrateAsync (self-contained: uses `SqlDialect.{Dialect}` enum directly, no instance field dependency)
+- `{Context}.Interceptors.g.cs` — `file static` class with `[InterceptsLocation]` methods + carrier classes (each with `_sql` field)
 
 ### Migration System
 
@@ -395,12 +421,12 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 | Carrier bases | `Internal/CarrierBase.cs`, `JoinedCarrierBase.cs`/`3`/`4`, `ModificationCarrierBase.cs` |
 | Query interfaces | `Query/IQueryBuilder.cs`, `IJoinedQueryBuilder.cs`, `IEntityAccessor.cs`, `Modification/IModificationBuilder.cs` |
 | PreparedQuery | `Query/PreparedQuery.cs` — sealed class, all methods throw (generator replaces) |
-| Diagnostics | `Query/QueryDiagnostics.cs` (rich metadata), `Query/QueryPlan.cs` (lightweight) |
-| Execution | `Internal/QueryExecutor.cs` (static carrier execution methods), `BatchInsertSqlBuilder.cs`, `IQueryExecutionContext.cs`, `OpId.cs` |
+| Diagnostics | `Query/QueryDiagnostics.cs` (rich metadata, int masks), `Query/QueryPlan.cs` (lightweight) |
+| Execution | `Internal/QueryExecutor.cs` (static carrier execution methods), `BatchInsertSqlBuilder.cs`, `IQueryExecutionContext.cs`, `OpId.cs`, `ExpressionHelper.cs` |
 | Context | `Context/QuarryContext.cs` (implements `IQueryExecutionContext`), `QuarryContextAttribute.cs` |
 | Dialect | `Quarry.Shared/Sql/SqlDialect.cs`, `SqlFormatting.cs` (+ per-dialect partials), `SqlClauseJoining.cs` |
 | Aggregates | `Query/Sql.cs` — compile-time markers (Count, Sum, Avg, Min, Max, Raw, Exists) |
-| Logging | `Logging/QueryLog.cs`, `ModifyLog.cs`, `RawSqlLog.cs`, `ConnectionLog.cs`, `ParameterLog.cs`, `ExecutionLog.cs` |
+| Logging | `Logging/QueryLog.cs`, `ModifyLog.cs`, `RawSqlLog.cs`, `ConnectionLog.cs`, `ParameterLog.cs`, `ExecutionLog.cs` — Logsmith Abstraction mode |
 | Migration runtime | `Migration/MigrationRunner.cs`, `MigrationBuilder.cs`, `DdlRenderer.cs`, `SqlTypeMapper.cs` |
 | Migration shared | `Quarry.Shared/Migration/Diff/SchemaDiffer.cs`, `CodeGen/MigrationCodeGenerator.cs`, `SnapshotCodeGenerator.cs` |
 | Scaffold | `Quarry.Shared/Scaffold/IDatabaseIntrospector.cs`, per-dialect introspectors, `ScaffoldCodeGenerator.cs` |
@@ -408,9 +434,9 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 | Parsing | `Parsing/UsageSiteDiscovery.cs`, `AnalyzabilityChecker.cs`, `ChainAnalyzer.cs`, `VariableTracer.cs`, `ContextParser.cs`, `SchemaParser.cs` |
 | IR | `IR/RawCallSite.cs`, `BoundCallSite.cs`, `TranslatedCallSite.cs`, `CallSiteBinder.cs`, `CallSiteTranslator.cs`, `SqlAssembler.cs`, `AssembledPlan.cs`, `EntityRegistry.cs`, `PipelineOrchestrator.cs`, `QueryPlan.cs` |
 | SqlExpr | `IR/SqlExprParser.cs`, `SqlExprAnnotator.cs`, `SqlExprBinder.cs`, `SqlExprClauseTranslator.cs`, `SqlExprRenderer.cs`, `SqlExprNodes.cs` |
-| CodeGen | `CodeGen/FileEmitter.cs`, `CarrierAnalyzer.cs`, `CarrierEmitter.cs`, `ClauseBodyEmitter.cs`, `JoinBodyEmitter.cs`, `TerminalBodyEmitter.cs`, `TransitionBodyEmitter.cs`, `RawSqlBodyEmitter.cs`, `InterceptorRouter.cs` |
+| CodeGen | `CodeGen/FileEmitter.cs`, `CarrierAnalyzer.cs`, `CarrierEmitter.cs`, `ClauseBodyEmitter.cs`, `JoinBodyEmitter.cs`, `TerminalBodyEmitter.cs`, `TerminalEmitHelpers.cs`, `TransitionBodyEmitter.cs`, `RawSqlBodyEmitter.cs`, `InterceptorRouter.cs` |
 | Generation | `Generation/ContextCodeGenerator.cs`, `EntityCodeGenerator.cs`, `InterceptorCodeGenerator.cs`, `MigrateAsyncCodeGenerator.cs` |
-| Projection | `Projection/ProjectionAnalyzer.cs`, `ReaderCodeGenerator.cs` |
+| Projection | `Projection/ProjectionAnalyzer.cs` (whole joined-entity projection via `AnalyzeJoinedEntityProjection`), `ReaderCodeGenerator.cs` (`GetValue()` fallback with explicit cast for `byte[]`/`DateTimeOffset`) |
 | Translation | `Translation/SqlLikeHelpers.cs`, `ParameterInfo.cs` |
 | Trace | `IR/TraceCapture.cs`, `Query/TraceExtensions.cs` |
 | Models | `Models/` — ContextInfo, EntityInfo, ColumnInfo, InsertInfo, ProjectionInfo, InterceptorKind, OptimizationTier, QueryKind, NavigationInfo, RawSqlTypeInfo, MigrationInfo, DiagnosticInfo, CarrierField, FileInterceptorGroup, etc. |
@@ -430,7 +456,7 @@ QueryTestHarness.AssertDialects(
 var results = await q.ExecuteFetchAllAsync(); // execute on SQLite only
 ```
 
-**Test files:** `SqlOutput/CrossDialect*.cs` (18 files, 4-dialect SQL verification), `SqlOutput/PrepareTests.cs` (Prepare single/multi-terminal), `Generation/CarrierGenerationTests.cs` (carrier class emission), `Integration/PrepareIntegrationTests.cs` (Prepare execution), `UsageSiteDiscoveryTests.cs`, `VariableTracerTests.cs`.
+**Test files:** `SqlOutput/CrossDialect*.cs` (18+ files, 4-dialect SQL verification), `SqlOutput/PrepareTests.cs` (Prepare single/multi-terminal), `SqlOutput/JoinedEntityProjectionTests.cs` (joined entity projection), `Generation/CarrierGenerationTests.cs` (carrier class emission), `Generation/MaskAwareTerminalBindingTests.cs` (mask-gated parameter binding), `Generation/InterceptorCodeGeneratorUtilityTests.cs`, `Integration/PrepareIntegrationTests.cs` (Prepare execution), `DialectTests.cs` (pagination formatting), `UsageSiteDiscoveryTests.cs`, `VariableTracerTests.cs`.
 
 ### Build & Test
 
