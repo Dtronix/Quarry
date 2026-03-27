@@ -4,6 +4,8 @@
   href: schema-definition.md
 - name: Context Definition
   href: context-definition.md
+- name: Switching Dialects
+  href: switching-dialects.md
 - name: Querying
   href: querying.md
 - name: Modifications

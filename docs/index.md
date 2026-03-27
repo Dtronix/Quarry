@@ -61,8 +61,8 @@ The source generator is included automatically. Enable interceptors in your `.cs
 <p>Ordinal-based readers and pre-allocated parameter arrays. Fully NativeAOT compatible.</p>
 </div>
 <div class="col-md-4" style="margin-bottom: 1.5rem;">
-<h3>Four Dialects</h3>
-<p>SQLite, PostgreSQL, MySQL, and SQL Server — with correct quoting, parameters, and pagination per dialect.</p>
+<h3>Switch Dialects Instantly</h3>
+<p>Change one enum value and rebuild. SQLite, PostgreSQL, MySQL, SQL Server — all SQL re-emits automatically. Run multiple dialects side by side.</p>
 </div>
 </div>
 
@@ -93,6 +93,9 @@ Install Quarry and write your first compile-time query in minutes.
 
 ### [Schema Definition](articles/schema-definition.md)
 Define tables as C# classes with typed column properties.
+
+### [Switching Dialects](articles/switching-dialects.md)
+Change one enum value to retarget your entire project to a different database.
 
 ### [Querying](articles/querying.md)
 Select, filter, join, aggregate — all compiled to SQL at build time.
