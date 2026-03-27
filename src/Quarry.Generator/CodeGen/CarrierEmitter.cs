@@ -229,21 +229,22 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
-    /// Resolves the carrier base class name for a chain, handling tuple result types correctly.
+    /// Resolves the interface list for a carrier class, replacing the former base class hierarchy.
+    /// Returns a list of fully-closed interface names the carrier must implement.
     /// </summary>
-    internal static string ResolveCarrierBaseClass(AssembledPlan chain)
+    internal static string[] ResolveCarrierInterfaceList(AssembledPlan chain)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
 
-        // Modification chains use modification-specific base classes
+        // Modification chains
         if (chain.QueryKind == QueryKind.Delete)
-            return $"DeleteCarrierBase<{entityType}>";
+            return [$"IEntityAccessor<{entityType}>", $"IDeleteBuilder<{entityType}>", $"IExecutableDeleteBuilder<{entityType}>"];
         if (chain.QueryKind == QueryKind.Update)
-            return $"UpdateCarrierBase<{entityType}>";
+            return [$"IEntityAccessor<{entityType}>", $"IUpdateBuilder<{entityType}>", $"IExecutableUpdateBuilder<{entityType}>"];
         if (chain.QueryKind == QueryKind.Insert)
-            return $"InsertCarrierBase<{entityType}>";
+            return [$"IEntityAccessor<{entityType}>", $"IInsertBuilder<{entityType}>"];
         if (chain.QueryKind == QueryKind.BatchInsert)
-            return $"BatchInsertCarrierBase<{entityType}>";
+            return [$"IEntityAccessor<{entityType}>", $"IBatchInsertBuilder<{entityType}>", $"IExecutableBatchInsert<{entityType}>"];
 
         var hasSelect = chain.GetClauseEntries().Any(c => c.Role == ClauseRole.Select);
         var joinCount = chain.IsJoinChain ? (chain.JoinedEntityTypeNames?.Count ?? 1) - 1 : 0;
@@ -263,31 +264,37 @@ internal static class CarrierEmitter
         if (joinCount == 0)
         {
             return resultType != null
-                ? $"CarrierBase<{entityType}, {resultType}>"
-                : $"CarrierBase<{entityType}>";
+                ? [$"IEntityAccessor<{entityType}>", $"IQueryBuilder<{entityType}>", $"IQueryBuilder<{entityType}, {resultType}>"]
+                : [$"IEntityAccessor<{entityType}>", $"IQueryBuilder<{entityType}>"];
         }
 
         var joinedTypes = chain.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
         var joinedStr = string.Join(", ", joinedTypes);
+        var interfaces = new List<string>
+        {
+            $"IEntityAccessor<{joinedTypes[0]}>",
+            $"IQueryBuilder<{joinedTypes[0]}>",
+            $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}>"
+        };
+
+        if (joinCount >= 2)
+            interfaces.Add($"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}>");
+        if (joinCount >= 3)
+            interfaces.Add($"IJoinedQueryBuilder4<{joinedStr}>");
 
         if (resultType != null)
         {
-            return joinCount switch
+            var lastJoinInterface = joinCount switch
             {
-                1 => $"JoinedCarrierBase<{joinedStr}, {resultType}>",
-                2 => $"JoinedCarrierBase3<{joinedStr}, {resultType}>",
-                3 => $"JoinedCarrierBase4<{joinedStr}, {resultType}>",
-                _ => $"JoinedCarrierBase<{joinedStr}, {resultType}>"
+                1 => $"IJoinedQueryBuilder<{joinedStr}, {resultType}>",
+                2 => $"IJoinedQueryBuilder3<{joinedStr}, {resultType}>",
+                3 => $"IJoinedQueryBuilder4<{joinedStr}, {resultType}>",
+                _ => $"IJoinedQueryBuilder<{joinedStr}, {resultType}>"
             };
+            interfaces.Add(lastJoinInterface);
         }
 
-        return joinCount switch
-        {
-            1 => $"JoinedCarrierBase<{joinedStr}>",
-            2 => $"JoinedCarrierBase3<{joinedStr}>",
-            3 => $"JoinedCarrierBase4<{joinedStr}>",
-            _ => $"JoinedCarrierBase<{joinedStr}>"
-        };
+        return interfaces.ToArray();
     }
 
     internal static string GetJoinedConcreteBuilderTypeName(int entityCount, string[] entityTypes)
@@ -473,6 +480,9 @@ internal static class CarrierEmitter
         // Emit static SQL field: single string for single-variant, string[] for multi-variant
         EmitCarrierSqlField(sb, chain);
 
+        // Emit the execution context field (formerly inherited from CarrierBase)
+        sb.AppendLine("    internal IQueryExecutionContext? Ctx;");
+
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)
         {
@@ -485,13 +495,6 @@ internal static class CarrierEmitter
         foreach (var staticField in info.StaticFields)
         {
             sb.AppendLine($"    internal static {staticField.TypeName} {staticField.Name};");
-        }
-
-        // Emit dead methods (explicit interface impls that throw)
-        foreach (var stub in info.DeadMethods)
-        {
-            sb.AppendLine();
-            EmitDeadInterfaceMethod(sb, stub);
         }
 
         sb.AppendLine("}");
@@ -529,15 +532,6 @@ internal static class CarrierEmitter
             }
             sb.AppendLine("    ];");
         }
-    }
-
-    /// <summary>
-    /// Emits an explicit interface method implementation that throws InvalidOperationException.
-    /// </summary>
-    private static void EmitDeadInterfaceMethod(StringBuilder sb, CarrierInterfaceStub stub)
-    {
-        sb.AppendLine($"    {stub.FullSignature}");
-        sb.AppendLine($"        => throw new InvalidOperationException(\"Method {stub.MethodName} is not used in this carrier-optimized chain.\");");
     }
 
     /// <summary>
