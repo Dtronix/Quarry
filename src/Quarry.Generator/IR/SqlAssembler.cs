@@ -501,8 +501,12 @@ internal static class SqlAssembler
             sb.Append(" ORDER BY (SELECT NULL)");
         }
 
-        if (pag.LiteralLimit != null || pag.LiteralOffset != null)
+        bool hasParamLimit = pag.LimitParamIndex != null;
+        bool hasParamOffset = pag.OffsetParamIndex != null;
+
+        if (!hasParamLimit && !hasParamOffset)
         {
+            // All values are literal (or absent) — use the literal formatter
             var pagination = SqlFormatting.FormatPagination(dialect, pag.LiteralLimit, pag.LiteralOffset);
             if (!string.IsNullOrEmpty(pagination))
             {
@@ -512,22 +516,24 @@ internal static class SqlAssembler
         }
         else
         {
-            int? limitIdx = pag.LimitParamIndex;
-            int? offsetIdx = pag.OffsetParamIndex;
+            // At least one value is parameterized — remap param indices and
+            // use the mixed formatter that handles literal/parameterized combinations
+            int? limitIdx = null;
+            int? offsetIdx = null;
 
-            // Remap to current paramIndex if needed
-            if (limitIdx != null)
+            if (hasParamLimit)
             {
                 limitIdx = paramIndex;
                 paramIndex++;
             }
-            if (offsetIdx != null)
+            if (hasParamOffset)
             {
                 offsetIdx = paramIndex;
                 paramIndex++;
             }
 
-            var pagination = SqlFormatting.FormatParameterizedPagination(dialect, limitIdx, offsetIdx);
+            var pagination = SqlFormatting.FormatMixedPagination(
+                dialect, pag.LiteralLimit, limitIdx, pag.LiteralOffset, offsetIdx);
             if (!string.IsNullOrEmpty(pagination))
             {
                 sb.Append(' ');
