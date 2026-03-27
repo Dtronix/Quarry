@@ -185,72 +185,60 @@ internal static partial class SqlFormatting
     }
 
     /// <summary>
-    /// Formats pagination with parameterized limit/offset values (compile-time path).
+    /// Formats pagination when limit/offset values may be any combination of literals and parameters.
+    /// Each of limit/offset is resolved from either a literal value or a parameter index.
     /// </summary>
-    public static string FormatParameterizedPagination(
+    internal static string FormatMixedPagination(
         SqlDialect dialect,
-        int? limitParamIndex,
-        int? offsetParamIndex)
+        int? literalLimit, int? limitParamIndex,
+        int? literalOffset, int? offsetParamIndex)
     {
-        if (limitParamIndex == null && offsetParamIndex == null)
+        // Resolve each to its string representation
+        string? limitStr = literalLimit.HasValue
+            ? literalLimit.Value.ToString()
+            : limitParamIndex.HasValue
+                ? FormatParameter(dialect, limitParamIndex.Value)
+                : null;
+
+        string? offsetStr = literalOffset.HasValue
+            ? literalOffset.Value.ToString()
+            : offsetParamIndex.HasValue
+                ? FormatParameter(dialect, offsetParamIndex.Value)
+                : null;
+
+        if (limitStr == null && offsetStr == null)
             return string.Empty;
 
         if (dialect == SqlDialect.SqlServer)
-            return FormatSqlServerParameterizedPagination(dialect, limitParamIndex, offsetParamIndex);
-
-        return FormatLimitOffsetParameterized(dialect, limitParamIndex, offsetParamIndex);
-    }
-
-    internal static string FormatLimitOffsetParameterized(
-        SqlDialect dialect,
-        int? limitParamIndex,
-        int? offsetParamIndex)
-    {
-        var sb = new StringBuilder();
-
-        if (limitParamIndex.HasValue)
         {
-            sb.Append("LIMIT ");
-            sb.Append(FormatParameter(dialect, limitParamIndex.Value));
-        }
-
-        if (offsetParamIndex.HasValue)
-        {
-            if (sb.Length > 0) sb.Append(' ');
+            var sb = new StringBuilder();
             sb.Append("OFFSET ");
-            sb.Append(FormatParameter(dialect, offsetParamIndex.Value));
+            sb.Append(offsetStr ?? "0");
+            sb.Append(" ROWS");
+            if (limitStr != null)
+            {
+                sb.Append(" FETCH NEXT ");
+                sb.Append(limitStr);
+                sb.Append(" ROWS ONLY");
+            }
+            return sb.ToString();
         }
 
-        return sb.ToString();
-    }
-
-    internal static string FormatSqlServerParameterizedPagination(
-        SqlDialect dialect,
-        int? limitParamIndex,
-        int? offsetParamIndex)
-    {
-        var sb = new StringBuilder();
-
-        // OFFSET is required for SQL Server even if 0
-        sb.Append("OFFSET ");
-        if (offsetParamIndex.HasValue)
         {
-            sb.Append(FormatParameter(dialect, offsetParamIndex.Value));
+            var sb = new StringBuilder();
+            if (limitStr != null)
+            {
+                sb.Append("LIMIT ");
+                sb.Append(limitStr);
+            }
+            if (offsetStr != null)
+            {
+                if (sb.Length > 0) sb.Append(' ');
+                sb.Append("OFFSET ");
+                sb.Append(offsetStr);
+            }
+            return sb.ToString();
         }
-        else
-        {
-            sb.Append('0');
-        }
-        sb.Append(" ROWS");
-
-        if (limitParamIndex.HasValue)
-        {
-            sb.Append(" FETCH NEXT ");
-            sb.Append(FormatParameter(dialect, limitParamIndex.Value));
-            sb.Append(" ROWS ONLY");
-        }
-
-        return sb.ToString();
     }
 
     /// <summary>

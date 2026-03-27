@@ -74,11 +74,15 @@ internal static class PipelineOrchestrator
 
         ct.ThrowIfCancellationRequested();
 
+        // Resolve unresolved result types from chain projections (e.g., tuple types
+        // that the semantic model couldn't resolve during discovery due to reassignment).
+        var resultTypePatches = BuildResultTypePatches(assembledPlans);
+
         // Propagate chain-updated sites (e.g., JoinedEntityTypeNames from ChainAnalyzer)
         // back into the main site array so downstream code sees a single consistent view.
         // This eliminates the need for FileEmitter to conditionally select between original
         // and chain-updated sites.
-        var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans);
+        var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans, resultTypePatches);
 
         // Group into files
         return GroupTranslatedIntoFiles(updatedSites, assembledPlans, carrierPlans, diagnostics);
@@ -142,13 +146,96 @@ internal static class PipelineOrchestrator
     }
 
     /// <summary>
+    /// Builds a dictionary of result type patches for clause/execution sites whose
+    /// ResultTypeName is unresolved (e.g., tuple types rendered as (object, object, object)
+    /// due to Roslyn semantic model limitations on reassigned variables).
+    /// The resolved type comes from the chain's SelectProjection after BuildProjection enrichment.
+    /// </summary>
+    private static Dictionary<string, string> BuildResultTypePatches(List<AssembledPlan> assembledPlans)
+    {
+        var patches = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var plan in assembledPlans)
+        {
+            var resolvedType = plan.Plan.Projection?.ResultTypeName;
+            if (resolvedType == null || resolvedType.Length == 0 || IsUnresolvedResultType(resolvedType))
+                continue;
+
+            // Patch execution site if its result type is unresolved
+            if (IsUnresolvedResultType(plan.ExecutionSite.ResultTypeName))
+                patches[plan.ExecutionSite.UniqueId] = resolvedType;
+
+            // Patch clause sites with unresolved result types
+            foreach (var cs in plan.ClauseSites)
+            {
+                if (IsUnresolvedResultType(cs.ResultTypeName))
+                    patches[cs.UniqueId] = resolvedType;
+            }
+        }
+
+        return patches;
+    }
+
+    /// <summary>
+    /// Determines whether a non-null ResultTypeName is unresolved and needs patching.
+    /// A null ResultTypeName means "no result type" (entity-only query), which is valid.
+    /// </summary>
+    private static bool IsUnresolvedResultType(string? resultTypeName)
+    {
+        if (resultTypeName == null)
+            return false;
+        if (resultTypeName.Length == 0 || resultTypeName == "?" || resultTypeName == "object")
+            return true;
+
+        // Tuple types with unresolved elements: "object" type parts, "?" type parts,
+        // or missing type parts (e.g., "( OrderId,  Total)" where types are empty)
+        if (resultTypeName.StartsWith("(") && resultTypeName.EndsWith(")"))
+        {
+            var inner = resultTypeName.Substring(1, resultTypeName.Length - 2);
+            foreach (var element in inner.Split(','))
+            {
+                var trimmed = element.Trim();
+                if (trimmed.Length == 0)
+                    return true;
+
+                // Named tuple element: "type name" format. Check the type part.
+                var spaceIdx = trimmed.LastIndexOf(' ');
+                if (spaceIdx >= 0)
+                {
+                    var typePart = trimmed.Substring(0, spaceIdx).Trim();
+                    // Empty type part means unresolved (e.g., " OrderId" → type is empty, name is "OrderId")
+                    if (typePart.Length == 0 || typePart == "object" || typePart == "?")
+                        return true;
+                }
+                else
+                {
+                    // Single token — no space. Could be a type-only element like "int"
+                    // or a bare "object"/"?" error type.
+                    if (trimmed == "object" || trimmed == "?")
+                        return true;
+                }
+
+            }
+
+            // If the inner string starts with a space, the first element's type is empty
+            // e.g., "( OrderId, decimal Total)" → first element has no type
+            if (inner.Length > 0 && inner[0] == ' ')
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Replaces sites in the main array with chain-updated versions from AssembledPlans.
     /// ChainAnalyzer may update sites (e.g., propagating JoinedEntityTypeNames to post-join
-    /// and execution sites). This ensures all downstream code sees the enriched sites.
+    /// and execution sites). Also applies result type patches for unresolved tuple types.
+    /// This ensures all downstream code sees the enriched sites.
     /// </summary>
     private static ImmutableArray<TranslatedCallSite> PropagateChainUpdatedSites(
         ImmutableArray<TranslatedCallSite> allSites,
-        List<AssembledPlan> assembledPlans)
+        List<AssembledPlan> assembledPlans,
+        Dictionary<string, string> resultTypePatches)
     {
         // Build lookup of chain-updated sites by UniqueId
         var chainUpdatedSites = new Dictionary<string, TranslatedCallSite>(StringComparer.Ordinal);
@@ -157,6 +244,25 @@ internal static class PipelineOrchestrator
             chainUpdatedSites[plan.ExecutionSite.UniqueId] = plan.ExecutionSite;
             foreach (var cs in plan.ClauseSites)
                 chainUpdatedSites[cs.UniqueId] = cs;
+        }
+
+        // Apply result type patches on top of chain-updated sites
+        foreach (var kvp in resultTypePatches)
+        {
+            if (chainUpdatedSites.TryGetValue(kvp.Key, out var site))
+                chainUpdatedSites[kvp.Key] = site.WithResolvedResultType(kvp.Value);
+            else
+            {
+                // Site not in any chain's updated set — find it in allSites
+                foreach (var s in allSites)
+                {
+                    if (s.UniqueId == kvp.Key)
+                    {
+                        chainUpdatedSites[kvp.Key] = s.WithResolvedResultType(kvp.Value);
+                        break;
+                    }
+                }
+            }
         }
 
         if (chainUpdatedSites.Count == 0)

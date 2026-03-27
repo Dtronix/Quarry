@@ -148,29 +148,43 @@ internal static class SqlExprAnnotator
             if (typeMap.ContainsKey(name)) continue;
 
             var typeInfo = semanticModel.GetTypeInfo(identifier);
-            if (typeInfo.Type != null)
+            if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
             {
                 typeMap[name] = typeInfo.Type.ToDisplayString();
             }
         }
 
-        // Collect constant values from member access expressions (e.g., EnumType.Member)
+        // Collect constant values and resolved types from member access expressions
         foreach (var memberAccess in node.DescendantNodes().OfType<MemberAccessExpressionSyntax>())
         {
             var text = memberAccess.ToString();
-            if (constantMap.ContainsKey(text)) continue;
 
-            var constant = semanticModel.GetConstantValue(memberAccess);
-            if (constant.HasValue && constant.Value != null)
+            // Check for compile-time constants (e.g., EnumType.Member)
+            if (!constantMap.ContainsKey(text))
             {
-                if (constant.Value is int intVal)
-                    constantMap[text] = intVal.ToString();
-                else if (constant.Value is long longVal)
-                    constantMap[text] = longVal.ToString();
-                else if (constant.Value is byte byteVal)
-                    constantMap[text] = byteVal.ToString();
-                else if (constant.Value is short shortVal)
-                    constantMap[text] = shortVal.ToString();
+                var constant = semanticModel.GetConstantValue(memberAccess);
+                if (constant.HasValue && constant.Value != null)
+                {
+                    if (constant.Value is int intVal)
+                        constantMap[text] = intVal.ToString();
+                    else if (constant.Value is long longVal)
+                        constantMap[text] = longVal.ToString();
+                    else if (constant.Value is byte byteVal)
+                        constantMap[text] = byteVal.ToString();
+                    else if (constant.Value is short shortVal)
+                        constantMap[text] = shortVal.ToString();
+                }
+            }
+
+            // Resolve the type of the member access expression itself (e.g., user.UserId → int)
+            // This enables correct carrier field types for property access on captured variables
+            if (!typeMap.ContainsKey(text))
+            {
+                var typeInfo = semanticModel.GetTypeInfo(memberAccess);
+                if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
+                {
+                    typeMap[text] = typeInfo.Type.ToDisplayString();
+                }
             }
         }
     }
@@ -186,6 +200,9 @@ internal static class SqlExprAnnotator
                 // Check if this captured value is a compile-time constant (e.g., enum member)
                 if (constantMap != null && constantMap.TryGetValue(captured.SyntaxText, out var literalValue))
                     return new LiteralExpr(literalValue, "int");
+                // Prefer the full expression type (e.g., "user.UserId" → int) over the variable type (e.g., "user" → User)
+                if (typeMap.TryGetValue(captured.SyntaxText, out var exprType))
+                    return captured.WithClrType(exprType);
                 if (typeMap.TryGetValue(captured.VariableName, out var clrType))
                     return captured.WithClrType(clrType);
                 return captured;

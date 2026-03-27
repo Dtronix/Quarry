@@ -70,6 +70,11 @@ public partial class AppDb : QuarryContext
 
 Multiple contexts with different dialects can coexist. Generator resolves context from receiver chain at each call site.
 
+**InterceptorsNamespaces:** Consumer `.csproj` must add the context's namespace to `InterceptorsNamespaces`. The generator emits interceptors into the context's namespace (or `Quarry.Generated` if the context has no namespace):
+```xml
+<InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
+```
+
 ### Querying
 
 ```csharp

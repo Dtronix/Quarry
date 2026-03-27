@@ -13,7 +13,7 @@ public class MigrateAsyncCodeGeneratorTests
             new(1, "InitialCreate", "M0001_InitialCreate", "MyApp.Migrations")
         };
 
-        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", migrations);
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", migrations);
 
         Assert.That(code, Does.Contain("partial class AppDbContext"));
         Assert.That(code, Does.Contain("namespace MyApp;"));
@@ -34,7 +34,7 @@ public class MigrateAsyncCodeGeneratorTests
             new(2, "AddUsers", "M0002_AddUsers", "MyApp.Migrations"),
         };
 
-        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", migrations);
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", migrations);
 
         var idx1 = code.IndexOf("M0001_InitialCreate");
         var idx2 = code.IndexOf("M0002_AddUsers");
@@ -46,7 +46,7 @@ public class MigrateAsyncCodeGeneratorTests
     [Test]
     public void Generate_EmptyMigrations_EmitsEmptyArray()
     {
-        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", new List<MigrationInfo>());
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", new List<MigrationInfo>());
 
         Assert.That(code, Does.Contain("MigrateAsync"));
         Assert.That(code, Does.Contain("MigrationRunner.RunAsync"));
@@ -61,10 +61,41 @@ public class MigrateAsyncCodeGeneratorTests
             new(2, "Seed", "M0002_Seed", "MyApp.Seeds"),
         };
 
-        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", migrations);
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", migrations);
 
         Assert.That(code, Does.Contain("using MyApp.Migrations;"));
         Assert.That(code, Does.Contain("using MyApp.Seeds;"));
+    }
+
+    [Test]
+    public void Generate_EmitsDialectConstant_NotFieldReference()
+    {
+        var migrations = new List<MigrationInfo>
+        {
+            new(1, "Init", "M0001_Init", "MyApp.Migrations")
+        };
+
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", migrations);
+
+        Assert.That(code, Does.Contain("SqlDialect.SQLite"));
+        Assert.That(code, Does.Not.Contain("_dialect"));
+        Assert.That(code, Does.Contain("using Quarry;"));
+    }
+
+    [TestCase("SQLite", "SqlDialect.SQLite")]
+    [TestCase("PostgreSQL", "SqlDialect.PostgreSQL")]
+    [TestCase("MySQL", "SqlDialect.MySQL")]
+    [TestCase("SqlServer", "SqlDialect.SqlServer")]
+    public void Generate_AllDialects_EmitCorrectConstant(string dialectName, string expected)
+    {
+        var migrations = new List<MigrationInfo>
+        {
+            new(1, "Init", "M0001_Init", "MyApp.Migrations")
+        };
+
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", dialectName, migrations);
+
+        Assert.That(code, Does.Contain(expected));
     }
 
     [Test]
@@ -75,7 +106,7 @@ public class MigrateAsyncCodeGeneratorTests
             new(1, "Initial Create", "M0001_InitialCreate", "MyApp.Migrations"),
         };
 
-        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", migrations);
+        var code = MigrateAsyncCodeGenerator.Generate("AppDbContext", "MyApp", "SQLite", migrations);
 
         Assert.That(code, Does.Contain("\"Initial Create\""));
     }

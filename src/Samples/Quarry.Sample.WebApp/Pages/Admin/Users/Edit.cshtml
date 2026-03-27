@@ -1,0 +1,65 @@
+@page "{id:int}"
+@model Quarry.Sample.WebApp.Pages.Admin.Users.EditModel
+@{
+    ViewData["Title"] = $"Edit User — {Model.UserDetail?.UserName}";
+    Layout = "_Layout";
+}
+
+@if (Model.UserDetail is null)
+{
+    <div class="card"><p>User not found.</p></div>
+    return;
+}
+
+<h1>Edit: @Model.UserDetail.UserName</h1>
+
+<div class="card">
+    <p><strong>Email:</strong> @Model.UserDetail.Email</p>
+    <p><strong>Created:</strong> @Model.UserDetail.CreatedAt.ToString("yyyy-MM-dd HH:mm")</p>
+    <p><strong>Last Login:</strong> @(Model.UserDetail.LastLoginAt?.ToString("yyyy-MM-dd HH:mm") ?? "Never")</p>
+
+    <div class="actions" style="margin-top:1rem;">
+        <form method="post" asp-page-handler="ToggleActive">
+            <input type="hidden" name="id" value="@Model.UserDetail.UserId" />
+            <button type="submit" class="btn btn-sm @(Model.UserDetail.IsActive ? "btn-danger" : "btn-primary")">
+                @(Model.UserDetail.IsActive ? "Deactivate" : "Reactivate")
+            </button>
+        </form>
+
+        <form method="post" asp-page-handler="ChangeRole">
+            <input type="hidden" name="id" value="@Model.UserDetail.UserId" />
+            <input type="hidden" name="newRole" value="@(Model.UserDetail.Role == UserRole.Admin ? "User" : "Admin")" />
+            <button type="submit" class="btn btn-sm btn-primary">
+                Make @(Model.UserDetail.Role == UserRole.Admin ? "User" : "Admin")
+            </button>
+        </form>
+
+        <form method="post" asp-page-handler="Delete" onsubmit="return confirm('Delete this user and all related data?');">
+            <input type="hidden" name="id" value="@Model.UserDetail.UserId" />
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+        </form>
+    </div>
+</div>
+
+@if (Model.RecentAudit.Count > 0)
+{
+    <div class="card">
+        <h2>Recent Activity</h2>
+        <table>
+            <thead>
+                <tr><th>Action</th><th>Detail</th><th>IP</th><th>Time</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var a in Model.RecentAudit)
+                {
+                    <tr>
+                        <td>@a.Action</td>
+                        <td>@a.Detail</td>
+                        <td>@a.IpAddress</td>
+                        <td>@a.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

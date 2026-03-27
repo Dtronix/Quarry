@@ -1,0 +1,45 @@
+@page
+@model Quarry.Sample.WebApp.Pages.Admin.AuditLogModel
+@{
+    ViewData["Title"] = "Audit Log";
+    Layout = "_Layout";
+}
+
+<h1>Audit Log</h1>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr><th>User</th><th>Action</th><th>Detail</th><th>IP</th><th>Time</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var entry in Model.Entries)
+            {
+                <tr>
+                    <td>@entry.UserName</td>
+                    <td>@entry.Action</td>
+                    <td>@entry.Detail</td>
+                    <td>@entry.IpAddress</td>
+                    <td>@entry.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @if (Model.TotalPages > 1)
+    {
+        <div class="pagination">
+            @for (var i = 1; i <= Model.TotalPages; i++)
+            {
+                if (i == Model.Page)
+                {
+                    <span class="current">@i</span>
+                }
+                else
+                {
+                    <a href="?page=@i">@i</a>
+                }
+            }
+        </div>
+    }
+</div>

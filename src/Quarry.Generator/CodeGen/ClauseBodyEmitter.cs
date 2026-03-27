@@ -49,9 +49,10 @@ internal static class ClauseBodyEmitter
 
         if (site.ResultTypeName != null)
         {
-            var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
+            var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
-            sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
+            sb.AppendLine($"        this {receiverType} builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
         }
         else
@@ -76,7 +77,7 @@ internal static class ClauseBodyEmitter
         {
             var concreteBuilder = $"QueryBuilder<{entityType}>";
             var retInterface = site.ResultTypeName != null
-                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields);
@@ -106,22 +107,26 @@ internal static class ClauseBodyEmitter
 
         if (site.ResultTypeName != null)
         {
-            var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
             var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
             if (isBrokenTuple)
                 keyType = null;
 
             if (keyType != null)
             {
+                var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
-                sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
+                sb.AppendLine($"        this {receiverType} builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
             {
-                sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
-                sb.AppendLine($"        this {thisType}<T, TResult> builder,");
+                var isAccessor = InterceptorCodeGenerator.IsEntityAccessorType(thisType);
+                var genericReceiver = isAccessor ? $"{thisType}<T>" : $"{thisType}<T, TResult>";
+                var genericReturn = $"{returnType}<T, TResult>";
+                sb.AppendLine($"    public static {genericReturn} {methodName}<T, TResult, TKey>(");
+                sb.AppendLine($"        this {genericReceiver} builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
             }
@@ -153,7 +158,7 @@ internal static class ClauseBodyEmitter
             {
                 var concreteBuilder = $"QueryBuilder<{entityType}>";
                 var retInterface = site.ResultTypeName != null
-                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                     concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
@@ -256,21 +261,24 @@ internal static class ClauseBodyEmitter
 
         if (site.ResultTypeName != null)
         {
-            var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
             var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
             if (isBrokenTuple)
                 keyType = null;
 
             if (keyType != null)
             {
+                var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
-                sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
+                sb.AppendLine($"        this {receiverType} builder,");
                 sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _)");
             }
             else
             {
+                var isAccessor = InterceptorCodeGenerator.IsEntityAccessorType(thisType);
+                var genericReceiver = isAccessor ? $"{thisType}<T>" : $"{thisType}<T, TResult>";
                 sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
-                sb.AppendLine($"        this {thisType}<T, TResult> builder,");
+                sb.AppendLine($"        this {genericReceiver} builder,");
                 sb.AppendLine($"        Expression<Func<T, TKey>> _) where T : class");
             }
         }
@@ -307,7 +315,7 @@ internal static class ClauseBodyEmitter
             {
                 var concreteBuilder = $"QueryBuilder<{entityType}>";
                 var retInterface = site.ResultTypeName != null
-                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                    ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                     concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
@@ -347,9 +355,10 @@ internal static class ClauseBodyEmitter
 
         if (site.ResultTypeName != null)
         {
-            var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
+            var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
+            var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
-            sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
+            sb.AppendLine($"        this {receiverType} builder,");
             sb.AppendLine($"        Expression<Func<{entityType}, bool>> _)");
         }
         else
@@ -374,7 +383,7 @@ internal static class ClauseBodyEmitter
         {
             var concreteBuilder = $"QueryBuilder<{entityType}>";
             var retInterface = site.ResultTypeName != null
-                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName))}>"
+                ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
@@ -577,14 +586,17 @@ internal static class ClauseBodyEmitter
                 if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
                 var carrierParam = prebuiltChain.ChainParameters[globalIdx];
 
+                var castType = carrierParam.ClrType == "?" || carrierParam.ClrType == "object"
+                    ? "object?"
+                    : carrierParam.ClrType;
                 if (p.IsCaptured)
                 {
                     sb.AppendLine($"        {carrier.ClassName}.F{globalIdx} ??= action.Target!.GetType().GetField(\"{p.ValueExpression}\")!;");
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
                 }
                 else
                 {
-                    sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){p.ValueExpression}!;");
+                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){p.ValueExpression}!;");
                 }
             }
 

@@ -26,6 +26,8 @@ public abstract class JoinedCarrierBase3<T1, T2, T3> : IEntityAccessor<T1>, IQue
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder<T1, TJoined> IEntityAccessor<T1>.LeftJoin<TJoined>(Expression<Func<T1, NavigationList<TJoined>>> navigation)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IQueryBuilder<T1> IEntityAccessor<T1>.GroupBy<TKey>(Expression<Func<T1, TKey>> keySelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.GroupBy is not intercepted in this optimized chain. This indicates a code generation bug.");
     IQueryBuilder<T1> IEntityAccessor<T1>.Distinct()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Distinct is not intercepted in this optimized chain. This indicates a code generation bug.");
     IQueryBuilder<T1> IEntityAccessor<T1>.WithTimeout(TimeSpan timeout)
@@ -197,6 +199,8 @@ public abstract class JoinedCarrierBase3<T1, T2, T3, TResult> : IEntityAccessor<
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder<T1, TJoined> IEntityAccessor<T1>.LeftJoin<TJoined>(Expression<Func<T1, NavigationList<TJoined>>> navigation)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IQueryBuilder<T1> IEntityAccessor<T1>.GroupBy<TKey>(Expression<Func<T1, TKey>> keySelector)
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.GroupBy is not intercepted in this optimized chain. This indicates a code generation bug.");
     IQueryBuilder<T1> IEntityAccessor<T1>.Distinct()
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Distinct is not intercepted in this optimized chain. This indicates a code generation bug.");
     IQueryBuilder<T1> IEntityAccessor<T1>.WithTimeout(TimeSpan timeout)

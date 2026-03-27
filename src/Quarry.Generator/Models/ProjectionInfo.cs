@@ -16,7 +16,8 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         bool isOptimalPath = true,
         string? nonOptimalReason = null,
         ProjectionFailureReason failureReason = ProjectionFailureReason.None,
-        string? customEntityReaderClass = null)
+        string? customEntityReaderClass = null,
+        string? joinedEntityAlias = null)
     {
         Kind = kind;
         ResultTypeName = resultTypeName;
@@ -25,6 +26,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         NonOptimalReason = nonOptimalReason;
         FailureReason = failureReason;
         CustomEntityReaderClass = customEntityReaderClass;
+        JoinedEntityAlias = joinedEntityAlias;
     }
 
     /// <summary>
@@ -65,6 +67,15 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
     public string? CustomEntityReaderClass { get; }
 
     /// <summary>
+    /// Gets the table alias of the joined entity selected in a whole-entity projection
+    /// (e.g., "t1" for <c>.Select((s, u) => u)</c>).
+    /// When set, BuildProjection populates all columns from the entity at this alias
+    /// using the registry, because the placeholder analysis path cannot resolve columns
+    /// at discovery time. Null for non-joined or non-entity projections.
+    /// </summary>
+    public string? JoinedEntityAlias { get; }
+
+    /// <summary>
     /// Creates a projection info for a failed analysis.
     /// </summary>
     public static ProjectionInfo CreateFailed(
@@ -91,6 +102,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
             && NonOptimalReason == other.NonOptimalReason
             && FailureReason == other.FailureReason
             && CustomEntityReaderClass == other.CustomEntityReaderClass
+            && JoinedEntityAlias == other.JoinedEntityAlias
             && EqualityHelpers.SequenceEqual(Columns, other.Columns);
     }
 
@@ -98,7 +110,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count);
+        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count, JoinedEntityAlias);
     }
 }
 

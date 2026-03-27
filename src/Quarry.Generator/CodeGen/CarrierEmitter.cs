@@ -561,7 +561,7 @@ internal static class CarrierEmitter
         sb.AppendLine(" };");
 
         // Bind parameters if this clause has any
-        EmitCarrierParamBindings(sb, siteParams, globalParamOffset);
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
 
         // Set clause bit if conditional
         if (bitIndex.HasValue)
@@ -581,7 +581,7 @@ internal static class CarrierEmitter
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        EmitCarrierParamBindings(sb, siteParams, globalParamOffset);
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
 
         if (bitIndex.HasValue)
         {
@@ -648,14 +648,7 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
-    /// Emits parameter value extraction into __pVal* local variables.
-    /// </summary>
-    private static void EmitCarrierParameterLocals(
-        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
-        => TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
-
-    /// <summary>
-    /// Emits DbCommand creation and binds __pVal* locals to parameters.
+    /// Emits DbCommand creation and binds parameters with mask-gated conditional support.
     /// </summary>
     private static void EmitCarrierCommandBinding(
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
@@ -670,28 +663,89 @@ internal static class CarrierEmitter
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
 
+        var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+        var hasConditional = chain.ConditionalTerms.Count > 0;
+        var maskType = hasConditional ? GetMaskType(chain) : null;
+
+        int? currentBitIndex = null;
+        bool inConditionalBlock = false;
+
         for (int i = 0; i < paramCount; i++)
         {
             var param = chain.ChainParameters[i];
-            sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
-            sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
-            sb.AppendLine($"        __p{i}.Value = __pVal{i};");
+            condMap.TryGetValue(i, out var ci);
 
-            if (param.TypeMappingClass != null)
+            if (ci.IsConditional)
             {
-                var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
-                sb.AppendLine($"        ({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+                if (!inConditionalBlock || ci.BitIndex != currentBitIndex)
+                {
+                    // Close previous block if open
+                    if (inConditionalBlock)
+                        sb.AppendLine("        }");
+
+                    sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex!.Value}))) != 0)");
+                    sb.AppendLine("        {");
+                    inConditionalBlock = true;
+                    currentBitIndex = ci.BitIndex;
+                }
+            }
+            else
+            {
+                // Close any open conditional block
+                if (inConditionalBlock)
+                {
+                    sb.AppendLine("        }");
+                    inConditionalBlock = false;
+                    currentBitIndex = null;
+                }
             }
 
-            sb.AppendLine($"        __cmd.Parameters.Add(__p{i});");
+            var indent = inConditionalBlock ? "            " : "        ";
+
+            if (param.IsCollection)
+            {
+                // Collection parameters are expanded into N individual DbParameters.
+                // EmitCollectionExpansion (called in preamble) already declared:
+                //   __col{i} = __c.P{i}        (IReadOnlyList<T>)
+                //   __col{i}Len = count
+                //   __col{i}Parts = string[]    (parameter name per element)
+                sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
+                sb.AppendLine($"{indent}{{");
+                sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
+                sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
+                sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
+                sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
+                sb.AppendLine($"{indent}}}");
+            }
+            else
+            {
+                var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
+
+                sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
+                sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
+                sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
+
+                if (param.TypeMappingClass != null)
+                {
+                    var mappingField = InterceptorCodeGenerator.GetMappingFieldName(param.TypeMappingClass);
+                    sb.AppendLine($"{indent}({mappingField} as IDialectAwareTypeMapping)?.ConfigureParameter({dialectLiteral}, __p{i});");
+                }
+
+                sb.AppendLine($"{indent}__cmd.Parameters.Add(__p{i});");
+            }
         }
 
+        // Close any trailing conditional block
+        if (inConditionalBlock)
+            sb.AppendLine("        }");
+
+        // Pagination parameters — always unconditional
         var nextIdx = paramCount;
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
             sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pL.Value = __pValL;");
+            sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
             nextIdx++;
         }
@@ -699,7 +753,7 @@ internal static class CarrierEmitter
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
             sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
-            sb.AppendLine($"        __pO.Value = __pValO;");
+            sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
         }
     }
@@ -720,8 +774,7 @@ internal static class CarrierEmitter
         // Parameter logging
         EmitInlineParameterLogging(sb, chain, carrier);
 
-        // Parameter value extraction + command binding
-        EmitCarrierParameterLocals(sb, chain, carrier);
+        // Command binding
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
@@ -745,7 +798,6 @@ internal static class CarrierEmitter
 
         EmitInlineParameterLogging(sb, chain, carrier);
 
-        EmitCarrierParameterLocals(sb, chain, carrier);
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
             : "__c.Ctx!.DefaultTimeout";
@@ -767,25 +819,80 @@ internal static class CarrierEmitter
         if (totalParams == 0)
             return;
 
+        var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+        var hasConditional = chain.ConditionalTerms.Count > 0;
+        var maskType = hasConditional ? GetMaskType(chain) : null;
+
         sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
         sb.AppendLine("        {");
+
+        int? currentBitIndex = null;
+        bool inConditionalBlock = false;
+
         for (int i = 0; i < paramCount; i++)
         {
             var param = chain.ChainParameters[i];
-            if (param.IsSensitive)
+            condMap.TryGetValue(i, out var ci);
+
+            if (ci.IsConditional)
             {
-                sb.AppendLine($"            ParameterLog.BoundSensitive(__opId, {i});");
+                if (!inConditionalBlock || ci.BitIndex != currentBitIndex)
+                {
+                    if (inConditionalBlock)
+                        sb.AppendLine("            }");
+
+                    sb.AppendLine($"            if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex!.Value}))) != 0)");
+                    sb.AppendLine("            {");
+                    inConditionalBlock = true;
+                    currentBitIndex = ci.BitIndex;
+                }
+            }
+            else
+            {
+                if (inConditionalBlock)
+                {
+                    sb.AppendLine("            }");
+                    inConditionalBlock = false;
+                    currentBitIndex = null;
+                }
+            }
+
+            var indent = inConditionalBlock ? "                " : "            ";
+
+            if (param.IsCollection)
+            {
+                // Log each collection element individually
+                if (param.IsSensitive)
+                {
+                    sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
+                    sb.AppendLine($"{indent}    ParameterLog.BoundSensitive(__opId, {i});");
+                }
+                else
+                {
+                    sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
+                    sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
+                }
+            }
+            else if (param.IsSensitive)
+            {
+                sb.AppendLine($"{indent}ParameterLog.BoundSensitive(__opId, {i});");
             }
             else
             {
                 if (param.EntityPropertyExpression != null)
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
                 else if (IsNonNullableValueType(param.ClrType) || param.IsEnum)
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
             }
         }
+
+        // Close any trailing conditional block
+        if (inConditionalBlock)
+            sb.AppendLine("            }");
+
+        // Pagination logging — always unconditional
         var nextLogIdx = paramCount;
         if (hasLimitField)
         {
@@ -940,8 +1047,26 @@ internal static class CarrierEmitter
     }
 
     private static void EmitCarrierParamBindings(
-        StringBuilder sb, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
+        // Emit FieldInfo-based extraction for captured closure variables.
+        // Captured variables (e.g., method parameters referenced in a joined Where lambda)
+        // are not in scope at the interceptor — they must be extracted from the expression tree.
+        var capturedFields = new List<InterceptorCodeGenerator.CachedExtractorField>();
+        for (int i = 0; i < siteParams.Count; i++)
+        {
+            var param = siteParams[i];
+            if (param.IsCaptured && param.ExpressionPath != null && !param.IsCollection)
+            {
+                var globalIdx = globalParamOffset + i;
+                capturedFields.Add(new InterceptorCodeGenerator.CachedExtractorField(
+                    $"{carrier.ClassName}.F{globalIdx}", "", i, param.ExpressionPath));
+            }
+        }
+        if (capturedFields.Count > 0)
+            InterceptorCodeGenerator.GenerateCachedExtraction(sb, capturedFields);
+
+        // Bind parameters to carrier fields
         for (int i = 0; i < siteParams.Count; i++)
         {
             var param = siteParams[i];
@@ -952,7 +1077,12 @@ internal static class CarrierEmitter
             }
             else
             {
-                sb.AppendLine($"        __c.P{globalIdx} = {param.ValueExpression};");
+                var extractExpr = (param.IsCaptured && param.ExpressionPath != null)
+                    ? $"p{i}" : param.ValueExpression;
+                var castType = param.ClrType == "?" || param.ClrType == "object"
+                    ? "object?"
+                    : param.ClrType;
+                sb.AppendLine($"        __c.P{globalIdx} = ({castType}){extractExpr}!;");
             }
         }
     }
@@ -1031,9 +1161,10 @@ internal static class CarrierEmitter
             return false;
         if (ValueTypes.Contains(typeName))
             return true;
-        // Enum types (PascalCase, no dots/generics) are value types
-        if (!typeName.Contains('<') && !typeName.Contains('[') && !typeName.Contains('.'))
-            return false; // Could be a class name — treat conservatively as reference
+        // Check unqualified name (e.g., "System.DateTime" → "DateTime")
+        var dotIndex = typeName.LastIndexOf('.');
+        if (dotIndex >= 0 && ValueTypes.Contains(typeName.Substring(dotIndex + 1)))
+            return true;
         return false;
     }
 

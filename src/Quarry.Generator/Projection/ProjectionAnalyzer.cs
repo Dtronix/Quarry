@@ -135,8 +135,58 @@ internal static class ProjectionAnalyzer
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
 
+            // Whole entity: (s, u) => u
+            IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
+                AnalyzeJoinedEntityProjection(identifier.Identifier.Text, perParamLookup, resultType, dialect),
+
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
+    }
+
+    /// <summary>
+    /// Analyzes a joined entity projection where a single lambda parameter is selected:
+    /// .Select((s, u) => u) — selects all columns from the entity corresponding to parameter u.
+    /// </summary>
+    private static ProjectionInfo AnalyzeJoinedEntityProjection(
+        string parameterName,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        string resultType,
+        SqlDialect dialect)
+    {
+        if (!perParamLookup.TryGetValue(parameterName, out var entry))
+            return ProjectionInfo.CreateFailed(resultType, $"Unknown parameter '{parameterName}' in joined entity projection");
+
+        // Placeholder path: column lookup is empty at discovery time (no EntityInfo available).
+        // Set JoinedEntityAlias so BuildProjection can populate columns from the registry later.
+        if (entry.Lookup.Count == 0)
+            return new ProjectionInfo(ProjectionKind.Dto, resultType, Array.Empty<ProjectedColumn>(), joinedEntityAlias: entry.Alias);
+
+        var columns = new List<ProjectedColumn>();
+        var ordinal = 0;
+        foreach (var kvp in entry.Lookup)
+        {
+            var col = kvp.Value;
+            var quotedName = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(dialect, col.ColumnName);
+            columns.Add(new ProjectedColumn(
+                propertyName: col.PropertyName,
+                columnName: col.ColumnName,
+                clrType: col.ClrType,
+                fullClrType: col.FullClrType,
+                isNullable: col.IsNullable,
+                ordinal: ordinal++,
+                customTypeMapping: col.CustomTypeMappingClass,
+                isValueType: col.IsValueType,
+                readerMethodName: col.DbReaderMethodName ?? col.ReaderMethodName,
+                tableAlias: entry.Alias,
+                isForeignKey: col.Kind == ColumnKind.ForeignKey,
+                foreignKeyEntityName: col.ReferencedEntityName,
+                isEnum: col.IsEnum));
+        }
+
+        // Use Dto kind (not Entity) because entity identity projections assume the primary entity.
+        // For joined projections selecting a secondary entity, Dto ensures correct column-by-column
+        // materialization with the right entity type and table alias.
+        return new ProjectionInfo(ProjectionKind.Dto, resultType, columns);
     }
 
     private static ProjectionInfo AnalyzeJoinedTupleWithPlaceholders(
@@ -393,6 +443,10 @@ internal static class ProjectionAnalyzer
             // Aggregate function: (u, o) => Sql.Count()
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
+
+            // Whole entity: (s, u) => u
+            IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
+                AnalyzeJoinedEntityProjection(identifier.Identifier.Text, perParamLookup, resultType, dialect),
 
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
@@ -1406,7 +1460,10 @@ internal static class ProjectionAnalyzer
                         ordinal: ordinal,
                         customTypeMapping: columnInfo.CustomTypeMappingClass,
                         isValueType: columnInfo.IsValueType,
-                        readerMethodName: columnInfo.DbReaderMethodName ?? columnInfo.ReaderMethodName);
+                        readerMethodName: columnInfo.DbReaderMethodName ?? columnInfo.ReaderMethodName,
+                        isForeignKey: columnInfo.Kind == ColumnKind.ForeignKey,
+                        foreignKeyEntityName: columnInfo.ReferencedEntityName,
+                        isEnum: columnInfo.IsEnum);
                 }
 
                 // Column lookup failed - try to get type info from the property symbol directly

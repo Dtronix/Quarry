@@ -168,6 +168,55 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Non-null when a .Prepare() result variable escapes scope (returned, field-assigned, passed as arg, captured in lambda)
     public string? PreparedQueryEscapeReason { get; }
 
+    /// <summary>
+    /// Creates a copy with a different ResultTypeName.
+    /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
+    /// </summary>
+    internal RawCallSite WithResultTypeName(string resolvedResultTypeName)
+    {
+        return new RawCallSite(
+            methodName: MethodName,
+            filePath: FilePath,
+            line: Line,
+            column: Column,
+            uniqueId: UniqueId,
+            kind: Kind,
+            builderKind: BuilderKind,
+            entityTypeName: EntityTypeName,
+            resultTypeName: resolvedResultTypeName,
+            isAnalyzable: IsAnalyzable,
+            nonAnalyzableReason: NonAnalyzableReason,
+            interceptableLocationData: InterceptableLocationData,
+            interceptableLocationVersion: InterceptableLocationVersion,
+            location: Location,
+            expression: Expression,
+            clauseKind: ClauseKind,
+            isDescending: IsDescending,
+            projectionInfo: ProjectionInfo,
+            joinedEntityTypeName: JoinedEntityTypeName,
+            initializedPropertyNames: InitializedPropertyNames,
+            constantIntValue: ConstantIntValue,
+            isNavigationJoin: IsNavigationJoin,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            isInsideLoop: IsInsideLoop,
+            isInsideTryCatch: IsInsideTryCatch,
+            isCapturedInLambda: IsCapturedInLambda,
+            isPassedAsArgument: IsPassedAsArgument,
+            isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
+            conditionalInfo: ConditionalInfo,
+            chainId: ChainId,
+            builderTypeName: BuilderTypeName,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            rawSqlTypeInfo: RawSqlTypeInfo,
+            setActionAssignments: SetActionAssignments,
+            setActionParameters: SetActionParameters,
+            lambdaParameterNames: LambdaParameterNames,
+            batchInsertColumnNames: BatchInsertColumnNames,
+            isPreparedTerminal: IsPreparedTerminal,
+            preparedQueryEscapeReason: PreparedQueryEscapeReason);
+    }
+
     public bool Equals(RawCallSite? other)
     {
         if (other is null) return false;

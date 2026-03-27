@@ -70,6 +70,28 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
     /// <summary>RawSql type metadata.</summary>
     public RawSqlTypeInfo? RawSqlTypeInfo { get; }
 
+    /// <summary>
+    /// Creates a copy with a different Raw call site, preserving all binding state.
+    /// Used to propagate resolved result types through the IR chain.
+    /// </summary>
+    internal BoundCallSite WithRaw(RawCallSite newRaw)
+    {
+        return new BoundCallSite(
+            raw: newRaw,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            dialect: Dialect,
+            tableName: TableName,
+            schemaName: SchemaName,
+            entity: Entity,
+            joinedEntity: JoinedEntity,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            joinedEntities: JoinedEntities,
+            insertInfo: InsertInfo,
+            updateInfo: UpdateInfo,
+            rawSqlTypeInfo: RawSqlTypeInfo);
+    }
+
     public bool Equals(BoundCallSite? other)
     {
         if (other is null) return false;

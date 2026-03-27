@@ -51,10 +51,10 @@ internal class CrossDialectCompositionTests
         QueryTestHarness.AssertDialects(
             lite.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` ORDER BY `t1`.`Total` DESC LIMIT 10",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = 1 ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = TRUE ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100 AND `t0`.`IsActive` = 1 ORDER BY `t1`.`Total` DESC LIMIT 10",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] = 1 ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
 
         // Seed: Alice has orders 250 (Shipped) and 75.50 (Pending). Only 250 > 100. Bob has 150 (Shipped) > 100. — 2 results
         var results = await lite.ExecuteFetchAllAsync();
@@ -97,10 +97,10 @@ internal class CrossDialectCompositionTests
         QueryTestHarness.AssertDialects(
             lite.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
-            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
-            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `IsActive` AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 500)) ORDER BY `UserName` ASC",
-            ss:     "SELECT [UserName], [Email] FROM [users] WHERE [IsActive] AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 500)) ORDER BY [UserName] ASC");
+            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" = 1 AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
+            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" = TRUE AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
+            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1 AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 500)) ORDER BY `UserName` ASC",
+            ss:     "SELECT [UserName], [Email] FROM [users] WHERE [IsActive] = 1 AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 500)) ORDER BY [UserName] ASC");
 
         // No users have orders > 500 in seed data — 0 results
         var results = await lite.ExecuteFetchAllAsync();
@@ -651,6 +651,120 @@ internal class CrossDialectCompositionTests
         // Verify execution
         var results = await prepared.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    #endregion
+
+    #region Conditional Where on Tuple Projection (Generator Type Resolution)
+
+    /// <summary>
+    /// Regression test: Conditional Where chain after Select with tuple projection.
+    /// The pattern: var query = db.Orders().Select(...tuple...); query = query.Where(...);
+    ///
+    /// BUG: The generator resolves the tuple type as (object, object, object) instead of
+    /// (int, decimal, OrderPriority) because the semantic model can't fully resolve tuple
+    /// element types from the Select return type. This causes CS9144 signature mismatch
+    /// when the Where interceptor is emitted with (object, object, object) but the runtime
+    /// type is (int, decimal, OrderPriority).
+    ///
+    /// This is the "generated entity bootstrap problem" applied to tuple projections:
+    /// Pipeline 2 can't see the TResult type argument resolved by Pipeline 1.
+    ///
+    /// Workaround: put Where before Select, or use a single fluent chain without reassignment.
+    /// See impl-plan-generator-resolution.md for the fix plan.
+    /// </summary>
+    [Test]
+    public async Task ConditionalWhere_OnTupleProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+
+        // This pattern triggers the bug: Select returns IQueryBuilder<Order, (int, decimal, OrderPriority)>
+        // but when assigned to var and Where is called conditionally, the generator sees (object, object, object).
+        var query = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query = query.Where(o => o.Priority == priority);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: Order1(High,250), Order2(Normal,75.50), Order3(Urgent,150)
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task ConditionalOrderBy_OnTupleProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // OrderBy after Select with tuple projection + variable reassignment
+        var query = Lite.Orders().Select(o => (o.OrderId, o.Total));
+        query = query.OrderBy(o => o.Total);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: 3 orders — should be sorted by Total ascending
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].Total, Is.LessThanOrEqualTo(results[1].Total));
+        Assert.That(results[1].Total, Is.LessThanOrEqualTo(results[2].Total));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnEntityProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Entity projection (Select identity) with reassignment — should already work
+        // but this ensures the resolution doesn't regress entity-typed chains.
+        var query = Lite.Users().Select(u => u);
+        query = query.Where(u => u.IsActive);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: 2 active users, 1 inactive
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnSingleColumnProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Single column projection with reassignment
+        var query = Lite.Orders().Select(o => o.Total);
+        query = query.Where(o => o.Total > 100m);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: Order1(250), Order2(75.50), Order3(150) — 2 > 100
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task ConditionalWhere_OnTupleProjection_FieldInfoCachingWorks()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+
+        // Execute the same query pattern twice to verify FieldInfo caching
+        // (the static F0 field should be populated on first call and reused)
+        var query1 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query1 = query1.Where(o => o.Priority == priority);
+        var results1 = await query1.ExecuteFetchAllAsync();
+
+        var query2 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query2 = query2.Where(o => o.Priority == priority);
+        var results2 = await query2.ExecuteFetchAllAsync();
+
+        Assert.That(results1, Has.Count.EqualTo(1));
+        Assert.That(results2, Has.Count.EqualTo(1));
+        Assert.That(results1[0].OrderId, Is.EqualTo(results2[0].OrderId));
     }
 
     #endregion

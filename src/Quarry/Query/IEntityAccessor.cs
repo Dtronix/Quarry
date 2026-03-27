@@ -52,6 +52,12 @@ public interface IEntityAccessor<T> where T : class
     IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class;
 
     /// <summary>
+    /// Groups the results by the specified key expression.
+    /// Returns <see cref="IQueryBuilder{T}"/> for further query building (e.g., Select with aggregates).
+    /// </summary>
+    IQueryBuilder<T> GroupBy<TKey>(Expression<Func<T, TKey>> keySelector);
+
+    /// <summary>
     /// Removes duplicate rows from the result.
     /// </summary>
     IQueryBuilder<T> Distinct();
