@@ -21,6 +21,7 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 - [Migrations](#migrations)
 - [Scaffolding](#scaffolding)
 - [Logging](#logging)
+- [Samples](#samples)
 
 ## Packages
 
@@ -137,7 +138,7 @@ Define tables as C# classes inheriting `Schema`. Columns are expression-bodied p
 
 ### Custom Entity Readers and Type Mappings
 
-Override generated materialization with `EntityReader<T>`, or map custom CLR types to database types with `TypeMapping<TClr, TDb>`. Both integrate with the generated interceptor pipeline.
+Override generated materialization with `EntityReader<T>`, or map custom CLR types to database types with `TypeMapping<TClr, TDb>`. For dialect-specific behavior (e.g., PostgreSQL `jsonb`), implement `IDialectAwareTypeMapping` to provide custom SQL type names via `GetSqlTypeName()` and configure ADO.NET parameters via `ConfigureParameter()`. All integrate with the generated interceptor pipeline.
 
 ---
 
@@ -224,13 +225,15 @@ public class UserSchema : Schema
     public Ref<OrderSchema, int> OrderId => ForeignKey<OrderSchema, int>();
     public Many<OrderSchema> Orders => HasMany<OrderSchema>(o => o.UserId);
 
+    public CompositeKey PK => PrimaryKey(StudentId, CourseId);  // multi-column PK
+
     public Index IX_UserName => Index(UserName).Unique();
     public Index IX_CreatedAt => Index(CreatedAt.Desc());
     public Index IX_Active => Index(IsActive).Where(IsActive);
 }
 ```
 
-**Column types:** `Key<T>` (primary key), `Col<T>` (standard), `Ref<TSchema, TKey>` (foreign key), `Many<T>` (1:N navigation). Generated entities use `EntityRef<TEntity, TKey>` for FK properties with optional navigation access via `.Id` and `.Value`.
+**Column types:** `Key<T>` (primary key), `Col<T>` (standard), `Ref<TSchema, TKey>` (foreign key), `Many<T>` (1:N navigation), `CompositeKey` (multi-column PK via `PrimaryKey(col1, col2)`). Generated entities use `EntityRef<TEntity, TKey>` for FK properties with optional navigation access via `.Id` and `.Value`.
 
 **Modifiers:** `Identity()`, `ClientGenerated()`, `Computed()`, `Length(n)`, `Precision(p, s)`, `Default(v)`, `Default(() => v)`, `MapTo("name")`, `Mapped<TMapping>()`, `Sensitive()`.
 
@@ -239,6 +242,28 @@ public class UserSchema : Schema
 **Naming styles:** Override `NamingStyle` property — `Exact` (default), `SnakeCase`, `CamelCase`, `LowerCase`.
 
 **Enums:** Automatically detected, stored and read as the underlying integral type.
+
+**Custom type mappings:** Map custom CLR types to database types with `TypeMapping<TClr, TDb>`. For dialect-specific behavior, also implement `IDialectAwareTypeMapping`:
+
+```csharp
+public class JsonDocMapping : TypeMapping<JsonDoc, string>, IDialectAwareTypeMapping
+{
+    public override string ToDb(JsonDoc value) => JsonSerializer.Serialize(value);
+    public override JsonDoc FromDb(string value) => JsonSerializer.Deserialize<JsonDoc>(value)!;
+
+    public string? GetSqlTypeName(SqlDialect dialect) => dialect switch
+    {
+        SqlDialect.PostgreSQL => "jsonb",
+        _ => "TEXT"
+    };
+
+    public void ConfigureParameter(SqlDialect dialect, DbParameter parameter)
+    {
+        // Set provider-specific parameter types (e.g., NpgsqlDbType.Jsonb)
+    }
+}
+// Schema: public Col<JsonDoc> Data => Mapped<JsonDoc, JsonDocMapping>();
+```
 
 ---
 
@@ -297,12 +322,15 @@ db.Orders().GroupBy(o => o.Status)
 
 Aggregate markers: `Sql.Count()`, `Sql.Sum()`, `Sql.Avg()`, `Sql.Min()`, `Sql.Max()`. Aggregates work in both single-table and joined projections.
 
-### Pagination and Distinct
+### Pagination, Distinct, and Timeout
 
 ```csharp
 db.Users().Select(u => u).Limit(10).Offset(20);
 db.Users().Select(u => u.UserName).Distinct();
+db.Users().Select(u => u).WithTimeout(TimeSpan.FromSeconds(5)).ExecuteFetchAllAsync();
 ```
+
+`.WithTimeout()` is available on all builder types (select, join, insert, update, delete).
 
 ### Joins
 
@@ -315,6 +343,10 @@ db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
 // Navigation-based join
 db.Users().Join(u => u.Orders)
     .Select((u, o) => (u.UserName, o.Total));
+
+// Whole-entity projection from a join — projects all columns from one entity
+db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+    .Select((u, o) => o);   // returns List<Order>
 
 // 3/4-table chained joins (max 4 tables)
 db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
@@ -472,6 +504,25 @@ Additional metadata available on `QueryDiagnostics`:
 | `IdentityColumnName` | Identity column for INSERT chains |
 | `InsertRowCount` | Number of rows for batch inserts |
 
+### Trace
+
+`.Trace()` is a compile-time debugging signal — at runtime it is a no-op. When `QUARRY_TRACE` is defined in your `.csproj`, the generator emits inline trace comments in the generated interceptor code showing the discovery, binding, translation, and assembly steps for each query chain.
+
+```xml
+<DefineConstants>$(DefineConstants);QUARRY_TRACE</DefineConstants>
+```
+
+```csharp
+// Add .Trace() anywhere in a chain to enable tracing for that chain
+var users = await db.Users()
+    .Where(u => u.IsActive)
+    .Trace()
+    .Select(u => u)
+    .ExecuteFetchAllAsync();
+```
+
+Available on all builder types: select, join, insert, update, delete, batch insert. Without the `QUARRY_TRACE` symbol defined, using `.Trace()` produces a QRY034 warning.
+
 ---
 
 ## Raw SQL
@@ -626,3 +677,13 @@ Mark columns with `Sensitive()` in the schema — parameters display as `***` in
 ### Operation Correlation
 
 Every log entry includes an `[opId]` prefix. All entries from the same query/modification share the same opId, enabling correlation across SQL, parameter, and completion logs.
+
+---
+
+## Samples
+
+A full working sample application is included in the repository:
+
+| Sample | Description |
+|--------|-------------|
+| [`Quarry.Sample.WebApp`](src/Samples/Quarry.Sample.WebApp) | ASP.NET Core Razor Pages app with SQLite — demonstrates schema definition, context setup, querying, authentication, migrations, and Logsmith logging integration |

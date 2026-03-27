@@ -159,10 +159,6 @@ await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 
 Source-generated typed readers — zero reflection.
 
-### Set Operations
-
-`db.Union(q1, q2)` — also `UnionAll`, `Except`, `Intersect`.
-
 ### Diagnostics (QueryDiagnostics)
 
 `ToDiagnostics()` returns compile-time analysis: `Sql`, `Parameters` (active only), `AllParameters`, `Kind`, `Dialect`, `TableName`, `Tier`, `IsCarrierOptimized`, `Clauses` (per-clause SQL + params + source location + conditional info), `SqlVariants` (`Dictionary<int, SqlVariantDiagnostic>` — mask→SQL map), `ProjectionColumns`, `ProjectionKind`, `CarrierClassName`, `Joins`, `IsDistinct`, `Limit`, `Offset`, `IdentityColumnName`, `ActiveMask` (int), `ConditionalBitCount`, `TierReason`, `DisqualifyReason`, `CarrierIneligibleReason`, `UnmatchedMethodNames`.
