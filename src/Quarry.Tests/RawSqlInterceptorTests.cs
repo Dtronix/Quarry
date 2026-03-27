@@ -346,7 +346,7 @@ public class RawSqlInterceptorTests
     #region Edge Case: DTO with Zero Properties
 
     [Test]
-    public void RawSqlAsync_DtoWithZeroProperties_GeneratesEmptySwitch()
+    public void RawSqlAsync_DtoWithZeroProperties_OmitsSwitch()
     {
         var rawSqlTypeInfo = new RawSqlTypeInfo(
             "EmptyDto",
@@ -359,8 +359,8 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         Assert.That(result, Does.Contain("new EmptyDto()"));
-        Assert.That(result, Does.Contain("switch (r.GetName(i))"));
-        // No case labels should be generated
+        // Empty switch block should be omitted entirely to avoid CS1522
+        Assert.That(result, Does.Not.Contain("switch (r.GetName(i))"));
         Assert.That(result, Does.Not.Contain("case \""));
     }
 

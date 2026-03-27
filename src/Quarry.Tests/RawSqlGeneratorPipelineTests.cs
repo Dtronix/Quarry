@@ -305,6 +305,59 @@ public class Service
 
     #endregion
 
+    #region Empty Properties — CS1522 Guard
+
+    [Test]
+    public void RawSqlAsync_DtoWithNoPublicSetters_DoesNotEmitEmptySwitch()
+    {
+        // When T is a DTO whose properties all lack public setters, the property list
+        // is empty. The emitter must not produce an empty switch block (CS1522).
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class ReadOnlyDto
+{
+    public int Id { get; }
+    public string Name { get; } = null!;
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var results = await db.RawSqlAsync<ReadOnlyDto>(""SELECT Id, Name FROM users"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+        Assert.That(code, Does.Contain("new ReadOnlyDto()"),
+            "Interceptor should construct the DTO");
+        Assert.That(code, Does.Not.Contain("switch (r.GetName(i))"),
+            "Should not emit a switch block when there are no settable properties");
+    }
+
+    #endregion
+
     #region Entity T Enrichment
 
     [Test]
