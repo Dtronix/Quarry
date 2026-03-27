@@ -201,6 +201,76 @@ public class DialectTests
 
     #endregion
 
+    #region Mixed Pagination Tests
+
+    [TestCase(SqlDialect.SQLite, 20, null, null, 0, "LIMIT 20 OFFSET @p0")]
+    [TestCase(SqlDialect.PostgreSQL, 20, null, null, 0, "LIMIT 20 OFFSET $1")]
+    [TestCase(SqlDialect.MySQL, 20, null, null, 0, "LIMIT 20 OFFSET ?")]
+    [TestCase(SqlDialect.SqlServer, 20, null, null, 0, "OFFSET @p0 ROWS FETCH NEXT 20 ROWS ONLY")]
+    public void FormatMixedPagination_LiteralLimit_ParamOffset(SqlDialect dialectType, int literalLimit, int? literalOffset, int? limitIdx, int offsetIdx, string expected)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, literalLimit, limitIdx, literalOffset, offsetIdx);
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, null, 5, 0, null, "LIMIT @p0 OFFSET 5")]
+    [TestCase(SqlDialect.PostgreSQL, null, 5, 0, null, "LIMIT $1 OFFSET 5")]
+    [TestCase(SqlDialect.MySQL, null, 5, 0, null, "LIMIT ? OFFSET 5")]
+    [TestCase(SqlDialect.SqlServer, null, 5, 0, null, "OFFSET 5 ROWS FETCH NEXT @p0 ROWS ONLY")]
+    public void FormatMixedPagination_ParamLimit_LiteralOffset(SqlDialect dialectType, int? literalLimit, int literalOffset, int limitIdx, int? offsetIdx, string expected)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, literalLimit, limitIdx, literalOffset, offsetIdx);
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, 0, 1, "LIMIT @p0 OFFSET @p1")]
+    [TestCase(SqlDialect.PostgreSQL, 0, 1, "LIMIT $1 OFFSET $2")]
+    [TestCase(SqlDialect.MySQL, 0, 1, "LIMIT ? OFFSET ?")]
+    [TestCase(SqlDialect.SqlServer, 0, 1, "OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY")]
+    public void FormatMixedPagination_BothParameterized(SqlDialect dialectType, int limitIdx, int offsetIdx, string expected)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, limitIdx, null, offsetIdx);
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite)]
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.MySQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void FormatMixedPagination_AllNull_ReturnsEmpty(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, null, null, null);
+        Assert.That(result, Is.EqualTo(string.Empty));
+    }
+
+    [TestCase(SqlDialect.SQLite, 0, "OFFSET @p0")]
+    [TestCase(SqlDialect.PostgreSQL, 0, "OFFSET $1")]
+    [TestCase(SqlDialect.MySQL, 0, "OFFSET ?")]
+    [TestCase(SqlDialect.SqlServer, 0, "OFFSET @p0 ROWS")]
+    public void FormatMixedPagination_ParamOffsetOnly(SqlDialect dialectType, int offsetIdx, string expected)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, null, null, offsetIdx);
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, 0, "LIMIT @p0")]
+    [TestCase(SqlDialect.PostgreSQL, 0, "LIMIT $1")]
+    [TestCase(SqlDialect.MySQL, 0, "LIMIT ?")]
+    [TestCase(SqlDialect.SqlServer, 0, "OFFSET 0 ROWS FETCH NEXT @p0 ROWS ONLY")]
+    public void FormatMixedPagination_ParamLimitOnly(SqlDialect dialectType, int limitIdx, string expected)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        var result = SqlFormatting.FormatMixedPagination(dialect, null, limitIdx, null, null);
+        Assert.That(result, Is.EqualTo(expected));
+    }
+
+    #endregion
+
     #region Identity/Returning Clause Tests
 
     [TestCase(SqlDialect.SQLite, "id", "RETURNING \"id\"")]

@@ -108,7 +108,7 @@ internal static class TerminalEmitHelpers
     /// <summary>
     /// Builds a mapping from global parameter index to conditional metadata (isConditional, bitIndex).
     /// </summary>
-    private static Dictionary<int, (bool IsConditional, int? BitIndex)> BuildParamConditionalMap(AssembledPlan chain)
+    internal static Dictionary<int, (bool IsConditional, int? BitIndex)> BuildParamConditionalMap(AssembledPlan chain)
     {
         var map = new Dictionary<int, (bool, int?)>();
         var globalOffset = 0;

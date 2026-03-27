@@ -29,13 +29,15 @@ Roslyn incremental source generator that analyzes fluent query chains at compile
     ReferenceOutputAssembly="false" />
 ```
 
-Add the interceptors namespace to your `.csproj`:
+Enable interceptors by adding your `QuarryContext` namespace to `InterceptorsNamespaces` in your `.csproj`. The generator emits interceptors into the same namespace as your context class:
 
 ```xml
 <PropertyGroup>
-  <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Generated</InterceptorsNamespaces>
+  <InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
 </PropertyGroup>
 ```
+
+Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass. If your context has no namespace, use `Quarry.Generated`.
 
 To inspect generated code, add:
 

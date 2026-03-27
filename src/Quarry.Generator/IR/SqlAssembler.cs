@@ -193,24 +193,33 @@ internal static class SqlAssembler
             paramIndex += paramsBefore;
         }
 
-        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
-        var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
-        if (nonTrivialWheres.Count > 0)
+        // WHERE — compute each term's global parameter offset from ALL terms (not just active),
+        // so conditional variants reference the correct carrier parameter slots.
+        // Without this, skipped conditional terms cause parameter renumbering that mismatches
+        // the carrier field indices (e.g., @p0 in SQL maps to P2 in the carrier).
+        var activeWhereSet = new HashSet<WhereTerm>(GetActiveTerms(plan.WhereTerms, mask));
+        var nonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+        var whereParamOffset = paramIndex;
+        foreach (var w in plan.WhereTerms)
+        {
+            var termParamCount = CountParameters(w.Condition);
+            if (activeWhereSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                nonTrivialActive.Add((w, whereParamOffset));
+            whereParamOffset += termParamCount;
+        }
+        if (nonTrivialActive.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < nonTrivialWheres.Count; i++)
+            for (int i = 0; i < nonTrivialActive.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = nonTrivialWheres[i];
-                var paramsBefore = CountParameters(w.Condition);
-                // Wrap each WHERE term in parentheses when there are multiple terms
-                if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
-                if (nonTrivialWheres.Count > 1) sb.Append(')');
-                paramIndex += paramsBefore;
+                var (w, termOffset) = nonTrivialActive[i];
+                if (nonTrivialActive.Count > 1) sb.Append('(');
+                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
+        paramIndex = whereParamOffset;
 
         // GROUP BY
         if (plan.GroupByExprs.Count > 0)
@@ -266,24 +275,33 @@ internal static class SqlAssembler
         sb.Append("DELETE FROM ");
         AppendTableRef(sb, dialect, plan.PrimaryTable);
 
-        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
-        var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
-        if (nonTrivialWheres.Count > 0)
+        // WHERE — compute each term's global parameter offset from ALL terms (not just active),
+        // so conditional variants reference the correct carrier parameter slots.
+        // Without this, skipped conditional terms cause parameter renumbering that mismatches
+        // the carrier field indices (e.g., @p0 in SQL maps to P2 in the carrier).
+        var activeWhereSet = new HashSet<WhereTerm>(GetActiveTerms(plan.WhereTerms, mask));
+        var nonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+        var whereParamOffset = paramIndex;
+        foreach (var w in plan.WhereTerms)
+        {
+            var termParamCount = CountParameters(w.Condition);
+            if (activeWhereSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                nonTrivialActive.Add((w, whereParamOffset));
+            whereParamOffset += termParamCount;
+        }
+        if (nonTrivialActive.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < nonTrivialWheres.Count; i++)
+            for (int i = 0; i < nonTrivialActive.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = nonTrivialWheres[i];
-                var paramsBefore = CountParameters(w.Condition);
-                // Wrap each WHERE term in parentheses when there are multiple terms
-                if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
-                if (nonTrivialWheres.Count > 1) sb.Append(')');
-                paramIndex += paramsBefore;
+                var (w, termOffset) = nonTrivialActive[i];
+                if (nonTrivialActive.Count > 1) sb.Append('(');
+                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
+        paramIndex = whereParamOffset;
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
@@ -313,24 +331,33 @@ internal static class SqlAssembler
             }
         }
 
-        // WHERE (skip trivial always-true conditions like WHERE 1 / WHERE true)
-        var activeWheres = GetActiveTerms(plan.WhereTerms, mask);
-        var nonTrivialWheres = activeWheres.Where(w => !IsTrivialTrueCondition(w.Condition)).ToList();
-        if (nonTrivialWheres.Count > 0)
+        // WHERE — compute each term's global parameter offset from ALL terms (not just active),
+        // so conditional variants reference the correct carrier parameter slots.
+        // Without this, skipped conditional terms cause parameter renumbering that mismatches
+        // the carrier field indices (e.g., @p0 in SQL maps to P2 in the carrier).
+        var activeWhereSet = new HashSet<WhereTerm>(GetActiveTerms(plan.WhereTerms, mask));
+        var nonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+        var whereParamOffset = paramIndex;
+        foreach (var w in plan.WhereTerms)
+        {
+            var termParamCount = CountParameters(w.Condition);
+            if (activeWhereSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                nonTrivialActive.Add((w, whereParamOffset));
+            whereParamOffset += termParamCount;
+        }
+        if (nonTrivialActive.Count > 0)
         {
             sb.Append(" WHERE ");
-            for (int i = 0; i < nonTrivialWheres.Count; i++)
+            for (int i = 0; i < nonTrivialActive.Count; i++)
             {
                 if (i > 0) sb.Append(" AND ");
-                var w = nonTrivialWheres[i];
-                var paramsBefore = CountParameters(w.Condition);
-                // Wrap each WHERE term in parentheses when there are multiple terms
-                if (nonTrivialWheres.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
-                if (nonTrivialWheres.Count > 1) sb.Append(')');
-                paramIndex += paramsBefore;
+                var (w, termOffset) = nonTrivialActive[i];
+                if (nonTrivialActive.Count > 1) sb.Append('(');
+                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
+        paramIndex = whereParamOffset;
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
@@ -474,8 +501,12 @@ internal static class SqlAssembler
             sb.Append(" ORDER BY (SELECT NULL)");
         }
 
-        if (pag.LiteralLimit != null || pag.LiteralOffset != null)
+        bool hasParamLimit = pag.LimitParamIndex != null;
+        bool hasParamOffset = pag.OffsetParamIndex != null;
+
+        if (!hasParamLimit && !hasParamOffset)
         {
+            // All values are literal (or absent) — use the literal formatter
             var pagination = SqlFormatting.FormatPagination(dialect, pag.LiteralLimit, pag.LiteralOffset);
             if (!string.IsNullOrEmpty(pagination))
             {
@@ -485,22 +516,24 @@ internal static class SqlAssembler
         }
         else
         {
-            int? limitIdx = pag.LimitParamIndex;
-            int? offsetIdx = pag.OffsetParamIndex;
+            // At least one value is parameterized — remap param indices and
+            // use the mixed formatter that handles literal/parameterized combinations
+            int? limitIdx = null;
+            int? offsetIdx = null;
 
-            // Remap to current paramIndex if needed
-            if (limitIdx != null)
+            if (hasParamLimit)
             {
                 limitIdx = paramIndex;
                 paramIndex++;
             }
-            if (offsetIdx != null)
+            if (hasParamOffset)
             {
                 offsetIdx = paramIndex;
                 paramIndex++;
             }
 
-            var pagination = SqlFormatting.FormatParameterizedPagination(dialect, limitIdx, offsetIdx);
+            var pagination = SqlFormatting.FormatMixedPagination(
+                dialect, pag.LiteralLimit, limitIdx, pag.LiteralOffset, offsetIdx);
             if (!string.IsNullOrEmpty(pagination))
             {
                 sb.Append(' ');
@@ -580,11 +613,15 @@ internal static class SqlAssembler
         // For AND/OR at the WHERE top level, recursively flatten and strip inner comparison parens.
         // RenderBinary wraps ALL BinaryOpExpr in parens, but WHERE context doesn't need them
         // around comparisons (e.g., WHERE col > 50 AND col2 = 1, not WHERE (col > 50) AND (col2 = 1)).
+        //
+        // IMPORTANT: paramIndex is the base offset for this entire clause — it is NOT accumulated
+        // across siblings. ParamSlotExpr.LocalIndex is clause-global (0, 1, 2...), so the renderer
+        // computes the final index as paramIndex + LocalIndex. Accumulating leftParams would
+        // double-count and produce gaps (e.g., @p0, @p2 instead of @p0, @p1).
         if (condition is BinaryOpExpr bin && (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or))
         {
             var left = RenderWhereChild(bin.Left, dialect, paramIndex, bin.Operator);
-            var leftParams = CountParameters(bin.Left);
-            var right = RenderWhereChild(bin.Right, dialect, paramIndex + leftParams, bin.Operator);
+            var right = RenderWhereChild(bin.Right, dialect, paramIndex, bin.Operator);
             var op = bin.Operator == SqlBinaryOperator.And ? " AND " : " OR ";
             return left + op + right;
         }

@@ -1,0 +1,63 @@
+@page
+@model Quarry.Sample.WebApp.Pages.Dev.SqlModel
+@{
+    ViewData["Title"] = "SQL Inspector";
+    Layout = "_Layout";
+}
+
+<h1>SQL Inspector</h1>
+<p>Generated SQL from Quarry's compile-time analysis. All queries are pre-built — no runtime SQL generation.</p>
+
+@foreach (var q in Model.Queries)
+{
+    <div class="card">
+        <h2>@q.Label</h2>
+        <p>@q.Description</p>
+
+        <dl class="diag-meta">
+            <dt>Dialect</dt><dd>@q.Diagnostics.Dialect</dd>
+            <dt>Kind</dt><dd>@q.Diagnostics.Kind</dd>
+            <dt>Tier</dt><dd>@q.Diagnostics.Tier</dd>
+            <dt>Carrier</dt><dd>@q.Diagnostics.IsCarrierOptimized</dd>
+            @if (q.Diagnostics.ProjectionKind != null)
+            {
+                <dt>Projection</dt><dd>@q.Diagnostics.ProjectionKind</dd>
+            }
+        </dl>
+
+        <pre class="sql">@q.Diagnostics.Sql</pre>
+
+        @if (q.Diagnostics.Parameters.Any())
+        {
+            <h3 style="margin-top:0.75rem;font-size:0.9rem;">Parameters</h3>
+            <table>
+                <thead><tr><th>Name</th><th>Value</th></tr></thead>
+                <tbody>
+                    @foreach (var p in q.Diagnostics.Parameters)
+                    {
+                        <tr><td>@p.Name</td><td>@p.Value</td></tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        @if (q.Diagnostics.Clauses.Any())
+        {
+            <h3 style="margin-top:0.75rem;font-size:0.9rem;">Clauses</h3>
+            <table>
+                <thead><tr><th>Type</th><th>SQL</th><th>Conditional</th><th>Active</th></tr></thead>
+                <tbody>
+                    @foreach (var c in q.Diagnostics.Clauses)
+                    {
+                        <tr>
+                            <td>@c.ClauseType</td>
+                            <td><code>@c.SqlFragment</code></td>
+                            <td>@c.IsConditional</td>
+                            <td>@c.IsActive</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}

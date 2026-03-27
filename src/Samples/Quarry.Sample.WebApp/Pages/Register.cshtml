@@ -1,0 +1,35 @@
+@page
+@model RegisterModel
+@{
+    ViewData["Title"] = "Register";
+    Layout = "_Layout";
+}
+
+<div class="card">
+    <h1>Register</h1>
+    <form method="post">
+        <div asp-validation-summary="ModelOnly" class="validation-message"></div>
+        <div class="form-group">
+            <label asp-for="Input.Email"></label>
+            <input asp-for="Input.Email" type="email" />
+            <span asp-validation-for="Input.Email" class="validation-message"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Input.UserName"></label>
+            <input asp-for="Input.UserName" />
+            <span asp-validation-for="Input.UserName" class="validation-message"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Input.Password"></label>
+            <input asp-for="Input.Password" type="password" />
+            <span asp-validation-for="Input.Password" class="validation-message"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Input.ConfirmPassword"></label>
+            <input asp-for="Input.ConfirmPassword" type="password" />
+            <span asp-validation-for="Input.ConfirmPassword" class="validation-message"></span>
+        </div>
+        <button type="submit" class="btn btn-primary">Register</button>
+    </form>
+    <p style="margin-top:1rem;">Already have an account? <a href="/Login">Login</a></p>
+</div>

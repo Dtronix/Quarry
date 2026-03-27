@@ -1,0 +1,25 @@
+@page
+@model LoginModel
+@{
+    ViewData["Title"] = "Login";
+    Layout = "_Layout";
+}
+
+<div class="card">
+    <h1>Login</h1>
+    <form method="post">
+        <div asp-validation-summary="ModelOnly" class="validation-message"></div>
+        <div class="form-group">
+            <label asp-for="Input.Email"></label>
+            <input asp-for="Input.Email" type="email" />
+            <span asp-validation-for="Input.Email" class="validation-message"></span>
+        </div>
+        <div class="form-group">
+            <label asp-for="Input.Password"></label>
+            <input asp-for="Input.Password" type="password" />
+            <span asp-validation-for="Input.Password" class="validation-message"></span>
+        </div>
+        <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+    <p style="margin-top:1rem;">Don't have an account? <a href="/Register">Register</a></p>
+</div>

@@ -259,4 +259,80 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Join + Where with multi-param and boolean columns
+
+    [Test]
+    public async Task Join_WithWhere_MultiParamAndBoolColumn_SequentialParamIndices()
+    {
+        // Regression test: WHERE with 2 captured params + a bare boolean column must produce
+        // sequential parameter indices (@p0, @p1) — not @p0, @p2 (skipping a slot for the bool).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minTotal = 100m;
+        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > minTotal && u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > minTotal && u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > minTotal && u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > minTotal && u.IsActive)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > @p0 AND \"t0\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > $1 AND \"t0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > ? AND `t0`.`IsActive` = 1",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > @p0 AND [t0].[IsActive] = 1");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    [Test]
+    public async Task Join_WithWhere_TwoCapturedParams_BooleanBetween_SequentialIndices()
+    {
+        // Regression test: param AND bool AND param — must produce @p0 and @p1, not @p0 and @p2.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var userName = "Alice";
+        var minTotal = 50m;
+        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.UserName == userName && u.IsActive && o.Total > minTotal)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.UserName == userName && u.IsActive && o.Total > minTotal)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.UserName == userName && u.IsActive && o.Total > minTotal)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => u.UserName == userName && u.IsActive && o.Total > minTotal)
+            .Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"UserName\" = @p0 AND \"t0\".\"IsActive\" = 1 AND \"t1\".\"Total\" > @p1",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"UserName\" = $1 AND \"t0\".\"IsActive\" = TRUE AND \"t1\".\"Total\" > $2",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`UserName` = ? AND `t0`.`IsActive` = 1 AND `t1`.`Total` > ?",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t0].[UserName] = @p0 AND [t0].[IsActive] = 1 AND [t1].[Total] > @p1");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
+    }
+
+    #endregion
 }

@@ -222,6 +222,18 @@ internal static class ReaderCodeGenerator
             return $"{fieldName}.FromDb(r.{readerMethod}({ordinal}))";
         }
 
+        // Handle types that use GetValue() fallback — need explicit cast (e.g., byte[], DateTimeOffset)
+        if (readerMethod == "GetValue")
+        {
+            var castType = column.FullClrType ?? column.ClrType;
+            if (column.IsNullable)
+            {
+                var nullableType = column.IsValueType ? $"{castType}?" : castType;
+                return $"r.IsDBNull({ordinal}) ? default({nullableType}) : ({castType})r.GetValue({ordinal})";
+            }
+            return $"({castType})r.GetValue({ordinal})";
+        }
+
         // Handle nullable types - need null check
         if (column.IsNullable)
         {

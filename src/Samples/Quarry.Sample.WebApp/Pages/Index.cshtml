@@ -1,0 +1,21 @@
+@page
+@{
+    ViewData["Title"] = "Home";
+    Layout = "_Layout";
+}
+
+<div class="card">
+    <h1>Quarry Sample Web App</h1>
+    <p>A demonstration of <strong>Quarry</strong>'s compile-time SQL builder in an ASP.NET Core Razor Pages application.</p>
+    <p>Features demonstrated: cookie authentication, CRUD operations, conditional query chains, joins, aggregates, batch inserts, navigation subqueries, and query diagnostics.</p>
+
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <p>Logged in as <strong>@User.Identity.Name</strong> (@User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value).</p>
+    }
+    else
+    {
+        <p><a href="/Login">Login</a> or <a href="/Register">Register</a> to get started.</p>
+        <p><em>Seed credentials: admin@example.com / admin123</em></p>
+    }
+</div>

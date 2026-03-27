@@ -150,6 +150,16 @@ Override generated materialization with `EntityReader<T>`, or map custom CLR typ
     ReferenceOutputAssembly="false" />
 ```
 
+Enable interceptors by adding your `QuarryContext` namespace to `InterceptorsNamespaces` in your `.csproj`. The generator emits interceptors into the same namespace as your context class:
+
+```xml
+<PropertyGroup>
+  <InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
+</PropertyGroup>
+```
+
+Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass. If your context has no namespace, use `Quarry.Generated`.
+
 Optional: add compile-time query analysis rules:
 
 ```xml

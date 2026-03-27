@@ -95,8 +95,11 @@ internal static class SqlExprBinder
 
             case BinaryOpExpr bin:
             {
-                var left = BindExpr(bin.Left, ctx, false);
-                var right = BindExpr(bin.Right, ctx, false);
+                // AND/OR children are in boolean context (each side must evaluate to bool),
+                // so bare boolean columns like u.IsActive get wrapped as "col = 1"/"col = TRUE".
+                var childBoolCtx = bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or;
+                var left = BindExpr(bin.Left, ctx, childBoolCtx);
+                var right = BindExpr(bin.Right, ctx, childBoolCtx);
                 if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
                     return bin;
                 return new BinaryOpExpr(left, bin.Operator, right);

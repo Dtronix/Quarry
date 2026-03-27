@@ -1,0 +1,55 @@
+@page
+@model Quarry.Sample.WebApp.Pages.Admin.DashboardModel
+@{
+    ViewData["Title"] = "Dashboard";
+    Layout = "_Layout";
+}
+
+<h1>Dashboard</h1>
+
+<div class="stats">
+    <div class="stat-card">
+        <div class="value">@Model.TotalUsers</div>
+        <div class="label">Total Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">@Model.ActiveUsers</div>
+        <div class="label">Active Users</div>
+    </div>
+    <div class="stat-card">
+        <div class="value">@Model.ActiveSessions</div>
+        <div class="label">Active Sessions</div>
+    </div>
+</div>
+
+@if (Model.UsersByRole.Count > 0)
+{
+    <div class="card">
+        <h2>Users by Role</h2>
+        <table>
+            <thead><tr><th>Role</th><th>Count</th></tr></thead>
+            <tbody>
+                @foreach (var r in Model.UsersByRole)
+                {
+                    <tr><td>@r.Role</td><td>@r.Count</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (Model.RecentLogins.Count > 0)
+{
+    <div class="card">
+        <h2>Recent Logins (last 7 days)</h2>
+        <table>
+            <thead><tr><th>Day</th><th>Count</th></tr></thead>
+            <tbody>
+                @foreach (var d in Model.RecentLogins)
+                {
+                    <tr><td>@d.Day</td><td>@d.Count</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}

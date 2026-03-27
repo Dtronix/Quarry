@@ -425,7 +425,9 @@ internal static partial class InterceptorCodeGenerator
 
     /// <summary>
     /// Generates cached extractor code using static fields for all captured parameters.
-    /// Emits inline Unsafe.As navigation with cached FieldInfo.
+    /// For simple closure field captures (the common case), caches the FieldInfo in a static
+    /// field for fast repeated access. For property chains (e.g., input.Email), falls back
+    /// to the generic ExtractMemberChainValue helper.
     /// </summary>
     internal static void GenerateCachedExtraction(StringBuilder sb, List<CachedExtractorField> fields)
     {
@@ -433,8 +435,13 @@ internal static partial class InterceptorCodeGenerator
         {
             sb.AppendLine($"        // Inline extraction: {field.ExpressionPath}");
             var memberVar = GenerateInlineNavigation(sb, field.ExpressionPath, field.ParameterIndex);
-            sb.AppendLine($"        {field.FieldName} ??= Unsafe.As<FieldInfo>({memberVar}.Member);");
-            sb.AppendLine($"        var p{field.ParameterIndex} = {field.FieldName}.GetValue(Unsafe.As<ConstantExpression>({memberVar}.Expression!).Value);");
+            // Cache FieldInfo when the MemberExpression targets a closure field directly
+            // (Expression is ConstantExpression). For property chains (Expression is another
+            // MemberExpression), FieldInfo caching doesn't apply — use generic extraction.
+            sb.AppendLine($"        {field.FieldName} ??= {memberVar}.Expression is ConstantExpression ? {memberVar}.Member as FieldInfo : null;");
+            sb.AppendLine($"        var p{field.ParameterIndex} = {field.FieldName} != null");
+            sb.AppendLine($"            ? {field.FieldName}.GetValue(Unsafe.As<ConstantExpression>({memberVar}.Expression!).Value)");
+            sb.AppendLine($"            : Quarry.Internal.ExpressionHelper.ExtractMemberChainValue({memberVar});");
         }
     }
 
@@ -556,6 +563,21 @@ internal static partial class InterceptorCodeGenerator
     /// </summary>
     internal static bool IsEntityAccessorType(string builderTypeName)
         => builderTypeName is "IEntityAccessor" or "EntityAccessor";
+
+    /// <summary>
+    /// Builds the receiver (this parameter) type string for an interceptor method.
+    /// IEntityAccessor only takes one type argument (the entity type), so when the
+    /// builder is an entity accessor, the result type is NOT included in the receiver.
+    /// For IQueryBuilder (2 type args), both entity and result are included.
+    /// </summary>
+    internal static string BuildReceiverType(string thisType, string entityType, string? resultType)
+    {
+        if (IsEntityAccessorType(thisType))
+            return $"{thisType}<{entityType}>";
+        if (resultType != null)
+            return $"{thisType}<{entityType}, {resultType}>";
+        return $"{thisType}<{entityType}>";
+    }
 
     /// <summary>
     /// Returns the expression to convert a builder to a QueryBuilder when the receiver is IEntityAccessor.

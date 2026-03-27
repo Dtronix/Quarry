@@ -245,4 +245,95 @@ internal class CrossDialectSelectTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` LIMIT 5",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
     }
+
+    [Test]
+    public async Task Pagination_LiteralLimit_ParameterizedOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Use a variable (not const) so the generator treats offset as parameterized
+        int offset = 1;
+
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(2).Offset(offset).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET @p0",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT 2 OFFSET $1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY");
+
+        // Execution: skip 1 user, take 2 → should get Bob and Charlie
+        var results = await Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(2).Offset(offset)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+        Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+    }
+
+    [Test]
+    public async Task Pagination_ParameterizedLimit_LiteralOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Inverse mixed case: parameterized limit, literal offset
+        int limit = 2;
+
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(1).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT @p0 OFFSET 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT $1 OFFSET 1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY");
+
+        // Execution: skip 1, take 2 → should get Bob and Charlie
+        var results = await Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(limit).Offset(1)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+        Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+    }
+
+    [Test]
+    public async Task Pagination_BothParameterized()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Both parameterized
+        int limit = 2;
+        int offset = 1;
+
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).ToDiagnostics(),
+            Pg.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).ToDiagnostics(),
+            My.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).ToDiagnostics(),
+            Ss.Users().Select(u => (u.UserId, u.UserName)).Limit(limit).Offset(offset).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT @p0 OFFSET @p1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" LIMIT $1 OFFSET $2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY");
+
+        // Execution: skip 1, take 2 → should get Bob and Charlie
+        var results = await Lite.Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Limit(limit).Offset(offset)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+        Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+    }
 }

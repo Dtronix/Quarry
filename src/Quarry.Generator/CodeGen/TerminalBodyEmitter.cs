@@ -74,8 +74,9 @@ internal static class TerminalBodyEmitter
         }
         else
         {
+            var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType} {methodName}(");
-            sb.AppendLine($"        this {thisType}<{entityType}, {resultType}> builder,");
+            sb.AppendLine($"        this {receiverType} builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default)");
         }
 
@@ -242,7 +243,7 @@ internal static class TerminalBodyEmitter
                 var resultType = InterceptorCodeGenerator.GetShortTypeName(
                     InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
                     ?? chain.ResultTypeName);
-                thisParamType = $"{thisType}<{joinTypeArgs}, {resultType}>";
+                thisParamType = InterceptorCodeGenerator.BuildReceiverType(thisType, joinTypeArgs, resultType);
             }
             else
             {
@@ -256,7 +257,7 @@ internal static class TerminalBodyEmitter
                 var resultType = InterceptorCodeGenerator.GetShortTypeName(
                     InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo)
                     ?? chain.ResultTypeName);
-                thisParamType = $"{thisType}<{entityType}, {resultType}>";
+                thisParamType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             }
             else
             {
@@ -648,7 +649,7 @@ internal static class TerminalBodyEmitter
                     if (site.ResultTypeName != null)
                     {
                         preparedResultType = resultType;
-                        receiverType = $"{thisType}<{joinTypeArgs}, {resultType}>";
+                        receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, joinTypeArgs, resultType);
                     }
                     else
                     {
@@ -664,10 +665,7 @@ internal static class TerminalBodyEmitter
                 break;
             default:
                 preparedResultType = resultType;
-                if (site.ResultTypeName != null)
-                    receiverType = $"{thisType}<{entityType}, {resultType}>";
-                else
-                    receiverType = $"{thisType}<{entityType}>";
+                receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, site.ResultTypeName != null ? resultType : null);
                 break;
         }
 

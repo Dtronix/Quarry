@@ -14,6 +14,7 @@ internal static class MigrateAsyncCodeGenerator
     public static string Generate(
         string contextClassName,
         string contextNamespace,
+        string dialectName,
         IReadOnlyList<MigrationInfo> migrations)
     {
         var sb = new StringBuilder();
@@ -22,6 +23,7 @@ internal static class MigrateAsyncCodeGenerator
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Data.Common;");
         sb.AppendLine("using System.Threading.Tasks;");
+        sb.AppendLine("using Quarry;");
         sb.AppendLine("using Quarry.Migration;");
         sb.AppendLine();
 
@@ -66,7 +68,7 @@ internal static class MigrateAsyncCodeGenerator
 
         sb.AppendLine("        };");
         sb.AppendLine();
-        sb.AppendLine("        await MigrationRunner.RunAsync(connection, _dialect, migrations, options);");
+        sb.Append("        await MigrationRunner.RunAsync(connection, SqlDialect.").Append(dialectName).AppendLine(", migrations, options);");
         sb.AppendLine("    }");
         sb.AppendLine("}");
 

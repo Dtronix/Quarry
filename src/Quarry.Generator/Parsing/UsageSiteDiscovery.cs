@@ -1484,8 +1484,18 @@ internal static class UsageSiteDiscovery
 
         // Find the containing method scope
         int statementStart = -1;
+        // For chains inside object/collection initializers, use the individual
+        // initializer expression's span to differentiate independent chains
+        // that share the same outer statement.
+        int initializerMemberStart = -1;
         foreach (var ancestor in invocation.Ancestors())
         {
+            if (initializerMemberStart < 0
+                && ancestor is AssignmentExpressionSyntax initAssign
+                && initAssign.Parent is InitializerExpressionSyntax)
+            {
+                initializerMemberStart = initAssign.SpanStart;
+            }
             if (ancestor is StatementSyntax stmt && !(ancestor is BlockSyntax))
             {
                 statementStart = stmt.SpanStart;
@@ -1502,7 +1512,9 @@ internal static class UsageSiteDiscovery
                 if (assignedVarName != null)
                     return $"{filePath}:{method.Span.Start}:{assignedVarName}";
                 // Standalone fluent chains: use statement scope to distinguish separate chains.
-                var scopeKey = statementStart >= 0 ? statementStart : method.Span.Start;
+                // For initializer members, use the individual member's span for finer differentiation.
+                var scopeKey = initializerMemberStart >= 0 ? initializerMemberStart
+                    : statementStart >= 0 ? statementStart : method.Span.Start;
                 return $"{filePath}:{scopeKey}:{rootText}";
             }
             if (ancestor is LocalFunctionStatementSyntax localFunc)
@@ -1512,7 +1524,8 @@ internal static class UsageSiteDiscovery
                     return $"{filePath}:{localFunc.Span.Start}:{rootText}";
                 if (assignedVarName != null)
                     return $"{filePath}:{localFunc.Span.Start}:{assignedVarName}";
-                var scopeKey = statementStart >= 0 ? statementStart : localFunc.Span.Start;
+                var scopeKey = initializerMemberStart >= 0 ? initializerMemberStart
+                    : statementStart >= 0 ? statementStart : localFunc.Span.Start;
                 return $"{filePath}:{scopeKey}:{rootText}";
             }
         }
@@ -1536,9 +1549,13 @@ internal static class UsageSiteDiscovery
                 return declarator.Identifier.Text;
             }
             // query = query.Where(...)
+            // Skip property assignments inside object initializers (e.g., new Dto { Prop = db.Users()... })
+            // — each initializer expression is an independent chain, not a shared variable.
             if (ancestor is AssignmentExpressionSyntax assignment
                 && assignment.Left is IdentifierNameSyntax ident)
             {
+                if (assignment.Parent is InitializerExpressionSyntax)
+                    break; // Stop — don't walk past initializer to outer assignments
                 return ident.Identifier.Text;
             }
             // Stop at statement boundary
