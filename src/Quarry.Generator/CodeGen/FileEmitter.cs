@@ -262,19 +262,10 @@ internal sealed class FileEmitter
         // Collect all unique EntityReader classes
         var entityReaderInstances = InterceptorCodeGenerator.CollectEntityReaderInstances(_sites, chainMemberIds, _chains);
 
-        // Filter out carrier member FieldInfo fields
-        var interceptorStaticFields = staticFields
-            .Where(f => f.SiteUniqueId == null || !carrierMemberIds.Contains(f.SiteUniqueId))
-            .ToList();
-
-        if (interceptorStaticFields.Count > 0 || mappingInstances.Count > 0 || entityReaderInstances.Count > 0)
+        if (mappingInstances.Count > 0 || entityReaderInstances.Count > 0)
         {
             sb.AppendLine("    #region Cached Fields");
             sb.AppendLine();
-            foreach (var field in interceptorStaticFields)
-            {
-                sb.AppendLine($"    private static FieldInfo? {field.FieldName};");
-            }
             foreach (var mapping in mappingInstances)
             {
                 sb.AppendLine($"    private static readonly {mapping.Value} {mapping.Key} = new();");
