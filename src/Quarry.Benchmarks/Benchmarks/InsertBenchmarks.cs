@@ -102,33 +102,36 @@ public class InsertBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Raw_BatchInsert10()
     {
-        var total = 0;
+        await using var cmd = Connection.CreateCommand();
+        var sb = new System.Text.StringBuilder("INSERT INTO users (UserName, Email, IsActive, CreatedAt) VALUES ");
         for (int i = 0; i < 10; i++)
         {
-            await using var cmd = Connection.CreateCommand();
-            cmd.CommandText = "INSERT INTO users (UserName, Email, IsActive, CreatedAt) VALUES (@name, @email, @active, @created)";
-            cmd.Parameters.AddWithValue("@name", $"BatchUser{i}");
-            cmd.Parameters.AddWithValue("@email", $"batch{i}@example.com");
-            cmd.Parameters.AddWithValue("@active", 1);
-            cmd.Parameters.AddWithValue("@created", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
-            total += await cmd.ExecuteNonQueryAsync();
+            if (i > 0) sb.Append(", ");
+            sb.Append($"(@name{i}, @email{i}, @active{i}, @created{i})");
+            cmd.Parameters.AddWithValue($"@name{i}", $"BatchUser{i}");
+            cmd.Parameters.AddWithValue($"@email{i}", $"batch{i}@example.com");
+            cmd.Parameters.AddWithValue($"@active{i}", 1);
+            cmd.Parameters.AddWithValue($"@created{i}", DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss"));
         }
-        return total;
+        cmd.CommandText = sb.ToString();
+        return await cmd.ExecuteNonQueryAsync();
     }
 
     [Benchmark]
     public async Task<int> Dapper_BatchInsert10()
     {
-        var users = Enumerable.Range(0, 10).Select(i => new
+        var sb = new System.Text.StringBuilder("INSERT INTO users (UserName, Email, IsActive, CreatedAt) VALUES ");
+        var parameters = new DynamicParameters();
+        for (int i = 0; i < 10; i++)
         {
-            UserName = $"BatchUser{i}",
-            Email = $"batch{i}@example.com",
-            IsActive = true,
-            CreatedAt = DateTime.UtcNow
-        });
-        return await Connection.ExecuteAsync(
-            "INSERT INTO users (UserName, Email, IsActive, CreatedAt) VALUES (@UserName, @Email, @IsActive, @CreatedAt)",
-            users);
+            if (i > 0) sb.Append(", ");
+            sb.Append($"(@name{i}, @email{i}, @active{i}, @created{i})");
+            parameters.Add($"name{i}", $"BatchUser{i}");
+            parameters.Add($"email{i}", $"batch{i}@example.com");
+            parameters.Add($"active{i}", true);
+            parameters.Add($"created{i}", DateTime.UtcNow);
+        }
+        return await Connection.ExecuteAsync(sb.ToString(), parameters);
     }
 
     [Benchmark]
@@ -163,26 +166,23 @@ public class InsertBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> SqlKata_BatchInsert10()
     {
-        var total = 0;
-        for (int i = 0; i < 10; i++)
+        var columns = new[] { "UserName", "Email", "IsActive", "CreatedAt" };
+        var rows = Enumerable.Range(0, 10).Select(i => new object[]
         {
-            var query = new Query("users").AsInsert(new Dictionary<string, object>
-            {
-                ["UserName"] = $"BatchUser{i}",
-                ["Email"] = $"batch{i}@example.com",
-                ["IsActive"] = 1,
-                ["CreatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
-            });
-            var compiled = SqlKataCompiler.Compile(query);
+            $"BatchUser{i}",
+            $"batch{i}@example.com",
+            1,
+            DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+        });
+        var query = new Query("users").AsInsert(columns, rows);
+        var compiled = SqlKataCompiler.Compile(query);
 
-            await using var cmd = Connection.CreateCommand();
-            cmd.CommandText = compiled.Sql;
-            foreach (var binding in compiled.Bindings)
-            {
-                cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
-            }
-            total += await cmd.ExecuteNonQueryAsync();
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
-        return total;
+        return await cmd.ExecuteNonQueryAsync();
     }
 }
