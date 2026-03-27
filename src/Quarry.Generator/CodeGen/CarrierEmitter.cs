@@ -476,8 +476,8 @@ internal static class CarrierEmitter
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)
         {
-            // Collection fields are non-nullable reference types — use null! to suppress CS8618
-            var initializer = field.TypeName.Contains("IReadOnlyList") ? " = null!" : "";
+            // Non-nullable reference type fields need null! to suppress CS8618
+            var initializer = (field.IsReferenceType && !field.TypeName.EndsWith("?")) ? " = null!" : "";
             sb.AppendLine($"    internal {field.TypeName} {field.Name}{initializer};");
         }
 

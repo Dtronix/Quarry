@@ -22,7 +22,7 @@ internal static class CarrierAnalyzer
     /// <summary>
     /// Normalizes a parameter type for carrier field emission.
     /// </summary>
-    private static string NormalizeFieldType(string typeName)
+    internal static string NormalizeFieldType(string typeName)
     {
         // Guard: unresolved types from the semantic model (error types display as "?")
         if (typeName == "?" || typeName == "object")
@@ -35,16 +35,25 @@ internal static class CarrierAnalyzer
             return inner + "?";
         }
 
+        // Already nullable — nothing to do
         if (typeName.EndsWith("?"))
             return typeName;
 
+        // Known value types by short name (int, DateTime, Guid, etc.)
         if (ValueTypes.Contains(typeName))
             return typeName;
 
-        if (typeName.Contains('<') || typeName.Contains('[') || typeName.Contains('.'))
-            return typeName;
+        // Qualified value types (e.g. System.Int32, System.DateTime)
+        if (typeName.Contains('.'))
+        {
+            var unqualified = typeName.Substring(typeName.LastIndexOf('.') + 1);
+            if (ValueTypes.Contains(unqualified))
+                return typeName;
+        }
 
-        // Reference types — append ? for nullable context
+        // Everything remaining is a reference type: arrays (byte[]),
+        // generics (IReadOnlyList<T>), qualified names (System.String),
+        // and simple names (string) — append ? for nullable context.
         return typeName + "?";
     }
 
@@ -56,6 +65,33 @@ internal static class CarrierAnalyzer
         "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
         "Single", "Double", "Decimal", "Boolean", "Char"
     };
+
+    /// <summary>
+    /// Determines whether a CLR type name represents a reference type.
+    /// </summary>
+    internal static bool IsReferenceTypeName(string typeName)
+    {
+        var baseName = typeName.EndsWith("?") ? typeName.Substring(0, typeName.Length - 1) : typeName;
+
+        if (baseName.StartsWith("Nullable<") || baseName.StartsWith("System.Nullable<"))
+            return false;
+
+        if (baseName.EndsWith("[]"))
+            return true;
+
+        if (ValueTypes.Contains(baseName))
+            return false;
+
+        // Qualified value types (e.g. System.Int32)
+        if (baseName.Contains('.'))
+        {
+            var unqualified = baseName.Substring(baseName.LastIndexOf('.') + 1);
+            if (ValueTypes.Contains(unqualified))
+                return false;
+        }
+
+        return true;
+    }
 
     #region New pipeline (AssembledPlan → CarrierPlan)
 
@@ -110,7 +146,7 @@ internal static class CarrierAnalyzer
             {
                 var elementType = NormalizeFieldType(param.ElementTypeName);
                 var fieldType = $"System.Collections.Generic.IReadOnlyList<{elementType}>";
-                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter));
+                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter, isReferenceType: true));
                 parameters.Add(new CarrierParameter(
                     globalIndex: param.GlobalIndex,
                     fieldName: $"P{param.GlobalIndex}",
@@ -122,7 +158,7 @@ internal static class CarrierAnalyzer
             else
             {
                 var fieldType = NormalizeFieldType(param.ClrType);
-                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter));
+                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter, isReferenceType: IsReferenceTypeName(param.ClrType)));
                 parameters.Add(new CarrierParameter(
                     globalIndex: param.GlobalIndex,
                     fieldName: $"P{param.GlobalIndex}",
@@ -167,14 +203,14 @@ internal static class CarrierAnalyzer
         if (plan.Kind == QueryKind.Insert || hasSetPoco)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
-            fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity));
+            fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity, isReferenceType: true));
         }
 
         // BatchEntities field for batch insert chains
         if (plan.Kind == QueryKind.BatchInsert)
         {
             var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
-            fields.Add(new Models.CarrierField("BatchEntities", $"System.Collections.Generic.IEnumerable<{entityType}>?", Models.FieldRole.Entity));
+            fields.Add(new Models.CarrierField("BatchEntities", $"System.Collections.Generic.IEnumerable<{entityType}>?", Models.FieldRole.Entity, isReferenceType: true));
         }
 
         return new CarrierPlan(

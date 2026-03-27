@@ -23,11 +23,12 @@ internal enum FieldRole
 /// </summary>
 internal sealed class CarrierField : IEquatable<CarrierField>
 {
-    public CarrierField(string name, string typeName, FieldRole role)
+    public CarrierField(string name, string typeName, FieldRole role, bool isReferenceType = false)
     {
         Name = name;
         TypeName = typeName;
         Role = role;
+        IsReferenceType = isReferenceType;
     }
 
     /// <summary>
@@ -45,15 +46,21 @@ internal sealed class CarrierField : IEquatable<CarrierField>
     /// </summary>
     public FieldRole Role { get; }
 
+    /// <summary>
+    /// Gets whether this field's type is a reference type (e.g., string, byte[], IReadOnlyList&lt;T&gt;).
+    /// Used by the emitter to decide whether a <c>= null!</c> initializer is needed.
+    /// </summary>
+    public bool IsReferenceType { get; }
+
     public bool Equals(CarrierField? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
-        return Name == other.Name && TypeName == other.TypeName && Role == other.Role;
+        return Name == other.Name && TypeName == other.TypeName && Role == other.Role && IsReferenceType == other.IsReferenceType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierField);
-    public override int GetHashCode() => HashCode.Combine(Name, TypeName, Role);
+    public override int GetHashCode() => HashCode.Combine(Name, TypeName, Role, IsReferenceType);
 }
 
 /// <summary>
