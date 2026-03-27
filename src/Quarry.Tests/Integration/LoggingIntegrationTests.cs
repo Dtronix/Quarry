@@ -620,6 +620,24 @@ internal partial class LoggingIntegrationTests
         Assert.That(slowEntry.Message, Does.Contain("SELECT"));
     }
 
+    [Test]
+    public async Task SlowQueryScalar_EmitsWarning()
+    {
+        await using var db = new TestDbContext(_connection);
+        db.SlowQueryThreshold = TimeSpan.Zero; // Everything is "slow"
+
+        await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+
+        var slowEntries = _logger.Entries
+            .Where(e => e.Category == "Quarry.Execution" && e.Level == LogLevel.Warning)
+            .ToList();
+
+        Assert.That(slowEntries, Has.Count.EqualTo(1));
+        Assert.That(slowEntries[0].Message, Does.Contain("Slow query"));
+    }
+
     #endregion
 
     #region Level Gating

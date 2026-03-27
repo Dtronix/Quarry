@@ -570,6 +570,41 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_OpIdIsConditionalOnLogger()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var count = await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // OpId should be conditional on logger presence
+        Assert.That(code, Does.Contain("LogsmithOutput.Logger != null ? OpId.Next() : 0"));
+        // Unconditional OpId.Next() should not appear
+        Assert.That(code, Does.Not.Match(@"var __opId = OpId\.Next\(\);"));
+    }
+
+    [Test]
     public void CarrierGeneration_UpdateWithSetAndWhere()
     {
         var source = SharedSchema + @"
@@ -985,6 +1020,60 @@ public static class Queries
             "Nullable enum should not double-wrap with DBNull.Value");
         Assert.That(code, Does.Contain("DbType = System.Data.DbType.Int32"),
             "Nullable enum should still set DbType.Int32");
+    }
+
+    [Test]
+    public void CarrierGeneration_WhereEnumParameter_EmitsNullSafeBindingAndLogging()
+    {
+        var source = @"
+using Quarry;
+namespace TestApp;
+
+public enum OrderPriority { Low, Normal, High }
+
+public class TicketSchema : Schema
+{
+    public static string Table => ""tickets"";
+    public Key<int> TicketId => Identity();
+    public Col<string> Subject => Length(200);
+    public Col<OrderPriority> Priority { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Ticket> Tickets();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var p = OrderPriority.High;
+        await db.Tickets().Where(t => t.Priority == p).Select(t => t).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Carrier field for enum should be nullable (NormalizeFieldType treats enums
+        // as reference types), so parameter binding must use HasValue null guard.
+        Assert.That(code, Does.Contain(".HasValue").And.Contain(".Value"),
+            "Enum parameter binding should use HasValue null guard (CS8629 fix)");
+        Assert.That(code, Does.Not.Contain("(object)(int)__c.P0;"),
+            "Should not directly cast nullable enum field without null guard");
+
+        // Parameter logging should use null-safe ToString pattern, not bare .ToString()
+        Assert.That(code, Does.Contain("?.ToString()").And.Contain(@"?? ""null"""),
+            "Enum parameter logging should use null-safe ToString (CS8604 fix)");
     }
 
     [Test]

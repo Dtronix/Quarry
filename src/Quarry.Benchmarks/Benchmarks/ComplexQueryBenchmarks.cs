@@ -3,6 +3,8 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -74,6 +76,36 @@ public class ComplexQueryBenchmarks : BenchmarkBase
             .ExecuteFetchAllAsync();
     }
 
+    [Benchmark]
+    public async Task<List<UserOrderDto>> SqlKata_JoinFilterPaginate()
+    {
+        var query = new Query("users as u")
+            .Select("u.UserName", "o.Total")
+            .Join("orders as o", "u.UserId", "o.UserId")
+            .Where("u.IsActive", true)
+            .Limit(10)
+            .Offset(5);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<UserOrderDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserOrderDto
+            {
+                UserName = reader.GetString(0),
+                Total = reader.GetDecimal(1)
+            });
+        }
+        return results;
+    }
+
     // --- Multi-Join + Aggregate ---
 
     [Benchmark]
@@ -116,12 +148,31 @@ public class ComplexQueryBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_MultiJoinAggregate()
     {
-        var results = await QuarryDb.Users()
+        return await QuarryDb.Users()
             .Where(u => u.IsActive)
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => Sql.Count())
-            .ExecuteFetchAllAsync();
-        return results[0];
+            .ExecuteFetchFirstAsync();
+    }
+
+    [Benchmark]
+    public async Task<int> SqlKata_MultiJoinAggregate()
+    {
+        var query = new Query("users as u")
+            .Join("orders as o", "u.UserId", "o.UserId")
+            .Join("order_items as oi", "o.OrderId", "oi.OrderId")
+            .Where("u.IsActive", true)
+            .AsCount();
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        var result = await cmd.ExecuteScalarAsync();
+        return Convert.ToInt32(result);
     }
 }

@@ -346,7 +346,7 @@ public class RawSqlInterceptorTests
     #region Edge Case: DTO with Zero Properties
 
     [Test]
-    public void RawSqlAsync_DtoWithZeroProperties_GeneratesEmptySwitch()
+    public void RawSqlAsync_DtoWithZeroProperties_OmitsSwitch()
     {
         var rawSqlTypeInfo = new RawSqlTypeInfo(
             "EmptyDto",
@@ -358,9 +358,9 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        Assert.That(result, Does.Contain("new EmptyDto()"));
-        Assert.That(result, Does.Contain("switch (r.GetName(i))"));
-        // No case labels should be generated
+        // Should emit a simple one-liner lambda discarding the reader parameter
+        Assert.That(result, Does.Contain("static _ => new EmptyDto()"));
+        Assert.That(result, Does.Not.Contain("switch (r.GetName(i))"));
         Assert.That(result, Does.Not.Contain("case \""));
     }
 

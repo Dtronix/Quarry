@@ -3,6 +3,8 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -48,20 +50,43 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Quarry_WhereActive()
+    public async Task<List<User>> Quarry_WhereActive()
     {
         return await QuarryDb.Users()
             .Where(u => u.IsActive)
-            .Select(u => new EfUser
-            {
-                UserId = u.UserId,
-                UserName = u.UserName,
-                Email = u.Email,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                LastLogin = u.LastLogin
-            })
+            .Select(u => u)
             .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<EfUser>> SqlKata_WhereActive()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
+            .Where("IsActive", true);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<EfUser>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new EfUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            });
+        }
+        return results;
     }
 
     // --- Where Compound ---
@@ -110,8 +135,7 @@ public class FilterBenchmarks : BenchmarkBase
     public async Task<List<UserSummaryDto>> Quarry_WhereCompound()
     {
         return await QuarryDb.Users()
-            .Where(u => u.IsActive)
-            .Where(u => u.Email != null)
+            .Where(u => u.IsActive && u.Email != null)
             .Select(u => new UserSummaryDto
             {
                 UserId = u.UserId,
@@ -119,6 +143,35 @@ public class FilterBenchmarks : BenchmarkBase
                 IsActive = u.IsActive
             })
             .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> SqlKata_WhereCompound()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "IsActive")
+            .Where("IsActive", true)
+            .WhereNotNull("Email");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<UserSummaryDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserSummaryDto
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return results;
     }
 
     // --- Where By ID ---
@@ -161,19 +214,41 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<EfUser?> Quarry_WhereById()
+    public async Task<User?> Quarry_WhereById()
     {
         return await QuarryDb.Users()
             .Where(u => u.UserId == 42)
-            .Select(u => new EfUser
-            {
-                UserId = u.UserId,
-                UserName = u.UserName,
-                Email = u.Email,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                LastLogin = u.LastLogin
-            })
+            .Select(u => u)
             .ExecuteFetchFirstOrDefaultAsync();
+    }
+
+    [Benchmark]
+    public async Task<EfUser?> SqlKata_WhereById()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
+            .Where("UserId", 42);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        if (await reader.ReadAsync())
+        {
+            return new EfUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            };
+        }
+        return null;
     }
 }

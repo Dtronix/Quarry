@@ -3,6 +3,8 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -49,21 +51,45 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Quarry_LimitOffset()
+    public async Task<List<User>> Quarry_LimitOffset()
     {
         return await QuarryDb.Users()
-            .Select(u => new EfUser
-            {
-                UserId = u.UserId,
-                UserName = u.UserName,
-                Email = u.Email,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                LastLogin = u.LastLogin
-            })
+            .Select(u => u)
             .Limit(10)
             .Offset(20)
             .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<EfUser>> SqlKata_LimitOffset()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
+            .Limit(10)
+            .Offset(20);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<EfUser>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new EfUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            });
+        }
+        return results;
     }
 
     // --- First Page ---
@@ -106,19 +132,42 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Quarry_FirstPage()
+    public async Task<List<User>> Quarry_FirstPage()
     {
         return await QuarryDb.Users()
-            .Select(u => new EfUser
-            {
-                UserId = u.UserId,
-                UserName = u.UserName,
-                Email = u.Email,
-                IsActive = u.IsActive,
-                CreatedAt = u.CreatedAt,
-                LastLogin = u.LastLogin
-            })
+            .Select(u => u)
             .Limit(10)
             .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<EfUser>> SqlKata_FirstPage()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
+            .Limit(10);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<EfUser>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new EfUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            });
+        }
+        return results;
     }
 }
