@@ -74,11 +74,15 @@ internal static class PipelineOrchestrator
 
         ct.ThrowIfCancellationRequested();
 
+        // Resolve unresolved result types from chain projections (e.g., tuple types
+        // that the semantic model couldn't resolve during discovery due to reassignment).
+        var resultTypePatches = BuildResultTypePatches(assembledPlans);
+
         // Propagate chain-updated sites (e.g., JoinedEntityTypeNames from ChainAnalyzer)
         // back into the main site array so downstream code sees a single consistent view.
         // This eliminates the need for FileEmitter to conditionally select between original
         // and chain-updated sites.
-        var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans);
+        var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans, resultTypePatches);
 
         // Group into files
         return GroupTranslatedIntoFiles(updatedSites, assembledPlans, carrierPlans, diagnostics);
@@ -142,13 +146,72 @@ internal static class PipelineOrchestrator
     }
 
     /// <summary>
+    /// Builds a dictionary of result type patches for clause/execution sites whose
+    /// ResultTypeName is unresolved (e.g., tuple types rendered as (object, object, object)
+    /// due to Roslyn semantic model limitations on reassigned variables).
+    /// The resolved type comes from the chain's SelectProjection after BuildProjection enrichment.
+    /// </summary>
+    private static Dictionary<string, string> BuildResultTypePatches(List<AssembledPlan> assembledPlans)
+    {
+        var patches = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var plan in assembledPlans)
+        {
+            var resolvedType = plan.Plan.Projection?.ResultTypeName;
+            if (resolvedType == null || resolvedType.Length == 0 || IsUnresolvedResultType(resolvedType))
+                continue;
+
+            // Patch execution site if its result type is unresolved
+            if (IsUnresolvedResultType(plan.ExecutionSite.ResultTypeName))
+                patches[plan.ExecutionSite.UniqueId] = resolvedType;
+
+            // Patch clause sites with unresolved result types
+            foreach (var cs in plan.ClauseSites)
+            {
+                if (IsUnresolvedResultType(cs.ResultTypeName))
+                    patches[cs.UniqueId] = resolvedType;
+            }
+        }
+
+        return patches;
+    }
+
+    /// <summary>
+    /// Determines whether a ResultTypeName is unresolved and needs patching.
+    /// </summary>
+    private static bool IsUnresolvedResultType(string? resultTypeName)
+    {
+        if (resultTypeName == null || resultTypeName == "?" || resultTypeName == "object")
+            return true;
+
+        // Tuple types containing "object" elements indicate unresolved generic type arguments
+        if (resultTypeName.StartsWith("(") && resultTypeName.EndsWith(")"))
+        {
+            var inner = resultTypeName.Substring(1, resultTypeName.Length - 2);
+            foreach (var element in inner.Split(','))
+            {
+                var trimmed = element.Trim();
+                // Strip element name if present (e.g., "object Id" → "object")
+                var spaceIdx = trimmed.LastIndexOf(' ');
+                var typePart = spaceIdx >= 0 ? trimmed.Substring(0, spaceIdx).Trim() : trimmed;
+                if (typePart == "object" || typePart == "?")
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Replaces sites in the main array with chain-updated versions from AssembledPlans.
     /// ChainAnalyzer may update sites (e.g., propagating JoinedEntityTypeNames to post-join
-    /// and execution sites). This ensures all downstream code sees the enriched sites.
+    /// and execution sites). Also applies result type patches for unresolved tuple types.
+    /// This ensures all downstream code sees the enriched sites.
     /// </summary>
     private static ImmutableArray<TranslatedCallSite> PropagateChainUpdatedSites(
         ImmutableArray<TranslatedCallSite> allSites,
-        List<AssembledPlan> assembledPlans)
+        List<AssembledPlan> assembledPlans,
+        Dictionary<string, string> resultTypePatches)
     {
         // Build lookup of chain-updated sites by UniqueId
         var chainUpdatedSites = new Dictionary<string, TranslatedCallSite>(StringComparer.Ordinal);
@@ -157,6 +220,25 @@ internal static class PipelineOrchestrator
             chainUpdatedSites[plan.ExecutionSite.UniqueId] = plan.ExecutionSite;
             foreach (var cs in plan.ClauseSites)
                 chainUpdatedSites[cs.UniqueId] = cs;
+        }
+
+        // Apply result type patches on top of chain-updated sites
+        foreach (var kvp in resultTypePatches)
+        {
+            if (chainUpdatedSites.TryGetValue(kvp.Key, out var site))
+                chainUpdatedSites[kvp.Key] = site.WithResolvedResultType(kvp.Value);
+            else
+            {
+                // Site not in any chain's updated set — find it in allSites
+                foreach (var s in allSites)
+                {
+                    if (s.UniqueId == kvp.Key)
+                    {
+                        chainUpdatedSites[kvp.Key] = s.WithResolvedResultType(kvp.Value);
+                        break;
+                    }
+                }
+            }
         }
 
         if (chainUpdatedSites.Count == 0)
