@@ -54,12 +54,12 @@ internal static class RawSqlBodyEmitter
         {
             sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
             sb.AppendLine($"            sql,");
-            sb.AppendLine($"            static r =>");
-            sb.AppendLine($"            {{");
-            sb.AppendLine($"                var item = new {resultType}();");
 
             if (rawSqlInfo.Properties.Count > 0)
             {
+                sb.AppendLine($"            static r =>");
+                sb.AppendLine($"            {{");
+                sb.AppendLine($"                var item = new {resultType}();");
                 sb.AppendLine($"                for (var i = 0; i < r.FieldCount; i++)");
                 sb.AppendLine($"                {{");
                 sb.AppendLine($"                    if (r.IsDBNull(i)) continue;");
@@ -74,10 +74,14 @@ internal static class RawSqlBodyEmitter
 
                 sb.AppendLine($"                    }}");
                 sb.AppendLine($"                }}");
+                sb.AppendLine($"                return item;");
+                sb.AppendLine($"            }},");
+            }
+            else
+            {
+                sb.AppendLine($"            static _ => new {resultType}(),");
             }
 
-            sb.AppendLine($"                return item;");
-            sb.AppendLine($"            }},");
             sb.AppendLine($"            {ctArg},");
             sb.AppendLine($"            parameters);");
         }

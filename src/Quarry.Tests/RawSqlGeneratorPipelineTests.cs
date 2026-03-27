@@ -350,8 +350,8 @@ public class Service
 
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
-        Assert.That(code, Does.Contain("new ReadOnlyDto()"),
-            "Interceptor should construct the DTO");
+        Assert.That(code, Does.Contain("static _ => new ReadOnlyDto()"),
+            "Should emit a one-liner lambda discarding the reader when there are no settable properties");
         Assert.That(code, Does.Not.Contain("switch (r.GetName(i))"),
             "Should not emit a switch block when there are no settable properties");
     }

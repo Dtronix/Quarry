@@ -358,8 +358,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        Assert.That(result, Does.Contain("new EmptyDto()"));
-        // Empty switch block should be omitted entirely to avoid CS1522
+        // Should emit a simple one-liner lambda discarding the reader parameter
+        Assert.That(result, Does.Contain("static _ => new EmptyDto()"));
         Assert.That(result, Does.Not.Contain("switch (r.GetName(i))"));
         Assert.That(result, Does.Not.Contain("case \""));
     }
