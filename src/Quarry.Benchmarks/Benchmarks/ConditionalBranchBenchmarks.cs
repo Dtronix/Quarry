@@ -19,8 +19,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
     private bool _sortByName;
     private bool _limitResults;
 
-    [GlobalSetup]
-    public new void GlobalSetup()
+    public override void GlobalSetup()
     {
         base.GlobalSetup();
         _filterActive = true;

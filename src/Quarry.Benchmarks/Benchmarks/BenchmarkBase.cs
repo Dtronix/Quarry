@@ -14,7 +14,7 @@ public abstract class BenchmarkBase
     protected SqliteCompiler SqlKataCompiler { get; private set; } = null!;
 
     [GlobalSetup]
-    public void GlobalSetup()
+    public virtual void GlobalSetup()
     {
         Connection = new SqliteConnection("Data Source=BenchDb;Mode=Memory;Cache=Shared");
         Connection.Open();
