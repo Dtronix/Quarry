@@ -1111,4 +1111,93 @@ public static class Queries
         Assert.That(code, Does.Not.Match(@"Content = r\.GetValue\(\d+\)[^)]"),
             "byte[] columns should not assign GetValue() result without cast");
     }
+
+    [Test]
+    public void CarrierGeneration_ByteArraySetParam_EmitsNullableFieldWithoutCS8618()
+    {
+        var source = @"
+using System;
+using Quarry;
+namespace TestApp;
+
+public class FileSchema : Schema
+{
+    public static string Table => ""files"";
+    public Key<int> FileId => Identity();
+    public Col<string> Name => Length(255);
+    public Col<byte[]> Content { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<File> Files();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db, byte[] data)
+    {
+        await db.Files().Update().Set(f => f.Content = data).Where(f => f.FileId == 1).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"),
+            "byte[] Set chain should be carrier-optimized");
+
+        // byte[] carrier field must be emitted as nullable (byte[]?) to avoid CS8618
+        Assert.That(code, Does.Contain("internal byte[]? P0;"),
+            "byte[] carrier field should be emitted as nullable (byte[]?)");
+        Assert.That(code, Does.Not.Match(@"internal byte\[\] P\d+;"),
+            "byte[] carrier field must not be emitted as non-nullable");
+
+        // No CS8618 warnings on the generated code
+        var cs8618 = diagnostics.Where(d => d.Id == "CS8618").ToList();
+        Assert.That(cs8618, Is.Empty,
+            "Generated carrier class should not produce CS8618 warnings for byte[] fields");
+    }
+
+    [Test]
+    public void CarrierGeneration_CollectionParam_EmitsNullBangInitializer()
+    {
+        var source = SharedSchema + @"
+using System.Collections.Generic;
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db, IReadOnlyList<int> ids)
+    {
+        await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // IReadOnlyList<> carrier field is non-nullable reference type — must have = null! initializer
+        Assert.That(code, Does.Match(@"internal System\.Collections\.Generic\.IReadOnlyList<int\??> P0 = null!;"),
+            "IReadOnlyList carrier field should have = null! initializer to suppress CS8618");
+    }
 }
