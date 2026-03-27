@@ -425,7 +425,9 @@ internal static partial class InterceptorCodeGenerator
 
     /// <summary>
     /// Generates cached extractor code using static fields for all captured parameters.
-    /// Emits inline Unsafe.As navigation with cached FieldInfo.
+    /// For simple closure field captures (the common case), caches the FieldInfo in a static
+    /// field for fast repeated access. For property chains (e.g., input.Email), falls back
+    /// to the generic ExtractMemberChainValue helper.
     /// </summary>
     internal static void GenerateCachedExtraction(StringBuilder sb, List<CachedExtractorField> fields)
     {
@@ -433,7 +435,13 @@ internal static partial class InterceptorCodeGenerator
         {
             sb.AppendLine($"        // Inline extraction: {field.ExpressionPath}");
             var memberVar = GenerateInlineNavigation(sb, field.ExpressionPath, field.ParameterIndex);
-            sb.AppendLine($"        var p{field.ParameterIndex} = Quarry.Internal.ExpressionHelper.ExtractMemberChainValue({memberVar});");
+            // Cache FieldInfo when the MemberExpression targets a closure field directly
+            // (Expression is ConstantExpression). For property chains (Expression is another
+            // MemberExpression), FieldInfo caching doesn't apply — use generic extraction.
+            sb.AppendLine($"        {field.FieldName} ??= {memberVar}.Expression is ConstantExpression ? {memberVar}.Member as FieldInfo : null;");
+            sb.AppendLine($"        var p{field.ParameterIndex} = {field.FieldName} != null");
+            sb.AppendLine($"            ? {field.FieldName}.GetValue(Unsafe.As<ConstantExpression>({memberVar}.Expression!).Value)");
+            sb.AppendLine($"            : Quarry.Internal.ExpressionHelper.ExtractMemberChainValue({memberVar});");
         }
     }
 
