@@ -20,8 +20,7 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
         IReadOnlyList<CarrierParameter>? parameters = null,
         string? maskType = null,
         int maskBitCount = 0,
-        IReadOnlyList<string>? implementedInterfaces = null,
-        IReadOnlyList<Models.CarrierInterfaceStub>? deadMethods = null)
+        IReadOnlyList<string>? implementedInterfaces = null)
     {
         IsEligible = isEligible;
         IneligibleReason = ineligibleReason;
@@ -33,7 +32,6 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
         MaskType = maskType;
         MaskBitCount = maskBitCount;
         ImplementedInterfaces = implementedInterfaces ?? Array.Empty<string>();
-        DeadMethods = deadMethods ?? Array.Empty<Models.CarrierInterfaceStub>();
     }
 
     /// <summary>Whether the chain qualifies for carrier optimization.</summary>
@@ -65,9 +63,6 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
 
     /// <summary>Fully qualified closed interface names this carrier implements. Assigned during emission.</summary>
     public IReadOnlyList<string> ImplementedInterfaces { get; set; }
-
-    /// <summary>Dead interface methods (explicit impls that throw).</summary>
-    public IReadOnlyList<Models.CarrierInterfaceStub> DeadMethods { get; }
 
     /// <summary>Creates an ineligible plan with a reason.</summary>
     public static CarrierPlan Ineligible(string reason)

@@ -2,6 +2,11 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using NUnit.Framework;
 using Quarry.Generators;
+using Quarry.Generators.CodeGen;
+using Quarry.Generators.IR;
+using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
+using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests.Generation;
 
@@ -121,8 +126,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Carrier class is emitted with CarrierBase<User, User> since Select(u => u) maps User -> User
-        Assert.That(code, Does.Contain("file sealed class Chain_0 : CarrierBase<"));
+        // Carrier class implements interfaces directly (no base class)
+        Assert.That(code, Does.Contain("file sealed class Chain_0 : IEntityAccessor<"));
         // Carrier-optimized chains don't use AllocatePrebuiltParams (that's the non-carrier path)
         Assert.That(code, Does.Not.Contain("AllocatePrebuiltParams"));
         // The carrier remark should indicate the optimization level
@@ -158,7 +163,7 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("file sealed class Chain_"));
-        Assert.That(code, Does.Contain("CarrierBase<"));
+        Assert.That(code, Does.Contain("IEntityAccessor<"));
         Assert.That(code, Does.Contain("__c.P0 ="));
     }
 
@@ -485,7 +490,7 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("CarrierBase<User, User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User, User>"));
     }
 
     [Test]
@@ -515,8 +520,8 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // Insert carrier uses InsertCarrierBase
-        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        // Insert carrier implements interfaces directly
+        Assert.That(code, Does.Contain("IInsertBuilder<User>"));
         // Carrier should have Entity field
         Assert.That(code, Does.Contain("internal User? Entity;"));
         // Insert transition stores entity on carrier
@@ -558,7 +563,7 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         // Insert carrier with RETURNING clause
-        Assert.That(code, Does.Contain("InsertCarrierBase<User>"));
+        Assert.That(code, Does.Contain("IInsertBuilder<User>"));
         Assert.That(code, Does.Contain("RETURNING"));
         // Carrier scalar execution
         Assert.That(code, Does.Contain("ExecuteCarrierScalarWithCommandAsync"));
@@ -1199,5 +1204,205 @@ public static class Queries
         // IReadOnlyList<> carrier field is non-nullable reference type — must have = null! initializer
         Assert.That(code, Does.Match(@"internal System\.Collections\.Generic\.IReadOnlyList<int\??> P0 = null!;"),
             "IReadOnlyList carrier field should have = null! initializer to suppress CS8618");
+    }
+
+    [Test]
+    public void CarrierGeneration_NoBaseClass_UsesInterfacesDirectly()
+    {
+        // Verifies that generated carriers implement interfaces directly
+        // and do not inherit from any CarrierBase class (issue #86).
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // No CarrierBase inheritance — interfaces only
+        Assert.That(code, Does.Not.Contain("CarrierBase"));
+        Assert.That(code, Does.Not.Contain("JoinedCarrierBase"));
+        // Carrier class directly implements interfaces
+        Assert.That(code, Does.Contain("IEntityAccessor<User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User>"));
+        Assert.That(code, Does.Contain("IQueryBuilder<User, User>"));
+        // Ctx field emitted directly on carrier
+        Assert.That(code, Does.Contain("internal IQueryExecutionContext? Ctx;"));
+    }
+
+    [Test]
+    public void CarrierGeneration_DeleteCarrier_UsesInterfacesDirectly()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var id = 42;
+        await db.Users().Delete().Where(u => u.UserId == id).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Delete carrier uses interfaces directly, not DeleteCarrierBase
+        Assert.That(code, Does.Not.Contain("DeleteCarrierBase"));
+        Assert.That(code, Does.Contain("IEntityAccessor<User>"));
+        Assert.That(code, Does.Contain("IDeleteBuilder<User>"));
+        Assert.That(code, Does.Contain("IExecutableDeleteBuilder<User>"));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_TwoTableJoin_ReturnsCorrectInterfaces()
+    {
+        var interfaces = ResolveJoinInterfaces("User", "Order");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>"
+        }));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_ThreeTableJoin_ReturnsCorrectInterfaces()
+    {
+        var interfaces = ResolveJoinInterfaces("User", "Order", "Product");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>",
+            "IJoinedQueryBuilder3<User, Order, Product>"
+        }));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_FourTableJoin_ReturnsCorrectInterfaces()
+    {
+        var interfaces = ResolveJoinInterfaces("User", "Order", "Product", "Category");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>",
+            "IJoinedQueryBuilder3<User, Order, Product>",
+            "IJoinedQueryBuilder4<User, Order, Product, Category>"
+        }));
+    }
+
+    /// <summary>
+    /// Constructs a minimal AssembledPlan with the given entity type names as a join chain
+    /// and calls ResolveCarrierInterfaceList. End-to-end join tests can't produce carrier
+    /// interceptors in the unit test compilation context, so we test the resolution directly.
+    /// </summary>
+    private static string[] ResolveJoinInterfaces(params string[] entityTypeNames)
+    {
+        var raw = new RawCallSite(
+            methodName: "ExecuteFetchAllAsync",
+            filePath: "test.cs",
+            line: 1, column: 1,
+            uniqueId: "join_test",
+            kind: InterceptorKind.ExecuteFetchAll,
+            builderKind: BuilderKind.Query,
+            entityTypeName: entityTypeNames[0],
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: default);
+
+        var mods = new ColumnModifiers();
+        var entity = EntityRef.FromEntityInfo(new EntityInfo(
+            entityName: entityTypeNames[0], schemaClassName: "Schema", schemaNamespace: "TestApp",
+            tableName: "t0", namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[] { new ColumnInfo("Id", "id", "int", "int", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
+            navigations: Array.Empty<NavigationInfo>(),
+            indexes: Array.Empty<IndexInfo>(),
+            location: Location.None));
+
+        var bound = new BoundCallSite(
+            raw, "Ctx", "App", GenSqlDialect.SQLite,
+            "t0", null, entity,
+            joinedEntityTypeNames: entityTypeNames);
+
+        var site = new TranslatedCallSite(bound);
+
+        var joins = new JoinPlan[entityTypeNames.Length - 1];
+        for (int i = 0; i < joins.Length; i++)
+        {
+            joins[i] = new JoinPlan(
+                JoinClauseKind.Inner,
+                new TableRef($"t{i + 1}", null, $"t{i + 1}"),
+                new LiteralExpr("1", "int"));
+        }
+
+        var plan = new Quarry.Generators.IR.QueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("t0", null, "t0"),
+            joins: joins,
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: new SelectProjection(
+                ProjectionKind.Entity, entityTypeNames[0],
+                Array.Empty<ProjectedColumn>(), isIdentity: true),
+            pagination: null, isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: new[] { 0 },
+            parameters: Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.PrebuiltDispatch);
+
+        var assembled = new AssembledPlan(
+            plan: plan,
+            sqlVariants: new Dictionary<int, AssembledSqlVariant>
+            {
+                [0] = new AssembledSqlVariant("SELECT 1", 0)
+            },
+            readerDelegateCode: null,
+            maxParameterCount: 0,
+            executionSite: site,
+            clauseSites: Array.Empty<TranslatedCallSite>(),
+            entityTypeName: entityTypeNames[0],
+            resultTypeName: null,
+            dialect: GenSqlDialect.SQLite);
+
+        return CarrierEmitter.ResolveCarrierInterfaceList(assembled);
     }
 }
