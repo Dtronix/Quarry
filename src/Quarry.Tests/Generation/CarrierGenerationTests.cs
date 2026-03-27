@@ -1282,11 +1282,54 @@ public static class Queries
     }
 
     [Test]
-    public void ResolveCarrierInterfaceList_JoinedChain_ReturnsCorrectInterfaces()
+    public void ResolveCarrierInterfaceList_TwoTableJoin_ReturnsCorrectInterfaces()
     {
-        // Directly test the interface resolution for a 2-table join chain.
-        // End-to-end join tests can't produce carrier interceptors in the unit test
-        // compilation context, so we test the resolution method directly.
+        var interfaces = ResolveJoinInterfaces("User", "Order");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>"
+        }));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_ThreeTableJoin_ReturnsCorrectInterfaces()
+    {
+        var interfaces = ResolveJoinInterfaces("User", "Order", "Product");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>",
+            "IJoinedQueryBuilder3<User, Order, Product>"
+        }));
+    }
+
+    [Test]
+    public void ResolveCarrierInterfaceList_FourTableJoin_ReturnsCorrectInterfaces()
+    {
+        var interfaces = ResolveJoinInterfaces("User", "Order", "Product", "Category");
+
+        Assert.That(interfaces, Is.EqualTo(new[]
+        {
+            "IEntityAccessor<User>",
+            "IQueryBuilder<User>",
+            "IJoinedQueryBuilder<User, Order>",
+            "IJoinedQueryBuilder3<User, Order, Product>",
+            "IJoinedQueryBuilder4<User, Order, Product, Category>"
+        }));
+    }
+
+    /// <summary>
+    /// Constructs a minimal AssembledPlan with the given entity type names as a join chain
+    /// and calls ResolveCarrierInterfaceList. End-to-end join tests can't produce carrier
+    /// interceptors in the unit test compilation context, so we test the resolution directly.
+    /// </summary>
+    private static string[] ResolveJoinInterfaces(params string[] entityTypeNames)
+    {
         var raw = new RawCallSite(
             methodName: "ExecuteFetchAllAsync",
             filePath: "test.cs",
@@ -1294,7 +1337,7 @@ public static class Queries
             uniqueId: "join_test",
             kind: InterceptorKind.ExecuteFetchAll,
             builderKind: BuilderKind.Query,
-            entityTypeName: "User",
+            entityTypeName: entityTypeNames[0],
             resultTypeName: null,
             isAnalyzable: true,
             nonAnalyzableReason: null,
@@ -1304,35 +1347,39 @@ public static class Queries
 
         var mods = new ColumnModifiers();
         var entity = EntityRef.FromEntityInfo(new EntityInfo(
-            entityName: "User", schemaClassName: "UserSchema", schemaNamespace: "TestApp",
-            tableName: "users", namingStyle: NamingStyleKind.SnakeCase,
-            columns: new[] { new ColumnInfo("UserId", "user_id", "int", "int", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
+            entityName: entityTypeNames[0], schemaClassName: "Schema", schemaNamespace: "TestApp",
+            tableName: "t0", namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[] { new ColumnInfo("Id", "id", "int", "int", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
             navigations: Array.Empty<NavigationInfo>(),
             indexes: Array.Empty<IndexInfo>(),
             location: Location.None));
 
         var bound = new BoundCallSite(
             raw, "Ctx", "App", GenSqlDialect.SQLite,
-            "users", null, entity,
-            joinedEntityTypeNames: new[] { "User", "Order" });
+            "t0", null, entity,
+            joinedEntityTypeNames: entityTypeNames);
 
         var site = new TranslatedCallSite(bound);
 
-        var joinPlan = new JoinPlan(
-            JoinClauseKind.Inner,
-            new TableRef("orders", null, "t1"),
-            new LiteralExpr("1", "int"));
+        var joins = new JoinPlan[entityTypeNames.Length - 1];
+        for (int i = 0; i < joins.Length; i++)
+        {
+            joins[i] = new JoinPlan(
+                JoinClauseKind.Inner,
+                new TableRef($"t{i + 1}", null, $"t{i + 1}"),
+                new LiteralExpr("1", "int"));
+        }
 
         var plan = new Quarry.Generators.IR.QueryPlan(
             kind: QueryKind.Select,
-            primaryTable: new TableRef("users", null, "t0"),
-            joins: new[] { joinPlan },
+            primaryTable: new TableRef("t0", null, "t0"),
+            joins: joins,
             whereTerms: Array.Empty<WhereTerm>(),
             orderTerms: Array.Empty<OrderTerm>(),
             groupByExprs: Array.Empty<SqlExpr>(),
             havingExprs: Array.Empty<SqlExpr>(),
             projection: new SelectProjection(
-                ProjectionKind.Entity, "User",
+                ProjectionKind.Entity, entityTypeNames[0],
                 Array.Empty<ProjectedColumn>(), isIdentity: true),
             pagination: null, isDistinct: false,
             setTerms: Array.Empty<SetTerm>(),
@@ -1352,16 +1399,10 @@ public static class Queries
             maxParameterCount: 0,
             executionSite: site,
             clauseSites: Array.Empty<TranslatedCallSite>(),
-            entityTypeName: "User",
+            entityTypeName: entityTypeNames[0],
             resultTypeName: null,
             dialect: GenSqlDialect.SQLite);
 
-        var interfaces = CarrierEmitter.ResolveCarrierInterfaceList(assembled);
-
-        Assert.That(interfaces, Does.Contain("IEntityAccessor<User>"));
-        Assert.That(interfaces, Does.Contain("IQueryBuilder<User>"));
-        Assert.That(interfaces, Does.Contain("IJoinedQueryBuilder<User, Order>"));
-        Assert.That(interfaces, Has.None.Contain("CarrierBase"));
-        Assert.That(interfaces, Has.None.Contain("JoinedCarrierBase"));
+        return CarrierEmitter.ResolveCarrierInterfaceList(assembled);
     }
 }
