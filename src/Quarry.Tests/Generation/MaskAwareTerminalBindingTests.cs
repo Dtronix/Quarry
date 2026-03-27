@@ -129,15 +129,33 @@ public partial class TestDbContext : QuarryContext
     }
 
     /// <summary>
-    /// Checks whether a given line index is inside a mask-gated block (preceded by a mask check).
-    /// Scans backward up to maxLookback lines for a line containing "__c.Mask &amp;".
+    /// Checks whether a given line index is inside a mask-gated block.
+    /// Scans backward tracking brace depth so that a closed mask block
+    /// (where the closing '}' appears before the target line) is not
+    /// mistaken for an enclosing block.
     /// </summary>
-    private static bool IsInsideMaskGatedBlock(string[] lines, int lineIdx, int maxLookback = 10)
+    private static bool IsInsideMaskGatedBlock(string[] lines, int lineIdx, int maxLookback = 20)
     {
+        int braceDepth = 0;
         for (int i = lineIdx - 1; i >= Math.Max(0, lineIdx - maxLookback); i--)
         {
-            if (lines[i].Contains("__c.Mask &"))
-                return true;
+            var trimmed = lines[i].Trim();
+
+            // Track braces — scanning backward, so '}' increases depth, '{' decreases
+            if (trimmed == "}")
+                braceDepth++;
+            else if (trimmed == "{")
+            {
+                if (braceDepth > 0)
+                    braceDepth--;
+                else
+                {
+                    // This '{' opens a block that encloses our target line.
+                    // Check the line above it for a mask check.
+                    if (i > 0 && lines[i - 1].Contains("__c.Mask &"))
+                        return true;
+                }
+            }
         }
         return false;
     }
@@ -402,5 +420,301 @@ public class Svc
                 $"@p0 binding at line {idx + 1} should be mask-gated to prevent ghost " +
                 "parameter values when bit 0 (first conditional WHERE) is inactive.");
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 7: Multi-param same bit — two captured vars in one conditional
+    //  WHERE should share a single mask gate
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_MultiParamSameBit_SingleMaskGate()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(int minAge, int maxAge, bool applyFilter)
+    {
+        var q = _db.Users().Select(u => u);
+        if (applyFilter)
+            q = q.Where(u => u.Age > minAge && u.Age < maxAge);
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
+        Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // Both @p0 and @p1 come from the same conditional WHERE (same bit).
+        // They should be under ONE mask check, not two separate checks.
+        var maskCheckCount = Regex.Matches(terminalBody, @"__c\.Mask\s*&").Count;
+        Assert.That(maskCheckCount, Is.EqualTo(1),
+            $"Two params from the same conditional WHERE should share one mask gate, got {maskCheckCount}");
+
+        // Both params should be inside the mask-gated block
+        var lines = terminalBody.Split('\n');
+        foreach (var paramName in new[] { "__p0", "__p1" })
+        {
+            var addLines = lines
+                .Select((line, idx) => (line, idx))
+                .Where(x => x.line.Contains($"Parameters.Add({paramName})"))
+                .ToList();
+            Assert.That(addLines, Has.Count.GreaterThan(0), $"Should bind {paramName}");
+            foreach (var (line, idx) in addLines)
+            {
+                Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.True,
+                    $"{paramName} should be inside mask-gated block");
+            }
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 8: Unconditional WHERE before conditional WHERE —
+    //  unconditional param must NOT be gated, conditional param must be
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_UnconditionalBeforeConditional_OnlyConditionalGated()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(string name, int minAge, bool filterAge)
+    {
+        var q = _db.Users().Select(u => u)
+            .Where(u => u.UserName == name);
+        if (filterAge)
+            q = q.Where(u => u.Age > minAge);
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
+        Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        var lines = terminalBody.Split('\n');
+
+        // @p0 (unconditional WHERE) should NOT be inside a mask gate
+        var p0AddLines = lines
+            .Select((line, idx) => (line, idx))
+            .Where(x => x.line.Contains("Parameters.Add(__p0)"))
+            .ToList();
+        Assert.That(p0AddLines, Has.Count.GreaterThan(0), "Should bind @p0");
+        foreach (var (line, idx) in p0AddLines)
+        {
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.False,
+                "Unconditional @p0 should NOT be inside a mask-gated block");
+        }
+
+        // @p1 (conditional WHERE) SHOULD be inside a mask gate
+        var p1AddLines = lines
+            .Select((line, idx) => (line, idx))
+            .Where(x => x.line.Contains("Parameters.Add(__p1)"))
+            .ToList();
+        Assert.That(p1AddLines, Has.Count.GreaterThan(0), "Should bind @p1");
+        foreach (var (line, idx) in p1AddLines)
+        {
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.True,
+                "Conditional @p1 should be inside a mask-gated block");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 9: Full interleave — unconditional → conditional → unconditional
+    //  Exercises block open/close transitions
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_InterleavedUnconditionalConditional_CorrectGating()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(string name, int minAge, string email, bool filterAge)
+    {
+        var q = _db.Users().Select(u => u)
+            .Where(u => u.UserName == name);
+        if (filterAge)
+            q = q.Where(u => u.Age > minAge);
+        q = q.Where(u => u.Email == email);
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        var lines = terminalBody.Split('\n');
+
+        // @p0 (unconditional, first WHERE) — NOT gated
+        var p0AddLines = lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("Parameters.Add(__p0)")).ToList();
+        Assert.That(p0AddLines, Has.Count.GreaterThan(0), "Should bind @p0");
+        foreach (var (_, idx) in p0AddLines)
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.False,
+                "Unconditional @p0 should NOT be mask-gated");
+
+        // @p1 (conditional, bit 0) — gated
+        var p1AddLines = lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("Parameters.Add(__p1)")).ToList();
+        Assert.That(p1AddLines, Has.Count.GreaterThan(0), "Should bind @p1");
+        foreach (var (_, idx) in p1AddLines)
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.True,
+                "Conditional @p1 should be mask-gated");
+
+        // @p2 (unconditional, third WHERE) — NOT gated
+        var p2AddLines = lines.Select((l, i) => (l, i)).Where(x => x.l.Contains("Parameters.Add(__p2)")).ToList();
+        Assert.That(p2AddLines, Has.Count.GreaterThan(0), "Should bind @p2");
+        foreach (var (_, idx) in p2AddLines)
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.False,
+                "Unconditional @p2 should NOT be mask-gated (after conditional block closes)");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 10: Three conditional WHEREs with params — 3 independent mask gates
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_ThreeConditionalWheres_ThreeIndependentMaskGates()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(int minAge, string? name, string? email, bool fa, bool fn, bool fe)
+    {
+        var q = _db.Users().Select(u => u);
+        if (fa)
+            q = q.Where(u => u.Age > minAge);
+        if (fn)
+            q = q.Where(u => u.UserName == name);
+        if (fe)
+            q = q.Where(u => u.Email == email);
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // Three conditional WHEREs with params → 3 mask checks in binding region
+        var maskCheckCount = Regex.Matches(terminalBody, @"__c\.Mask\s*&").Count;
+        Assert.That(maskCheckCount, Is.GreaterThanOrEqualTo(3),
+            $"Should have at least 3 mask checks for 3 conditional WHEREs, got {maskCheckCount}");
+
+        // Each param should be independently gated
+        var lines = terminalBody.Split('\n');
+        foreach (var paramName in new[] { "__p0", "__p1", "__p2" })
+        {
+            var addLines = lines
+                .Select((line, idx) => (line, idx))
+                .Where(x => x.line.Contains($"Parameters.Add({paramName})"))
+                .ToList();
+            Assert.That(addLines, Has.Count.GreaterThan(0), $"Should bind {paramName}");
+            foreach (var (_, idx) in addLines)
+                Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.True,
+                    $"{paramName} should be inside a mask-gated block");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 11: Conditional WHERE with nullable string param —
+    //  different value expression and logging path
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_ConditionalWhereNullableParam_LoggingAndBindingGated()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(string? email, bool filterEmail)
+    {
+        var q = _db.Users().Select(u => u);
+        if (filterEmail)
+            q = q.Where(u => u.Email == email);
+        await q.ExecuteFetchAllAsync();
+    }
+}");
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
+
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
+
+        // Binding should be mask-gated
+        Assert.That(terminalBody, Does.Contain("__c.Mask &"),
+            "Nullable string conditional param binding should be mask-gated");
+
+        // Logging should also be mask-gated for the nullable param.
+        // Nullable string uses ?.ToString() ?? "null" in logging.
+        var lines = code.Split('\n');
+        var logLines = lines
+            .Select((line, idx) => (line, idx))
+            .Where(x => x.line.Contains("ParameterLog.Bound") && x.line.Contains("__opId, 0"))
+            .ToList();
+
+        Assert.That(logLines, Has.Count.GreaterThan(0), "Should log @p0");
+        foreach (var (line, idx) in logLines)
+        {
+            Assert.That(IsInsideMaskGatedBlock(lines, idx), Is.True,
+                "Logging for nullable conditional param should be mask-gated");
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Test 12: Non-query (DELETE) terminal with conditional WHERE —
+    //  EmitCarrierNonQueryTerminal uses the same rewritten methods
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Terminal_DeleteConditionalWhere_NonQueryTerminalIsMaskGated()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public async Task Run(int minAge, bool filterAge)
+    {
+        var q = _db.Users().Delete();
+        if (filterAge)
+            q = q.Where(u => u.Age > minAge);
+        await q.All().ExecuteNonQueryAsync();
+    }
+}");
+        // Check if carrier-optimized — DELETE with conditional WHERE may or may not
+        // use carrier optimization depending on eligibility
+        if (!code.Contains("file sealed class Chain_"))
+        {
+            Assert.Inconclusive("DELETE with conditional WHERE did not produce carrier-optimized path — non-query terminal not exercised");
+            return;
+        }
+
+        Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
+
+        // Non-query terminal should also mask-gate parameter binding
+        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        if (string.IsNullOrEmpty(terminalBody))
+        {
+            // Try alternate section extraction for non-query
+            terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "ExecuteCarrierNonQuery");
+        }
+        Assert.That(terminalBody, Is.Not.Empty, "Should have non-query terminal body");
+
+        Assert.That(terminalBody, Does.Contain("__c.Mask &"),
+            "Non-query terminal should mask-gate conditional parameter binding");
     }
 }
