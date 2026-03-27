@@ -140,6 +140,36 @@ internal class CrossDialectDiagnosticsTests
     }
 
     [Test]
+    public void ToDiagnostics_WithNestedPropertyChain_ExtractsValue()
+    {
+        // 3-hop chain: closure → input → Address → City
+        var input = new PropertyChainTestInput { Address = new PropertyChainAddress { City = "Seattle" } };
+        var diag = _db.Users().Where(u => u.UserName == input.Address.City).ToDiagnostics();
+
+        Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(1));
+        Assert.That(diag.Parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo("Seattle"));
+    }
+
+    [Test]
+    public void ToDiagnostics_WithMixedCaptureAndPropertyChain_ExtractsBothValues()
+    {
+        // One simple capture and one property chain in the same Where
+        var input = new PropertyChainTestInput { Email = "test@example.com" };
+        var id = 42;
+        var diag = _db.Users()
+            .Where(u => u.Email == input.Email)
+            .Where(u => u.UserId == id)
+            .ToDiagnostics();
+
+        Assert.That(diag.Parameters, Has.Count.GreaterThanOrEqualTo(2));
+        var emailParam = diag.Parameters.First(p => p.Value is string);
+        var idParam = diag.Parameters.First(p => p.Value is int);
+        Assert.That(emailParam.Value, Is.EqualTo("test@example.com"));
+        Assert.That(idParam.Value, Is.EqualTo(42));
+    }
+
+    [Test]
     public void ToDiagnostics_WithMultipleParameters_AllParametersPresent()
     {
         var name = "john";
@@ -491,4 +521,10 @@ internal class CrossDialectDiagnosticsTests
 internal class PropertyChainTestInput
 {
     public string Email { get; set; } = "";
+    public PropertyChainAddress Address { get; set; } = new();
+}
+
+internal class PropertyChainAddress
+{
+    public string City { get; set; } = "";
 }
