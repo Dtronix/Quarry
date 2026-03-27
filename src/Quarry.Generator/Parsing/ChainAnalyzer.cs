@@ -781,9 +781,12 @@ internal static class ChainAnalyzer
 
             var isEnum = col.IsEnum || p.IsEnum;
             var isSensitive = col.Modifiers.IsSensitive || p.IsSensitive;
+            // Derive enum underlying type when enriching from column metadata.
+            // Default to "int" — the most common underlying type for C# enums.
+            var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
             // Skip if nothing changed
-            if (isEnum == p.IsEnum && isSensitive == p.IsSensitive)
+            if (isEnum == p.IsEnum && isSensitive == p.IsSensitive && enumUnderlying == p.EnumUnderlyingType)
                 continue;
 
             clauseParams[i] = new QueryParameter(
@@ -796,7 +799,7 @@ internal static class ChainAnalyzer
                 elementTypeName: p.ElementTypeName,
                 typeMappingClass: p.TypeMappingClass,
                 isEnum: isEnum,
-                enumUnderlyingType: p.EnumUnderlyingType,
+                enumUnderlyingType: enumUnderlying,
                 isSensitive: isSensitive,
                 entityPropertyExpression: p.EntityPropertyExpression,
                 needsFieldInfoCache: p.NeedsFieldInfoCache,
@@ -840,8 +843,9 @@ internal static class ChainAnalyzer
                 var p = clauseParams[paramIdx];
                 var isEnum = colInfo.IsEnum || p.IsEnum;
                 var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
+                var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
-                if (isEnum != p.IsEnum || isSensitive != p.IsSensitive)
+                if (isEnum != p.IsEnum || isSensitive != p.IsSensitive || enumUnderlying != p.EnumUnderlyingType)
                 {
                     var enriched = new QueryParameter(
                         globalIndex: p.GlobalIndex,
@@ -853,7 +857,7 @@ internal static class ChainAnalyzer
                         elementTypeName: p.ElementTypeName,
                         typeMappingClass: p.TypeMappingClass,
                         isEnum: isEnum,
-                        enumUnderlyingType: p.EnumUnderlyingType,
+                        enumUnderlyingType: enumUnderlying,
                         isSensitive: isSensitive,
                         entityPropertyExpression: p.EntityPropertyExpression,
                         needsFieldInfoCache: p.NeedsFieldInfoCache,

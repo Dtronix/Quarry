@@ -51,7 +51,7 @@
                     <td><span class="badge @(u.Role == UserRole.Admin ? "badge-admin" : "badge-user")">@u.Role</span></td>
                     <td><span class="badge @(u.IsActive ? "badge-active" : "badge-inactive")">@(u.IsActive ? "Active" : "Inactive")</span></td>
                     <td>@(u.LastLoginAt?.ToString("yyyy-MM-dd HH:mm") ?? "Never")</td>
-                    <td><a href="/Admin/Users/@u.UserId" class="btn btn-sm btn-primary">Edit</a></td>
+                    <td><a href="/Admin/Users/Edit/@u.UserId" class="btn btn-sm btn-primary">Edit</a></td>
                 </tr>
             }
         </tbody>

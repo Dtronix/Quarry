@@ -36,6 +36,64 @@ internal class CrossDialectEnumTests
         Assert.That(results[0], Is.EqualTo((3, 150.00m)));
     }
 
+    [Test]
+    public async Task Where_EnumCapturedVariable_ExecutesCorrectly()
+    {
+        // Regression test: enum parameter must be cast to underlying int for SQLite binding.
+        // Without the cast, the enum object is boxed and SQLite rejects or mismatches it.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+        var results = await Lite.Orders()
+            .Where(o => o.Priority == priority)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // Seed: Order1(High), Order2(Normal), Order3(Urgent) — only Order1 matches High
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Where_EnumCompoundCondition_ExecutesCorrectly()
+    {
+        // Regression test: enum parameter in a compound WHERE with other conditions.
+        // The enum parameter goes through EnrichParametersFromColumns which must set both
+        // IsEnum and EnumUnderlyingType so the terminal emits (int) cast, not bare object boxing.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+        var minTotal = 100m;
+        var results = await Lite.Orders()
+            .Where(o => o.Priority == priority && o.Total > minTotal)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+
+        // Seed: Order1(High,250), Order2(Normal,75.50), Order3(Urgent,150) — only Order1 matches
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Where_EnumDiagnostics_ParameterValueIsInteger()
+    {
+        // Verify the diagnostics report the enum parameter value as an integer, not the enum name.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.Urgent;
+        var diag = Lite.Orders()
+            .Where(o => o.Priority == priority)
+            .Select(o => o.OrderId)
+            .ToDiagnostics();
+
+        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
+        // The parameter value should be the underlying integer (3), not the enum name
+        Assert.That(diag.Parameters[0].Value, Is.EqualTo(3));
+    }
+
     #region Boolean in INSERT
 
     [Test]

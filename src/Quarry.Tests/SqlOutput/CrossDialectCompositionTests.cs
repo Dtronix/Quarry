@@ -654,4 +654,44 @@ internal class CrossDialectCompositionTests
     }
 
     #endregion
+
+    #region Conditional Where on Tuple Projection (Generator Type Resolution)
+
+    /// <summary>
+    /// Regression test: Conditional Where chain after Select with tuple projection.
+    /// The pattern: var query = db.Orders().Select(...tuple...); query = query.Where(...);
+    ///
+    /// BUG: The generator resolves the tuple type as (object, object, object) instead of
+    /// (int, decimal, OrderPriority) because the semantic model can't fully resolve tuple
+    /// element types from the Select return type. This causes CS9144 signature mismatch
+    /// when the Where interceptor is emitted with (object, object, object) but the runtime
+    /// type is (int, decimal, OrderPriority).
+    ///
+    /// This is the "generated entity bootstrap problem" applied to tuple projections:
+    /// Pipeline 2 can't see the TResult type argument resolved by Pipeline 1.
+    ///
+    /// Workaround: put Where before Select, or use a single fluent chain without reassignment.
+    /// See impl-plan-generator-resolution.md for the fix plan.
+    /// </summary>
+    [Test]
+    public async Task ConditionalWhere_OnTupleProjection_ResolvesCorrectType()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var priority = OrderPriority.High;
+
+        // This pattern triggers the bug: Select returns IQueryBuilder<Order, (int, decimal, OrderPriority)>
+        // but when assigned to var and Where is called conditionally, the generator sees (object, object, object).
+        var query = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        query = query.Where(o => o.Priority == priority);
+
+        var results = await query.ExecuteFetchAllAsync();
+
+        // Seed: Order1(High,250), Order2(Normal,75.50), Order3(Urgent,150)
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+    }
+
+    #endregion
 }
