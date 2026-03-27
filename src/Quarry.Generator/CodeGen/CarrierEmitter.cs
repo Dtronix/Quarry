@@ -809,25 +809,66 @@ internal static class CarrierEmitter
         if (totalParams == 0)
             return;
 
+        var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+        var hasConditional = chain.ConditionalTerms.Count > 0;
+        var maskType = hasConditional ? GetMaskType(chain) : null;
+
         sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
         sb.AppendLine("        {");
+
+        int? currentBitIndex = null;
+        bool inConditionalBlock = false;
+
         for (int i = 0; i < paramCount; i++)
         {
             var param = chain.ChainParameters[i];
+            condMap.TryGetValue(i, out var ci);
+
+            if (ci.IsConditional)
+            {
+                if (!inConditionalBlock || ci.BitIndex != currentBitIndex)
+                {
+                    if (inConditionalBlock)
+                        sb.AppendLine("            }");
+
+                    sb.AppendLine($"            if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex!.Value}))) != 0)");
+                    sb.AppendLine("            {");
+                    inConditionalBlock = true;
+                    currentBitIndex = ci.BitIndex;
+                }
+            }
+            else
+            {
+                if (inConditionalBlock)
+                {
+                    sb.AppendLine("            }");
+                    inConditionalBlock = false;
+                    currentBitIndex = null;
+                }
+            }
+
+            var indent = inConditionalBlock ? "                " : "            ";
+
             if (param.IsSensitive)
             {
-                sb.AppendLine($"            ParameterLog.BoundSensitive(__opId, {i});");
+                sb.AppendLine($"{indent}ParameterLog.BoundSensitive(__opId, {i});");
             }
             else
             {
                 if (param.EntityPropertyExpression != null)
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
                 else if (IsNonNullableValueType(param.ClrType) || param.IsEnum)
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
-                    sb.AppendLine($"            ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
+                    sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
             }
         }
+
+        // Close any trailing conditional block
+        if (inConditionalBlock)
+            sb.AppendLine("            }");
+
+        // Pagination logging — always unconditional
         var nextLogIdx = paramCount;
         if (hasLimitField)
         {
