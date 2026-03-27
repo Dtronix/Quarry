@@ -433,8 +433,7 @@ internal static partial class InterceptorCodeGenerator
         {
             sb.AppendLine($"        // Inline extraction: {field.ExpressionPath}");
             var memberVar = GenerateInlineNavigation(sb, field.ExpressionPath, field.ParameterIndex);
-            sb.AppendLine($"        {field.FieldName} ??= Unsafe.As<FieldInfo>({memberVar}.Member);");
-            sb.AppendLine($"        var p{field.ParameterIndex} = {field.FieldName}.GetValue(Unsafe.As<ConstantExpression>({memberVar}.Expression!).Value);");
+            sb.AppendLine($"        var p{field.ParameterIndex} = Quarry.Internal.ExpressionHelper.ExtractMemberChainValue({memberVar});");
         }
     }
 
