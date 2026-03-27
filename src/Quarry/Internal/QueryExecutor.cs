@@ -197,14 +197,18 @@ internal static class QueryExecutor
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
-        var startTimestamp = Stopwatch.GetTimestamp();
+        var instrumented = LogsmithOutput.Logger != null || ctx.SlowQueryThreshold.HasValue;
+        var startTimestamp = instrumented ? Stopwatch.GetTimestamp() : 0;
 
         try
         {
             var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
 
-            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+            if (instrumented)
+            {
+                var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+                CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+            }
 
             if (result is null or DBNull)
             {
@@ -220,7 +224,7 @@ internal static class QueryExecutor
             if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                 QueryLog.ScalarResult(opId, result.ToString() ?? "null");
 
-            return (TScalar)Convert.ChangeType(result, Nullable.GetUnderlyingType(typeof(TScalar)) ?? typeof(TScalar));
+            return ScalarConverter.Convert<TScalar>(result);
         }
         catch (InvalidOperationException)
         {

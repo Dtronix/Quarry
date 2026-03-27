@@ -539,7 +539,7 @@ internal static class TerminalBodyEmitter
         if (insertInfo == null || insertInfo.Columns.Count == 0) return;
 
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-        sb.AppendLine("        var __opId = OpId.Next();");
+        sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
 
         // Materialize entities
         sb.AppendLine($"        var __entities = System.Linq.Enumerable.ToList(__c.BatchEntities!);");

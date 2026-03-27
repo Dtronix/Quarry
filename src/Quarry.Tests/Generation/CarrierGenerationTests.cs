@@ -570,6 +570,41 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_OpIdIsConditionalOnLogger()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var count = await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // OpId should be conditional on logger presence
+        Assert.That(code, Does.Contain("LogsmithOutput.Logger != null ? OpId.Next() : 0"));
+        // Unconditional OpId.Next() should not appear
+        Assert.That(code, Does.Not.Match(@"var __opId = OpId\.Next\(\);"));
+    }
+
+    [Test]
     public void CarrierGeneration_UpdateWithSetAndWhere()
     {
         var source = SharedSchema + @"

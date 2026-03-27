@@ -637,7 +637,7 @@ internal static class CarrierEmitter
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         if (emitOpId)
-            sb.AppendLine("        var __opId = OpId.Next();");
+            sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
         EmitCarrierSqlDispatch(sb, carrier, chain);
     }
 
