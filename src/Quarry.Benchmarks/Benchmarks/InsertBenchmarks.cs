@@ -4,6 +4,8 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Context;
 using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -74,6 +76,27 @@ public class InsertBenchmarks : BenchmarkBase
         }).ExecuteNonQueryAsync();
     }
 
+    [Benchmark]
+    public async Task<int> SqlKata_SingleInsert()
+    {
+        var query = new Query("users").AsInsert(new Dictionary<string, object>
+        {
+            ["UserName"] = "BenchUser",
+            ["Email"] = "bench@example.com",
+            ["IsActive"] = 1,
+            ["CreatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+        });
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        return await cmd.ExecuteNonQueryAsync();
+    }
+
     // --- Batch Insert (10 rows) ---
 
     [Benchmark]
@@ -135,5 +158,31 @@ public class InsertBenchmarks : BenchmarkBase
             CreatedAt = DateTime.UtcNow
         });
         return await QuarryDb.Users().InsertBatch(u => (u.UserName, u.Email, u.IsActive, u.CreatedAt)).Values(users).ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task<int> SqlKata_BatchInsert10()
+    {
+        var total = 0;
+        for (int i = 0; i < 10; i++)
+        {
+            var query = new Query("users").AsInsert(new Dictionary<string, object>
+            {
+                ["UserName"] = $"BatchUser{i}",
+                ["Email"] = $"batch{i}@example.com",
+                ["IsActive"] = 1,
+                ["CreatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+            });
+            var compiled = SqlKataCompiler.Compile(query);
+
+            await using var cmd = Connection.CreateCommand();
+            cmd.CommandText = compiled.Sql;
+            foreach (var binding in compiled.Bindings)
+            {
+                cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+            }
+            total += await cmd.ExecuteNonQueryAsync();
+        }
+        return total;
     }
 }

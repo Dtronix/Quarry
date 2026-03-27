@@ -2,6 +2,8 @@
 
 Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit all SQL at compile time. AOT compatible. Zero runtime dependencies. Structured logging via Logsmith Abstraction mode.
 
+**[Documentation](https://dtronix.github.io/Quarry/)** | **[API Reference](https://dtronix.github.io/Quarry/api/)**
+
 ---
 
 ## Table of Contents

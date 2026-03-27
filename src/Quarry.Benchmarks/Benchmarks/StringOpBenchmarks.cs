@@ -3,6 +3,8 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
@@ -64,6 +66,34 @@ public class StringOpBenchmarks : BenchmarkBase
             .ExecuteFetchAllAsync();
     }
 
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> SqlKata_Contains()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "IsActive")
+            .WhereContains("UserName", "User05");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<UserSummaryDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserSummaryDto
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return results;
+    }
+
     // --- StartsWith (LIKE '...%') ---
 
     [Benchmark]
@@ -118,5 +148,33 @@ public class StringOpBenchmarks : BenchmarkBase
                 IsActive = u.IsActive
             })
             .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> SqlKata_StartsWith()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "IsActive")
+            .WhereStarts("UserName", "User0");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<UserSummaryDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserSummaryDto
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return results;
     }
 }
