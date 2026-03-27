@@ -68,3 +68,4 @@ Cargo.lock
 /.dotnet
 /test_output
 BenchmarkDotNet.Artifacts
+*.db
