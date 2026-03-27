@@ -199,8 +199,8 @@ public class SqlExprStressTests
     public void Complex_ThreeWayAnd()
     {
         // u.Age > 18 AND u.IsActive AND u.Email IS NOT NULL
-        // Note: boolean context only applies at the top level (standalone .Where(u => u.IsActive)).
-        // Inside a compound expression, boolean columns render as bare column names.
+        // Boolean context propagates into AND/OR children, so boolean columns
+        // render with = 1 (SQLite) even inside compound expressions.
         var expr = new BinaryOpExpr(
             new BinaryOpExpr(
                 new BinaryOpExpr(
@@ -217,14 +217,14 @@ public class SqlExprStressTests
         var sql = BindAndRender(expr, UserEntity, GenSqlDialect.SQLite, "u", inBooleanContext: true);
 
         Assert.That(sql, Is.EqualTo(
-            "(((\"age\" > 18) AND \"is_active\") AND \"email\" IS NOT NULL)"));
+            "(((\"age\" > 18) AND \"is_active\" = 1) AND \"email\" IS NOT NULL)"));
     }
 
     [Test]
     public void Complex_OrWithNestedAnd()
     {
         // (u.Age < 18 OR u.Age > 65) AND u.IsActive
-        // Boolean column inside compound expr renders as bare column name
+        // Boolean column inside compound expr renders with = 1 in boolean context
         var orExpr = new BinaryOpExpr(
             new BinaryOpExpr(
                 new ColumnRefExpr("u", "Age"),
@@ -244,7 +244,7 @@ public class SqlExprStressTests
         var sql = BindAndRender(expr, UserEntity, GenSqlDialect.SQLite, "u", inBooleanContext: true);
 
         Assert.That(sql, Is.EqualTo(
-            "(((\"age\" < 18) OR (\"age\" > 65)) AND \"is_active\")"));
+            "(((\"age\" < 18) OR (\"age\" > 65)) AND \"is_active\" = 1)"));
     }
 
     [Test]

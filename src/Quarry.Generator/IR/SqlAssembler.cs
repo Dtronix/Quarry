@@ -580,11 +580,15 @@ internal static class SqlAssembler
         // For AND/OR at the WHERE top level, recursively flatten and strip inner comparison parens.
         // RenderBinary wraps ALL BinaryOpExpr in parens, but WHERE context doesn't need them
         // around comparisons (e.g., WHERE col > 50 AND col2 = 1, not WHERE (col > 50) AND (col2 = 1)).
+        //
+        // IMPORTANT: paramIndex is the base offset for this entire clause — it is NOT accumulated
+        // across siblings. ParamSlotExpr.LocalIndex is clause-global (0, 1, 2...), so the renderer
+        // computes the final index as paramIndex + LocalIndex. Accumulating leftParams would
+        // double-count and produce gaps (e.g., @p0, @p2 instead of @p0, @p1).
         if (condition is BinaryOpExpr bin && (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or))
         {
             var left = RenderWhereChild(bin.Left, dialect, paramIndex, bin.Operator);
-            var leftParams = CountParameters(bin.Left);
-            var right = RenderWhereChild(bin.Right, dialect, paramIndex + leftParams, bin.Operator);
+            var right = RenderWhereChild(bin.Right, dialect, paramIndex, bin.Operator);
             var op = bin.Operator == SqlBinaryOperator.And ? " AND " : " OR ";
             return left + op + right;
         }
