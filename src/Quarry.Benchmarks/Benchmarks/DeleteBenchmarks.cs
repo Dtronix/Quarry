@@ -16,7 +16,9 @@ public class DeleteBenchmarks : BenchmarkBase
     // This forces Quarry to parameterize the query, matching what Raw/Dapper/SqlKata do.
     // Note: Quarry CAN inline compile-time constants (e.g. `.Where(u => u.UserId == 999)`)
     // which eliminates parameter allocation entirely — a unique strength of source generation.
-    private int _targetId;
+    // Static to work around source generator bug: UnsafeAccessor emits StaticField
+    // for all class-level fields. See handoff-bug.md for details.
+    private static int _targetId;
 
     public override void GlobalSetup()
     {
