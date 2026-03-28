@@ -574,10 +574,10 @@ internal class CrossDialectSubqueryTests
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || $1 || '%'))",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', ?, '%')))",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%' + @p0 + '%'))");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%hipp%'))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%paid%'))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE '%paid%'))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%paid%'))");
 
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
         var results = await lite.ExecuteFetchAllAsync();
@@ -600,15 +600,55 @@ internal class CrossDialectSubqueryTests
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE @p0 || '%'))",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE $1 || '%'))",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT(?, '%')))",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE @p0 + '%'))");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE 'P%'))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE 'p%'))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE 'p%'))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE 'p%'))");
 
         // 'Pending' starts with 'P' — only Alice has a Pending order (order 2)
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Where_Any_StringPredicate_EndsWith()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%ped'))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%ped'))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE '%ped'))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%ped'))");
+
+        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+
+        // 'Shipped' ends with 'ped' — Alice (order 1) and Bob (order 3) have Shipped orders
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Where_Any_StringPredicate_Contains_ZeroParameters()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Verify inlined string literal LIKE in subquery produces zero parameters
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
+
+        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
     }
 
     #endregion

@@ -130,8 +130,8 @@ internal static class SqlExprAnnotator
     {
         // Build a map of identifier name -> CLR type from the syntax tree
         var typeMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
-        // Build a map of member access text -> constant literal value (e.g., "OrderPriority.Urgent" -> "3")
-        var constantMap = new System.Collections.Generic.Dictionary<string, string>(StringComparer.Ordinal);
+        // Build a map of member access text -> constant literal value + CLR type (e.g., "OrderPriority.Urgent" -> ("3", "int"))
+        var constantMap = new System.Collections.Generic.Dictionary<string, (string Value, string ClrType)>(StringComparer.Ordinal);
         CollectCapturedTypes(lambdaBody, semanticModel, typeMap, constantMap);
         if (typeMap.Count == 0 && constantMap.Count == 0) return expr;
 
@@ -142,7 +142,7 @@ internal static class SqlExprAnnotator
         SyntaxNode node,
         SemanticModel semanticModel,
         System.Collections.Generic.Dictionary<string, string> typeMap,
-        System.Collections.Generic.Dictionary<string, string> constantMap)
+        System.Collections.Generic.Dictionary<string, (string Value, string ClrType)> constantMap)
     {
         foreach (var identifier in node.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
@@ -168,13 +168,15 @@ internal static class SqlExprAnnotator
                 if (constant.HasValue && constant.Value != null)
                 {
                     if (constant.Value is int intVal)
-                        constantMap[text] = intVal.ToString();
+                        constantMap[text] = (intVal.ToString(), "int");
                     else if (constant.Value is long longVal)
-                        constantMap[text] = longVal.ToString();
+                        constantMap[text] = (longVal.ToString(), "long");
                     else if (constant.Value is byte byteVal)
-                        constantMap[text] = byteVal.ToString();
+                        constantMap[text] = (byteVal.ToString(), "int");
                     else if (constant.Value is short shortVal)
-                        constantMap[text] = shortVal.ToString();
+                        constantMap[text] = (shortVal.ToString(), "int");
+                    else if (constant.Value is string strVal)
+                        constantMap[text] = (strVal, "string");
                 }
             }
 
@@ -194,14 +196,14 @@ internal static class SqlExprAnnotator
     private static SqlExpr ApplyCapturedTypes(
         SqlExpr expr,
         System.Collections.Generic.Dictionary<string, string> typeMap,
-        System.Collections.Generic.Dictionary<string, string>? constantMap = null)
+        System.Collections.Generic.Dictionary<string, (string Value, string ClrType)>? constantMap = null)
     {
         switch (expr)
         {
             case CapturedValueExpr captured:
-                // Check if this captured value is a compile-time constant (e.g., enum member)
-                if (constantMap != null && constantMap.TryGetValue(captured.SyntaxText, out var literalValue))
-                    return new LiteralExpr(literalValue, "int");
+                // Check if this captured value is a compile-time constant (e.g., enum member or string constant)
+                if (constantMap != null && constantMap.TryGetValue(captured.SyntaxText, out var constInfo))
+                    return new LiteralExpr(constInfo.Value, constInfo.ClrType);
                 // Prefer the full expression type (e.g., "user.UserId" → int) over the variable type (e.g., "user" → User)
                 if (typeMap.TryGetValue(captured.SyntaxText, out var exprType))
                     return captured.WithClrType(exprType);
@@ -524,6 +526,15 @@ internal static class SqlExprAnnotator
                 var operand = InlineLikePatternsRecursive(unary.Operand, lambdaBody, semanticModel);
                 if (ReferenceEquals(operand, unary.Operand)) return unary;
                 return new UnaryOpExpr(unary.Operator, operand);
+            }
+
+            case SubqueryExpr subquery when subquery.Predicate != null:
+            {
+                var predicate = InlineLikePatternsRecursive(subquery.Predicate, lambdaBody, semanticModel);
+                if (ReferenceEquals(predicate, subquery.Predicate))
+                    return subquery;
+                return new SubqueryExpr(subquery.OuterParameterName, subquery.NavigationPropertyName,
+                    subquery.SubqueryKind, predicate, subquery.InnerParameterName);
             }
 
             default:
