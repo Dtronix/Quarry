@@ -72,6 +72,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public bool IsPreparedTerminal => Bound.Raw.IsPreparedTerminal;
     public string? DisplayClassName => Bound.Raw.DisplayClassName;
     public System.Collections.Generic.IReadOnlyDictionary<string, string>? CapturedVariableTypes => Bound.Raw.CapturedVariableTypes;
+    public CaptureKind CaptureKind => Bound.Raw.CaptureKind;
 
     /// <summary>
     /// Creates a copy with updated JoinedEntityTypeNames and JoinedEntities.

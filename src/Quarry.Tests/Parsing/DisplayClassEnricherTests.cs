@@ -76,6 +76,7 @@ public class DisplayClassEnricherTests
 
         Assert.That(result[0].DisplayClassName, Is.Null);
         Assert.That(result[0].CapturedVariableTypes, Is.Null);
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.None));
     }
 
     [Test]
@@ -105,6 +106,7 @@ class TestClass
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[0].DisplayClassName, Does.Contain("<>c__DisplayClass"));
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("name"));
     }
@@ -137,6 +139,7 @@ class TestClass
         // DisplayClassName is set (used by code generator for UnsafeAccessor detection)
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[0].DisplayClassName, Does.Contain("<>c__DisplayClass"));
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.FieldCapture));
         // CapturedVariableTypes is null because no locals/params are captured
         Assert.That(result[0].CapturedVariableTypes, Is.Null);
     }
@@ -206,6 +209,7 @@ class TestClass
         var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("threshold"));
     }
@@ -236,6 +240,7 @@ class TestClass
 
         // DisplayClassName is always set for lambdas with enrichment targets
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.FieldCapture));
         // No captured variables
         Assert.That(result[0].CapturedVariableTypes, Is.Null);
     }
@@ -335,8 +340,48 @@ class TestClass
         var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[1].DisplayClassName, Is.Null);
+        Assert.That(result[1].CaptureKind, Is.EqualTo(CaptureKind.None));
         Assert.That(result[1].CapturedVariableTypes, Is.Null);
+    }
+
+    [Test]
+    public void EnrichAll_LambdaInsideLocalFunction_SetsDisplayClassNameAndCapturedTypes()
+    {
+        var source = @"
+using System;
+class TestClass
+{
+    void OuterMethod()
+    {
+        DoWork();
+
+        void DoWork()
+        {
+            var threshold = 10;
+            Func<int, bool> predicate = x => x > threshold;
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>().First();
+
+        var site = CreateSite("test-local-func", lambda);
+        var sites = ImmutableArray.Create(site);
+
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+
+        // Lambda inside a local function should walk up to the containing method
+        Assert.That(result[0].DisplayClassName, Is.Not.Null);
+        Assert.That(result[0].DisplayClassName, Does.Contain("<>c__DisplayClass"));
+        Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
+        Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
+        Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("threshold"));
     }
 }

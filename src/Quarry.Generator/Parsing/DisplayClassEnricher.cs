@@ -88,10 +88,6 @@ internal static class DisplayClassEnricher
                 methodAnalysisCache[methodSyntax] = analysisResult;
             }
 
-            // Always compute the display class name for lambdas that have an enrichment
-            // target — matching the original Resolve() behavior. The code generator uses
-            // DisplayClassName != null with CapturedVariableTypes == null to detect
-            // static field captures that need UnsafeAccessor(StaticField).
             var analysis = analysisResult.ClosureAnalysis;
 
             int closureOrdinal = analysis.DataFlowByNode.ContainsKey(lambda)
@@ -100,13 +96,18 @@ internal static class DisplayClassEnricher
 
             site.DisplayClassName = $"{analysisResult.DisplayClassPrefix}{closureOrdinal}";
 
-            // Only set CapturedVariableTypes when there are local/parameter captures
+            // Classify the capture kind and set CapturedVariableTypes for closure locals
             if (analysis.DataFlowByNode.TryGetValue(lambda, out var dataFlow)
                 && dataFlow.Succeeded
                 && dataFlow.CapturedInside.Any(s => s is ILocalSymbol || s is IParameterSymbol))
             {
+                site.CaptureKind = CaptureKind.ClosureCapture;
                 site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(
                     dataFlow, analysisResult.SemanticModel);
+            }
+            else
+            {
+                site.CaptureKind = CaptureKind.FieldCapture;
             }
         }
 
