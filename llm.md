@@ -223,11 +223,13 @@ All base class methods throw `InvalidOperationException` — generator replaces 
 
 ### Generator Pipeline
 
-Entry: `QuarryGenerator : IIncrementalGenerator` — three pipelines.
+Entry: `QuarryGenerator : IIncrementalGenerator` — three pipelines, split between design-time (IDE/IntelliSense) and build-time (`dotnet build`).
 
-**Pipeline 1 — Schema/Context:** `ClassDeclarationSyntax` → `ContextParser` → `SchemaParser` per entity → emits entity classes + context partials + migration code.
+**Pipeline 1 — Schema/Context (design-time, `RegisterSourceOutput`):** `ClassDeclarationSyntax` → `ContextParser` → `SchemaParser` per entity → emits entity classes + context partials. Per-context with no `Collect()` — zero cross-context aggregation at design-time. Reports QRY003, QRY017, QRY026, QRY027, QRY028 immediately.
 
-**Pipeline 2 — Interceptors (6-stage IR):**
+**Pipeline 1 cross-context check (build-time, `RegisterImplementationSourceOutput`):** Duplicate TypeMapping detection (QRY016) across collected contexts.
+
+**Pipeline 2 — Interceptors (build-time, `RegisterImplementationSourceOutput`, 6-stage IR):**
 
 ```
 Stage 1: Discovery     → RawCallSite        (syntax + semantic)
@@ -238,7 +240,9 @@ Stage 5: Assembly      → AssembledPlan      (+ SQL strings per mask)
 Stage 6: Emission      → C# interceptor source
 ```
 
-**Pipeline 3 — Migrations:** Discovers `[Migration]`/`[MigrationSnapshot]` → `MigrationInfo`/`SnapshotInfo` → QRY050–055 diagnostics.
+User code resolves against builder interfaces (`IQueryBuilder<T>`, etc.) at design-time; interceptors only replace implementations at build-time via `[InterceptsLocation]`.
+
+**Pipeline 3 — Migrations (build-time, `RegisterImplementationSourceOutput`):** Discovers `[Migration]`/`[MigrationSnapshot]` → `MigrationInfo`/`SnapshotInfo` → QRY050–055 diagnostics.
 
 ### Stage 1 — Discovery (`Parsing/`)
 
