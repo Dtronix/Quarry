@@ -1791,4 +1791,93 @@ public static class Queries
         Assert.That(code, Does.Contain("Name: r.Get"),
             "Generated reader should include 'Name:' named element prefix with typed reader call");
     }
+
+    // -----------------------------------------------------------------
+    //  Top-level program -- ComputeChainId scoping
+    // -----------------------------------------------------------------
+
+    [Test]
+    public void TopLevelProgram_MultipleLocalFunctions_SeparateChains()
+    {
+        // Top-level programs with static local functions must scope each function's
+        // chains independently. Before the ComputeChainId fix, LocalFunctionStatementSyntax
+        // (which derives from StatementSyntax) was consumed by the generic statement handler,
+        // causing all chains to collapse into ChainId "db" and produce QRY032.
+        var source = SharedSchema + @"
+using System;
+using System.Threading.Tasks;
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+" + @"
+var db = new TestDbContext((System.Data.IDbConnection)null!);
+await Scenario1(db);
+await Scenario2(db);
+
+static async Task<string> Scenario1(TestDbContext db)
+{
+    var rows = await db.Users()
+        .Where(u => u.IsActive)
+        .Select(u => u.UserName)
+        .ExecuteFetchAllAsync();
+    return rows[0];
+}
+
+static async Task<int> Scenario2(TestDbContext db)
+{
+    var rows = await db.Users()
+        .Where(u => u.UserId == 1)
+        .Select(u => u.UserId)
+        .ExecuteFetchFirstAsync();
+    return rows;
+}
+";
+        // Must use ConsoleApplication for top-level statements
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
+        var syntaxTrees = new[] { CSharpSyntaxTree.ParseText(source, parseOptions) };
+
+        var references = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(QuarryCoreAssemblyPath),
+            MetadataReference.CreateFromFile(SystemRuntimeAssemblyPath),
+            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
+        };
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Collections.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.Expressions.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "netstandard.dll")));
+        references.Add(MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Threading.Tasks.dll")));
+
+        var compilation = CSharpCompilation.Create(
+            "TopLevelTestAssembly",
+            syntaxTrees,
+            references,
+            new CSharpCompilationOptions(OutputKind.ConsoleApplication)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // Must NOT produce QRY032 (forked chain)
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Empty,
+            $"Top-level local functions should not produce QRY032. Got: {string.Join("; ", qry032.Select(d => d.GetMessage()))}");
+
+        // Should generate interceptors with two separate carrier classes
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Two separate chains -> at least two carrier classes
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.GreaterThanOrEqualTo(2),
+            "Each local function's chain should produce a separate carrier class");
+    }
 }
