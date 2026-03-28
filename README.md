@@ -86,7 +86,7 @@ Quarry's median overhead is **1.02x Raw ADO.NET** across 23 benchmarks — faste
 - **[Custom type mappings](https://dtronix.github.io/Quarry/articles/schema-definition.html)** — `TypeMapping<TClr, TDb>` with optional `IDialectAwareTypeMapping` for dialect-specific SQL types
 - **[Migrations](https://dtronix.github.io/Quarry/articles/migrations.html)** — code-first migrations with bundles, seed data, views/stored procedures, squash, checksums, and runtime hooks
 - **[Scaffolding](https://dtronix.github.io/Quarry/articles/scaffolding.html)** — reverse-engineer existing databases into schema classes and a context
-- **[Query diagnostics](https://dtronix.github.io/Quarry/articles/diagnostics.html)** — `ToDiagnostics()` surfaces SQL, parameters, variants, projection metadata, and carrier optimization status
+- **[Query diagnostics](https://dtronix.github.io/Quarry/articles/diagnostics.html)** — `ToDiagnostics()` surfaces SQL, parameters, variants, projection metadata, and carrier class info
 - **[Structured logging](https://dtronix.github.io/Quarry/articles/logging.html)** — Logsmith Abstraction mode with categories, slow query detection, sensitive redaction, and operation correlation
 - **[Analyzer rules](https://dtronix.github.io/Quarry/articles/analyzer-rules.html)** — compile-time QRA diagnostics with code fixes
 - **[Benchmarks](https://dtronix.github.io/Quarry/articles/benchmarks.html)** — comprehensive BenchmarkDotNet suite comparing Quarry against Raw ADO.NET, Dapper, EF Core, and SqlKata

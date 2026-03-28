@@ -9,10 +9,10 @@ public class CarrierStrategyTests
     [Test]
     public void Ineligible_HasReason()
     {
-        var strategy = CarrierStrategy.Ineligible("Chain is not tier 1");
+        var strategy = CarrierStrategy.Ineligible("Chain is not analyzable");
 
         Assert.That(strategy.IsEligible, Is.False);
-        Assert.That(strategy.IneligibleReason, Is.EqualTo("Chain is not tier 1"));
+        Assert.That(strategy.IneligibleReason, Is.EqualTo("Chain is not analyzable"));
         Assert.That(strategy.Fields, Is.Empty);
         Assert.That(strategy.Parameters, Is.Empty);
     }

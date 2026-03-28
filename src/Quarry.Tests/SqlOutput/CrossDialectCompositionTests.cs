@@ -638,8 +638,7 @@ internal class CrossDialectCompositionTests
 
         Assert.That(diag.Sql, Does.Contain("ORDER BY"));
         Assert.That(diag.Sql, Does.Contain("DESC"));
-        Assert.That(diag.IsCarrierOptimized, Is.True);
-        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
+        Assert.That(diag.CarrierClassName, Is.Not.Null.And.Not.Empty);
 
         // Limit 10 is a literal constant — inlined directly into SQL, no runtime parameter
         Assert.That(diag.Sql, Does.Contain("LIMIT 10"));

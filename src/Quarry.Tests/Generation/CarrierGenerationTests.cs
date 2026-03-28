@@ -131,7 +131,7 @@ public static class Queries
         // Carrier-optimized chains don't use AllocatePrebuiltParams (that's the non-carrier path)
         Assert.That(code, Does.Not.Contain("AllocatePrebuiltParams"));
         // The carrier remark should indicate the optimization level
-        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+        Assert.That(code, Does.Contain("PrebuiltDispatch (1 allocation: carrier)"));
     }
 
     [Test]
@@ -783,12 +783,12 @@ public static class Queries
         var code = interceptorsTree!.GetText().ToString();
         // Update chains with scalar Set clauses are carrier-eligible when ValueTypeName is resolved
         Assert.That(code, Does.Contain("UPDATE"));
-        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+        Assert.That(code, Does.Contain("PrebuiltDispatch (1 allocation: carrier)"));
     }
 
 
     [Test]
-    public void CarrierGeneration_UpdateSetAction_Literal_IsCarrierOptimized()
+    public void CarrierGeneration_UpdateSetAction_Literal_IsPrebuiltDispatch()
     {
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
@@ -817,11 +817,11 @@ public class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("UPDATE"));
-        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+        Assert.That(code, Does.Contain("PrebuiltDispatch (1 allocation: carrier)"));
     }
 
     [Test]
-    public void CarrierGeneration_UpdateSetAction_CapturedVariable_IsCarrierOptimized()
+    public void CarrierGeneration_UpdateSetAction_CapturedVariable_IsPrebuiltDispatch()
     {
         // Uses _db.Users().Update() (non-generic Update) with a captured variable
         var source = SharedSchema + @"
@@ -851,7 +851,7 @@ public class Queries
 
         var code = interceptorsTree!.GetText().ToString();
         Assert.That(code, Does.Contain("UPDATE"));
-        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"));
+        Assert.That(code, Does.Contain("PrebuiltDispatch (1 allocation: carrier)"));
     }
 
     [Test]
@@ -1395,7 +1395,7 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("Carrier-Optimized PrebuiltDispatch"),
+        Assert.That(code, Does.Contain("PrebuiltDispatch (1 allocation: carrier)"),
             "byte[] Set chain should be carrier-optimized");
 
         // byte[] carrier field must be emitted as nullable (byte[]?) to avoid CS8618

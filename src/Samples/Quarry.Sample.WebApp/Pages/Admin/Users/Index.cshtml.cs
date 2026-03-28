@@ -13,7 +13,7 @@ public class IndexModel(AppDb db) : PageModel
     public string? Search { get; set; }
     public UserRole? RoleFilter { get; set; }
     public bool? ActiveOnly { get; set; }
-    public int Page { get; set; } = 1;
+    public new int Page { get; set; } = 1;
     public int TotalPages { get; set; }
 
     private const int PageSize = 20;

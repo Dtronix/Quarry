@@ -454,7 +454,7 @@ internal static class TerminalEmitHelpers
     /// </summary>
     internal static void EmitDiagnosticsConstruction(
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
-        string diagnosticKind, string isCarrierOptimized)
+        string diagnosticKind)
     {
         var plan = chain.Plan;
         var esc = InterceptorCodeGenerator.EscapeStringLiteral;
@@ -579,8 +579,6 @@ internal static class TerminalEmitHelpers
 
         // Construct the QueryDiagnostics
         sb.AppendLine($"        return new QueryDiagnostics(sql, __params, {diagnosticKind}, SqlDialect.{chain.Dialect}, \"{esc(chain.TableName)}\",");
-        sb.AppendLine($"            tier: DiagnosticOptimizationTier.PrebuiltDispatch,");
-        sb.AppendLine($"            isCarrierOptimized: {isCarrierOptimized},");
         sb.AppendLine($"            clauses: __clauses,");
         sb.AppendLine($"            tierReason: {tierReasonLiteral},");
         sb.AppendLine($"            disqualifyReason: {disqualifyLiteral},");

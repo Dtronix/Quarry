@@ -3,7 +3,7 @@ using Quarry.Sample.WebApp.Data;
 
 namespace Quarry.Sample.WebApp.Services;
 
-public sealed class SessionService(AppDb db, AuditService audit)
+public sealed class SessionService(AppDb db)
 {
     private static readonly TimeSpan SessionDuration = TimeSpan.FromHours(24);
 

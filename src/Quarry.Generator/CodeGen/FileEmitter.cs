@@ -500,8 +500,7 @@ internal sealed class FileEmitter
         sb.AppendLine($"    /// </summary>");
         if (chainForRemarks != null)
         {
-            var carrierLabel = carrierInfo != null ? ", Carrier-Optimized" : "";
-            sb.AppendLine($"    /// <remarks>Chain: Fully Analyzed ({chainForRemarks.Tier}{carrierLabel})</remarks>");
+            sb.AppendLine($"    /// <remarks>Chain: PrebuiltDispatch ({chainForRemarks.Plan.PossibleMasks.Count} variants)</remarks>");
         }
         else
             sb.AppendLine($"    /// <remarks>Chain: Not Analyzed (standalone interceptor)</remarks>");
