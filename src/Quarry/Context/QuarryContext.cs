@@ -194,7 +194,8 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
                         if (!reader.IsDBNull(i))
                         {
                             var value = reader.GetValue(i);
-                            prop.SetValue(item, Convert.ChangeType(value, prop.PropertyType));
+                            var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
+                            prop.SetValue(item, Convert.ChangeType(value, targetType));
                         }
                         break;
                     }

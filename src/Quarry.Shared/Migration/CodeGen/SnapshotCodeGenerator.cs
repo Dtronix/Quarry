@@ -185,7 +185,7 @@ static class SnapshotCodeGenerator
         if (col.Precision.HasValue && col.Scale.HasValue)
             sb.Append(".Precision(").Append(col.Precision.Value).Append(", ").Append(col.Scale.Value).Append(")");
         if (col.HasDefault && col.DefaultExpression != null)
-            sb.Append(".Default(\"").Append(EscapeString(col.DefaultExpression)).Append("\")");
+            sb.Append(".DefaultValue(\"").Append(EscapeString(col.DefaultExpression)).Append("\")");
         else if (col.HasDefault)
             sb.Append(".HasDefault()");
         if (col.MappedName != null)
