@@ -22,6 +22,7 @@
     <InternalsVisibleTo Include="Quarry.Generator" />
     <InternalsVisibleTo Include="Quarry.Tool" />
     <InternalsVisibleTo Include="Quarry.Sample.WebApp" />
+    <InternalsVisibleTo Include="Quarry.Sample.Aot" />
   </ItemGroup>
 
   <ItemGroup>
