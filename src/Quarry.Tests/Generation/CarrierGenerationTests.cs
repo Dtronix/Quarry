@@ -598,10 +598,84 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        // OpId should be conditional on logger presence
-        Assert.That(code, Does.Contain("LogsmithOutput.Logger != null ? OpId.Next() : 0"));
+        // Logger should be cached in a local
+        Assert.That(code, Does.Contain("var __logger = LogsmithOutput.Logger;"));
+        // OpId should be conditional on cached logger local
+        Assert.That(code, Does.Contain("__logger != null ? OpId.Next() : 0"));
         // Unconditional OpId.Next() should not appear
         Assert.That(code, Does.Not.Match(@"var __opId = OpId\.Next\(\);"));
+    }
+
+    [Test]
+    public void CarrierGeneration_CtxIsCachedInLocal()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var count = await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Ctx should be cached in a local
+        Assert.That(code, Does.Contain("var __ctx = __c.Ctx!;"));
+        // Command creation should use cached local
+        Assert.That(code, Does.Contain("__ctx.Connection.CreateCommand()"));
+        // Direct __c.Ctx access should not appear after the local declaration
+        Assert.That(code, Does.Not.Contain("__c.Ctx.Connection"));
+        Assert.That(code, Does.Not.Contain("__c.Ctx!.DefaultTimeout"));
+    }
+
+    [Test]
+    public void CarrierGeneration_LoggerIsUsedInLoggingGates()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var count = await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Logging gates should use cached __logger local, not LogsmithOutput.Logger directly
+        Assert.That(code, Does.Contain("__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName)"));
+        Assert.That(code, Does.Not.Match(@"LogsmithOutput\.Logger\?\.IsEnabled"));
     }
 
     [Test]

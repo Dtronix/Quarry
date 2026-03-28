@@ -191,7 +191,7 @@ public class Svc
         //
         // Current bug: __p0 is created and added unconditionally even when the
         // WHERE clause (bit 0) is inactive.
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body with command binding");
 
         // The conditional parameter @p0 should only be bound when bit 0 is active.
@@ -226,7 +226,7 @@ public class Svc
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bits");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // With two independent conditional WHEREs (bit 0 and bit 1),
@@ -308,7 +308,7 @@ public class Svc
         // After the fix, the execution terminal inlines value expressions directly
         // into __p0.Value = (object?)__c.P0 ?? DBNull.Value instead of using __pVal0
         // intermediate locals. The inlined binding should be inside a mask-gated block.
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // __pVal0 should NOT appear in the execution terminal (values are inlined)
@@ -356,7 +356,7 @@ public class Svc
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Pagination parameters (Limit/Offset) should be bound unconditionally.
@@ -398,7 +398,7 @@ public class Svc
 }");
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // When only the second WHERE is active (mask=2, bit 1 set, bit 0 unset),
@@ -446,7 +446,7 @@ public class Svc
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Both @p0 and @p1 come from the same conditional WHERE (same bit).
@@ -497,7 +497,7 @@ public class Svc
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         var lines = terminalBody.Split('\n');
@@ -552,7 +552,7 @@ public class Svc
 }");
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         var lines = terminalBody.Split('\n');
@@ -605,7 +605,7 @@ public class Svc
 }");
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Three conditional WHEREs with params → 3 mask checks in binding region
@@ -651,7 +651,7 @@ public class Svc
 }");
         Assert.That(code, Does.Contain("file sealed class Chain_"), "Should emit carrier class");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Binding should be mask-gated
@@ -706,11 +706,11 @@ public class Svc
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bit");
 
         // Non-query terminal should also mask-gate parameter binding
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         if (string.IsNullOrEmpty(terminalBody))
         {
             // Try alternate section extraction for non-query
-            terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "ExecuteCarrierNonQuery");
+            terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "ExecuteCarrierNonQuery");
         }
         Assert.That(terminalBody, Is.Not.Empty, "Should have non-query terminal body");
 
@@ -747,7 +747,7 @@ public class Svc
             return;
         }
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Collection elements must be bound in a loop, not as a single parameter.
@@ -793,7 +793,7 @@ public class Svc
 
         Assert.That(code, Does.Contain("Mask |="), "Should set mask bit for conditional WHERE");
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // The collection expansion loop should be inside a mask-gated block
@@ -843,7 +843,7 @@ public class Svc
             return;
         }
 
-        var terminalBody = ExtractSection(code, "var __cmd = __c.Ctx.Connection.CreateCommand()", "return QueryExecutor.");
+        var terminalBody = ExtractSection(code, "var __cmd = __ctx.Connection.CreateCommand()", "return QueryExecutor.");
         Assert.That(terminalBody, Is.Not.Empty, "Should have terminal execution body");
 
         // Scalar param @p0 should be bound normally
