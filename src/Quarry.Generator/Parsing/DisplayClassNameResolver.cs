@@ -325,7 +325,7 @@ internal static class DisplayClassNameResolver
 
     /// <summary>
     /// Looks up the closure ordinal for a lambda using pre-computed analysis.
-    /// Returns -1 if the lambda has no captured variables.
+    /// Returns 0 if the lambda has no captured local/parameter variables.
     /// </summary>
     internal static int LookupClosureOrdinal(
         MethodClosureAnalysis analysis,
