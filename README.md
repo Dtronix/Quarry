@@ -79,6 +79,32 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 
 ---
 
+## Installation
+
+```xml
+<PackageReference Include="Quarry" Version="*" />
+```
+
+Enable interceptors by adding your context's namespace to `InterceptorsNamespaces` in your `.csproj`:
+
+```xml
+<PropertyGroup>
+  <InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
+</PropertyGroup>
+```
+
+Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass. If your context has no namespace, use `Quarry.Generated`.
+
+Optional: add compile-time query analysis rules:
+
+```xml
+<PackageReference Include="Quarry.Analyzers" Version="*"
+    OutputItemType="Analyzer"
+    ReferenceOutputAssembly="false" />
+```
+
+---
+
 ## Quick Start
 
 ```csharp
@@ -111,32 +137,6 @@ var activeUsers = await db.Users()
 ```
 
 The generator emits an interceptor that replaces the `ExecuteFetchAllAsync` call with pre-built SQL and a typed reader. No runtime translation occurs.
-
----
-
-## Installation
-
-```xml
-<PackageReference Include="Quarry" Version="*" />
-```
-
-Enable interceptors by adding your context's namespace to `InterceptorsNamespaces` in your `.csproj`:
-
-```xml
-<PropertyGroup>
-  <InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
-</PropertyGroup>
-```
-
-Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass. If your context has no namespace, use `Quarry.Generated`.
-
-Optional: add compile-time query analysis rules:
-
-```xml
-<PackageReference Include="Quarry.Analyzers" Version="*"
-    OutputItemType="Analyzer"
-    ReferenceOutputAssembly="false" />
-```
 
 ---
 
