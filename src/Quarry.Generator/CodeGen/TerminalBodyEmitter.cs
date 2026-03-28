@@ -546,7 +546,9 @@ internal static class TerminalBodyEmitter
         if (insertInfo == null || insertInfo.Columns.Count == 0) return;
 
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-        sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
+        sb.AppendLine("        var __ctx = __c.Ctx!;");
+        sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
+        sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
 
         // Materialize entities
         sb.AppendLine($"        var __entities = System.Linq.Enumerable.ToList(__c.BatchEntities!);");
@@ -562,14 +564,14 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        var sql = Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", __entityCount, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
 
         // SQL logging
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Command creation and parameter binding
         var timeoutExpr = carrier.Fields.Any(f => f.Role == FieldRole.Timeout)
-            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
-            : "__c.Ctx!.DefaultTimeout";
-        sb.AppendLine("        var __cmd = __c.Ctx!.Connection.CreateCommand();");
+            ? "__c.Timeout ?? __ctx.DefaultTimeout"
+            : "__ctx.DefaultTimeout";
+        sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
@@ -598,7 +600,7 @@ internal static class TerminalBodyEmitter
 
         sb.AppendLine("        }");
 
-        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd, cancellationToken);");
     }
 
     /// <summary>
