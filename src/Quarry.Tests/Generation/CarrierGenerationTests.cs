@@ -717,6 +717,44 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_BatchInsertTerminal_CachesCtxAndLogger()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var users = new[] { new User { UserName = ""a"", IsActive = true } };
+        await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Batch insert terminal has its own inline preamble — verify it also caches locals
+        Assert.That(code, Does.Contain("var __ctx = __c.Ctx!;"));
+        Assert.That(code, Does.Contain("var __logger = LogsmithOutput.Logger;"));
+        Assert.That(code, Does.Contain("__logger != null ? OpId.Next() : 0"));
+        Assert.That(code, Does.Contain("__ctx.Connection.CreateCommand()"));
+        Assert.That(code, Does.Not.Contain("__c.Ctx.Connection"));
+        Assert.That(code, Does.Not.Contain("__c.Ctx!.DefaultTimeout"));
+        Assert.That(code, Does.Contain("__logger?.IsEnabled(LogLevel.Debug"));
+    }
+
+    [Test]
     public void CarrierGeneration_UpdateWithSetAndWhere()
     {
         var source = SharedSchema + @"
