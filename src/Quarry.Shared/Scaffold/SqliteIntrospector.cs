@@ -6,94 +6,59 @@ using Microsoft.Data.Sqlite;
 
 namespace Quarry.Shared.Scaffold;
 
-internal sealed class SqliteIntrospector : IDatabaseIntrospector
+internal sealed class SqliteIntrospector : DatabaseIntrospectorBase
 {
-    private readonly SqliteConnection _connection;
+    private SqliteIntrospector(SqliteConnection connection) : base(connection) { }
 
-    private SqliteIntrospector(SqliteConnection connection)
+    public static Task<SqliteIntrospector> CreateAsync(string connectionString) =>
+        CreateCoreAsync(new SqliteConnection(connectionString), c => new SqliteIntrospector((SqliteConnection)c));
+
+    public override Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
     {
-        _connection = connection;
+        return ExecuteListAsync(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            r => new TableMetadata(r.GetString(0), null));
     }
 
-    public static async Task<SqliteIntrospector> CreateAsync(string connectionString)
+    public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
     {
-        var connection = new SqliteConnection(connectionString);
-        try
-        {
-            await connection.OpenAsync();
-            return new SqliteIntrospector(connection);
-        }
-        catch
-        {
-            connection.Dispose();
-            throw;
-        }
-    }
-
-    public async Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
-    {
-        var tables = new List<TableMetadata>();
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name";
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(new TableMetadata(reader.GetString(0), null));
-        }
-
-        return tables;
-    }
-
-    public async Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
-    {
-        var columns = new List<ColumnMetadata>();
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = $"PRAGMA table_info({QuoteIdentifier(tableName)})";
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var cid = reader.GetInt32(0);
-            var name = reader.GetString(1);
-            var type = reader.IsDBNull(2) ? "TEXT" : reader.GetString(2);
-            var notNull = reader.GetInt32(3) != 0;
-            var defaultValue = reader.IsDBNull(4) ? null : reader.GetString(4);
-            var pk = reader.GetInt32(5);
-
-            // Normalize empty type to TEXT
-            if (string.IsNullOrWhiteSpace(type))
-                type = "TEXT";
-
-            // SQLite INTEGER PRIMARY KEY is an alias for the rowid (auto-increment)
-            var isIdentity = pk > 0 && type.Equals("INTEGER", StringComparison.OrdinalIgnoreCase);
-
-            columns.Add(new ColumnMetadata(
-                name: name,
-                dataType: type.ToUpperInvariant(),
-                isNullable: !notNull && pk == 0,
-                isIdentity: isIdentity,
-                defaultExpression: defaultValue,
-                ordinalPosition: cid));
-        }
-
-        return columns;
-    }
-
-    public async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
-    {
-        var pkColumns = new List<(int PkOrder, string Name)>();
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = $"PRAGMA table_info({QuoteIdentifier(tableName)})";
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var pk = reader.GetInt32(5);
-            if (pk > 0)
+        return ExecuteListAsync(
+            $"PRAGMA table_info({QuoteIdentifier(tableName)})",
+            r =>
             {
-                pkColumns.Add((pk, reader.GetString(1)));
-            }
+                var cid = r.GetInt32(0);
+                var name = r.GetString(1);
+                var type = r.IsDBNull(2) ? "TEXT" : r.GetString(2);
+                var notNull = r.GetInt32(3) != 0;
+                var defaultValue = r.IsDBNull(4) ? null : r.GetString(4);
+                var pk = r.GetInt32(5);
+
+                if (string.IsNullOrWhiteSpace(type))
+                    type = "TEXT";
+
+                var isIdentity = pk > 0 && type.Equals("INTEGER", StringComparison.OrdinalIgnoreCase);
+
+                return new ColumnMetadata(
+                    name: name,
+                    dataType: type.ToUpperInvariant(),
+                    isNullable: !notNull && pk == 0,
+                    isIdentity: isIdentity,
+                    defaultExpression: defaultValue,
+                    ordinalPosition: cid);
+            });
+    }
+
+    public override async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
+    {
+        var allColumns = await ExecuteListAsync(
+            $"PRAGMA table_info({QuoteIdentifier(tableName)})",
+            r => (Pk: r.GetInt32(5), Name: r.GetString(1)));
+
+        var pkColumns = new List<(int PkOrder, string Name)>();
+        foreach (var (pk, name) in allColumns)
+        {
+            if (pk > 0)
+                pkColumns.Add((pk, name));
         }
 
         if (pkColumns.Count == 0)
@@ -103,71 +68,36 @@ internal sealed class SqliteIntrospector : IDatabaseIntrospector
         return new PrimaryKeyMetadata(null, pkColumns.ConvertAll(p => p.Name));
     }
 
-    public async Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
+    public override Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
     {
-        var fks = new List<ForeignKeyMetadata>();
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = $"PRAGMA foreign_key_list({QuoteIdentifier(tableName)})";
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var id = reader.GetInt32(0);
-            var seq = reader.GetInt32(1);
-            var refTable = reader.GetString(2);
-            var from = reader.GetString(3);
-            var to = reader.GetString(4);
-            var onUpdate = reader.GetString(5);
-            var onDelete = reader.GetString(6);
-
-            fks.Add(new ForeignKeyMetadata(
-                constraintName: $"FK_{tableName}_{from}",
-                columnName: from,
-                referencedTable: refTable,
-                referencedColumn: to,
-                onDelete: NormalizeFkAction(onDelete),
-                onUpdate: NormalizeFkAction(onUpdate)));
-        }
-
-        return fks;
+        return ExecuteListAsync(
+            $"PRAGMA foreign_key_list({QuoteIdentifier(tableName)})",
+            r => new ForeignKeyMetadata(
+                constraintName: $"FK_{tableName}_{r.GetString(3)}",
+                columnName: r.GetString(3),
+                referencedTable: r.GetString(2),
+                referencedColumn: r.GetString(4),
+                onDelete: NormalizeFkAction(r.GetString(6)),
+                onUpdate: NormalizeFkAction(r.GetString(5))));
     }
 
-    public async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
+    public override async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
     {
+        var indexEntries = await ExecuteListAsync(
+            $"PRAGMA index_list({QuoteIdentifier(tableName)})",
+            r => (Name: r.GetString(1), IsUnique: r.GetInt32(2) != 0, Origin: r.GetString(3)));
+
         var indexes = new List<IndexMetadata>();
-        using var listCmd = _connection.CreateCommand();
-        listCmd.CommandText = $"PRAGMA index_list({QuoteIdentifier(tableName)})";
-
-        var indexEntries = new List<(string Name, bool IsUnique, string Origin)>();
-        using (var reader = await listCmd.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                var name = reader.GetString(1);
-                var isUnique = reader.GetInt32(2) != 0;
-                var origin = reader.GetString(3); // "c" = CREATE INDEX, "u" = UNIQUE, "pk" = PRIMARY KEY
-
-                indexEntries.Add((name, isUnique, origin));
-            }
-        }
-
         foreach (var (name, isUnique, origin) in indexEntries)
         {
-            var columns = new List<string>();
-            using var infoCmd = _connection.CreateCommand();
-            infoCmd.CommandText = $"PRAGMA index_info({QuoteIdentifier(name)})";
+            var columns = await ExecuteListAsync(
+                $"PRAGMA index_info({QuoteIdentifier(name)})",
+                r => r.IsDBNull(2) ? null : r.GetString(2));
 
-            using var infoReader = await infoCmd.ExecuteReaderAsync();
-            while (await infoReader.ReadAsync())
+            var nonNullColumns = columns.FindAll(c => c != null)!;
+            if (nonNullColumns.Count > 0)
             {
-                var colName = infoReader.IsDBNull(2) ? null : infoReader.GetString(2);
-                if (colName != null)
-                    columns.Add(colName);
-            }
-
-            if (columns.Count > 0)
-            {
-                indexes.Add(new IndexMetadata(name, columns, isUnique, isPrimaryKey: origin == "pk"));
+                indexes.Add(new IndexMetadata(name, nonNullColumns!, isUnique, isPrimaryKey: origin == "pk"));
             }
         }
 
@@ -190,10 +120,5 @@ internal sealed class SqliteIntrospector : IDatabaseIntrospector
     private static string QuoteIdentifier(string identifier)
     {
         return "\"" + identifier.Replace("\"", "\"\"") + "\"";
-    }
-
-    public void Dispose()
-    {
-        _connection.Dispose();
     }
 }

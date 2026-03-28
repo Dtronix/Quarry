@@ -167,7 +167,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             var param = command.CreateParameter();
             param.ParameterName = $"@p{i}";
-            param.Value = parameters[i] ?? DBNull.Value;
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
             command.Parameters.Add(param);
         }
 
@@ -261,7 +261,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             var param = command.CreateParameter();
             param.ParameterName = $"@p{i}";
-            param.Value = parameters[i] ?? DBNull.Value;
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
             command.Parameters.Add(param);
         }
 
@@ -324,7 +324,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             var param = command.CreateParameter();
             param.ParameterName = $"@p{i}";
-            param.Value = parameters[i] ?? DBNull.Value;
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
             command.Parameters.Add(param);
         }
 
@@ -378,7 +378,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             var param = command.CreateParameter();
             param.ParameterName = $"@p{i}";
-            param.Value = parameters[i] ?? DBNull.Value;
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
             command.Parameters.Add(param);
         }
 
@@ -430,7 +430,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         {
             var param = command.CreateParameter();
             param.ParameterName = $"@p{i}";
-            param.Value = parameters[i] ?? DBNull.Value;
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
             command.Parameters.Add(param);
         }
 
@@ -462,7 +462,10 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
 
         for (int i = 0; i < parameters.Length; i++)
         {
-            ParameterLog.Bound(opId, i, parameters[i]?.ToString() ?? "null");
+            if (parameters[i] is SensitiveParameter)
+                ParameterLog.BoundSensitive(opId, i);
+            else
+                ParameterLog.Bound(opId, i, parameters[i]?.ToString() ?? "null");
         }
     }
 

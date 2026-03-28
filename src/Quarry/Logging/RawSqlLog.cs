@@ -14,7 +14,4 @@ internal static partial class RawSqlLog
 
     [LogMessage(LogLevel.Debug, "[{opId}] Scalar result: {result}", AlwaysEmit = true)]
     internal static partial void ScalarResult(long opId, string result);
-
-    [LogMessage(LogLevel.Error, "[{opId}] Raw SQL failed")]
-    internal static partial void Failed(long opId, Exception ex);
 }

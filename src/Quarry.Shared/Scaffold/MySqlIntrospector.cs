@@ -6,60 +6,33 @@ using MySqlConnector;
 
 namespace Quarry.Shared.Scaffold;
 
-internal sealed class MySqlIntrospector : IDatabaseIntrospector
+internal sealed class MySqlIntrospector : DatabaseIntrospectorBase
 {
-    private readonly MySqlConnection _connection;
     private readonly string _database;
 
-    private MySqlIntrospector(MySqlConnection connection)
+    private MySqlIntrospector(MySqlConnection connection) : base(connection)
     {
-        _connection = connection;
         _database = connection.Database;
     }
 
-    public static async Task<MySqlIntrospector> CreateAsync(string connectionString)
-    {
-        var connection = new MySqlConnection(connectionString);
-        try
-        {
-            await connection.OpenAsync();
-            return new MySqlIntrospector(connection);
-        }
-        catch
-        {
-            connection.Dispose();
-            throw;
-        }
-    }
+    public static Task<MySqlIntrospector> CreateAsync(string connectionString) =>
+        CreateCoreAsync(new MySqlConnection(connectionString), c => new MySqlIntrospector((MySqlConnection)c));
 
-    public async Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
+    public override Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
     {
-        var tables = new List<TableMetadata>();
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT TABLE_NAME, TABLE_SCHEMA
             FROM information_schema.TABLES
             WHERE TABLE_SCHEMA = @db
               AND TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME";
-        cmd.Parameters.AddWithValue("@db", _database);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(new TableMetadata(reader.GetString(0), reader.GetString(1)));
-        }
-
-        return tables;
+            ORDER BY TABLE_NAME",
+            r => new TableMetadata(r.GetString(0), r.GetString(1)),
+            cmd => AddParameter(cmd,"@db", _database));
     }
 
-    public async Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
+    public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
     {
-        var columns = new List<ColumnMetadata>();
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 COLUMN_NAME,
                 COLUMN_TYPE,
@@ -73,39 +46,36 @@ internal sealed class MySqlIntrospector : IDatabaseIntrospector
                 DATA_TYPE
             FROM information_schema.COLUMNS
             WHERE TABLE_NAME = @table AND TABLE_SCHEMA = @db
-            ORDER BY ORDINAL_POSITION";
-        cmd.Parameters.AddWithValue("@table", tableName);
-        cmd.Parameters.AddWithValue("@db", _database);
+            ORDER BY ORDINAL_POSITION",
+            r =>
+            {
+                var columnType = r.GetString(1);
+                var extra = r.IsDBNull(8) ? "" : r.GetString(8);
+                var maxLen = r.IsDBNull(3) ? (int?)null : Convert.ToInt32(r.GetValue(3));
+                var precision = r.IsDBNull(4) ? (int?)null : Convert.ToInt32(r.GetValue(4));
+                var scale = r.IsDBNull(5) ? (int?)null : Convert.ToInt32(r.GetValue(5));
 
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var columnType = reader.GetString(1); // e.g., "int(11)", "varchar(255)", "tinyint(1)"
-            var dataType = reader.GetString(9);   // e.g., "int", "varchar", "tinyint"
-            var extra = reader.IsDBNull(8) ? "" : reader.GetString(8);
-            var maxLen = reader.IsDBNull(3) ? (int?)null : Convert.ToInt32(reader.GetValue(3));
-            var precision = reader.IsDBNull(4) ? (int?)null : Convert.ToInt32(reader.GetValue(4));
-            var scale = reader.IsDBNull(5) ? (int?)null : Convert.ToInt32(reader.GetValue(5));
-
-            columns.Add(new ColumnMetadata(
-                name: reader.GetString(0),
-                dataType: columnType.ToUpperInvariant(),
-                isNullable: reader.GetString(2) == "YES",
-                maxLength: maxLen,
-                precision: precision,
-                scale: scale,
-                isIdentity: extra.Contains("auto_increment", StringComparison.OrdinalIgnoreCase),
-                defaultExpression: reader.IsDBNull(6) ? null : reader.GetString(6),
-                ordinalPosition: reader.GetInt32(7)));
-        }
-
-        return columns;
+                return new ColumnMetadata(
+                    name: r.GetString(0),
+                    dataType: columnType.ToUpperInvariant(),
+                    isNullable: r.GetString(2) == "YES",
+                    maxLength: maxLen,
+                    precision: precision,
+                    scale: scale,
+                    isIdentity: extra.Contains("auto_increment", StringComparison.OrdinalIgnoreCase),
+                    defaultExpression: r.IsDBNull(6) ? null : r.GetString(6),
+                    ordinalPosition: r.GetInt32(7));
+            },
+            cmd =>
+            {
+                AddParameter(cmd,"@table", tableName);
+                AddParameter(cmd,"@db", _database);
+            });
     }
 
-    public async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
+    public override async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
     {
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        var rows = await ExecuteListAsync(@"
             SELECT kcu.COLUMN_NAME, tc.CONSTRAINT_NAME
             FROM information_schema.TABLE_CONSTRAINTS tc
             JOIN information_schema.KEY_COLUMN_USAGE kcu
@@ -114,29 +84,30 @@ internal sealed class MySqlIntrospector : IDatabaseIntrospector
             WHERE tc.TABLE_NAME = @table
               AND tc.TABLE_SCHEMA = @db
               AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-            ORDER BY kcu.ORDINAL_POSITION";
-        cmd.Parameters.AddWithValue("@table", tableName);
-        cmd.Parameters.AddWithValue("@db", _database);
+            ORDER BY kcu.ORDINAL_POSITION",
+            r => (Column: r.GetString(0), Constraint: r.GetString(1)),
+            cmd =>
+            {
+                AddParameter(cmd,"@table", tableName);
+                AddParameter(cmd,"@db", _database);
+            });
 
-        var columns = new List<string>();
+        if (rows.Count == 0) return null;
+
         string? constraintName = null;
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        var columns = new List<string>();
+        foreach (var (col, constraint) in rows)
         {
-            columns.Add(reader.GetString(0));
-            constraintName ??= reader.GetString(1);
+            columns.Add(col);
+            constraintName ??= constraint;
         }
 
-        return columns.Count > 0 ? new PrimaryKeyMetadata(constraintName, columns) : null;
+        return new PrimaryKeyMetadata(constraintName, columns);
     }
 
-    public async Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
+    public override Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
     {
-        var fks = new List<ForeignKeyMetadata>();
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 rc.CONSTRAINT_NAME,
                 kcu.COLUMN_NAME,
@@ -151,52 +122,40 @@ internal sealed class MySqlIntrospector : IDatabaseIntrospector
                 AND rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
             WHERE kcu.TABLE_NAME = @table
               AND kcu.TABLE_SCHEMA = @db
-              AND kcu.REFERENCED_TABLE_NAME IS NOT NULL";
-        cmd.Parameters.AddWithValue("@table", tableName);
-        cmd.Parameters.AddWithValue("@db", _database);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            fks.Add(new ForeignKeyMetadata(
-                constraintName: reader.GetString(0),
-                columnName: reader.GetString(1),
-                referencedTable: reader.GetString(2),
-                referencedColumn: reader.GetString(3),
-                referencedSchema: reader.IsDBNull(4) ? null : reader.GetString(4),
-                onDelete: reader.GetString(5),
-                onUpdate: reader.GetString(6)));
-        }
-
-        return fks;
+              AND kcu.REFERENCED_TABLE_NAME IS NOT NULL",
+            r => new ForeignKeyMetadata(
+                constraintName: r.GetString(0),
+                columnName: r.GetString(1),
+                referencedTable: r.GetString(2),
+                referencedColumn: r.GetString(3),
+                referencedSchema: r.IsDBNull(4) ? null : r.GetString(4),
+                onDelete: r.GetString(5),
+                onUpdate: r.GetString(6)),
+            cmd =>
+            {
+                AddParameter(cmd,"@table", tableName);
+                AddParameter(cmd,"@db", _database);
+            });
     }
 
-    public async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
+    public override async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
     {
-        var indexes = new List<IndexMetadata>();
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = $"SHOW INDEX FROM `{tableName.Replace("`", "``")}`";
+        var rawRows = await ExecuteListAsync(
+            $"SHOW INDEX FROM `{tableName.Replace("`", "``")}`",
+            r => (KeyName: r.GetString(2), Seq: r.GetInt32(3), ColName: r.GetString(4), NonUnique: r.GetInt32(1)));
 
         var indexMap = new Dictionary<string, (bool IsUnique, bool IsPrimary, List<(int Seq, string Col)> Columns)>();
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        foreach (var (keyName, seq, colName, nonUnique) in rawRows)
         {
-            var keyName = reader.GetString(2);
-            var seqInIndex = reader.GetInt32(3);
-            var colName = reader.GetString(4);
-            var nonUnique = reader.GetInt32(1);
-
             if (!indexMap.TryGetValue(keyName, out var entry))
             {
                 entry = (nonUnique == 0, keyName == "PRIMARY", new List<(int, string)>());
                 indexMap[keyName] = entry;
             }
-
-            entry.Columns.Add((seqInIndex, colName));
+            entry.Columns.Add((seq, colName));
         }
 
+        var indexes = new List<IndexMetadata>();
         foreach (var (name, (isUnique, isPrimary, cols)) in indexMap)
         {
             cols.Sort((a, b) => a.Seq.CompareTo(b.Seq));
@@ -204,10 +163,5 @@ internal sealed class MySqlIntrospector : IDatabaseIntrospector
         }
 
         return indexes;
-    }
-
-    public void Dispose()
-    {
-        _connection.Dispose();
     }
 }
