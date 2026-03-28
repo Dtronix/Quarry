@@ -800,11 +800,12 @@ internal static class CarrierEmitter
 
         // OpId + SQL dispatch
         sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
+        sb.AppendLine("        var __debugLog = LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true;");
         EmitCarrierSqlDispatch(sb, carrier, chain);
         sb.AppendLine();
 
         // SQL logging
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("        if (__debugLog)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
         sb.AppendLine();
 
@@ -936,7 +937,7 @@ internal static class CarrierEmitter
         sb.AppendLine();
         sb.AppendLine("            if (__result is null or DBNull)");
         sb.AppendLine("            {");
-        sb.AppendLine("                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("                if (__debugLog)");
         sb.AppendLine("                    QueryLog.ScalarResult(__opId, \"null\");");
         sb.AppendLine();
         sb.AppendLine("                if (default(TScalar) is null)");
@@ -945,7 +946,7 @@ internal static class CarrierEmitter
         sb.AppendLine("                throw new InvalidOperationException(\"Query returned null but expected a non-nullable value.\");");
         sb.AppendLine("            }");
         sb.AppendLine();
-        sb.AppendLine("            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("            if (__debugLog)");
         sb.AppendLine("                QueryLog.ScalarResult(__opId, __result.ToString() ?? \"null\");");
         sb.AppendLine();
         sb.AppendLine("            return ScalarConverter.Convert<TScalar>(__result);");
