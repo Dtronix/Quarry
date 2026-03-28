@@ -410,9 +410,10 @@ internal static class CarrierEmitter
                 {
                     // Set clauses: the value comes from the 'value' method parameter
                     var isSetClause = site.Kind == InterceptorKind.Set || site.Kind == InterceptorKind.UpdateSet;
+                    var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                     if (isSetClause)
                     {
-                        sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType})value!;");
+                        sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType})value!;");
                     }
                     else if (p.IsCaptured && p.CapturedFieldName != null
                              && HasUnsafeAccessor(carrier, globalIdx))
@@ -421,11 +422,11 @@ internal static class CarrierEmitter
                         var isStaticAccessor = IsStaticUnsafeAccessor(carrier, globalIdx);
                         var targetExpr = isStaticAccessor ? "null!" : "func.Target!";
                         var propertySuffix = GetPropertyChainSuffix(carrierParam);
-                        sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){carrier.ClassName}.__ExtractP{globalIdx}({targetExpr}){propertySuffix};");
+                        sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType}){carrier.ClassName}.__ExtractP{globalIdx}({targetExpr}){propertySuffix};");
                     }
                     else
                     {
-                        sb.AppendLine($"        __c.P{globalIdx} = ({carrierParam.ClrType}){p.ValueExpression}!;");
+                        sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType}){p.ValueExpression}!;");
                     }
                 }
             }
@@ -895,7 +896,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (IsNonNullableValueType(param.ClrType))
+                else if (IsNonNullableValueType(GetEffectiveCastType(i, param, carrier)))
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -1082,9 +1083,7 @@ internal static class CarrierEmitter
                      && HasUnsafeAccessor(carrier, globalIdx))
             {
                 // Use [UnsafeAccessor] extraction via the pre-emitted __ExtractP{n} method
-                var castType = param.ClrType == "?" || param.ClrType == "object"
-                    ? "object?"
-                    : param.ClrType;
+                var castType = GetEffectiveCastType(globalIdx, param, carrier);
                 var isStaticAccessor = IsStaticUnsafeAccessor(carrier, globalIdx);
                 var targetExpr = isStaticAccessor ? "null!" : "func.Target!";
                 var extractExpr = $"{carrier.ClassName}.__ExtractP{globalIdx}({targetExpr})";
@@ -1094,9 +1093,7 @@ internal static class CarrierEmitter
             }
             else
             {
-                var castType = param.ClrType == "?" || param.ClrType == "object"
-                    ? "object?"
-                    : param.ClrType;
+                var castType = GetEffectiveCastType(globalIdx, param, carrier);
                 sb.AppendLine($"        __c.P{globalIdx} = ({castType}){param.ValueExpression}!;");
             }
         }
@@ -1217,6 +1214,32 @@ internal static class CarrierEmitter
             SqlDialect.MySQL => "SqlDialect.MySQL",
             _ => $"(SqlDialect){(int)dialect}"
         };
+    }
+
+    /// <summary>
+    /// Gets the effective CLR type for a parameter, using the carrier parameter's
+    /// resolved field type when the QueryParameter's type is unresolved ("?" or "object").
+    /// Returns the non-nullable base type suitable for casts.
+    /// </summary>
+    internal static string GetEffectiveCastType(int globalIndex, QueryParameter queryParam, CarrierPlan carrier)
+    {
+        if (queryParam.ClrType != "?" && queryParam.ClrType != "object")
+            return queryParam.ClrType;
+
+        foreach (var cp in carrier.Parameters)
+        {
+            if (cp.GlobalIndex == globalIndex)
+            {
+                var ft = cp.FieldType;
+                if (ft.EndsWith("?"))
+                    ft = ft.Substring(0, ft.Length - 1);
+                if (ft != "object")
+                    return ft;
+                break;
+            }
+        }
+
+        return queryParam.ClrType;
     }
 
     /// <summary>

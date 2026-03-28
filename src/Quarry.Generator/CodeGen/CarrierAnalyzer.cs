@@ -184,8 +184,21 @@ internal static class CarrierAnalyzer
             }
             else
             {
-                var fieldType = NormalizeFieldType(param.ClrType);
-                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter, isReferenceType: IsReferenceTypeName(param.ClrType)));
+                // When param.ClrType is unresolved ("?" or "object"), try to use
+                // the resolved type from CapturedVariableTypes if available.
+                var effectiveClrType = param.ClrType;
+                if ((effectiveClrType == "?" || effectiveClrType == "object")
+                    && param.CapturedFieldName != null
+                    && displayClassByParam.TryGetValue(param.GlobalIndex, out var dcTypeHint)
+                    && dcTypeHint.VarTypes != null
+                    && dcTypeHint.VarTypes.TryGetValue(param.CapturedFieldName, out var hintType)
+                    && hintType != "object" && hintType != "?")
+                {
+                    effectiveClrType = hintType;
+                }
+
+                var fieldType = NormalizeFieldType(effectiveClrType);
+                fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter, isReferenceType: IsReferenceTypeName(effectiveClrType)));
                 parameters.Add(new CarrierParameter(
                     globalIndex: param.GlobalIndex,
                     fieldName: $"P{param.GlobalIndex}",
@@ -238,10 +251,13 @@ internal static class CarrierAnalyzer
 
                     // Determine if this is a class-level static field or a closure capture
                     // whose type wasn't in VarTypes due to chain sharing.
+                    // When VarTypes is null (no captured locals) or doesn't contain the field,
+                    // the field is a class-level static/instance field, not a closure capture.
                     var containingType = dcInfoStatic.DisplayClassName;
                     var displayClassMarker = containingType.IndexOf("+<>c__DisplayClass");
-                    if (displayClassMarker > 0 && dcInfoStatic.VarTypes != null
-                        && !dcInfoStatic.VarTypes.ContainsKey(param.CapturedFieldName))
+                    if (displayClassMarker > 0
+                        && (dcInfoStatic.VarTypes == null
+                            || !dcInfoStatic.VarTypes.ContainsKey(param.CapturedFieldName)))
                     {
                         // Static/instance field on the containing class
                         containingType = containingType.Substring(0, displayClassMarker);

@@ -598,9 +598,9 @@ internal static class ClauseBodyEmitter
                 if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
                 var carrierParam = prebuiltChain.ChainParameters[globalIdx];
 
-                var castType = carrierParam.ClrType == "?" || carrierParam.ClrType == "object"
-                    ? "object?"
-                    : carrierParam.ClrType;
+                var castType = carrier != null
+                    ? CarrierEmitter.GetEffectiveCastType(globalIdx, carrierParam, carrier)
+                    : (carrierParam.ClrType == "?" || carrierParam.ClrType == "object" ? "object?" : carrierParam.ClrType);
                 if (p.IsCaptured && assignmentIdx < nonInlinedAssignments.Count)
                 {
                     var propertyName = nonInlinedAssignments[assignmentIdx].ColumnSql;

@@ -177,9 +177,11 @@ internal static class DisplayClassNameResolver
             }
             else continue;
 
-            // Handle unresolved types (error types from generator ordering)
+            // Handle unresolved types (error types from generator ordering).
+            // When the type is error, try to infer it from the declaration syntax
+            // (e.g., var id = await ...Method<int>() → int).
             var varType = typeSymbol.TypeKind == TypeKind.Error
-                ? "object"
+                ? (TryResolveErrorType(symbol, semanticModel) ?? "object")
                 : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             // Guard against empty/null type strings
@@ -190,6 +192,53 @@ internal static class DisplayClassNameResolver
         }
 
         return result.Count > 0 ? result : null;
+    }
+
+    /// <summary>
+    /// Attempts to resolve the type of a captured variable when the semantic model
+    /// reports TypeKind.Error (typically because the variable is assigned from a
+    /// generator-produced method whose return type isn't yet resolved).
+    /// Handles patterns like: var x = await something.Method&lt;T&gt;()
+    /// </summary>
+    private static string? TryResolveErrorType(ISymbol symbol, SemanticModel semanticModel)
+    {
+        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declRef == null)
+            return null;
+
+        var declSyntax = declRef.GetSyntax();
+        if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
+            return null;
+
+        // Unwrap await expressions: var x = await expr → analyze expr
+        if (initValue is AwaitExpressionSyntax awaitExpr)
+            initValue = awaitExpr.Expression;
+
+        // Look for generic method invocations: something.Method<T>()
+        // Extract T from the type argument list.
+        if (initValue is InvocationExpressionSyntax invocation)
+        {
+            GenericNameSyntax? genericName = null;
+            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess
+                && memberAccess.Name is GenericNameSyntax g1)
+            {
+                genericName = g1;
+            }
+            else if (invocation.Expression is GenericNameSyntax g2)
+            {
+                genericName = g2;
+            }
+
+            if (genericName != null && genericName.TypeArgumentList.Arguments.Count == 1)
+            {
+                var typeArg = genericName.TypeArgumentList.Arguments[0];
+                var typeInfo = semanticModel.GetTypeInfo(typeArg);
+                if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
+                    return typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+            }
+        }
+
+        return null;
     }
 
     private static void AssignOrdinalsPreOrder(
