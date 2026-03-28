@@ -140,7 +140,7 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// </remarks>");
         sb.AppendLine($"    {access} IUpdateBuilder<{entityName}> Update{entityName}()");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new UpdateBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, (IQueryExecutionContext)this);");
+        sb.AppendLine($"        return new UpdateBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, this);");
         sb.AppendLine($"    }}");
         sb.AppendLine();
     }
@@ -166,7 +166,7 @@ internal static class ContextCodeGenerator
             var entityName = mapping.Entity.EntityName;
             var tableName = mapping.Entity.TableName;
             sb.AppendLine($"        if (typeof(T) == typeof({entityName}))");
-            sb.AppendLine($"            return (IUpdateBuilder<T>)(object)new UpdateBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, (IQueryExecutionContext)this);");
+            sb.AppendLine($"            return (IUpdateBuilder<T>)(object)new UpdateBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, this);");
         }
 
         sb.AppendLine($"        throw new NotImplementedException($\"No update mapping for {{typeof(T).Name}}. Ensure the entity type is declared in this context.\");");
@@ -195,7 +195,7 @@ internal static class ContextCodeGenerator
             var entityName = mapping.Entity.EntityName;
             var tableName = mapping.Entity.TableName;
             sb.AppendLine($"        if (typeof(T) == typeof({entityName}))");
-            sb.AppendLine($"            return (IDeleteBuilder<T>)(object)new DeleteBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, (IQueryExecutionContext)this);");
+            sb.AppendLine($"            return (IDeleteBuilder<T>)(object)new DeleteBuilder<{entityName}>(_dialect, \"{EscapeString(tableName)}\", {schemaArg}, this);");
         }
 
         sb.AppendLine($"        throw new NotImplementedException($\"No delete mapping for {{typeof(T).Name}}. Ensure the entity type is declared in this context.\");");

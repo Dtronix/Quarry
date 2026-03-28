@@ -58,7 +58,7 @@ internal static class CarrierEmitter
         sb.AppendLine($"    public static IEntityAccessor<{entityType}> {{0}}(");
         sb.AppendLine($"        this {contextClass} @this)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new {className} {{ Ctx = (IQueryExecutionContext)@this }};");
+        sb.AppendLine($"        return new {className} {{ Ctx = @this }};");
         sb.AppendLine($"    }}");
     }
 
@@ -481,7 +481,7 @@ internal static class CarrierEmitter
         EmitCarrierSqlField(sb, chain);
 
         // Emit the execution context field (formerly inherited from CarrierBase)
-        sb.AppendLine("    internal IQueryExecutionContext? Ctx;");
+        sb.AppendLine("    internal QuarryContext? Ctx;");
 
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)

@@ -101,7 +101,7 @@ internal static class TransitionBodyEmitter
         sb.AppendLine($"    public static IEntityAccessor<{entityType}> {methodName}(");
         sb.AppendLine($"        this {contextClass} @this)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = (IQueryExecutionContext)@this }};");
+        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = @this }};");
         sb.AppendLine($"    }}");
     }
 

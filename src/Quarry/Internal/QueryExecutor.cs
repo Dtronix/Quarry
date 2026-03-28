@@ -29,7 +29,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized query with a pre-built command and returns all results as a list.
     /// </summary>
     public static async Task<List<TResult>> ExecuteCarrierWithCommandAsync<TResult>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -67,7 +67,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized query with a pre-built command and returns the first result.
     /// </summary>
     public static async Task<TResult> ExecuteCarrierFirstWithCommandAsync<TResult>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -104,7 +104,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized query with a pre-built command and returns the first result or default.
     /// </summary>
     public static async Task<TResult?> ExecuteCarrierFirstOrDefaultWithCommandAsync<TResult>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -148,7 +148,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized query with a pre-built command and returns exactly one result.
     /// </summary>
     public static async Task<TResult> ExecuteCarrierSingleWithCommandAsync<TResult>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -192,7 +192,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized scalar query with a pre-built command.
     /// </summary>
     public static async Task<TScalar> ExecuteCarrierScalarWithCommandAsync<TScalar>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -243,7 +243,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized non-query (DELETE/UPDATE) with a pre-built command.
     /// </summary>
     public static async Task<int> ExecuteCarrierNonQueryWithCommandAsync(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
@@ -275,7 +275,7 @@ internal static class QueryExecutor
     /// Executes a carrier-optimized query with a pre-built command and returns results as an async enumerable.
     /// </summary>
     public static async IAsyncEnumerable<TResult> ToCarrierAsyncEnumerableWithCommandAsync<TResult>(
-        long opId, IQueryExecutionContext ctx,
+        long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader,
         [EnumeratorCancellation] CancellationToken ct)
     {
@@ -315,7 +315,7 @@ internal static class QueryExecutor
     /// <summary>
     /// Checks if a query exceeded the slow query threshold and emits a warning.
     /// </summary>
-    private static void CheckSlowQuery(long opId, IQueryExecutionContext context, double elapsedMs, string sql)
+    private static void CheckSlowQuery(long opId, QuarryContext context, double elapsedMs, string sql)
     {
         var threshold = context.SlowQueryThreshold;
         if (threshold.HasValue && elapsedMs > threshold.Value.TotalMilliseconds)
