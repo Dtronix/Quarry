@@ -89,7 +89,7 @@ Quarry's median overhead is **1.02x Raw ADO.NET** across 23 benchmarks — faste
 - **[Query diagnostics](https://dtronix.github.io/Quarry/articles/diagnostics.html)** — `ToDiagnostics()` surfaces SQL, parameters, variants, projection metadata, and carrier optimization status
 - **[Structured logging](https://dtronix.github.io/Quarry/articles/logging.html)** — Logsmith Abstraction mode with categories, slow query detection, sensitive redaction, and operation correlation
 - **[Analyzer rules](https://dtronix.github.io/Quarry/articles/analyzer-rules.html)** — compile-time QRA diagnostics with code fixes
-- **[Benchmarks](https://dtronix.github.io/Quarry/articles/benchmarks.html)** — 1.02x median overhead vs Raw ADO.NET across 23 benchmarks; faster than Dapper with 1.10x allocation ratio
+- **[Benchmarks](https://dtronix.github.io/Quarry/articles/benchmarks.html)** — comprehensive BenchmarkDotNet suite comparing Quarry against Raw ADO.NET, Dapper, EF Core, and SqlKata
 
 ---
 
