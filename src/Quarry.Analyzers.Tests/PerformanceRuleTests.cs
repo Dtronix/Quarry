@@ -130,6 +130,101 @@ public class PerformanceRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
+    // -- QRA305: MutableArrayInClauseRule --
+
+    [Test]
+    public void QRA305_StaticReadonlyArray_Reports()
+    {
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateWhereContextWithLambda(
+            "private static readonly string[] _statuses = new[] { \"a\", \"b\" };",
+            "o => _statuses.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA305"));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("_statuses"));
+    }
+
+    [Test]
+    public void QRA305_MutableStaticArray_NoReport()
+    {
+        // Mutable static (not readonly) — won't be inlined, so no false warning
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateWhereContextWithLambda(
+            "private static string[] _statuses = new[] { \"a\", \"b\" };",
+            "o => _statuses.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA305_LocalArray_NoReport()
+    {
+        var rule = new MutableArrayInClauseRule();
+        // Local variable — not a field, so rule should not fire
+        var context = CreateWhereContextWithLambda(
+            "", // no field needed
+            "o => new[] { \"a\", \"b\" }.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    private static QueryAnalysisContext CreateWhereContextWithLambda(string fieldDeclaration, string lambdaExpr)
+    {
+        var source = $@"
+using System.Linq;
+class Param {{ public string Status {{ get; set; }} }}
+class C {{
+    {fieldDeclaration}
+    void M() {{
+        System.Func<Param, bool> f = null;
+        Where({lambdaExpr});
+    }}
+    static void Where(System.Func<Param, bool> predicate) {{ }}
+}}";
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var runtimeDir = System.IO.Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        var refs = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+        };
+        var runtimeRef = System.IO.Path.Combine(runtimeDir, "System.Runtime.dll");
+        if (System.IO.File.Exists(runtimeRef))
+            refs.Add(MetadataReference.CreateFromFile(runtimeRef));
+
+        var compilation = CSharpCompilation.Create("Test",
+            new[] { tree },
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var semanticModel = compilation.GetSemanticModel(tree);
+
+        // Find the Where(...) invocation
+        var invocation = tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .First(inv => inv.Expression is IdentifierNameSyntax id && id.Identifier.ValueText == "Where");
+
+        var site = new RawCallSite(
+            methodName: "Where",
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_qra305",
+            kind: InterceptorKind.Where,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "Param",
+            resultTypeName: "Param",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)),
+            expression: null,
+            clauseKind: ClauseKind.Where);
+
+        return new QueryAnalysisContext(
+            site, null, null, null, semanticModel, invocation,
+            new EmptyAnalyzerConfigOptions());
+    }
+
     private static EntityInfo CreateEntityWithIndex(string indexedPropertyName, string indexName)
     {
         var modifiers = new ColumnModifiers();
