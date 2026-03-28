@@ -23,7 +23,7 @@ namespace Quarry.Generators.CodeGen;
 internal static class TerminalBodyEmitter
 {
     /// <summary>
-    /// Emits a execution interceptor for SELECT queries (ExecuteFetchAll, ExecuteFetchFirst, etc.).
+    /// Emits an execution interceptor for SELECT queries (ExecuteFetchAll, ExecuteFetchFirst, etc.).
     /// Contains a dispatch table that maps ClauseMask to pre-built SQL string literal.
     /// </summary>
     public static void EmitReaderTerminal(
@@ -101,7 +101,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a execution interceptor for joined query execution (multi-entity SELECT).
+    /// Emits an execution interceptor for joined query execution (multi-entity SELECT).
     /// </summary>
     public static void EmitJoinReaderTerminal(
         StringBuilder sb,
@@ -177,7 +177,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a execution interceptor for non-query operations (DELETE/UPDATE ExecuteNonQueryAsync).
+    /// Emits an execution interceptor for non-query operations (DELETE/UPDATE ExecuteNonQueryAsync).
     /// </summary>
     public static void EmitNonQueryTerminal(
         StringBuilder sb,
