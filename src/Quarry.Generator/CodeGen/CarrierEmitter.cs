@@ -633,11 +633,16 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCarrierPreamble(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
-        bool emitOpId = true)
+        bool emitOpId = true, bool emitCtxLocal = true)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        if (emitCtxLocal)
+            sb.AppendLine("        var __ctx = __c.Ctx!;");
         if (emitOpId)
-            sb.AppendLine("        var __opId = LogsmithOutput.Logger != null ? OpId.Next() : 0;");
+        {
+            sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
+            sb.AppendLine("        var __opId = __logger != null ? OpId.Next() : 0;");
+        }
         EmitCarrierSqlDispatch(sb, carrier, chain);
     }
 
@@ -648,7 +653,7 @@ internal static class CarrierEmitter
         StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
         string timeoutExpr)
     {
-        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
+        sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
@@ -762,7 +767,7 @@ internal static class CarrierEmitter
         EmitCarrierPreamble(sb, carrier, chain);
 
         // SQL logging
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Parameter logging
@@ -770,13 +775,13 @@ internal static class CarrierEmitter
 
         // Command binding
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
-            : "__c.Ctx!.DefaultTimeout";
+            ? "__c.Timeout ?? __ctx.DefaultTimeout"
+            : "__ctx.DefaultTimeout";
         EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
 
         // Executor call
         var readerArg = readerExpression != null ? $", {readerExpression}" : "";
-        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd{readerArg}, cancellationToken);");
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd{readerArg}, cancellationToken);");
     }
 
     /// <summary>
@@ -787,17 +792,17 @@ internal static class CarrierEmitter
     {
         EmitCarrierPreamble(sb, carrier, chain);
 
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         EmitInlineParameterLogging(sb, chain, carrier);
 
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
-            : "__c.Ctx!.DefaultTimeout";
+            ? "__c.Timeout ?? __ctx.DefaultTimeout"
+            : "__ctx.DefaultTimeout";
         EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
 
-        sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __c.Ctx, __cmd, cancellationToken);");
+        sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __ctx, __cmd, cancellationToken);");
     }
 
     /// <summary>
@@ -817,7 +822,7 @@ internal static class CarrierEmitter
         var hasConditional = chain.ConditionalTerms.Count > 0;
         var maskType = hasConditional ? GetMaskType(chain) : null;
 
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
+        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
         sb.AppendLine("        {");
 
         int? currentBitIndex = null;
@@ -914,18 +919,20 @@ internal static class CarrierEmitter
         string executorMethod, bool isScalar = false)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+        sb.AppendLine("        var __ctx = __c.Ctx!;");
+        sb.AppendLine("        var __logger = LogsmithOutput.Logger;");
 
         sb.AppendLine("        var __opId = OpId.Next();");
         EmitCarrierSqlDispatch(sb, carrier, chain);
 
-        sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
+        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
         // Command creation + inline parameter binding from entity properties
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __c.Ctx!.DefaultTimeout"
-            : "__c.Ctx!.DefaultTimeout";
-        sb.AppendLine("        var __cmd = __c.Ctx.Connection.CreateCommand();");
+            ? "__c.Timeout ?? __ctx.DefaultTimeout"
+            : "__ctx.DefaultTimeout";
+        sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
         sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
 
@@ -951,7 +958,7 @@ internal static class CarrierEmitter
             // Parameter logging
             if (insertInfo.Columns.Count > 0)
             {
-                sb.AppendLine("        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
+                sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Trace, ParameterLog.CategoryName) == true)");
                 sb.AppendLine("        {");
                 for (int i = 0; i < insertInfo.Columns.Count; i++)
                 {
@@ -965,7 +972,7 @@ internal static class CarrierEmitter
             }
         }
 
-        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __c.Ctx, __cmd, cancellationToken);");
+        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd, cancellationToken);");
     }
 
     // ───────────────────────────────────────────────────────────────
@@ -978,7 +985,7 @@ internal static class CarrierEmitter
     internal static void EmitCarrierInsertToDiagnosticsTerminal(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
-        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false);
 
         var insertInfo = chain.InsertInfo;
         if (insertInfo != null && insertInfo.Columns.Count > 0)
@@ -1009,7 +1016,7 @@ internal static class CarrierEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         string diagnosticKind, string isCarrierOptimized)
     {
-        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false);
+        EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false);
         TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticParameterArray(sb, chain, carrier);
