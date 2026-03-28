@@ -85,6 +85,8 @@ internal static class SqlExprAnnotator
                 return new LiteralExpr(byteVal.ToString(), "int");
             if (resolved is short shortVal)
                 return new LiteralExpr(shortVal.ToString(), "int");
+            if (resolved is string strVal)
+                return new LiteralExpr(strVal, "string");
         }
 
         // Try to resolve the type
@@ -467,6 +469,107 @@ internal static class SqlExprAnnotator
         // Collection initializer: { ... }
         if (initValue is InitializerExpressionSyntax init)
             return init;
+        return null;
+    }
+
+    /// <summary>
+    /// Inlines constant string values in LikeExpr patterns. When a LikeExpr contains
+    /// a CapturedValueExpr referencing a static readonly/const string field initialized
+    /// with a string literal, replaces it with a LiteralExpr.
+    /// </summary>
+    public static SqlExpr InlineConstantLikePatterns(
+        SqlExpr expr,
+        ExpressionSyntax lambdaBody,
+        SemanticModel semanticModel)
+    {
+        try
+        {
+            return InlineLikePatternsRecursive(expr, lambdaBody, semanticModel);
+        }
+        catch
+        {
+            return expr;
+        }
+    }
+
+    private static SqlExpr InlineLikePatternsRecursive(SqlExpr expr, ExpressionSyntax lambdaBody, SemanticModel semanticModel)
+    {
+        switch (expr)
+        {
+            case LikeExpr like when like.Pattern is CapturedValueExpr captured:
+            {
+                var resolved = TryResolveConstantString(captured.VariableName, lambdaBody, semanticModel);
+                if (resolved != null)
+                {
+                    var operand = InlineLikePatternsRecursive(like.Operand, lambdaBody, semanticModel);
+                    var escapedPattern = Translation.SqlLikeHelpers.EscapeLikeMetaChars(resolved);
+                    var needsEscape = like.NeedsEscape || escapedPattern != resolved;
+                    return new LikeExpr(operand, new LiteralExpr(escapedPattern, "string"),
+                        like.IsNegated, like.LikePrefix, like.LikeSuffix, needsEscape);
+                }
+                return like;
+            }
+
+            case BinaryOpExpr bin:
+            {
+                var left = InlineLikePatternsRecursive(bin.Left, lambdaBody, semanticModel);
+                var right = InlineLikePatternsRecursive(bin.Right, lambdaBody, semanticModel);
+                if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
+                    return bin;
+                return new BinaryOpExpr(left, bin.Operator, right);
+            }
+
+            case UnaryOpExpr unary:
+            {
+                var operand = InlineLikePatternsRecursive(unary.Operand, lambdaBody, semanticModel);
+                if (ReferenceEquals(operand, unary.Operand)) return unary;
+                return new UnaryOpExpr(unary.Operator, operand);
+            }
+
+            default:
+                return expr;
+        }
+    }
+
+    /// <summary>
+    /// Tries to resolve a variable name to a constant string value.
+    /// Returns the string value, or null if not resolvable as a constant.
+    /// </summary>
+    private static string? TryResolveConstantString(
+        string variableName,
+        SyntaxNode scope,
+        SemanticModel semanticModel)
+    {
+        var identifier = scope.DescendantNodesAndSelf()
+            .OfType<IdentifierNameSyntax>()
+            .FirstOrDefault(id => id.Identifier.ValueText == variableName);
+
+        if (identifier == null) return null;
+
+        // Try GetConstantValue first (handles const fields and local consts)
+        var constant = semanticModel.GetConstantValue(identifier);
+        if (constant.HasValue && constant.Value is string constStr)
+            return constStr;
+
+        // Try symbol resolution for static readonly fields
+        var symbolInfo = semanticModel.GetSymbolInfo(identifier);
+        var symbol = symbolInfo.Symbol;
+
+        if (symbol is IFieldSymbol fieldSymbol && (fieldSymbol.IsReadOnly || fieldSymbol.IsConst))
+        {
+            var declRef = fieldSymbol.DeclaringSyntaxReferences.FirstOrDefault();
+            if (declRef != null)
+            {
+                var declNode = declRef.GetSyntax();
+                if (declNode is VariableDeclaratorSyntax declarator && declarator.Initializer?.Value != null)
+                {
+                    var initConstant = semanticModel.GetConstantValue(declarator.Initializer.Value);
+                    if (initConstant.HasValue && initConstant.Value is string initStr)
+                        return initStr;
+                }
+            }
+        }
+
         return null;
     }
 }

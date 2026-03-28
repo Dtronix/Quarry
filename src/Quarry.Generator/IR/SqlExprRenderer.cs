@@ -337,7 +337,18 @@ internal static class SqlExprRenderer
         var hasPrefix = !string.IsNullOrEmpty(like.LikePrefix);
         var hasSuffix = !string.IsNullOrEmpty(like.LikeSuffix);
 
-        if (!hasPrefix && !hasSuffix)
+        // When the pattern is a string literal, fold prefix + value + suffix into a single SQL literal
+        if ((hasPrefix || hasSuffix) && like.Pattern is LiteralExpr literalPattern
+            && literalPattern.ClrType == "string" && !literalPattern.IsNull)
+        {
+            var escaped = literalPattern.SqlText.Replace("'", "''");
+            sb.Append('\'');
+            if (hasPrefix) sb.Append(like.LikePrefix);
+            sb.Append(escaped);
+            if (hasSuffix) sb.Append(like.LikeSuffix);
+            sb.Append('\'');
+        }
+        else if (!hasPrefix && !hasSuffix)
         {
             RenderExpr(like.Pattern, dialect, paramBase, sb, genericParams);
         }
