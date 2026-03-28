@@ -71,7 +71,7 @@ internal static class JoinBodyEmitter
                 // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
                 sb.AppendLine($"    public static {returnBuilderName}<{returnTypeArgs}> {methodName}(");
                 sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder,");
-                sb.AppendLine($"        Expression<Func<{funcTypeArgs}>> _)");
+                sb.AppendLine($"        Func<{funcTypeArgs}> _)");
                 sb.AppendLine($"    {{");
 
                 // Compute carrier site params
@@ -114,13 +114,13 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, NavigationList<{joinedEntityName}>>> _)");
+                sb.AppendLine($"        Func<{entityType}, NavigationList<{joinedEntityName}>> _)");
             }
             else
             {
                 sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, {joinedEntityName}, bool>> _)");
+                sb.AppendLine($"        Func<{entityType}, {joinedEntityName}, bool> _)");
             }
             sb.AppendLine($"    {{");
 
@@ -174,13 +174,13 @@ internal static class JoinBodyEmitter
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.Clause;
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
-        var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
-            sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
         }
 
         // Check if this is on a projected builder (has TResult)
@@ -197,20 +197,20 @@ internal static class JoinBodyEmitter
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
-                sb.AppendLine($"        Expression<Func<{allTypeParams}, bool>> {exprParamName}) {constraints}");
+                sb.AppendLine($"        Func<{allTypeParams}, bool> {funcParamName}) {constraints}");
             }
             else
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}, {resultType}> builder,");
-                sb.AppendLine($"        Expression<Func<{typeArgs}, bool>> {exprParamName})");
+                sb.AppendLine($"        Func<{typeArgs}, bool> {funcParamName})");
             }
         }
         else
         {
             sb.AppendLine($"    public static {builderName}<{typeArgs}> {methodName}(");
             sb.AppendLine($"        this {thisBuilderName}<{typeArgs}> builder,");
-            sb.AppendLine($"        Expression<Func<{typeArgs}, bool>> {exprParamName})");
+            sb.AppendLine($"        Func<{typeArgs}, bool> {funcParamName})");
         }
 
         sb.AppendLine($"    {{");
@@ -289,7 +289,7 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}, {resultType}> builder,");
-                sb.AppendLine($"        Expression<Func<{typeArgs}, {keyType}>> _,");
+                sb.AppendLine($"        Func<{typeArgs}, {keyType}> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -300,7 +300,7 @@ internal static class JoinBodyEmitter
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
-                sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
+                sb.AppendLine($"        Func<{allTypeParams}, TKey> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
             }
         }
@@ -310,7 +310,7 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}> builder,");
-                sb.AppendLine($"        Expression<Func<{typeArgs}, {keyType}>> _,");
+                sb.AppendLine($"        Func<{typeArgs}, {keyType}> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -319,7 +319,7 @@ internal static class JoinBodyEmitter
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}> {methodName}<{allTypeParams}, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}> builder,");
-                sb.AppendLine($"        Expression<Func<{allTypeParams}, TKey>> _,");
+                sb.AppendLine($"        Func<{allTypeParams}, TKey> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
             }
         }

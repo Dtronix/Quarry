@@ -1,5 +1,3 @@
-using System.Linq.Expressions;
-
 namespace Quarry;
 
 /// <summary>
@@ -22,7 +20,7 @@ public interface IEntityAccessor<T> where T : class
     /// <summary>
     /// Adds a WHERE clause to filter rows. Returns <see cref="IQueryBuilder{T}"/> for further query building.
     /// </summary>
-    IQueryBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IQueryBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
@@ -34,38 +32,38 @@ public interface IEntityAccessor<T> where T : class
     /// <summary>
     /// Adds an INNER JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a LEFT JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a RIGHT JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> RightJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> RightJoin<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds an INNER JOIN via a navigation property relationship.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a LEFT JOIN via a navigation property relationship.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Groups the results by the specified key expression.
     /// Returns <see cref="IQueryBuilder{T}"/> for further query building (e.g., Select with aggregates).
     /// </summary>
-    IQueryBuilder<T> GroupBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    IQueryBuilder<T> GroupBy<TKey>(Func<T, TKey> keySelector)
         => throw new InvalidOperationException("Carrier method IEntityAccessor.GroupBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>

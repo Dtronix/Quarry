@@ -1,5 +1,3 @@
-using System.Linq.Expressions;
-
 namespace Quarry;
 
 /// <summary>
@@ -7,7 +5,7 @@ namespace Quarry;
 /// </summary>
 public interface IDeleteBuilder<T> where T : class
 {
-    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IExecutableDeleteBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IDeleteBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
     IExecutableDeleteBuilder<T> All()
         => throw new InvalidOperationException("Carrier method IDeleteBuilder.All is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -29,7 +27,7 @@ public interface IDeleteBuilder<T> where T : class
 /// </summary>
 public interface IExecutableDeleteBuilder<T> where T : class
 {
-    IExecutableDeleteBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IExecutableDeleteBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
     IExecutableDeleteBuilder<T> WithTimeout(TimeSpan timeout)
         => throw new InvalidOperationException("Carrier method IExecutableDeleteBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -55,7 +53,7 @@ public interface IUpdateBuilder<T> where T : class
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
     IUpdateBuilder<T> Set(Action<T> assignment)
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IExecutableUpdateBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
     IExecutableUpdateBuilder<T> All()
         => throw new InvalidOperationException("Carrier method IUpdateBuilder.All is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -81,7 +79,7 @@ public interface IExecutableUpdateBuilder<T> where T : class
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
     IExecutableUpdateBuilder<T> Set(Action<T> assignment)
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Set is not intercepted in this optimized chain. This indicates a code generation bug.");
-    IExecutableUpdateBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IExecutableUpdateBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
     IExecutableUpdateBuilder<T> WithTimeout(TimeSpan timeout)
         => throw new InvalidOperationException("Carrier method IExecutableUpdateBuilder.WithTimeout is not intercepted in this optimized chain. This indicates a code generation bug.");

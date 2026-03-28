@@ -337,9 +337,11 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         string? enumUnderlyingType = null,
         bool isSensitive = false,
         string? entityPropertyExpression = null,
-        bool needsFieldInfoCache = false,
+        bool needsUnsafeAccessor = false,
         bool isDirectAccessible = false,
-        string? collectionAccessExpression = null)
+        string? collectionAccessExpression = null,
+        string? capturedFieldName = null,
+        string? capturedFieldType = null)
     {
         GlobalIndex = globalIndex;
         ClrType = clrType;
@@ -353,9 +355,11 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         EnumUnderlyingType = enumUnderlyingType;
         IsSensitive = isSensitive;
         EntityPropertyExpression = entityPropertyExpression;
-        NeedsFieldInfoCache = needsFieldInfoCache;
+        NeedsUnsafeAccessor = needsUnsafeAccessor;
         IsDirectAccessible = isDirectAccessible;
         CollectionAccessExpression = collectionAccessExpression;
+        CapturedFieldName = capturedFieldName;
+        CapturedFieldType = capturedFieldType;
     }
 
     public int GlobalIndex { get; }
@@ -370,9 +374,11 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public string? EnumUnderlyingType { get; }
     public bool IsSensitive { get; }
     public string? EntityPropertyExpression { get; }
-    public bool NeedsFieldInfoCache { get; }
+    public bool NeedsUnsafeAccessor { get; }
     public bool IsDirectAccessible { get; }
     public string? CollectionAccessExpression { get; }
+    public string? CapturedFieldName { get; }
+    public string? CapturedFieldType { get; }
 
     public bool Equals(QueryParameter? other)
     {
@@ -388,14 +394,16 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
             && TypeMappingClass == other.TypeMappingClass
             && IsEnum == other.IsEnum
             && EnumUnderlyingType == other.EnumUnderlyingType
-            && IsSensitive == other.IsSensitive;
+            && IsSensitive == other.IsSensitive
+            && CapturedFieldName == other.CapturedFieldName
+            && CapturedFieldType == other.CapturedFieldType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryParameter);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured);
+        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured, CapturedFieldName);
     }
 }
 
