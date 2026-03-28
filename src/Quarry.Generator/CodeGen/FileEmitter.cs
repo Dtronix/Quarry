@@ -75,7 +75,6 @@ internal sealed class FileEmitter
         sb.AppendLine("using System.Threading;");
         sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using System.Collections.Generic;");
-        sb.AppendLine("using System.Diagnostics;");
         sb.AppendLine("using System.Diagnostics.CodeAnalysis;");
         sb.AppendLine("using Quarry;");
         sb.AppendLine("using Quarry.Internal;");

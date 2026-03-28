@@ -44,9 +44,7 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityType;
 
-        // Determine return type and async modifier from the execution kind.
-        // ExecuteScalar uses an inline async body (no delegation to QueryExecutor).
-        var isInlineScalar = site.Kind == InterceptorKind.ExecuteScalar;
+        // Determine return type from the execution kind.
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
@@ -57,7 +55,6 @@ internal static class TerminalBodyEmitter
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
             _ => ""
         };
-        var asyncModifier = isInlineScalar ? "async " : "";
         if (string.IsNullOrEmpty(returnType)) return;
 
         var thisType = site.BuilderTypeName;
@@ -65,32 +62,26 @@ internal static class TerminalBodyEmitter
         // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
         if (site.IsPreparedTerminal)
         {
-            sb.AppendLine($"    public static {asyncModifier}{returnType} {methodName}(");
+            sb.AppendLine($"    public static {returnType} {methodName}(");
             sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default)");
         }
         else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
-            sb.AppendLine($"    public static {asyncModifier}{returnType} {methodName}<TEntity, TResult, TScalar>(");
+            sb.AppendLine($"    public static {returnType} {methodName}<TEntity, TResult, TScalar>(");
             sb.AppendLine($"        this {thisType}<TEntity, TResult> builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default) where TEntity : class");
         }
         else
         {
             var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
-            sb.AppendLine($"    public static {asyncModifier}{returnType} {methodName}(");
+            sb.AppendLine($"    public static {returnType} {methodName}(");
             sb.AppendLine($"        this {receiverType} builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default)");
         }
 
         sb.AppendLine($"    {{");
 
-        // ExecuteScalar uses a fully inlined async body; all others delegate to QueryExecutor.
-        if (isInlineScalar)
-        {
-            CarrierEmitter.EmitInlineScalarTerminal(sb, carrier, chain);
-        }
-        else
         {
             var carrierExecutorMethod = site.Kind switch
             {
@@ -98,10 +89,12 @@ internal static class TerminalBodyEmitter
                 InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
-            var readerCode = chain.ReaderDelegateCode;
+            // Scalar queries don't use a reader delegate — pass null to omit the reader argument.
+            var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
             CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         }
         sb.AppendLine($"    }}");
@@ -132,7 +125,6 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityTypes[0];
 
-        var isInlineJoinScalar = site.Kind == InterceptorKind.ExecuteScalar;
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
@@ -144,35 +136,29 @@ internal static class TerminalBodyEmitter
             _ => ""
         };
         if (string.IsNullOrEmpty(returnType)) return;
-        var joinAsyncModifier = isInlineJoinScalar ? "async " : "";
 
         // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
         if (site.IsPreparedTerminal)
         {
-            sb.AppendLine($"    public static {joinAsyncModifier}{returnType} {methodName}(");
+            sb.AppendLine($"    public static {returnType} {methodName}(");
             sb.AppendLine($"        this PreparedQuery<{resultType}> builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default)");
         }
         else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
-            sb.AppendLine($"    public static {joinAsyncModifier}{returnType} {methodName}<{entityTypeArgs}, TResult, TScalar>(");
+            sb.AppendLine($"    public static {returnType} {methodName}<{entityTypeArgs}, TResult, TScalar>(");
             sb.AppendLine($"        this {thisBuilderName}<{entityTypeArgs}, TResult> builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default) where TScalar : struct");
         }
         else
         {
-            sb.AppendLine($"    public static {joinAsyncModifier}{returnType} {methodName}(");
+            sb.AppendLine($"    public static {returnType} {methodName}(");
             sb.AppendLine($"        this {thisBuilderName}<{entityTypeArgs}, {resultType}> builder,");
             sb.AppendLine($"        CancellationToken cancellationToken = default)");
         }
 
         sb.AppendLine($"    {{");
 
-        if (isInlineJoinScalar)
-        {
-            CarrierEmitter.EmitInlineScalarTerminal(sb, carrier, chain);
-        }
-        else
         {
             var carrierExecutorMethod = site.Kind switch
             {
@@ -180,10 +166,12 @@ internal static class TerminalBodyEmitter
                 InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
-            CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, chain.ReaderDelegateCode, carrierExecutorMethod);
+            var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
+            CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         }
         sb.AppendLine($"    }}");
     }
