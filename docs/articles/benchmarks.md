@@ -283,9 +283,7 @@ It is the fastest library tested, outperforming Dapper (1.23x median) while allo
 significantly less memory (1.10x vs Dapper's 1.40x).
 
 **Best results:** Quarry is *faster* than hand-written ADO.NET on throughput (0.90x), cold
-start (0.98x), and several individual benchmarks (Sum, WhereActive, ThreeTableJoin). This is
-possible because the source-generated code disposes commands promptly and avoids unnecessary
-async state machines.
+start (0.98x), and several individual benchmarks (Sum, WhereActive, ThreeTableJoin).
 
 **Highest overhead:** Delete (1.34x) and update (1.24x) single-row mutations show the most
 overhead, likely due to carrier allocation for modification chains. Complex multi-join
