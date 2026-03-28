@@ -157,7 +157,18 @@ internal static class ReaderCodeGenerator
             first = false;
 
             var readerCall = GetReaderCall(column);
-            sb.Append(readerCall);
+
+            // Include explicit element names so the generated tuple matches the
+            // user's named-element syntax (e.g. (ProductName: r.GetString(0), …)).
+            // Default ItemN names are omitted to avoid CS9154 warnings.
+            var isDefaultName = column.PropertyName.StartsWith("Item") &&
+                                int.TryParse(column.PropertyName.Substring(4), out var idx) &&
+                                idx == column.Ordinal + 1;
+
+            if (isDefaultName)
+                sb.Append(readerCall);
+            else
+                sb.Append($"{column.PropertyName}: {readerCall}");
         }
 
         sb.Append(")");

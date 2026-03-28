@@ -1748,4 +1748,41 @@ public static class Queries
         // Must NOT be async (no state machine)
         Assert.That(code, Does.Not.Contain("public static async Task<TScalar>"));
     }
+
+    [Test]
+    public void CarrierGeneration_NamedTupleProjection()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Select(u => (Id: u.UserId, Name: u.UserName))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Named tuple elements must appear as prefixes in the generated reader delegate
+        Assert.That(code, Does.Contain("Id:"),
+            "Generated reader should include 'Id:' named element prefix");
+        Assert.That(code, Does.Contain("Name:"),
+            "Generated reader should include 'Name:' named element prefix");
+    }
 }
