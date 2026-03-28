@@ -1779,10 +1779,16 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
 
+        // Verify correct tuple type with resolved element types (not error '?' types)
+        Assert.That(code, Does.Contain("(int Id, string Name)"),
+            "Generated code should contain the fully resolved named tuple type");
+        Assert.That(code, Does.Not.Contain("(?)"),
+            "Generated code should not contain error-type casts");
+
         // Named tuple elements must appear as prefixes in the generated reader delegate
-        Assert.That(code, Does.Contain("Id:"),
-            "Generated reader should include 'Id:' named element prefix");
-        Assert.That(code, Does.Contain("Name:"),
-            "Generated reader should include 'Name:' named element prefix");
+        Assert.That(code, Does.Contain("Id: r.Get"),
+            "Generated reader should include 'Id:' named element prefix with typed reader call");
+        Assert.That(code, Does.Contain("Name: r.Get"),
+            "Generated reader should include 'Name:' named element prefix with typed reader call");
     }
 }
