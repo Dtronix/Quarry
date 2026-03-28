@@ -258,7 +258,8 @@ internal static class ChainAnalyzer
         {
             if (executionSite.Bound.JoinedEntityTypeNames == null)
                 executionSite = executionSite.WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
-            // Only propagate to sites AFTER the join — pre-join sites use single-entity builder types
+            // Only propagate JoinedEntityTypeNames to sites AFTER the join —
+            // pre-join sites use single-entity builder types.
             bool seenJoin = false;
             for (int i = 0; i < clauseSites.Count; i++)
             {
@@ -270,6 +271,49 @@ internal static class ChainAnalyzer
                 if (seenJoin && clauseSites[i].Bound.JoinedEntityTypeNames == null)
                 {
                     clauseSites[i] = clauseSites[i].WithJoinedEntityTypeNames(resolvedJoinNames, resolvedJoinEntities);
+                }
+            }
+
+            // Retranslate pre-join clause sites with join context so their SQL gets
+            // table alias qualification (e.g., "t0"."IsActive" instead of "IsActive").
+            // Pre-join sites keep single-entity builder types (JoinedEntityTypeNames stays null),
+            // but their SQL must use "t0" prefixes because the assembled query includes JOINs.
+            if (resolvedJoinEntities != null)
+            {
+                seenJoin = false;
+                for (int i = 0; i < clauseSites.Count; i++)
+                {
+                    if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+                    {
+                        seenJoin = true;
+                        continue;
+                    }
+                    if (!seenJoin && clauseSites[i].Clause != null && clauseSites[i].Bound.Raw.Expression != null)
+                    {
+                        var origBound = clauseSites[i].Bound;
+                        var enrichedBound = new BoundCallSite(
+                            raw: origBound.Raw,
+                            contextClassName: origBound.ContextClassName,
+                            contextNamespace: origBound.ContextNamespace,
+                            dialect: origBound.Dialect,
+                            tableName: origBound.TableName,
+                            schemaName: origBound.SchemaName,
+                            entity: origBound.Entity,
+                            joinedEntity: origBound.JoinedEntity,
+                            joinedEntityTypeNames: origBound.JoinedEntityTypeNames,
+                            joinedEntities: resolvedJoinEntities,
+                            insertInfo: origBound.InsertInfo,
+                            updateInfo: origBound.UpdateInfo,
+                            rawSqlTypeInfo: origBound.RawSqlTypeInfo);
+
+                        var retranslated = CallSiteTranslator.Translate(enrichedBound, registry, ct);
+                        if (retranslated.Clause != null)
+                        {
+                            clauseSites[i] = new TranslatedCallSite(
+                                origBound, retranslated.Clause,
+                                retranslated.KeyTypeName, retranslated.ValueTypeName);
+                        }
+                    }
                 }
             }
         }

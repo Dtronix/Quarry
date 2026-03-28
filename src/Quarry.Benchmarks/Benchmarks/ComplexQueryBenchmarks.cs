@@ -153,7 +153,7 @@ public class ComplexQueryBenchmarks : BenchmarkBase
             .Join<Order>((u, o) => u.UserId == o.UserId.Id)
             .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
             .Select((u, o, oi) => Sql.Count())
-            .ExecuteFetchFirstAsync();
+            .ExecuteScalarAsync<int>();
     }
 
     [Benchmark]

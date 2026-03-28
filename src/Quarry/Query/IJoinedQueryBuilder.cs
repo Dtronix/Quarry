@@ -70,6 +70,8 @@ public interface IJoinedQueryBuilder<T1, T2, TResult>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToAsyncEnumerable is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -150,6 +152,8 @@ public interface IJoinedQueryBuilder3<T1, T2, T3, TResult>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.ToAsyncEnumerable is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -227,6 +231,8 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4, TResult>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
     IAsyncEnumerable<TResult> ToAsyncEnumerable(CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.ToAsyncEnumerable is not intercepted in this optimized chain. This indicates a code generation bug.");
+    Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
