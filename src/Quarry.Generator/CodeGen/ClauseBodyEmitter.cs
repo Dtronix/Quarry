@@ -579,6 +579,18 @@ internal static class ClauseBodyEmitter
                 sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
             }
 
+            // Invoke the action on a cached entity instance to extract captured values.
+            // This avoids reflection (GetType().GetField()) which breaks under AOT trimming.
+            if (hasCapturedParams)
+            {
+                sb.AppendLine($"        var __e = __c.__setEntity ??= new {entityType}();");
+                sb.AppendLine($"        action(__e);");
+            }
+
+            // Walk non-inlined assignments in order to pair with parameters
+            var assignmentIdx = 0;
+            var nonInlinedAssignments = clauseInfo.SetAssignments!.Where(a => !a.IsInlined).ToList();
+
             for (int i = 0; i < clauseInfo.Parameters.Count; i++)
             {
                 var p = clauseInfo.Parameters[i];
@@ -589,15 +601,16 @@ internal static class ClauseBodyEmitter
                 var castType = carrierParam.ClrType == "?" || carrierParam.ClrType == "object"
                     ? "object?"
                     : carrierParam.ClrType;
-                if (p.IsCaptured)
+                if (p.IsCaptured && assignmentIdx < nonInlinedAssignments.Count)
                 {
-                    sb.AppendLine($"        {carrier.ClassName}.F{globalIdx} ??= action.Target!.GetType().GetField(\"{p.ValueExpression}\")!;");
-                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){carrier.ClassName}.F{globalIdx}.GetValue(action.Target)!;");
+                    var propertyName = nonInlinedAssignments[assignmentIdx].ColumnSql;
+                    sb.AppendLine($"        __c.P{globalIdx} = ({castType})__e!.{propertyName}!;");
                 }
                 else
                 {
                     sb.AppendLine($"        __c.P{globalIdx} = ({castType}){p.ValueExpression}!;");
                 }
+                assignmentIdx++;
             }
 
             if (clauseBit.HasValue)

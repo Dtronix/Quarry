@@ -387,7 +387,10 @@ internal static class ChainAnalyzer
                 var expr = clause.ResolvedExpression;
 
                 // Remap parameters and enrich with column metadata (IsEnum, IsSensitive)
-                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex);
+                // Suppress FieldInfo cache for UpdateSetAction — uses invoke-and-read instead (AOT-safe)
+                var suppressFieldInfo = kind == InterceptorKind.UpdateSetAction;
+                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex,
+                    suppressFieldInfoCache: suppressFieldInfo);
                 EnrichParametersFromColumns(clauseParams, expr, executionSite.Bound.Entity, resolvedJoinEntities);
                 parameters.AddRange(clauseParams);
 
@@ -476,7 +479,8 @@ internal static class ChainAnalyzer
                 // because Action<T> can't be parsed to SqlExpr.
                 if (raw.SetActionParameters != null)
                 {
-                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex);
+                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex,
+                        suppressFieldInfoCache: true);
                     parameters.AddRange(clauseParams);
                 }
 
@@ -702,7 +706,8 @@ internal static class ChainAnalyzer
     /// </summary>
     private static List<QueryParameter> RemapParameters(
         IReadOnlyList<ParameterInfo> clauseParams,
-        ref int globalIndex)
+        ref int globalIndex,
+        bool suppressFieldInfoCache = false)
     {
         var result = new List<QueryParameter>(clauseParams.Count);
         foreach (var p in clauseParams)
@@ -718,7 +723,7 @@ internal static class ChainAnalyzer
                 typeMappingClass: p.CustomTypeMappingClass,
                 isEnum: p.IsEnum,
                 enumUnderlyingType: p.EnumUnderlyingType,
-                needsFieldInfoCache: p.IsCaptured && p.CanGenerateDirectPath,
+                needsFieldInfoCache: !suppressFieldInfoCache && p.IsCaptured && p.CanGenerateDirectPath,
                 isDirectAccessible: false, // Computed during carrier analysis
                 collectionAccessExpression: null)); // Computed during carrier analysis
         }

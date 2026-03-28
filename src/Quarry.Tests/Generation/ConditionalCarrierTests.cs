@@ -376,9 +376,11 @@ public class Svc
 ");
         AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
-        // Captured variable should use FieldInfo extraction on carrier
-        Assert.That(code, Does.Contain("GetField(\"name\")"),
-            "Captured variable should be extracted from delegate.Target");
+        // Captured variable should use invoke-and-read pattern (AOT-safe, no reflection)
+        Assert.That(code, Does.Contain("__setEntity ??= new"),
+            "Captured variable should be extracted via invoke-and-read on carrier entity");
+        Assert.That(code, Does.Contain("action(__e)"),
+            "Action should be invoked on the cached entity instance");
     }
 
     // ─────────────────────────────────────────────────────────────────

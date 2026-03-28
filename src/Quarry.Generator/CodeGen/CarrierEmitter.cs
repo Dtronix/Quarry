@@ -491,6 +491,16 @@ internal static class CarrierEmitter
             sb.AppendLine($"    internal {field.TypeName} {field.Name}{initializer};");
         }
 
+        // Emit entity instance field for UpdateSetAction (invoke-and-read pattern, AOT-safe)
+        var hasSetActionCaptured = chain.ClauseSites.Any(cs =>
+            cs.Kind == InterceptorKind.UpdateSetAction
+            && cs.Clause?.Parameters.Any(p => p.IsCaptured) == true);
+        if (hasSetActionCaptured)
+        {
+            var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
+            sb.AppendLine($"    internal {entityType}? __setEntity;");
+        }
+
         // Emit static fields (FieldInfo caches for captured params)
         foreach (var staticField in info.StaticFields)
         {
