@@ -1112,10 +1112,10 @@ internal static class CarrierEmitter
         // ValueExpression for a property chain looks like "viewModel.SearchTerm"
         // CapturedFieldName is "viewModel"
         // We want ".SearchTerm"
-        var idx = param.ValueExpression.IndexOf(param.CapturedFieldName);
-        if (idx >= 0)
+        // Use StartsWith to avoid matching substrings (e.g., "id" within "userId")
+        if (param.ValueExpression.StartsWith(param.CapturedFieldName))
         {
-            var afterField = idx + param.CapturedFieldName.Length;
+            var afterField = param.CapturedFieldName.Length;
             if (afterField < param.ValueExpression.Length && param.ValueExpression[afterField] == '.')
                 return param.ValueExpression.Substring(afterField);
         }

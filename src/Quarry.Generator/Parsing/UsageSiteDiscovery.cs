@@ -914,7 +914,7 @@ internal static class UsageSiteDiscovery
                 }
             }
 
-            results.Add(new RawCallSite(
+            var postJoinSite = new RawCallSite(
                 methodName: methodName,
                 filePath: filePath,
                 line: line,
@@ -941,7 +941,10 @@ internal static class UsageSiteDiscovery
                 conditionalInfo: conditionalInfo,
                 chainId: chainId,
                 builderTypeName: "IJoinedQueryBuilder",
-                joinedEntityTypeNames: joinedEntityTypeNames));
+                joinedEntityTypeNames: joinedEntityTypeNames);
+
+            EnrichDisplayClassInfo(postJoinSite, parentInvoc, semanticModel);
+            results.Add(postJoinSite);
 
             currentInvoc = parentInvoc;
         }
