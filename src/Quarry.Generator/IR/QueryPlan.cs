@@ -394,14 +394,16 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
             && TypeMappingClass == other.TypeMappingClass
             && IsEnum == other.IsEnum
             && EnumUnderlyingType == other.EnumUnderlyingType
-            && IsSensitive == other.IsSensitive;
+            && IsSensitive == other.IsSensitive
+            && CapturedFieldName == other.CapturedFieldName
+            && CapturedFieldType == other.CapturedFieldType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryParameter);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured);
+        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured, CapturedFieldName);
     }
 }
 

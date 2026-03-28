@@ -133,13 +133,15 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
             && ExpressionPath == other.ExpressionPath
             && CustomTypeMappingClass == other.CustomTypeMappingClass
             && IsEnum == other.IsEnum
-            && EnumUnderlyingType == other.EnumUnderlyingType;
+            && EnumUnderlyingType == other.EnumUnderlyingType
+            && CapturedFieldName == other.CapturedFieldName
+            && CapturedFieldType == other.CapturedFieldType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ParameterInfo);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Index, Name, ClrType, ValueExpression);
+        return HashCode.Combine(Index, Name, ClrType, ValueExpression, CapturedFieldName);
     }
 }

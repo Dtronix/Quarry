@@ -133,5 +133,5 @@ internal sealed class CarrierStaticField : IEquatable<CarrierStaticField>
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierStaticField);
-    public override int GetHashCode() => HashCode.Combine(Name, TypeName, ParameterIndex, DisplayClassName);
+    public override int GetHashCode() => HashCode.Combine(Name, TypeName, ParameterIndex, DisplayClassName, CapturedFieldName, CapturedFieldType);
 }
