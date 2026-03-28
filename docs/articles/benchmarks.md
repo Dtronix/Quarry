@@ -174,12 +174,12 @@ categories.
 
 ## Latest Results
 
-<!-- Updated: 2026-03-28 | Commit: a21edf3 | Branch: master -->
+<!-- Updated: 2026-03-28 | Commit: 58c2442 | Branch: master -->
 <!-- Full benchmark history: https://github.com/Dtronix/Quarry/issues/105 -->
 
 The tables below show the most recent benchmark run. Each value is a ratio to the Raw ADO.NET
 baseline — a value of 1.00 means identical performance. For full run-over-run history and
-regression tracking, see [Performance Tracking (Issue #105)](https://github.com/Dtronix/Quarry/issues/105#issuecomment-4147439912).
+regression tracking, see [Performance Tracking (Issue #105)](https://github.com/Dtronix/Quarry/issues/105#issuecomment-4147599868).
 
 **Environment:** AMD Ryzen 9 3900X, .NET 10.0.4, BenchmarkDotNet v0.15.8, `Job.MediumRun`
 
@@ -190,41 +190,41 @@ Lower is better. 1.00 = identical to hand-written ADO.NET.
 | Benchmark | Raw (us) | Dapper | **Quarry** | SqlKata | EF Core |
 |---|---:|---:|---:|---:|---:|
 | **Aggregates** | | | | | |
-| Count | 3.66 | 0.93x | <u>0.89x</u> | 2.24x | 2.96x |
-| Sum | 9.22 | 1.01x | <u>1.04x</u> | 1.64x | 9.46x |
-| Avg | 8.89 | 1.05x | <u>1.04x</u> | 1.67x | 9.55x |
+| Count | 3.04 | 1.08x | <u>1.04x</u> | 2.66x | 3.54x |
+| Sum | 9.17 | 1.01x | <u>1.01x</u> | 1.59x | 9.28x |
+| Avg | 9.14 | 1.03x | <u>1.01x</u> | 1.62x | 9.09x |
 | **Cold Start** | | | | | |
-| ColdStart | 101.20 | 1.25x | <u>1.03x</u> | 1.10x | 2.08x |
+| ColdStart | 100.10 | 1.24x | <u>1.02x</u> | 1.12x | 2.07x |
 | **Complex Queries** | | | | | |
-| JoinFilterPaginate | 15.89 | 0.85x | <u>1.19x</u> | 2.72x | 4.00x |
-| MultiJoinAggregate | 34.44 | 1.03x | <u>1.11x</u> | 1.48x | 2.08x |
+| JoinFilterPaginate | 15.84 | 0.85x | <u>1.15x</u> | 2.61x | 3.90x |
+| MultiJoinAggregate | 34.37 | 1.02x | <u>1.10x</u> | 1.44x | 2.12x |
 | **Conditional** | | | | | |
-| ConditionalQuery | 48.70 | 1.16x | <u>1.04x</u> | 1.47x | 1.87x |
+| ConditionalQuery | 48.02 | 1.16x | <u>1.04x</u> | 1.47x | 1.90x |
 | **Delete** | | | | | |
-| DeleteSingleRow | 26.55 | 1.15x | <u>1.32x</u> | 2.26x | 24.70x |
+| DeleteSingleRow | 28.13 | 1.29x | <u>1.42x</u> | 2.25x | 23.02x |
 | **Filters** | | | | | |
-| WhereById | 6.32 | 1.34x | <u>1.18x</u> | 2.53x | 3.47x |
-| WhereCompound | 41.40 | 1.34x | <u>1.02x</u> | 1.18x | 1.89x |
-| WhereActive | 101.69 | 1.31x | <u>1.04x</u> | 1.10x | 1.41x |
+| WhereById | 6.44 | 1.32x | <u>1.08x</u> | 2.49x | 3.35x |
+| WhereCompound | 42.60 | 1.31x | <u>1.02x</u> | 1.15x | 1.80x |
+| WhereActive | 100.51 | 1.24x | <u>1.02x</u> | 1.08x | 1.37x |
 | **Inserts** | | | | | |
-| SingleInsert | 29.64 | 1.27x | <u>1.06x</u> | 2.01x | 17.19x |
-| BatchInsert10 | 77.75 | 2.07x | <u>1.06x</u> | 1.75x | 17.96x |
+| SingleInsert | 32.34 | 1.29x | <u>1.09x</u> | 2.02x | 14.20x |
+| BatchInsert10 | 82.53 | 1.92x | <u>1.08x</u> | 1.71x | 17.34x |
 | **Joins** | | | | | |
-| InnerJoin | 81.47 | 0.73x | <u>1.08x</u> | 1.18x | 1.53x |
-| ThreeTableJoin | 242.46 | 0.79x | <u>1.01x</u> | 1.10x | 1.33x |
+| InnerJoin | 83.31 | 0.71x | <u>1.03x</u> | 1.15x | 1.46x |
+| ThreeTableJoin | 236.08 | 0.81x | <u>1.03x</u> | 1.08x | 1.34x |
 | **Pagination** | | | | | |
-| LimitOffset | 16.64 | 1.41x | <u>1.07x</u> | 2.11x | 2.55x |
-| FirstPage | 16.95 | 1.21x | <u>0.97x</u> | 1.85x | 2.23x |
+| LimitOffset | 16.45 | 1.22x | <u>1.00x</u> | 1.98x | 2.47x |
+| FirstPage | 15.77 | 1.25x | <u>1.03x</u> | 1.94x | 2.34x |
 | **Select** | | | | | |
-| SelectProjection | 46.60 | 1.40x | <u>1.01x</u> | 1.20x | 1.61x |
-| SelectAll | 115.08 | 1.33x | <u>1.07x</u> | 1.09x | 1.25x |
+| SelectProjection | 45.71 | 1.40x | <u>1.01x</u> | 1.14x | 1.67x |
+| SelectAll | 108.58 | 1.25x | <u>1.00x</u> | 1.06x | 1.29x |
 | **String Ops** | | | | | |
-| Contains | 18.45 | 1.11x | <u>1.12x</u> | 2.85x | 2.31x |
-| StartsWith | 52.41 | 1.36x | <u>1.04x</u> | 1.70x | 1.70x |
+| Contains | 17.76 | 1.15x | <u>1.11x</u> | 2.86x | 2.37x |
+| StartsWith | 52.09 | 1.33x | <u>1.02x</u> | 1.72x | 1.75x |
 | **Throughput** | | | | | |
-| Throughput (ms) | 6,341 | 1.33x | <u>0.92x</u> | 2.67x | 3.96x |
+| Throughput (ms) | 6,416 | 1.35x | <u>0.93x</u> | 2.55x | 4.07x |
 | **Update** | | | | | |
-| UpdateSingleRow | 26.71 | 1.14x | <u>1.16x</u> | 2.38x | 22.09x |
+| UpdateSingleRow | 27.56 | 1.23x | <u>1.28x</u> | 2.45x | 20.97x |
 
 ### Allocation Ratio to Raw ADO.NET
 
@@ -239,31 +239,31 @@ Lower is better. 1.00 = same memory as hand-written ADO.NET.
 | **Cold Start** | | | | |
 | ColdStart | 1.27x | <u>1.03x</u> | 1.66x | 3.78x |
 | **Complex Queries** | | | | |
-| JoinFilterPaginate | 1.13x | <u>1.73x</u> | 11.97x | 7.83x |
-| MultiJoinAggregate | 1.07x | <u>3.83x</u> | 27.16x | 15.62x |
+| JoinFilterPaginate | 1.13x | <u>1.73x</u> | 11.95x | 7.78x |
+| MultiJoinAggregate | 1.07x | <u>3.95x</u> | 27.09x | 15.95x |
 | **Conditional** | | | | |
-| ConditionalQuery | 1.30x | <u>1.06x</u> | 3.21x | 2.57x |
+| ConditionalQuery | 1.30x | <u>1.06x</u> | 3.22x | 2.57x |
 | **Delete** | | | | |
 | DeleteSingleRow | 1.41x | <u>1.65x</u> | 10.79x | 97.90x |
 | **Filters** | | | | |
-| WhereById | 1.76x | <u>1.35x</u> | 12.92x | 5.08x |
-| WhereCompound | 1.49x | <u>1.14x</u> | 2.55x | 3.86x |
+| WhereById | 1.76x | <u>1.35x</u> | 12.84x | 5.08x |
+| WhereCompound | 1.49x | <u>1.14x</u> | 2.54x | 3.85x |
 | WhereActive | 1.27x | <u>1.03x</u> | 1.53x | 1.85x |
 | **Inserts** | | | | |
 | SingleInsert | 1.81x | <u>1.11x</u> | 8.50x | 50.74x |
 | BatchInsert10 | 2.14x | <u>1.08x</u> | 3.12x | 12.21x |
 | **Joins** | | | | |
-| InnerJoin | 0.97x | <u>1.08x</u> | 2.26x | 2.92x |
-| ThreeTableJoin | 0.97x | <u>1.05x</u> | 1.51x | 2.30x |
+| InnerJoin | 0.97x | <u>1.08x</u> | 2.25x | 2.92x |
+| ThreeTableJoin | 0.97x | <u>1.05x</u> | 1.51x | 2.31x |
 | **Pagination** | | | | |
 | LimitOffset | 1.41x | <u>1.04x</u> | 5.88x | 3.51x |
-| FirstPage | 1.40x | <u>1.04x</u> | 5.49x | 3.05x |
+| FirstPage | 1.40x | <u>1.04x</u> | 5.48x | 3.05x |
 | **Select** | | | | |
 | SelectProjection | 1.51x | <u>1.01x</u> | 2.12x | 3.56x |
 | SelectAll | 1.28x | <u>1.01x</u> | 1.44x | 1.79x |
 | **String Ops** | | | | |
 | Contains | 1.48x | <u>1.61x</u> | 9.49x | 7.31x |
-| StartsWith | 1.51x | <u>1.12x</u> | 2.62x | 3.87x |
+| StartsWith | 1.51x | <u>1.12x</u> | 2.62x | 3.91x |
 | **Throughput** | | | | |
 | Throughput | 1.84x | <u>1.11x</u> | 13.66x | 6.15x |
 | **Update** | | | | |
@@ -273,23 +273,23 @@ Lower is better. 1.00 = same memory as hand-written ADO.NET.
 
 | | Dapper | **Quarry** | SqlKata | EF Core |
 |---|---:|---:|---:|---:|
-| **Median speed ratio** | 1.21x | <u>1.04x</u> | 1.70x | 2.31x |
+| **Median speed ratio** | 1.24x | <u>1.03x</u> | 1.71x | 2.37x |
 | **Median alloc ratio** | 1.40x | <u>1.10x</u> | 5.88x | 5.08x |
 
 ### Analysis
 
-Across 23 benchmarks, Quarry's median overhead is **1.04x Raw ADO.NET** — effectively zero.
-It is the fastest library tested, outperforming Dapper (1.21x median) while allocating
+Across 23 benchmarks, Quarry's median overhead is **1.03x Raw ADO.NET** — effectively zero.
+It is the fastest library tested, outperforming Dapper (1.24x median) while allocating
 significantly less memory (1.10x vs Dapper's 1.40x).
 
-**Best results:** Quarry is *faster* than hand-written ADO.NET on throughput (0.92x), count
-(0.89x), and first-page pagination (0.97x).
+**Best results:** Quarry is *faster* than hand-written ADO.NET on throughput (0.93x) and
+matches it on pagination (1.00x) and select-all (1.00x).
 
-**Highest overhead:** Delete (1.32x) and join-filter-paginate (1.19x) show the most overhead,
-likely due to carrier allocation for modification chains and multi-table carrier structures.
-WhereById (1.18x) and update (1.16x) also show measurable but modest overhead.
+**Highest overhead:** Delete (1.42x) and update (1.28x) show the most overhead, likely due to
+carrier allocation for modification chains. Join-filter-paginate (1.15x) and contains (1.11x)
+also show measurable but modest overhead.
 
 **Allocations:** Quarry stays within 1.01–1.12x of Raw for most operations. The outliers are
-multi-join queries (1.73x, 3.83x) where the carrier must hold fields for multiple joined
+multi-join queries (1.73x, 3.95x) where the carrier must hold fields for multiple joined
 entities, and delete (1.65x) where the modification carrier adds overhead. Even in these
 cases, Quarry allocates far less than SqlKata (5.88x median) or EF Core (5.08x median).
