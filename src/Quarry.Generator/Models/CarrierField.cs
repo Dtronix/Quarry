@@ -37,7 +37,7 @@ internal sealed class CarrierField : IEquatable<CarrierField>
     public string Name { get; }
 
     /// <summary>
-    /// Gets the C# type name (e.g., "decimal", "IQueryExecutionContext?", "int?", "byte").
+    /// Gets the C# type name (e.g., "decimal", "int?", "byte").
     /// </summary>
     public string TypeName { get; }
 

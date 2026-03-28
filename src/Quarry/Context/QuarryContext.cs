@@ -26,7 +26,7 @@ namespace Quarry;
 /// </code>
 /// </para>
 /// </remarks>
-public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecutionContext
+public abstract class QuarryContext : IAsyncDisposable, IDisposable
 {
     private readonly DbConnection _connection;
     private readonly bool _connectionWasOpen;
@@ -37,12 +37,12 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
     /// <summary>
     /// Gets the underlying database connection.
     /// </summary>
-    protected DbConnection Connection => _connection;
+    public DbConnection Connection => _connection;
 
     /// <summary>
     /// Gets the default query timeout.
     /// </summary>
-    protected TimeSpan DefaultTimeout => _defaultTimeout;
+    public TimeSpan DefaultTimeout => _defaultTimeout;
 
     /// <summary>
     /// Gets the default transaction isolation level.
@@ -84,25 +84,27 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable, IQueryExecu
         _defaultIsolation = defaultIsolation ?? IsolationLevel.ReadCommitted;
     }
 
-    // IQueryExecutionContext implementation
-    DbConnection IQueryExecutionContext.Connection => _connection;
-    TimeSpan IQueryExecutionContext.DefaultTimeout => _defaultTimeout;
-    TimeSpan? IQueryExecutionContext.SlowQueryThreshold => SlowQueryThreshold;
-    Task IQueryExecutionContext.EnsureConnectionOpenAsync(CancellationToken cancellationToken) =>
-        EnsureConnectionOpenAsync(cancellationToken);
-
     /// <summary>
     /// Ensures the connection is open.
+    /// Returns <see cref="Task.CompletedTask"/> synchronously when the connection is already open (the common case),
+    /// avoiding async state machine overhead on the hot path.
     /// </summary>
-    protected async Task EnsureConnectionOpenAsync(CancellationToken cancellationToken = default)
+    public Task EnsureConnectionOpenAsync(CancellationToken cancellationToken = default)
     {
-        if (_connection.State != ConnectionState.Open)
-        {
-            await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        return _connection.State == ConnectionState.Open
+            ? Task.CompletedTask
+            : EnsureConnectionOpenCoreAsync(cancellationToken);
+    }
 
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
-                ConnectionLog.Opened();
-        }
+    /// <summary>
+    /// Async slow-path: actually opens the connection. Called only when the connection is not yet open.
+    /// </summary>
+    private async Task EnsureConnectionOpenCoreAsync(CancellationToken cancellationToken)
+    {
+        await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
+            ConnectionLog.Opened();
     }
 
     // Update/Delete/Insert operations are now accessed via EntityAccessor:
