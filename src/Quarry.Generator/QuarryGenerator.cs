@@ -80,15 +80,23 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         var entityRegistry = contextDeclarations.Collect()
             .Select(static (contexts, ct) => IR.EntityRegistry.Build(contexts, ct));
 
-        // === Stage 2: Raw Call Site Discovery (returns RawCallSite) ===
+        // === Stage 2: Raw Call Site Discovery (returns RawCallSite, no display class enrichment) ===
         var rawCallSites = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => UsageSiteDiscovery.IsQuarryMethodCandidate(node),
                 transform: static (ctx, ct) => DiscoverRawCallSites(ctx, ct))
             .SelectMany(static (sites, _) => sites);
 
+        // === Stage 2.5: Batch display class enrichment (build-time only via downstream consumers) ===
+        // Collect all raw sites, then enrich display class names and captured variable types
+        // in batch — computing closure analysis once per method instead of once per call site.
+        var enrichedCallSites = rawCallSites.Collect()
+            .Combine(context.CompilationProvider)
+            .SelectMany(static (data, ct) =>
+                DisplayClassEnricher.EnrichAll(data.Left, data.Right, ct));
+
         // === Stage 3: Per-Site Binding (individually cached) ===
-        var boundCallSites = rawCallSites
+        var boundCallSites = enrichedCallSites
             .Combine(entityRegistry)
             .SelectMany(static (pair, ct) =>
             {

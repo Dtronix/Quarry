@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.IR;
@@ -174,6 +175,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Captured variable types: field name → CLR type (for UnsafeAccessor return types)
     public IReadOnlyDictionary<string, string>? CapturedVariableTypes { get; set; }
 
+    // Transient: lambda syntax for deferred batch enrichment. Not part of Equals/GetHashCode.
+    public LambdaExpressionSyntax? EnrichmentLambda { get; set; }
+
     /// <summary>
     /// Creates a copy with a different ResultTypeName.
     /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
@@ -224,6 +228,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.EnrichmentLambda = EnrichmentLambda;
         return copy;
     }
 
