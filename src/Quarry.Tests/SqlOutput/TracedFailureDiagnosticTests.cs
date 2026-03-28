@@ -133,7 +133,7 @@ internal class TracedFailureDiagnosticTests
         Assert.That(diag.Sql, Does.Contain("ORDER BY"));
         Assert.That(diag.Sql, Does.Contain("\"UserId\""));
         Assert.That(diag.Sql, Does.Not.Contain("ORDER BY \"UserName\""));
-        Assert.That(diag.IsCarrierOptimized, Is.True);
+        Assert.That(diag.CarrierClassName, Is.Not.Null);
     }
 
     #endregion

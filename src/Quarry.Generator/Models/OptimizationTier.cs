@@ -6,7 +6,7 @@ namespace Quarry.Generators.Models;
 internal enum OptimizationTier
 {
     /// <summary>
-    /// Tier 1: All clause combinations are enumerable (up to 4 conditional bits = 16 variants).
+    /// All clause combinations are enumerable (up to 8 conditional bits = 256 variants).
     /// The execution interceptor carries const string SQL for every possible path.
     /// Zero runtime string work.
     /// </summary>

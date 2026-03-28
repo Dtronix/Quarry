@@ -196,15 +196,7 @@ internal class CrossDialectDiagnosticsTests
 
     #endregion
 
-    #region Optimization Tier
-
-    [Test]
-    public void ToDiagnostics_PrebuiltChain_ReportsPrebuiltDispatchTier()
-    {
-        var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
-
-        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
-    }
+    #region Optimization
 
     [Test]
     public void ToDiagnostics_PrebuiltChain_ReportsCorrectDialect()
@@ -318,7 +310,6 @@ internal class CrossDialectDiagnosticsTests
         var diag = _db.Users().Where(u => u.IsActive).ToDiagnostics();
 
         Assert.That(diag.CarrierClassName, Is.Not.Null.And.Not.Empty);
-        Assert.That(diag.IsCarrierOptimized, Is.True);
     }
 
     [Test]
@@ -379,8 +370,6 @@ internal class CrossDialectDiagnosticsTests
         Assert.That(diag.Sql, Does.Contain("SELECT"));
         Assert.That(diag.TableName, Is.EqualTo("users"));
         Assert.That(diag.Kind, Is.EqualTo(DiagnosticQueryKind.Select));
-        Assert.That(diag.Tier, Is.EqualTo(DiagnosticOptimizationTier.PrebuiltDispatch));
-        Assert.That(diag.IsCarrierOptimized, Is.True);
         Assert.That(diag.TierReason, Is.Not.Null);
         Assert.That(diag.CarrierClassName, Is.Not.Null);
     }

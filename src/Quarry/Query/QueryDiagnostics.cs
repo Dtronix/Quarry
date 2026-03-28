@@ -15,11 +15,8 @@ public sealed class QueryDiagnostics
         DiagnosticQueryKind kind,
         SqlDialect dialect,
         string tableName,
-        DiagnosticOptimizationTier tier = DiagnosticOptimizationTier.PrebuiltDispatch,
-        bool isCarrierOptimized = false,
         IReadOnlyList<ClauseDiagnostic>? clauses = null,
         int insertRowCount = 0,
-        // New parameters
         string? tierReason = null,
         string? disqualifyReason = null,
         int activeMask = 0,
@@ -30,7 +27,6 @@ public sealed class QueryDiagnostics
         string? projectionKind = null,
         string? projectionNonOptimalReason = null,
         string? carrierClassName = null,
-        string? carrierIneligibleReason = null,
         string? schemaName = null,
         IReadOnlyList<JoinDiagnostic>? joins = null,
         bool isDistinct = false,
@@ -43,12 +39,9 @@ public sealed class QueryDiagnostics
         Kind = kind;
         Dialect = dialect;
         TableName = tableName;
-        Tier = tier;
-        IsCarrierOptimized = isCarrierOptimized;
         Clauses = clauses ?? [];
         InsertRowCount = insertRowCount;
 
-        // New properties
         TierReason = tierReason;
         DisqualifyReason = disqualifyReason;
         ActiveMask = activeMask;
@@ -59,7 +52,6 @@ public sealed class QueryDiagnostics
         ProjectionKind = projectionKind;
         ProjectionNonOptimalReason = projectionNonOptimalReason;
         CarrierClassName = carrierClassName;
-        CarrierIneligibleReason = carrierIneligibleReason;
         SchemaName = schemaName;
         Joins = joins;
         IsDistinct = isDistinct;
@@ -82,12 +74,6 @@ public sealed class QueryDiagnostics
 
     /// <summary>Gets the active parameters only (filtered by mask for conditional chains).</summary>
     public IReadOnlyList<DiagnosticParameter> Parameters { get; }
-
-    /// <summary>Gets the optimization tier applied to this query chain.</summary>
-    public DiagnosticOptimizationTier Tier { get; }
-
-    /// <summary>Gets whether this chain was optimized using a generated carrier class.</summary>
-    public bool IsCarrierOptimized { get; }
 
     /// <summary>Gets the kind of query (Select, Delete, Update, Insert).</summary>
     public DiagnosticQueryKind Kind { get; }
@@ -132,9 +118,6 @@ public sealed class QueryDiagnostics
 
     /// <summary>Generated carrier class name (non-null for all PrebuiltDispatch chains).</summary>
     public string? CarrierClassName { get; }
-
-    /// <summary>Why carrier optimization was not used (null when carrier-optimized).</summary>
-    public string? CarrierIneligibleReason { get; }
 
     /// <summary>Database schema name (null if default schema).</summary>
     public string? SchemaName { get; }
@@ -342,13 +325,6 @@ public enum DiagnosticBranchKind
     Independent,
     /// <summary>Mutually exclusive — if/else both assign, consumes 1 bit for two clauses.</summary>
     MutuallyExclusive
-}
-
-/// <summary>The optimization tier applied to a query chain at compile time.</summary>
-public enum DiagnosticOptimizationTier
-{
-    /// <summary>SQL is pre-built at compile time with a dispatch table for conditional clauses.</summary>
-    PrebuiltDispatch
 }
 
 /// <summary>The kind of query for diagnostic purposes.</summary>

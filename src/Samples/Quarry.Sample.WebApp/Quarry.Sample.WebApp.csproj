@@ -5,6 +5,9 @@
     <LangVersion>preview</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <!-- CS8619: Schema.Length() returns ColumnBuilder<string> (non-nullable) but nullable columns use Col<string?>.
+         Tracked for a framework-level fix to Length()/ColumnBuilder nullability. -->
+    <NoWarn>$(NoWarn);CS8619</NoWarn>
     <RootNamespace>Quarry.Sample.WebApp</RootNamespace>
 
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Sample.WebApp.Data</InterceptorsNamespaces>

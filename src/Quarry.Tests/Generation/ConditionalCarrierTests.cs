@@ -7,11 +7,11 @@ namespace Quarry.Tests.Generation;
 
 /// <summary>
 /// Tests that conditional (variable-based) chains across all query operations produce
-/// carrier-optimized interceptors with bitmask dispatch.
+/// PrebuiltDispatch interceptors with bitmask dispatch.
 ///
 /// Every test verifies:
 ///   1. A carrier class is emitted (file sealed class Chain_).
-///   2. The chain is marked "Carrier-Optimized" in remarks.
+///   2. The chain is marked "PrebuiltDispatch" in remarks.
 ///   3. Conditional clauses set a Mask bit (Mask |= …(1 &lt;&lt; N)).
 ///   4. The terminal switches on the mask to select the correct SQL variant.
 /// </summary>
@@ -107,12 +107,12 @@ public partial class TestDbContext : QuarryContext
         return interceptorsTree!.GetText().ToString();
     }
 
-    private static void AssertCarrierOptimizedWithMask(string code, string? expectedSql = null)
+    private static void AssertPrebuiltDispatchWithMask(string code, string? expectedSql = null)
     {
         Assert.That(code, Does.Contain("file sealed class Chain_"),
             "Should emit a carrier class");
-        Assert.That(code, Does.Contain("Carrier-Optimized"),
-            "Should be marked Carrier-Optimized in remarks");
+        Assert.That(code, Does.Contain("PrebuiltDispatch"),
+            "Should be marked PrebuiltDispatch in remarks");
         Assert.That(code, Does.Contain("Mask |="),
             "Conditional clause should set a bit on the carrier Mask");
         if (expectedSql != null)
@@ -165,7 +165,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -190,7 +190,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -217,7 +217,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         // Two bits → 4 SQL variants dispatched by mask value
         AssertMaskVariantCount(code, 4);
     }
@@ -245,7 +245,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         // If/else → 1 bit, 2 mask variants
         AssertMaskVariantCount(code, 2);
     }
@@ -271,7 +271,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -296,7 +296,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -323,7 +323,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         // 2 bits → 4 SQL variants
         AssertMaskVariantCount(code, 4);
     }
@@ -349,7 +349,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -374,7 +374,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
         // Captured variable should use FieldInfo extraction on carrier
         Assert.That(code, Does.Contain("GetField(\"name\")"),
@@ -402,7 +402,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
         // Multi-assignment should produce two SET columns
         Assert.That(code, Does.Contain("UserName"));
@@ -430,7 +430,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "DELETE");
+        AssertPrebuiltDispatchWithMask(code, "DELETE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -457,7 +457,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "DELETE");
+        AssertPrebuiltDispatchWithMask(code, "DELETE");
         // 2 bits → 4 SQL variants
         AssertMaskVariantCount(code, 4);
     }
@@ -483,7 +483,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -512,13 +512,13 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         // 3 bits → 8 SQL variants
         AssertMaskVariantCount(code, 8);
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  SELECT — four conditionals → 4 bits, 16 masks (max for Tier 1)
+    //  SELECT — four conditionals → 4 bits, 16 masks
     // ─────────────────────────────────────────────────────────────────
 
     [Test]
@@ -544,7 +544,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "SELECT");
+        AssertPrebuiltDispatchWithMask(code, "SELECT");
         // 4 bits → 16 SQL variants
         AssertMaskVariantCount(code, 16);
     }
@@ -574,7 +574,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         // 1 independent + 1 exclusive → 2 bits, 4 mask variants
         AssertMaskVariantCount(code, 4);
     }
@@ -600,7 +600,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -625,7 +625,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "DELETE");
+        AssertPrebuiltDispatchWithMask(code, "DELETE");
         AssertMaskVariantCount(code, 2);
     }
 
@@ -652,7 +652,7 @@ public class Svc
     }
 }
 ");
-        AssertCarrierOptimizedWithMask(code, "UPDATE");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
         // 2 bits → 4 SQL variants
         AssertMaskVariantCount(code, 4);
     }

@@ -161,7 +161,7 @@ Source-generated typed readers — zero reflection.
 
 ### Diagnostics (QueryDiagnostics)
 
-`ToDiagnostics()` returns compile-time analysis: `Sql`, `Parameters` (active only), `AllParameters`, `Kind`, `Dialect`, `TableName`, `Tier`, `IsCarrierOptimized`, `Clauses` (per-clause SQL + params + source location + conditional info), `SqlVariants` (`Dictionary<int, SqlVariantDiagnostic>` — mask→SQL map), `ProjectionColumns`, `ProjectionKind`, `CarrierClassName`, `Joins`, `IsDistinct`, `Limit`, `Offset`, `IdentityColumnName`, `ActiveMask` (int), `ConditionalBitCount`, `TierReason`, `DisqualifyReason`, `CarrierIneligibleReason`, `UnmatchedMethodNames`.
+`ToDiagnostics()` returns compile-time analysis: `Sql`, `Parameters` (active only), `AllParameters`, `Kind`, `Dialect`, `TableName`, `Clauses` (per-clause SQL + params + source location + conditional info), `SqlVariants` (`Dictionary<int, SqlVariantDiagnostic>` — mask→SQL map), `ProjectionColumns`, `ProjectionKind`, `CarrierClassName`, `Joins`, `IsDistinct`, `Limit`, `Offset`, `IdentityColumnName`, `ActiveMask` (int), `ConditionalBitCount`, `TierReason`, `DisqualifyReason`, `UnmatchedMethodNames`.
 
 ### Trace
 
@@ -197,7 +197,7 @@ All runtime builder classes (QueryBuilder, JoinedQueryBuilder, DeleteBuilder, Up
 
 All base class methods throw `InvalidOperationException` — generator replaces them with actual implementations via interceptors.
 
-**Optimization tier:** Only `PrebuiltDispatch` exists. ≤4 conditional bits → up to 16 SQL variants. Mask type is `int` (narrowed from `ulong`; max value 255 with 8-bit cap). Non-analyzable chains → compile error QRY032.
+**Optimization:** Only `PrebuiltDispatch` exists. ≤8 conditional bits → up to 256 SQL variants. Mask type is `int` (max value 255 with 8-bit cap). Non-analyzable chains → compile error QRY032.
 
 **ExpressionHelper** (`Internal/ExpressionHelper.cs`): Runtime helper for extracting collection values and member chain values from expression trees. Used by generated interceptors when the collection receiver cannot be accessed directly (non-public, instance, local, or complex expression). Methods: `ExtractContainsCollection<T>(MethodCallExpression)`, `ExtractMemberChainValue(MemberExpression)`.
 

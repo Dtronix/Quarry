@@ -116,19 +116,18 @@ The result: fluent C# queries become pre-compiled SQL execution with full type s
 
 The generator classifies every query chain into an optimization tier:
 
-| Tier | Name | Description |
+| Mode | Name | Description |
 |------|------|-------------|
-| **Tier 1** | Pre-built dispatch | All clauses analyzed. SQL dispatch table emitted as constants. Zero runtime string work. Carrier-optimized. |
-| **Tier 2** | Conditional runtime build | Too many conditional bits (>8) for a dispatch table. Pre-quoted fragments concatenated at runtime. |
-| **Tier 3** | Runtime fallback | Chain not statically analyzable (dynamic expressions, loop assignments). Falls back to runtime `SqlBuilder`. |
+| **PrebuiltDispatch** | Pre-built dispatch | All clauses analyzed. SQL dispatch table emitted as constants. Zero runtime string work. |
+| **RuntimeBuild** | Compile error | Chain not statically analyzable. Produces QRY032 compile error directing the user to restructure. |
 
-Tier 1 is the default for well-formed chains. The generator emits `QRY001` or `QRY032` diagnostics when a chain falls to a lower tier.
+PrebuiltDispatch is the only output mode for well-formed chains. The generator emits `QRY001` or `QRY032` diagnostics when a chain cannot be analyzed.
 
 ---
 
 ## Carrier Architecture
 
-For Tier 1 chains, the generator emits a **carrier class** — a lightweight sealed class that holds all parameters, conditions, and state for the query. Carriers eliminate all intermediate builder allocations on the execution path.
+For all analyzed chains, the generator emits a **carrier class** — a lightweight sealed class that holds all parameters, conditions, and state for the query. Carriers eliminate all intermediate builder allocations on the execution path.
 
 Each carrier:
 - Implements the builder interfaces (`IQueryBuilder<T>`, `IDeleteBuilder<T>`, etc.)
@@ -145,8 +144,8 @@ var diag = db.Users()
     .Select(u => u)
     .ToDiagnostics();
 
-Console.WriteLine(diag.IsCarrierOptimized); // True
-Console.WriteLine(diag.Tier);              // PrebuiltDispatch
+Console.WriteLine(diag.Kind);              // Select
+Console.WriteLine(diag.CarrierClassName);  // Chain_...
 ```
 
 ---
@@ -214,8 +213,7 @@ var diag = db.Users()
 
 Console.WriteLine(diag.Sql);               // SELECT ... FROM "users" WHERE ...
 Console.WriteLine(diag.Dialect);           // SQLite
-Console.WriteLine(diag.Tier);             // PrebuiltDispatch
-Console.WriteLine(diag.IsCarrierOptimized); // True
+Console.WriteLine(diag.Kind);             // Select
 
 foreach (var p in diag.Parameters)
     Console.WriteLine($"{p.Name} = {p.Value} ({p.TypeName})");
@@ -450,7 +448,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | ID | Title |
 |----|-------|
 | QRY026 | Custom EntityReader active |
-| QRY030 | Query chain optimized (tier 1) |
+| QRY030 | Query chain optimized |
 | QRY053 | Pending migrations detected |
 
 ---

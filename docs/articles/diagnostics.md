@@ -15,8 +15,6 @@ var diag = db.Users()
 
 Console.WriteLine(diag.Sql);                // SELECT "UserId", "UserName", ... FROM "users" WHERE ...
 Console.WriteLine(diag.Dialect);            // SQLite
-Console.WriteLine(diag.Tier);              // PrebuiltDispatch
-Console.WriteLine(diag.IsCarrierOptimized); // True
 Console.WriteLine(diag.Kind);              // Select
 Console.WriteLine(diag.TableName);         // users
 ```
@@ -31,8 +29,6 @@ Console.WriteLine(diag.TableName);         // users
 | `Kind` | Select, Delete, Update, or Insert |
 | `Dialect` | The SQL dialect |
 | `TableName` | Target table name |
-| `Tier` | Optimization tier (PrebuiltDispatch) |
-| `IsCarrierOptimized` | Whether the chain uses carrier optimization |
 | `Clauses` | Per-clause SQL fragments with metadata |
 | `SqlVariants` | All pre-built SQL variants keyed by conditional bitmask |
 | `ActiveMask` | Current runtime bitmask for conditional clauses |
@@ -47,7 +43,6 @@ Console.WriteLine(diag.TableName);         // users
 | `IdentityColumnName` | Identity column for INSERT chains |
 | `TierReason` | Human-readable tier classification explanation |
 | `DisqualifyReason` | Why the chain is not PrebuiltDispatch (null when it is) |
-| `CarrierIneligibleReason` | Why carrier optimization was not used |
 | `UnmatchedMethodNames` | Method names that could not be matched to known operations |
 
 ### Parameter Inspection

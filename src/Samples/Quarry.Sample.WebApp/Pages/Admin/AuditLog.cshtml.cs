@@ -10,7 +10,7 @@ namespace Quarry.Sample.WebApp.Pages.Admin;
 public class AuditLogModel(AppDb db) : PageModel
 {
     public List<AuditLogEntry> Entries { get; set; } = [];
-    public int Page { get; set; } = 1;
+    public new int Page { get; set; } = 1;
     public int TotalPages { get; set; }
 
     private const int PageSize = 25;
