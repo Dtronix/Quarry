@@ -13,7 +13,7 @@ public class BenchmarkConfig : ManualConfig
     public BenchmarkConfig()
     {
         AddDiagnoser(MemoryDiagnoser.Default);
-        AddJob(Job.Default);
+        AddJob(Job.MediumRun);
         AddExporter(MarkdownExporter.GitHub);
         AddLogger(ConsoleLogger.Default);
         AddColumnProvider(DefaultColumnProviders.Instance);
