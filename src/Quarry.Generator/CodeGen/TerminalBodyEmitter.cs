@@ -44,6 +44,10 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityType;
 
+        // For prepared terminals, ExecuteScalar uses the concrete result type;
+        // for non-prepared terminals, TScalar remains a generic type parameter.
+        var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
+
         // Determine return type from the execution kind.
         string returnType = site.Kind switch
         {
@@ -51,7 +55,7 @@ internal static class TerminalBodyEmitter
             InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
             InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
             InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
-            InterceptorKind.ExecuteScalar => $"Task<TScalar>",
+            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
             _ => ""
         };
@@ -89,7 +93,7 @@ internal static class TerminalBodyEmitter
                 InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
+                InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
@@ -125,13 +129,17 @@ internal static class TerminalBodyEmitter
             ? InterceptorCodeGenerator.GetShortTypeName(rawResultType!)
             : entityTypes[0];
 
+        // For prepared terminals, ExecuteScalar uses the concrete result type;
+        // for non-prepared terminals, TScalar remains a generic type parameter.
+        var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
+
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
             InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
             InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
             InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
-            InterceptorKind.ExecuteScalar => $"Task<TScalar>",
+            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
             _ => ""
         };
@@ -146,9 +154,16 @@ internal static class TerminalBodyEmitter
         }
         else if (site.Kind == InterceptorKind.ExecuteScalar)
         {
-            sb.AppendLine($"    public static {returnType} {methodName}<{entityTypeArgs}, TResult, TScalar>(");
-            sb.AppendLine($"        this {thisBuilderName}<{entityTypeArgs}, TResult> builder,");
-            sb.AppendLine($"        CancellationToken cancellationToken = default) where TScalar : struct");
+            // Use placeholder generic names (T1, T2, ...) instead of concrete entity names
+            // to avoid shadowing the real types and violating class constraints.
+            var genericNames = new List<string>(entityCount);
+            for (int i = 0; i < entityCount; i++)
+                genericNames.Add("T" + (i + 1));
+            var genericArgs = string.Join(", ", genericNames);
+            var constraints = string.Join(" ", genericNames.Select(n => $"where {n} : class"));
+            sb.AppendLine($"    public static {returnType} {methodName}<{genericArgs}, TResult, TScalar>(");
+            sb.AppendLine($"        this {thisBuilderName}<{genericArgs}, TResult> builder,");
+            sb.AppendLine($"        CancellationToken cancellationToken = default) {constraints}");
         }
         else
         {
@@ -166,7 +181,7 @@ internal static class TerminalBodyEmitter
                 InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
                 InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => "ExecuteCarrierScalarWithCommandAsync<TScalar>",
+                InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
                 InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
                 _ => ""
             };
