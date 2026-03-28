@@ -531,7 +531,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 case OptimizationTier.PrebuiltDispatch:
                     spc.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.ChainOptimizedTier1,
+                        DiagnosticDescriptors.ChainOptimized,
                         Location.Create(execRaw.FilePath, location.Span, new Microsoft.CodeAnalysis.Text.LinePositionSpan(
                             new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1),
                             new Microsoft.CodeAnalysis.Text.LinePosition(execRaw.Line - 1, execRaw.Column - 1))),
@@ -609,7 +609,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.AmbiguousContextResolution,
         DiagnosticDescriptors.UnboundParameterPlaceholder,
         DiagnosticDescriptors.ClauseNotTranslatable,
-        DiagnosticDescriptors.ChainOptimizedTier1,
+        DiagnosticDescriptors.ChainOptimized,
         DiagnosticDescriptors.ChainNotAnalyzable,
         DiagnosticDescriptors.ForkedQueryChain,
         DiagnosticDescriptors.SqlRawPlaceholderMismatch,

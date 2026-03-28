@@ -23,7 +23,7 @@ namespace Quarry.Generators.CodeGen;
 internal static class TerminalBodyEmitter
 {
     /// <summary>
-    /// Emits a tier 1 execution interceptor for SELECT queries (ExecuteFetchAll, ExecuteFetchFirst, etc.).
+    /// Emits a execution interceptor for SELECT queries (ExecuteFetchAll, ExecuteFetchFirst, etc.).
     /// Contains a dispatch table that maps ClauseMask to pre-built SQL string literal.
     /// </summary>
     public static void EmitReaderTerminal(
@@ -101,7 +101,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a tier 1 execution interceptor for joined query execution (multi-entity SELECT).
+    /// Emits a execution interceptor for joined query execution (multi-entity SELECT).
     /// </summary>
     public static void EmitJoinReaderTerminal(
         StringBuilder sb,
@@ -177,7 +177,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a tier 1 execution interceptor for non-query operations (DELETE/UPDATE ExecuteNonQueryAsync).
+    /// Emits a execution interceptor for non-query operations (DELETE/UPDATE ExecuteNonQueryAsync).
     /// </summary>
     public static void EmitNonQueryTerminal(
         StringBuilder sb,
@@ -224,7 +224,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a tier 1 ToDiagnostics interceptor that returns a QueryDiagnostics with pre-built SQL
+    /// Emits a ToDiagnostics interceptor that returns a QueryDiagnostics with pre-built SQL
     /// and optimization metadata.
     /// </summary>
     public static void EmitDiagnosticsTerminal(
@@ -301,8 +301,6 @@ internal static class TerminalBodyEmitter
             _ => "DiagnosticQueryKind.Select"
         };
 
-        var isCarrierOptimized = "true";
-
         // Override receiver type for prepared terminals
         if (site.IsPreparedTerminal)
         {
@@ -321,7 +319,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        this {thisParamType} builder)");
         sb.AppendLine($"    {{");
 
-        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind, isCarrierOptimized);
+        CarrierEmitter.EmitCarrierToDiagnosticsTerminal(sb, carrier, chain, diagnosticKind);
         sb.AppendLine($"    }}");
     }
 
@@ -398,7 +396,7 @@ internal static class TerminalBodyEmitter
     }
 
     /// <summary>
-    /// Emits a tier 1 ToDiagnostics interceptor for INSERT chains.
+    /// Emits a ToDiagnostics interceptor for INSERT chains.
     /// </summary>
     public static void EmitInsertDiagnosticsTerminal(
         StringBuilder sb,
@@ -524,7 +522,7 @@ internal static class TerminalBodyEmitter
                 : "null";
 
             sb.AppendLine($"        var sql = Quarry.Internal.BatchInsertSqlBuilder.Build(@\"{escapedPrefix}\", 1, {chain.BatchInsertColumnsPerRow}, SqlDialect.{chain.Dialect}, {returningSuffix});");
-            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, true);");
+            sb.AppendLine($"        return new QueryDiagnostics(sql, Array.Empty<DiagnosticParameter>(), DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\");");
         }
         else
         {

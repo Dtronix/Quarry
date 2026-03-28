@@ -418,13 +418,13 @@ internal static class DiagnosticDescriptors
     // ─── Chain analysis diagnostics (QRY030–QRY032) ───────────────────
 
     /// <summary>
-    /// QRY030: Query chain fully analyzed, tier 1 applied.
+    /// QRY030: Query chain fully analyzed.
     /// Severity: Info
     /// </summary>
-    public static readonly DiagnosticDescriptor ChainOptimizedTier1 = new(
+    public static readonly DiagnosticDescriptor ChainOptimized = new(
         id: "QRY030",
-        title: "Query chain optimized (tier 1)",
-        messageFormat: "Query chain fully analyzed at {0}: tier 1 applied ({1} variants)",
+        title: "Query chain optimized",
+        messageFormat: "Query chain fully analyzed at {0}: pre-built dispatch ({1} variants)",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: true,

@@ -21,7 +21,7 @@ internal static class CarrierEmitter
     /// </summary>
     public static void EmitClassDeclaration(StringBuilder sb, CarrierStrategy strategy, string className)
     {
-        sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
+        sb.AppendLine($"/// <remarks>Chain: PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {className}");
 
         if (!string.IsNullOrEmpty(strategy.BaseClassName))
@@ -461,7 +461,7 @@ internal static class CarrierEmitter
     /// </summary>
     internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info, AssembledPlan chain, string contextTypeName)
     {
-        sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
+        sb.AppendLine($"/// <remarks>Chain: PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");
 
         if (info.ImplementedInterfaces.Count > 0)
@@ -1006,7 +1006,7 @@ internal static class CarrierEmitter
             sb.AppendLine("        var __params = Array.Empty<DiagnosticParameter>();");
         }
 
-        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\", DiagnosticOptimizationTier.PrebuiltDispatch, true);");
+        sb.AppendLine($"        return new QueryDiagnostics(sql, __params, DiagnosticQueryKind.Insert, SqlDialect.{chain.Dialect}, \"{InterceptorCodeGenerator.EscapeStringLiteral(chain.TableName)}\");");
     }
 
     /// <summary>
@@ -1014,13 +1014,13 @@ internal static class CarrierEmitter
     /// </summary>
     internal static void EmitCarrierToDiagnosticsTerminal(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
-        string diagnosticKind, string isCarrierOptimized)
+        string diagnosticKind)
     {
         EmitCarrierPreamble(sb, carrier, chain, emitOpId: false, emitCtxLocal: false);
         TerminalEmitHelpers.EmitParameterLocals(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticClauseArray(sb, chain, carrier);
         TerminalEmitHelpers.EmitDiagnosticParameterArray(sb, chain, carrier);
-        TerminalEmitHelpers.EmitDiagnosticsConstruction(sb, chain, carrier, diagnosticKind, isCarrierOptimized);
+        TerminalEmitHelpers.EmitDiagnosticsConstruction(sb, chain, carrier, diagnosticKind);
     }
 
     // ───────────────────────────────────────────────────────────────

@@ -49,7 +49,7 @@ internal static class AnalyzabilityChecker
     /// lambda expression itself is analyzable — the only blocker is being inside a
     /// conditional, which doesn't prevent expression translation.
     /// This enables lightweight interceptors for conditional clause sites in
-    /// chains that the ChainAnalyzer classifies as Tier 1/2.
+    /// chains that the ChainAnalyzer classifies as PrebuiltDispatch.
     /// </summary>
     public static bool IsClauseAnalyzable(
         InvocationExpressionSyntax invocation,
