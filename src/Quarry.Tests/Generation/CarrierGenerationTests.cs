@@ -1495,4 +1495,107 @@ public static class Queries
         return CarrierEmitter.ResolveCarrierInterfaceList(assembled);
     }
 
+    // ── Concrete Context Type Tests ──
+
+    [Test]
+    public void CarrierGeneration_ConcreteContextType_OnCarrierCtxField()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Carrier Ctx field must use concrete context type, not QuarryContext
+        Assert.That(code, Does.Contain("internal TestDbContext? Ctx;"));
+        Assert.That(code, Does.Not.Contain("internal QuarryContext? Ctx;"));
+    }
+
+    [Test]
+    public void CarrierGeneration_ChainRoot_NoInterfaceCast()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // ChainRoot must assign @this directly, no interface cast
+        Assert.That(code, Does.Contain("Ctx = @this"));
+        Assert.That(code, Does.Not.Contain("(IQueryExecutionContext)"));
+    }
+
+    [Test]
+    public void CarrierGeneration_ScalarTerminal_DelegatesToQueryExecutor()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var count = await db.Users()
+            .Select(u => Sql.Count())
+            .ExecuteScalarAsync<int>();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Scalar must delegate to QueryExecutor, not inline
+        Assert.That(code, Does.Contain("ExecuteCarrierScalarWithCommandAsync"));
+        // Must NOT be async (no state machine)
+        Assert.That(code, Does.Not.Contain("public static async Task<TScalar>"));
+    }
 }
