@@ -376,7 +376,7 @@ internal static class SqlExprAnnotator
                         arrayInit = ExtractArrayInitializer(declarator.Initializer.Value);
                 }
             }
-            else if (symbol is IFieldSymbol fieldSymbol && (fieldSymbol.IsReadOnly || fieldSymbol.IsConst || fieldSymbol.IsStatic))
+            else if (symbol is IFieldSymbol fieldSymbol && (fieldSymbol.IsReadOnly || fieldSymbol.IsConst))
             {
                 var declRef = fieldSymbol.DeclaringSyntaxReferences.FirstOrDefault();
                 if (declRef != null)

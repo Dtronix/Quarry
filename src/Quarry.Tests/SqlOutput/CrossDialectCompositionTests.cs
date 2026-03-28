@@ -619,6 +619,41 @@ internal class CrossDialectCompositionTests
 
     #endregion
 
+    #region 15. Mutable static collection must NOT be inlined (issue #117)
+
+    // Mutable static field (not readonly, not const) — must NOT be inlined
+    private static string[] _mutableStatuses = new[] { "pending", "processing", "shipped" };
+
+    [Test]
+    public async Task Where_ContainsMutableStaticCollection_RemainsParameterized()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+
+        // Mutable static field must stay parameterized — values are NOT inlined
+        var liteDiag = lite.ToDiagnostics();
+        Assert.That(liteDiag.Parameters, Has.Count.GreaterThan(0),
+            "Mutable static array should not be inlined — parameters expected");
+        Assert.That(liteDiag.Sql, Does.Not.Contain("IN ('pending'"),
+            "Mutable static array values should not appear as inline literals");
+
+        var pgDiag = Pg.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).ToDiagnostics();
+        Assert.That(pgDiag.Parameters, Has.Count.GreaterThan(0),
+            "Mutable static array should not be inlined — parameters expected (PostgreSQL)");
+
+        var myDiag = My.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).ToDiagnostics();
+        Assert.That(myDiag.Parameters, Has.Count.GreaterThan(0),
+            "Mutable static array should not be inlined — parameters expected (MySQL)");
+
+        var ssDiag = Ss.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).ToDiagnostics();
+        Assert.That(ssDiag.Parameters, Has.Count.GreaterThan(0),
+            "Mutable static array should not be inlined — parameters expected (SQL Server)");
+    }
+
+    #endregion
+
     #region 10. Joined OrderBy carrier diagnostics
 
     [Test]
