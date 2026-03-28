@@ -32,6 +32,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -70,6 +71,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -107,6 +109,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -151,6 +154,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -195,6 +199,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var instrumented = LogsmithOutput.Logger != null || ctx.SlowQueryThreshold.HasValue;
@@ -246,6 +251,7 @@ internal static class QueryExecutor
         long opId, QuarryContext ctx,
         DbCommand command, CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
@@ -279,6 +285,7 @@ internal static class QueryExecutor
         DbCommand command, Func<DbDataReader, TResult> reader,
         [EnumeratorCancellation] CancellationToken ct)
     {
+        await using var _cmd = command;
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
