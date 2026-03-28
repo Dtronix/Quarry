@@ -119,6 +119,9 @@ internal static class MigrateCommands
                 }
             }
         } // lock file released here
+
+        // Clean up the lock file — it's only needed during the operation
+        try { File.Delete(lockFilePath); } catch { /* best-effort cleanup */ }
     }
 
     /// <summary>

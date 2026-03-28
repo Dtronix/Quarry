@@ -120,21 +120,21 @@ var hasOrders = await db.Users
 
 ```csharp
 // Before (flagged by QRA102)
-db.Users.Where(u => new[] { 42 }.Contains(u.UserId));
+db.Users().Where(u => new[] { 42 }.Contains(u.UserId));
 
 // After fix applied
-db.Users.Where(u => u.UserId == 42);
+db.Users().Where(u => u.UserId == 42);
 ```
 
 ### QRA201 — Remove Unused Join
 
 ```csharp
 // Before (flagged by QRA201)
-db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Select((u, o) => u.UserName);  // 'o' never used
 
 // After fix applied
-db.Users
+db.Users()
     .Select(u => u.UserName);
 ```
 
@@ -159,11 +159,11 @@ var users = await db.Users
 
 ```csharp
 // Flagged by QRA205 — missing ON condition
-db.Users.Join<Order>()
+db.Users().Join<Order>()
     .Select((u, o) => new { u.Name, o.Total });
 
 // Fixed: add join condition
-db.Users.Join<Order>((u, o) => u.Id == o.UserId)
+db.Users().Join<Order>((u, o) => u.Id == o.UserId)
     .Select((u, o) => new { u.Name, o.Total });
 ```
 
@@ -192,6 +192,6 @@ quarry_analyzers.wide_table_column_count = 15
 
 ```csharp
 #pragma warning disable QRA301
-var results = db.Users.Where(u => u.Name.Contains(term));
+var results = db.Users().Where(u => u.Name.Contains(term));
 #pragma warning restore QRA301
 ```
