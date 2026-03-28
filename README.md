@@ -59,6 +59,19 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 
 ---
 
+## Performance
+
+Quarry is benchmarked against Raw ADO.NET, Dapper, EF Core, and SqlKata using [BenchmarkDotNet](https://benchmarkdotnet.org/) on an in-memory SQLite database. All libraries execute the same logical operation so that numbers reflect framework overhead, not network or engine variance.
+
+| | Dapper | **Quarry** | SqlKata | EF Core |
+|---|---:|---:|---:|---:|
+| **Median speed ratio** | 1.23x | <u>1.02x</u> | 1.73x | 2.33x |
+| **Median alloc ratio** | 1.40x | <u>1.10x</u> | 5.88x | 5.08x |
+
+Quarry's median overhead is **1.02x Raw ADO.NET** across 23 benchmarks — faster than Dapper with fewer allocations. See the [full benchmark results](https://dtronix.github.io/Quarry/articles/benchmarks.html) for per-category breakdowns and the [performance tracking issue](https://github.com/Dtronix/Quarry/issues/105) for run-over-run history.
+
+---
+
 ## Features
 
 - **[Compile-time SQL generation](https://dtronix.github.io/Quarry/articles/getting-started.html)** — all SQL emitted as string literals at build time; no runtime translation
@@ -76,6 +89,7 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 - **[Query diagnostics](https://dtronix.github.io/Quarry/articles/diagnostics.html)** — `ToDiagnostics()` surfaces SQL, parameters, variants, projection metadata, and carrier optimization status
 - **[Structured logging](https://dtronix.github.io/Quarry/articles/logging.html)** — Logsmith Abstraction mode with categories, slow query detection, sensitive redaction, and operation correlation
 - **[Analyzer rules](https://dtronix.github.io/Quarry/articles/analyzer-rules.html)** — compile-time QRA diagnostics with code fixes
+- **[Benchmarks](https://dtronix.github.io/Quarry/articles/benchmarks.html)** — 1.02x median overhead vs Raw ADO.NET across 23 benchmarks; faster than Dapper with 1.10x allocation ratio
 
 ---
 
@@ -144,4 +158,4 @@ The generator emits an interceptor that replaces the `ExecuteFetchAllAsync` call
 
 | Sample | Description |
 |--------|-------------|
-| [`Quarry.Sample.WebApp`](src/Samples/Quarry.Sample.WebApp) | ASP.NET Core Razor Pages app with SQLite — demonstrates schema definition, context setup, querying, authentication, migrations, and Logsmith logging integration |
+| [`Quarry.Sample.WebApp`](https://github.com/Dtronix/Quarry/tree/master/src/Samples/Quarry.Sample.WebApp) | ASP.NET Core Razor Pages app with SQLite — demonstrates schema definition, context setup, querying, authentication, migrations, and Logsmith logging integration |
