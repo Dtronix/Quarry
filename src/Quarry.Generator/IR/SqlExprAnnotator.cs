@@ -512,6 +512,20 @@ internal static class SqlExprAnnotator
                 return like;
             }
 
+            // Catch string literals folded early by AnnotateCapturedTypes (e.g., qualified const fields)
+            // that bypassed the parser's CreateLikeExpr escaping. Only fire when NeedsEscape is still
+            // false — if the parser already escaped, NeedsEscape is true and we skip.
+            case LikeExpr like when like.Pattern is LiteralExpr literal
+                && literal.ClrType == "string" && !like.NeedsEscape:
+            {
+                var escaped = Translation.SqlLikeHelpers.EscapeLikeMetaChars(literal.SqlText);
+                if (escaped == literal.SqlText)
+                    return like; // No metacharacters — no change needed
+                var operand = InlineLikePatternsRecursive(like.Operand, lambdaBody, semanticModel);
+                return new LikeExpr(operand, new LiteralExpr(escaped, "string"),
+                    like.IsNegated, like.LikePrefix, like.LikeSuffix, needsEscape: true);
+            }
+
             case BinaryOpExpr bin:
             {
                 var left = InlineLikePatternsRecursive(bin.Left, lambdaBody, semanticModel);

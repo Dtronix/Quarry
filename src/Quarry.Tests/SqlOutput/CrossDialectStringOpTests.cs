@@ -203,6 +203,7 @@ internal class CrossDialectStringOpTests
     private static class StringConstants
     {
         public const string SearchTerm = "lic";
+        public const string MetaSearchTerm = "50%";
     }
 
     [Test]
@@ -461,6 +462,24 @@ internal class CrossDialectStringOpTests
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task Where_Contains_QualifiedConstField_WithMetaChars_EscapesPattern()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Qualified const containing LIKE metacharacter (%) must be escaped
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Pg.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%50\\%%' ESCAPE '\\'",
+            ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%50\\%%' ESCAPE '\\'");
     }
 
     #endregion
