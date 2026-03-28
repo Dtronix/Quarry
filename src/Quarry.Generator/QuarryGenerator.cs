@@ -58,7 +58,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     /// <param name="context">The initialization context.</param>
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Phase 1: Register a syntax provider to find class declarations with [QuarryContext] attribute
+        // Pipeline 1: Register a syntax provider to find class declarations with [QuarryContext] attribute
         var contextDeclarations = context.SyntaxProvider
             .CreateSyntaxProvider(
                 predicate: static (node, _) => IsContextCandidate(node),
@@ -66,12 +66,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
-        // Phase 1 output: Per-context entity/context/metadata generation (no Collect needed)
+        // Pipeline 1 output: Per-context entity/context/metadata generation (no Collect needed)
         // Each context is independently cached — changing one context doesn't regenerate others.
         context.RegisterSourceOutput(contextDeclarations,
             static (spc, contextInfo) => GenerateEntityAndContextCode(contextInfo, spc));
 
-        // Phase 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
+        // Pipeline 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
         // Build-time only — rare edge case, not needed for IntelliSense.
         context.RegisterImplementationSourceOutput(contextDeclarations.Collect(),
             static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
@@ -120,7 +120,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             perFileGroups.Combine(context.CompilationProvider),
             static (spc, pair) => EmitFileInterceptors(spc, pair.Left, pair.Right));
 
-        // Phase 3: Migration class discovery for MigrateAsync generation
+        // Pipeline 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
             .ForAttributeWithMetadataName(
                 "Quarry.MigrationAttribute",
@@ -896,7 +896,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             "byte[]" or "System.Byte[]";
     }
 
-    // ─── Phase 3: Migration helpers ──────────────────────────────────
+    // ─── Pipeline 3: Migration helpers ─────────────────────────────────
 
     private static MigrationInfo? ExtractMigrationInfo(GeneratorAttributeSyntaxContext ctx)
     {
