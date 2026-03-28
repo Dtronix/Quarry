@@ -13,15 +13,15 @@ public class SelectBenchmarks : BenchmarkBase
     // --- Select All ---
 
     [Benchmark(Baseline = true)]
-    public async Task<List<EfUser>> Raw_SelectAll()
+    public async Task<List<RawUser>> Raw_SelectAll()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users";
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -35,9 +35,9 @@ public class SelectBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Dapper_SelectAll()
+    public async Task<List<DapperUser>> Dapper_SelectAll()
     {
-        return (await Connection.QueryAsync<EfUser>(
+        return (await Connection.QueryAsync<DapperUser>(
             "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users")).AsList();
     }
 
@@ -56,7 +56,7 @@ public class SelectBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> SqlKata_SelectAll()
+    public async Task<List<SqlKataUser>> SqlKata_SelectAll()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin");
@@ -65,10 +65,10 @@ public class SelectBenchmarks : BenchmarkBase
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = compiled.Sql;
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<SqlKataUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),

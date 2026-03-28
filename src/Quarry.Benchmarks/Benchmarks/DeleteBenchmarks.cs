@@ -12,6 +12,18 @@ public class DeleteBenchmarks : BenchmarkBase
 {
     private EfBenchContext _iterationEfContext = null!;
 
+    // Use a field so the source generator cannot inline the value into the SQL string.
+    // This forces Quarry to parameterize the query, matching what Raw/Dapper/SqlKata do.
+    // Note: Quarry CAN inline compile-time constants (e.g. `.Where(u => u.UserId == 999)`)
+    // which eliminates parameter allocation entirely — a unique strength of source generation.
+    private int _targetId;
+
+    public override void GlobalSetup()
+    {
+        base.GlobalSetup();
+        _targetId = 999;
+    }
+
     [IterationSetup]
     public void IterationSetup()
     {
@@ -38,7 +50,7 @@ public class DeleteBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "DELETE FROM users WHERE UserId = @id";
-        cmd.Parameters.AddWithValue("@id", 999);
+        cmd.Parameters.AddWithValue("@id", _targetId);
         return await cmd.ExecuteNonQueryAsync();
     }
 
@@ -47,19 +59,15 @@ public class DeleteBenchmarks : BenchmarkBase
     {
         return await Connection.ExecuteAsync(
             "DELETE FROM users WHERE UserId = @UserId",
-            new { UserId = 999 });
+            new { UserId = _targetId });
     }
 
     [Benchmark]
     public async Task<int> EfCore_DeleteSingleRow()
     {
-        var user = await _iterationEfContext.Users.FindAsync(999);
-        if (user != null)
-        {
-            _iterationEfContext.Users.Remove(user);
-            return await _iterationEfContext.SaveChangesAsync();
-        }
-        return 0;
+        return await _iterationEfContext.Users
+            .Where(u => u.UserId == _targetId)
+            .ExecuteDeleteAsync();
     }
 
     [Benchmark]
@@ -67,14 +75,14 @@ public class DeleteBenchmarks : BenchmarkBase
     {
         return await QuarryDb.Users()
             .Delete()
-            .Where(u => u.UserId == 999)
+            .Where(u => u.UserId == _targetId)
             .ExecuteNonQueryAsync();
     }
 
     [Benchmark]
     public async Task<int> SqlKata_DeleteSingleRow()
     {
-        var query = new Query("users").Where("UserId", 999).AsDelete();
+        var query = new Query("users").Where("UserId", _targetId).AsDelete();
         var compiled = SqlKataCompiler.Compile(query);
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = compiled.Sql;

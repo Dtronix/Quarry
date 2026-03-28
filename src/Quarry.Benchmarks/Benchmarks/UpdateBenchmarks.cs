@@ -12,6 +12,18 @@ public class UpdateBenchmarks : BenchmarkBase
 {
     private EfBenchContext _iterationEfContext = null!;
 
+    // Use a field so the source generator cannot inline the value into the SQL string.
+    // This forces Quarry to parameterize the query, matching what Raw/Dapper/SqlKata do.
+    // Note: Quarry CAN inline compile-time constants (e.g. `.Where(u => u.UserId == 1)`)
+    // which eliminates parameter allocation entirely — a unique strength of source generation.
+    private int _targetId;
+
+    public override void GlobalSetup()
+    {
+        base.GlobalSetup();
+        _targetId = 1;
+    }
+
     [IterationSetup]
     public void IterationSetup()
     {
@@ -36,7 +48,7 @@ public class UpdateBenchmarks : BenchmarkBase
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "UPDATE users SET UserName = @name WHERE UserId = @id";
         cmd.Parameters.AddWithValue("@name", "UpdatedUser");
-        cmd.Parameters.AddWithValue("@id", 1);
+        cmd.Parameters.AddWithValue("@id", _targetId);
         return await cmd.ExecuteNonQueryAsync();
     }
 
@@ -45,15 +57,16 @@ public class UpdateBenchmarks : BenchmarkBase
     {
         return await Connection.ExecuteAsync(
             "UPDATE users SET UserName = @UserName WHERE UserId = @UserId",
-            new { UserName = "UpdatedUser", UserId = 1 });
+            new { UserName = "UpdatedUser", UserId = _targetId });
     }
 
     [Benchmark]
     public async Task<int> EfCore_UpdateSingleRow()
     {
-        var user = await _iterationEfContext.Users.FindAsync(1);
-        user!.UserName = "UpdatedUser";
-        return await _iterationEfContext.SaveChangesAsync();
+        return await _iterationEfContext.Users
+            .Where(u => u.UserId == _targetId)
+            .ExecuteUpdateAsync(u => u
+                .SetProperty(x => x.UserName, "UpdatedUser"));
     }
 
     [Benchmark]
@@ -62,14 +75,14 @@ public class UpdateBenchmarks : BenchmarkBase
         return await QuarryDb.Users()
             .Update()
             .Set(u => u.UserName = "UpdatedUser")
-            .Where(u => u.UserId == 1)
+            .Where(u => u.UserId == _targetId)
             .ExecuteNonQueryAsync();
     }
 
     [Benchmark]
     public async Task<int> SqlKata_UpdateSingleRow()
     {
-        var query = new Query("users").Where("UserId", 1).AsUpdate(new { UserName = "UpdatedUser" });
+        var query = new Query("users").Where("UserId", _targetId).AsUpdate(new { UserName = "UpdatedUser" });
         var compiled = SqlKataCompiler.Compile(query);
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = compiled.Sql;

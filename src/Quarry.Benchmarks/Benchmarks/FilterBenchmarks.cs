@@ -13,15 +13,15 @@ public class FilterBenchmarks : BenchmarkBase
     // --- Where Active ---
 
     [Benchmark(Baseline = true)]
-    public async Task<List<EfUser>> Raw_WhereActive()
+    public async Task<List<RawUser>> Raw_WhereActive()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE IsActive = 1";
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -35,9 +35,9 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Dapper_WhereActive()
+    public async Task<List<DapperUser>> Dapper_WhereActive()
     {
-        return (await Connection.QueryAsync<EfUser>(
+        return (await Connection.QueryAsync<DapperUser>(
             "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE IsActive = 1")).AsList();
     }
 
@@ -59,7 +59,7 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> SqlKata_WhereActive()
+    public async Task<List<SqlKataUser>> SqlKata_WhereActive()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
@@ -73,10 +73,10 @@ public class FilterBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<SqlKataUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -177,7 +177,7 @@ public class FilterBenchmarks : BenchmarkBase
     // --- Where By ID ---
 
     [Benchmark]
-    public async Task<EfUser?> Raw_WhereById()
+    public async Task<RawUser?> Raw_WhereById()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE UserId = @id";
@@ -185,7 +185,7 @@ public class FilterBenchmarks : BenchmarkBase
         await using var reader = await cmd.ExecuteReaderAsync();
         if (await reader.ReadAsync())
         {
-            return new EfUser
+            return new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -199,9 +199,9 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<EfUser?> Dapper_WhereById()
+    public async Task<DapperUser?> Dapper_WhereById()
     {
-        return await Connection.QueryFirstOrDefaultAsync<EfUser>(
+        return await Connection.QueryFirstOrDefaultAsync<DapperUser>(
             "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE UserId = @id",
             new { id = 42 });
     }
@@ -223,7 +223,7 @@ public class FilterBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<EfUser?> SqlKata_WhereById()
+    public async Task<SqlKataUser?> SqlKata_WhereById()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
@@ -239,7 +239,7 @@ public class FilterBenchmarks : BenchmarkBase
         await using var reader = await cmd.ExecuteReaderAsync();
         if (await reader.ReadAsync())
         {
-            return new EfUser
+            return new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
