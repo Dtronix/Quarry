@@ -6,60 +6,30 @@ using Npgsql;
 
 namespace Quarry.Shared.Scaffold;
 
-internal sealed class PostgreSqlIntrospector : IDatabaseIntrospector
+internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
 {
-    private readonly NpgsqlConnection _connection;
+    private PostgreSqlIntrospector(NpgsqlConnection connection) : base(connection) { }
 
-    private PostgreSqlIntrospector(NpgsqlConnection connection)
-    {
-        _connection = connection;
-    }
+    public static Task<PostgreSqlIntrospector> CreateAsync(string connectionString) =>
+        CreateCoreAsync(new NpgsqlConnection(connectionString), c => new PostgreSqlIntrospector((NpgsqlConnection)c));
 
-    public static async Task<PostgreSqlIntrospector> CreateAsync(string connectionString)
+    public override Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
     {
-        var connection = new NpgsqlConnection(connectionString);
-        try
-        {
-            await connection.OpenAsync();
-            return new PostgreSqlIntrospector(connection);
-        }
-        catch
-        {
-            connection.Dispose();
-            throw;
-        }
-    }
-
-    public async Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
-    {
-        var tables = new List<TableMetadata>();
         var schema = schemaFilter ?? "public";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT table_name, table_schema
             FROM information_schema.tables
             WHERE table_schema = @schema
               AND table_type = 'BASE TABLE'
-            ORDER BY table_name";
-        cmd.Parameters.AddWithValue("schema", schema);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(new TableMetadata(reader.GetString(0), reader.GetString(1)));
-        }
-
-        return tables;
+            ORDER BY table_name",
+            r => new TableMetadata(r.GetString(0), r.GetString(1)),
+            cmd => AddParameter(cmd, "schema", schema));
     }
 
-    public async Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
+    public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
     {
-        var columns = new List<ColumnMetadata>();
         schema ??= "public";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 c.column_name,
                 c.data_type,
@@ -75,50 +45,44 @@ internal sealed class PostgreSqlIntrospector : IDatabaseIntrospector
                      ELSE false END AS is_identity
             FROM information_schema.columns c
             WHERE c.table_name = @table AND c.table_schema = @schema
-            ORDER BY c.ordinal_position";
-        cmd.Parameters.AddWithValue("table", tableName);
-        cmd.Parameters.AddWithValue("schema", schema);
+            ORDER BY c.ordinal_position",
+            r =>
+            {
+                var dataType = r.GetString(1);
+                var udtName = r.IsDBNull(8) ? null : r.GetString(8);
 
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var dataType = reader.GetString(1);
-            var udtName = reader.IsDBNull(8) ? null : reader.GetString(8);
+                if (dataType == "USER-DEFINED" && udtName != null)
+                    dataType = udtName;
+                if (dataType == "ARRAY" && udtName != null)
+                    dataType = udtName;
 
-            // Use UDT name for user-defined types and array types
-            if (dataType == "USER-DEFINED" && udtName != null)
-                dataType = udtName;
-            if (dataType == "ARRAY" && udtName != null)
-                dataType = udtName;
+                var maxLen = r.IsDBNull(3) ? (int?)null : r.GetInt32(3);
+                var precision = r.IsDBNull(4) ? (int?)null : r.GetInt32(4);
+                var scale = r.IsDBNull(5) ? (int?)null : r.GetInt32(5);
 
-            var maxLen = reader.IsDBNull(3) ? (int?)null : reader.GetInt32(3);
-            var precision = reader.IsDBNull(4) ? (int?)null : reader.GetInt32(4);
-            var scale = reader.IsDBNull(5) ? (int?)null : reader.GetInt32(5);
-
-            // For types like varchar, numeric — use precision/scale or maxLength
-            var resolvedType = ResolvePostgresType(dataType, maxLen, precision, scale);
-
-            columns.Add(new ColumnMetadata(
-                name: reader.GetString(0),
-                dataType: resolvedType,
-                isNullable: reader.GetString(2) == "YES",
-                maxLength: maxLen,
-                precision: precision,
-                scale: scale,
-                isIdentity: reader.GetBoolean(9),
-                defaultExpression: reader.IsDBNull(6) ? null : reader.GetString(6),
-                ordinalPosition: reader.GetInt32(7)));
-        }
-
-        return columns;
+                return new ColumnMetadata(
+                    name: r.GetString(0),
+                    dataType: dataType,
+                    isNullable: r.GetString(2) == "YES",
+                    maxLength: maxLen,
+                    precision: precision,
+                    scale: scale,
+                    isIdentity: r.GetBoolean(9),
+                    defaultExpression: r.IsDBNull(6) ? null : r.GetString(6),
+                    ordinalPosition: r.GetInt32(7));
+            },
+            cmd =>
+            {
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
+            });
     }
 
-    public async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
+    public override async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
     {
         schema ??= "public";
 
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        var rows = await ExecuteListAsync(@"
             SELECT kcu.column_name, tc.constraint_name
             FROM information_schema.table_constraints tc
             JOIN information_schema.key_column_usage kcu
@@ -127,30 +91,31 @@ internal sealed class PostgreSqlIntrospector : IDatabaseIntrospector
             WHERE tc.table_name = @table
               AND tc.table_schema = @schema
               AND tc.constraint_type = 'PRIMARY KEY'
-            ORDER BY kcu.ordinal_position";
-        cmd.Parameters.AddWithValue("table", tableName);
-        cmd.Parameters.AddWithValue("schema", schema);
+            ORDER BY kcu.ordinal_position",
+            r => (Column: r.GetString(0), Constraint: r.GetString(1)),
+            cmd =>
+            {
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
+            });
 
-        var columns = new List<string>();
+        if (rows.Count == 0) return null;
+
         string? constraintName = null;
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        var columns = new List<string>();
+        foreach (var (col, constraint) in rows)
         {
-            columns.Add(reader.GetString(0));
-            constraintName ??= reader.GetString(1);
+            columns.Add(col);
+            constraintName ??= constraint;
         }
 
-        return columns.Count > 0 ? new PrimaryKeyMetadata(constraintName, columns) : null;
+        return new PrimaryKeyMetadata(constraintName, columns);
     }
 
-    public async Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
+    public override Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
     {
-        var fks = new List<ForeignKeyMetadata>();
         schema ??= "public";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 c.conname AS constraint_name,
                 a_src.attname AS column_name,
@@ -184,33 +149,26 @@ internal sealed class PostgreSqlIntrospector : IDatabaseIntrospector
             WHERE t.relname = @table
               AND n.nspname = @schema
               AND c.contype = 'f'
-            ORDER BY c.conname, k.ord";
-        cmd.Parameters.AddWithValue("table", tableName);
-        cmd.Parameters.AddWithValue("schema", schema);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            fks.Add(new ForeignKeyMetadata(
-                constraintName: reader.GetString(0),
-                columnName: reader.GetString(1),
-                referencedTable: reader.GetString(2),
-                referencedColumn: reader.GetString(3),
-                referencedSchema: reader.GetString(4),
-                onDelete: reader.GetString(5),
-                onUpdate: reader.GetString(6)));
-        }
-
-        return fks;
+            ORDER BY c.conname, k.ord",
+            r => new ForeignKeyMetadata(
+                constraintName: r.GetString(0),
+                columnName: r.GetString(1),
+                referencedTable: r.GetString(2),
+                referencedColumn: r.GetString(3),
+                referencedSchema: r.GetString(4),
+                onDelete: r.GetString(5),
+                onUpdate: r.GetString(6)),
+            cmd =>
+            {
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
+            });
     }
 
-    public async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
+    public override Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
     {
-        var indexes = new List<IndexMetadata>();
         schema ??= "public";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 i.relname AS index_name,
                 array_agg(a.attname ORDER BY k.n) AS columns,
@@ -225,32 +183,16 @@ internal sealed class PostgreSqlIntrospector : IDatabaseIntrospector
             WHERE t.relname = @table
               AND n.nspname = @schema
             GROUP BY i.relname, ix.indisunique, ix.indisprimary
-            ORDER BY i.relname";
-        cmd.Parameters.AddWithValue("table", tableName);
-        cmd.Parameters.AddWithValue("schema", schema);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var name = reader.GetString(0);
-            var colArray = (string[])reader.GetValue(1);
-            var isUnique = reader.GetBoolean(2);
-            var isPrimary = reader.GetBoolean(3);
-
-            indexes.Add(new IndexMetadata(name, colArray, isUnique, isPrimary));
-        }
-
-        return indexes;
-    }
-
-    private static string ResolvePostgresType(string dataType, int? maxLen, int? precision, int? scale)
-    {
-        // Return the type as-is; the ReverseTypeMapper handles normalization
-        return dataType;
-    }
-
-    public void Dispose()
-    {
-        _connection.Dispose();
+            ORDER BY i.relname",
+            r =>
+            {
+                var colArray = (string[])r.GetValue(1);
+                return new IndexMetadata(r.GetString(0), colArray, r.GetBoolean(2), r.GetBoolean(3));
+            },
+            cmd =>
+            {
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
+            });
     }
 }

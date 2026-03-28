@@ -113,7 +113,7 @@ internal static class DdlRenderer
             if (dialect == SqlDialect.SqlServer)
             {
                 sb.Append("IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '")
-                    .Append(op.Name).AppendLine("')");
+                    .Append(SqlFormatting.EscapeStringLiteral(op.Name)).AppendLine("')");
             }
             else
             {
@@ -205,7 +205,7 @@ internal static class DdlRenderer
             if (dialect == SqlDialect.SqlServer)
             {
                 sb.Append("IF EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '")
-                    .Append(op.Name).AppendLine("')");
+                    .Append(SqlFormatting.EscapeStringLiteral(op.Name)).AppendLine("')");
                 sb.Append("DROP TABLE ").Append(FormatTable(op.Name, op.Schema, dialect)).AppendLine(";");
             }
             else
@@ -303,14 +303,14 @@ internal static class DdlRenderer
                     break;
                 case SqlDialect.SqlServer:
                     sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('")
-                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
-                        .Append("') AND name = '").Append(op.Column).AppendLine("')");
+                        .Append(SqlFormatting.EscapeStringLiteral(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table))
+                        .Append("') AND name = '").Append(SqlFormatting.EscapeStringLiteral(op.Column)).AppendLine("')");
                     sb.Append("ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
                     sb.Append(" ADD ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
                     break;
                 default: // MySQL
                     // MySQL doesn't have native IF NOT EXISTS for ADD COLUMN, use INFORMATION_SCHEMA
-                    sb.AppendLine($"SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{op.Table}' AND COLUMN_NAME = '{op.Column}');");
+                    sb.AppendLine($"SET @col_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{SqlFormatting.EscapeStringLiteral(op.Table)}' AND COLUMN_NAME = '{SqlFormatting.EscapeStringLiteral(op.Column)}');");
                     sb.AppendLine($"SET @sql = IF(@col_exists = 0,");
                     sb.Append("    'ALTER TABLE ").Append(FormatTable(op.Table, op.Schema, dialect));
                     sb.Append(" ADD ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Column)).Append(" ");
@@ -363,8 +363,8 @@ internal static class DdlRenderer
         if (idempotent && dialect == SqlDialect.SqlServer)
         {
             sb.Append("IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('")
-                .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
-                .Append("') AND name = '").Append(op.Column).AppendLine("')");
+                .Append(SqlFormatting.EscapeStringLiteral(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table))
+                .Append("') AND name = '").Append(SqlFormatting.EscapeStringLiteral(op.Column)).AppendLine("')");
         }
 
         if (dialect == SqlDialect.SQLite)
@@ -490,13 +490,13 @@ internal static class DdlRenderer
             {
                 case SqlDialect.SqlServer:
                     sb.Append("IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = '")
-                        .Append(op.Name).Append("' AND object_id = OBJECT_ID('")
-                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                        .Append(SqlFormatting.EscapeStringLiteral(op.Name)).Append("' AND object_id = OBJECT_ID('")
+                        .Append(SqlFormatting.EscapeStringLiteral(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table))
                         .AppendLine("'))");
                     break;
                 case SqlDialect.MySQL:
                     // MySQL doesn't have IF NOT EXISTS for CREATE INDEX, but we can check
-                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{op.Table}' AND INDEX_NAME = '{op.Name}');");
+                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{SqlFormatting.EscapeStringLiteral(op.Table)}' AND INDEX_NAME = '{SqlFormatting.EscapeStringLiteral(op.Name)}');");
                     sb.AppendLine("SET @sql = IF(@idx_exists = 0,");
                     var idxSb = new StringBuilder();
                     RenderAddIndexCore(idxSb, op, dialect);
@@ -564,8 +564,8 @@ internal static class DdlRenderer
             {
                 case SqlDialect.SqlServer:
                     sb.Append("IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = '")
-                        .Append(op.Name).Append("' AND object_id = OBJECT_ID('")
-                        .Append(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table)
+                        .Append(SqlFormatting.EscapeStringLiteral(op.Name)).Append("' AND object_id = OBJECT_ID('")
+                        .Append(SqlFormatting.EscapeStringLiteral(op.Schema != null ? $"{op.Schema}.{op.Table}" : op.Table))
                         .AppendLine("'))");
                     break;
                 case SqlDialect.PostgreSQL:
@@ -576,7 +576,7 @@ internal static class DdlRenderer
                     return;
                 case SqlDialect.MySQL:
                     // MySQL doesn't have IF EXISTS for DROP INDEX; need to check first
-                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{op.Table}' AND INDEX_NAME = '{op.Name}');");
+                    sb.AppendLine($"SET @idx_exists = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = '{SqlFormatting.EscapeStringLiteral(op.Table)}' AND INDEX_NAME = '{SqlFormatting.EscapeStringLiteral(op.Name)}');");
                     sb.AppendLine("SET @sql = IF(@idx_exists > 0,");
                     sb.Append("    'DROP INDEX ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Name));
                     sb.Append(" ON ").Append(SqlFormatting.QuoteIdentifier(dialect, op.Table)).AppendLine("', 'SELECT 1');");

@@ -758,7 +758,7 @@ Use `builder.Sql()` for operations the diff engine doesn't handle:
 public static void Upgrade(MigrationBuilder builder)
 {
     // Auto-generated steps
-    builder.AddColumn("users", "status", c => c.ClrType("string").NotNull().Default("'active'"));
+    builder.AddColumn("users", "status", c => c.ClrType("string").NotNull().DefaultValue("'active'"));
 
     // Custom data migration
     builder.Sql("UPDATE users SET status = 'legacy' WHERE created_at < '2025-01-01'");

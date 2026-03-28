@@ -6,60 +6,30 @@ using Microsoft.Data.SqlClient;
 
 namespace Quarry.Shared.Scaffold;
 
-internal sealed class SqlServerIntrospector : IDatabaseIntrospector
+internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
 {
-    private readonly SqlConnection _connection;
+    private SqlServerIntrospector(SqlConnection connection) : base(connection) { }
 
-    private SqlServerIntrospector(SqlConnection connection)
-    {
-        _connection = connection;
-    }
+    public static Task<SqlServerIntrospector> CreateAsync(string connectionString) =>
+        CreateCoreAsync(new SqlConnection(connectionString), c => new SqlServerIntrospector((SqlConnection)c));
 
-    public static async Task<SqlServerIntrospector> CreateAsync(string connectionString)
+    public override Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
     {
-        var connection = new SqlConnection(connectionString);
-        try
-        {
-            await connection.OpenAsync();
-            return new SqlServerIntrospector(connection);
-        }
-        catch
-        {
-            connection.Dispose();
-            throw;
-        }
-    }
-
-    public async Task<List<TableMetadata>> GetTablesAsync(string? schemaFilter)
-    {
-        var tables = new List<TableMetadata>();
         var schema = schemaFilter ?? "dbo";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT TABLE_NAME, TABLE_SCHEMA
             FROM INFORMATION_SCHEMA.TABLES
             WHERE TABLE_SCHEMA = @schema
               AND TABLE_TYPE = 'BASE TABLE'
-            ORDER BY TABLE_NAME";
-        cmd.Parameters.AddWithValue("@schema", schema);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            tables.Add(new TableMetadata(reader.GetString(0), reader.GetString(1)));
-        }
-
-        return tables;
+            ORDER BY TABLE_NAME",
+            r => new TableMetadata(r.GetString(0), r.GetString(1)),
+            cmd => AddParameter(cmd, "@schema", schema));
     }
 
-    public async Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
+    public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
     {
-        var columns = new List<ColumnMetadata>();
         schema ??= "dbo";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 c.COLUMN_NAME,
                 c.DATA_TYPE,
@@ -72,49 +42,41 @@ internal sealed class SqlServerIntrospector : IDatabaseIntrospector
                 COLUMNPROPERTY(OBJECT_ID(c.TABLE_SCHEMA + '.' + c.TABLE_NAME), c.COLUMN_NAME, 'IsIdentity') AS IsIdentity
             FROM INFORMATION_SCHEMA.COLUMNS c
             WHERE c.TABLE_NAME = @table AND c.TABLE_SCHEMA = @schema
-            ORDER BY c.ORDINAL_POSITION";
-        cmd.Parameters.AddWithValue("@table", tableName);
-        cmd.Parameters.AddWithValue("@schema", schema);
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var dataType = reader.GetString(1).ToUpperInvariant();
-            var maxLen = reader.IsDBNull(3) ? (int?)null : Convert.ToInt32(reader.GetValue(3));
-            var precision = reader.IsDBNull(4) ? (int?)null : Convert.ToInt32(reader.GetValue(4));
-            var scale = reader.IsDBNull(5) ? (int?)null : Convert.ToInt32(reader.GetValue(5));
-
-            // Reconstruct full type name
-            if (maxLen.HasValue && (dataType == "NVARCHAR" || dataType == "VARCHAR" || dataType == "VARBINARY" || dataType == "NCHAR" || dataType == "CHAR" || dataType == "BINARY"))
+            ORDER BY c.ORDINAL_POSITION",
+            r =>
             {
-                dataType = maxLen == -1 ? $"{dataType}(MAX)" : $"{dataType}({maxLen})";
-            }
-            else if (precision.HasValue && (dataType == "DECIMAL" || dataType == "NUMERIC"))
+                var dataType = r.GetString(1).ToUpperInvariant();
+                var maxLen = r.IsDBNull(3) ? (int?)null : Convert.ToInt32(r.GetValue(3));
+                var precision = r.IsDBNull(4) ? (int?)null : Convert.ToInt32(r.GetValue(4));
+                var scale = r.IsDBNull(5) ? (int?)null : Convert.ToInt32(r.GetValue(5));
+
+                if (maxLen.HasValue && (dataType == "NVARCHAR" || dataType == "VARCHAR" || dataType == "VARBINARY" || dataType == "NCHAR" || dataType == "CHAR" || dataType == "BINARY"))
+                    dataType = maxLen == -1 ? $"{dataType}(MAX)" : $"{dataType}({maxLen})";
+                else if (precision.HasValue && (dataType == "DECIMAL" || dataType == "NUMERIC"))
+                    dataType = $"{dataType}({precision},{scale ?? 0})";
+
+                return new ColumnMetadata(
+                    name: r.GetString(0),
+                    dataType: dataType,
+                    isNullable: r.GetString(2) == "YES",
+                    maxLength: maxLen,
+                    precision: precision,
+                    scale: scale,
+                    isIdentity: r.IsDBNull(8) ? false : Convert.ToInt32(r.GetValue(8)) == 1,
+                    defaultExpression: r.IsDBNull(6) ? null : r.GetString(6),
+                    ordinalPosition: r.GetInt32(7));
+            },
+            cmd =>
             {
-                dataType = $"{dataType}({precision},{scale ?? 0})";
-            }
-
-            columns.Add(new ColumnMetadata(
-                name: reader.GetString(0),
-                dataType: dataType,
-                isNullable: reader.GetString(2) == "YES",
-                maxLength: maxLen,
-                precision: precision,
-                scale: scale,
-                isIdentity: reader.IsDBNull(8) ? false : Convert.ToInt32(reader.GetValue(8)) == 1,
-                defaultExpression: reader.IsDBNull(6) ? null : reader.GetString(6),
-                ordinalPosition: reader.GetInt32(7)));
-        }
-
-        return columns;
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@schema", schema);
+            });
     }
 
-    public async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
+    public override async Task<PrimaryKeyMetadata?> GetPrimaryKeyAsync(string tableName, string? schema)
     {
         schema ??= "dbo";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        var rows = await ExecuteListAsync(@"
             SELECT kcu.COLUMN_NAME, tc.CONSTRAINT_NAME
             FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
             JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
@@ -123,30 +85,31 @@ internal sealed class SqlServerIntrospector : IDatabaseIntrospector
             WHERE tc.TABLE_NAME = @table
               AND tc.TABLE_SCHEMA = @schema
               AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
-            ORDER BY kcu.ORDINAL_POSITION";
-        cmd.Parameters.AddWithValue("@table", tableName);
-        cmd.Parameters.AddWithValue("@schema", schema);
+            ORDER BY kcu.ORDINAL_POSITION",
+            r => (Column: r.GetString(0), Constraint: r.GetString(1)),
+            cmd =>
+            {
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@schema", schema);
+            });
 
-        var columns = new List<string>();
+        if (rows.Count == 0) return null;
+
         string? constraintName = null;
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
+        var columns = new List<string>();
+        foreach (var (col, constraint) in rows)
         {
-            columns.Add(reader.GetString(0));
-            constraintName ??= reader.GetString(1);
+            columns.Add(col);
+            constraintName ??= constraint;
         }
 
-        return columns.Count > 0 ? new PrimaryKeyMetadata(constraintName, columns) : null;
+        return new PrimaryKeyMetadata(constraintName, columns);
     }
 
-    public async Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
+    public override Task<List<ForeignKeyMetadata>> GetForeignKeysAsync(string tableName, string? schema)
     {
-        var fks = new List<ForeignKeyMetadata>();
         schema ??= "dbo";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 fk.name AS constraint_name,
                 COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS column_name,
@@ -159,32 +122,22 @@ internal sealed class SqlServerIntrospector : IDatabaseIntrospector
             JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
             JOIN sys.tables rt ON fkc.referenced_object_id = rt.object_id
             WHERE fk.parent_object_id = OBJECT_ID(@qualifiedName)
-            ORDER BY fk.name, fkc.constraint_column_id";
-        cmd.Parameters.AddWithValue("@qualifiedName", $"{schema}.{tableName}");
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            fks.Add(new ForeignKeyMetadata(
-                constraintName: reader.GetString(0),
-                columnName: reader.GetString(1),
-                referencedTable: reader.GetString(2),
-                referencedColumn: reader.GetString(3),
-                referencedSchema: reader.GetString(4),
-                onDelete: NormalizeSqlServerAction(reader.GetString(5)),
-                onUpdate: NormalizeSqlServerAction(reader.GetString(6))));
-        }
-
-        return fks;
+            ORDER BY fk.name, fkc.constraint_column_id",
+            r => new ForeignKeyMetadata(
+                constraintName: r.GetString(0),
+                columnName: r.GetString(1),
+                referencedTable: r.GetString(2),
+                referencedColumn: r.GetString(3),
+                referencedSchema: r.GetString(4),
+                onDelete: NormalizeSqlServerAction(r.GetString(5)),
+                onUpdate: NormalizeSqlServerAction(r.GetString(6))),
+            cmd => AddParameter(cmd, "@qualifiedName", $"{schema}.{tableName}"));
     }
 
-    public async Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
+    public override Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
     {
-        var indexes = new List<IndexMetadata>();
         schema ??= "dbo";
-
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
+        return ExecuteListAsync(@"
             SELECT
                 i.name AS index_name,
                 i.is_unique,
@@ -197,22 +150,13 @@ internal sealed class SqlServerIntrospector : IDatabaseIntrospector
               AND i.name IS NOT NULL
               AND ic.is_included_column = 0
             GROUP BY i.name, i.is_unique, i.is_primary_key
-            ORDER BY i.name";
-        cmd.Parameters.AddWithValue("@qualifiedName", $"{schema}.{tableName}");
-
-        using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            var name = reader.GetString(0);
-            var isUnique = reader.GetBoolean(1);
-            var isPrimary = reader.GetBoolean(2);
-            var colStr = reader.GetString(3);
-            var columns = new List<string>(colStr.Split(','));
-
-            indexes.Add(new IndexMetadata(name, columns, isUnique, isPrimary));
-        }
-
-        return indexes;
+            ORDER BY i.name",
+            r => new IndexMetadata(
+                r.GetString(0),
+                new List<string>(r.GetString(3).Split(',')),
+                r.GetBoolean(1),
+                r.GetBoolean(2)),
+            cmd => AddParameter(cmd, "@qualifiedName", $"{schema}.{tableName}"));
     }
 
     private static string NormalizeSqlServerAction(string action)
@@ -225,10 +169,5 @@ internal sealed class SqlServerIntrospector : IDatabaseIntrospector
             "NO_ACTION" => "NO ACTION",
             _ => "NO ACTION"
         };
-    }
-
-    public void Dispose()
-    {
-        _connection.Dispose();
     }
 }
