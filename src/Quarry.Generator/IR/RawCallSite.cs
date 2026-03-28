@@ -168,6 +168,12 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Non-null when a .Prepare() result variable escapes scope (returned, field-assigned, passed as arg, captured in lambda)
     public string? PreparedQueryEscapeReason { get; }
 
+    // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
+    public string? DisplayClassName { get; set; }
+
+    // Captured variable types: field name → CLR type (for UnsafeAccessor return types)
+    public IReadOnlyDictionary<string, string>? CapturedVariableTypes { get; set; }
+
     /// <summary>
     /// Creates a copy with a different ResultTypeName.
     /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.

@@ -121,6 +121,33 @@ internal static class CarrierAnalyzer
                 return CarrierPlan.Ineligible("empty SQL variant");
         }
 
+        // Build a mapping from parameter GlobalIndex → (DisplayClassName, CapturedVariableTypes)
+        // by walking clause sites. Each clause site owns a contiguous range of global indices.
+        var displayClassByParam = new Dictionary<int, (string? DisplayClassName, System.Collections.Generic.IReadOnlyDictionary<string, string>? VarTypes)>();
+        foreach (var cs in assembled.ClauseSites)
+        {
+            var clause = cs.Clause;
+            if (clause == null) continue;
+            foreach (var p in clause.Parameters)
+            {
+                if (p.IsCaptured && cs.DisplayClassName != null)
+                {
+                    // Find the global index for this clause-local parameter
+                    // by matching via the plan.Parameters list
+                    foreach (var gp in plan.Parameters)
+                    {
+                        if (gp.CapturedFieldName == p.CapturedFieldName
+                            && gp.IsCaptured
+                            && !displayClassByParam.ContainsKey(gp.GlobalIndex))
+                        {
+                            displayClassByParam[gp.GlobalIndex] = (cs.DisplayClassName, cs.CapturedVariableTypes);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
         // Build fields and parameters from QueryPlan.Parameters
         var fields = new List<Models.CarrierField>();
         var staticFields = new List<Models.CarrierStaticField>();
@@ -169,8 +196,47 @@ internal static class CarrierAnalyzer
                     isSensitive: param.IsSensitive));
             }
 
-            if (param.NeedsFieldInfoCache)
-                staticFields.Add(new Models.CarrierStaticField($"F{param.GlobalIndex}", "FieldInfo?", param.GlobalIndex));
+            if (param.NeedsFieldInfoCache && param.CapturedFieldName != null)
+            {
+                // Only emit [UnsafeAccessor] when the variable is actually a closure-captured
+                // local/parameter (present in CapturedVariableTypes). Static/instance field
+                // references on the containing class don't use a display class.
+                if (displayClassByParam.TryGetValue(param.GlobalIndex, out var dcInfo)
+                    && dcInfo.DisplayClassName != null
+                    && dcInfo.VarTypes != null
+                    && dcInfo.VarTypes.ContainsKey(param.CapturedFieldName))
+                {
+                    var capturedType = param.CapturedFieldType ?? param.ClrType;
+                    if (param.CapturedFieldType == null
+                        && dcInfo.VarTypes.TryGetValue(param.CapturedFieldName, out var resolvedType))
+                    {
+                        capturedType = resolvedType;
+                    }
+                    staticFields.Add(new Models.CarrierStaticField(
+                        $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
+                        displayClassName: dcInfo.DisplayClassName,
+                        capturedFieldName: param.CapturedFieldName,
+                        capturedFieldType: capturedType));
+                }
+                else if (displayClassByParam.TryGetValue(param.GlobalIndex, out var dcInfoStatic)
+                         && dcInfoStatic.DisplayClassName != null)
+                {
+                    // Captured variable references a class-level field (static/instance) rather than
+                    // a closure-captured local/parameter. Use UnsafeAccessor(StaticField) on the
+                    // containing class instead of the display class.
+                    var containingType = dcInfoStatic.DisplayClassName;
+                    var displayClassMarker = containingType.IndexOf("+<>c__DisplayClass");
+                    if (displayClassMarker > 0)
+                        containingType = containingType.Substring(0, displayClassMarker);
+                    var capturedType = param.CapturedFieldType ?? param.ClrType;
+                    staticFields.Add(new Models.CarrierStaticField(
+                        $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
+                        displayClassName: containingType,
+                        capturedFieldName: param.CapturedFieldName,
+                        capturedFieldType: capturedType,
+                        isStaticField: true));
+                }
+            }
         }
 
         // Mask field for conditional clauses

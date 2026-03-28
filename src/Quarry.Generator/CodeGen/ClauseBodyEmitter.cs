@@ -34,13 +34,13 @@ internal static class ClauseBodyEmitter
         var clauseInfo = site.Clause;
 
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
-        var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
-            sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
         }
 
         var thisType = site.BuilderTypeName;
@@ -53,13 +53,13 @@ internal static class ClauseBodyEmitter
             var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {receiverType} builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
+            sb.AppendLine($"        Func<{entityType}, bool> {funcParamName})");
         }
         else
         {
             sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
+            sb.AppendLine($"        Func<{entityType}, bool> {funcParamName})");
         }
 
         sb.AppendLine($"    {{");
@@ -117,7 +117,7 @@ internal static class ClauseBodyEmitter
                 var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {receiverType} builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _,");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -127,7 +127,7 @@ internal static class ClauseBodyEmitter
                 var genericReturn = $"{returnType}<T, TResult>";
                 sb.AppendLine($"    public static {genericReturn} {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {genericReceiver} builder,");
-                sb.AppendLine($"        Expression<Func<T, TKey>> _,");
+                sb.AppendLine($"        Func<T, TKey> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
             }
         }
@@ -137,14 +137,14 @@ internal static class ClauseBodyEmitter
             {
                 sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _,");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
             {
                 sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
-                sb.AppendLine($"        Expression<Func<T, TKey>> _,");
+                sb.AppendLine($"        Func<T, TKey> _,");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
             }
         }
@@ -271,7 +271,7 @@ internal static class ClauseBodyEmitter
                 var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {receiverType} builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _)");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> _)");
             }
             else
             {
@@ -279,7 +279,7 @@ internal static class ClauseBodyEmitter
                 var genericReceiver = isAccessor ? $"{thisType}<T>" : $"{thisType}<T, TResult>";
                 sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {genericReceiver} builder,");
-                sb.AppendLine($"        Expression<Func<T, TKey>> _) where T : class");
+                sb.AppendLine($"        Func<T, TKey> _) where T : class");
             }
         }
         else
@@ -288,13 +288,13 @@ internal static class ClauseBodyEmitter
             {
                 sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Expression<Func<{entityType}, {keyType}>> _)");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> _)");
             }
             else
             {
                 sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
-                sb.AppendLine($"        Expression<Func<T, TKey>> _) where T : class");
+                sb.AppendLine($"        Func<T, TKey> _) where T : class");
             }
         }
 
@@ -359,13 +359,13 @@ internal static class ClauseBodyEmitter
             var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {receiverType} builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, bool>> _)");
+            sb.AppendLine($"        Func<{entityType}, bool> _)");
         }
         else
         {
             sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, bool>> _)");
+            sb.AppendLine($"        Func<{entityType}, bool> _)");
         }
 
         sb.AppendLine($"    {{");
@@ -416,7 +416,7 @@ internal static class ClauseBodyEmitter
         {
             sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {returnType}<{entityType}> builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, {resolvedValueType}>> _,");
+            sb.AppendLine($"        Func<{entityType}, {resolvedValueType}> _,");
             sb.AppendLine($"        {resolvedValueType} value)");
             sb.AppendLine($"    {{");
 
@@ -448,13 +448,13 @@ internal static class ClauseBodyEmitter
         var modKind = isDelete ? "Delete" : "Update";
 
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
-        var exprParamName = hasResolvableCapturedParams ? "expr" : "_";
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
         if (methodFields.Count > 0)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
-            sb.AppendLine($"        Justification = \"Closure fields are preserved by the expression tree that references them.\")]");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
         }
 
         var thisType = site.BuilderTypeName;
@@ -464,7 +464,7 @@ internal static class ClauseBodyEmitter
 
         sb.AppendLine($"    public static IExecutable{modKind}Builder<{entityType}> {methodName}(");
         sb.AppendLine($"        this {receiverType} builder,");
-        sb.AppendLine($"        Expression<Func<{entityType}, bool>> {exprParamName})");
+        sb.AppendLine($"        Func<{entityType}, bool> {funcParamName})");
         sb.AppendLine($"    {{");
 
         if (clauseInfo == null || !clauseInfo.IsSuccess)
@@ -511,7 +511,7 @@ internal static class ClauseBodyEmitter
         {
             sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
-            sb.AppendLine($"        Expression<Func<{entityType}, {resolvedValueType}>> _,");
+            sb.AppendLine($"        Func<{entityType}, {resolvedValueType}> _,");
             sb.AppendLine($"        {resolvedValueType} value)");
             sb.AppendLine($"    {{");
 

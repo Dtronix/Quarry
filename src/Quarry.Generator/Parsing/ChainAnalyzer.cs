@@ -769,7 +769,9 @@ internal static class ChainAnalyzer
                 enumUnderlyingType: p.EnumUnderlyingType,
                 needsFieldInfoCache: !suppressFieldInfoCache && p.IsCaptured && p.CanGenerateDirectPath,
                 isDirectAccessible: false, // Computed during carrier analysis
-                collectionAccessExpression: null)); // Computed during carrier analysis
+                collectionAccessExpression: null, // Computed during carrier analysis
+                capturedFieldName: p.CapturedFieldName,
+                capturedFieldType: p.CapturedFieldType));
         }
         return result;
     }
@@ -853,7 +855,9 @@ internal static class ChainAnalyzer
                 entityPropertyExpression: p.EntityPropertyExpression,
                 needsFieldInfoCache: p.NeedsFieldInfoCache,
                 isDirectAccessible: p.IsDirectAccessible,
-                collectionAccessExpression: p.CollectionAccessExpression);
+                collectionAccessExpression: p.CollectionAccessExpression,
+                capturedFieldName: p.CapturedFieldName,
+                capturedFieldType: p.CapturedFieldType);
         }
     }
 
@@ -911,7 +915,9 @@ internal static class ChainAnalyzer
                         entityPropertyExpression: p.EntityPropertyExpression,
                         needsFieldInfoCache: p.NeedsFieldInfoCache,
                         isDirectAccessible: p.IsDirectAccessible,
-                        collectionAccessExpression: p.CollectionAccessExpression);
+                        collectionAccessExpression: p.CollectionAccessExpression,
+                        capturedFieldName: p.CapturedFieldName,
+                        capturedFieldType: p.CapturedFieldType);
                     clauseParams[paramIdx] = enriched;
 
                     // Also update in allParameters if already added

@@ -339,7 +339,9 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         string? entityPropertyExpression = null,
         bool needsFieldInfoCache = false,
         bool isDirectAccessible = false,
-        string? collectionAccessExpression = null)
+        string? collectionAccessExpression = null,
+        string? capturedFieldName = null,
+        string? capturedFieldType = null)
     {
         GlobalIndex = globalIndex;
         ClrType = clrType;
@@ -356,6 +358,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         NeedsFieldInfoCache = needsFieldInfoCache;
         IsDirectAccessible = isDirectAccessible;
         CollectionAccessExpression = collectionAccessExpression;
+        CapturedFieldName = capturedFieldName;
+        CapturedFieldType = capturedFieldType;
     }
 
     public int GlobalIndex { get; }
@@ -373,6 +377,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public bool NeedsFieldInfoCache { get; }
     public bool IsDirectAccessible { get; }
     public string? CollectionAccessExpression { get; }
+    public string? CapturedFieldName { get; }
+    public string? CapturedFieldType { get; }
 
     public bool Equals(QueryParameter? other)
     {

@@ -64,40 +64,74 @@ internal sealed class CarrierField : IEquatable<CarrierField>
 }
 
 /// <summary>
-/// Describes a static field on the carrier class for caching FieldInfo or other
-/// per-chain state that should be isolated to the carrier.
+/// Describes a static member on the carrier class — either an [UnsafeAccessor] extern method
+/// for zero-alloc closure field extraction, or a legacy FieldInfo cache.
 /// </summary>
 internal sealed class CarrierStaticField : IEquatable<CarrierStaticField>
 {
-    public CarrierStaticField(string name, string typeName, int parameterIndex)
+    public CarrierStaticField(string name, string typeName, int parameterIndex,
+        string? displayClassName = null, string? capturedFieldName = null, string? capturedFieldType = null,
+        bool isStaticField = false)
     {
         Name = name;
         TypeName = typeName;
         ParameterIndex = parameterIndex;
+        DisplayClassName = displayClassName;
+        CapturedFieldName = capturedFieldName;
+        CapturedFieldType = capturedFieldType;
+        IsStaticField = isStaticField;
     }
 
     /// <summary>
-    /// Gets the field name (e.g., "F0", "F1").
+    /// Gets the method/field name (e.g., "__ExtractP0").
     /// </summary>
     public string Name { get; }
 
     /// <summary>
-    /// Gets the C# type name (e.g., "FieldInfo?").
+    /// Gets the return type for [UnsafeAccessor] methods (e.g., "decimal").
     /// </summary>
     public string TypeName { get; }
 
     /// <summary>
-    /// Gets the global parameter index this field caches extraction for.
+    /// Gets the global parameter index this accessor extracts.
     /// </summary>
     public int ParameterIndex { get; }
+
+    /// <summary>
+    /// The fully-qualified display class name (e.g., "Namespace.Class+&lt;&gt;c__DisplayClass0_0").
+    /// Used in [UnsafeAccessorType] attribute on the target parameter.
+    /// </summary>
+    public string? DisplayClassName { get; }
+
+    /// <summary>
+    /// The field name on the display class (e.g., "minTotal").
+    /// Used as the Name parameter of [UnsafeAccessor].
+    /// </summary>
+    public string? CapturedFieldName { get; }
+
+    /// <summary>
+    /// The CLR type of the captured field (e.g., "decimal").
+    /// Used as the return type of the [UnsafeAccessor] extern method.
+    /// </summary>
+    public string? CapturedFieldType { get; }
+
+    /// <summary>
+    /// True when the field is a static field on the containing class (not a closure display class field).
+    /// Uses UnsafeAccessorKind.StaticField instead of UnsafeAccessorKind.Field.
+    /// </summary>
+    public bool IsStaticField { get; }
 
     public bool Equals(CarrierStaticField? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
-        return Name == other.Name && TypeName == other.TypeName && ParameterIndex == other.ParameterIndex;
+        return Name == other.Name && TypeName == other.TypeName && ParameterIndex == other.ParameterIndex
+            && DisplayClassName == other.DisplayClassName
+            && CapturedFieldName == other.CapturedFieldName
+            && CapturedFieldType == other.CapturedFieldType
+            && IsStaticField == other.IsStaticField;
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierStaticField);
-    public override int GetHashCode() => HashCode.Combine(Name, TypeName, ParameterIndex);
+    public override int GetHashCode() => HashCode.Combine(Name, TypeName, ParameterIndex, DisplayClassName);
 }

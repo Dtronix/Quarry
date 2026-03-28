@@ -71,6 +71,22 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
     public bool CanGenerateDirectPath => IsCaptured && ExpressionPath != null;
 
     /// <summary>
+    /// Gets or sets the name of the field on the compiler-generated display class
+    /// that holds this captured variable (e.g., "minTotal", "viewModel").
+    /// This is the root variable name — for property chain access like viewModel.SearchTerm,
+    /// this is "viewModel" and the property chain ".SearchTerm" is derived from ValueExpression.
+    /// </summary>
+    public string? CapturedFieldName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the CLR type of the captured field on the display class.
+    /// For simple captures this equals ClrType. For property chain captures
+    /// (e.g., viewModel.SearchTerm), this is the type of the root variable (SearchViewModel),
+    /// not the type of the final expression (string).
+    /// </summary>
+    public string? CapturedFieldType { get; set; }
+
+    /// <summary>
     /// Gets or sets the element type name for collection parameters (e.g., "string", "int").
     /// Only meaningful when <see cref="IsCollection"/> is true.
     /// </summary>
