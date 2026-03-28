@@ -291,10 +291,12 @@ internal static class ProjectionAnalyzer
                         tableAlias: info.Alias);
                 }
 
-                // Placeholder: PropertyName and TableAlias known, types will be enriched later
+                // Placeholder: PropertyName and TableAlias known, types will be enriched later.
+                // Store the entity member name (colName) so enrichment can match by it
+                // even when PropertyName is a user alias (e.g. named tuple elements).
                 return new ProjectedColumn(
                     propertyName: propertyName,
-                    columnName: "",
+                    columnName: colName,
                     clrType: "",
                     fullClrType: "",
                     isNullable: false,
@@ -1441,6 +1443,11 @@ internal static class ProjectionAnalyzer
         int ordinal,
         SqlDialect dialect)
     {
+        // Track the entity member name from member access (e.g. "UserId" from u.UserId)
+        // so that downstream enrichment can match even when the tuple element name differs
+        // (e.g. named tuple (Id: u.UserId) has PropertyName="Id" but member name="UserId").
+        string? sourceMemberName = null;
+
         // Simple column reference: u.Name
         if (expression is MemberAccessExpressionSyntax memberAccess)
         {
@@ -1449,6 +1456,7 @@ internal static class ProjectionAnalyzer
                 identifier.Identifier.Text == lambdaParameterName)
             {
                 var columnPropertyName = memberAccess.Name.Identifier.Text;
+                sourceMemberName = columnPropertyName;
                 if (columnLookup.TryGetValue(columnPropertyName, out var columnInfo))
                 {
                     return new ProjectedColumn(
@@ -1585,10 +1593,13 @@ internal static class ProjectionAnalyzer
             // Get type metadata from the type symbol
             var (isValueType, readerMethodName, _) = ColumnInfo.GetTypeMetadata(typeInfo.Type);
 
-            // For unsupported expressions, we can still generate fallback code
+            // For unsupported expressions, we can still generate fallback code.
+            // Use the source member name (e.g. "UserId" from u.UserId) as the column name
+            // so downstream enrichment from the EntityRegistry can match by entity property name
+            // even when the tuple element name differs (e.g. named tuple Id: u.UserId).
             return new ProjectedColumn(
                 propertyName: propertyName,
-                columnName: "",
+                columnName: sourceMemberName ?? "",
                 clrType: GetSimpleTypeName(typeInfo.Type),
                 fullClrType: typeInfo.Type.ToDisplayString(),
                 isNullable: typeInfo.Nullability.FlowState == NullableFlowState.MaybeNull,

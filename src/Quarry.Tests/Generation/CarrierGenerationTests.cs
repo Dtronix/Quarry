@@ -1748,4 +1748,47 @@ public static class Queries
         // Must NOT be async (no state machine)
         Assert.That(code, Does.Not.Contain("public static async Task<TScalar>"));
     }
+
+    [Test]
+    public void CarrierGeneration_NamedTupleProjection()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Select(u => (Id: u.UserId, Name: u.UserName))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Verify correct tuple type with resolved element types (not error '?' types)
+        Assert.That(code, Does.Contain("(int Id, string Name)"),
+            "Generated code should contain the fully resolved named tuple type");
+        Assert.That(code, Does.Not.Contain("(?)"),
+            "Generated code should not contain error-type casts");
+
+        // Named tuple elements must appear as prefixes in the generated reader delegate
+        Assert.That(code, Does.Contain("Id: r.Get"),
+            "Generated reader should include 'Id:' named element prefix with typed reader call");
+        Assert.That(code, Does.Contain("Name: r.Get"),
+            "Generated reader should include 'Name:' named element prefix with typed reader call");
+    }
 }
