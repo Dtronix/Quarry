@@ -15,7 +15,7 @@ Quarry targets .NET 10. Before you begin, make sure you have:
 Add the Quarry package to your project. The source generator (`Quarry.Generator`) is included automatically:
 
 ```xml
-<PackageReference Include="Quarry" Version="1.0.0" />
+<PackageReference Include="Quarry" Version="*" />
 ```
 
 Enable interceptors by adding your context's namespace to `InterceptorsNamespaces` in your `.csproj`. The generator emits C# 12 interceptor methods into this namespace, which is how it replaces your terminal calls with pre-built SQL at compile time:
@@ -42,7 +42,7 @@ Examples of what the analyzers detect:
 To install:
 
 ```xml
-<PackageReference Include="Quarry.Analyzers" Version="1.0.0"
+<PackageReference Include="Quarry.Analyzers" Version="*"
     OutputItemType="Analyzer"
     ReferenceOutputAssembly="false" />
 ```
