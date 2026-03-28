@@ -979,6 +979,9 @@ internal static class UsageSiteDiscovery
         // Inline constant collection arrays (e.g., new[] { "a", "b" }.Contains(x) → IN ('a', 'b'))
         sqlExpr = IR.SqlExprAnnotator.InlineConstantCollections(sqlExpr, body, semanticModel);
 
+        // Inline constant string values in LIKE patterns (e.g., u.Name.Contains(ReadonlyField) → LIKE '%value%')
+        sqlExpr = IR.SqlExprAnnotator.InlineConstantLikePatterns(sqlExpr, body, semanticModel);
+
         var isDescending = false;
         if ((kind == InterceptorKind.OrderBy || kind == InterceptorKind.ThenBy) &&
             invocation.ArgumentList.Arguments.Count >= 2)

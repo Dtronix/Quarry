@@ -233,10 +233,10 @@ internal class CrossDialectCompositionTests
         QueryTestHarness.AssertDialects(
             lite.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || @p0 || '%' ORDER BY \"UserName\" DESC LIMIT 5",
-            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%' || $1 || '%' ORDER BY \"UserName\" DESC LIMIT 5",
-            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `Email` IS NOT NULL AND `UserName` LIKE CONCAT('%', ?, '%') ORDER BY `UserName` DESC LIMIT 5",
-            ss:     "SELECT [UserName], [Email] FROM [users] WHERE [Email] IS NOT NULL AND [UserName] LIKE '%' + @p0 + '%' ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
+            sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%john%' ORDER BY \"UserName\" DESC LIMIT 5",
+            pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%john%' ORDER BY \"UserName\" DESC LIMIT 5",
+            mysql:  "SELECT `UserName`, `Email` FROM `users` WHERE `Email` IS NOT NULL AND `UserName` LIKE '%john%' ORDER BY `UserName` DESC LIMIT 5",
+            ss:     "SELECT [UserName], [Email] FROM [users] WHERE [Email] IS NOT NULL AND [UserName] LIKE '%john%' ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
 
         // No seed users have "john" in UserName — 0 results
         var results = await lite.ExecuteFetchAllAsync();
