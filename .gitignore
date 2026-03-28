@@ -69,3 +69,6 @@ Cargo.lock
 /test_output
 BenchmarkDotNet.Artifacts
 *.db
+
+# Quarry tool
+.quarry-migrate.lock

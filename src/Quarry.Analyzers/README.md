@@ -161,21 +161,21 @@ Analyzers fire automatically on Quarry query chains. No configuration is needed 
 
 ```csharp
 // QRA101 fires: "Use Any() instead of Count() > 0"
-var hasUsers = await db.Users
+var hasUsers = await db.Users()
     .Where(u => u.IsActive)
     .ExecuteCountAsync() > 0;
 
 // Fix: use Any()
-var hasUsers = await db.Users
+var hasUsers = await db.Users()
     .Where(u => u.IsActive)
     .ExecuteAnyAsync();
 ```
 
 ```csharp
 // QRA201 fires: "Joined table 'Orders' is not referenced in SELECT, WHERE, or ORDER BY"
-var users = await db.Users
-    .Join(db.Orders, (u, o) => u.Id == o.UserId)
-    .Select(u => new { u.Name, u.Email })
+var users = await db.Users()
+    .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+    .Select((u, o) => u.UserName)
     .ExecuteFetchAllAsync();
 ```
 
@@ -183,8 +183,8 @@ var users = await db.Users
 // QRA401 fires: "Query execution inside loop — potential N+1 query"
 foreach (var userId in userIds)
 {
-    var orders = await db.Orders
-        .Where(o => o.UserId == userId)
+    var orders = await db.Orders()
+        .Where(o => o.UserId.Id == userId)
         .ExecuteFetchAllAsync();
 }
 ```

@@ -1496,6 +1496,22 @@ internal static class UsageSiteDiscovery
             {
                 initializerMemberStart = initAssign.SpanStart;
             }
+            // Check LocalFunctionStatementSyntax BEFORE the generic StatementSyntax check,
+            // because LocalFunctionStatementSyntax derives from StatementSyntax and would
+            // otherwise be consumed by the generic handler (which does `continue`), preventing
+            // it from being recognized as a scope boundary. This matters for top-level programs
+            // where there is no enclosing MethodDeclarationSyntax.
+            if (ancestor is LocalFunctionStatementSyntax localFunc)
+            {
+                var filePath = invocation.SyntaxTree.FilePath;
+                if (rootIsBuilderLocal)
+                    return $"{filePath}:{localFunc.Span.Start}:{rootText}";
+                if (assignedVarName != null)
+                    return $"{filePath}:{localFunc.Span.Start}:{assignedVarName}";
+                var scopeKey = initializerMemberStart >= 0 ? initializerMemberStart
+                    : statementStart >= 0 ? statementStart : localFunc.Span.Start;
+                return $"{filePath}:{scopeKey}:{rootText}";
+            }
             if (ancestor is StatementSyntax stmt && !(ancestor is BlockSyntax))
             {
                 statementStart = stmt.SpanStart;
@@ -1515,17 +1531,6 @@ internal static class UsageSiteDiscovery
                 // For initializer members, use the individual member's span for finer differentiation.
                 var scopeKey = initializerMemberStart >= 0 ? initializerMemberStart
                     : statementStart >= 0 ? statementStart : method.Span.Start;
-                return $"{filePath}:{scopeKey}:{rootText}";
-            }
-            if (ancestor is LocalFunctionStatementSyntax localFunc)
-            {
-                var filePath = invocation.SyntaxTree.FilePath;
-                if (rootIsBuilderLocal)
-                    return $"{filePath}:{localFunc.Span.Start}:{rootText}";
-                if (assignedVarName != null)
-                    return $"{filePath}:{localFunc.Span.Start}:{assignedVarName}";
-                var scopeKey = initializerMemberStart >= 0 ? initializerMemberStart
-                    : statementStart >= 0 ? statementStart : localFunc.Span.Start;
                 return $"{filePath}:{scopeKey}:{rootText}";
             }
         }

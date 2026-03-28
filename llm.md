@@ -82,30 +82,32 @@ Multiple contexts with different dialects can coexist. Generator resolves contex
 await using var db = new AppDb(connection);
 
 // Select (tuple, DTO, single column, entity)
-var users = await db.Users
+// NOTE: Entity accessors are methods — db.Users() not db.Users
+// NOTE: OrderBy is on IQueryBuilder<T>, not IEntityAccessor<T> — must come after Where() or Select()
+var users = await db.Users()
     .Where(u => u.IsActive && u.UserId > minId)
-    .OrderBy(u => u.UserName)
     .Select(u => new UserDto { Name = u.UserName })
+    .OrderBy(u => u.UserName)
     .Limit(10).Offset(20)
     .ExecuteFetchAllAsync();
 
 // Aggregates — GroupBy available on IEntityAccessor<T> and IQueryBuilder<T>
-db.Orders.GroupBy(o => o.Status)
+db.Orders().GroupBy(o => o.Status)
     .Having(o => Sql.Count() > 5)
     .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)));
 
 // Joins (2/3/4-table, max 4) — supports whole-entity projection from any alias
-db.Users.Join<Order>((u, o) => u.UserId == o.UserId.Id)
+db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Select((u, o) => (u.UserName, o.Total))
     .Where((u, o) => o.Total > 100);
-// Navigation: db.Users.Join(u => u.Orders)
+// Navigation: db.Users().Join(u => u.Orders)
 // Joined entity projection: .Select((u, o) => o) — projects full entity from alias
 // Also: LeftJoin, RightJoin
 
 // Subqueries on Many<T>
-db.Users.Where(u => u.Orders.Any(o => o.Total > 100));  // EXISTS
-db.Users.Where(u => u.Orders.All(o => o.Status == "paid")); // NOT EXISTS + negated
-db.Users.Where(u => u.Orders.Count() > 5);              // scalar COUNT
+db.Users().Where(u => u.Orders.Any(o => o.Total > 100));  // EXISTS
+db.Users().Where(u => u.Orders.All(o => o.Status == "paid")); // NOT EXISTS + negated
+db.Users().Where(u => u.Orders.Count() > 5);              // scalar COUNT
 
 // Where operators: ==, !=, <, >, <=, >=, &&, ||, !, null checks
 // String: Contains, StartsWith, EndsWith, ToLower, ToUpper, Trim, Substring
@@ -116,19 +118,23 @@ db.Users.Where(u => u.Orders.Count() > 5);              // scalar COUNT
 ### Modifications
 
 ```csharp
+// NOTE: All modifications go through entity accessors — db.Users().Insert(...), NOT db.Insert(...)
+
 // Insert — initializer-aware (only set properties generate columns)
-await db.Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
-var id = await db.Insert(user).ExecuteScalarAsync<int>();
+await db.Users().Insert(new User { UserName = "x", IsActive = true }).ExecuteNonQueryAsync();
+var id = await db.Users().Insert(user).ExecuteScalarAsync<int>();
 
 // Batch insert
 await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
 
 // Update — requires Where() or All()
-await db.Update<User>().Set(u => u.UserName, "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
-await db.Update<User>().Set(new User { UserName = "New" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+// Set() takes Action<T> with assignment syntax, NOT a two-argument selector
+await db.Users().Update().Set(u => u.UserName = "New").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update().Set(u => { u.UserName = "New"; u.IsActive = true; }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Update().Set(new User { UserName = "New" }).Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 
 // Delete — requires Where() or All()
-await db.Delete<User>().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+await db.Users().Delete().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 ```
 
 ### PreparedQuery (Multi-Terminal)
@@ -136,7 +142,7 @@ await db.Delete<User>().Where(u => u.UserId == 1).ExecuteNonQueryAsync();
 `.Prepare()` freezes a chain into `PreparedQuery<TResult>`, allowing multiple terminals on the same compiled chain:
 
 ```csharp
-var q = db.Users.Where(u => u.IsActive).Select(u => u).Prepare();
+var q = db.Users().Where(u => u.IsActive).Select(u => u).Prepare();
 var diag = q.ToDiagnostics();           // inspect SQL
 var all  = await q.ExecuteFetchAllAsync(); // execute
 ```
@@ -204,6 +210,13 @@ All base class methods throw `InvalidOperationException` — generator replaces 
 ### Builder Interfaces
 
 **Query:** `IEntityAccessor<T>` (entry point, includes `GroupBy<TKey>()`) → `IQueryBuilder<T>` (no projection) → `IQueryBuilder<T,TResult>` (with projection, adds execution terminals). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder4<T1,T2,T3,T4>` (± TResult).
+
+**Chain-continuation methods** (`OrderBy`, `ThenBy`, `Limit`, `Offset`, `Distinct`, `WithTimeout`) are on `IQueryBuilder<T>`, NOT on `IEntityAccessor<T>`. They only become available after the first clause (`.Where()`, `.Select()`, `.GroupBy()`) transitions the chain from the entity accessor. Writing `db.Users().OrderBy(...)` directly will not compile — use `db.Users().Where(...).OrderBy(...)` or `db.Users().Select(...).OrderBy(...)`.
+
+**Modification entry points** are on `IEntityAccessor<T>`: `.Insert(entity)`, `.Update()`, `.Delete()`, `.InsertBatch(selector)`. Access via the entity accessor method — `db.Users().Insert(...)`, NOT `db.Insert(...)`.
+
+**Update `.Set()` overloads:** `Set(Action<T> assignment)` uses assignment syntax (`u => u.Name = value` or `u => { u.Name = value; u.Active = true; }`), and `Set(T entity)` uses initializer-aware entity form. There is NO two-argument `Set(selector, value)` overload.
+
 **Modification:** `IDeleteBuilder<T>` → `IExecutableDeleteBuilder<T>` (via Where/All). `IUpdateBuilder<T>` → `IExecutableUpdateBuilder<T>`. `IInsertBuilder<T>`. `IBatchInsertBuilder<T>` → `IExecutableBatchInsert<T>` (via Values).
 **All** support `.Prepare()` → `PreparedQuery<TResult>`.
 
