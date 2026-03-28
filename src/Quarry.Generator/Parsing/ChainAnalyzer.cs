@@ -431,10 +431,10 @@ internal static class ChainAnalyzer
                 var expr = clause.ResolvedExpression;
 
                 // Remap parameters and enrich with column metadata (IsEnum, IsSensitive)
-                // Suppress FieldInfo cache for UpdateSetAction — uses invoke-and-read instead (AOT-safe)
-                var suppressFieldInfo = kind == InterceptorKind.UpdateSetAction;
+                // Suppress UnsafeAccessor for UpdateSetAction — uses invoke-and-read instead (AOT-safe)
+                var suppressAccessor = kind == InterceptorKind.UpdateSetAction;
                 var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex,
-                    suppressFieldInfoCache: suppressFieldInfo);
+                    suppressUnsafeAccessor: suppressAccessor);
                 EnrichParametersFromColumns(clauseParams, expr, executionSite.Bound.Entity, resolvedJoinEntities);
                 parameters.AddRange(clauseParams);
 
@@ -524,7 +524,7 @@ internal static class ChainAnalyzer
                 if (raw.SetActionParameters != null)
                 {
                     var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex,
-                        suppressFieldInfoCache: true);
+                        suppressUnsafeAccessor: true);
                     parameters.AddRange(clauseParams);
                 }
 
@@ -751,7 +751,7 @@ internal static class ChainAnalyzer
     private static List<QueryParameter> RemapParameters(
         IReadOnlyList<ParameterInfo> clauseParams,
         ref int globalIndex,
-        bool suppressFieldInfoCache = false)
+        bool suppressUnsafeAccessor = false)
     {
         var result = new List<QueryParameter>(clauseParams.Count);
         foreach (var p in clauseParams)
@@ -767,7 +767,7 @@ internal static class ChainAnalyzer
                 typeMappingClass: p.CustomTypeMappingClass,
                 isEnum: p.IsEnum,
                 enumUnderlyingType: p.EnumUnderlyingType,
-                needsFieldInfoCache: !suppressFieldInfoCache && p.IsCaptured && p.CanGenerateDirectPath,
+                needsUnsafeAccessor: !suppressUnsafeAccessor && p.IsCaptured && p.CanGenerateDirectPath,
                 isDirectAccessible: false, // Computed during carrier analysis
                 collectionAccessExpression: null, // Computed during carrier analysis
                 capturedFieldName: p.CapturedFieldName,
@@ -853,7 +853,7 @@ internal static class ChainAnalyzer
                 enumUnderlyingType: enumUnderlying,
                 isSensitive: isSensitive,
                 entityPropertyExpression: p.EntityPropertyExpression,
-                needsFieldInfoCache: p.NeedsFieldInfoCache,
+                needsUnsafeAccessor: p.NeedsUnsafeAccessor,
                 isDirectAccessible: p.IsDirectAccessible,
                 collectionAccessExpression: p.CollectionAccessExpression,
                 capturedFieldName: p.CapturedFieldName,
@@ -913,7 +913,7 @@ internal static class ChainAnalyzer
                         enumUnderlyingType: enumUnderlying,
                         isSensitive: isSensitive,
                         entityPropertyExpression: p.EntityPropertyExpression,
-                        needsFieldInfoCache: p.NeedsFieldInfoCache,
+                        needsUnsafeAccessor: p.NeedsUnsafeAccessor,
                         isDirectAccessible: p.IsDirectAccessible,
                         collectionAccessExpression: p.CollectionAccessExpression,
                         capturedFieldName: p.CapturedFieldName,
@@ -1839,7 +1839,7 @@ internal static class ChainAnalyzer
                 if (p.IsCaptured) flags.Add("captured");
                 if (p.IsCollection) flags.Add($"collection<{p.ElementTypeName ?? "?"}>");
                 if (p.IsEnum) flags.Add($"enum({p.EnumUnderlyingType})");
-                if (p.NeedsFieldInfoCache) flags.Add("fieldInfo");
+                if (p.NeedsUnsafeAccessor) flags.Add("unsafeAccessor");
                 if (p.TypeMappingClass != null) flags.Add($"mapping={p.TypeMappingClass}");
                 log(chainUid, $"    P{p.GlobalIndex}: type={p.ClrType}, value={p.ValueExpression}{(flags.Count > 0 ? $", [{string.Join(", ", flags)}]" : "")}");
             }

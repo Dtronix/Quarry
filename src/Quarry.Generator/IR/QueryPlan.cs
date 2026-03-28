@@ -337,7 +337,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         string? enumUnderlyingType = null,
         bool isSensitive = false,
         string? entityPropertyExpression = null,
-        bool needsFieldInfoCache = false,
+        bool needsUnsafeAccessor = false,
         bool isDirectAccessible = false,
         string? collectionAccessExpression = null,
         string? capturedFieldName = null,
@@ -355,7 +355,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         EnumUnderlyingType = enumUnderlyingType;
         IsSensitive = isSensitive;
         EntityPropertyExpression = entityPropertyExpression;
-        NeedsFieldInfoCache = needsFieldInfoCache;
+        NeedsUnsafeAccessor = needsUnsafeAccessor;
         IsDirectAccessible = isDirectAccessible;
         CollectionAccessExpression = collectionAccessExpression;
         CapturedFieldName = capturedFieldName;
@@ -374,7 +374,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public string? EnumUnderlyingType { get; }
     public bool IsSensitive { get; }
     public string? EntityPropertyExpression { get; }
-    public bool NeedsFieldInfoCache { get; }
+    public bool NeedsUnsafeAccessor { get; }
     public bool IsDirectAccessible { get; }
     public string? CollectionAccessExpression { get; }
     public string? CapturedFieldName { get; }

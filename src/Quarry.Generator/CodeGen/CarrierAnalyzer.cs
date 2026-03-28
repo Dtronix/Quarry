@@ -209,7 +209,7 @@ internal static class CarrierAnalyzer
                     isSensitive: param.IsSensitive));
             }
 
-            if (param.NeedsFieldInfoCache && param.CapturedFieldName != null)
+            if (param.NeedsUnsafeAccessor && param.CapturedFieldName != null)
             {
                 // Only emit [UnsafeAccessor] when the variable is actually a closure-captured
                 // local/parameter (present in CapturedVariableTypes). Static/instance field
