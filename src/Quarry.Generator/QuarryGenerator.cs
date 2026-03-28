@@ -18,24 +18,31 @@ using Quarry.Shared.Migration;
 namespace Quarry.Generators;
 
 /// <summary>
-/// Incremental source generator for Quarry schema and entity generation.
+/// Incremental source generator for Quarry schema, interceptor, and migration generation.
 /// </summary>
 /// <remarks>
-/// This generator implements a two-phase scanning approach:
+/// Three pipelines, split between design-time (IDE) and build-time (<c>dotnet build</c>):
 ///
-/// Phase 1 (Context &amp; Schema Discovery):
+/// <b>Design-time (RegisterSourceOutput):</b>
+/// Pipeline 1 — Schema/Context (per-context, no Collect):
 /// 1. Discovers classes decorated with [QuarryContext] attribute
 /// 2. Extracts dialect and database schema configuration
 /// 3. Discovers entities via partial QueryBuilder&lt;T&gt; properties
 /// 4. Parses schema classes to extract column metadata
-/// 5. Generates entity classes and column metadata
+/// 5. Generates entity classes, context partials, and column metadata
+/// Reports QRY003, QRY017, QRY026, QRY027, QRY028 immediately.
 ///
-/// Phase 2 (Usage Site Discovery):
-/// 1. Scans for InvocationExpressionSyntax nodes
-/// 2. Filters for method calls on Quarry builder types
-/// 3. Extracts location info for [InterceptsLocation] attributes
-/// 4. Determines analyzability for optimal vs fallback path
-/// 5. Generates interceptor methods for each usage site
+/// <b>Build-time only (RegisterImplementationSourceOutput):</b>
+/// Pipeline 1 cross-context check — Duplicate TypeMapping detection (QRY016).
+/// Pipeline 2 — Interceptors (6-stage IR: discovery → binding → translation →
+/// chain analysis → assembly → emission). Produces [InterceptsLocation] methods
+/// and carrier classes. Reports QRY001/014-016/019/029-036.
+/// Pipeline 3 — Migrations. Discovers [Migration]/[MigrationSnapshot] classes
+/// and generates MigrateAsync. Reports QRY050–055.
+///
+/// Design-time profile: one CreateSyntaxProvider + one RegisterSourceOutput,
+/// zero Collect() calls. Pipeline 2's syntax predicates are registered but
+/// never pulled because no design-time consumer exists downstream.
 /// </remarks>
 [Generator(LanguageNames.CSharp)]
 public sealed class QuarryGenerator : IIncrementalGenerator
@@ -65,7 +72,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             static (spc, contextInfo) => GenerateEntityAndContextCode(contextInfo, spc));
 
         // Phase 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
-        context.RegisterSourceOutput(contextDeclarations.Collect(),
+        // Build-time only — rare edge case, not needed for IntelliSense.
+        context.RegisterImplementationSourceOutput(contextDeclarations.Collect(),
             static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
 
         // === NEW: Build EntityRegistry from collected contexts ===
@@ -103,10 +111,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .SelectMany(static (data, ct) =>
                 IR.PipelineOrchestrator.AnalyzeAndGroupTranslated(data.Right, data.Left, ct));
 
-        // Per-file output — only regenerates files whose group changed
+        // Per-file output — only regenerates files whose group changed.
+        // Build-time only — interceptors replace builder interface implementations
+        // at compile time via [InterceptsLocation]; not needed for IntelliSense.
         // Combine with CompilationProvider so EmitFileInterceptors can reconstruct
         // source locations for diagnostics (Location.Create needs SyntaxTree).
-        context.RegisterSourceOutput(
+        context.RegisterImplementationSourceOutput(
             perFileGroups.Combine(context.CompilationProvider),
             static (spc, pair) => EmitFileInterceptors(spc, pair.Left, pair.Right));
 
@@ -132,7 +142,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Combine(migrationClasses.Collect())
             .Combine(snapshotClasses.Collect());
 
-        context.RegisterSourceOutput(migrationData,
+        // Build-time only — MigrateAsync is a partial method called at runtime,
+        // not needed for IntelliSense.
+        context.RegisterImplementationSourceOutput(migrationData,
             static (spc, source) => GenerateMigrateAsync(source.Left.Left, source.Left.Right, source.Right, spc));
     }
 
