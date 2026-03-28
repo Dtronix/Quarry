@@ -69,9 +69,8 @@ internal sealed class FileEmitter
         // Required usings
         sb.AppendLine("using System;");
         sb.AppendLine("using System.Data.Common;");
-        sb.AppendLine("using System.Linq.Expressions;");
-        sb.AppendLine("using System.Reflection;");
         sb.AppendLine("using System.Runtime.CompilerServices;");
+        sb.AppendLine("using System.Runtime.InteropServices;");
         sb.AppendLine("using System.Threading;");
         sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using System.Collections.Generic;");

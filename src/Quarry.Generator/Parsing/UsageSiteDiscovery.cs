@@ -757,6 +757,8 @@ internal static class UsageSiteDiscovery
         if (site == null)
             return ImmutableArray<RawCallSite>.Empty;
 
+        EnrichDisplayClassInfo(site, invocation, semanticModel);
+
         // For navigation joins, forward-scan the chain to discover post-join sites
         // that Roslyn can't resolve due to generated entity type inference failure.
         if (site.IsNavigationJoin
@@ -912,7 +914,7 @@ internal static class UsageSiteDiscovery
                 }
             }
 
-            results.Add(new RawCallSite(
+            var postJoinSite = new RawCallSite(
                 methodName: methodName,
                 filePath: filePath,
                 line: line,
@@ -939,7 +941,10 @@ internal static class UsageSiteDiscovery
                 conditionalInfo: conditionalInfo,
                 chainId: chainId,
                 builderTypeName: "IJoinedQueryBuilder",
-                joinedEntityTypeNames: joinedEntityTypeNames));
+                joinedEntityTypeNames: joinedEntityTypeNames);
+
+            EnrichDisplayClassInfo(postJoinSite, parentInvoc, semanticModel);
+            results.Add(postJoinSite);
 
             currentInvoc = parentInvoc;
         }
@@ -1598,8 +1603,8 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Gets the expected lambda parameter count from a method symbol's first Expression parameter.
-    /// For example, Expression&lt;Func&lt;T, bool&gt;&gt; → 1, Expression&lt;Func&lt;T1, T2, bool&gt;&gt; → 2.
+    /// Gets the expected lambda parameter count from a method symbol's first delegate parameter.
+    /// For example, Func&lt;T, bool&gt; → 1, Func&lt;T1, T2, bool&gt; → 2.
     /// </summary>
     private static int GetExpressionLambdaParameterCount(IMethodSymbol method)
     {
@@ -1608,26 +1613,19 @@ internal static class UsageSiteDiscovery
 
         var paramType = method.Parameters[0].Type;
 
-        // Unwrap Expression<TDelegate> → TDelegate
-        if (paramType is INamedTypeSymbol exprType
-            && exprType.Name == "Expression"
-            && exprType.TypeArguments.Length == 1
-            && exprType.TypeArguments[0] is INamedTypeSymbol delegateType)
-        {
-            // Func<T, TResult> has N type args where N-1 are parameters
-            // But for navigation join: Func<T, NavigationList<TJoined>> → 1 param
-            // For condition join: Func<T1, T2, bool> → 2 params
-            return delegateType.TypeArguments.Length - 1;
-        }
-
-        // Raw delegate types: Action<T> has 1 type arg = 1 parameter,
-        // Action<T1, T2> has 2 type args = 2 parameters.
-        // This handles Set(Action<T>) disambiguation from Set(T entity).
+        // Delegate types: Func<T, bool> has 2 type args → 1 parameter,
+        // Action<T> has 1 type arg → 1 parameter.
+        // Func<T, TResult> → N-1 parameters (last type arg is return type).
+        // Action<T1, T2> → N parameters (all type args are parameters).
         if (paramType is INamedTypeSymbol rawDelegate
             && rawDelegate.TypeKind == TypeKind.Delegate
             && rawDelegate.TypeArguments.Length > 0)
         {
-            return rawDelegate.TypeArguments.Length;
+            // Func<> returns the last type arg, so parameter count = Length - 1
+            // Action<> has no return type, so parameter count = Length
+            return rawDelegate.Name.StartsWith("Func")
+                ? rawDelegate.TypeArguments.Length - 1
+                : rawDelegate.TypeArguments.Length;
         }
 
         return 0;
@@ -1639,17 +1637,7 @@ internal static class UsageSiteDiscovery
     /// </summary>
     private static bool IsDelegateParameterType(ITypeSymbol type)
     {
-        if (type.TypeKind == TypeKind.Delegate)
-            return true;
-
-        // Expression<Func<...>> is a class, not a delegate, but should be treated as
-        // a delegate-like parameter for overload disambiguation (e.g., Insert(entity) vs Insert(lambda))
-        if (type is INamedTypeSymbol namedType
-            && namedType.IsGenericType
-            && namedType.ToDisplayString().StartsWith("System.Linq.Expressions.Expression<"))
-            return true;
-
-        return false;
+        return type.TypeKind == TypeKind.Delegate;
     }
 
     private static bool IsNavigationJoinLambda(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
@@ -3122,5 +3110,32 @@ internal static class UsageSiteDiscovery
             "TimeOnly" or "System.TimeOnly" => "GetFieldValue<TimeOnly>",
             _ => "GetValue"
         };
+    }
+
+    /// <summary>
+    /// Enriches a RawCallSite with display class name and captured variable types
+    /// for UnsafeAccessor-based closure field extraction.
+    /// </summary>
+    private static void EnrichDisplayClassInfo(
+        RawCallSite site,
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel)
+    {
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return;
+
+        var arg = invocation.ArgumentList.Arguments[0].Expression;
+        if (arg is not LambdaExpressionSyntax lambda)
+            return;
+
+        var enclosing = semanticModel.GetEnclosingSymbol(invocation.SpanStart);
+        while (enclosing != null && enclosing is not IMethodSymbol)
+            enclosing = enclosing.ContainingSymbol;
+
+        if (enclosing is not IMethodSymbol method)
+            return;
+
+        site.DisplayClassName = DisplayClassNameResolver.Resolve(method, lambda, semanticModel);
+        site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(lambda, semanticModel);
     }
 }

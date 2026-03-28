@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Linq.Expressions;
 
 namespace Quarry;
 
@@ -15,7 +14,7 @@ public interface IQueryBuilder<T> where T : class
     /// <summary>
     /// Adds a WHERE clause to filter rows.
     /// </summary>
-    IQueryBuilder<T> Where(Expression<Func<T, bool>> predicate)
+    IQueryBuilder<T> Where(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
@@ -27,13 +26,13 @@ public interface IQueryBuilder<T> where T : class
     /// <summary>
     /// Specifies the primary sort order.
     /// </summary>
-    IQueryBuilder<T> OrderBy<TKey>(Expression<Func<T, TKey>> keySelector, Direction direction = Direction.Ascending)
+    IQueryBuilder<T> OrderBy<TKey>(Func<T, TKey> keySelector, Direction direction = Direction.Ascending)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.OrderBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Specifies an additional sort order.
     /// </summary>
-    IQueryBuilder<T> ThenBy<TKey>(Expression<Func<T, TKey>> keySelector, Direction direction = Direction.Ascending)
+    IQueryBuilder<T> ThenBy<TKey>(Func<T, TKey> keySelector, Direction direction = Direction.Ascending)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ThenBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
@@ -63,43 +62,43 @@ public interface IQueryBuilder<T> where T : class
     /// <summary>
     /// Groups rows by the specified key selector.
     /// </summary>
-    IQueryBuilder<T> GroupBy<TKey>(Expression<Func<T, TKey>> keySelector)
+    IQueryBuilder<T> GroupBy<TKey>(Func<T, TKey> keySelector)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.GroupBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Filters groups using the specified predicate.
     /// </summary>
-    IQueryBuilder<T> Having(Expression<Func<T, bool>> predicate)
+    IQueryBuilder<T> Having(Func<T, bool> predicate)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Having is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds an INNER JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a LEFT JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a RIGHT JOIN with another table using an explicit condition.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> RightJoin<TJoined>(Expression<Func<T, TJoined, bool>> condition) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> RightJoin<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds an INNER JOIN via a navigation property relationship.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Join is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Adds a LEFT JOIN via a navigation property relationship.
     /// </summary>
-    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Expression<Func<T, NavigationList<TJoined>>> navigation) where TJoined : class
+    IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
@@ -129,19 +128,19 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// <summary>
     /// Adds a WHERE clause to filter rows.
     /// </summary>
-    IQueryBuilder<TEntity, TResult> Where(Expression<Func<TEntity, bool>> predicate)
+    IQueryBuilder<TEntity, TResult> Where(Func<TEntity, bool> predicate)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Where is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Specifies the primary sort order.
     /// </summary>
-    IQueryBuilder<TEntity, TResult> OrderBy<TKey>(Expression<Func<TEntity, TKey>> keySelector, Direction direction = Direction.Ascending)
+    IQueryBuilder<TEntity, TResult> OrderBy<TKey>(Func<TEntity, TKey> keySelector, Direction direction = Direction.Ascending)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.OrderBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Specifies an additional sort order.
     /// </summary>
-    IQueryBuilder<TEntity, TResult> ThenBy<TKey>(Expression<Func<TEntity, TKey>> keySelector, Direction direction = Direction.Ascending)
+    IQueryBuilder<TEntity, TResult> ThenBy<TKey>(Func<TEntity, TKey> keySelector, Direction direction = Direction.Ascending)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ThenBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
@@ -171,13 +170,13 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// <summary>
     /// Groups rows by the specified key selector.
     /// </summary>
-    IQueryBuilder<TEntity, TResult> GroupBy<TKey>(Expression<Func<TEntity, TKey>> keySelector)
+    IQueryBuilder<TEntity, TResult> GroupBy<TKey>(Func<TEntity, TKey> keySelector)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.GroupBy is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Filters groups using the specified predicate.
     /// </summary>
-    IQueryBuilder<TEntity, TResult> Having(Expression<Func<TEntity, bool>> predicate)
+    IQueryBuilder<TEntity, TResult> Having(Func<TEntity, bool> predicate)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Having is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>

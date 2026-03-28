@@ -357,91 +357,32 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
-    /// Generates inline expression tree navigation code for a path segment.
-    /// Each segment maps to a specific Unsafe.As cast and property access.
+    /// Generates [UnsafeAccessor]-based extraction code for captured parameters.
+    /// Emits direct calls to the pre-emitted __ExtractP{n} methods on the carrier class.
+    /// For property chain captures, appends the property suffix.
     /// </summary>
-    private static string GenerateSegmentNavigation(string segment, string prevExpr)
+    internal static void GenerateUnsafeAccessorExtraction(
+        StringBuilder sb, string carrierClassName, IReadOnlyList<IR.QueryParameter> capturedParams, int globalParamOffset)
     {
-        // Handle Arguments[N] format
-        if (segment.StartsWith("Arguments["))
+        foreach (var param in capturedParams)
         {
-            var idx = segment.Substring("Arguments[".Length, segment.IndexOf(']') - "Arguments[".Length);
-            return $"Unsafe.As<MethodCallExpression>({prevExpr}).Arguments[{idx}]";
-        }
-
-        // Handle Expressions[N] format (NewArrayExpression for params arrays)
-        if (segment.StartsWith("Expressions["))
-        {
-            var idx = segment.Substring("Expressions[".Length, segment.IndexOf(']') - "Expressions[".Length);
-            return $"Unsafe.As<NewArrayExpression>({prevExpr}).Expressions[{idx}]";
-        }
-
-        return segment switch
-        {
-            "Body" => $"{prevExpr}.Body",
-            "Left" => $"Unsafe.As<BinaryExpression>({prevExpr}).Left",
-            "Right" => $"Unsafe.As<BinaryExpression>({prevExpr}).Right",
-            "Operand" => $"Unsafe.As<UnaryExpression>({prevExpr}).Operand",
-            "Object" => $"Unsafe.As<MethodCallExpression>({prevExpr}).Object!",
-            "LambdaBody" => $"Unsafe.As<LambdaExpression>({prevExpr}).Body",
-            "Expression" => $"Unsafe.As<MemberExpression>({prevExpr}).Expression!",
-            "Test" => $"Unsafe.As<ConditionalExpression>({prevExpr}).Test",
-            "IfTrue" => $"Unsafe.As<ConditionalExpression>({prevExpr}).IfTrue",
-            "IfFalse" => $"Unsafe.As<ConditionalExpression>({prevExpr}).IfFalse",
-            _ => throw new InvalidOperationException($"Unknown path segment: {segment}")
-        };
-    }
-
-    /// <summary>
-    /// Generates inline navigation code that arrives at the MemberExpression for a given path.
-    /// Returns the variable name holding the final MemberExpression.
-    /// </summary>
-    /// <remarks>
-    /// For enum captured variables, the C# compiler inserts a UnaryExpression(Convert) node
-    /// wrapping the MemberExpression. The generated code uses a pattern match to unwrap it.
-    /// </remarks>
-    private static string GenerateInlineNavigation(StringBuilder sb, string path, int paramIndex)
-    {
-        var segments = path.Split('.');
-        // "Body" is the first segment — navigate from expr
-        // The remaining segments (except the last, which is the MemberExpression itself)
-        // are intermediate casts. We build a single chained expression.
-
-        // Build the chain from the inside out
-        var currentExpr = "expr";
-        foreach (var segment in segments)
-        {
-            currentExpr = GenerateSegmentNavigation(segment, currentExpr);
-        }
-
-        // The final node is a MemberExpression, but for enum captured variables
-        // the compiler inserts a UnaryExpression(Convert) wrapper that must be stripped.
-        var nodeVar = $"_n{paramIndex}";
-        var memberVar = $"_m{paramIndex}";
-        sb.AppendLine($"        var {nodeVar} = {currentExpr};");
-        sb.AppendLine($"        var {memberVar} = {nodeVar} is UnaryExpression _u{paramIndex} ? Unsafe.As<MemberExpression>(_u{paramIndex}.Operand) : Unsafe.As<MemberExpression>({nodeVar});");
-        return memberVar;
-    }
-
-    /// <summary>
-    /// Generates cached extractor code using static fields for all captured parameters.
-    /// For simple closure field captures (the common case), caches the FieldInfo in a static
-    /// field for fast repeated access. For property chains (e.g., input.Email), falls back
-    /// to the generic ExtractMemberChainValue helper.
-    /// </summary>
-    internal static void GenerateCachedExtraction(StringBuilder sb, List<CachedExtractorField> fields)
-    {
-        foreach (var field in fields)
-        {
-            sb.AppendLine($"        // Inline extraction: {field.ExpressionPath}");
-            var memberVar = GenerateInlineNavigation(sb, field.ExpressionPath, field.ParameterIndex);
-            // Cache FieldInfo when the MemberExpression targets a closure field directly
-            // (Expression is ConstantExpression). For property chains (Expression is another
-            // MemberExpression), FieldInfo caching doesn't apply — use generic extraction.
-            sb.AppendLine($"        {field.FieldName} ??= {memberVar}.Expression is ConstantExpression ? {memberVar}.Member as FieldInfo : null;");
-            sb.AppendLine($"        var p{field.ParameterIndex} = {field.FieldName} != null");
-            sb.AppendLine($"            ? {field.FieldName}.GetValue(Unsafe.As<ConstantExpression>({memberVar}.Expression!).Value)");
-            sb.AppendLine($"            : Quarry.Internal.ExpressionHelper.ExtractMemberChainValue({memberVar});");
+            if (!param.IsCaptured || param.CapturedFieldName == null) continue;
+            var globalIdx = globalParamOffset + param.GlobalIndex;
+            var castType = param.ClrType == "?" || param.ClrType == "object"
+                ? "object?"
+                : param.ClrType;
+            var propertySuffix = "";
+            if (param.ValueExpression != null && param.CapturedFieldName != null)
+            {
+                var idx = param.ValueExpression.IndexOf(param.CapturedFieldName);
+                if (idx >= 0)
+                {
+                    var afterField = idx + param.CapturedFieldName.Length;
+                    if (afterField < param.ValueExpression.Length && param.ValueExpression[afterField] == '.')
+                        propertySuffix = param.ValueExpression.Substring(afterField);
+                }
+            }
+            sb.AppendLine($"        __c.P{globalIdx} = ({castType}){carrierClassName}.__ExtractP{globalIdx}(func.Target!){propertySuffix};");
         }
     }
 
