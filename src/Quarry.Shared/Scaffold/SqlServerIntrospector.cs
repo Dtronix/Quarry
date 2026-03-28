@@ -23,7 +23,7 @@ internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
               AND TABLE_TYPE = 'BASE TABLE'
             ORDER BY TABLE_NAME",
             r => new TableMetadata(r.GetString(0), r.GetString(1)),
-            cmd => AddParameter(cmd,"@schema", schema));
+            cmd => AddParameter(cmd, "@schema", schema));
     }
 
     public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
@@ -68,8 +68,8 @@ internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
             },
             cmd =>
             {
-                AddParameter(cmd,"@table", tableName);
-                AddParameter(cmd,"@schema", schema);
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@schema", schema);
             });
     }
 
@@ -89,8 +89,8 @@ internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
             r => (Column: r.GetString(0), Constraint: r.GetString(1)),
             cmd =>
             {
-                AddParameter(cmd,"@table", tableName);
-                AddParameter(cmd,"@schema", schema);
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@schema", schema);
             });
 
         if (rows.Count == 0) return null;
@@ -131,7 +131,7 @@ internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
                 referencedSchema: r.GetString(4),
                 onDelete: NormalizeSqlServerAction(r.GetString(5)),
                 onUpdate: NormalizeSqlServerAction(r.GetString(6))),
-            cmd => AddParameter(cmd,"@qualifiedName", $"{schema}.{tableName}"));
+            cmd => AddParameter(cmd, "@qualifiedName", $"{schema}.{tableName}"));
     }
 
     public override Task<List<IndexMetadata>> GetIndexesAsync(string tableName, string? schema)
@@ -156,7 +156,7 @@ internal sealed class SqlServerIntrospector : DatabaseIntrospectorBase
                 new List<string>(r.GetString(3).Split(',')),
                 r.GetBoolean(1),
                 r.GetBoolean(2)),
-            cmd => AddParameter(cmd,"@qualifiedName", $"{schema}.{tableName}"));
+            cmd => AddParameter(cmd, "@qualifiedName", $"{schema}.{tableName}"));
     }
 
     private static string NormalizeSqlServerAction(string action)

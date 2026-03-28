@@ -23,7 +23,7 @@ internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
               AND table_type = 'BASE TABLE'
             ORDER BY table_name",
             r => new TableMetadata(r.GetString(0), r.GetString(1)),
-            cmd => AddParameter(cmd,"schema", schema));
+            cmd => AddParameter(cmd, "schema", schema));
     }
 
     public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
@@ -73,8 +73,8 @@ internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
             },
             cmd =>
             {
-                AddParameter(cmd,"table", tableName);
-                AddParameter(cmd,"schema", schema);
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
             });
     }
 
@@ -95,8 +95,8 @@ internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
             r => (Column: r.GetString(0), Constraint: r.GetString(1)),
             cmd =>
             {
-                AddParameter(cmd,"table", tableName);
-                AddParameter(cmd,"schema", schema);
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
             });
 
         if (rows.Count == 0) return null;
@@ -160,8 +160,8 @@ internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
                 onUpdate: r.GetString(6)),
             cmd =>
             {
-                AddParameter(cmd,"table", tableName);
-                AddParameter(cmd,"schema", schema);
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
             });
     }
 
@@ -191,8 +191,8 @@ internal sealed class PostgreSqlIntrospector : DatabaseIntrospectorBase
             },
             cmd =>
             {
-                AddParameter(cmd,"table", tableName);
-                AddParameter(cmd,"schema", schema);
+                AddParameter(cmd, "table", tableName);
+                AddParameter(cmd, "schema", schema);
             });
     }
 }

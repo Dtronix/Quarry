@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Common;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 
@@ -94,10 +95,10 @@ internal sealed class SqliteIntrospector : DatabaseIntrospectorBase
                 $"PRAGMA index_info({QuoteIdentifier(name)})",
                 r => r.IsDBNull(2) ? null : r.GetString(2));
 
-            var nonNullColumns = columns.FindAll(c => c != null)!;
+            var nonNullColumns = columns.Where(c => c != null).Select(c => c!).ToList();
             if (nonNullColumns.Count > 0)
             {
-                indexes.Add(new IndexMetadata(name, nonNullColumns!, isUnique, isPrimaryKey: origin == "pk"));
+                indexes.Add(new IndexMetadata(name, nonNullColumns, isUnique, isPrimaryKey: origin == "pk"));
             }
         }
 

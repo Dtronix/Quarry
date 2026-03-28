@@ -27,7 +27,7 @@ internal sealed class MySqlIntrospector : DatabaseIntrospectorBase
               AND TABLE_TYPE = 'BASE TABLE'
             ORDER BY TABLE_NAME",
             r => new TableMetadata(r.GetString(0), r.GetString(1)),
-            cmd => AddParameter(cmd,"@db", _database));
+            cmd => AddParameter(cmd, "@db", _database));
     }
 
     public override Task<List<ColumnMetadata>> GetColumnsAsync(string tableName, string? schema)
@@ -68,8 +68,8 @@ internal sealed class MySqlIntrospector : DatabaseIntrospectorBase
             },
             cmd =>
             {
-                AddParameter(cmd,"@table", tableName);
-                AddParameter(cmd,"@db", _database);
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@db", _database);
             });
     }
 
@@ -88,8 +88,8 @@ internal sealed class MySqlIntrospector : DatabaseIntrospectorBase
             r => (Column: r.GetString(0), Constraint: r.GetString(1)),
             cmd =>
             {
-                AddParameter(cmd,"@table", tableName);
-                AddParameter(cmd,"@db", _database);
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@db", _database);
             });
 
         if (rows.Count == 0) return null;
@@ -133,8 +133,8 @@ internal sealed class MySqlIntrospector : DatabaseIntrospectorBase
                 onUpdate: r.GetString(6)),
             cmd =>
             {
-                AddParameter(cmd,"@table", tableName);
-                AddParameter(cmd,"@db", _database);
+                AddParameter(cmd, "@table", tableName);
+                AddParameter(cmd, "@db", _database);
             });
     }
 
