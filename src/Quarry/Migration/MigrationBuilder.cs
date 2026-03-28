@@ -13,6 +13,8 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder CreateTable(string name, string? schema, Action<TableBuilder> configure)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentNullException.ThrowIfNull(configure);
         var tb = new TableBuilder(name, schema);
         configure(tb);
         _operations.Add(new CreateTableOperation(name, schema, tb.Build()));
@@ -21,24 +23,32 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder DropTable(string name, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _operations.Add(new DropTableOperation(name, schema));
         return this;
     }
 
     public MigrationBuilder RenameTable(string oldName, string newName, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
         _operations.Add(new RenameTableOperation(oldName, newName, schema));
         return this;
     }
 
     public MigrationBuilder RenameTable(string oldName, string newName, string? oldSchema, string? newSchema)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
         _operations.Add(new RenameTableOperation(oldName, newName, oldSchema, newSchema));
         return this;
     }
 
     public MigrationBuilder AddColumn(string table, string column, Action<ColumnBuilder> configure)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ArgumentNullException.ThrowIfNull(configure);
         var cb = new ColumnBuilder();
         configure(cb);
         _operations.Add(new AddColumnOperation(table, null, column, cb.Build()));
@@ -47,18 +57,26 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder DropColumn(string table, string column)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
         _operations.Add(new DropColumnOperation(table, null, column));
         return this;
     }
 
     public MigrationBuilder RenameColumn(string table, string oldName, string newName)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(oldName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(newName);
         _operations.Add(new RenameColumnOperation(table, null, oldName, newName));
         return this;
     }
 
     public MigrationBuilder AlterColumn(string table, string column, Action<ColumnBuilder> configure)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ArgumentNullException.ThrowIfNull(configure);
         var cb = new ColumnBuilder();
         configure(cb);
         _operations.Add(new AlterColumnOperation(table, null, column, cb.Build()));
@@ -70,35 +88,50 @@ public sealed class MigrationBuilder
         ForeignKeyAction? onDelete = null,
         ForeignKeyAction? onUpdate = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentException.ThrowIfNullOrWhiteSpace(column);
+        ArgumentException.ThrowIfNullOrWhiteSpace(refTable);
+        ArgumentException.ThrowIfNullOrWhiteSpace(refColumn);
         _operations.Add(new AddForeignKeyOperation(name, table, null, column, refTable, refColumn, onDelete, onUpdate));
         return this;
     }
 
     public MigrationBuilder DropForeignKey(string name, string table)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
         _operations.Add(new DropForeignKeyOperation(name, table, null));
         return this;
     }
 
     public MigrationBuilder AddIndex(string name, string table, string[] columns, bool unique = false, string? filter = null, bool[]? descending = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(columns);
         _operations.Add(new AddIndexOperation(name, table, null, columns, unique, filter, descending));
         return this;
     }
 
     public MigrationBuilder DropIndex(string name, string table)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
         _operations.Add(new DropIndexOperation(name, table, null));
         return this;
     }
 
     public MigrationBuilder InsertData(string table, object row, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
         return InsertData(table, new[] { row }, schema);
     }
 
     public MigrationBuilder InsertData(string table, object[] rows, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(rows);
         if (rows.Length == 0)
             throw new ArgumentException("At least one row must be provided.", nameof(rows));
 
@@ -120,6 +153,9 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder UpdateData(string table, object set, object where, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(set);
+        ArgumentNullException.ThrowIfNull(where);
         var (setCols, setVals) = ExtractProperties(set);
         var (whereCols, whereVals) = ExtractProperties(where);
         _operations.Add(new UpdateDataOperation(table, schema, setCols, setVals, whereCols, whereVals));
@@ -128,6 +164,8 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder DeleteData(string table, object where, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(table);
+        ArgumentNullException.ThrowIfNull(where);
         var (whereCols, whereVals) = ExtractProperties(where);
         _operations.Add(new DeleteDataOperation(table, schema, whereCols, whereVals));
         return this;
@@ -135,42 +173,53 @@ public sealed class MigrationBuilder
 
     public MigrationBuilder Sql(string sql)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         _operations.Add(new RawSqlOperation(sql));
         return this;
     }
 
     public MigrationBuilder CreateView(string name, string sql, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         _operations.Add(new CreateViewOperation(name, schema, sql));
         return this;
     }
 
     public MigrationBuilder DropView(string name, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _operations.Add(new DropViewOperation(name, schema));
         return this;
     }
 
     public MigrationBuilder AlterView(string name, string sql, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         _operations.Add(new AlterViewOperation(name, schema, sql));
         return this;
     }
 
     public MigrationBuilder CreateProcedure(string name, string sql, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         _operations.Add(new CreateProcedureOperation(name, schema, sql));
         return this;
     }
 
     public MigrationBuilder DropProcedure(string name, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
         _operations.Add(new DropProcedureOperation(name, schema));
         return this;
     }
 
     public MigrationBuilder AlterProcedure(string name, string sql, string? schema = null)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sql);
         _operations.Add(new AlterProcedureOperation(name, schema, sql));
         return this;
     }

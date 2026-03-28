@@ -507,7 +507,7 @@ public static class MigrationRunner
         using var reader = await cmd.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
-            map[reader.GetInt32(0)] = reader.GetString(1);
+            map[reader.GetInt32(0)] = reader.IsDBNull(1) ? "" : reader.GetString(1);
         }
         return map;
     }

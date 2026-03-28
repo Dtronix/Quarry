@@ -12,6 +12,9 @@ internal static class ScalarConverter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static TScalar Convert<TScalar>(object result)
     {
+        if (result is null or DBNull)
+            return default!;
+
         // The JIT recognizes typeof(T) == typeof(X) as a constant per generic instantiation
         // and eliminates all non-matching branches, producing a direct Convert.ToXxx call.
 

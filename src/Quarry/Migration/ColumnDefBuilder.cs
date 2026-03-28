@@ -25,7 +25,7 @@ public sealed class ColumnDefBuilder
 
     public ColumnDefBuilder Name(string name) { _name = name; return this; }
     public ColumnDefBuilder ClrType(string clrType) { _clrType = clrType; return this; }
-    public ColumnDefBuilder Nullable() { _isNullable = true; return this; }
+    public ColumnDefBuilder Nullable(bool nullable = true) { _isNullable = nullable; return this; }
     public ColumnDefBuilder PrimaryKey() { _kind = ColumnKind.PrimaryKey; return this; }
     public ColumnDefBuilder ForeignKey(string referencedEntityName)
     {
@@ -40,7 +40,7 @@ public sealed class ColumnDefBuilder
     public ColumnDefBuilder Collation(string collation) { _collation = collation; return this; }
     public ColumnDefBuilder Length(int maxLength) { _maxLength = maxLength; return this; }
     public ColumnDefBuilder Precision(int precision, int scale) { _precision = precision; _scale = scale; return this; }
-    public ColumnDefBuilder Default(string expression) { _hasDefault = true; _defaultExpression = expression; return this; }
+    public ColumnDefBuilder DefaultValue(string expression) { _hasDefault = true; _defaultExpression = expression; return this; }
     public ColumnDefBuilder HasDefault() { _hasDefault = true; return this; }
     public ColumnDefBuilder MapTo(string mappedName) { _mappedName = mappedName; return this; }
     public ColumnDefBuilder CustomTypeMapping(string mapping) { _customTypeMapping = mapping; return this; }

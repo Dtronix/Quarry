@@ -93,7 +93,7 @@ internal static partial class M0001_InitialCreate
             .AddColumn(c => c.Name("PasswordHash").ClrType("byte[]"))
             .AddColumn(c => c.Name("Salt").ClrType("byte[]"))
             .AddColumn(c => c.Name("Role").ClrType("int"))
-            .AddColumn(c => c.Name("IsActive").ClrType("bool").Default("1"))
+            .AddColumn(c => c.Name("IsActive").ClrType("bool").DefaultValue("1"))
             .AddColumn(c => c.Name("CreatedAt").ClrType("DateTime"))
             .AddColumn(c => c.Name("LastLoginAt").ClrType("DateTime").Nullable())
             .AddIndex("IX_Email", ["Email"], isUnique: true)
