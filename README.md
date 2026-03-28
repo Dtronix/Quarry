@@ -117,13 +117,10 @@ The generator emits an interceptor that replaces the `ExecuteFetchAllAsync` call
 ## Installation
 
 ```xml
-<PackageReference Include="Quarry" Version="1.0.0" />
-<PackageReference Include="Quarry.Generator" Version="1.0.0"
-    OutputItemType="Analyzer"
-    ReferenceOutputAssembly="false" />
+<PackageReference Include="Quarry" Version="*" />
 ```
 
-Enable interceptors by adding your `QuarryContext` namespace to `InterceptorsNamespaces` in your `.csproj`:
+Enable interceptors by adding your context's namespace to `InterceptorsNamespaces` in your `.csproj`:
 
 ```xml
 <PropertyGroup>
@@ -136,7 +133,7 @@ Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass
 Optional: add compile-time query analysis rules:
 
 ```xml
-<PackageReference Include="Quarry.Analyzers" Version="1.0.0"
+<PackageReference Include="Quarry.Analyzers" Version="*"
     OutputItemType="Analyzer"
     ReferenceOutputAssembly="false" />
 ```
