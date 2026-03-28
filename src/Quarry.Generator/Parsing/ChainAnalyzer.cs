@@ -1080,14 +1080,30 @@ internal static class ChainAnalyzer
 
                     if (isJoined && perAliasLookup != null && col.TableAlias != null)
                     {
-                        // Multi-entity: match by TableAlias + PropertyName
+                        // Multi-entity: match by TableAlias + PropertyName, then ColumnName
                         if (perAliasLookup.TryGetValue(col.TableAlias, out var aliasLookup))
-                            aliasLookup.TryGetValue(col.PropertyName, out entityCol);
+                        {
+                            if (!aliasLookup.TryGetValue(col.PropertyName, out entityCol)
+                                && !string.IsNullOrEmpty(col.ColumnName))
+                            {
+                                // Named tuple elements have PropertyName != entity property name
+                                // (e.g. "Id" vs "UserId"), so fall back to ColumnName which
+                                // stores the original entity member name from the expression.
+                                aliasLookup.TryGetValue(col.ColumnName, out entityCol);
+                            }
+                        }
                     }
                     else if (entityColumnLookup != null)
                     {
-                        // Single-entity: match by PropertyName
-                        entityColumnLookup.TryGetValue(col.PropertyName, out entityCol);
+                        // Single-entity: match by PropertyName, then ColumnName
+                        if (!entityColumnLookup.TryGetValue(col.PropertyName, out entityCol)
+                            && !string.IsNullOrEmpty(col.ColumnName))
+                        {
+                            // Named tuple elements have PropertyName != entity property name
+                            // (e.g. "Id" vs "UserId"), so fall back to ColumnName which
+                            // stores the original entity member name from the expression.
+                            entityColumnLookup.TryGetValue(col.ColumnName, out entityCol);
+                        }
                     }
 
                     if (entityCol != null)

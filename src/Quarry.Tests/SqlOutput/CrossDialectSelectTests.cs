@@ -307,6 +307,62 @@ internal class CrossDialectSelectTests
     }
 
     [Test]
+    public async Task Select_NamedTuple_TwoColumns()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (Id: u.UserId, Name: u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            Pg.Users().Select(u => (Id: u.UserId, Name: u.UserName)).ToDiagnostics(),
+            My.Users().Select(u => (Id: u.UserId, Name: u.UserName)).ToDiagnostics(),
+            Ss.Users().Select(u => (Id: u.UserId, Name: u.UserName)).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users`",
+            ss:     "SELECT [UserId], [UserName] FROM [users]");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        // Verify named element access works
+        Assert.That(results[0].Id, Is.EqualTo(1));
+        Assert.That(results[0].Name, Is.EqualTo("Alice"));
+        Assert.That(results[1].Id, Is.EqualTo(2));
+        Assert.That(results[1].Name, Is.EqualTo("Bob"));
+        Assert.That(results[2].Id, Is.EqualTo(3));
+        Assert.That(results[2].Name, Is.EqualTo("Charlie"));
+    }
+
+    [Test]
+    public async Task Select_NamedTuple_ThreeColumns()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lite = Lite.Users().Select(u => (Id: u.UserId, Name: u.UserName, Active: u.IsActive)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            Pg.Users().Select(u => (Id: u.UserId, Name: u.UserName, Active: u.IsActive)).ToDiagnostics(),
+            My.Users().Select(u => (Id: u.UserId, Name: u.UserName, Active: u.IsActive)).ToDiagnostics(),
+            Ss.Users().Select(u => (Id: u.UserId, Name: u.UserName, Active: u.IsActive)).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users`",
+            ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users]");
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].Id, Is.EqualTo(1));
+        Assert.That(results[0].Name, Is.EqualTo("Alice"));
+        Assert.That(results[0].Active, Is.True);
+        Assert.That(results[2].Id, Is.EqualTo(3));
+        Assert.That(results[2].Active, Is.False);
+    }
+
+    [Test]
     public async Task Pagination_BothParameterized()
     {
         await using var t = await QueryTestHarness.CreateAsync();

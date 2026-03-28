@@ -124,6 +124,47 @@ public class EntityReaderTests
     }
 
     [Test]
+    public void GenerateReaderDelegate_NamedTupleElements_IncludesElementNames()
+    {
+        var projection = new ProjectionInfo(
+            ProjectionKind.Tuple,
+            "(string ProductName, string CategoryName)",
+            new[]
+            {
+                CreateProjectedColumn("ProductName", "name", "string", 0),
+                CreateProjectedColumn("CategoryName", "name", "string", 1),
+            });
+
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "Product");
+
+        Assert.That(readerCode, Does.Contain("ProductName: r.GetString(0)"),
+            "Named tuple elements should include element name prefix");
+        Assert.That(readerCode, Does.Contain("CategoryName: r.GetString(1)"),
+            "Named tuple elements should include element name prefix");
+    }
+
+    [Test]
+    public void GenerateReaderDelegate_DefaultItemNames_OmitsElementNames()
+    {
+        var projection = new ProjectionInfo(
+            ProjectionKind.Tuple,
+            "(int, string)",
+            new[]
+            {
+                CreateProjectedColumn("Item1", "user_id", "int", 0),
+                CreateProjectedColumn("Item2", "user_name", "string", 1),
+            });
+
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "User");
+
+        Assert.That(readerCode, Does.Not.Contain("Item1:"),
+            "Default ItemN names should be omitted");
+        Assert.That(readerCode, Does.Not.Contain("Item2:"),
+            "Default ItemN names should be omitted");
+        Assert.That(readerCode, Does.Contain("r.GetInt32(0), r.GetString(1)"));
+    }
+
+    [Test]
     public void GenerateReaderDelegate_SingleColumnProjection_IgnoresCustomEntityReader()
     {
         var projection = new ProjectionInfo(
