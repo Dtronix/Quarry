@@ -86,10 +86,10 @@ internal static class EntityCodeGenerator
             case ColumnKind.Standard:
             default:
                 propertyType = GetNullableType(column.FullClrType, column.IsNullable);
-                // Add null! default for non-nullable strings to suppress warnings
-                if (column.FullClrType == "string" && !column.IsNullable)
+                // Add default! for non-nullable reference types to suppress CS8618
+                if (!column.IsNullable && CodeGen.CarrierAnalyzer.IsReferenceTypeName(column.FullClrType))
                 {
-                    defaultValue = "null!";
+                    defaultValue = "default!";
                 }
                 break;
         }
