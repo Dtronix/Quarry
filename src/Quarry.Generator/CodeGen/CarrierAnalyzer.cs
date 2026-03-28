@@ -204,14 +204,12 @@ internal static class CarrierAnalyzer
                 if (displayClassByParam.TryGetValue(param.GlobalIndex, out var dcInfo)
                     && dcInfo.DisplayClassName != null
                     && dcInfo.VarTypes != null
-                    && dcInfo.VarTypes.ContainsKey(param.CapturedFieldName))
+                    && dcInfo.VarTypes.TryGetValue(param.CapturedFieldName, out var resolvedType))
                 {
-                    var capturedType = param.CapturedFieldType ?? param.ClrType;
-                    if (param.CapturedFieldType == null
-                        && dcInfo.VarTypes.TryGetValue(param.CapturedFieldName, out var resolvedType))
-                    {
-                        capturedType = resolvedType;
-                    }
+                    // Always use the type from CapturedVariableTypes — it comes from
+                    // semantic analysis and is the actual CLR type of the captured variable.
+                    // param.ClrType may be "?" or "object" when unresolved.
+                    var capturedType = resolvedType;
                     staticFields.Add(new Models.CarrierStaticField(
                         $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
                         displayClassName: dcInfo.DisplayClassName,
@@ -221,20 +219,48 @@ internal static class CarrierAnalyzer
                 else if (displayClassByParam.TryGetValue(param.GlobalIndex, out var dcInfoStatic)
                          && dcInfoStatic.DisplayClassName != null)
                 {
-                    // Captured variable references a class-level field (static/instance) rather than
-                    // a closure-captured local/parameter. Use UnsafeAccessor(StaticField) on the
-                    // containing class instead of the display class.
+                    // The variable wasn't found in CapturedVariableTypes. This can happen when
+                    // chain sites share global indices across multiple call sites and the enrichment
+                    // ran on a different invocation. Try to resolve the type from VarTypes if available,
+                    // otherwise fall back to the carrier parameter's ClrType.
+                    string capturedType;
+                    if (dcInfoStatic.VarTypes != null
+                        && dcInfoStatic.VarTypes.TryGetValue(param.CapturedFieldName, out var resolvedType2))
+                    {
+                        capturedType = resolvedType2;
+                    }
+                    else
+                    {
+                        capturedType = param.CapturedFieldType ?? param.ClrType;
+                        if (capturedType == "?" || string.IsNullOrWhiteSpace(capturedType))
+                            capturedType = "object";
+                    }
+
+                    // Determine if this is a class-level static field or a closure capture
+                    // whose type wasn't in VarTypes due to chain sharing.
                     var containingType = dcInfoStatic.DisplayClassName;
                     var displayClassMarker = containingType.IndexOf("+<>c__DisplayClass");
-                    if (displayClassMarker > 0)
+                    if (displayClassMarker > 0 && dcInfoStatic.VarTypes != null
+                        && !dcInfoStatic.VarTypes.ContainsKey(param.CapturedFieldName))
+                    {
+                        // Static/instance field on the containing class
                         containingType = containingType.Substring(0, displayClassMarker);
-                    var capturedType = param.CapturedFieldType ?? param.ClrType;
-                    staticFields.Add(new Models.CarrierStaticField(
-                        $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
-                        displayClassName: containingType,
-                        capturedFieldName: param.CapturedFieldName,
-                        capturedFieldType: capturedType,
-                        isStaticField: true));
+                        staticFields.Add(new Models.CarrierStaticField(
+                            $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
+                            displayClassName: containingType,
+                            capturedFieldName: param.CapturedFieldName,
+                            capturedFieldType: capturedType,
+                            isStaticField: true));
+                    }
+                    else
+                    {
+                        // Closure capture — use the display class name directly
+                        staticFields.Add(new Models.CarrierStaticField(
+                            $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
+                            displayClassName: dcInfoStatic.DisplayClassName,
+                            capturedFieldName: param.CapturedFieldName,
+                            capturedFieldType: capturedType));
+                    }
                 }
             }
         }

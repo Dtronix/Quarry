@@ -180,7 +180,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     /// </summary>
     internal RawCallSite WithResultTypeName(string resolvedResultTypeName)
     {
-        return new RawCallSite(
+        var copy = new RawCallSite(
             methodName: MethodName,
             filePath: FilePath,
             line: Line,
@@ -221,6 +221,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             batchInsertColumnNames: BatchInsertColumnNames,
             isPreparedTerminal: IsPreparedTerminal,
             preparedQueryEscapeReason: PreparedQueryEscapeReason);
+        // Propagate mutable properties set after construction
+        copy.DisplayClassName = DisplayClassName;
+        copy.CapturedVariableTypes = CapturedVariableTypes;
+        return copy;
     }
 
     public bool Equals(RawCallSite? other)

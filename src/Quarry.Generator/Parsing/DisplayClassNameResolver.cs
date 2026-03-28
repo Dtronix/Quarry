@@ -23,15 +23,26 @@ internal static class DisplayClassNameResolver
         LambdaExpressionSyntax lambda,
         SemanticModel semanticModel)
     {
-        var containingType = containingMethod.ContainingType;
+        // For local functions, the display class is generated under the containing
+        // non-local method's ordinal. Walk up past local functions.
+        var effectiveMethod = containingMethod;
+        while (effectiveMethod.MethodKind == MethodKind.LocalFunction
+               && effectiveMethod.ContainingSymbol is IMethodSymbol parent)
+        {
+            effectiveMethod = parent;
+        }
+
+        var containingType = effectiveMethod.ContainingType;
         if (containingType == null)
             return null;
 
-        int methodOrdinal = ComputeMethodOrdinal(containingType, containingMethod);
+        int methodOrdinal = ComputeMethodOrdinal(containingType, effectiveMethod);
         if (methodOrdinal < 0)
             return null;
 
-        var methodSyntax = containingMethod.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
+        // Use the effective (non-local) method's syntax so the scope walk covers
+        // local function bodies for closure ordinal computation.
+        var methodSyntax = effectiveMethod.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
         if (methodSyntax == null)
             return null;
 
@@ -48,15 +59,20 @@ internal static class DisplayClassNameResolver
     /// Computes the method ordinal: the index of the method in the containing type's
     /// GetMembers() array. ALL members count (backing fields, properties, accessor
     /// methods, events, fields, methods) because the C# compiler uses the same ordering.
+    /// For local functions, matches against the synthesized method name pattern
+    /// (e.g., &lt;&lt;Main&gt;$&gt;g__MethodName|N_M).
     /// </summary>
     internal static int ComputeMethodOrdinal(INamedTypeSymbol containingType, IMethodSymbol methodSymbol)
     {
         var members = containingType.GetMembers();
+
+        // Direct match (regular methods, constructors, accessors)
         for (int i = 0; i < members.Length; i++)
         {
             if (SymbolEqualityComparer.Default.Equals(members[i], methodSymbol))
                 return i;
         }
+
         return -1;
     }
 
@@ -148,18 +164,27 @@ internal static class DisplayClassNameResolver
         foreach (var symbol in captured)
         {
             string varName;
-            string varType;
+            ITypeSymbol? typeSymbol;
             if (symbol is ILocalSymbol local)
             {
                 varName = local.Name;
-                varType = local.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                typeSymbol = local.Type;
             }
             else if (symbol is IParameterSymbol param)
             {
                 varName = param.Name;
-                varType = param.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                typeSymbol = param.Type;
             }
             else continue;
+
+            // Handle unresolved types (error types from generator ordering)
+            var varType = typeSymbol.TypeKind == TypeKind.Error
+                ? "object"
+                : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            // Guard against empty/null type strings
+            if (string.IsNullOrWhiteSpace(varType))
+                varType = "object";
 
             result[varName] = varType;
         }
