@@ -459,7 +459,7 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits a carrier class at namespace scope (outside the static interceptor class).
     /// </summary>
-    internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info, AssembledPlan chain)
+    internal static void EmitCarrierClass(StringBuilder sb, CarrierPlan info, AssembledPlan chain, string contextTypeName)
     {
         sb.AppendLine($"/// <remarks>Chain: Carrier-Optimized PrebuiltDispatch (1 allocation: carrier)</remarks>");
         sb.Append($"file sealed class {info.ClassName}");
@@ -480,8 +480,8 @@ internal static class CarrierEmitter
         // Emit static SQL field: single string for single-variant, string[] for multi-variant
         EmitCarrierSqlField(sb, chain);
 
-        // Emit the execution context field (formerly inherited from CarrierBase)
-        sb.AppendLine("    internal QuarryContext? Ctx;");
+        // Emit the execution context field using the concrete context type for devirtualization
+        sb.AppendLine($"    internal {contextTypeName}? Ctx;");
 
         // Emit instance fields (typed params, mask, limit, offset, timeout)
         foreach (var field in info.Fields)

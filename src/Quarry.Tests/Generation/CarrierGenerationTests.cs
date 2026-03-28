@@ -1332,7 +1332,7 @@ public static class Queries
         Assert.That(code, Does.Contain("IQueryBuilder<User>"));
         Assert.That(code, Does.Contain("IQueryBuilder<User, User>"));
         // Ctx field emitted directly on carrier
-        Assert.That(code, Does.Contain("internal QuarryContext? Ctx;"));
+        Assert.That(code, Does.Contain("internal TestDbContext? Ctx;"));
     }
 
     [Test]
