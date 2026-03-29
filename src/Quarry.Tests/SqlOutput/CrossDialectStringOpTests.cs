@@ -17,15 +17,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.Contains("User05")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("User05")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("User05")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("User05")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("User05")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%User05%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%User05%'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE '%User05%'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE '%User05%'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%User05%'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%User05%'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%User05%'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE '%User05%'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -34,19 +40,20 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -57,15 +64,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("admin")).Where(u => u.IsActive).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%admin%') AND (\"IsActive\" = 1)",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%admin%') AND (\"IsActive\" = TRUE)",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`UserName` LIKE '%admin%') AND (`IsActive` = 1)",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([UserName] LIKE '%admin%') AND ([IsActive] = 1)");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%admin%') AND (\"IsActive\" = 1)",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%admin%') AND (\"IsActive\" = TRUE)",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`UserName` LIKE '%admin%') AND (`IsActive` = 1)",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([UserName] LIKE '%admin%') AND ([IsActive] = 1)");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -78,15 +91,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.StartsWith("User0")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.StartsWith("User0")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.StartsWith("User0")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.StartsWith("User0")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.StartsWith("User0")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE 'User0%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE 'User0%'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE 'User0%'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE 'User0%'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE 'User0%'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE 'User0%'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE 'User0%'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE 'User0%'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -95,19 +114,20 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.StartsWith("A")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE 'A%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE 'A%'");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -122,15 +142,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.EndsWith("son")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.EndsWith("son")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.EndsWith("son")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.EndsWith("son")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.EndsWith("son")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%son'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%son'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE '%son'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE '%son'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%son'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%son'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%son'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE '%son'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -139,15 +165,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.EndsWith("z")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%z'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%z'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%z'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%z'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -160,15 +192,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.Email!.Contains("@example")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Email!.Contains("@example")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.Email!.Contains("@example")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.Email!.Contains("@example")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
-            Pg.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
-            My.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
-            Ss.Users().Where(u => u.Email!.Contains("@example")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" LIKE '%@example%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" LIKE '%@example%'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `Email` LIKE '%@example%'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [Email] LIKE '%@example%'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" LIKE '%@example%'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" LIKE '%@example%'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `Email` LIKE '%@example%'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [Email] LIKE '%@example%'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -181,15 +219,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([UserName] LIKE '%er%') AND ([UserName] LIKE 'Us%')");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([UserName] LIKE '%er%') AND ([UserName] LIKE 'Us%')");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -212,21 +256,22 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("lic")).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -237,15 +282,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.StartsWith("A")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.StartsWith("A")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.StartsWith("A")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.StartsWith("A")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.StartsWith("A")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.StartsWith("A")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.StartsWith("A")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.StartsWith("A")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE 'A%'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE 'A%'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE 'A%'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE 'A%'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE 'A%'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
     }
 
     [Test]
@@ -254,15 +305,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.EndsWith("ce")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.EndsWith("ce")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.EndsWith("ce")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.EndsWith("ce")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.EndsWith("ce")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.EndsWith("ce")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.EndsWith("ce")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.EndsWith("ce")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%ce'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%ce'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE '%ce'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE '%ce'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%ce'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%ce'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%ce'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE '%ce'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
     }
 
     [Test]
@@ -271,21 +328,22 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(ConstSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -296,21 +354,22 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(ReadonlySearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -323,21 +382,22 @@ internal class CrossDialectStringOpTests
 
         const string search = "lic";
 
-        var lite = Lite.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(search)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -349,21 +409,22 @@ internal class CrossDialectStringOpTests
         var (Lite, Pg, My, Ss) = t;
 
         // Mutable static field — cannot be inlined, must stay parameterized
-        var lite = Lite.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(MutableSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || @p0 || '%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%' || $1 || '%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCAT('%', ?, '%')",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%' + @p0 + '%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -410,15 +471,21 @@ internal class CrossDialectStringOpTests
         var (Lite, Pg, My, Ss) = t;
 
         // Literal containing LIKE metacharacter _ should be escaped and inlined
+        var lt = Lite.Users().Where(u => u.UserName.Contains("user_name")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("user_name")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("user_name")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("user_name")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("user_name")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("user_name")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("user_name")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("user_name")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%user\\_name%' ESCAPE '\\'",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserName\" LIKE '%user\\_name%' ESCAPE '\\'",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserName` LIKE '%user\\_name%' ESCAPE '\\'",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserName] LIKE '%user\\_name%' ESCAPE '\\'");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%user\\_name%' ESCAPE '\\'",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserName\" LIKE '%user\\_name%' ESCAPE '\\'",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%user\\_name%' ESCAPE '\\'",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserName] LIKE '%user\\_name%' ESCAPE '\\'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -427,15 +494,21 @@ internal class CrossDialectStringOpTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).Select(u => (u.UserId, u.UserName)).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains("er")).Where(u => u.UserName.StartsWith("Us")).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([UserName] LIKE '%er%') AND ([UserName] LIKE 'Us%')");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([UserName] LIKE '%er%') AND ([UserName] LIKE 'Us%')");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -445,21 +518,22 @@ internal class CrossDialectStringOpTests
         var (Lite, Pg, My, Ss) = t;
 
         // Qualified member access to const string (e.g., StringConstants.SearchTerm) should be folded
-        var lite = Lite.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
     }
@@ -471,15 +545,21 @@ internal class CrossDialectStringOpTests
         var (Lite, Pg, My, Ss) = t;
 
         // Qualified const containing LIKE metacharacter (%) must be escaped
+        var lt = Lite.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
         QueryTestHarness.AssertDialects(
-            Lite.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Pg.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%50\\%%' ESCAPE '\\'",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%50\\%%' ESCAPE '\\'");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(0));
     }
 
     #endregion
