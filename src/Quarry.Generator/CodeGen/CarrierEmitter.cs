@@ -608,14 +608,12 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitExtractionLocalsAndBindParams(
         StringBuilder sb, CarrierPlan carrier, TranslatedCallSite site,
-        IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
-        string delegateParamName = "func")
+        IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
         {
-            delegateParamName = extractionPlan.DelegateParamName;
-            sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
             foreach (var extractor in extractionPlan.Extractors)
             {
                 var targetExpr = extractor.IsStaticField ? "null!" : "__target";
