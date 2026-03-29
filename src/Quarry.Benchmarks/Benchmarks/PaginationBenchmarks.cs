@@ -13,15 +13,15 @@ public class PaginationBenchmarks : BenchmarkBase
     // --- Limit/Offset ---
 
     [Benchmark(Baseline = true)]
-    public async Task<List<EfUser>> Raw_LimitOffset()
+    public async Task<List<RawUser>> Raw_LimitOffset()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10 OFFSET 20";
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -35,9 +35,9 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Dapper_LimitOffset()
+    public async Task<List<DapperUser>> Dapper_LimitOffset()
     {
-        return (await Connection.QueryAsync<EfUser>(
+        return (await Connection.QueryAsync<DapperUser>(
             "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10 OFFSET 20")).AsList();
     }
 
@@ -61,7 +61,7 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> SqlKata_LimitOffset()
+    public async Task<List<SqlKataUser>> SqlKata_LimitOffset()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
@@ -76,10 +76,10 @@ public class PaginationBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<SqlKataUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -95,15 +95,15 @@ public class PaginationBenchmarks : BenchmarkBase
     // --- First Page ---
 
     [Benchmark]
-    public async Task<List<EfUser>> Raw_FirstPage()
+    public async Task<List<RawUser>> Raw_FirstPage()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10";
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -117,9 +117,9 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Dapper_FirstPage()
+    public async Task<List<DapperUser>> Dapper_FirstPage()
     {
-        return (await Connection.QueryAsync<EfUser>(
+        return (await Connection.QueryAsync<DapperUser>(
             "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10")).AsList();
     }
 
@@ -141,7 +141,7 @@ public class PaginationBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> SqlKata_FirstPage()
+    public async Task<List<SqlKataUser>> SqlKata_FirstPage()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
@@ -155,10 +155,10 @@ public class PaginationBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<SqlKataUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
