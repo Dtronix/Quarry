@@ -64,8 +64,8 @@ Dialect-aware: implement `IDialectAwareTypeMapping` for `GetSqlTypeName(dialect)
 [QuarryContext(Dialect = SqlDialect.SQLite, Schema = "public")]
 public partial class AppDb : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
-    public partial IQueryBuilder<Order> Orders { get; }
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 ```
 

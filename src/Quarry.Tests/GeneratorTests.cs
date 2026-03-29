@@ -367,7 +367,12 @@ public partial class TestDbContext : QuarryContext
         Assert.That(contextCode, Does.Contain("public TestDbContext(IDbConnection connection)"));
         Assert.That(contextCode, Does.Contain(": base(connection)"));
 
+        // Check owned connection constructor
+        Assert.That(contextCode, Does.Contain("public TestDbContext(IDbConnection connection, bool ownsConnection)"));
+        Assert.That(contextCode, Does.Contain(": base(connection, ownsConnection)"));
+
         // Check full constructor with options
+        Assert.That(contextCode, Does.Contain("bool ownsConnection,"));
         Assert.That(contextCode, Does.Contain("TimeSpan? defaultTimeout"));
         Assert.That(contextCode, Does.Contain("IsolationLevel? defaultIsolation"));
         Assert.That(contextCode, Does.Not.Contain("onSqlGenerated"));

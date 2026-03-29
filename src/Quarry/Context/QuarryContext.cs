@@ -30,6 +30,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 {
     private readonly DbConnection _connection;
     private readonly bool _connectionWasOpen;
+    private readonly bool _ownsConnection;
     private readonly TimeSpan _defaultTimeout;
     private readonly IsolationLevel _defaultIsolation;
     private bool _disposed;
@@ -60,7 +61,17 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// </summary>
     /// <param name="connection">The database connection to use.</param>
     protected QuarryContext(IDbConnection connection)
-        : this(connection, null, null)
+        : this(connection, ownsConnection: false, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Creates a new context with the specified connection and ownership flag.
+    /// </summary>
+    /// <param name="connection">The database connection to use.</param>
+    /// <param name="ownsConnection">If true, the context will dispose the connection when the context is disposed.</param>
+    protected QuarryContext(IDbConnection connection, bool ownsConnection)
+        : this(connection, ownsConnection, null, null)
     {
     }
 
@@ -68,10 +79,12 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Creates a new context with the specified connection and options.
     /// </summary>
     /// <param name="connection">The database connection to use.</param>
+    /// <param name="ownsConnection">If true, the context will dispose the connection when the context is disposed.</param>
     /// <param name="defaultTimeout">Optional default timeout for queries. Defaults to 30 seconds.</param>
     /// <param name="defaultIsolation">Optional default isolation level for transactions.</param>
     protected QuarryContext(
         IDbConnection connection,
+        bool ownsConnection,
         TimeSpan? defaultTimeout,
         IsolationLevel? defaultIsolation)
     {
@@ -80,6 +93,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 
         _connection = dbConnection;
         _connectionWasOpen = connection.State == ConnectionState.Open;
+        _ownsConnection = ownsConnection;
         _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(30);
         _defaultIsolation = defaultIsolation ?? IsolationLevel.ReadCommitted;
     }
@@ -502,8 +516,14 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 
         if (disposing)
         {
-            // Restore connection to original state
-            if (!_connectionWasOpen && _connection.State == ConnectionState.Open)
+            if (_ownsConnection)
+            {
+                _connection.Dispose();
+
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
+                    ConnectionLog.Closed();
+            }
+            else if (!_connectionWasOpen && _connection.State == ConnectionState.Open)
             {
                 _connection.Close();
 
@@ -522,8 +542,14 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     {
         if (_disposed) return;
 
-        // Restore connection to original state
-        if (!_connectionWasOpen && _connection.State == ConnectionState.Open)
+        if (_ownsConnection)
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Information, ConnectionLog.CategoryName) == true)
+                ConnectionLog.Closed();
+        }
+        else if (!_connectionWasOpen && _connection.State == ConnectionState.Open)
         {
             await _connection.CloseAsync().ConfigureAwait(false);
 

@@ -545,13 +545,13 @@ Infer from SQL strings and reader calls:
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class AppDb : QuarryContext
 {
-    public partial IQueryBuilder<User> Users { get; }
-    public partial IQueryBuilder<Order> Orders { get; }
-    // One property per schema/entity
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+    // One method per schema/entity
 }
 ```
 
-One `partial IQueryBuilder<TEntity>` property per entity. Entity names come from generated entity classes (not schema classes).
+One `partial IEntityAccessor<TEntity>` method per entity. Entity names come from generated entity classes (not schema classes). Entity accessors are methods (not properties) — `db.Users()` not `db.Users`.
 
 ### 4.2 .csproj Changes
 
@@ -992,3 +992,5 @@ After all tests pass:
 8. Phase 7 — full verification, SQL inspection, cleanup
 
 Build after phases 3, 4, and 5 individually to catch errors incrementally. Present build results to user before proceeding to next phase.
+
+**Task tracking:** After the plan is approved and before beginning execution, create tasks (via TaskCreate) for each phase and major sub-step. Mark each task in_progress when starting and completed when done. This gives the user visibility into migration progress and ensures no steps are skipped across long or multi-conversation migrations.
