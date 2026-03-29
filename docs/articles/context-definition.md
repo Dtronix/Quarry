@@ -15,7 +15,7 @@ public partial class AppDb : QuarryContext
 
 The class must be `partial`. The source generator emits a companion partial class containing:
 
-- **Constructors** -- one accepting `IDbConnection`, another accepting `IDbConnection` plus optional `TimeSpan? defaultTimeout` and `IsolationLevel? defaultIsolation`.
+- **Constructors** -- one accepting `IDbConnection`, one accepting `IDbConnection` and `bool ownsConnection`, and a full constructor accepting `IDbConnection`, `bool ownsConnection`, `TimeSpan? defaultTimeout`, and `IsolationLevel? defaultIsolation`.
 - **Entity accessor methods** -- each `partial IEntityAccessor<T>` declaration gets a generated body that returns a carrier instance wired to the context's connection and dialect.
 - **Insert / Update / Delete** -- accessed through the entity accessor (`db.Users().Insert(entity)`, `db.Users().Update()`, `db.Users().Delete()`). The generator intercepts each call site and emits pre-built SQL.
 - **MigrateAsync** -- generated when migration classes are present in the project. Accepts a `DbConnection` and optional `MigrationOptions`, then delegates to the migration runner with the correct dialect and an ordered list of discovered migrations.
@@ -124,11 +124,55 @@ Key behaviors:
 ```csharp
 await using var db = new AppDb(
     connection,
+    ownsConnection: false,
     defaultTimeout: TimeSpan.FromSeconds(10),
     defaultIsolation: IsolationLevel.ReadCommitted);
 ```
 
 Avoid sharing a single context across concurrent operations. Create a new context per unit of work (per request, per background job, etc.).
+
+### Connection Ownership
+
+By default, the context **borrows** the connection -- it may close it on dispose but never disposes it. When `ownsConnection` is `true`, the context takes full ownership and disposes the connection when the context is disposed:
+
+```csharp
+// Context owns the connection -- disposes it when done
+await using var db = new AppDb(
+    new SqliteConnection("Data Source=app.db"),
+    ownsConnection: true);
+```
+
+| `ownsConnection` | Connection was closed | Connection was open |
+|---|---|---|
+| `false` (default) | Closes on dispose | Left open |
+| `true` | Disposes on dispose | Disposes on dispose |
+
+This is primarily useful for dependency injection scenarios where the context should manage the entire connection lifecycle.
+
+## Dependency Injection
+
+Register the context as a scoped service so each request gets its own context and connection. The DI container handles disposal at the end of the scope, which disposes the owned connection and returns it to the pool:
+
+```csharp
+// Program.cs
+services.AddScoped<AppDb>(_ =>
+    new AppDb(new SqliteConnection(connectionString), ownsConnection: true));
+```
+
+Consumers inject the context directly -- no connection knowledge required:
+
+```csharp
+public class UserService(AppDb db)
+{
+    public async Task<List<User>> GetActiveUsers()
+    {
+        return await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => u)
+            .ExecuteFetchAllAsync();
+    }
+}
+```
 
 ## Usage
 
