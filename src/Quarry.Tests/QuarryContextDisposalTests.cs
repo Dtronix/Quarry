@@ -13,6 +13,7 @@ public class QuarryContextDisposalTests
     private sealed class MinimalContext : QuarryContext
     {
         public MinimalContext(IDbConnection connection) : base(connection) { }
+        public MinimalContext(IDbConnection connection, bool ownsConnection) : base(connection, ownsConnection) { }
     }
 
     [Test]
@@ -89,5 +90,78 @@ public class QuarryContextDisposalTests
 
         await ctx.DisposeAsync();
         Assert.DoesNotThrowAsync(async () => await ctx.DisposeAsync());
+    }
+
+    [Test]
+    public void Dispose_OwnsConnection_DisposesConnection()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: true);
+        connection.Open();
+
+        ctx.Dispose();
+
+        Assert.That(connection.State, Is.EqualTo(ConnectionState.Closed));
+        Assert.That(connection.DisposeCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task DisposeAsync_OwnsConnection_DisposesConnection()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: true);
+        connection.Open();
+
+        await ctx.DisposeAsync();
+
+        Assert.That(connection.State, Is.EqualTo(ConnectionState.Closed));
+        Assert.That(connection.DisposeAsyncCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Dispose_OwnsConnectionButNotOpen_StillDisposesConnection()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: true);
+
+        ctx.Dispose();
+
+        Assert.That(connection.DisposeCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void Dispose_DoesNotOwnConnection_DoesNotDisposeConnection()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: false);
+        connection.Open();
+
+        ctx.Dispose();
+
+        Assert.That(connection.State, Is.EqualTo(ConnectionState.Closed));
+        Assert.That(connection.DisposeCallCount, Is.EqualTo(0));
+    }
+
+    /// <summary>
+    /// SqliteConnection wrapper that tracks Dispose/DisposeAsync calls.
+    /// </summary>
+    private sealed class TrackingConnection : SqliteConnection
+    {
+        public int DisposeCallCount { get; private set; }
+        public int DisposeAsyncCallCount { get; private set; }
+
+        public TrackingConnection(string connectionString) : base(connectionString) { }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) DisposeCallCount++;
+            base.Dispose(disposing);
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            DisposeAsyncCallCount++;
+            await base.DisposeAsync();
+        }
     }
 }

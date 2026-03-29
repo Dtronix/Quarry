@@ -85,18 +85,32 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    }}");
         sb.AppendLine();
 
+        // Owned connection constructor
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Creates a new {context.ClassName} with the specified connection and ownership flag.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    /// <param name=\"connection\">The database connection to use.</param>");
+        sb.AppendLine($"    /// <param name=\"ownsConnection\">If true, the context will dispose the connection when disposed.</param>");
+        sb.AppendLine($"    {access} {context.ClassName}(IDbConnection connection, bool ownsConnection)");
+        sb.AppendLine($"        : base(connection, ownsConnection)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"    }}");
+        sb.AppendLine();
+
         // Full constructor
         sb.AppendLine($"    /// <summary>");
         sb.AppendLine($"    /// Creates a new {context.ClassName} with the specified connection and options.");
         sb.AppendLine($"    /// </summary>");
         sb.AppendLine($"    /// <param name=\"connection\">The database connection to use.</param>");
+        sb.AppendLine($"    /// <param name=\"ownsConnection\">If true, the context will dispose the connection when disposed.</param>");
         sb.AppendLine($"    /// <param name=\"defaultTimeout\">Optional default timeout for queries.</param>");
         sb.AppendLine($"    /// <param name=\"defaultIsolation\">Optional default isolation level for transactions.</param>");
         sb.AppendLine($"    {access} {context.ClassName}(");
         sb.AppendLine($"        IDbConnection connection,");
+        sb.AppendLine($"        bool ownsConnection,");
         sb.AppendLine($"        TimeSpan? defaultTimeout,");
         sb.AppendLine($"        IsolationLevel? defaultIsolation = null)");
-        sb.AppendLine($"        : base(connection, defaultTimeout, defaultIsolation)");
+        sb.AppendLine($"        : base(connection, ownsConnection, defaultTimeout, defaultIsolation)");
         sb.AppendLine($"    {{");
         sb.AppendLine($"    }}");
         sb.AppendLine();
