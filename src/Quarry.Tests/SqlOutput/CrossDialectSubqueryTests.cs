@@ -579,6 +579,8 @@ internal class CrossDialectSubqueryTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE '%paid%'))",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%paid%'))");
 
+        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
@@ -640,16 +642,37 @@ internal class CrossDialectSubqueryTests
     }
 
     [Test]
-    public async Task Where_Any_StringPredicate_Contains_ZeroParameters()
+    public async Task Where_Any_StringPredicate_Contains_CapturedVariable_RemainsParameterized()
     {
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        // Verify inlined string literal LIKE in subquery produces zero parameters
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        // Mutable captured variable — must stay parameterized, not inlined
+        var search = GetSubquerySearchValue();
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || @p0 || '%'))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" LIKE '%' || $1 || '%'))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', ?, '%')))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%' + @p0 + '%'))");
+
+        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
+
+        // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
     }
+
+    private static string GetSubquerySearchValue() => "hipp";
 
     #endregion
 }
