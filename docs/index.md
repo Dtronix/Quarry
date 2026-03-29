@@ -1,7 +1,3 @@
----
-_layout: landing
----
-
 <div style="text-align: center; padding: 2rem 0;">
   <img src="images/logo-128.png" alt="Quarry" style="height: 96px; margin-bottom: 1rem;" />
   <h1 style="margin-bottom: 0.25rem;">Quarry</h1>
