@@ -50,6 +50,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         RawSqlTypeInfo? rawSqlTypeInfo = null,
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
+        IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? setActionAllCapturedIdentifiers = null,
         ImmutableArray<string>? lambdaParameterNames = null,
         ImmutableArray<string>? batchInsertColumnNames = null,
         bool isPreparedTerminal = false,
@@ -91,6 +92,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         RawSqlTypeInfo = rawSqlTypeInfo;
         SetActionAssignments = setActionAssignments;
         SetActionParameters = setActionParameters;
+        SetActionAllCapturedIdentifiers = setActionAllCapturedIdentifiers;
         LambdaParameterNames = lambdaParameterNames;
         BatchInsertColumnNames = batchInsertColumnNames;
         IsPreparedTerminal = isPreparedTerminal;
@@ -156,6 +158,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // SetAction data (from discovery -- Action<T> lambdas can't be parsed into SqlExpr)
     public IReadOnlyList<Models.SetActionAssignment>? SetActionAssignments { get; }
     public IReadOnlyList<Translation.ParameterInfo>? SetActionParameters { get; }
+
+    // All external identifiers from SetAction computed expressions (for per-variable extraction)
+    public IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? SetActionAllCapturedIdentifiers { get; }
 
     // Ordered lambda parameter names for multi-entity join ON clause resolution
     public ImmutableArray<string>? LambdaParameterNames { get; }
@@ -224,6 +229,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             rawSqlTypeInfo: RawSqlTypeInfo,
             setActionAssignments: SetActionAssignments,
             setActionParameters: SetActionParameters,
+            setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
             lambdaParameterNames: LambdaParameterNames,
             batchInsertColumnNames: BatchInsertColumnNames,
             isPreparedTerminal: IsPreparedTerminal,
