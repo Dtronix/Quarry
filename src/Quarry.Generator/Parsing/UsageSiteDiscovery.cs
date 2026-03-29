@@ -583,6 +583,7 @@ internal static class UsageSiteDiscovery
         // ── Step 12: SetAction handling ────────────────────────────────────
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null;
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null;
+        IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? setActionAllCapturedIdentifiers = null;
 
         if (kind == InterceptorKind.UpdateSetAction)
         {
@@ -591,6 +592,7 @@ internal static class UsageSiteDiscovery
             {
                 setActionAssignments = setResult.Value.Assignments;
                 setActionParameters = setResult.Value.Parameters;
+                setActionAllCapturedIdentifiers = setResult.Value.AllCapturedIdentifiers;
             }
         }
 
@@ -736,6 +738,7 @@ internal static class UsageSiteDiscovery
             joinedEntityTypeNames: joinedEntityTypeNames,
             setActionAssignments: setActionAssignments,
             setActionParameters: setActionParameters,
+            setActionAllCapturedIdentifiers: setActionAllCapturedIdentifiers,
             lambdaParameterNames: lambdaParamNames,
             batchInsertColumnNames: batchInsertColumnNames,
             isPreparedTerminal: isPreparedTerminal,
@@ -1687,7 +1690,7 @@ internal static class UsageSiteDiscovery
     /// Extracts SetAction assignments directly from the lambda body without ClauseTranslator.
     /// Returns assignments and parameters for Set(Action&lt;T&gt;) patterns.
     /// </summary>
-    private static (IReadOnlyList<Models.SetActionAssignment> Assignments, IReadOnlyList<Translation.ParameterInfo> Parameters)?
+    private static (IReadOnlyList<Models.SetActionAssignment> Assignments, IReadOnlyList<Translation.ParameterInfo> Parameters, IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? AllCapturedIdentifiers)?
         ExtractSetActionAssignments(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
     {
         if (invocation.ArgumentList.Arguments.Count < 1)
@@ -1772,13 +1775,26 @@ internal static class UsageSiteDiscovery
             var paramIndex = parameters.Count;
             var isCaptured = IsSetActionCapturedVariable(valueExpr, parameterName);
 
-            // Only simple identifiers can be extracted via closure field lookup
-            if (isCaptured && valueExpr is not IdentifierNameSyntax)
-                isCaptured = false;
-
             var paramInfo = new Translation.ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
                 isCaptured: isCaptured,
                 expressionPath: isCaptured ? valueExpression : null);
+
+            // Populate CapturedFieldName by extracting the root identifier from the value expression
+            if (isCaptured)
+            {
+                var (rootName, rootExpr) = ExtractRootIdentifier(valueExpr, parameterName);
+                if (rootName != null)
+                {
+                    paramInfo.CapturedFieldName = rootName;
+                    if (rootExpr != null)
+                    {
+                        var rootTypeInfo = semanticModel.GetTypeInfo(rootExpr);
+                        if (rootTypeInfo.Type != null)
+                            paramInfo.CapturedFieldType = rootTypeInfo.Type.ToDisplayString(
+                                Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat);
+                    }
+                }
+            }
 
             parameters.Add(paramInfo);
 
@@ -1786,7 +1802,37 @@ internal static class UsageSiteDiscovery
                 columnSql, valueTypeName: null, customTypeMappingClass: null));
         }
 
-        return (assignments, parameters);
+        // Collect all external identifiers from non-inlined value expressions
+        // so BuildExtractionPlans can create extractors for computed expressions (a + b)
+        Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? allCapturedIdentifiers = null;
+        if (parameters.Count > 0)
+        {
+            foreach (var p in parameters)
+            {
+                if (!p.IsCaptured)
+                    continue;
+
+                // Find the assignment whose value expression matches this parameter
+                // (non-inlined assignments have no InlinedSqlValue)
+                var valueExpr = assignmentExprs.FirstOrDefault(a =>
+                    a.Right.ToFullString().Trim() == p.ValueExpression);
+                if (valueExpr == null)
+                    continue;
+
+                var identifiers = CollectExternalIdentifiers(valueExpr.Right, semanticModel, parameterName);
+                if (identifiers != null)
+                {
+                    allCapturedIdentifiers ??= new Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>(StringComparer.Ordinal);
+                    foreach (var kvp in identifiers)
+                    {
+                        if (!allCapturedIdentifiers.ContainsKey(kvp.Key))
+                            allCapturedIdentifiers[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+        }
+
+        return (assignments, parameters, allCapturedIdentifiers);
     }
 
     /// <summary>
@@ -1827,6 +1873,113 @@ internal static class UsageSiteDiscovery
         if (value.IndexOf('\'') < 0 && value.IndexOf('\\') < 0)
             return value;
         return value.Replace("'", "''").Replace("\\", "\\\\");
+    }
+
+    /// <summary>
+    /// Extracts the root identifier from a value expression.
+    /// For simple identifiers (e.g., <c>localVar</c>), returns the identifier text.
+    /// For member access chains (e.g., <c>obj.Property.Nested</c>), walks left to the root identifier.
+    /// Returns null if the root is the lambda parameter or cannot be determined.
+    /// </summary>
+    private static (string? Name, ExpressionSyntax? RootExpression) ExtractRootIdentifier(ExpressionSyntax expr, string lambdaParamName)
+    {
+        // Walk left through member access to find the root
+        var current = expr;
+        while (current is MemberAccessExpressionSyntax memberAccess)
+            current = memberAccess.Expression;
+
+        if (current is IdentifierNameSyntax identifier)
+        {
+            var name = identifier.Identifier.Text;
+            if (name == lambdaParamName)
+                return (null, null);
+            return (name, identifier);
+        }
+
+        return (null, null);
+    }
+
+    /// <summary>
+    /// Walks an expression tree and collects all external identifiers (locals, parameters,
+    /// static/instance fields) that are NOT the lambda parameter or type/method references.
+    /// Used to discover all captured variables in computed SetAction expressions like <c>a + b</c>.
+    /// </summary>
+    private static Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>?
+        CollectExternalIdentifiers(ExpressionSyntax expr, SemanticModel semanticModel, string lambdaParamName)
+    {
+        var result = new Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>(StringComparer.Ordinal);
+
+        foreach (var node in expr.DescendantNodesAndSelf())
+        {
+            if (node is not IdentifierNameSyntax identifier)
+                continue;
+
+            var name = identifier.Identifier.Text;
+            if (name == lambdaParamName)
+                continue;
+
+            if (result.ContainsKey(name))
+                continue;
+
+            var symbolInfo = semanticModel.GetSymbolInfo(identifier);
+            var symbol = symbolInfo.Symbol;
+            if (symbol == null)
+                continue;
+
+            if (symbol is ILocalSymbol local)
+            {
+                var varType = ResolveSymbolType(local.Type, local, semanticModel);
+                result[name] = (varType, false, null);
+            }
+            else if (symbol is IParameterSymbol param && !param.IsThis)
+            {
+                var varType = ResolveSymbolType(param.Type, param, semanticModel);
+                result[name] = (varType, false, null);
+            }
+            else if (symbol is IFieldSymbol field)
+            {
+                var varType = ResolveSymbolType(field.Type, field, semanticModel);
+                var containingClass = field.ContainingType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                result[name] = (varType, field.IsStatic, containingClass);
+            }
+            // Skip types, methods, namespaces, properties, events
+        }
+
+        return result.Count > 0 ? result : null;
+    }
+
+    /// <summary>
+    /// Resolves a type symbol to a fully qualified string, handling error types
+    /// via the same fallback used by <see cref="DisplayClassNameResolver.CollectCapturedVariableTypes"/>.
+    /// </summary>
+    private static string ResolveSymbolType(ITypeSymbol typeSymbol, ISymbol ownerSymbol, SemanticModel semanticModel)
+    {
+        if (typeSymbol.TypeKind == TypeKind.Error)
+        {
+            var typeName = typeSymbol.Name;
+            if (!string.IsNullOrEmpty(typeName) && typeName != "?")
+            {
+                // Try to qualify via using directives (same approach as DisplayClassNameResolver)
+                var declRef = ownerSymbol.DeclaringSyntaxReferences.FirstOrDefault();
+                if (declRef != null && declRef.SyntaxTree.GetRoot() is CompilationUnitSyntax root)
+                {
+                    var compilation = semanticModel.Compilation;
+                    var schemaName = typeName + "Schema";
+                    foreach (var usingDir in root.Usings)
+                    {
+                        if (usingDir.Alias != null || usingDir.Name == null)
+                            continue;
+                        var ns = usingDir.Name.ToString();
+                        if (compilation.GetTypeByMetadataName(ns + "." + schemaName) != null)
+                            return "global::" + ns + "." + typeName;
+                    }
+                }
+            }
+            return "object";
+        }
+
+        var result = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        return string.IsNullOrWhiteSpace(result) ? "object" : result;
     }
 
     /// <summary>

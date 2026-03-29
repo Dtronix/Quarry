@@ -73,6 +73,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public string? DisplayClassName => Bound.Raw.DisplayClassName;
     public System.Collections.Generic.IReadOnlyDictionary<string, string>? CapturedVariableTypes => Bound.Raw.CapturedVariableTypes;
     public CaptureKind CaptureKind => Bound.Raw.CaptureKind;
+    public System.Collections.Generic.IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? SetActionAllCapturedIdentifiers => Bound.Raw.SetActionAllCapturedIdentifiers;
 
     /// <summary>
     /// Creates a copy with updated JoinedEntityTypeNames and JoinedEntities.

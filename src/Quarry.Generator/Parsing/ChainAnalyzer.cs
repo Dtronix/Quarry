@@ -431,10 +431,7 @@ internal static class ChainAnalyzer
                 var expr = clause.ResolvedExpression;
 
                 // Remap parameters and enrich with column metadata (IsEnum, IsSensitive)
-                // Suppress UnsafeAccessor for UpdateSetAction — uses invoke-and-read instead (AOT-safe)
-                var suppressAccessor = kind == InterceptorKind.UpdateSetAction;
-                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex,
-                    suppressUnsafeAccessor: suppressAccessor);
+                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex);
                 EnrichParametersFromColumns(clauseParams, expr, executionSite.Bound.Entity, resolvedJoinEntities);
                 parameters.AddRange(clauseParams);
 
@@ -486,8 +483,9 @@ internal static class ChainAnalyzer
                                 }
                                 else
                                 {
-                                    // Parameter reference — each non-inlined gets the next slot
-                                    valueExpr = new ParamSlotExpr(nextSetParamIdx, "object", "@p" + nextSetParamIdx);
+                                    // Parameter reference — LocalIndex=0 within each SetTerm.
+                                    // The SQL assembler computes the global index via paramBase.
+                                    valueExpr = new ParamSlotExpr(0, "object", "@p" + nextSetParamIdx);
                                     nextSetParamIdx++;
                                 }
                                 setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
@@ -500,9 +498,9 @@ internal static class ChainAnalyzer
                             // The value parameter is the second arg to Set(), handled at runtime
                             // by the emitter via SetClauseInfo.ValueParameterIndex.
                             var col = new ResolvedColumnExpr(SqlExprRenderer.Render(expr, site.Bound.Dialect));
-                            // Use the next available parameter index for the value slot
+                            // LocalIndex=0 within this SetTerm — assembler computes global index
                             var valueIdx = clauseParams.Count > 0 ? paramGlobalIndex - 1 : paramGlobalIndex;
-                            var valExpr = new ParamSlotExpr(valueIdx, "object", "@p" + valueIdx);
+                            var valExpr = new ParamSlotExpr(0, "object", "@p" + valueIdx);
                             setTerms.Add(new SetTerm(col, valExpr, clause.CustomTypeMappingClass, clauseBitIndex));
                         }
                         break;
@@ -523,8 +521,7 @@ internal static class ChainAnalyzer
                 // because Action<T> can't be parsed to SqlExpr.
                 if (raw.SetActionParameters != null)
                 {
-                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex,
-                        suppressUnsafeAccessor: true);
+                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex);
                     parameters.AddRange(clauseParams);
                 }
 
@@ -552,7 +549,8 @@ internal static class ChainAnalyzer
                     }
                     else
                     {
-                        valueExpr = new ParamSlotExpr(nextParamIdx, "object", "@p" + nextParamIdx);
+                        // LocalIndex=0 within each SetTerm — assembler computes global index
+                        valueExpr = new ParamSlotExpr(0, "object", "@p" + nextParamIdx);
                         nextParamIdx++;
                     }
                     setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
@@ -750,8 +748,7 @@ internal static class ChainAnalyzer
     /// </summary>
     private static List<QueryParameter> RemapParameters(
         IReadOnlyList<ParameterInfo> clauseParams,
-        ref int globalIndex,
-        bool suppressUnsafeAccessor = false)
+        ref int globalIndex)
     {
         var result = new List<QueryParameter>(clauseParams.Count);
         foreach (var p in clauseParams)
@@ -767,7 +764,7 @@ internal static class ChainAnalyzer
                 typeMappingClass: p.CustomTypeMappingClass,
                 isEnum: p.IsEnum,
                 enumUnderlyingType: p.EnumUnderlyingType,
-                needsUnsafeAccessor: !suppressUnsafeAccessor && p.IsCaptured && p.CanGenerateDirectPath,
+                needsUnsafeAccessor: p.IsCaptured && p.CanGenerateDirectPath,
                 isDirectAccessible: false, // Computed during carrier analysis
                 collectionAccessExpression: null, // Computed during carrier analysis
                 capturedFieldName: p.CapturedFieldName,

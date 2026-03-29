@@ -356,36 +356,6 @@ internal static partial class InterceptorCodeGenerator
         return $"({string.Join(", ", sanitized)})";
     }
 
-    /// <summary>
-    /// Generates [UnsafeAccessor]-based extraction code for captured parameters.
-    /// Emits direct calls to the pre-emitted __ExtractP{n} methods on the carrier class.
-    /// For property chain captures, appends the property suffix.
-    /// </summary>
-    internal static void GenerateUnsafeAccessorExtraction(
-        StringBuilder sb, string carrierClassName, IReadOnlyList<IR.QueryParameter> capturedParams, int globalParamOffset)
-    {
-        foreach (var param in capturedParams)
-        {
-            if (!param.IsCaptured || param.CapturedFieldName == null) continue;
-            var globalIdx = globalParamOffset + param.GlobalIndex;
-            var castType = param.ClrType == "?" || param.ClrType == "object"
-                ? "object?"
-                : param.ClrType;
-            var propertySuffix = "";
-            if (param.ValueExpression != null && param.CapturedFieldName != null)
-            {
-                var idx = param.ValueExpression.IndexOf(param.CapturedFieldName);
-                if (idx >= 0)
-                {
-                    var afterField = idx + param.CapturedFieldName.Length;
-                    if (afterField < param.ValueExpression.Length && param.ValueExpression[afterField] == '.')
-                        propertySuffix = param.ValueExpression.Substring(afterField);
-                }
-            }
-            sb.AppendLine($"        __c.P{globalIdx} = ({castType}){carrierClassName}.__ExtractP{globalIdx}(func.Target!){propertySuffix};");
-        }
-    }
-
     internal static void GeneratePlaceholderInterceptor(StringBuilder sb, TranslatedCallSite site, string methodName)
     {
         var entityType = GetShortTypeName(site.EntityTypeName);

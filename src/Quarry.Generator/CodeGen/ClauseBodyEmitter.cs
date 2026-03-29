@@ -537,16 +537,14 @@ internal static class ClauseBodyEmitter
         CarrierPlan? carrier)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-        var clauseInfo = site.Clause;
 
         var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
         var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
         var returnInterfaceBaseName = "I" + concreteBaseName;
 
-        if (clauseInfo is not { SetAssignments: not null, IsSuccess: true })
-            return;
-
-        var hasCapturedParams = clauseInfo.Parameters.Any(p => p.IsCaptured);
+        // Determine captured params from SetActionParameters (canonical location for UpdateSetAction)
+        var setActionParams = site.Bound.Raw.SetActionParameters;
+        var hasCapturedParams = setActionParams?.Any(p => p.IsCaptured) == true;
         var actionParamName = hasCapturedParams ? "action" : "_";
 
         // Carrier-optimized path
@@ -557,70 +555,11 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        Action<{entityType}> {actionParamName})");
             sb.AppendLine($"    {{");
 
-            var globalParamOffset = 0;
-            foreach (var clause in prebuiltChain.GetClauseEntries())
-            {
-                if (clause.Site.UniqueId == site.UniqueId)
-                    break;
-                if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-                    globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-                else if (clause.Site.Clause != null)
-                    globalParamOffset += clause.Site.Clause.Parameters.Count;
-            }
-
-            if (isFirstInChain)
-            {
-                var concreteBuilder = $"{concreteBaseName}<{entityType}>";
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilder}>(builder);");
-                sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = __b.State.ExecutionContext }};");
-            }
-            else
-            {
-                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            }
-
-            // Invoke the action on a cached entity instance to extract captured values.
-            // This avoids reflection (GetType().GetField()) which breaks under AOT trimming.
-            if (hasCapturedParams)
-            {
-                sb.AppendLine($"        var __e = __c.__setEntity ??= new {entityType}();");
-                sb.AppendLine($"        action(__e);");
-            }
-
-            // Walk non-inlined assignments in order to pair with parameters
-            var assignmentIdx = 0;
-            var nonInlinedAssignments = clauseInfo.SetAssignments!.Where(a => !a.IsInlined).ToList();
-
-            for (int i = 0; i < clauseInfo.Parameters.Count; i++)
-            {
-                var p = clauseInfo.Parameters[i];
-                var globalIdx = globalParamOffset + i;
-                if (globalIdx >= prebuiltChain.ChainParameters.Count) continue;
-                var carrierParam = prebuiltChain.ChainParameters[globalIdx];
-
-                var castType = carrier != null
-                    ? CarrierEmitter.GetEffectiveCastType(globalIdx, carrierParam, carrier)
-                    : (carrierParam.ClrType == "?" || carrierParam.ClrType == "object" ? "object?" : carrierParam.ClrType);
-                if (p.IsCaptured && assignmentIdx < nonInlinedAssignments.Count)
-                {
-                    var propertyName = nonInlinedAssignments[assignmentIdx].ColumnSql;
-                    sb.AppendLine($"        __c.P{globalIdx} = ({castType})__e!.{propertyName}!;");
-                }
-                else
-                {
-                    sb.AppendLine($"        __c.P{globalIdx} = ({castType}){p.ValueExpression}!;");
-                }
-                assignmentIdx++;
-            }
-
-            if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
-
+            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            if (isFirstInChain)
-                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
-            else
-                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                delegateParamName: actionParamName);
 
             sb.AppendLine($"    }}");
             return;

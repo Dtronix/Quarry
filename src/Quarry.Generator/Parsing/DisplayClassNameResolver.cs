@@ -82,6 +82,44 @@ internal static class DisplayClassNameResolver
         return null;
     }
 
+    /// <summary>
+    /// Attempts to qualify an error type by checking the source file's using directives
+    /// against known schema types in the compilation. Generated entity types are error
+    /// types at generator time, but the corresponding Schema classes (user-defined) are
+    /// resolvable. E.g., for error type "User", checks each imported namespace for
+    /// "UserSchema" — if found, the entity will be generated as {namespace}.User.
+    /// </summary>
+    private static string? TryQualifyErrorTypeFromUsings(
+        ITypeSymbol errorType, ISymbol symbol, SemanticModel semanticModel)
+    {
+        var typeName = errorType.Name;
+        if (string.IsNullOrEmpty(typeName) || typeName == "?")
+            return null;
+
+        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declRef == null)
+            return null;
+
+        if (!(declRef.SyntaxTree.GetRoot() is CompilationUnitSyntax root))
+            return null;
+
+        var compilation = semanticModel.Compilation;
+        var schemaName = typeName + "Schema";
+
+        foreach (var usingDir in root.Usings)
+        {
+            if (usingDir.Alias != null || usingDir.Name == null)
+                continue;
+
+            var ns = usingDir.Name.ToString();
+            var candidate = ns + "." + schemaName;
+            if (compilation.GetTypeByMetadataName(candidate) != null)
+                return "global::" + ns + "." + typeName;
+        }
+
+        return null;
+    }
+
     private static void AssignOrdinalsPreOrder(
         SyntaxNode node,
         HashSet<SyntaxNode> scopesWithCaptures,
@@ -225,7 +263,9 @@ internal static class DisplayClassNameResolver
             else continue;
 
             var varType = typeSymbol.TypeKind == TypeKind.Error
-                ? (TryResolveErrorType(symbol, semanticModel) ?? "object")
+                ? (TryResolveErrorType(symbol, semanticModel)
+                    ?? TryQualifyErrorTypeFromUsings(typeSymbol, symbol, semanticModel)
+                    ?? "object")
                 : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             if (string.IsNullOrWhiteSpace(varType))

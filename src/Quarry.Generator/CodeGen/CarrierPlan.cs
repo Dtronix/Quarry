@@ -16,22 +16,22 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
         string? className = null,
         string? baseClassName = null,
         IReadOnlyList<Models.CarrierField>? fields = null,
-        IReadOnlyList<Models.CarrierStaticField>? staticFields = null,
         IReadOnlyList<CarrierParameter>? parameters = null,
         string? maskType = null,
         int maskBitCount = 0,
-        IReadOnlyList<string>? implementedInterfaces = null)
+        IReadOnlyList<string>? implementedInterfaces = null,
+        IReadOnlyList<Models.ClauseExtractionPlan>? extractionPlans = null)
     {
         IsEligible = isEligible;
         IneligibleReason = ineligibleReason;
         ClassName = className ?? "";
         BaseClassName = baseClassName ?? "";
         Fields = fields ?? Array.Empty<Models.CarrierField>();
-        StaticFields = staticFields ?? Array.Empty<Models.CarrierStaticField>();
         Parameters = parameters ?? Array.Empty<CarrierParameter>();
         MaskType = maskType;
         MaskBitCount = maskBitCount;
         ImplementedInterfaces = implementedInterfaces ?? Array.Empty<string>();
+        ExtractionPlans = extractionPlans ?? Array.Empty<Models.ClauseExtractionPlan>();
     }
 
     /// <summary>Whether the chain qualifies for carrier optimization.</summary>
@@ -49,9 +49,6 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
     /// <summary>Instance fields on the carrier class.</summary>
     public IReadOnlyList<Models.CarrierField> Fields { get; }
 
-    /// <summary>Static fields on the carrier class (FieldInfo caches).</summary>
-    public IReadOnlyList<Models.CarrierStaticField> StaticFields { get; }
-
     /// <summary>Parameters with extraction/binding metadata.</summary>
     public IReadOnlyList<CarrierParameter> Parameters { get; }
 
@@ -64,10 +61,30 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
     /// <summary>Fully qualified closed interface names this carrier implements. Assigned during emission.</summary>
     public IReadOnlyList<string> ImplementedInterfaces { get; set; }
 
+    /// <summary>
+    /// Per-clause extraction plans for captured variable extraction via [UnsafeAccessor].
+    /// Each plan covers a single clause and contains per-variable extractors.
+    /// Keyed by clause UniqueId for lookup during emission.
+    /// </summary>
+    public IReadOnlyList<Models.ClauseExtractionPlan> ExtractionPlans { get; }
+
     /// <summary>Creates an ineligible plan with a reason.</summary>
     public static CarrierPlan Ineligible(string reason)
     {
         return new CarrierPlan(isEligible: false, ineligibleReason: reason);
+    }
+
+    /// <summary>
+    /// Finds the extraction plan for a given clause UniqueId, or null if none exists.
+    /// </summary>
+    public ClauseExtractionPlan? GetExtractionPlan(string clauseUniqueId)
+    {
+        foreach (var plan in ExtractionPlans)
+        {
+            if (plan.ClauseUniqueId == clauseUniqueId)
+                return plan;
+        }
+        return null;
     }
 
     public bool Equals(CarrierPlan? other)
@@ -81,8 +98,8 @@ internal sealed class CarrierPlan : IEquatable<CarrierPlan>
             && MaskType == other.MaskType
             && MaskBitCount == other.MaskBitCount
             && EqualityHelpers.SequenceEqual(Fields, other.Fields)
-            && EqualityHelpers.SequenceEqual(StaticFields, other.StaticFields)
-            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters);
+            && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
+            && EqualityHelpers.SequenceEqual(ExtractionPlans, other.ExtractionPlans);
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierPlan);
