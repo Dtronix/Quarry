@@ -24,5 +24,7 @@
   href: logging.md
 - name: Analyzer Rules
   href: analyzer-rules.md
+- name: Migrating to Quarry
+  href: migrating-to-quarry.md
 - name: Benchmarks
   href: benchmarks.md
