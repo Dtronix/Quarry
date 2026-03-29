@@ -39,7 +39,7 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 | Capability | Quarry | EF Core | Dapper | SqlKata |
 |---|---|---|---|---|
 | SQL generated at compile time | Yes | No (runtime LINQ translation) | No (hand-written SQL) | No (runtime builder) |
-| Reflection-free hot path | Yes¹ | No | Partial (AOT mode) | No |
+| Reflection-free | Yes | No | Partial (AOT mode) | No |
 | Zero-allocation query dispatch | Yes (carrier architecture) | No | No | No |
 | NativeAOT compatible | Yes | Partial | Partial | No |
 | Compile-time diagnostics | Yes | Limited | No | No |
@@ -55,7 +55,6 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 | Migrations | Yes (code-first, bundles, seed data, views) | Yes | No | No |
 | Prepared multi-terminal queries | Yes (all builder types) | No | No | No |
 
-¹ Captured closure variables use a cached `FieldInfo` read per parameter; all SQL dispatch, binding, and row materialization is reflection-free.
 
 ---
 
