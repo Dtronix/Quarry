@@ -96,10 +96,13 @@ internal static class DisplayClassEnricher
 
             site.DisplayClassName = $"{analysisResult.DisplayClassPrefix}{closureOrdinal}";
 
-            // Classify the capture kind and set CapturedVariableTypes for closure locals
+            // Classify the capture kind and set CapturedVariableTypes for closure locals.
+            // Exclude the implicit 'this' parameter — the compiler captures 'this' directly
+            // without a display class, so it should be treated as FieldCapture.
             if (analysis.DataFlowByNode.TryGetValue(lambda, out var dataFlow)
                 && dataFlow.Succeeded
-                && dataFlow.CapturedInside.Any(s => s is ILocalSymbol || s is IParameterSymbol))
+                && dataFlow.CapturedInside.Any(s => s is ILocalSymbol
+                    || (s is IParameterSymbol p && !p.IsThis)))
             {
                 site.CaptureKind = CaptureKind.ClosureCapture;
                 site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(

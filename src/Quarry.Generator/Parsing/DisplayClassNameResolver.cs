@@ -148,7 +148,7 @@ internal static class DisplayClassNameResolver
 
             foreach (var capturedVar in dataFlow.CapturedInside)
             {
-                if (capturedVar is ILocalSymbol || capturedVar is IParameterSymbol)
+                if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
                 {
                     var declScope = FindDeclaringScope(capturedVar, methodSyntax);
                     if (declScope != null)
@@ -178,7 +178,7 @@ internal static class DisplayClassNameResolver
 
         foreach (var capturedVar in dataFlow.CapturedInside)
         {
-            if (capturedVar is ILocalSymbol || capturedVar is IParameterSymbol)
+            if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
             {
                 var declScope = FindDeclaringScope(capturedVar, methodSyntax);
                 if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
@@ -200,7 +200,7 @@ internal static class DisplayClassNameResolver
             return null;
 
         var captured = dataFlow.CapturedInside
-            .Where(s => s is ILocalSymbol || s is IParameterSymbol)
+            .Where(s => s is ILocalSymbol || (s is IParameterSymbol p && !p.IsThis))
             .Distinct<ISymbol>(SymbolEqualityComparer.Default)
             .ToArray();
 
