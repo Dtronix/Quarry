@@ -376,11 +376,13 @@ public class Svc
 ");
         AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
-        // Captured variable should use invoke-and-read pattern (AOT-safe, no reflection)
-        Assert.That(code, Does.Contain("__setEntity ??= new"),
-            "Captured variable should be extracted via invoke-and-read on carrier entity");
-        Assert.That(code, Does.Contain("action(__e)"),
-            "Action should be invoked on the cached entity instance");
+        // Captured variable should use per-variable UnsafeAccessor extraction
+        Assert.That(code, Does.Contain("__ExtractVar_name_"),
+            "Captured variable should have a per-variable UnsafeAccessor extractor");
+        Assert.That(code, Does.Contain("action.Target!"),
+            "Captured variable extraction should access the delegate target");
+        Assert.That(code, Does.Not.Contain("__setEntity"),
+            "Legacy invoke-and-read __setEntity pattern should not be present");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -409,6 +411,69 @@ public class Svc
         // Multi-assignment should produce two SET columns
         Assert.That(code, Does.Contain("UserName"));
         Assert.That(code, Does.Contain("IsActive"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — property chain capture
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_PropertyChain_ConditionalWhere_CarrierWithMask()
+    {
+        var code = GenerateInterceptors(@"
+public class ViewModel { public string Name { get; set; } = """"; }
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(ViewModel vm, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = vm.Name);
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Property chain should use per-variable extraction for the root variable
+        Assert.That(code, Does.Contain("__ExtractVar_vm_"),
+            "Property chain capture should extract the root variable 'vm'");
+        Assert.That(code, Does.Contain("vm.Name"),
+            "ValueExpression should be used verbatim for property chain access");
+        Assert.That(code, Does.Not.Contain("__setEntity"),
+            "Legacy invoke-and-read __setEntity pattern should not be present");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — multiple captured variables
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_MultipleCapturedVars_ConditionalWhere_CarrierWithMask()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string name, bool active, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => { u.UserName = name; u.IsActive = active; });
+        if (restrict)
+            q = q.Where(u => u.UserId > 0);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Both captured variables should have extractors
+        Assert.That(code, Does.Contain("__ExtractVar_name_"),
+            "Captured variable 'name' should have a per-variable UnsafeAccessor extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_active_"),
+            "Captured variable 'active' should have a per-variable UnsafeAccessor extractor");
     }
 
     // ─────────────────────────────────────────────────────────────────

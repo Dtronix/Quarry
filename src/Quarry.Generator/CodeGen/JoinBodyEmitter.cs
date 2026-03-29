@@ -245,7 +245,7 @@ internal static class JoinBodyEmitter
             }
             else if (siteParams.Count > 0)
             {
-                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site);
             }
             else
             {
@@ -368,7 +368,7 @@ internal static class JoinBodyEmitter
             }
             else if (siteParams.Count > 0)
             {
-                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site);
             }
             else
             {

@@ -1772,13 +1772,25 @@ internal static class UsageSiteDiscovery
             var paramIndex = parameters.Count;
             var isCaptured = IsSetActionCapturedVariable(valueExpr, parameterName);
 
-            // Only simple identifiers can be extracted via closure field lookup
-            if (isCaptured && valueExpr is not IdentifierNameSyntax)
-                isCaptured = false;
-
             var paramInfo = new Translation.ParameterInfo(paramIndex, $"@p{paramIndex}", valueType, valueExpression,
                 isCaptured: isCaptured,
                 expressionPath: isCaptured ? valueExpression : null);
+
+            // Populate CapturedFieldName by extracting the root identifier from the value expression
+            if (isCaptured)
+            {
+                var (rootName, rootExpr) = ExtractRootIdentifier(valueExpr, parameterName);
+                if (rootName != null)
+                {
+                    paramInfo.CapturedFieldName = rootName;
+                    if (rootExpr != null)
+                    {
+                        var rootTypeInfo = semanticModel.GetTypeInfo(rootExpr);
+                        if (rootTypeInfo.Type != null)
+                            paramInfo.CapturedFieldType = rootTypeInfo.Type.ToDisplayString();
+                    }
+                }
+            }
 
             parameters.Add(paramInfo);
 
@@ -1827,6 +1839,30 @@ internal static class UsageSiteDiscovery
         if (value.IndexOf('\'') < 0 && value.IndexOf('\\') < 0)
             return value;
         return value.Replace("'", "''").Replace("\\", "\\\\");
+    }
+
+    /// <summary>
+    /// Extracts the root identifier from a value expression.
+    /// For simple identifiers (e.g., <c>localVar</c>), returns the identifier text.
+    /// For member access chains (e.g., <c>obj.Property.Nested</c>), walks left to the root identifier.
+    /// Returns null if the root is the lambda parameter or cannot be determined.
+    /// </summary>
+    private static (string? Name, ExpressionSyntax? RootExpression) ExtractRootIdentifier(ExpressionSyntax expr, string lambdaParamName)
+    {
+        // Walk left through member access to find the root
+        var current = expr;
+        while (current is MemberAccessExpressionSyntax memberAccess)
+            current = memberAccess.Expression;
+
+        if (current is IdentifierNameSyntax identifier)
+        {
+            var name = identifier.Identifier.Text;
+            if (name == lambdaParamName)
+                return (null, null);
+            return (name, identifier);
+        }
+
+        return (null, null);
     }
 
     /// <summary>

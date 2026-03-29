@@ -365,7 +365,8 @@ internal static class CarrierEmitter
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         TranslatedCallSite site, int? clauseBit, bool isFirstInChain,
         string concreteBuilderType, string returnInterface,
-        bool hasResolvableCapturedParams, List<InterceptorCodeGenerator.CachedExtractorField> methodFields)
+        bool hasResolvableCapturedParams, List<InterceptorCodeGenerator.CachedExtractorField> methodFields,
+        string delegateParamName = "func")
     {
         // Compute global parameter offset for this clause's params
         var globalParamOffset = 0;
@@ -377,6 +378,8 @@ internal static class CarrierEmitter
                 globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
             else if (clause.Site.Clause != null)
                 globalParamOffset += clause.Site.Clause.Parameters.Count;
+            else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
+                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
         }
 
         if (isFirstInChain)
@@ -389,11 +392,29 @@ internal static class CarrierEmitter
             sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         }
 
-        // Extract and bind parameters using [UnsafeAccessor] extraction for captured params
-        var clauseInfo = site.Clause;
-        if (clauseInfo != null && clauseInfo.Parameters.Count > 0)
+        // Determine which parameters to bind: clause params or SetAction params
+        IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
+        if (site.Kind == InterceptorKind.UpdateSetAction)
+            clauseParams = site.Bound.Raw.SetActionParameters;
+        else if (site.Clause != null)
+            clauseParams = site.Clause.Parameters;
+
+        if (clauseParams != null && clauseParams.Count > 0)
         {
-            var allParams = clauseInfo.Parameters.OrderBy(p => p.Index).ToList();
+            // Emit per-variable extraction locals from the extraction plan
+            var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
+            if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
+            {
+                sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+                foreach (var extractor in extractionPlan.Extractors)
+                {
+                    var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                    sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
+                }
+            }
+
+            // Bind parameters using ValueExpression — captured variables are now in scope as locals
+            var allParams = clauseParams.OrderBy(p => p.Index).ToList();
             for (int i = 0; i < allParams.Count; i++)
             {
                 var p = allParams[i];
@@ -403,26 +424,15 @@ internal static class CarrierEmitter
 
                 if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
                 {
-                    // Collection parameter: extract via UnsafeAccessor or fallback
-                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier.ClassName);
+                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier, delegateParamName);
                 }
                 else
                 {
-                    // Set clauses: the value comes from the 'value' method parameter
                     var isSetClause = site.Kind == InterceptorKind.Set || site.Kind == InterceptorKind.UpdateSet;
                     var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                     if (isSetClause)
                     {
                         sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType})value!;");
-                    }
-                    else if (p.IsCaptured && p.CapturedFieldName != null
-                             && HasUnsafeAccessor(carrier, globalIdx))
-                    {
-                        // Use [UnsafeAccessor] extraction via __ExtractP{n}
-                        var isStaticAccessor = IsStaticUnsafeAccessor(carrier, globalIdx);
-                        var targetExpr = isStaticAccessor ? "null!" : "func.Target!";
-                        var propertySuffix = GetPropertyChainSuffix(carrierParam);
-                        sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType}){carrier.ClassName}.__ExtractP{globalIdx}({targetExpr}){propertySuffix};");
                     }
                     else
                     {
@@ -481,35 +491,15 @@ internal static class CarrierEmitter
             sb.AppendLine($"    internal {field.TypeName} {field.Name}{initializer};");
         }
 
-        // Emit entity instance field for UpdateSetAction (invoke-and-read pattern, AOT-safe)
-        var hasSetActionCaptured = chain.ClauseSites.Any(cs =>
-            cs.Kind == InterceptorKind.UpdateSetAction
-            && cs.Clause?.Parameters.Any(p => p.IsCaptured) == true);
-        if (hasSetActionCaptured)
+        // Emit [UnsafeAccessor] extern methods from per-clause extraction plans
+        foreach (var extractionPlan in info.ExtractionPlans)
         {
-            var entityType = InterceptorCodeGenerator.GetShortTypeName(chain.EntityTypeName);
-            sb.AppendLine($"    internal {entityType}? __setEntity;");
-        }
-
-        // Emit [UnsafeAccessor] extern methods for captured parameter extraction
-        foreach (var staticField in info.StaticFields)
-        {
-            if (staticField.DisplayClassName != null && staticField.CapturedFieldName != null)
+            foreach (var extractor in extractionPlan.Extractors)
             {
-                if (staticField.IsStaticField)
-                {
-                    // Static field on the containing class (not a closure display class)
-                    sb.AppendLine($"    [UnsafeAccessor(UnsafeAccessorKind.StaticField, Name = \"{staticField.CapturedFieldName}\")]");
-                    sb.AppendLine($"    internal extern static ref {staticField.CapturedFieldType ?? staticField.TypeName} {staticField.Name}(");
-                    sb.AppendLine($"        [UnsafeAccessorType(\"{staticField.DisplayClassName}\")] object target);");
-                }
-                else
-                {
-                    // Instance field on a closure display class
-                    sb.AppendLine($"    [UnsafeAccessor(UnsafeAccessorKind.Field, Name = \"{staticField.CapturedFieldName}\")]");
-                    sb.AppendLine($"    internal extern static ref {staticField.CapturedFieldType ?? staticField.TypeName} {staticField.Name}(");
-                    sb.AppendLine($"        [UnsafeAccessorType(\"{staticField.DisplayClassName}\")] object target);");
-                }
+                var accessorKind = extractor.IsStaticField ? "UnsafeAccessorKind.StaticField" : "UnsafeAccessorKind.Field";
+                sb.AppendLine($"    [UnsafeAccessor({accessorKind}, Name = \"{extractor.VariableName}\")]");
+                sb.AppendLine($"    internal extern static ref {extractor.VariableType} {extractor.MethodName}(");
+                sb.AppendLine($"        [UnsafeAccessorType(\"{extractor.DisplayClassName}\")] object target);");
             }
         }
 
@@ -570,8 +560,8 @@ internal static class CarrierEmitter
 
         sb.AppendLine(" };");
 
-        // Bind parameters if this clause has any
-        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
+        // Emit per-variable extraction locals and bind parameters
+        EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
 
         // Set clause bit if conditional
         if (bitIndex.HasValue)
@@ -587,11 +577,15 @@ internal static class CarrierEmitter
     /// </summary>
     internal static void EmitCarrierParamBind(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
-        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
+        TranslatedCallSite? site = null)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
+        if (site != null)
+            EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
+        else
+            EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
 
         if (bitIndex.HasValue)
         {
@@ -599,6 +593,29 @@ internal static class CarrierEmitter
         }
 
         sb.AppendLine("        return builder;");
+    }
+
+    /// <summary>
+    /// Emits per-variable extraction locals from the extraction plan, then binds parameters.
+    /// </summary>
+    private static void EmitExtractionLocalsAndBindParams(
+        StringBuilder sb, CarrierPlan carrier, TranslatedCallSite site,
+        IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
+        string delegateParamName = "func")
+    {
+        var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
+        if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
+        {
+            delegateParamName = extractionPlan.DelegateParamName;
+            sb.AppendLine($"        var __target = {delegateParamName}.Target!;");
+            foreach (var extractor in extractionPlan.Extractors)
+            {
+                var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
+            }
+        }
+
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
     }
 
     /// <summary>
@@ -1049,7 +1066,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCollectionContainsExtraction(
         StringBuilder sb, int globalIdx, QueryParameter carrierParam,
-        string? carrierClassName = null)
+        CarrierPlan carrier, string delegateParamName = "func")
     {
         var fieldType = carrierParam.ElementTypeName != null
             ? $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>"
@@ -1059,37 +1076,25 @@ internal static class CarrierEmitter
         {
             sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierParam.CollectionAccessExpression};");
         }
-        else if (carrierParam.CapturedFieldName != null && carrierClassName != null)
+        else if (carrierParam.ValueExpression != null)
         {
-            // Use [UnsafeAccessor] extraction for captured collection
-            var propertySuffix = GetPropertyChainSuffix(carrierParam);
-            sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierClassName}.__ExtractP{globalIdx}(func.Target!){propertySuffix};");
+            // Per-variable extraction locals bring captured variables into scope,
+            // so ValueExpression is valid C# in the generated context
+            sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierParam.ValueExpression}!;");
         }
     }
 
     private static void EmitCarrierParamBindings(
         StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
-        // Bind parameters to carrier fields using [UnsafeAccessor] extraction for captured variables
+        // Bind parameters to carrier fields using ValueExpression — per-variable locals are in scope
         for (int i = 0; i < siteParams.Count; i++)
         {
             var param = siteParams[i];
             var globalIdx = globalParamOffset + i;
             if (param.IsCollection)
             {
-                EmitCollectionContainsExtraction(sb, globalIdx, param, carrier.ClassName);
-            }
-            else if (param.IsCaptured && param.CapturedFieldName != null
-                     && HasUnsafeAccessor(carrier, globalIdx))
-            {
-                // Use [UnsafeAccessor] extraction via the pre-emitted __ExtractP{n} method
-                var castType = GetEffectiveCastType(globalIdx, param, carrier);
-                var isStaticAccessor = IsStaticUnsafeAccessor(carrier, globalIdx);
-                var targetExpr = isStaticAccessor ? "null!" : "func.Target!";
-                var extractExpr = $"{carrier.ClassName}.__ExtractP{globalIdx}({targetExpr})";
-                // For property chain captures, derive the property suffix from ValueExpression
-                var propertySuffix = GetPropertyChainSuffix(param);
-                sb.AppendLine($"        __c.P{globalIdx} = ({castType}){extractExpr}{propertySuffix};");
+                EmitCollectionContainsExtraction(sb, globalIdx, param, carrier);
             }
             else
             {
@@ -1099,29 +1104,6 @@ internal static class CarrierEmitter
         }
     }
 
-    /// <summary>
-    /// For property chain captures (e.g., viewModel.SearchTerm), derives the ".PropertyName"
-    /// suffix from the ValueExpression by stripping the CapturedFieldName prefix.
-    /// Returns empty string for simple (non-chain) captures.
-    /// </summary>
-    private static string GetPropertyChainSuffix(QueryParameter param)
-    {
-        if (param.CapturedFieldName == null || param.ValueExpression == null)
-            return "";
-
-        // ValueExpression for a property chain looks like "viewModel.SearchTerm"
-        // CapturedFieldName is "viewModel"
-        // We want ".SearchTerm"
-        // Use StartsWith to avoid matching substrings (e.g., "id" within "userId")
-        if (param.ValueExpression.StartsWith(param.CapturedFieldName))
-        {
-            var afterField = param.CapturedFieldName.Length;
-            if (afterField < param.ValueExpression.Length && param.ValueExpression[afterField] == '.')
-                return param.ValueExpression.Substring(afterField);
-        }
-
-        return "";
-    }
 
     /// <summary>
     /// Emits SQL read from the carrier's static _sql field.
@@ -1145,35 +1127,6 @@ internal static class CarrierEmitter
         {
             TerminalEmitHelpers.EmitCollectionExpansion(sb, chain);
         }
-    }
-
-    /// <summary>
-    /// Checks whether the carrier has an [UnsafeAccessor] static method for a given parameter index.
-    /// </summary>
-    private static bool HasUnsafeAccessor(CarrierPlan carrier, int globalIdx)
-    {
-        var targetName = $"__ExtractP{globalIdx}";
-        foreach (var sf in carrier.StaticFields)
-        {
-            if (sf.Name == targetName && sf.DisplayClassName != null)
-                return true;
-        }
-        return false;
-    }
-
-    /// <summary>
-    /// Checks whether the UnsafeAccessor for a given parameter targets a static field
-    /// (on the containing class) rather than an instance field (on a display class).
-    /// </summary>
-    private static bool IsStaticUnsafeAccessor(CarrierPlan carrier, int globalIdx)
-    {
-        var targetName = $"__ExtractP{globalIdx}";
-        foreach (var sf in carrier.StaticFields)
-        {
-            if (sf.Name == targetName && sf.IsStaticField)
-                return true;
-        }
-        return false;
     }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)

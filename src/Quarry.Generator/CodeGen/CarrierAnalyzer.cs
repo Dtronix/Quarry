@@ -5,6 +5,7 @@ using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -150,7 +151,6 @@ internal static class CarrierAnalyzer
 
         // Build fields and parameters from QueryPlan.Parameters
         var fields = new List<Models.CarrierField>();
-        var staticFields = new List<Models.CarrierStaticField>();
         var parameters = new List<CarrierParameter>();
 
         foreach (var param in plan.Parameters)
@@ -208,63 +208,10 @@ internal static class CarrierAnalyzer
                     typeMappingClass: param.TypeMappingClass,
                     isSensitive: param.IsSensitive));
             }
-
-            if (param.NeedsUnsafeAccessor && param.CapturedFieldName != null
-                && displayClassByParam.TryGetValue(param.GlobalIndex, out var dcInfo)
-                && dcInfo.DisplayClassName != null)
-            {
-                switch (dcInfo.CaptureKind)
-                {
-                    case CaptureKind.ClosureCapture:
-                    {
-                        // Closure-captured local/parameter — use UnsafeAccessorKind.Field
-                        // with the display class as the target type.
-                        string capturedType;
-                        if (dcInfo.VarTypes != null
-                            && dcInfo.VarTypes.TryGetValue(param.CapturedFieldName, out var resolvedType))
-                        {
-                            capturedType = resolvedType;
-                        }
-                        else
-                        {
-                            capturedType = param.CapturedFieldType ?? param.ClrType;
-                            if (capturedType == "?" || string.IsNullOrWhiteSpace(capturedType))
-                                capturedType = "object";
-                        }
-
-                        staticFields.Add(new Models.CarrierStaticField(
-                            $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
-                            displayClassName: dcInfo.DisplayClassName,
-                            capturedFieldName: param.CapturedFieldName,
-                            capturedFieldType: capturedType));
-                        break;
-                    }
-                    case CaptureKind.FieldCapture:
-                    {
-                        // Static or instance field on the containing class — strip the
-                        // display class suffix and use the per-parameter IsStaticCapture
-                        // flag to select UnsafeAccessorKind.StaticField vs .Field.
-                        var capturedType = param.CapturedFieldType ?? param.ClrType;
-                        if (capturedType == "?" || string.IsNullOrWhiteSpace(capturedType))
-                            capturedType = "object";
-
-                        var containingType = dcInfo.DisplayClassName;
-                        var displayClassMarker = containingType.IndexOf("+<>c__DisplayClass");
-                        if (displayClassMarker > 0)
-                            containingType = containingType.Substring(0, displayClassMarker);
-
-                        staticFields.Add(new Models.CarrierStaticField(
-                            $"__ExtractP{param.GlobalIndex}", capturedType, param.GlobalIndex,
-                            displayClassName: containingType,
-                            capturedFieldName: param.CapturedFieldName,
-                            capturedFieldType: capturedType,
-                            isStaticField: param.IsStaticCapture));
-                        break;
-                    }
-                    // CaptureKind.None: no UnsafeAccessor needed
-                }
-            }
         }
+
+        // Build per-clause extraction plans for captured variable extraction
+        var extractionPlans = BuildExtractionPlans(assembled);
 
         // Mask field for conditional clauses
         string? maskType = null;
@@ -311,10 +258,120 @@ internal static class CarrierAnalyzer
             className: null, // Assigned during file grouping
             baseClassName: "", // Resolved by emitter
             fields: fields,
-            staticFields: staticFields,
             parameters: parameters,
             maskType: maskType,
-            maskBitCount: maskBitCount);
+            maskBitCount: maskBitCount,
+            extractionPlans: extractionPlans);
+    }
+
+    /// <summary>
+    /// Builds per-clause extraction plans for captured variable extraction via [UnsafeAccessor].
+    /// Each plan covers a single clause and contains per-variable extractors.
+    /// </summary>
+    private static List<Models.ClauseExtractionPlan> BuildExtractionPlans(
+        AssembledPlan assembled)
+    {
+        var plans = new List<Models.ClauseExtractionPlan>();
+        var clauseIndex = 0;
+
+        foreach (var cs in assembled.ClauseSites)
+        {
+            // Determine which parameters belong to this clause
+            IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
+            string delegateParamName;
+
+            if (cs.Kind == InterceptorKind.UpdateSetAction)
+            {
+                clauseParams = cs.Bound.Raw.SetActionParameters;
+                var hasCaptured = clauseParams?.Any(p => p.IsCaptured) == true;
+                delegateParamName = hasCaptured ? "action" : "_";
+            }
+            else if (cs.Clause?.Parameters.Count > 0)
+            {
+                clauseParams = cs.Clause.Parameters;
+                delegateParamName = "func";
+            }
+            else
+            {
+                continue;
+            }
+
+            if (clauseParams == null || clauseParams.Count == 0)
+                continue;
+
+            // Collect unique captured variables for this clause
+            var seenVariables = new Dictionary<string, Models.CapturedVariableExtractor>();
+
+            foreach (var p in clauseParams)
+            {
+                if (!p.IsCaptured || p.CapturedFieldName == null)
+                    continue;
+
+                if (seenVariables.ContainsKey(p.CapturedFieldName))
+                    continue;
+
+                // Resolve display class info from the clause site
+                var captureKind = cs.CaptureKind;
+                var displayClassName = cs.DisplayClassName;
+
+                if (captureKind == CaptureKind.None || displayClassName == null)
+                    continue;
+
+                // Resolve the variable type from CapturedVariableTypes or fallback to param metadata
+                string variableType;
+                if (cs.CapturedVariableTypes != null
+                    && cs.CapturedVariableTypes.TryGetValue(p.CapturedFieldName, out var resolvedType)
+                    && resolvedType != "object" && resolvedType != "?")
+                {
+                    variableType = resolvedType;
+                }
+                else
+                {
+                    variableType = p.CapturedFieldType ?? p.ClrType;
+                    if (variableType == "?" || string.IsNullOrWhiteSpace(variableType))
+                        variableType = "object";
+                }
+
+                // For FieldCapture, strip the display class suffix to get the containing type
+                var effectiveDisplayClass = displayClassName;
+                var isStaticField = p.IsStaticCapture;
+                if (captureKind == CaptureKind.FieldCapture)
+                {
+                    var marker = displayClassName.IndexOf("+<>c__DisplayClass");
+                    if (marker > 0)
+                        effectiveDisplayClass = displayClassName.Substring(0, marker);
+                }
+
+                var methodName = $"__ExtractVar_{p.CapturedFieldName}_{clauseIndex}";
+                seenVariables[p.CapturedFieldName] = new Models.CapturedVariableExtractor(
+                    methodName,
+                    p.CapturedFieldName,
+                    variableType,
+                    effectiveDisplayClass,
+                    captureKind,
+                    isStaticField);
+            }
+
+            if (seenVariables.Count > 0)
+            {
+                plans.Add(new Models.ClauseExtractionPlan(
+                    cs.UniqueId,
+                    delegateParamName,
+                    new List<Models.CapturedVariableExtractor>(seenVariables.Values)));
+            }
+
+            clauseIndex++;
+        }
+
+        return plans;
+    }
+
+    /// <summary>
+    /// Maps an InterceptorKind to the delegate parameter name used in the interceptor method signature.
+    /// </summary>
+    internal static string GetDelegateParamName(InterceptorKind kind)
+    {
+        return kind == InterceptorKind.UpdateSetAction ? "action" : "func";
     }
 
     #endregion
