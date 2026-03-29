@@ -150,6 +150,17 @@ internal static class AnalyzerDiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Filtering on a column without an index may result in a full table scan.");
 
+    public static readonly DiagnosticDescriptor MutableArrayInClause = new(
+        id: "QRA305",
+        title: "Mutable array in IN clause",
+        messageFormat: "Field '{0}' is a 'static readonly' array whose elements can be mutated at runtime; consider ImmutableArray<T> for a safe constant collection",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "A static readonly array used in a .Contains() / IN clause has immutable reference but mutable elements. " +
+                     "The source generator inlines the initializer values at compile time, which may diverge from runtime state if elements are modified. " +
+                     "Using ImmutableArray<T> guarantees element immutability.");
+
     // ── QRA4xx: Patterns ──
 
     public static readonly DiagnosticDescriptor QueryInsideLoop = new(

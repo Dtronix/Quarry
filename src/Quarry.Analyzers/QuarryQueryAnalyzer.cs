@@ -41,6 +41,7 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         new FunctionOnColumnInWhereRule(),
         new OrOnDifferentColumnsRule(),
         new WhereOnNonIndexedColumnRule(),
+        new MutableArrayInClauseRule(),
         // QRA4xx: Patterns
         new QueryInsideLoopRule(),
         new MultipleQueriesSameTableRule(),
@@ -64,6 +65,7 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         AnalyzerDiagnosticDescriptors.FunctionOnColumnInWhere,
         AnalyzerDiagnosticDescriptors.OrOnDifferentColumns,
         AnalyzerDiagnosticDescriptors.WhereOnNonIndexedColumn,
+        AnalyzerDiagnosticDescriptors.MutableArrayInClause,
         AnalyzerDiagnosticDescriptors.QueryInsideLoop,
         AnalyzerDiagnosticDescriptors.MultipleQueriesSameTable,
         AnalyzerDiagnosticDescriptors.DialectOptimization,

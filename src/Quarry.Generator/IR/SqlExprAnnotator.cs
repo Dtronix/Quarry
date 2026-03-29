@@ -368,6 +368,10 @@ internal static class SqlExprAnnotator
         {
             if (symbol is ILocalSymbol localSymbol)
             {
+                // Guard: only inline if the local is never reassigned after declaration
+                if (IsLocalReassigned(localSymbol, scope, semanticModel))
+                    return null;
+
                 var declRef = localSymbol.DeclaringSyntaxReferences.FirstOrDefault();
                 if (declRef != null)
                 {
@@ -376,7 +380,7 @@ internal static class SqlExprAnnotator
                         arrayInit = ExtractArrayInitializer(declarator.Initializer.Value);
                 }
             }
-            else if (symbol is IFieldSymbol fieldSymbol && (fieldSymbol.IsReadOnly || fieldSymbol.IsConst || fieldSymbol.IsStatic))
+            else if (symbol is IFieldSymbol fieldSymbol && (fieldSymbol.IsReadOnly || fieldSymbol.IsConst))
             {
                 var declRef = fieldSymbol.DeclaringSyntaxReferences.FirstOrDefault();
                 if (declRef != null)
@@ -405,6 +409,10 @@ internal static class SqlExprAnnotator
                                 if (variable.Identifier.ValueText == variableName &&
                                     variable.Initializer?.Value != null)
                                 {
+                                    // Guard: check if any subsequent statement reassigns this variable
+                                    if (IsLocalReassignedInBlock(variableName, localDecl, block))
+                                        return null;
+
                                     arrayInit = ExtractArrayInitializer(variable.Initializer.Value);
                                     if (arrayInit != null) break;
                                 }
@@ -459,6 +467,57 @@ internal static class SqlExprAnnotator
         }
 
         return literals.Count > 0 ? literals.ToArray() : null;
+    }
+
+    /// <summary>
+    /// Checks whether a local variable is reassigned anywhere in the enclosing block.
+    /// Uses semantic symbol comparison to avoid false positives from same-named variables in nested scopes.
+    /// </summary>
+    private static bool IsLocalReassigned(ILocalSymbol local, SyntaxNode scope, SemanticModel semanticModel)
+    {
+        var enclosing = scope.FirstAncestorOrSelf<BlockSyntax>();
+        if (enclosing == null) return false;
+
+        foreach (var assignment in enclosing.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+        {
+            if (assignment.Left is IdentifierNameSyntax id &&
+                id.Identifier.ValueText == local.Name)
+            {
+                var assignedSymbol = semanticModel.GetSymbolInfo(id).Symbol;
+                if (SymbolEqualityComparer.Default.Equals(assignedSymbol, local))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks whether a local variable (identified by name) is reassigned after its declaration
+    /// in the same block. Used by the fallback block-walk path where no symbol is available.
+    /// </summary>
+    private static bool IsLocalReassignedInBlock(string variableName, LocalDeclarationStatementSyntax declaration, BlockSyntax block)
+    {
+        bool pastDeclaration = false;
+        foreach (var statement in block.Statements)
+        {
+            if (ReferenceEquals(statement, declaration))
+            {
+                pastDeclaration = true;
+                continue;
+            }
+
+            if (!pastDeclaration) continue;
+
+            foreach (var assignment in statement.DescendantNodes().OfType<AssignmentExpressionSyntax>())
+            {
+                if (assignment.Left is IdentifierNameSyntax id &&
+                    id.Identifier.ValueText == variableName)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private static InitializerExpressionSyntax? ExtractArrayInitializer(ExpressionSyntax initValue)

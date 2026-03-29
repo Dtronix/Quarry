@@ -130,6 +130,135 @@ public class PerformanceRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
+    // -- QRA305: MutableArrayInClauseRule --
+
+    [Test]
+    public void QRA305_StaticReadonlyArray_Reports()
+    {
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateLambdaContext(
+            "private static readonly string[] _statuses = new[] { \"a\", \"b\" };",
+            "o => _statuses.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA305"));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("_statuses"));
+    }
+
+    [Test]
+    public void QRA305_MutableStaticArray_NoReport()
+    {
+        // Mutable static (not readonly) — won't be inlined, so no false warning
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateLambdaContext(
+            "private static string[] _statuses = new[] { \"a\", \"b\" };",
+            "o => _statuses.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA305_LocalArray_NoReport()
+    {
+        var rule = new MutableArrayInClauseRule();
+        // Local variable — not a field, so rule should not fire
+        var context = CreateLambdaContext(
+            "", // no field needed
+            "o => new[] { \"a\", \"b\" }.Contains(o.Status)");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA305_ImmutableArrayField_NoReport()
+    {
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateLambdaContext(
+            "private static readonly System.Collections.Immutable.ImmutableArray<string> _statuses = System.Collections.Immutable.ImmutableArray.Create(\"a\", \"b\");",
+            "o => _statuses.Contains(o.Status)",
+            extraUsings: "using System.Collections.Immutable;");
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA305_HavingClause_Reports()
+    {
+        var rule = new MutableArrayInClauseRule();
+        var context = CreateLambdaContext(
+            "private static readonly string[] _statuses = new[] { \"a\", \"b\" };",
+            "o => _statuses.Contains(o.Status)",
+            clauseKind: ClauseKind.Having);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA305"));
+    }
+
+    private static QueryAnalysisContext CreateLambdaContext(
+        string fieldDeclaration,
+        string lambdaExpr,
+        ClauseKind clauseKind = ClauseKind.Where,
+        string? extraUsings = null)
+    {
+        var source = $@"
+using System.Linq;
+{extraUsings ?? ""}
+class Param {{ public string Status {{ get; set; }} }}
+class C {{
+    {fieldDeclaration}
+    void M() {{
+        System.Func<Param, bool> f = null;
+        Where({lambdaExpr});
+    }}
+    static void Where(System.Func<Param, bool> predicate) {{ }}
+}}";
+        var tree = CSharpSyntaxTree.ParseText(source);
+        var runtimeDir = System.IO.Path.GetDirectoryName(typeof(object).Assembly.Location)!;
+        var refs = new List<MetadataReference>
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(typeof(System.Linq.Enumerable).Assembly.Location),
+        };
+        var runtimeRef = System.IO.Path.Combine(runtimeDir, "System.Runtime.dll");
+        if (System.IO.File.Exists(runtimeRef))
+            refs.Add(MetadataReference.CreateFromFile(runtimeRef));
+        var immutableRef = System.IO.Path.Combine(runtimeDir, "System.Collections.Immutable.dll");
+        if (System.IO.File.Exists(immutableRef))
+            refs.Add(MetadataReference.CreateFromFile(immutableRef));
+
+        var compilation = CSharpCompilation.Create("Test",
+            new[] { tree },
+            refs,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var semanticModel = compilation.GetSemanticModel(tree);
+
+        // Find the Where(...) invocation
+        var invocation = tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>()
+            .First(inv => inv.Expression is IdentifierNameSyntax id && id.Identifier.ValueText == "Where");
+
+        var interceptorKind = clauseKind == ClauseKind.Having ? InterceptorKind.Having : InterceptorKind.Where;
+        var site = new RawCallSite(
+            methodName: clauseKind == ClauseKind.Having ? "Having" : "Where",
+            filePath: "Test.cs",
+            line: 1, column: 1,
+            uniqueId: "test_qra305",
+            kind: interceptorKind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "Param",
+            resultTypeName: "Param",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, new TextSpan(0, 0)),
+            expression: null,
+            clauseKind: clauseKind);
+
+        return new QueryAnalysisContext(
+            site, null, null, null, semanticModel, invocation,
+            new EmptyAnalyzerConfigOptions());
+    }
+
     private static EntityInfo CreateEntityWithIndex(string indexedPropertyName, string indexName)
     {
         var modifiers = new ColumnModifiers();
