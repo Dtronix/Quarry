@@ -142,6 +142,43 @@ public class QuarryContextDisposalTests
         Assert.That(connection.DisposeCallCount, Is.EqualTo(0));
     }
 
+    [Test]
+    public async Task DisposeAsync_DoesNotOwnConnection_DoesNotDisposeConnection()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: false);
+        connection.Open();
+
+        await ctx.DisposeAsync();
+
+        Assert.That(connection.State, Is.EqualTo(ConnectionState.Closed));
+        Assert.That(connection.DisposeAsyncCallCount, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void Dispose_OwnsConnection_DoubleDispose_DoesNotThrow()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: true);
+        connection.Open();
+
+        ctx.Dispose();
+        Assert.DoesNotThrow(() => ctx.Dispose());
+        Assert.That(connection.DisposeCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task DisposeAsync_OwnsConnection_DoubleDispose_DoesNotThrow()
+    {
+        var connection = new TrackingConnection("Data Source=:memory:");
+        var ctx = new MinimalContext(connection, ownsConnection: true);
+        connection.Open();
+
+        await ctx.DisposeAsync();
+        Assert.DoesNotThrowAsync(async () => await ctx.DisposeAsync());
+        Assert.That(connection.DisposeAsyncCallCount, Is.EqualTo(1));
+    }
+
     /// <summary>
     /// SqliteConnection wrapper that tracks Dispose/DisposeAsync calls.
     /// </summary>
