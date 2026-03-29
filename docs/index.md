@@ -1,9 +1,68 @@
-<div style="text-align: center; padding: 2rem 0;">
-  <img src="images/logo-128.png" alt="Quarry" style="height: 96px; margin-bottom: 1rem;" />
-  <h1 style="margin-bottom: 0.25rem;">Quarry</h1>
-  <p style="font-size: 1.25rem; color: #666; max-width: 640px; margin: 0 auto;">
+---
+_layout: landing
+---
+
+<div style="text-align: center; padding: 0.75rem 0 0.5rem;">
+  <img src="images/logo-128.png" alt="Quarry" style="height: 64px; margin-bottom: 0.5rem;" />
+  <h1 style="margin-bottom: 0.25rem; font-size: 2rem;">Quarry</h1>
+  <p style="font-size: 1.1rem; color: #666; max-width: 640px; margin: 0 auto;">
     Type-safe SQL builder for .NET 10. Write C# — the compiler emits SQL. Zero reflection. AOT compatible.
   </p>
+</div>
+
+---
+
+## Explore the Documentation
+
+<div class="row" style="margin-top: 0.5rem;">
+<div class="col-md-6">
+
+### [Getting Started](articles/getting-started.md)
+Install Quarry and write your first compile-time query in minutes.
+
+### [Schema Definition](articles/schema-definition.md)
+Define tables as C# classes with typed column properties.
+
+### [Context Definition](articles/context-definition.md)
+Configure your QuarryContext with dialect, schema, and connection settings.
+
+### [Switching Dialects](articles/switching-dialects.md)
+Change one enum value to retarget your entire project to a different database.
+
+### [Querying](articles/querying.md)
+Select, filter, join, aggregate — all compiled to SQL at build time.
+
+### [Prepared Queries](articles/prepared-queries.md)
+Compile once, execute multiple ways with zero overhead.
+
+### [Modifications](articles/modifications.md)
+Insert, update, and delete with initializer-aware compile-time analysis.
+
+</div>
+<div class="col-md-6">
+
+### [Migrations](articles/migrations.md)
+Code-first migration diffing via the CLI tool.
+
+### [Scaffolding](articles/scaffolding.md)
+Reverse-engineer an existing database into schema classes.
+
+### [Diagnostics](articles/diagnostics.md)
+Inspect generated SQL, parameters, and optimization metadata.
+
+### [Logging](articles/logging.md)
+Structured logging with sensitive parameter redaction and slow query detection.
+
+### [Analyzer Rules](articles/analyzer-rules.md)
+Compile-time SQL analysis rules and code fixes.
+
+### [Migrating to Quarry](articles/migrating-to-quarry.md)
+Migrate from Dapper, EF Core, SqlKata, or raw ADO.NET.
+
+### [Benchmarks](articles/benchmarks.md)
+Performance comparison against Dapper, EF Core, and SqlKata.
+
+</div>
 </div>
 
 ---
@@ -74,45 +133,5 @@ The source generator is included automatically. Enable interceptors in your `.cs
 <div class="col-md-4" style="margin-bottom: 1.5rem;">
 <h3>Migrations & Scaffolding</h3>
 <p>Code-first migration diffing via CLI. Reverse-engineer existing databases into schema classes.</p>
-</div>
-</div>
-
----
-
-## Explore the Documentation
-
-<div class="row" style="margin-top: 1rem;">
-<div class="col-md-6">
-
-### [Getting Started](articles/getting-started.md)
-Install Quarry and write your first compile-time query in minutes.
-
-### [Schema Definition](articles/schema-definition.md)
-Define tables as C# classes with typed column properties.
-
-### [Switching Dialects](articles/switching-dialects.md)
-Change one enum value to retarget your entire project to a different database.
-
-### [Querying](articles/querying.md)
-Select, filter, join, aggregate — all compiled to SQL at build time.
-
-### [Prepared Queries](articles/prepared-queries.md)
-Compile once, execute multiple ways with zero overhead.
-
-</div>
-<div class="col-md-6">
-
-### [Modifications](articles/modifications.md)
-Insert, update, and delete with initializer-aware compile-time analysis.
-
-### [Migrations](articles/migrations.md)
-Code-first migration scaffolding via the CLI tool.
-
-### [Diagnostics](articles/diagnostics.md)
-Inspect generated SQL, parameters, and optimization metadata.
-
-### [API Reference](api/index.md)
-Auto-generated reference for all public types and methods.
-
 </div>
 </div>
