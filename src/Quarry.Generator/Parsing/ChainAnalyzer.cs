@@ -771,7 +771,8 @@ internal static class ChainAnalyzer
                 isDirectAccessible: false, // Computed during carrier analysis
                 collectionAccessExpression: null, // Computed during carrier analysis
                 capturedFieldName: p.CapturedFieldName,
-                capturedFieldType: p.CapturedFieldType));
+                capturedFieldType: p.CapturedFieldType,
+                isStaticCapture: p.IsStaticCapture));
         }
         return result;
     }

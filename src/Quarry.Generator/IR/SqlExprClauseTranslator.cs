@@ -27,6 +27,7 @@ internal static class SqlExprClauseTranslator
                     idx, name, captured.ClrType, captured.SyntaxText,
                     isCaptured: true, expressionPath: captured.ExpressionPath);
                 paramInfo.CapturedFieldName = captured.VariableName;
+                paramInfo.IsStaticCapture = captured.IsStaticField;
                 parameters.Add(paramInfo);
                 return new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
                     isCaptured: true, expressionPath: captured.ExpressionPath);

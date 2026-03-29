@@ -241,8 +241,9 @@ internal static class CarrierAnalyzer
                     }
                     case CaptureKind.FieldCapture:
                     {
-                        // Static/instance field on the containing class — strip the
-                        // display class suffix and use UnsafeAccessorKind.StaticField.
+                        // Static or instance field on the containing class — strip the
+                        // display class suffix and use the per-parameter IsStaticCapture
+                        // flag to select UnsafeAccessorKind.StaticField vs .Field.
                         var capturedType = param.CapturedFieldType ?? param.ClrType;
                         if (capturedType == "?" || string.IsNullOrWhiteSpace(capturedType))
                             capturedType = "object";
@@ -257,7 +258,7 @@ internal static class CarrierAnalyzer
                             displayClassName: containingType,
                             capturedFieldName: param.CapturedFieldName,
                             capturedFieldType: capturedType,
-                            isStaticField: true));
+                            isStaticField: param.IsStaticCapture));
                         break;
                     }
                     // CaptureKind.None: no UnsafeAccessor needed
