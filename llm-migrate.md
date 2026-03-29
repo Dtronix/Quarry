@@ -415,7 +415,7 @@ Migration Plan: MyApp.Data
 5. DI Registration Changes
    Remove: builder.Services.AddDbContext<ApplicationDbContext>(...)
    Remove: builder.Services.AddScoped<IDbConnection>(...)
-   Add:    builder.Services.AddScoped(sp => new AppDb(new NpgsqlConnection(connectionString)))
+   Add:    builder.Services.AddScoped(sp => new AppDb(new NpgsqlConnection(connectionString), ownsConnection: true))
 
 6. Query Conversions (14 sites, rated)
    [Direct]   UserRepository.cs:23  — .Where().ToListAsync() → .Where().Select().ExecuteFetchAllAsync()
@@ -581,7 +581,8 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // ADD:
 var connectionString = builder.Configuration.GetConnectionString("Default");
-builder.Services.AddScoped(_ => new AppDb(new NpgsqlConnection(connectionString)));
+builder.Services.AddScoped(_ =>
+    new AppDb(new NpgsqlConnection(connectionString), ownsConnection: true));
 ```
 
 **Replacing Dapper connection factory:**
@@ -591,21 +592,23 @@ builder.Services.AddScoped<IDbConnection>(_ =>
     new NpgsqlConnection(connectionString));
 
 // ADD:
-builder.Services.AddScoped(_ => new AppDb(new NpgsqlConnection(connectionString)));
+builder.Services.AddScoped(_ =>
+    new AppDb(new NpgsqlConnection(connectionString), ownsConnection: true));
 ```
 
 **Replacing both (mixed codebase):** Single `AppDb` registration replaces both. All data access goes through `AppDb`.
 
 Key points:
 - `QuarryContext` is `IAsyncDisposable`. Scoped lifetime handles disposal automatically.
-- Connection passed to constructor. QuarryContext uses the connection, does not own it.
+- Use `ownsConnection: true` in DI registrations so the context disposes the connection when the scope ends. When `ownsConnection: false` (default), the context only closes connections it opened — use this when you manage connection lifetime externally.
 - Repository classes that took `IDbConnection` or `DbContext` now take `AppDb`.
 
 **ASP.NET project** (reference `Quarry.Sample.WebApp`):
 ```csharp
 // Program.cs
 var connectionString = builder.Configuration.GetConnectionString("Default");
-builder.Services.AddScoped(_ => new AppDb(new SqliteConnection(connectionString)));
+builder.Services.AddScoped(_ =>
+    new AppDb(new SqliteConnection(connectionString), ownsConnection: true));
 ```
 
 Inject into services/controllers:
@@ -623,13 +626,17 @@ public class UserService(AppDb db)
 ### 4.4 DI Registration — No DI
 
 ```csharp
+// Option A: context owns connection — single await using
+await using var db = new AppDb(new NpgsqlConnection(connectionString), ownsConnection: true);
+
+// Option B: manage connection separately (ownsConnection defaults to false)
 await using var connection = new NpgsqlConnection(connectionString);
 await using var db = new AppDb(connection);
 ```
 
 ### 4.5 DI Registration — Custom Container
 
-Apply the same pattern: register `AppDb` with scoped/per-request lifetime, pass a new connection to the constructor. Adapt syntax to the container's registration API. If the user described a custom system in Q3, match its patterns.
+Apply the same pattern: register `AppDb` with scoped/per-request lifetime, pass a new connection to the constructor with `ownsConnection: true`. Adapt syntax to the container's registration API. If the user described a custom system in Q3, match its patterns.
 
 ---
 
