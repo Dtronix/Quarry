@@ -29,7 +29,7 @@ public class ThroughputBenchmarks : BenchmarkBase
             await using var reader = await cmd.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                _ = new EfUser
+                _ = new RawUser
                 {
                     UserId = reader.GetInt32(0),
                     UserName = reader.GetString(1),
@@ -48,7 +48,7 @@ public class ThroughputBenchmarks : BenchmarkBase
         for (int i = 0; i < Iterations; i++)
         {
             var id = i % 100 + 1;
-            _ = await Connection.QueryFirstOrDefaultAsync<EfUser>(
+            _ = await Connection.QueryFirstOrDefaultAsync<DapperUser>(
                 "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE UserId = @id",
                 new { id });
         }
@@ -96,7 +96,7 @@ public class ThroughputBenchmarks : BenchmarkBase
             await using var reader = await cmd.ExecuteReaderAsync();
             if (await reader.ReadAsync())
             {
-                _ = new EfUser
+                _ = new SqlKataUser
                 {
                     UserId = reader.GetInt32(0),
                     UserName = reader.GetString(1),

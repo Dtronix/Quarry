@@ -28,7 +28,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
     }
 
     [Benchmark(Baseline = true)]
-    public async Task<List<EfUser>> Raw_ConditionalQuery()
+    public async Task<List<RawUser>> Raw_ConditionalQuery()
     {
         var sql = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users";
         if (_filterActive)
@@ -41,10 +41,10 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = sql;
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new RawUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
@@ -58,7 +58,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> Dapper_ConditionalQuery()
+    public async Task<List<DapperUser>> Dapper_ConditionalQuery()
     {
         var sql = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users";
         if (_filterActive)
@@ -68,7 +68,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
         if (_limitResults)
             sql += " LIMIT 25";
 
-        return (await Connection.QueryAsync<EfUser>(sql)).AsList();
+        return (await Connection.QueryAsync<DapperUser>(sql)).AsList();
     }
 
     [Benchmark]
@@ -103,7 +103,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<EfUser>> SqlKata_ConditionalQuery()
+    public async Task<List<SqlKataUser>> SqlKata_ConditionalQuery()
     {
         var query = new Query("users")
             .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin");
@@ -124,10 +124,10 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         await using var reader = await cmd.ExecuteReaderAsync();
-        var results = new List<EfUser>();
+        var results = new List<SqlKataUser>();
         while (await reader.ReadAsync())
         {
-            results.Add(new EfUser
+            results.Add(new SqlKataUser
             {
                 UserId = reader.GetInt32(0),
                 UserName = reader.GetString(1),
