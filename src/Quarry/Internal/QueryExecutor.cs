@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
@@ -20,10 +21,11 @@ internal enum ExecutionMode
 }
 
 /// <summary>
-/// Internal helper for executing carrier-optimized queries.
-/// All methods accept a pre-built DbCommand from the generated carrier interceptor.
+/// Executes carrier-optimized queries with pre-built commands.
+/// This type is used by generated interceptor code and is not intended for direct use.
 /// </summary>
-internal static class QueryExecutor
+[EditorBrowsable(EditorBrowsableState.Never)]
+public static class QueryExecutor
 {
     /// <summary>
     /// Executes a carrier-optimized query with a pre-built command and returns all results as a list.
