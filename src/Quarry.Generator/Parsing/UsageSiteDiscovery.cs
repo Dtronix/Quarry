@@ -1787,7 +1787,8 @@ internal static class UsageSiteDiscovery
                     {
                         var rootTypeInfo = semanticModel.GetTypeInfo(rootExpr);
                         if (rootTypeInfo.Type != null)
-                            paramInfo.CapturedFieldType = rootTypeInfo.Type.ToDisplayString();
+                            paramInfo.CapturedFieldType = rootTypeInfo.Type.ToDisplayString(
+                                Microsoft.CodeAnalysis.SymbolDisplayFormat.FullyQualifiedFormat);
                     }
                 }
             }

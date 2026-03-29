@@ -300,6 +300,87 @@ internal class CrossDialectUpdateTests
 
     #endregion
 
+    #region Set(Action<T>) — Property Chain and Computed Expressions
+
+    [Test]
+    public async Task Update_SetAction_PropertyChainCapture()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var source = new User { UserName = "fromDto" };
+
+        // Cross-dialect SQL verification
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = source.UserName).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = source.UserName).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = source.UserName).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = source.UserName).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        // Execute on SQLite and verify the property chain value was written
+        var affected = await Lite.Users().Update()
+            .Set(u => u.UserName = source.UserName)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var user = await Lite.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(user, Is.EqualTo("fromDto"));
+    }
+
+    [Test]
+    public async Task Update_SetAction_CapturedWithLiteral_ExecuteCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var name = "updated";
+        var affected = await Lite.Users().Update()
+            .Set(u => { u.UserName = name; u.IsActive = false; })
+            .Where(u => u.UserId == 2)
+            .ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        // Verify captured var and literal were both written correctly
+        var user = await Lite.Users()
+            .Where(u => u.UserId == 2)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(user.UserName, Is.EqualTo("updated"));
+        Assert.That(user.IsActive, Is.False);
+    }
+
+    [Test]
+    public async Task Update_SetAction_MultipleCapturedVars_ExecuteCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var name = "multiCap";
+        var active = false;
+        var affected = await Lite.Users().Update()
+            .Set(u => { u.UserName = name; u.IsActive = active; })
+            .Where(u => u.UserId == 2)
+            .ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var user = await Lite.Users()
+            .Where(u => u.UserId == 2)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(user.UserName, Is.EqualTo("multiCap"));
+        Assert.That(user.IsActive, Is.False);
+    }
+
+    #endregion
+
     #region Set(Action<T>) — Type-Mapped Column
 
     [Test]

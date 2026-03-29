@@ -127,9 +127,17 @@ internal static class CarrierAnalyzer
         var displayClassByParam = new Dictionary<int, (CaptureKind CaptureKind, string? DisplayClassName, System.Collections.Generic.IReadOnlyDictionary<string, string>? VarTypes)>();
         foreach (var cs in assembled.ClauseSites)
         {
-            var clause = cs.Clause;
-            if (clause == null) continue;
-            foreach (var p in clause.Parameters)
+            // Determine the clause's parameters: regular clauses use cs.Clause.Parameters,
+            // UpdateSetAction uses raw.SetActionParameters (Action<T> can't be parsed to SqlExpr)
+            IReadOnlyList<ParameterInfo>? clauseLocalParams = null;
+            if (cs.Clause != null)
+                clauseLocalParams = cs.Clause.Parameters;
+            else if (cs.Kind == InterceptorKind.UpdateSetAction)
+                clauseLocalParams = cs.Bound.Raw.SetActionParameters;
+
+            if (clauseLocalParams == null) continue;
+
+            foreach (var p in clauseLocalParams)
             {
                 if (p.IsCaptured && cs.DisplayClassName != null)
                 {
@@ -186,9 +194,14 @@ internal static class CarrierAnalyzer
             {
                 // When param.ClrType is unresolved ("?" or "object"), try to use
                 // the resolved type from CapturedVariableTypes if available.
+                // Only apply the hint for simple captures where the variable IS the
+                // value (ValueExpression == CapturedFieldName). For property chains
+                // like source.UserName, the variable type (User) differs from the
+                // expression type (string), so the hint would be wrong.
                 var effectiveClrType = param.ClrType;
                 if ((effectiveClrType == "?" || effectiveClrType == "object")
                     && param.CapturedFieldName != null
+                    && param.ValueExpression == param.CapturedFieldName
                     && displayClassByParam.TryGetValue(param.GlobalIndex, out var dcTypeHint)
                     && dcTypeHint.VarTypes != null
                     && dcTypeHint.VarTypes.TryGetValue(param.CapturedFieldName, out var hintType)

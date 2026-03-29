@@ -414,6 +414,7 @@ internal static class CarrierEmitter
             }
 
             // Bind parameters using ValueExpression — captured variables are now in scope as locals
+            var hasExtraction = extractionPlan != null && extractionPlan.Extractors.Count > 0;
             var allParams = clauseParams.OrderBy(p => p.Index).ToList();
             for (int i = 0; i < allParams.Count; i++)
             {
@@ -429,13 +430,20 @@ internal static class CarrierEmitter
                 else
                 {
                     var isSetClause = site.Kind == InterceptorKind.Set || site.Kind == InterceptorKind.UpdateSet;
-                    var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                     if (isSetClause)
                     {
+                        var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                         sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType})value!;");
+                    }
+                    else if (hasExtraction && p.IsCaptured)
+                    {
+                        // Per-variable extraction locals are already typed by the [UnsafeAccessor]
+                        // return type, so ValueExpression is type-safe C# — no cast needed.
+                        sb.AppendLine($"        __c.P{globalIdx} = {p.ValueExpression}!;");
                     }
                     else
                     {
+                        var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                         sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType}){p.ValueExpression}!;");
                     }
                 }
@@ -615,7 +623,8 @@ internal static class CarrierEmitter
             }
         }
 
-        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
+        var hasExtraction = extractionPlan != null && extractionPlan.Extractors.Count > 0;
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset, hasExtraction);
     }
 
     /// <summary>
@@ -1085,7 +1094,8 @@ internal static class CarrierEmitter
     }
 
     private static void EmitCarrierParamBindings(
-        StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
+        bool hasExtraction = false)
     {
         // Bind parameters to carrier fields using ValueExpression — per-variable locals are in scope
         for (int i = 0; i < siteParams.Count; i++)
@@ -1095,6 +1105,11 @@ internal static class CarrierEmitter
             if (param.IsCollection)
             {
                 EmitCollectionContainsExtraction(sb, globalIdx, param, carrier);
+            }
+            else if (hasExtraction && param.IsCaptured)
+            {
+                // Per-variable extraction locals are already typed — no cast needed
+                sb.AppendLine($"        __c.P{globalIdx} = {param.ValueExpression}!;");
             }
             else
             {
