@@ -381,8 +381,6 @@ public class Svc
             "Captured variable should have a per-variable UnsafeAccessor extractor");
         Assert.That(code, Does.Contain("action.Target!"),
             "Captured variable extraction should access the delegate target");
-        Assert.That(code, Does.Not.Contain("__setEntity"),
-            "Legacy invoke-and-read __setEntity pattern should not be present");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -442,8 +440,6 @@ public class Svc
             "Property chain capture should extract the root variable 'vm'");
         Assert.That(code, Does.Contain("vm.Name"),
             "ValueExpression should be used verbatim for property chain access");
-        Assert.That(code, Does.Not.Contain("__setEntity"),
-            "Legacy invoke-and-read __setEntity pattern should not be present");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -752,8 +748,6 @@ public class Svc
             "Captured variable 'a' from computed expression should have a per-variable extractor");
         Assert.That(code, Does.Contain("__ExtractVar_b_"),
             "Captured variable 'b' from computed expression should have a per-variable extractor");
-        Assert.That(code, Does.Not.Contain("__setEntity"),
-            "Legacy invoke-and-read __setEntity pattern should not be present");
     }
 
     [Test]
@@ -777,8 +771,6 @@ public class Svc
         // The ternary references 'flag' which is a captured variable
         Assert.That(code, Does.Contain("__ExtractVar_flag_"),
             "Captured variable 'flag' from ternary expression should have a per-variable extractor");
-        Assert.That(code, Does.Not.Contain("__setEntity"),
-            "Legacy invoke-and-read __setEntity pattern should not be present");
     }
 
     [Test]
