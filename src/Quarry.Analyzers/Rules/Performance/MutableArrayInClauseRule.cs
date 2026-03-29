@@ -17,7 +17,7 @@ internal sealed class MutableArrayInClauseRule : IQueryAnalysisRule
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
     {
-        if (context.Site.ClauseKind != ClauseKind.Where)
+        if (context.Site.ClauseKind is not (ClauseKind.Where or ClauseKind.Having))
             yield break;
 
         if (context.InvocationSyntax is not InvocationExpressionSyntax invocation)
