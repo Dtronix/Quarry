@@ -23,7 +23,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 100 && u.IsActive)
                 .OrderBy((u, o) => o.Total, Direction.Descending)
                 .Limit(10).Offset(0)
@@ -49,7 +49,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = 1 ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t1\".\"Status\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 100 AND \"t0\".\"IsActive\" = TRUE ORDER BY \"t1\".\"Total\" DESC LIMIT 10",
@@ -57,7 +57,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] = 1 ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY");
 
         // Seed: Alice has orders 250 (Shipped) and 75.50 (Pending). Only 250 > 100. Bob has 150 (Shipped) > 100. — 2 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, "Shipped")));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, "Shipped")));
@@ -73,7 +73,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users()
+        var lt = Lite.Users()
                 .Where(u => u.IsActive && u.Orders.Any(o => o.Total > 500))
                 .OrderBy(u => u.UserName)
                 .Select(u => (u.UserName, u.Email))
@@ -95,7 +95,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" = 1 AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
             pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"IsActive\" = TRUE AND EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Total\" > 500)) ORDER BY \"UserName\" ASC",
@@ -103,7 +103,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [UserName], [Email] FROM [users] WHERE [IsActive] = 1 AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 500)) ORDER BY [UserName] ASC");
 
         // No users have orders > 500 in seed data — 0 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -117,7 +117,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
                 .Where((u, o, oi) => oi.UnitPrice > 50.00m)
                 .Select((u, o, oi) => (u.UserName, o.Status, oi.ProductName, oi.Quantity))
@@ -139,7 +139,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Status\", \"t2\".\"ProductName\", \"t2\".\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Status\", \"t2\".\"ProductName\", \"t2\".\"Quantity\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" WHERE \"t2\".\"UnitPrice\" > 50.00",
@@ -147,7 +147,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [t0].[UserName], [t1].[Status], [t2].[ProductName], [t2].[Quantity] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] INNER JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] WHERE [t2].[UnitPrice] > 50.00");
 
         // Seed: Widget UnitPrice=125 (>50) and Gadget UnitPrice=75.50 (>50), Widget UnitPrice=50 (NOT >50) — 2 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -161,7 +161,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users()
+        var lt = Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Status == "shipped")
                          && u.Orders.All(o => o.Status != "cancelled"))
                 .Select(u => (u.UserId, u.UserName))
@@ -183,7 +183,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'shipped')) AND NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq1\".\"Status\" <> 'cancelled'))",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Status\" = 'shipped')) AND NOT EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\" AND NOT (\"sq1\".\"Status\" <> 'cancelled'))",
@@ -191,7 +191,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] = 'shipped')) AND NOT EXISTS (SELECT 1 FROM [orders] AS [sq1] WHERE [sq1].[UserId] = [users].[UserId] AND NOT ([sq1].[Status] <> 'cancelled'))");
 
         // Seed: Alice has Shipped+Pending, Bob has Shipped — case-sensitive "shipped" vs "Shipped" means 0 matches
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -205,7 +205,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users()
+        var lt = Lite.Users()
                 .Where(u => u.Email != null && u.UserName.Contains("john"))
                 .OrderBy(u => u.UserName, Direction.Descending)
                 .Limit(5)
@@ -231,7 +231,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%john%' ORDER BY \"UserName\" DESC LIMIT 5",
             pg:     "SELECT \"UserName\", \"Email\" FROM \"users\" WHERE \"Email\" IS NOT NULL AND \"UserName\" LIKE '%john%' ORDER BY \"UserName\" DESC LIMIT 5",
@@ -239,7 +239,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [UserName], [Email] FROM [users] WHERE [Email] IS NOT NULL AND [UserName] LIKE '%john%' ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY");
 
         // No seed users have "john" in UserName — 0 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -254,7 +254,7 @@ internal class CrossDialectCompositionTests
         var (Lite, Pg, My, Ss) = t;
 
         var statuses = new[] { "pending", "processing", "shipped" };
-        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => statuses.Contains(o.Status))
                 .Select((u, o) => (u.UserName, o.Total))
                 .Prepare();
@@ -272,7 +272,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Status\" IN ('pending', 'processing', 'shipped')",
@@ -280,7 +280,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Status] IN ('pending', 'processing', 'shipped')");
 
         // Case-sensitive: seed has "Shipped", "Pending" — lowercase "shipped"/"pending" match 0
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -294,7 +294,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users()
+        var lt = Lite.Users()
                 .Where(u => u.Orders.Count(o => o.Priority == OrderPriority.Urgent) > 2)
                 .Select(u => (u.UserId, u.UserName))
                 .Prepare();
@@ -312,7 +312,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Priority\" = 3)) > 2",
@@ -320,7 +320,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Priority] = 3)) > 2");
 
         // Seed: Bob has 1 Urgent order, nobody has >2 — 0 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -334,7 +334,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders()
+        var lt = Lite.Orders()
                 .Where(o => true)
                 .GroupBy(o => o.Status)
                 .Having(o => Sql.Count() > 5)
@@ -360,7 +360,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
@@ -368,7 +368,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5");
 
         // Seed: only 3 orders total, no status group has >5 — 0 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -382,7 +382,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > 0)
                 .OrderBy((u, o) => o.Total)
                 .Distinct()
@@ -412,7 +412,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
             pg:     "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
@@ -420,7 +420,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT DISTINCT [t0].[UserName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0 ORDER BY [t1].[Total] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
 
         // Seed: Alice has 2 orders, Bob has 1 — DISTINCT UserName gives Alice, Bob — 2 results
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -434,7 +434,7 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users()
+        var lt = Lite.Users()
                 .Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 100)))
                 .Select(u => (u.UserId, u.UserName))
                 .Prepare();
@@ -452,7 +452,7 @@ internal class CrossDialectCompositionTests
                 .Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND (\"sq1\".\"UnitPrice\" > 100))))",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (EXISTS (SELECT 1 FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\" AND (\"sq1\".\"UnitPrice\" > 100))))",
@@ -460,7 +460,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId] AND ([sq1].[UnitPrice] > 100))))");
 
         // Seed: Widget UnitPrice=125 (>100) in order 1 (Alice) — Alice matches
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
@@ -475,13 +475,13 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
-        var pg   = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
-        var my   = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
-        var ss   = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
+        var lt = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
+        var pg = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
+        var my = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
+        var ss = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Avg(o.Total))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
@@ -489,7 +489,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [Status], AVG(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
 
         // Seed: Shipped=(250+150)/2=200, Pending=75.50 — 2 groups
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -499,20 +499,20 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
-        var pg   = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
-        var my   = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
-        var ss   = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
+        var lt = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
+        var pg = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
+        var my = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
+        var ss = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Min(o.Total))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, MIN(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
             ss:     "SELECT [Status], MIN(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -522,20 +522,20 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
-        var pg   = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
-        var my   = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
-        var ss   = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
+        var lt = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
+        var pg = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
+        var my = My.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
+        var ss = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Select(o => (o.Status, Sql.Max(o.Total))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             mysql:  "SELECT `Status`, MAX(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
             ss:     "SELECT [Status], MAX(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -545,13 +545,13 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
-        var pg   = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
-        var my   = My.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
-        var ss   = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
+        var lt = Lite.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
+        var pg = Pg.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
+        var my = My.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
+        var ss = Ss.Orders().Where(o => true).GroupBy(o => o.Status).Having(o => Sql.Count() > 1).Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total), Sql.Avg(o.Total), Sql.Min(o.Total), Sql.Max(o.Total))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
@@ -559,7 +559,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3], AVG(\"Total\") AS [Item4], MIN(\"Total\") AS [Item5], MAX(\"Total\") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
 
         // Seed: Shipped has 2 orders (>1), Pending has 1 (not >1) — 1 group
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].Item1, Is.EqualTo("Shipped"));
         Assert.That(results[0].Item2, Is.EqualTo(2));
@@ -578,13 +578,13 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
-        var pg   = Pg.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
-        var my   = My.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
-        var ss   = Ss.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+        var lt = Lite.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+        var pg = Pg.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+        var my = My.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+        var ss = Ss.Orders().Where(o => _runtimeStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ('pending', 'processing', 'shipped')",
             pg:     "SELECT \"OrderId\", \"Status\" FROM \"orders\" WHERE \"Status\" IN ('pending', 'processing', 'shipped')",
@@ -592,7 +592,7 @@ internal class CrossDialectCompositionTests
             ss:     "SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN ('pending', 'processing', 'shipped')");
 
         // Case-sensitive: seed has "Shipped", "Pending" — lowercase values match 0
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -630,13 +630,13 @@ internal class CrossDialectCompositionTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
+        var lt = Lite.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).Prepare();
 
         // Mutable static field must stay parameterized — values are NOT inlined
-        var liteDiag = lite.ToDiagnostics();
-        Assert.That(liteDiag.Parameters, Has.Count.GreaterThan(0),
+        var ltDiag = lt.ToDiagnostics();
+        Assert.That(ltDiag.Parameters, Has.Count.GreaterThan(0),
             "Mutable static array should not be inlined — parameters expected");
-        Assert.That(liteDiag.Sql, Does.Not.Contain("IN ('pending'"),
+        Assert.That(ltDiag.Sql, Does.Not.Contain("IN ('pending'"),
             "Mutable static array values should not appear as inline literals");
 
         var pgDiag = Pg.Orders().Where(o => _mutableStatuses.Contains(o.Status)).Select(o => (o.OrderId, o.Status)).ToDiagnostics();
@@ -711,18 +711,38 @@ internal class CrossDialectCompositionTests
     public async Task ConditionalWhere_OnTupleProjection_ResolvesCorrectType()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         var priority = OrderPriority.High;
 
         // This pattern triggers the bug: Select returns IQueryBuilder<Order, (int, decimal, OrderPriority)>
         // but when assigned to var and Where is called conditionally, the generator sees (object, object, object).
-        var query = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
-        query = query.Where(o => o.Priority == priority);
+        var ltQ = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        ltQ = ltQ.Where(o => o.Priority == priority);
+        var lt = ltQ.Prepare();
 
-        var results = await query.ExecuteFetchAllAsync();
+        var pgQ = Pg.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        pgQ = pgQ.Where(o => o.Priority == priority);
+        var pg = pgQ.Prepare();
+
+        var myQ = My.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        myQ = myQ.Where(o => o.Priority == priority);
+        var my = myQ.Prepare();
+
+        var ssQ = Ss.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        ssQ = ssQ.Where(o => o.Priority == priority);
+        var ss = ssQ.Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Total\", \"Priority\" FROM \"orders\" WHERE \"Priority\" = @p0",
+            pg:     "SELECT \"OrderId\", \"Total\", \"Priority\" FROM \"orders\" WHERE \"Priority\" = $1",
+            mysql:  "SELECT `OrderId`, `Total`, `Priority` FROM `orders` WHERE `Priority` = ?",
+            ss:     "SELECT [OrderId], [Total], [Priority] FROM [orders] WHERE [Priority] = @p0");
 
         // Seed: Order1(High,250), Order2(Normal,75.50), Order3(Urgent,150)
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].OrderId, Is.EqualTo(1));
     }
@@ -731,15 +751,35 @@ internal class CrossDialectCompositionTests
     public async Task ConditionalOrderBy_OnTupleProjection_ResolvesCorrectType()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         // OrderBy after Select with tuple projection + variable reassignment
-        var query = Lite.Orders().Select(o => (o.OrderId, o.Total));
-        query = query.OrderBy(o => o.Total);
+        var ltQ = Lite.Orders().Select(o => (o.OrderId, o.Total));
+        ltQ = ltQ.OrderBy(o => o.Total);
+        var lt = ltQ.Prepare();
 
-        var results = await query.ExecuteFetchAllAsync();
+        var pgQ = Pg.Orders().Select(o => (o.OrderId, o.Total));
+        pgQ = pgQ.OrderBy(o => o.Total);
+        var pg = pgQ.Prepare();
+
+        var myQ = My.Orders().Select(o => (o.OrderId, o.Total));
+        myQ = myQ.OrderBy(o => o.Total);
+        var my = myQ.Prepare();
+
+        var ssQ = Ss.Orders().Select(o => (o.OrderId, o.Total));
+        ssQ = ssQ.OrderBy(o => o.Total);
+        var ss = ssQ.Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Total\" FROM \"orders\" ORDER BY \"Total\" ASC",
+            pg:     "SELECT \"OrderId\", \"Total\" FROM \"orders\" ORDER BY \"Total\" ASC",
+            mysql:  "SELECT `OrderId`, `Total` FROM `orders` ORDER BY `Total` ASC",
+            ss:     "SELECT [OrderId], [Total] FROM [orders] ORDER BY [Total] ASC");
 
         // Seed: 3 orders — should be sorted by Total ascending
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].Total, Is.LessThanOrEqualTo(results[1].Total));
         Assert.That(results[1].Total, Is.LessThanOrEqualTo(results[2].Total));
@@ -749,16 +789,36 @@ internal class CrossDialectCompositionTests
     public async Task ConditionalWhere_OnEntityProjection_ResolvesCorrectType()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         // Entity projection (Select identity) with reassignment — should already work
         // but this ensures the resolution doesn't regress entity-typed chains.
-        var query = Lite.Users().Select(u => u);
-        query = query.Where(u => u.IsActive);
+        var ltQ = Lite.Users().Select(u => u);
+        ltQ = ltQ.Where(u => u.IsActive);
+        var lt = ltQ.Prepare();
 
-        var results = await query.ExecuteFetchAllAsync();
+        var pgQ = Pg.Users().Select(u => u);
+        pgQ = pgQ.Where(u => u.IsActive);
+        var pg = pgQ.Prepare();
+
+        var myQ = My.Users().Select(u => u);
+        myQ = myQ.Where(u => u.IsActive);
+        var my = myQ.Prepare();
+
+        var ssQ = Ss.Users().Select(u => u);
+        ssQ = ssQ.Where(u => u.IsActive);
+        var ss = ssQ.Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1");
 
         // Seed: 2 active users, 1 inactive
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -766,15 +826,35 @@ internal class CrossDialectCompositionTests
     public async Task ConditionalWhere_OnSingleColumnProjection_ResolvesCorrectType()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         // Single column projection with reassignment
-        var query = Lite.Orders().Select(o => o.Total);
-        query = query.Where(o => o.Total > 100m);
+        var ltQ = Lite.Orders().Select(o => o.Total);
+        ltQ = ltQ.Where(o => o.Total > 100m);
+        var lt = ltQ.Prepare();
 
-        var results = await query.ExecuteFetchAllAsync();
+        var pgQ = Pg.Orders().Select(o => o.Total);
+        pgQ = pgQ.Where(o => o.Total > 100m);
+        var pg = pgQ.Prepare();
+
+        var myQ = My.Orders().Select(o => o.Total);
+        myQ = myQ.Where(o => o.Total > 100m);
+        var my = myQ.Prepare();
+
+        var ssQ = Ss.Orders().Select(o => o.Total);
+        ssQ = ssQ.Where(o => o.Total > 100m);
+        var ss = ssQ.Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"Total\" FROM \"orders\" WHERE \"Total\" > 100",
+            pg:     "SELECT \"Total\" FROM \"orders\" WHERE \"Total\" > 100",
+            mysql:  "SELECT `Total` FROM `orders` WHERE `Total` > 100",
+            ss:     "SELECT [Total] FROM [orders] WHERE [Total] > 100");
 
         // Seed: Order1(250), Order2(75.50), Order3(150) — 2 > 100
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -782,16 +862,39 @@ internal class CrossDialectCompositionTests
     public async Task ConditionalWhere_OnTupleProjection_FieldInfoCachingWorks()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         var priority = OrderPriority.High;
 
         // Execute the same query pattern twice to verify FieldInfo caching
         // (the static F0 field should be populated on first call and reused)
-        var query1 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
-        query1 = query1.Where(o => o.Priority == priority);
-        var results1 = await query1.ExecuteFetchAllAsync();
+        var ltQ1 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        ltQ1 = ltQ1.Where(o => o.Priority == priority);
+        var lt = ltQ1.Prepare();
 
+        var pgQ1 = Pg.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        pgQ1 = pgQ1.Where(o => o.Priority == priority);
+        var pg = pgQ1.Prepare();
+
+        var myQ1 = My.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        myQ1 = myQ1.Where(o => o.Priority == priority);
+        var my = myQ1.Prepare();
+
+        var ssQ1 = Ss.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
+        ssQ1 = ssQ1.Where(o => o.Priority == priority);
+        var ss = ssQ1.Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Total\", \"Priority\" FROM \"orders\" WHERE \"Priority\" = @p0",
+            pg:     "SELECT \"OrderId\", \"Total\", \"Priority\" FROM \"orders\" WHERE \"Priority\" = $1",
+            mysql:  "SELECT `OrderId`, `Total`, `Priority` FROM `orders` WHERE `Priority` = ?",
+            ss:     "SELECT [OrderId], [Total], [Priority] FROM [orders] WHERE [Priority] = @p0");
+
+        var results1 = await lt.ExecuteFetchAllAsync();
+
+        // Second execution (Lite-only is fine — caching is runtime behavior)
         var query2 = Lite.Orders().Select(o => (o.OrderId, o.Total, o.Priority));
         query2 = query2.Where(o => o.Priority == priority);
         var results2 = await query2.ExecuteFetchAllAsync();
