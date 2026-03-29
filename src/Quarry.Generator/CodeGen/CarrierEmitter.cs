@@ -439,7 +439,13 @@ internal static class CarrierEmitter
                     {
                         // Per-variable extraction locals are already typed by the [UnsafeAccessor]
                         // return type, so ValueExpression is type-safe C# — no cast needed.
-                        sb.AppendLine($"        __c.P{globalIdx} = {p.ValueExpression}!;");
+                        // For compound expressions (a + b), parenthesize so ! applies to the full result.
+                        // For simple identifiers/member-access, bare ! is correct and avoids C# cast ambiguity.
+                        var ve = p.ValueExpression;
+                        var wrap = ve.Contains(' ') || ve.Contains('(');
+                        sb.AppendLine(wrap
+                            ? $"        __c.P{globalIdx} = ({ve})!;"
+                            : $"        __c.P{globalIdx} = {ve}!;");
                     }
                     else
                     {
@@ -1106,8 +1112,13 @@ internal static class CarrierEmitter
             }
             else if (hasExtraction && param.IsCaptured)
             {
-                // Per-variable extraction locals are already typed — no cast needed
-                sb.AppendLine($"        __c.P{globalIdx} = {param.ValueExpression}!;");
+                // Per-variable extraction locals are already typed — no cast needed.
+                // For compound expressions, parenthesize so ! applies to the full result.
+                var ve = param.ValueExpression;
+                var wrap = ve.Contains(' ') || ve.Contains('(');
+                sb.AppendLine(wrap
+                    ? $"        __c.P{globalIdx} = ({ve})!;"
+                    : $"        __c.P{globalIdx} = {ve}!;");
             }
             else
             {
