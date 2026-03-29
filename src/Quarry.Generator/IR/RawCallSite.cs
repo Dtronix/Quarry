@@ -281,6 +281,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
             && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
             && EqualityHelpers.NullableSequenceEqual(SetActionParameters, other.SetActionParameters)
+            && CapturedIdentifiersEqual(SetActionAllCapturedIdentifiers, other.SetActionAllCapturedIdentifiers)
             && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
             && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames)
             && IsPreparedTerminal == other.IsPreparedTerminal
@@ -292,6 +293,21 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     public override int GetHashCode()
     {
         return HashCode.Combine(UniqueId, MethodName, FilePath, Line, Column);
+    }
+
+    private static bool CapturedIdentifiersEqual(
+        IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? a,
+        IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? b)
+    {
+        if (ReferenceEquals(a, b)) return true;
+        if (a is null || b is null) return false;
+        if (a.Count != b.Count) return false;
+        foreach (var kvp in a)
+        {
+            if (!b.TryGetValue(kvp.Key, out var otherValue) || !kvp.Value.Equals(otherValue))
+                return false;
+        }
+        return true;
     }
 
     private static bool ImmutableArrayEqual(ImmutableArray<string>? a, ImmutableArray<string>? b)
