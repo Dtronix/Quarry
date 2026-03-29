@@ -376,11 +376,11 @@ public class Svc
 ");
         AssertPrebuiltDispatchWithMask(code, "UPDATE");
         AssertMaskVariantCount(code, 2);
-        // Captured variable should use invoke-and-read pattern (AOT-safe, no reflection)
-        Assert.That(code, Does.Contain("__setEntity ??= new"),
-            "Captured variable should be extracted via invoke-and-read on carrier entity");
-        Assert.That(code, Does.Contain("action(__e)"),
-            "Action should be invoked on the cached entity instance");
+        // Captured variable should use per-variable UnsafeAccessor extraction
+        Assert.That(code, Does.Contain("__ExtractVar_name_"),
+            "Captured variable should have a per-variable UnsafeAccessor extractor");
+        Assert.That(code, Does.Contain("action.Target!"),
+            "Captured variable extraction should access the delegate target");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -409,6 +409,67 @@ public class Svc
         // Multi-assignment should produce two SET columns
         Assert.That(code, Does.Contain("UserName"));
         Assert.That(code, Does.Contain("IsActive"));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — property chain capture
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_PropertyChain_ConditionalWhere_CarrierWithMask()
+    {
+        var code = GenerateInterceptors(@"
+public class ViewModel { public string Name { get; set; } = """"; }
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(ViewModel vm, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = vm.Name);
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Property chain should use per-variable extraction for the root variable
+        Assert.That(code, Does.Contain("__ExtractVar_vm_"),
+            "Property chain capture should extract the root variable 'vm'");
+        Assert.That(code, Does.Contain("vm.Name"),
+            "ValueExpression should be used verbatim for property chain access");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — multiple captured variables
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_MultipleCapturedVars_ConditionalWhere_CarrierWithMask()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string name, bool active, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => { u.UserName = name; u.IsActive = active; });
+        if (restrict)
+            q = q.Where(u => u.UserId > 0);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Both captured variables should have extractors
+        Assert.That(code, Does.Contain("__ExtractVar_name_"),
+            "Captured variable 'name' should have a per-variable UnsafeAccessor extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_active_"),
+            "Captured variable 'active' should have a per-variable UnsafeAccessor extractor");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -657,5 +718,182 @@ public class Svc
         AssertPrebuiltDispatchWithMask(code, "UPDATE");
         // 2 bits → 4 SQL variants
         AssertMaskVariantCount(code, 4);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — computed expression with multiple captured locals
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_ComputedExpression_GeneratesPerVariableExtractors()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string a, string b, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = a + b);
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Both variables from the computed expression should have extractors
+        Assert.That(code, Does.Contain("__ExtractVar_a_"),
+            "Captured variable 'a' from computed expression should have a per-variable extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_b_"),
+            "Captured variable 'b' from computed expression should have a per-variable extractor");
+    }
+
+    [Test]
+    public void Update_SetAction_TernaryExpression_GeneratesExtractorForCondition()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(bool flag, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = flag ? ""A"" : ""B"");
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        // The ternary references 'flag' which is a captured variable
+        Assert.That(code, Does.Contain("__ExtractVar_flag_"),
+            "Captured variable 'flag' from ternary expression should have a per-variable extractor");
+    }
+
+    [Test]
+    public void Update_SetAction_BlockLambda_MultipleComputedExpressions_GeneratesAllExtractors()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string first, string last, string domain, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => { u.UserName = first + last; u.Email = first + domain; });
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        // All three variables should be extracted (first is shared between both expressions)
+        Assert.That(code, Does.Contain("__ExtractVar_first_"),
+            "Captured variable 'first' should have a per-variable extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_last_"),
+            "Captured variable 'last' should have a per-variable extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_domain_"),
+            "Captured variable 'domain' should have a per-variable extractor");
+    }
+
+    [Test]
+    public void Update_SetAction_MethodCallOnCapture_GeneratesExtractor()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string name, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = name.ToUpper());
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        // name.ToUpper() — name is the captured variable
+        Assert.That(code, Does.Contain("__ExtractVar_name_"),
+            "Captured variable 'name' from method call expression should have a per-variable extractor");
+    }
+
+    [Test]
+    public void Update_SetAction_LiteralPlusComputed_InlinedAndParameterized()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string first, string last, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => { u.UserName = first + last; u.IsActive = false; });
+        if (restrict)
+            q = q.Where(u => u.UserId > 0);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        // Captured vars from computed expression should have extractors
+        Assert.That(code, Does.Contain("__ExtractVar_first_"),
+            "Captured variable 'first' should have extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_last_"),
+            "Captured variable 'last' should have extractor");
+        // Inlined boolean literal should appear directly in SQL
+        Assert.That(code, Does.Contain("IsActive"),
+            "IsActive column should be in the generated SQL");
+    }
+
+    [Test]
+    public void Update_SetAction_NullCoalescing_GeneratesExtractor()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string? maybe, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = maybe ?? ""default"");
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        Assert.That(code, Does.Contain("__ExtractVar_maybe_"),
+            "Captured variable 'maybe' from null-coalescing expression should have a per-variable extractor");
+    }
+
+    [Test]
+    public void Update_SetAction_ArithmeticExpression_GeneratesExtractors()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(int baseAge, int offset, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.Age = baseAge + offset);
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        Assert.That(code, Does.Contain("__ExtractVar_baseAge_"),
+            "Captured variable 'baseAge' from arithmetic expression should have a per-variable extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_offset_"),
+            "Captured variable 'offset' from arithmetic expression should have a per-variable extractor");
     }
 }
