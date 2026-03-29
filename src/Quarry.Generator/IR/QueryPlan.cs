@@ -341,7 +341,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         bool isDirectAccessible = false,
         string? collectionAccessExpression = null,
         string? capturedFieldName = null,
-        string? capturedFieldType = null)
+        string? capturedFieldType = null,
+        bool isStaticCapture = false)
     {
         GlobalIndex = globalIndex;
         ClrType = clrType;
@@ -360,6 +361,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         CollectionAccessExpression = collectionAccessExpression;
         CapturedFieldName = capturedFieldName;
         CapturedFieldType = capturedFieldType;
+        IsStaticCapture = isStaticCapture;
     }
 
     public int GlobalIndex { get; }
@@ -379,6 +381,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public string? CollectionAccessExpression { get; }
     public string? CapturedFieldName { get; }
     public string? CapturedFieldType { get; }
+    public bool IsStaticCapture { get; }
 
     public bool Equals(QueryParameter? other)
     {
@@ -396,7 +399,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
             && EnumUnderlyingType == other.EnumUnderlyingType
             && IsSensitive == other.IsSensitive
             && CapturedFieldName == other.CapturedFieldName
-            && CapturedFieldType == other.CapturedFieldType;
+            && CapturedFieldType == other.CapturedFieldType
+            && IsStaticCapture == other.IsStaticCapture;
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryParameter);
