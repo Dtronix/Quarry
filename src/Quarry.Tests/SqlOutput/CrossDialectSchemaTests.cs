@@ -48,13 +48,13 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
-        var pg   = Pg.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
-        var my   = My.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
-        var ss   = Ss.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
+        var lt= Lite.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
+        var pg = Pg.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
+        var my = My.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
+        var ss = Ss.Accounts().Select(a => (a.AccountId, a.CreditLimit)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
             pg:     "SELECT \"AccountId\", \"credit_limit\" FROM \"accounts\"",
@@ -72,20 +72,20 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Select(u => u.UserName).Prepare();
-        var pg   = Pg.Users().Select(u => u.UserName).Prepare();
-        var my   = My.Users().Select(u => u.UserName).Prepare();
-        var ss   = Ss.Users().Select(u => u.UserName).Prepare();
+        var lt= Lite.Users().Select(u => u.UserName).Prepare();
+        var pg = Pg.Users().Select(u => u.UserName).Prepare();
+        var my = My.Users().Select(u => u.UserName).Prepare();
+        var ss = Ss.Users().Select(u => u.UserName).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserName\" FROM \"users\"",
             pg:     "SELECT \"UserName\" FROM \"users\"",
             mysql:  "SELECT `UserName` FROM `users`",
             ss:     "SELECT [UserName] FROM [users]");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo("Alice"));
     }
@@ -100,13 +100,13 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Orders().Where(o => o.UserId.Id == 5).Prepare();
-        var pg   = Pg.Orders().Where(o => o.UserId.Id == 5).Prepare();
-        var my   = My.Orders().Where(o => o.UserId.Id == 5).Prepare();
-        var ss   = Ss.Orders().Where(o => o.UserId.Id == 5).Prepare();
+        var lt= Lite.Orders().Where(o => o.UserId.Id == 5).Prepare();
+        var pg = Pg.Orders().Where(o => o.UserId.Id == 5).Prepare();
+        var my = My.Orders().Where(o => o.UserId.Id == 5).Prepare();
+        var ss = Ss.Orders().Where(o => o.UserId.Id == 5).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"UserId\" = 5",
             pg:     "SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"UserId\" = 5",
@@ -156,20 +156,20 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Delete().All().Prepare();
-        var pg   = Pg.Users().Delete().All().Prepare();
-        var my   = My.Users().Delete().All().Prepare();
-        var ss   = Ss.Users().Delete().All().Prepare();
+        var lt= Lite.Users().Delete().All().Prepare();
+        var pg = Pg.Users().Delete().All().Prepare();
+        var my = My.Users().Delete().All().Prepare();
+        var ss = Ss.Users().Delete().All().Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "DELETE FROM \"users\"",
             pg:     "DELETE FROM \"users\"",
             mysql:  "DELETE FROM `users`",
             ss:     "DELETE FROM [users]");
 
-        var affected = await lite.ExecuteNonQueryAsync();
+        var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(3)); // All 3 seeded users
     }
 

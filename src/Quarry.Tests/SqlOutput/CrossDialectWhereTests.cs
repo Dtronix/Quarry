@@ -17,20 +17,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.IsActive).Prepare();
+        var lt = Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.IsActive).ToDiagnostics(),
-            My.Users().Where(u => u.IsActive).ToDiagnostics(),
-            Ss.Users().Where(u => u.IsActive).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1");
 
         // Execution: 2 active users
-        var results = await Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -42,20 +43,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => !u.IsActive).Prepare();
+        var lt = Lite.Users().Where(u => !u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => !u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => !u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => !u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => !u.IsActive).ToDiagnostics(),
-            My.Users().Where(u => !u.IsActive).ToDiagnostics(),
-            Ss.Users().Where(u => !u.IsActive).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE NOT (\"IsActive\")",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE NOT (\"IsActive\")",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE NOT (`IsActive`)",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE NOT ([IsActive])");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"IsActive\")",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"IsActive\")",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE NOT (`IsActive`)",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE NOT ([IsActive])");
 
         // Execution: 1 inactive user
-        var results = await Lite.Users().Where(u => !u.IsActive).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
@@ -70,20 +72,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserId > 0).Prepare();
+        var lt = Lite.Users().Where(u => u.UserId > 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId > 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserId > 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId > 1).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserId > 0).ToDiagnostics(),
-            My.Users().Where(u => u.UserId > 0).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserId > 0).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" > 0",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" > 0",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` > 0",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] > 0");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" > 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" > 1",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` > 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] > 1");
 
-        // Execution: all 3 users have UserId > 0; integration uses > 1 yielding 2
-        var results = await Lite.Users().Where(u => u.UserId > 1).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        // Execution: 2 users with UserId > 1
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
@@ -95,20 +98,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.UserId <= 100).Prepare();
+        var lt = Lite.Users().Where(u => u.UserId <= 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId <= 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.UserId <= 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId <= 2).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
-            My.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
-            Ss.Users().Where(u => u.UserId <= 100).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" <= 100",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" <= 100",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` <= 100",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] <= 100");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= 2",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= 2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= 2",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= 2");
 
-        // Execution: integration uses <= 2 yielding 2 results
-        var results = await Lite.Users().Where(u => u.UserId <= 2).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        // Execution: 2 users with UserId <= 2
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -124,20 +128,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Email == null).Prepare();
+        var lt = Lite.Users().Where(u => u.Email == null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Email == null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.Email == null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.Email == null).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.Email == null).ToDiagnostics(),
-            My.Users().Where(u => u.Email == null).ToDiagnostics(),
-            Ss.Users().Where(u => u.Email == null).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" IS NULL",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" IS NULL",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `Email` IS NULL",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [Email] IS NULL");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" IS NULL",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" IS NULL",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `Email` IS NULL",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [Email] IS NULL");
 
         // Execution: Bob has null email
-        var results = await Lite.Users().Where(u => u.Email == null).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
     }
@@ -148,20 +153,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Email != null).Prepare();
+        var lt = Lite.Users().Where(u => u.Email != null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Email != null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.Email != null).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.Email != null).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.Email != null).ToDiagnostics(),
-            My.Users().Where(u => u.Email != null).ToDiagnostics(),
-            Ss.Users().Where(u => u.Email != null).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" IS NOT NULL",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"Email\" IS NOT NULL",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `Email` IS NOT NULL",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [Email] IS NOT NULL");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" IS NOT NULL",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"Email\" IS NOT NULL",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `Email` IS NOT NULL",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [Email] IS NOT NULL");
 
         // Execution: Alice and Charlie have non-null emails
-        var results = await Lite.Users().Where(u => u.Email != null).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
@@ -177,20 +183,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Prepare();
+        var lt = Lite.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
-            My.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
-            Ss.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"IsActive\" = TRUE) AND (\"UserId\" > 0)",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`IsActive` = 1) AND (`UserId` > 0)",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([IsActive] = 1) AND ([UserId] > 0)");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"IsActive\" = 1) AND (\"UserId\" > 0)",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"IsActive\" = TRUE) AND (\"UserId\" > 0)",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`IsActive` = 1) AND (`UserId` > 0)",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([IsActive] = 1) AND ([UserId] > 0)");
 
         // Execution: 2 active users with UserId > 0
-        var results = await Lite.Users().Where(u => u.IsActive).Where(u => u.UserId > 0).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -202,20 +209,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Email != null).Where(u => u.IsActive).Prepare();
+        var lt = Lite.Users().Where(u => u.Email != null).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Email != null).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.Email != null).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.Email != null).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.Email != null).Where(u => u.IsActive).ToDiagnostics(),
-            My.Users().Where(u => u.Email != null).Where(u => u.IsActive).ToDiagnostics(),
-            Ss.Users().Where(u => u.Email != null).Where(u => u.IsActive).ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"Email\" IS NOT NULL) AND (\"IsActive\" = 1)",
-            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"Email\" IS NOT NULL) AND (\"IsActive\" = TRUE)",
-            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActive` = 1)",
-            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActive] = 1)");
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"Email\" IS NOT NULL) AND (\"IsActive\" = 1)",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (\"Email\" IS NOT NULL) AND (\"IsActive\" = TRUE)",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActive` = 1)",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActive] = 1)");
 
         // Execution: only Alice has non-null email AND is active
-        var results = await Lite.Users().Where(u => u.Email != null).Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
@@ -230,20 +238,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var lt = Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
-            Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = TRUE",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1",
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1");
 
         // Execution: 2 active users
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -255,20 +264,21 @@ internal class CrossDialectWhereTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var lt = Lite.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
-            Pg.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            My.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
-            Ss.Users().Where(u => u.IsActive).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = 1",
             pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = TRUE",
             mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `IsActive` = 1",
             ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [IsActive] = 1");
 
         // Execution: 2 active users as DTOs
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserId, Is.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));

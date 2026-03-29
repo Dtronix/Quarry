@@ -17,13 +17,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any()).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any()).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any()).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -33,7 +33,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
 
         // Alice has 2 orders, Bob has 1 order, Charlie has none
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -45,13 +45,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => !u.Orders.Any()).Prepare();
-        var my   = My.Users().Where(u => !u.Orders.Any()).Prepare();
-        var ss   = Ss.Users().Where(u => !u.Orders.Any()).Prepare();
+        var lt = Lite.Users().Where(u => !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => !u.Orders.Any()).Prepare();
+        var my = My.Users().Where(u => !u.Orders.Any()).Prepare();
+        var ss = Ss.Users().Where(u => !u.Orders.Any()).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -61,7 +61,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE NOT (EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]))");
 
         // Only Charlie has no orders
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
@@ -76,13 +76,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -92,7 +92,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 100))");
 
         // Alice has order 250, Bob has order 150 — both > 100
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -104,13 +104,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -120,7 +120,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] = 'paid'))");
 
         // No orders have status 'paid' (they're 'Shipped' and 'Pending')
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -134,13 +134,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
-        var my   = My.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+        var my = My.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -151,7 +151,7 @@ internal class CrossDialectSubqueryTests
 
         // All(status=="paid") is vacuously true for users with no orders (Charlie)
         // Alice/Bob have non-paid orders, so they fail the All check
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
@@ -166,13 +166,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Count() > 5).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Count() > 5).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Count() > 5).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Count() > 5).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Count() > 5).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Count() > 5).Prepare();
+        var my = My.Users().Where(u => u.Orders.Count() > 5).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Count() > 5).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -182,7 +182,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > 5");
 
         // Max orders per user is 2 (Alice), nobody has > 5
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -192,13 +192,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Count() == 0).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Count() == 0).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Count() == 0).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Count() == 0).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Count() == 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Count() == 0).Prepare();
+        var my = My.Users().Where(u => u.Orders.Count() == 0).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Count() == 0).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -208,7 +208,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) = 0");
 
         // Only Charlie has zero orders
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
@@ -219,13 +219,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+        var my = My.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -235,7 +235,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 100)) > 2");
 
         // Alice has 1 order > 100 (250), Bob has 1 (150) — neither > 2
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -245,13 +245,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+        var my = My.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -261,7 +261,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] = 'paid')) >= 1");
 
         // No orders have status 'paid'
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
     }
 
@@ -273,13 +273,13 @@ internal class CrossDialectSubqueryTests
 
         var minTotal = 50m;
 
-        var lite = Lite.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+        var my = My.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -289,7 +289,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0)) > 0");
 
         // All 3 orders have Total > 50 — Alice and Bob both qualify
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -305,13 +305,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -322,7 +322,7 @@ internal class CrossDialectSubqueryTests
 
         // Order1 has Widget UnitPrice=125 (>50), Order2 has Gadget UnitPrice=75.50 (>50) → Alice
         // Order3 has Widget UnitPrice=50 (not >50) → Bob does NOT qualify
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
@@ -333,13 +333,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -349,7 +349,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (NOT EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId] AND NOT ([sq1].[Quantity] > 0))))");
 
         // All order items have Quantity > 0 — Alice and Bob both have orders where All items have Quantity > 0
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -367,13 +367,13 @@ internal class CrossDialectSubqueryTests
 
         var minAmount = 100m;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -383,7 +383,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > @p0))");
 
         // Alice (250 > 100), Bob (150 > 100)
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -395,13 +395,13 @@ internal class CrossDialectSubqueryTests
 
         var status = "paid";
 
-        var lite = Lite.Users().Where(u => u.Orders.All(o => o.Status == status)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
-        var my   = My.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.All(o => o.Status == status)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+        var my = My.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.All(o => o.Status == status)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -411,7 +411,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE NOT EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND NOT ([sq0].[Status] = @p0))");
 
         // No orders are 'paid' — vacuously true only for Charlie (no orders)
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
     }
@@ -426,13 +426,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.IsActive && u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
-        var my   = My.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
-        var ss   = Ss.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+        var lt = Lite.Users().Where(u => u.IsActive && u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+        var my = My.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive && u.Orders.Any()).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -442,7 +442,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
 
         // Active users with orders: Alice and Bob
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -454,20 +454,20 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
             mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
 
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -483,13 +483,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any() || u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any() || u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any() || u.IsActive).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -500,7 +500,7 @@ internal class CrossDialectSubqueryTests
 
         // Has orders OR is active — all 3 users (Alice/Bob have orders, Alice/Bob are active, Charlie is neither but... wait Charlie is inactive and has no orders, so she fails)
         // Alice: orders=yes → true. Bob: orders=yes → true. Charlie: orders=no, active=no → false.
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -510,13 +510,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -526,7 +526,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AND EXISTS (SELECT 1 FROM [orders] AS [sq1] WHERE [sq1].[UserId] = [users].[UserId] AND ([sq1].[Total] > 100))");
 
         // Has any order AND has an order > 100: Alice (250), Bob (150)
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -536,13 +536,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -552,7 +552,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND (EXISTS (SELECT 1 FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])))");
 
         // All orders have at least one item — Alice and Bob
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
@@ -564,13 +564,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains("paid"))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -579,10 +579,10 @@ internal class CrossDialectSubqueryTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE '%paid%'))",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%paid%'))");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -592,13 +592,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("P"))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("P"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("p"))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -608,7 +608,7 @@ internal class CrossDialectSubqueryTests
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE 'p%'))");
 
         // 'Pending' starts with 'P' — only Alice has a Pending order (order 2)
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
@@ -619,13 +619,13 @@ internal class CrossDialectSubqueryTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -634,10 +634,10 @@ internal class CrossDialectSubqueryTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE '%ped'))",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%ped'))");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
 
         // 'Shipped' ends with 'ped' — Alice (order 1) and Bob (order 3) have Shipped orders
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
@@ -650,13 +650,13 @@ internal class CrossDialectSubqueryTests
         // Mutable captured variable — must stay parameterized, not inlined
         var search = GetSubquerySearchValue();
 
-        var lite = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg   = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
-        var my   = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
-        var ss   = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Prepare();
 
         QueryTestHarness.AssertDialects(
-            lite.ToDiagnostics(),
+            lt.ToDiagnostics(),
             pg.ToDiagnostics(),
             my.ToDiagnostics(),
             ss.ToDiagnostics(),
@@ -665,10 +665,10 @@ internal class CrossDialectSubqueryTests
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Status` LIKE CONCAT('%', ?, '%')))",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Status] LIKE '%' + @p0 + '%'))");
 
-        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
 
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
-        var results = await lite.ExecuteFetchAllAsync();
+        var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
