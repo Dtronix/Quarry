@@ -144,4 +144,36 @@ internal class CrossDialectMiscTests
     }
 
     #endregion
+
+    #region Instance Field Capture
+
+    private int _instanceUserId = 1;
+
+    [Test]
+    public async Task Where_InstanceFieldCapture_UsesFieldAccessor()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Instance field on the test class — must use UnsafeAccessorKind.Field + func.Target!
+        // (not StaticField + null!, which would throw MissingFieldException at runtime)
+        var lite = Lite.Users().Where(u => u.UserId == _instanceUserId).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            Pg.Users().Where(u => u.UserId == _instanceUserId).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Where(u => u.UserId == _instanceUserId).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Where(u => u.UserId == _instanceUserId).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserId\" = @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserId\" = $1",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserId` = ?",
+            ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserId] = @p0");
+
+        // Runtime execution — would throw MissingFieldException if StaticField was used
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+    }
+
+    #endregion
 }

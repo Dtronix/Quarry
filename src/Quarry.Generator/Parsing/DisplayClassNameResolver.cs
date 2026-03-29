@@ -6,55 +6,14 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 namespace Quarry.Generators.Parsing;
 
 /// <summary>
-/// Predicts the compiler-generated display class name for a lambda's closure.
-/// The C# compiler names display classes as:
+/// Provides utilities for predicting compiler-generated display class names
+/// and analyzing closure captures within methods. Used by
+/// <see cref="DisplayClassEnricher"/> for batch enrichment.
+/// Display class naming convention:
 ///   ContainingType+&lt;&gt;c__DisplayClass{methodOrdinal}_{closureOrdinal}
-/// where methodOrdinal is the index of the method in GetMembers()
-/// and closureOrdinal is assigned during pre-order scope tree traversal.
 /// </summary>
 internal static class DisplayClassNameResolver
 {
-    /// <summary>
-    /// Resolves the full display class name for a lambda expression's closure.
-    /// Returns null if the display class name cannot be determined.
-    /// </summary>
-    public static string? Resolve(
-        IMethodSymbol containingMethod,
-        LambdaExpressionSyntax lambda,
-        SemanticModel semanticModel)
-    {
-        // For local functions, the display class is generated under the containing
-        // non-local method's ordinal. Walk up past local functions.
-        var effectiveMethod = containingMethod;
-        while (effectiveMethod.MethodKind == MethodKind.LocalFunction
-               && effectiveMethod.ContainingSymbol is IMethodSymbol parent)
-        {
-            effectiveMethod = parent;
-        }
-
-        var containingType = effectiveMethod.ContainingType;
-        if (containingType == null)
-            return null;
-
-        int methodOrdinal = ComputeMethodOrdinal(containingType, effectiveMethod);
-        if (methodOrdinal < 0)
-            return null;
-
-        // Use the effective (non-local) method's syntax so the scope walk covers
-        // local function bodies for closure ordinal computation.
-        var methodSyntax = effectiveMethod.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax();
-        if (methodSyntax == null)
-            return null;
-
-        int closureOrdinal = ComputeClosureOrdinal(methodSyntax, lambda, semanticModel);
-
-        // Use a format that produces a CLR-resolvable type name:
-        // Namespace.Outer+Inner (using + for nested types) without global:: prefix.
-        var typeName = containingType.ToDisplayString(new SymbolDisplayFormat(
-            typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces));
-        return $"{typeName}+<>c__DisplayClass{methodOrdinal}_{closureOrdinal}";
-    }
-
     /// <summary>
     /// Computes the method ordinal: the index of the method in the containing type's
     /// GetMembers() array. ALL members count (backing fields, properties, accessor
@@ -74,124 +33,6 @@ internal static class DisplayClassNameResolver
         }
 
         return -1;
-    }
-
-    /// <summary>
-    /// Computes the closure ordinal for a lambda within a method.
-    /// Roslyn assigns display class ordinals in scope-tree pre-order: the method body
-    /// scope (if it has captured variables) gets the first ordinal, then child scopes
-    /// in source order. Only scopes that declare captured variables get an ordinal.
-    /// </summary>
-    internal static int ComputeClosureOrdinal(
-        SyntaxNode methodSyntax,
-        LambdaExpressionSyntax targetLambda,
-        SemanticModel semanticModel)
-    {
-        // Step 1: Find ALL scopes that declare captured variables.
-        var scopesWithCaptures = new HashSet<SyntaxNode>(SyntaxNodeComparer.Instance);
-
-        var allClosures = methodSyntax.DescendantNodes()
-            .Where(n => n is LambdaExpressionSyntax || n is LocalFunctionStatementSyntax)
-            .ToArray();
-
-        foreach (var closure in allClosures)
-        {
-            DataFlowAnalysis? dataFlow = null;
-
-            if (closure is LambdaExpressionSyntax lambda)
-                dataFlow = semanticModel.AnalyzeDataFlow(lambda);
-            else if (closure is LocalFunctionStatementSyntax localFunc && localFunc.Body != null)
-                dataFlow = semanticModel.AnalyzeDataFlow(localFunc.Body);
-
-            if (dataFlow == null || !dataFlow.Succeeded)
-                continue;
-
-            foreach (var capturedVar in dataFlow.CapturedInside)
-            {
-                if (capturedVar is ILocalSymbol || capturedVar is IParameterSymbol)
-                {
-                    var declScope = FindDeclaringScope(capturedVar, methodSyntax);
-                    if (declScope != null)
-                        scopesWithCaptures.Add(declScope);
-                }
-            }
-        }
-
-        // Step 2: Walk scopes in pre-order, assign ordinals to those with captures.
-        var scopeOrdinals = new Dictionary<SyntaxNode, int>(SyntaxNodeComparer.Instance);
-        int nextOrdinal = 0;
-        AssignOrdinalsPreOrder(methodSyntax, scopesWithCaptures, scopeOrdinals, ref nextOrdinal);
-
-        // Step 3: Find the target lambda's scope ordinal.
-        var targetDataFlow = semanticModel.AnalyzeDataFlow(targetLambda);
-        if (targetDataFlow != null && targetDataFlow.Succeeded)
-        {
-            foreach (var capturedVar in targetDataFlow.CapturedInside)
-            {
-                if (capturedVar is ILocalSymbol || capturedVar is IParameterSymbol)
-                {
-                    var declScope = FindDeclaringScope(capturedVar, methodSyntax);
-                    if (declScope != null && scopeOrdinals.TryGetValue(declScope, out int ordinal))
-                        return ordinal;
-                }
-            }
-        }
-
-        return 0;
-    }
-
-    /// <summary>
-    /// Collects captured variable names and their CLR types from a lambda expression.
-    /// Returns a dictionary mapping field name → fully-qualified CLR type.
-    /// </summary>
-    public static Dictionary<string, string>? CollectCapturedVariableTypes(
-        LambdaExpressionSyntax lambda,
-        SemanticModel semanticModel)
-    {
-        var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
-        if (dataFlow == null || !dataFlow.Succeeded)
-            return null;
-
-        var captured = dataFlow.CapturedInside
-            .Where(s => s is ILocalSymbol || s is IParameterSymbol)
-            .Distinct<ISymbol>(SymbolEqualityComparer.Default)
-            .ToArray();
-
-        if (captured.Length == 0)
-            return null;
-
-        var result = new Dictionary<string, string>();
-        foreach (var symbol in captured)
-        {
-            string varName;
-            ITypeSymbol? typeSymbol;
-            if (symbol is ILocalSymbol local)
-            {
-                varName = local.Name;
-                typeSymbol = local.Type;
-            }
-            else if (symbol is IParameterSymbol param)
-            {
-                varName = param.Name;
-                typeSymbol = param.Type;
-            }
-            else continue;
-
-            // Handle unresolved types (error types from generator ordering).
-            // When the type is error, try to infer it from the declaration syntax
-            // (e.g., var id = await ...Method<int>() → int).
-            var varType = typeSymbol.TypeKind == TypeKind.Error
-                ? (TryResolveErrorType(symbol, semanticModel) ?? "object")
-                : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-
-            // Guard against empty/null type strings
-            if (string.IsNullOrWhiteSpace(varType))
-                varType = "object";
-
-            result[varName] = varType;
-        }
-
-        return result.Count > 0 ? result : null;
     }
 
     /// <summary>
@@ -275,7 +116,142 @@ internal static class DisplayClassNameResolver
         return methodRoot;
     }
 
-    private sealed class SyntaxNodeComparer : IEqualityComparer<SyntaxNode>
+    /// <summary>
+    /// Builds the scope-ordinal map and dataflow cache for all closures in a method.
+    /// Called once per method by DisplayClassEnricher.
+    /// </summary>
+    internal static MethodClosureAnalysis AnalyzeMethodClosures(
+        SyntaxNode methodSyntax,
+        SemanticModel semanticModel)
+    {
+        var scopesWithCaptures = new HashSet<SyntaxNode>(SyntaxNodeComparer.Instance);
+        var dataFlowByNode = new Dictionary<SyntaxNode, DataFlowAnalysis>(SyntaxNodeComparer.Instance);
+
+        var allClosures = methodSyntax.DescendantNodes()
+            .Where(n => n is LambdaExpressionSyntax || n is LocalFunctionStatementSyntax)
+            .ToArray();
+
+        foreach (var closure in allClosures)
+        {
+            DataFlowAnalysis? dataFlow = null;
+
+            if (closure is LambdaExpressionSyntax lambda)
+                dataFlow = semanticModel.AnalyzeDataFlow(lambda);
+            else if (closure is LocalFunctionStatementSyntax localFunc && localFunc.Body != null)
+                dataFlow = semanticModel.AnalyzeDataFlow(localFunc.Body);
+
+            if (dataFlow == null || !dataFlow.Succeeded)
+                continue;
+
+            if (closure is LambdaExpressionSyntax lam)
+                dataFlowByNode[lam] = dataFlow;
+
+            foreach (var capturedVar in dataFlow.CapturedInside)
+            {
+                if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
+                {
+                    var declScope = FindDeclaringScope(capturedVar, methodSyntax);
+                    if (declScope != null)
+                        scopesWithCaptures.Add(declScope);
+                }
+            }
+        }
+
+        var scopeOrdinals = new Dictionary<SyntaxNode, int>(SyntaxNodeComparer.Instance);
+        int nextOrdinal = 0;
+        AssignOrdinalsPreOrder(methodSyntax, scopesWithCaptures, scopeOrdinals, ref nextOrdinal);
+
+        return new MethodClosureAnalysis(dataFlowByNode, scopeOrdinals);
+    }
+
+    /// <summary>
+    /// Looks up the closure ordinal for a lambda using pre-computed analysis.
+    /// Returns 0 if the lambda has no captured local/parameter variables.
+    /// </summary>
+    internal static int LookupClosureOrdinal(
+        MethodClosureAnalysis analysis,
+        LambdaExpressionSyntax lambda,
+        SyntaxNode methodSyntax)
+    {
+        if (!analysis.DataFlowByNode.TryGetValue(lambda, out var dataFlow))
+            return 0;
+
+        foreach (var capturedVar in dataFlow.CapturedInside)
+        {
+            if (capturedVar is ILocalSymbol || (capturedVar is IParameterSymbol p && !p.IsThis))
+            {
+                var declScope = FindDeclaringScope(capturedVar, methodSyntax);
+                if (declScope != null && analysis.ScopeOrdinals.TryGetValue(declScope, out int ordinal))
+                    return ordinal;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Overload that uses a pre-computed DataFlowAnalysis instead of calling AnalyzeDataFlow.
+    /// </summary>
+    public static Dictionary<string, string>? CollectCapturedVariableTypes(
+        DataFlowAnalysis dataFlow,
+        SemanticModel semanticModel)
+    {
+        if (!dataFlow.Succeeded)
+            return null;
+
+        var captured = dataFlow.CapturedInside
+            .Where(s => s is ILocalSymbol || (s is IParameterSymbol p && !p.IsThis))
+            .Distinct<ISymbol>(SymbolEqualityComparer.Default)
+            .ToArray();
+
+        if (captured.Length == 0)
+            return null;
+
+        var result = new Dictionary<string, string>();
+        foreach (var symbol in captured)
+        {
+            string varName;
+            ITypeSymbol? typeSymbol;
+            if (symbol is ILocalSymbol local)
+            {
+                varName = local.Name;
+                typeSymbol = local.Type;
+            }
+            else if (symbol is IParameterSymbol param)
+            {
+                varName = param.Name;
+                typeSymbol = param.Type;
+            }
+            else continue;
+
+            var varType = typeSymbol.TypeKind == TypeKind.Error
+                ? (TryResolveErrorType(symbol, semanticModel) ?? "object")
+                : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+            if (string.IsNullOrWhiteSpace(varType))
+                varType = "object";
+
+            result[varName] = varType;
+        }
+
+        return result.Count > 0 ? result : null;
+    }
+
+    internal sealed class MethodClosureAnalysis
+    {
+        public MethodClosureAnalysis(
+            Dictionary<SyntaxNode, DataFlowAnalysis> dataFlowByNode,
+            Dictionary<SyntaxNode, int> scopeOrdinals)
+        {
+            DataFlowByNode = dataFlowByNode;
+            ScopeOrdinals = scopeOrdinals;
+        }
+
+        public Dictionary<SyntaxNode, DataFlowAnalysis> DataFlowByNode { get; }
+        public Dictionary<SyntaxNode, int> ScopeOrdinals { get; }
+    }
+
+    internal sealed class SyntaxNodeComparer : IEqualityComparer<SyntaxNode>
     {
         public static readonly SyntaxNodeComparer Instance = new SyntaxNodeComparer();
         public bool Equals(SyntaxNode x, SyntaxNode y) => ReferenceEquals(x, y);

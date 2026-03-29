@@ -757,7 +757,7 @@ internal static class UsageSiteDiscovery
         if (site == null)
             return ImmutableArray<RawCallSite>.Empty;
 
-        EnrichDisplayClassInfo(site, invocation, semanticModel);
+        EnrichDisplayClassInfo(site, invocation);
 
         // For navigation joins, forward-scan the chain to discover post-join sites
         // that Roslyn can't resolve due to generated entity type inference failure.
@@ -943,7 +943,7 @@ internal static class UsageSiteDiscovery
                 builderTypeName: "IJoinedQueryBuilder",
                 joinedEntityTypeNames: joinedEntityTypeNames);
 
-            EnrichDisplayClassInfo(postJoinSite, parentInvoc, semanticModel);
+            EnrichDisplayClassInfo(postJoinSite, parentInvoc);
             results.Add(postJoinSite);
 
             currentInvoc = parentInvoc;
@@ -3113,13 +3113,12 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Enriches a RawCallSite with display class name and captured variable types
-    /// for UnsafeAccessor-based closure field extraction.
+    /// Stores the lambda syntax reference on a RawCallSite for deferred batch enrichment
+    /// by DisplayClassEnricher in Stage 2.5.
     /// </summary>
     private static void EnrichDisplayClassInfo(
         RawCallSite site,
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel)
+        InvocationExpressionSyntax invocation)
     {
         if (invocation.ArgumentList.Arguments.Count == 0)
             return;
@@ -3128,14 +3127,6 @@ internal static class UsageSiteDiscovery
         if (arg is not LambdaExpressionSyntax lambda)
             return;
 
-        var enclosing = semanticModel.GetEnclosingSymbol(invocation.SpanStart);
-        while (enclosing != null && enclosing is not IMethodSymbol)
-            enclosing = enclosing.ContainingSymbol;
-
-        if (enclosing is not IMethodSymbol method)
-            return;
-
-        site.DisplayClassName = DisplayClassNameResolver.Resolve(method, lambda, semanticModel);
-        site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(lambda, semanticModel);
+        site.EnrichmentLambda = lambda;
     }
 }

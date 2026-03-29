@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 
 namespace Quarry.Generators.IR;
@@ -174,6 +175,12 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Captured variable types: field name → CLR type (for UnsafeAccessor return types)
     public IReadOnlyDictionary<string, string>? CapturedVariableTypes { get; set; }
 
+    // Capture classification set by DisplayClassEnricher. Not part of Equals/GetHashCode.
+    public CaptureKind CaptureKind { get; set; }
+
+    // Transient: lambda syntax for deferred batch enrichment. Not part of Equals/GetHashCode.
+    public LambdaExpressionSyntax? EnrichmentLambda { get; set; }
+
     /// <summary>
     /// Creates a copy with a different ResultTypeName.
     /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
@@ -224,6 +231,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.CaptureKind = CaptureKind;
+        copy.EnrichmentLambda = EnrichmentLambda;
         return copy;
     }
 
@@ -292,6 +301,22 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         }
         return true;
     }
+}
+
+/// <summary>
+/// Classifies the type of variable capture for a lambda's enrichment target.
+/// Set by <see cref="Parsing.DisplayClassEnricher"/> during batch enrichment.
+/// </summary>
+internal enum CaptureKind
+{
+    /// <summary>No enrichment lambda or enricher did not run.</summary>
+    None = 0,
+
+    /// <summary>Lambda captures a local variable or parameter via a compiler-generated display class.</summary>
+    ClosureCapture,
+
+    /// <summary>Lambda references a static or instance field on the containing class (not a closure local).</summary>
+    FieldCapture
 }
 
 /// <summary>

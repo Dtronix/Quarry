@@ -397,22 +397,31 @@ internal sealed class CapturedValueExpr : SqlExpr
     public string SyntaxText { get; }
     public string? ExpressionPath { get; }
     public string ClrType { get; }
+    public bool IsStaticField { get; }
     public bool CanGenerateDirectPath => ExpressionPath != null;
 
-    public CapturedValueExpr(string variableName, string syntaxText, string clrType = "object", string? expressionPath = null)
+    public CapturedValueExpr(string variableName, string syntaxText, string clrType = "object", string? expressionPath = null, bool isStaticField = false)
         : base(HashCode.Combine(SqlExprKind.CapturedValue, variableName, syntaxText, expressionPath))
     {
         VariableName = variableName;
         SyntaxText = syntaxText;
         ClrType = clrType;
         ExpressionPath = expressionPath;
+        IsStaticField = isStaticField;
     }
 
     /// <summary>Creates a copy with an updated CLR type.</summary>
     public CapturedValueExpr WithClrType(string clrType)
     {
         if (ClrType == clrType) return this;
-        return new CapturedValueExpr(VariableName, SyntaxText, clrType, ExpressionPath);
+        return new CapturedValueExpr(VariableName, SyntaxText, clrType, ExpressionPath, IsStaticField);
+    }
+
+    /// <summary>Creates a copy with the IsStaticField flag set.</summary>
+    public CapturedValueExpr WithStaticField(bool isStaticField)
+    {
+        if (IsStaticField == isStaticField) return this;
+        return new CapturedValueExpr(VariableName, SyntaxText, ClrType, ExpressionPath, isStaticField);
     }
 
     protected override bool DeepEquals(SqlExpr other)
@@ -421,7 +430,8 @@ internal sealed class CapturedValueExpr : SqlExpr
         return VariableName == o.VariableName
             && SyntaxText == o.SyntaxText
             && ExpressionPath == o.ExpressionPath
-            && ClrType == o.ClrType;
+            && ClrType == o.ClrType
+            && IsStaticField == o.IsStaticField;
     }
 }
 

@@ -113,6 +113,13 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
     public string? EnumUnderlyingType { get; set; }
 
     /// <summary>
+    /// Gets or sets whether the captured variable is a static field on the containing class.
+    /// When true, UnsafeAccessor should use StaticField kind with null target.
+    /// When false, UnsafeAccessor should use Field kind with func.Target.
+    /// </summary>
+    public bool IsStaticCapture { get; set; }
+
+    /// <summary>
     /// Gets or sets the symbol for the collection receiver expression.
     /// Used by the carrier parameter builder to determine direct-access eligibility
     /// (public static fields/properties can be accessed without expression tree extraction).
@@ -135,7 +142,8 @@ internal sealed class ParameterInfo : IEquatable<ParameterInfo>
             && IsEnum == other.IsEnum
             && EnumUnderlyingType == other.EnumUnderlyingType
             && CapturedFieldName == other.CapturedFieldName
-            && CapturedFieldType == other.CapturedFieldType;
+            && CapturedFieldType == other.CapturedFieldType
+            && IsStaticCapture == other.IsStaticCapture;
     }
 
     public override bool Equals(object? obj) => Equals(obj as ParameterInfo);

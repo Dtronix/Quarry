@@ -27,6 +27,7 @@ internal static class SqlExprClauseTranslator
                     idx, name, captured.ClrType, captured.SyntaxText,
                     isCaptured: true, expressionPath: captured.ExpressionPath);
                 paramInfo.CapturedFieldName = captured.VariableName;
+                paramInfo.IsStaticCapture = captured.IsStaticField;
                 parameters.Add(paramInfo);
                 return new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
                     isCaptured: true, expressionPath: captured.ExpressionPath);
@@ -99,6 +100,7 @@ internal static class SqlExprClauseTranslator
                             expressionPath: "__CONTAINS_COLLECTION__");
                         paramInfo.CollectionElementType = elementType;
                         paramInfo.CapturedFieldName = captured.VariableName;
+                        paramInfo.IsStaticCapture = captured.IsStaticField;
                         parameters.Add(paramInfo);
                         newValues[i] = new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
                             isCaptured: true, expressionPath: "__CONTAINS_COLLECTION__",
