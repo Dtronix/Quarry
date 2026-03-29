@@ -248,9 +248,11 @@ internal static class SqlExprClauseTranslator
 
             case LikeExpr like:
             {
-                // For LIKE patterns, DO parameterize string literals (matches old pipeline)
                 var operand = ExtractSubqueryPredicateParams(like.Operand, parameters, ref paramIndex);
-                var pattern = ExtractParameters(like.Pattern, parameters, ref paramIndex);
+                // String literals in LIKE patterns are inlined directly — no parameterization needed
+                var pattern = like.Pattern is LiteralExpr { ClrType: "string", IsNull: false }
+                    ? like.Pattern
+                    : ExtractParameters(like.Pattern, parameters, ref paramIndex);
                 if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
                     return like;
                 return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);

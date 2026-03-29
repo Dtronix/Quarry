@@ -200,6 +200,12 @@ internal class CrossDialectStringOpTests
     private static readonly string ReadonlySearchTerm = "lic";
     private static string MutableSearchTerm = "lic";
 
+    private static class StringConstants
+    {
+        public const string SearchTerm = "lic";
+        public const string MetaSearchTerm = "50%";
+    }
+
     [Test]
     public async Task Where_Contains_StringLiteral_InlinesPattern()
     {
@@ -430,6 +436,50 @@ internal class CrossDialectStringOpTests
             pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (\"UserName\" LIKE '%er%') AND (\"UserName\" LIKE 'Us%')",
             mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')",
             ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE ([UserName] LIKE '%er%') AND ([UserName] LIKE 'Us%')");
+    }
+
+    [Test]
+    public async Task Where_Contains_QualifiedConstField_InlinesPattern()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Qualified member access to const string (e.g., StringConstants.SearchTerm) should be folded
+        var lite = Lite.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(),
+            Pg.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Where(u => u.UserName.Contains(StringConstants.SearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%lic%'",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'",
+            ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%lic%'");
+
+        Assert.That(lite.ToDiagnostics().Parameters, Has.Count.EqualTo(0));
+
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task Where_Contains_QualifiedConstField_WithMetaChars_EscapesPattern()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Qualified const containing LIKE metacharacter (%) must be escaped
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Pg.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            My.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            Ss.Users().Where(u => u.UserName.Contains(StringConstants.MetaSearchTerm)).Select(u => new UserSummaryDto { UserId = u.UserId, UserName = u.UserName, IsActive = u.IsActive }).ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
+            pg:     "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"UserName\" LIKE '%50\\%%' ESCAPE '\\'",
+            mysql:  "SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%50\\%%' ESCAPE '\\'",
+            ss:     "SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%50\\%%' ESCAPE '\\'");
     }
 
     #endregion
