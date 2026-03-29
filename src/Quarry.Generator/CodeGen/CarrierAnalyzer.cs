@@ -365,6 +365,51 @@ internal static class CarrierAnalyzer
                     isStaticField);
             }
 
+            // For UpdateSetAction: also create extractors from clause-level captured identifiers
+            // that aren't covered by any parameter's CapturedFieldName (computed expressions like a + b)
+            if (cs.Kind == InterceptorKind.UpdateSetAction
+                && cs.SetActionAllCapturedIdentifiers != null)
+            {
+                foreach (var kvp in cs.SetActionAllCapturedIdentifiers)
+                {
+                    var varName = kvp.Key;
+                    var (varType, isStatic, containingClass) = kvp.Value;
+
+                    if (seenVariables.ContainsKey(varName))
+                        continue;
+
+                    var captureKind = cs.CaptureKind;
+                    var displayClassName = cs.DisplayClassName;
+
+                    if (displayClassName == null)
+                        continue;
+
+                    // For field captures, use the containing class from Phase 1
+                    string effectiveDisplayClass;
+                    CaptureKind effectiveCaptureKind;
+                    if (isStatic || containingClass != null)
+                    {
+                        effectiveDisplayClass = containingClass ?? displayClassName;
+                        effectiveCaptureKind = CaptureKind.FieldCapture;
+                    }
+                    else
+                    {
+                        // Closure-captured local — use the display class
+                        effectiveDisplayClass = displayClassName;
+                        effectiveCaptureKind = captureKind != CaptureKind.None ? captureKind : CaptureKind.ClosureCapture;
+                    }
+
+                    var methodName = $"__ExtractVar_{varName}_{clauseIndex}";
+                    seenVariables[varName] = new Models.CapturedVariableExtractor(
+                        methodName,
+                        varName,
+                        varType,
+                        effectiveDisplayClass,
+                        effectiveCaptureKind,
+                        isStatic);
+                }
+            }
+
             if (seenVariables.Count > 0)
             {
                 plans.Add(new Models.ClauseExtractionPlan(
