@@ -723,4 +723,36 @@ public class Svc
         // 2 bits → 4 SQL variants
         AssertMaskVariantCount(code, 4);
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  UPDATE Set(Action<T>) — computed expression with multiple captured locals
+    // ─────────────────────────────────────────────────────────────────
+
+    [Test]
+    public void Update_SetAction_ComputedExpression_GeneratesPerVariableExtractors()
+    {
+        var code = GenerateInterceptors(@"
+public class Svc
+{
+    private readonly TestDbContext _db;
+    public Svc(TestDbContext db) { _db = db; }
+    public string Run(string a, string b, bool restrict)
+    {
+        var q = _db.Users().Update().Set(u => u.UserName = a + b);
+        if (restrict)
+            q = q.Where(u => u.IsActive);
+        return q.All().ToDiagnostics().Sql;
+    }
+}
+");
+        AssertPrebuiltDispatchWithMask(code, "UPDATE");
+        AssertMaskVariantCount(code, 2);
+        // Both variables from the computed expression should have extractors
+        Assert.That(code, Does.Contain("__ExtractVar_a_"),
+            "Captured variable 'a' from computed expression should have a per-variable extractor");
+        Assert.That(code, Does.Contain("__ExtractVar_b_"),
+            "Captured variable 'b' from computed expression should have a per-variable extractor");
+        Assert.That(code, Does.Not.Contain("__setEntity"),
+            "Legacy invoke-and-read __setEntity pattern should not be present");
+    }
 }

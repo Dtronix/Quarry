@@ -381,6 +381,63 @@ internal class CrossDialectUpdateTests
 
     #endregion
 
+    #region Set(Action<T>) — Computed Expressions with Multiple Captured Variables
+
+    [Test]
+    public async Task Update_SetAction_BinaryExpression_MultipleCapturedVars()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var a = "Hello";
+        var b = "World";
+
+        // Binary expression with two captured locals → single parameter
+        QueryTestHarness.AssertDialects(
+            Lite.Users().Update().Set(u => u.UserName = a + b).Where(u => u.UserId == 1).ToDiagnostics(),
+            Pg.Users().Update().Set(u => u.UserName = a + b).Where(u => u.UserId == 1).ToDiagnostics(),
+            My.Users().Update().Set(u => u.UserName = a + b).Where(u => u.UserId == 1).ToDiagnostics(),
+            Ss.Users().Update().Set(u => u.UserName = a + b).Where(u => u.UserId == 1).ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = @p0 WHERE \"UserId\" = 1",
+            pg:     "UPDATE \"users\" SET \"UserName\" = $1 WHERE \"UserId\" = 1",
+            mysql:  "UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1",
+            ss:     "UPDATE [users] SET [UserName] = @p0 WHERE [UserId] = 1");
+
+        var affected = await Lite.Users().Update()
+            .Set(u => u.UserName = a + b)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var user = await Lite.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(user, Is.EqualTo("HelloWorld"));
+    }
+
+    [Test]
+    public async Task Update_SetAction_MethodCallOnCapture_ExecuteCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var name = "hello";
+        var affected = await Lite.Users().Update()
+            .Set(u => u.UserName = name.ToUpper())
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var user = await Lite.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(user, Is.EqualTo("HELLO"));
+    }
+
+    #endregion
+
     #region Set(Action<T>) — Type-Mapped Column
 
     [Test]
