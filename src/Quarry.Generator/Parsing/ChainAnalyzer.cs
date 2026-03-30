@@ -860,14 +860,19 @@ internal static class ChainAnalyzer
             if (!paramColumnMap.TryGetValue(i, out var col))
                 continue;
 
-            var isEnum = col.IsEnum || p.IsEnum;
-            var isSensitive = col.Modifiers.IsSensitive || p.IsSensitive;
-            // Derive enum underlying type when enriching from column metadata.
-            // Default to "int" — the most common underlying type for C# enums.
-            var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
-
-            clauseParams[i] = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+            clauseParams[i] = EnrichParameterFromColumn(p, col);
         }
+    }
+
+    /// <summary>
+    /// Enriches a single parameter with column metadata (IsEnum, EnumUnderlyingType, IsSensitive).
+    /// </summary>
+    private static QueryParameter EnrichParameterFromColumn(QueryParameter param, ColumnInfo col)
+    {
+        var isEnum = col.IsEnum || param.IsEnum;
+        var isSensitive = col.Modifiers.IsSensitive || param.IsSensitive;
+        var enumUnderlying = param.EnumUnderlyingType ?? (isEnum ? (col.DbClrType ?? "int") : null);
+        return param.WithEnrichment(isEnum, enumUnderlying, isSensitive);
     }
 
     /// <summary>
@@ -903,11 +908,7 @@ internal static class ChainAnalyzer
             if (columnByProperty.TryGetValue(assignment.ColumnSql, out var colInfo))
             {
                 var p = clauseParams[paramIdx];
-                var isEnum = colInfo.IsEnum || p.IsEnum;
-                var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
-                var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
-
-                var enriched = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+                var enriched = EnrichParameterFromColumn(p, colInfo);
                 if (!ReferenceEquals(enriched, p))
                 {
                     clauseParams[paramIdx] = enriched;

@@ -82,7 +82,8 @@ internal sealed class InsertInfo : IEquatable<InsertInfo>
                 customTypeMappingClass: column.CustomTypeMappingClass,
                 isSensitive: column.Modifiers.IsSensitive,
                 isEnum: column.IsEnum,
-                isBoolean: column.ClrType is "bool" or "Boolean"));
+                isBoolean: column.ClrType is "bool" or "Boolean",
+                enumUnderlyingType: column.IsEnum ? (column.DbClrType ?? "int") : null));
         }
 
         string? quotedIdentityColumnName = identityColumnName != null
@@ -200,6 +201,12 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
     /// </summary>
     public bool IsBoolean { get; }
 
+    /// <summary>
+    /// Gets the underlying type name for enum columns (e.g., "int", "byte").
+    /// Null for non-enum columns. Used for the cast in generated insert code.
+    /// </summary>
+    public string? EnumUnderlyingType { get; }
+
     public InsertColumnInfo(
         string propertyName,
         string columnName,
@@ -213,7 +220,8 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
         string? customTypeMappingClass = null,
         bool isSensitive = false,
         bool isEnum = false,
-        bool isBoolean = false)
+        bool isBoolean = false,
+        string? enumUnderlyingType = null)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -228,6 +236,7 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
         IsSensitive = isSensitive;
         IsEnum = isEnum;
         IsBoolean = isBoolean;
+        EnumUnderlyingType = enumUnderlyingType;
     }
 
     public bool Equals(InsertColumnInfo? other)
@@ -246,7 +255,8 @@ internal sealed class InsertColumnInfo : IEquatable<InsertColumnInfo>
             && CustomTypeMappingClass == other.CustomTypeMappingClass
             && IsSensitive == other.IsSensitive
             && IsEnum == other.IsEnum
-            && IsBoolean == other.IsBoolean;
+            && IsBoolean == other.IsBoolean
+            && EnumUnderlyingType == other.EnumUnderlyingType;
     }
 
     public override bool Equals(object? obj) => Equals(obj as InsertColumnInfo);

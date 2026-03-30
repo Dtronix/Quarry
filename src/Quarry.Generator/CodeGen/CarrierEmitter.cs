@@ -985,7 +985,7 @@ internal static class CarrierEmitter
             {
                 var col = insertInfo.Columns[i];
                 var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
-                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
+                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
                 sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
                 sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
                 sb.AppendLine($"        __p{i}.Value = (object?){valueExpr} ?? DBNull.Value;");
@@ -1035,7 +1035,7 @@ internal static class CarrierEmitter
             for (int i = 0; i < insertInfo.Columns.Count; i++)
             {
                 var col = insertInfo.Columns[i];
-                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
+                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
                 sb.AppendLine($"            new(\"@p{i}\", (object?){valueExpr} ?? DBNull.Value),");
             }
             sb.AppendLine("        };");

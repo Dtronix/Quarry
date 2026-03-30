@@ -610,7 +610,7 @@ internal static class TerminalBodyEmitter
         {
             var col = insertInfo.Columns[i];
             var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
-            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
+            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
             sb.AppendLine($"            {{");
             sb.AppendLine($"                var __p = __cmd.CreateParameter();");
             sb.AppendLine($"                __p.ParameterName = \"@p\" + __paramIdx;");
