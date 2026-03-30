@@ -430,6 +430,113 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_MutuallyExclusiveBranches_NoForkedChainDiagnostic()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, bool condition)
+    {
+        if (condition)
+        {
+            await db.Users().Update().Set(u => u.UserName = ""a"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+        }
+        else
+        {
+            await db.Users().Update().Set(u => u.UserName = ""b"").Where(u => u.UserId == 2).ExecuteNonQueryAsync();
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry033 = diagnostics.FirstOrDefault(d => d.Id == "QRY033");
+        Assert.That(qry033, Is.Null, "Should NOT report QRY033 for chains in mutually exclusive if/else branches");
+    }
+
+    [Test]
+    public void CarrierGeneration_TryCatchBranches_NoForkedChainDiagnostic()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        try
+        {
+            await db.Users().Update().Set(u => u.UserName = ""a"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            await db.Users().Update().Set(u => u.UserName = ""b"").Where(u => u.UserId == 2).ExecuteNonQueryAsync();
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry033 = diagnostics.FirstOrDefault(d => d.Id == "QRY033");
+        Assert.That(qry033, Is.Null, "Should NOT report QRY033 for chains in try/catch branches");
+    }
+
+    [Test]
+    public void CarrierGeneration_NestedIfElseBranches_NoForkedChainDiagnostic()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int mode)
+    {
+        var user = await db.Users().Where(u => u.UserId == 1).Select(u => u).ExecuteFetchFirstOrDefaultAsync();
+        if (user != null)
+        {
+            if (mode == 1)
+            {
+                await db.Users().Update().Set(u => u.UserName = ""a"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+            }
+            else if (mode == 2)
+            {
+                await db.Users().Update().Set(u => u.UserName = ""b"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+            }
+            else
+            {
+                await db.Users().Update().Set(u => u.UserName = ""c"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+            }
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry033 = diagnostics.FirstOrDefault(d => d.Id == "QRY033");
+        Assert.That(qry033, Is.Null, "Should NOT report QRY033 for chains in nested if/else-if/else branches");
+    }
+
+    [Test]
     public void CarrierGeneration_DeleteWithWhere()
     {
         var source = SharedSchema + @"
