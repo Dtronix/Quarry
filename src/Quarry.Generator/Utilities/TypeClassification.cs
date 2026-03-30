@@ -208,34 +208,90 @@ internal static class TypeClassification
         if (resultTypeName.StartsWith("(") && resultTypeName.EndsWith(")"))
         {
             var inner = resultTypeName.Substring(1, resultTypeName.Length - 2);
-            foreach (var element in inner.Split(','))
+
+            // If the inner string starts with a space, the first element's type is empty
+            if (inner.Length > 0 && inner[0] == ' ')
+                return true;
+
+            foreach (var element in SplitTupleElements(inner))
             {
                 var trimmed = element.Trim();
                 if (trimmed.Length == 0)
                     return true;
 
-                // Named tuple element: "type name" format. Check the type part.
-                var spaceIdx = trimmed.LastIndexOf(' ');
-                if (spaceIdx >= 0)
+                // Extract the type part, handling nested tuples that contain spaces.
+                // For nested tuples like "(object, int)", find the matching close paren
+                // before looking for a name suffix.
+                string typePart;
+                if (trimmed.StartsWith("("))
                 {
-                    var typePart = trimmed.Substring(0, spaceIdx).Trim();
-                    if (typePart.Length == 0 || typePart == "object" || typePart == "?")
-                        return true;
+                    int closeIdx = FindMatchingCloseParen(trimmed, 0);
+                    typePart = closeIdx >= 0 ? trimmed.Substring(0, closeIdx + 1) : trimmed;
                 }
                 else
                 {
-                    // Single token — could be a type-only element or a bare error type
-                    if (trimmed == "object" || trimmed == "?")
-                        return true;
+                    // Named tuple element: "type name" format. Check the type part.
+                    var spaceIdx = trimmed.LastIndexOf(' ');
+                    if (spaceIdx >= 0)
+                    {
+                        typePart = trimmed.Substring(0, spaceIdx).Trim();
+                        if (typePart.Length == 0 || typePart == "object" || typePart == "?")
+                            return true;
+                    }
+                    else
+                    {
+                        typePart = trimmed;
+                        if (typePart == "object" || typePart == "?")
+                            return true;
+                    }
                 }
-            }
 
-            // If the inner string starts with a space, the first element's type is empty
-            if (inner.Length > 0 && inner[0] == ' ')
-                return true;
+                // Recursively check nested tuples
+                if (typePart.StartsWith("(") && IsUnresolvedResultType(typePart))
+                    return true;
+            }
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Finds the index of the closing parenthesis matching the opening one at <paramref name="startIdx"/>.
+    /// </summary>
+    private static int FindMatchingCloseParen(string s, int startIdx)
+    {
+        int depth = 0;
+        for (int i = startIdx; i < s.Length; i++)
+        {
+            if (s[i] == '(') depth++;
+            else if (s[i] == ')') { depth--; if (depth == 0) return i; }
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// Splits tuple element strings at top-level commas only, respecting nested parentheses.
+    /// </summary>
+    private static List<string> SplitTupleElements(string inner)
+    {
+        var elements = new List<string>();
+        int depth = 0;
+        int start = 0;
+
+        for (int i = 0; i < inner.Length; i++)
+        {
+            var ch = inner[i];
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            else if (ch == ',' && depth == 0)
+            {
+                elements.Add(inner.Substring(start, i - start));
+                start = i + 1;
+            }
+        }
+
+        elements.Add(inner.Substring(start));
+        return elements;
     }
 
     /// <summary>

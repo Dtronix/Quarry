@@ -117,6 +117,10 @@ public class PipelineOrchestratorTests
     [TestCase("(object OrderId, object UserName)", ExpectedResult = true, Description = "Named tuple with object types")]
     [TestCase("( OrderId,  Total,  Priority)", ExpectedResult = true, Description = "Tuple with empty type parts (leading space)")]
     [TestCase("( OrderId)", ExpectedResult = true, Description = "Single-element tuple with empty type")]
+    [TestCase("(int, (string, object))", ExpectedResult = true, Description = "Nested tuple with unresolved inner element")]
+    [TestCase("(int, (string, decimal))", ExpectedResult = false, Description = "Nested tuple, all resolved")]
+    [TestCase("((object, int), string)", ExpectedResult = true, Description = "Unresolved element in first nested tuple")]
+    [TestCase("(int, (string, decimal) Named)", ExpectedResult = false, Description = "Nested named tuple, all resolved")]
     public bool IsUnresolvedResultType_DetectsPatterns(string? resultTypeName)
     {
         return InvokeIsUnresolvedResultType(resultTypeName);
