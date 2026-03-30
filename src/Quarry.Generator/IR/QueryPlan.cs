@@ -396,12 +396,25 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         if (IsEnum == isEnum && EnumUnderlyingType == enumUnderlyingType && IsSensitive == isSensitive)
             return this;
         return new QueryParameter(
-            GlobalIndex, ClrType, ValueExpression, IsCaptured, ExpressionPath,
-            IsCollection, ElementTypeName, TypeMappingClass,
-            isEnum, enumUnderlyingType, isSensitive,
-            EntityPropertyExpression, NeedsUnsafeAccessor, IsDirectAccessible,
-            CollectionAccessExpression, CapturedFieldName, CapturedFieldType,
-            IsStaticCapture, IsEnumerableCollection);
+            globalIndex: GlobalIndex,
+            clrType: ClrType,
+            valueExpression: ValueExpression,
+            isCaptured: IsCaptured,
+            expressionPath: ExpressionPath,
+            isCollection: IsCollection,
+            elementTypeName: ElementTypeName,
+            typeMappingClass: TypeMappingClass,
+            isEnum: isEnum,
+            enumUnderlyingType: enumUnderlyingType,
+            isSensitive: isSensitive,
+            entityPropertyExpression: EntityPropertyExpression,
+            needsUnsafeAccessor: NeedsUnsafeAccessor,
+            isDirectAccessible: IsDirectAccessible,
+            collectionAccessExpression: CollectionAccessExpression,
+            capturedFieldName: CapturedFieldName,
+            capturedFieldType: CapturedFieldType,
+            isStaticCapture: IsStaticCapture,
+            isEnumerableCollection: IsEnumerableCollection);
     }
 
     public bool Equals(QueryParameter? other)

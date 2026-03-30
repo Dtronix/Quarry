@@ -331,7 +331,7 @@ internal static class TerminalEmitHelpers
             foreach (var p in clause.Site.Clause!.Parameters.Where(p => p.IsCollection))
             {
                 var globalIdx = offset + p.Index;
-                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", string.Join(\", \", __col{globalIdx}Parts));");
+                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", __col{globalIdx}Len == 0 ? \"SELECT 1 WHERE 1=0\" : string.Join(\", \", __col{globalIdx}Parts));");
             }
         }
 
