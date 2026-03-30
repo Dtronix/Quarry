@@ -440,10 +440,6 @@ internal static class DisplayClassNameResolver
     }
 
     /// <summary>
-    /// Finds an EntityInfo by accessor method name (e.g., "Packages" → Package entity)
-    /// by searching all contexts in the EntityRegistry for matching EntityMappings.
-    /// </summary>
-    /// <summary>
     /// Finds a local variable declarator by name in the enclosing block scope.
     /// </summary>
     private static VariableDeclaratorSyntax? FindLocalDeclarator(string varName, SyntaxNode fromNode)
@@ -605,27 +601,13 @@ internal static class DisplayClassNameResolver
         return entityType;
     }
 
+    /// <summary>
+    /// Finds an EntityInfo by accessor method name (e.g., "Packages" → Package entity).
+    /// Uses the EntityRegistry's accessor name index for exact lookup.
+    /// </summary>
     private static EntityInfo? TryFindEntityByAccessorName(string accessorName, EntityRegistry entityRegistry)
     {
-        // The EntityRegistry doesn't index by accessor name, but we can derive the
-        // entity name heuristically: try the accessor name as-is, then strip trailing 's'.
-        // Most Quarry accessors follow the pattern: Packages() → Package, Files() → File.
-        var entity = entityRegistry.GetByName(accessorName);
-        if (entity != null) return entity;
-
-        if (accessorName.EndsWith("s") && accessorName.Length > 1)
-        {
-            entity = entityRegistry.GetByName(accessorName.Substring(0, accessorName.Length - 1));
-            if (entity != null) return entity;
-        }
-
-        if (accessorName.EndsWith("ies") && accessorName.Length > 3)
-        {
-            entity = entityRegistry.GetByName(accessorName.Substring(0, accessorName.Length - 3) + "y");
-            if (entity != null) return entity;
-        }
-
-        return null;
+        return entityRegistry.GetByAccessorName(accessorName);
     }
 
     /// <summary>

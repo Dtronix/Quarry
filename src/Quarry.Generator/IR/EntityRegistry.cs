@@ -16,13 +16,16 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
 {
     private readonly Dictionary<string, List<EntityRegistryEntry>> _byEntityType;
     private readonly Dictionary<string, EntityInfo> _byEntityName;
+    private readonly Dictionary<string, EntityInfo> _byAccessorName;
 
     public EntityRegistry(
         Dictionary<string, List<EntityRegistryEntry>> byEntityType,
-        Dictionary<string, EntityInfo> byEntityName)
+        Dictionary<string, EntityInfo> byEntityName,
+        Dictionary<string, EntityInfo> byAccessorName)
     {
         _byEntityType = byEntityType;
         _byEntityName = byEntityName;
+        _byAccessorName = byAccessorName;
     }
 
     /// <summary>
@@ -37,10 +40,18 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     {
         var byEntityType = new Dictionary<string, List<EntityRegistryEntry>>(StringComparer.Ordinal);
         var byEntityName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+        var byAccessorName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
 
         foreach (var context in contexts)
         {
             ct.ThrowIfCancellationRequested();
+
+            // Index accessor names from EntityMappings (e.g., "Packages" → Package entity)
+            foreach (var mapping in context.EntityMappings)
+            {
+                if (!byAccessorName.ContainsKey(mapping.PropertyName))
+                    byAccessorName[mapping.PropertyName] = mapping.Entity;
+            }
 
             foreach (var entity in context.Entities)
             {
@@ -75,7 +86,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             }
         }
 
-        return new EntityRegistry(byEntityType, byEntityName);
+        return new EntityRegistry(byEntityType, byEntityName, byAccessorName);
     }
 
     private static void AddToIndex(
@@ -181,6 +192,15 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     public EntityInfo? GetByName(string entityName)
     {
         _byEntityName.TryGetValue(entityName, out var entity);
+        return entity;
+    }
+
+    /// <summary>
+    /// Gets entity info by context accessor method name (e.g., "Packages" → Package entity).
+    /// </summary>
+    public EntityInfo? GetByAccessorName(string accessorName)
+    {
+        _byAccessorName.TryGetValue(accessorName, out var entity);
         return entity;
     }
 
