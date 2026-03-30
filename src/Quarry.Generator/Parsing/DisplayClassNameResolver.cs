@@ -181,7 +181,8 @@ internal static class DisplayClassNameResolver
                     if (returnType is INamedTypeSymbol nt
                         && nt.IsGenericType
                         && nt.TypeArguments.Length == 1
-                        && SymbolEqualityComparer.Default.Equals(nt.TypeArguments[0], schemaType))
+                        && (SymbolEqualityComparer.Default.Equals(nt.TypeArguments[0], schemaType)
+                            || nt.TypeArguments[0].Name + "Schema" == schemaType.Name))
                     {
                         var ns = classSymbol.ContainingNamespace?.ToDisplayString();
                         if (!string.IsNullOrEmpty(ns))
