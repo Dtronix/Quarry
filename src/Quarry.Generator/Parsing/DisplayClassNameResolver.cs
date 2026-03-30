@@ -376,12 +376,20 @@ internal static class DisplayClassNameResolver
 
     /// <summary>
     /// Resolves a captured variable whose initializer is a Quarry chain terminal
-    /// (e.g., <c>var x = await db.T().Select(...).ExecuteFetchFirstOrDefaultAsync()</c>).
+    /// (e.g., <c>var x = await db.T().Select(...).ExecuteFetchFirstOrDefaultAsync()</c>),
+    /// or a member access on such a variable (e.g., <c>var y = x.Name</c>).
     /// Walks the invocation chain to find the entity accessor and Select projection,
     /// then reconstructs the result type from EntityRegistry column metadata.
     /// </summary>
     private static string? TryResolveChainResultType(ISymbol symbol, EntityRegistry entityRegistry)
     {
+        return TryResolveChainResultTypeCore(symbol, entityRegistry, depth: 0);
+    }
+
+    private static string? TryResolveChainResultTypeCore(ISymbol symbol, EntityRegistry entityRegistry, int depth)
+    {
+        if (depth > 3) return null; // Guard against deep/circular chains
+
         var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
         if (declRef == null)
             return null;
@@ -394,11 +402,139 @@ internal static class DisplayClassNameResolver
         if (initValue is AwaitExpressionSyntax awaitExpr)
             initValue = awaitExpr.Expression;
 
-        // Must be an invocation chain
-        if (initValue is not InvocationExpressionSyntax terminalInvocation)
+        // Case 1: member access on another local (var y = x.Name)
+        if (initValue is MemberAccessExpressionSyntax derivedAccess
+            && derivedAccess.Expression is IdentifierNameSyntax sourceIdent)
+        {
+            // Find the source variable's symbol by walking up to the enclosing block
+            var sourceDecl = FindLocalDeclarator(sourceIdent.Identifier.Text, declSyntax);
+            if (sourceDecl != null)
+            {
+                // Create a temporary symbol-like lookup via the declarator syntax
+                var sourceType = TryResolveInitializerType(sourceDecl, entityRegistry, depth + 1);
+                if (sourceType != null)
+                    return ResolveMemberOnType(sourceType, derivedAccess.Name.Identifier.Text, entityRegistry);
+            }
+            return null;
+        }
+
+        // Case 2: conditional member access (var y = x?.Name)
+        if (initValue is ConditionalAccessExpressionSyntax conditional
+            && conditional.Expression is IdentifierNameSyntax condSourceIdent
+            && conditional.WhenNotNull is MemberBindingExpressionSyntax memberBinding)
+        {
+            var sourceDecl = FindLocalDeclarator(condSourceIdent.Identifier.Text, declSyntax);
+            if (sourceDecl != null)
+            {
+                var sourceType = TryResolveInitializerType(sourceDecl, entityRegistry, depth + 1);
+                if (sourceType != null)
+                    return ResolveMemberOnType(sourceType, memberBinding.Name.Identifier.Text, entityRegistry);
+            }
+            return null;
+        }
+
+        // Case 3: Quarry chain invocation
+        return initValue is InvocationExpressionSyntax terminalInvocation
+            ? TryResolveChainInvocation(terminalInvocation, entityRegistry)
+            : null;
+    }
+
+    /// <summary>
+    /// Finds an EntityInfo by accessor method name (e.g., "Packages" → Package entity)
+    /// by searching all contexts in the EntityRegistry for matching EntityMappings.
+    /// </summary>
+    /// <summary>
+    /// Finds a local variable declarator by name in the enclosing block scope.
+    /// </summary>
+    private static VariableDeclaratorSyntax? FindLocalDeclarator(string varName, SyntaxNode fromNode)
+    {
+        var current = fromNode.Parent;
+        while (current != null)
+        {
+            if (current is BlockSyntax block)
+            {
+                foreach (var statement in block.Statements)
+                {
+                    if (statement is LocalDeclarationStatementSyntax localDecl)
+                    {
+                        foreach (var declarator in localDecl.Declaration.Variables)
+                        {
+                            if (declarator.Identifier.Text == varName)
+                                return declarator;
+                        }
+                    }
+                }
+            }
+            current = current.Parent;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the type of a local variable from its declarator syntax by recursively
+    /// analyzing its initializer (chain result or member access on another resolved variable).
+    /// </summary>
+    private static string? TryResolveInitializerType(
+        VariableDeclaratorSyntax declarator, EntityRegistry entityRegistry, int depth)
+    {
+        if (depth > 3 || declarator.Initializer?.Value == null)
             return null;
 
-        // Check if the terminal method name is a known Quarry terminal
+        var initValue = declarator.Initializer.Value;
+
+        // Unwrap await
+        if (initValue is AwaitExpressionSyntax awaitExpr)
+            initValue = awaitExpr.Expression;
+
+        // Chain invocation
+        if (initValue is InvocationExpressionSyntax)
+        {
+            // Create a synthetic symbol-less resolution using the declarator syntax.
+            // TryResolveChainResultTypeCore needs an ISymbol, but we can call the chain
+            // resolver directly with the initValue.
+            return TryResolveChainInvocation(initValue as InvocationExpressionSyntax, entityRegistry);
+        }
+
+        // Member access: sourceVar.Property
+        if (initValue is MemberAccessExpressionSyntax ma
+            && ma.Expression is IdentifierNameSyntax sourceIdent)
+        {
+            var sourceDecl = FindLocalDeclarator(sourceIdent.Identifier.Text, declarator);
+            if (sourceDecl != null)
+            {
+                var sourceType = TryResolveInitializerType(sourceDecl, entityRegistry, depth + 1);
+                if (sourceType != null)
+                    return ResolveMemberOnType(sourceType, ma.Name.Identifier.Text, entityRegistry);
+            }
+        }
+
+        // Conditional member access: sourceVar?.Property
+        if (initValue is ConditionalAccessExpressionSyntax cond
+            && cond.Expression is IdentifierNameSyntax condSourceIdent
+            && cond.WhenNotNull is MemberBindingExpressionSyntax binding)
+        {
+            var sourceDecl = FindLocalDeclarator(condSourceIdent.Identifier.Text, declarator);
+            if (sourceDecl != null)
+            {
+                var sourceType = TryResolveInitializerType(sourceDecl, entityRegistry, depth + 1);
+                if (sourceType != null)
+                    return ResolveMemberOnType(sourceType, binding.Name.Identifier.Text, entityRegistry);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the type of a chain invocation expression without requiring an ISymbol.
+    /// Extracted from TryResolveChainResultTypeCore for use when walking declarators.
+    /// </summary>
+    private static string? TryResolveChainInvocation(
+        InvocationExpressionSyntax? terminalInvocation, EntityRegistry entityRegistry)
+    {
+        if (terminalInvocation == null)
+            return null;
+
         string? terminalName = null;
         if (terminalInvocation.Expression is MemberAccessExpressionSyntax terminalAccess)
             terminalName = terminalAccess.Name.Identifier.Text;
@@ -417,7 +553,6 @@ internal static class DisplayClassNameResolver
         if (!isKnownTerminal)
             return null;
 
-        // Walk the chain to find .Select() and the root entity accessor
         LambdaExpressionSyntax? selectLambda = null;
         EntityInfo? entityInfo = null;
 
@@ -427,8 +562,6 @@ internal static class DisplayClassNameResolver
             if (current.Expression is MemberAccessExpressionSyntax ma)
             {
                 var methodName = ma.Name.Identifier.Text;
-
-                // Capture .Select() lambda
                 if (methodName == "Select"
                     && current.ArgumentList.Arguments.Count == 1
                     && current.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax lambda)
@@ -436,29 +569,18 @@ internal static class DisplayClassNameResolver
                     selectLambda = lambda;
                 }
 
-                // Walk to the receiver
                 if (ma.Expression is InvocationExpressionSyntax receiver)
                 {
-                    // Check if receiver is the root entity accessor (e.g., db.Packages())
                     if (receiver.Expression is MemberAccessExpressionSyntax rootAccess
                         && receiver.ArgumentList.Arguments.Count == 0)
                     {
-                        // Try to find entity by accessor method name via EntityRegistry
                         var accessorName = rootAccess.Name.Identifier.Text;
                         entityInfo = TryFindEntityByAccessorName(accessorName, entityRegistry);
                     }
-
                     current = receiver;
                 }
                 else
-                {
-                    // Root might be a direct method call: Packages() without db. prefix
-                    if (ma.Expression is IdentifierNameSyntax)
-                    {
-                        // Not a member access chain root — can't determine entity
-                    }
                     break;
-                }
             }
             else
                 break;
@@ -467,11 +589,9 @@ internal static class DisplayClassNameResolver
         if (entityInfo == null)
             return null;
 
-        // Determine the result type
         if (selectLambda != null)
             return ResolveProjectionType(selectLambda, entityInfo, isNullableResult, isListResult);
 
-        // No Select — result type is the entity itself
         var contextNs = FindContextNamespaceForEntityInfo(entityInfo, entityRegistry);
         var entityNs = contextNs ?? entityInfo.SchemaNamespace;
         var entityType = "global::" + entityNs + "." + entityInfo.EntityName;
@@ -483,10 +603,6 @@ internal static class DisplayClassNameResolver
         return entityType;
     }
 
-    /// <summary>
-    /// Finds an EntityInfo by accessor method name (e.g., "Packages" → Package entity)
-    /// by searching all contexts in the EntityRegistry for matching EntityMappings.
-    /// </summary>
     private static EntityInfo? TryFindEntityByAccessorName(string accessorName, EntityRegistry entityRegistry)
     {
         // The EntityRegistry doesn't index by accessor name, but we can derive the
