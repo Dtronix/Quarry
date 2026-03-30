@@ -346,15 +346,7 @@ internal static class CarrierEmitter
                     }
                     else if (hasExtraction && p.IsCaptured)
                     {
-                        // Per-variable extraction locals are already typed by the [UnsafeAccessor]
-                        // return type, so ValueExpression is type-safe C# — no cast needed.
-                        // For compound expressions (a + b), parenthesize so ! applies to the full result.
-                        // For simple identifiers/member-access, bare ! is correct and avoids C# cast ambiguity.
-                        var ve = p.ValueExpression;
-                        var wrap = ve.Contains(' ') || ve.Contains('(');
-                        sb.AppendLine(wrap
-                            ? $"        __c.P{globalIdx} = ({ve})!;"
-                            : $"        __c.P{globalIdx} = {ve}!;");
+                        sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, p.ValueExpression));
                     }
                     else
                     {
@@ -892,9 +884,7 @@ internal static class CarrierEmitter
             var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);
             for (int i = 0; i < insertInfo.Columns.Count; i++)
             {
-                var col = insertInfo.Columns[i];
-                var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
-                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
+                var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__c.Entity!", convertBool);
                 sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
                 sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
                 sb.AppendLine($"        __p{i}.Value = (object?){valueExpr} ?? DBNull.Value;");
@@ -1022,13 +1012,7 @@ internal static class CarrierEmitter
             }
             else if (hasExtraction && param.IsCaptured)
             {
-                // Per-variable extraction locals are already typed — no cast needed.
-                // For compound expressions, parenthesize so ! applies to the full result.
-                var ve = param.ValueExpression;
-                var wrap = ve.Contains(' ') || ve.Contains('(');
-                sb.AppendLine(wrap
-                    ? $"        __c.P{globalIdx} = ({ve})!;"
-                    : $"        __c.P{globalIdx} = {ve}!;");
+                sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, param.ValueExpression));
             }
             else
             {
@@ -1101,6 +1085,18 @@ internal static class CarrierEmitter
             SqlDialect.MySQL => "SqlDialect.MySQL",
             _ => $"(SqlDialect){(int)dialect}"
         };
+    }
+
+    /// <summary>
+    /// Formats a carrier field assignment for a captured parameter with extraction.
+    /// Parenthesizes compound expressions so the null-forgiving ! applies to the full result.
+    /// </summary>
+    private static string FormatCarrierFieldAssignment(int globalIndex, string valueExpression)
+    {
+        var wrap = valueExpression.Contains(' ') || valueExpression.Contains('(');
+        return wrap
+            ? $"        __c.P{globalIndex} = ({valueExpression})!;"
+            : $"        __c.P{globalIndex} = {valueExpression}!;";
     }
 
     /// <summary>

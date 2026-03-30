@@ -662,6 +662,58 @@ internal static class TerminalEmitHelpers
     }
 
     /// <summary>
+    /// Resolves the return type for a terminal interceptor method based on the execution kind.
+    /// </summary>
+    internal static string ResolveTerminalReturnType(
+        InterceptorKind kind, string resultType, string scalarTypeArg, bool isValueType)
+    {
+        var firstOrDefaultSuffix = isValueType ? "" : "?";
+        return kind switch
+        {
+            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
+            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
+            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
+            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Resolves the carrier executor method name for a terminal execution kind.
+    /// </summary>
+    internal static string ResolveCarrierExecutorMethod(
+        InterceptorKind kind, string resultType, string scalarTypeArg)
+    {
+        return kind switch
+        {
+            InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
+            InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Computes the value expression and DbType flag for an insert column binding.
+    /// Consolidates the GetColumnValueExpression call arguments (9 parameters) into a single source of truth.
+    /// </summary>
+    internal static (string ValueExpr, bool NeedsIntType) GetInsertColumnBinding(
+        InsertColumnInfo col, string entityVar, bool convertBool)
+    {
+        var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
+        var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression(
+            entityVar, col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass,
+            col.IsBoolean, col.IsEnum, col.IsNullable, convertBool,
+            col.EnumUnderlyingType ?? "int");
+        return (valueExpr, needsIntType);
+    }
+
+    /// <summary>
     /// Gets the inline value expression for a parameter based on its type classification.
     /// </summary>
     internal static string GetParameterValueExpression(QueryParameter param, int index)

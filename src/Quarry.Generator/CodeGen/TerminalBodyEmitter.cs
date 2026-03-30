@@ -57,17 +57,7 @@ internal static class TerminalBodyEmitter
         // type was unresolved then (type parameter), fall back to string-based detection on
         // the final resolved type.
         var isValueType = site.IsValueTypeResult || TypeClassification.IsValueType(resultType);
-        var firstOrDefaultSuffix = isValueType ? "" : "?";
-        string returnType = site.Kind switch
-        {
-            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
-            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
-            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
-            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
-            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
-            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
-            _ => ""
-        };
+        string returnType = TerminalEmitHelpers.ResolveTerminalReturnType(site.Kind, resultType, scalarTypeArg, isValueType);
         if (string.IsNullOrEmpty(returnType)) return;
 
         var thisType = site.BuilderTypeName;
@@ -96,16 +86,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"    {{");
 
         {
-            var carrierExecutorMethod = site.Kind switch
-            {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
-                _ => ""
-            };
+            var carrierExecutorMethod = TerminalEmitHelpers.ResolveCarrierExecutorMethod(site.Kind, resultType, scalarTypeArg);
             // Scalar queries don't use a reader delegate — pass null to omit the reader argument.
             var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
             CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
@@ -143,17 +124,7 @@ internal static class TerminalBodyEmitter
         var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
 
         var isValueType = site.IsValueTypeResult || TypeClassification.IsValueType(resultType);
-        var firstOrDefaultSuffix = isValueType ? "" : "?";
-        string returnType = site.Kind switch
-        {
-            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
-            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
-            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
-            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
-            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
-            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
-            _ => ""
-        };
+        string returnType = TerminalEmitHelpers.ResolveTerminalReturnType(site.Kind, resultType, scalarTypeArg, isValueType);
         if (string.IsNullOrEmpty(returnType)) return;
 
         // Method signature — use PreparedQuery<TResult> as receiver for prepared terminals
@@ -186,16 +157,7 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"    {{");
 
         {
-            var carrierExecutorMethod = site.Kind switch
-            {
-                InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
-                InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
-                InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
-                _ => ""
-            };
+            var carrierExecutorMethod = TerminalEmitHelpers.ResolveCarrierExecutorMethod(site.Kind, resultType, scalarTypeArg);
             var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
             CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         }
@@ -608,9 +570,7 @@ internal static class TerminalBodyEmitter
 
         for (int i = 0; i < insertInfo.Columns.Count; i++)
         {
-            var col = insertInfo.Columns[i];
-            var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
-            var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__entity", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
+            var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__entity", convertBool);
             sb.AppendLine($"            {{");
             sb.AppendLine($"                var __p = __cmd.CreateParameter();");
             sb.AppendLine($"                __p.ParameterName = \"@p\" + __paramIdx;");
