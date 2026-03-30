@@ -16,12 +16,14 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         BoundCallSite bound,
         TranslatedClause? clause = null,
         string? keyTypeName = null,
-        string? valueTypeName = null)
+        string? valueTypeName = null,
+        string? pipelineError = null)
     {
         Bound = bound;
         Clause = clause;
         KeyTypeName = keyTypeName;
         ValueTypeName = valueTypeName;
+        PipelineError = pipelineError;
     }
 
     /// <summary>Underlying bound call site (composition).</summary>
@@ -38,6 +40,12 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
 
     /// <summary>Resolved value type for Set.</summary>
     public string? ValueTypeName { get; }
+
+    /// <summary>
+    /// Pipeline error captured during binding or translation.
+    /// Non-null indicates the site failed to process and should produce a QRY900 diagnostic.
+    /// </summary>
+    public string? PipelineError { get; }
 
     // Convenience accessors to reduce verbosity in emitters
     public string UniqueId => Bound.Raw.UniqueId;

@@ -102,7 +102,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .SelectMany(static (pair, ct) =>
             {
                 try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
-                catch { return ImmutableArray<IR.BoundCallSite>.Empty; }
+                catch (System.Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Quarry] Bind failed: {ex}");
+                    return ImmutableArray<IR.BoundCallSite>.Empty;
+                }
             });
 
         // === Stage 4: Per-Site Translation (individually cached) ===
@@ -111,7 +115,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Select(static (pair, ct) =>
             {
                 try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
-                catch { return new IR.TranslatedCallSite(pair.Left); }
+                catch (System.Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Quarry] Translate failed: {ex}");
+                    return new IR.TranslatedCallSite(pair.Left, pipelineError: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                }
             });
 
         // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===
@@ -376,6 +384,19 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 syntaxTree = tree;
                 break;
+            }
+        }
+
+        // Report pipeline errors captured during binding/translation
+        foreach (var site in group.Sites)
+        {
+            if (site.PipelineError != null)
+            {
+                var errorLoc = syntaxTree != null && site.Line > 0
+                    ? Location.Create(syntaxTree, default)
+                    : Location.None;
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.InternalError, errorLoc, site.PipelineError));
             }
         }
 
