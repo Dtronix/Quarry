@@ -370,18 +370,7 @@ internal static class CarrierEmitter
         string delegateParamName = "func")
     {
         // Compute global parameter offset for this clause's params
-        var globalParamOffset = 0;
-        foreach (var clause in chain.GetClauseEntries())
-        {
-            if (clause.Site.UniqueId == site.UniqueId)
-                break;
-            if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-            else if (clause.Site.Clause != null)
-                globalParamOffset += clause.Site.Clause.Parameters.Count;
-            else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
-                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
-        }
+        var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
 
         if (isFirstInChain)
         {

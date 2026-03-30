@@ -75,20 +75,7 @@ internal static class JoinBodyEmitter
                 sb.AppendLine($"    {{");
 
                 // Compute carrier site params
-                var siteParams = new List<QueryParameter>();
-                var globalParamOffset = 0;
-                foreach (var clause in prebuiltChain.GetClauseEntries())
-                {
-                    if (clause.Site.UniqueId == site.UniqueId)
-                    {
-                        if (clause.Site.Clause != null)
-                            for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                                siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                        break;
-                    }
-                    if (clause.Site.Clause != null)
-                        globalParamOffset += clause.Site.Clause.Parameters.Count;
-                }
+                var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
 
                 var joinReturnType = $"{returnBuilderName}<{returnTypeArgs}>";
                 if (isFirstInChain)
@@ -125,20 +112,7 @@ internal static class JoinBodyEmitter
             sb.AppendLine($"    {{");
 
             // Compute carrier site params
-            var siteParams = new List<QueryParameter>();
-            var globalParamOffset = 0;
-            foreach (var clause in prebuiltChain.GetClauseEntries())
-            {
-                if (clause.Site.UniqueId == site.UniqueId)
-                {
-                    if (clause.Site.Clause != null)
-                        for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                            siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                    break;
-                }
-                if (clause.Site.Clause != null)
-                    globalParamOffset += clause.Site.Clause.Parameters.Count;
-            }
+            var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
 
             var joinReturnType = $"IJoinedQueryBuilder<{entityType}, {joinedEntityName}>";
             if (isFirstInChain)
@@ -219,20 +193,7 @@ internal static class JoinBodyEmitter
         if (carrier != null && prebuiltChain != null)
         {
             // Compute carrier site params
-            var siteParams = new List<QueryParameter>();
-            var globalParamOffset = 0;
-            foreach (var clause in prebuiltChain.GetClauseEntries())
-            {
-                if (clause.Site.UniqueId == site.UniqueId)
-                {
-                    if (clause.Site.Clause != null)
-                        for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                            siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                    break;
-                }
-                if (clause.Site.Clause != null)
-                    globalParamOffset += clause.Site.Clause.Parameters.Count;
-            }
+            var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
 
             var joinedBuilderTypeName = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
@@ -342,20 +303,7 @@ internal static class JoinBodyEmitter
         if (carrier != null && prebuiltChain != null && keyType != null)
         {
             // Compute carrier site params
-            var siteParams = new List<QueryParameter>();
-            var globalParamOffset = 0;
-            foreach (var clause in prebuiltChain.GetClauseEntries())
-            {
-                if (clause.Site.UniqueId == site.UniqueId)
-                {
-                    if (clause.Site.Clause != null)
-                        for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                            siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                    break;
-                }
-                if (clause.Site.Clause != null)
-                    globalParamOffset += clause.Site.Clause.Parameters.Count;
-            }
+            var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
 
             var joinedBuilderTypeName = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
             var returnInterface = site.ResultTypeName != null
@@ -412,21 +360,7 @@ internal static class JoinBodyEmitter
                 var targetInterface = $"{builderName}<{typeArgs}, {resultType}>";
                 if (isFirstInChain)
                 {
-                    // Compute carrier site params
-                    var siteParams = new List<QueryParameter>();
-                    var globalParamOffset = 0;
-                    foreach (var clause in prebuiltChain.GetClauseEntries())
-                    {
-                        if (clause.Site.UniqueId == site.UniqueId)
-                        {
-                            if (clause.Site.Clause != null)
-                                for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                                    siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                            break;
-                        }
-                        if (clause.Site.Clause != null)
-                            globalParamOffset += clause.Site.Clause.Parameters.Count;
-                    }
+                    var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     var joinedBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
                     int? clauseBit = null;
                     CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
