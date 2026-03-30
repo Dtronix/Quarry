@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.IR;
+using Quarry.Generators.Models;
 
 namespace Quarry.Generators.Parsing;
 
@@ -307,7 +309,8 @@ internal static class DisplayClassNameResolver
     /// </summary>
     public static Dictionary<string, string>? CollectCapturedVariableTypes(
         DataFlowAnalysis dataFlow,
-        SemanticModel semanticModel)
+        SemanticModel semanticModel,
+        EntityRegistry? entityRegistry = null)
     {
         if (!dataFlow.Succeeded)
             return null;
@@ -340,6 +343,7 @@ internal static class DisplayClassNameResolver
             var varType = typeSymbol.TypeKind == TypeKind.Error
                 ? (TryResolveErrorType(symbol, semanticModel)
                     ?? TryQualifyErrorTypeFromUsings(typeSymbol, symbol, semanticModel)
+                    ?? (entityRegistry != null ? TryResolveChainResultType(symbol, entityRegistry) : null)
                     ?? "object")
                 : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
@@ -349,7 +353,354 @@ internal static class DisplayClassNameResolver
             result[varName] = varType;
         }
 
+        // Second pass: resolve derived locals (var x = resolvedVar.Property)
+        // whose types depend on variables resolved in the first pass.
+        if (entityRegistry != null)
+            ResolveDerivedLocals(captured, result, entityRegistry);
+
         return result.Count > 0 ? result : null;
+    }
+
+    /// <summary>
+    /// Resolves a captured variable whose initializer is a Quarry chain terminal
+    /// (e.g., <c>var x = await db.T().Select(...).ExecuteFetchFirstOrDefaultAsync()</c>).
+    /// Walks the invocation chain to find the entity accessor and Select projection,
+    /// then reconstructs the result type from EntityRegistry column metadata.
+    /// </summary>
+    private static string? TryResolveChainResultType(ISymbol symbol, EntityRegistry entityRegistry)
+    {
+        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declRef == null)
+            return null;
+
+        var declSyntax = declRef.GetSyntax();
+        if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
+            return null;
+
+        // Unwrap await
+        if (initValue is AwaitExpressionSyntax awaitExpr)
+            initValue = awaitExpr.Expression;
+
+        // Must be an invocation chain
+        if (initValue is not InvocationExpressionSyntax terminalInvocation)
+            return null;
+
+        // Check if the terminal method name is a known Quarry terminal
+        string? terminalName = null;
+        if (terminalInvocation.Expression is MemberAccessExpressionSyntax terminalAccess)
+            terminalName = terminalAccess.Name.Identifier.Text;
+
+        if (terminalName == null)
+            return null;
+
+        bool isNullableResult = terminalName == "ExecuteFetchFirstOrDefaultAsync"
+            || terminalName == "ExecuteFetchSingleOrDefaultAsync";
+        bool isListResult = terminalName == "ExecuteFetchAllAsync";
+        bool isScalarResult = terminalName.StartsWith("ExecuteScalar");
+        bool isKnownTerminal = isNullableResult || isListResult || isScalarResult
+            || terminalName == "ExecuteFetchFirstAsync"
+            || terminalName == "ExecuteFetchSingleAsync";
+
+        if (!isKnownTerminal)
+            return null;
+
+        // Walk the chain to find .Select() and the root entity accessor
+        LambdaExpressionSyntax? selectLambda = null;
+        EntityInfo? entityInfo = null;
+
+        var current = terminalInvocation;
+        while (current != null)
+        {
+            if (current.Expression is MemberAccessExpressionSyntax ma)
+            {
+                var methodName = ma.Name.Identifier.Text;
+
+                // Capture .Select() lambda
+                if (methodName == "Select"
+                    && current.ArgumentList.Arguments.Count == 1
+                    && current.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax lambda)
+                {
+                    selectLambda = lambda;
+                }
+
+                // Walk to the receiver
+                if (ma.Expression is InvocationExpressionSyntax receiver)
+                {
+                    // Check if receiver is the root entity accessor (e.g., db.Packages())
+                    if (receiver.Expression is MemberAccessExpressionSyntax rootAccess
+                        && receiver.ArgumentList.Arguments.Count == 0)
+                    {
+                        // Try to find entity by accessor method name via EntityRegistry
+                        var accessorName = rootAccess.Name.Identifier.Text;
+                        entityInfo = TryFindEntityByAccessorName(accessorName, entityRegistry);
+                    }
+
+                    current = receiver;
+                }
+                else
+                {
+                    // Root might be a direct method call: Packages() without db. prefix
+                    if (ma.Expression is IdentifierNameSyntax)
+                    {
+                        // Not a member access chain root — can't determine entity
+                    }
+                    break;
+                }
+            }
+            else
+                break;
+        }
+
+        if (entityInfo == null)
+            return null;
+
+        // Determine the result type
+        if (selectLambda != null)
+            return ResolveProjectionType(selectLambda, entityInfo, isNullableResult, isListResult);
+
+        // No Select — result type is the entity itself
+        var contextNs = FindContextNamespaceForEntityInfo(entityInfo, entityRegistry);
+        var entityNs = contextNs ?? entityInfo.SchemaNamespace;
+        var entityType = "global::" + entityNs + "." + entityInfo.EntityName;
+
+        if (isListResult)
+            return "global::System.Collections.Generic.List<" + entityType + ">";
+        if (isNullableResult)
+            return entityType + "?";
+        return entityType;
+    }
+
+    /// <summary>
+    /// Finds an EntityInfo by accessor method name (e.g., "Packages" → Package entity)
+    /// by searching all contexts in the EntityRegistry for matching EntityMappings.
+    /// </summary>
+    private static EntityInfo? TryFindEntityByAccessorName(string accessorName, EntityRegistry entityRegistry)
+    {
+        // The EntityRegistry doesn't index by accessor name, but we can derive the
+        // entity name heuristically: try the accessor name as-is, then strip trailing 's'.
+        // Most Quarry accessors follow the pattern: Packages() → Package, Files() → File.
+        var entity = entityRegistry.GetByName(accessorName);
+        if (entity != null) return entity;
+
+        if (accessorName.EndsWith("s") && accessorName.Length > 1)
+        {
+            entity = entityRegistry.GetByName(accessorName.Substring(0, accessorName.Length - 1));
+            if (entity != null) return entity;
+        }
+
+        if (accessorName.EndsWith("ies") && accessorName.Length > 3)
+        {
+            entity = entityRegistry.GetByName(accessorName.Substring(0, accessorName.Length - 3) + "y");
+            if (entity != null) return entity;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reconstructs the projection type from a Select lambda body using EntityRegistry column metadata.
+    /// For tuple projections like <c>p => (p.Id, p.Status, p.Name)</c>, builds a ValueTuple type string.
+    /// </summary>
+    private static string? ResolveProjectionType(
+        LambdaExpressionSyntax selectLambda, EntityInfo entityInfo,
+        bool isNullableResult, bool isListResult)
+    {
+        var body = selectLambda.Body;
+
+        // Tuple projection: p => (p.Id, p.Status, p.Name)
+        if (body is TupleExpressionSyntax tuple)
+        {
+            var elementTypes = new List<string>();
+            foreach (var arg in tuple.Arguments)
+            {
+                string? elementType = null;
+                string? elementName = null;
+
+                // Simple member access: p.PropertyName
+                if (arg.Expression is MemberAccessExpressionSyntax memberAccess)
+                {
+                    var propName = memberAccess.Name.Identifier.Text;
+                    elementType = FindColumnClrType(propName, entityInfo);
+                    elementName = propName; // Inferred tuple element name
+                }
+
+                if (elementType == null)
+                    return null; // Can't resolve an element — bail
+
+                // Explicit name (p.Id: myName) takes precedence over inferred name
+                if (arg.NameColon != null)
+                    elementName = arg.NameColon.Name.Identifier.Text;
+
+                elementTypes.Add(elementName != null ? elementType + " " + elementName : elementType);
+            }
+
+            var tupleType = "(" + string.Join(", ", elementTypes) + ")";
+            if (isListResult)
+                return "global::System.Collections.Generic.List<" + tupleType + ">";
+            if (isNullableResult)
+                return tupleType + "?";
+            return tupleType;
+        }
+
+        // Identity projection: p => p (result is the entity type)
+        if (body is IdentifierNameSyntax)
+        {
+            // No Select needed — handled by caller
+            return null;
+        }
+
+        // Single column projection: p => p.Name
+        if (body is MemberAccessExpressionSyntax singleMember)
+        {
+            var propName = singleMember.Name.Identifier.Text;
+            var elementType = FindColumnClrType(propName, entityInfo);
+            if (elementType == null) return null;
+
+            if (isListResult)
+                return "global::System.Collections.Generic.List<" + elementType + ">";
+            if (isNullableResult)
+                return elementType + "?";
+            return elementType;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Looks up the CLR type of a column by property name from EntityInfo.
+    /// </summary>
+    private static string? FindColumnClrType(string propertyName, EntityInfo entityInfo)
+    {
+        foreach (var col in entityInfo.Columns)
+        {
+            if (col.PropertyName == propertyName)
+                return col.FullClrType;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Finds the context namespace for an entity to construct fully-qualified entity type names.
+    /// </summary>
+    private static string? FindContextNamespaceForEntityInfo(EntityInfo entityInfo, EntityRegistry entityRegistry)
+    {
+        var entry = entityRegistry.Resolve(entityInfo.EntityName);
+        return entry?.Context.Namespace;
+    }
+
+    /// <summary>
+    /// Second pass: resolves derived locals whose types depend on variables resolved in the first pass.
+    /// Handles patterns like <c>var name = resolvedVar.PropertyName</c> where resolvedVar was
+    /// resolved as a tuple or entity type.
+    /// </summary>
+    private static void ResolveDerivedLocals(
+        ISymbol[] captured, Dictionary<string, string> result, EntityRegistry entityRegistry)
+    {
+        bool changed;
+        do
+        {
+            changed = false;
+            foreach (var symbol in captured)
+            {
+                if (symbol is not ILocalSymbol local)
+                    continue;
+
+                if (result.TryGetValue(local.Name, out var existing) && existing != "object" && existing != "?")
+                    continue; // Already resolved
+
+                var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
+                if (declRef == null) continue;
+
+                var declSyntax = declRef.GetSyntax();
+                if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
+                    continue;
+
+                // Pattern: sourceVar.PropertyName or sourceVar?.PropertyName
+                MemberAccessExpressionSyntax? memberAccess = null;
+                if (initValue is MemberAccessExpressionSyntax ma)
+                    memberAccess = ma;
+                else if (initValue is ConditionalAccessExpressionSyntax conditional
+                    && conditional.WhenNotNull is MemberBindingExpressionSyntax memberBinding)
+                {
+                    // sourceVar?.PropertyName — check the source expression
+                    if (conditional.Expression is IdentifierNameSyntax sourceId)
+                    {
+                        var sourceName = sourceId.Identifier.Text;
+                        if (result.TryGetValue(sourceName, out var sourceType) && sourceType != "object" && sourceType != "?")
+                        {
+                            var propName = memberBinding.Name.Identifier.Text;
+                            var resolved = ResolveMemberOnType(sourceType, propName, entityRegistry);
+                            if (resolved != null)
+                            {
+                                result[local.Name] = resolved;
+                                changed = true;
+                            }
+                        }
+                    }
+                    continue;
+                }
+
+                if (memberAccess != null && memberAccess.Expression is IdentifierNameSyntax sourceIdent)
+                {
+                    var sourceName = sourceIdent.Identifier.Text;
+                    if (result.TryGetValue(sourceName, out var sourceType) && sourceType != "object" && sourceType != "?")
+                    {
+                        var propName = memberAccess.Name.Identifier.Text;
+                        var resolved = ResolveMemberOnType(sourceType, propName, entityRegistry);
+                        if (resolved != null)
+                        {
+                            result[local.Name] = resolved;
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        } while (changed); // Iterate until no more progress (handles chains of derivations)
+    }
+
+    /// <summary>
+    /// Resolves a member access on a resolved type string.
+    /// For tuples like "(long Id, int Status, string Name)", looks up the named element.
+    /// For entity types, looks up the column in EntityRegistry.
+    /// </summary>
+    private static string? ResolveMemberOnType(string typeString, string memberName, EntityRegistry entityRegistry)
+    {
+        // Strip trailing ? for nullable types
+        var baseType = typeString.EndsWith("?") ? typeString.Substring(0, typeString.Length - 1) : typeString;
+
+        // Tuple type: "(long Id, int Status, string Name)"
+        if (baseType.StartsWith("(") && baseType.EndsWith(")"))
+        {
+            var inner = baseType.Substring(1, baseType.Length - 2);
+            foreach (var element in inner.Split(','))
+            {
+                var trimmed = element.Trim();
+                var spaceIdx = trimmed.LastIndexOf(' ');
+                if (spaceIdx > 0)
+                {
+                    var elemName = trimmed.Substring(spaceIdx + 1);
+                    var elemType = trimmed.Substring(0, spaceIdx).Trim();
+                    if (elemName == memberName)
+                        return elemType;
+                }
+            }
+            return null;
+        }
+
+        // Entity type: look up column in EntityRegistry
+        // Extract entity name from fully-qualified name (global::Ns.EntityName → EntityName)
+        var entityName = baseType;
+        var lastDot = entityName.LastIndexOf('.');
+        if (lastDot >= 0)
+            entityName = entityName.Substring(lastDot + 1);
+        if (entityName.StartsWith("global::"))
+            entityName = entityName.Substring(8);
+
+        var entityInfo = entityRegistry.GetByName(entityName);
+        if (entityInfo != null)
+            return FindColumnClrType(memberName, entityInfo);
+
+        return null;
     }
 
     internal sealed class MethodClosureAnalysis

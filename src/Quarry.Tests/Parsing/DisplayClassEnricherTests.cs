@@ -5,6 +5,8 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Parsing;
+using Quarry.Generators.Sql;
+using Quarry.Shared.Migration;
 
 namespace Quarry.Tests.Parsing;
 
@@ -60,7 +62,7 @@ public class DisplayClassEnricherTests
     {
         var compilation = CreateCompilation("class C {}");
         var result = DisplayClassEnricher.EnrichAll(
-            ImmutableArray<RawCallSite>.Empty, compilation, CancellationToken.None);
+            ImmutableArray<RawCallSite>.Empty, compilation, null!, CancellationToken.None);
 
         Assert.That(result, Is.Empty);
     }
@@ -72,7 +74,7 @@ public class DisplayClassEnricherTests
         var site = CreateSite("test-1");
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Null);
         Assert.That(result[0].CapturedVariableTypes, Is.Null);
@@ -102,7 +104,7 @@ class TestClass
         var site = CreateSite("test-1", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[0].DisplayClassName, Does.Contain("<>c__DisplayClass"));
@@ -134,7 +136,7 @@ class TestClass
         var site = CreateSite("test-1", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         // DisplayClassName is set (used by code generator for UnsafeAccessor detection)
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
@@ -170,7 +172,7 @@ class TestClass
         var site2 = CreateSite("test-2", lambdas[1]);
         var sites = ImmutableArray.Create(site1, site2);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         // Both sites should have display class names from the same method
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
@@ -206,7 +208,7 @@ class TestClass
         var site = CreateSite("test-1", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
@@ -236,7 +238,7 @@ class TestClass
         var site = CreateSite("test-1", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         // DisplayClassName is always set for lambdas with enrichment targets
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
@@ -275,7 +277,7 @@ class TestClass
         var site2 = CreateSite("test-2", lambdas[1]);
         var sites = ImmutableArray.Create(site1, site2);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[1].DisplayClassName, Is.Not.Null);
@@ -310,7 +312,7 @@ class TestClass
         cts.Cancel();
 
         Assert.Throws<OperationCanceledException>(() =>
-            DisplayClassEnricher.EnrichAll(sites, compilation, cts.Token));
+            DisplayClassEnricher.EnrichAll(sites, compilation, null!, cts.Token));
     }
 
     [Test]
@@ -337,7 +339,7 @@ class TestClass
         var siteWithoutLambda = CreateSite("test-2");
         var sites = ImmutableArray.Create(siteWithLambda, siteWithoutLambda);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
         Assert.That(result[0].CaptureKind, Is.EqualTo(CaptureKind.ClosureCapture));
@@ -375,7 +377,7 @@ class TestClass
         var site = CreateSite("test-local-func", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         // Lambda inside a local function should walk up to the containing method
         Assert.That(result[0].DisplayClassName, Is.Not.Null);
@@ -438,7 +440,7 @@ namespace App.Services
         var site = CreateSite("test-entity-ns", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
@@ -481,7 +483,7 @@ namespace App.Services
         var site = CreateSite("test-fallback-ns", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
 
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
@@ -492,9 +494,8 @@ namespace App.Services
     [Test]
     public void Inspect_CapturedChainResultVariable_TypeInfo()
     {
-        // Mirrors the real pattern: var result = await chain.Select(...).ExecuteFetchFirstOrDefaultAsync()
-        // then result is captured in a subsequent lambda.
-        // Uses the real Quarry IQueryBuilder interfaces so the semantic model sees concrete return types.
+        // Scenario A: chain root method exists at analysis time (direct IQueryBuilder<T> return).
+        // The semantic model should fully resolve the tuple type through the interfaces.
         var source = @"
 using System;
 using System.Threading;
@@ -601,5 +602,124 @@ namespace App
                 TestContext.Out.WriteLine($"  {kvp.Key} => {kvp.Value}");
         else
             TestContext.Out.WriteLine("  (null)");
+    }
+
+    [Test]
+    public void ChainResult_GeneratedAccessor_ResolvesViEntityRegistry()
+    {
+        // Chain root is a GENERATED method (db.Packages() doesn't exist at analysis time).
+        // The EntityRegistry provides column metadata so TryResolveChainResultType can
+        // reconstruct the tuple type from the .Select() projection.
+        var source = @"
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Quarry
+{
+    public interface IQueryBuilder<T> where T : class
+    {
+        IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
+        IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
+    }
+
+    public interface IQueryBuilder<TEntity, TResult> where TEntity : class
+    {
+        Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+    }
+}
+
+namespace App.Data
+{
+    public partial class AppDb { }
+}
+
+namespace App
+{
+    using App.Data;
+
+    class Service
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var fetched = await db.Packages()
+                .Where(p => p.Id == 1)
+                .Select(p => (p.Id, p.Status, p.Name))
+                .ExecuteFetchFirstOrDefaultAsync();
+
+            var derivedName = fetched.Name;
+
+            Func<bool> capturer = () => fetched != null && derivedName != null;
+        }
+    }
+}
+";
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var references = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Threading.Tasks.dll")),
+        };
+        var compilation = CSharpCompilation.Create("TestAssembly",
+            new[] { syntaxTree }, references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        var tree = compilation.SyntaxTrees.First();
+        var semanticModel = compilation.GetSemanticModel(tree);
+
+        // Build an EntityRegistry with the Package entity and its columns
+        var mods = new ColumnModifiers();
+        var packageEntity = new EntityInfo(
+            entityName: "Package",
+            schemaClassName: "PackageSchema",
+            schemaNamespace: "App.Schemas",
+            tableName: "packages",
+            namingStyle: NamingStyleKind.SnakeCase,
+            columns: new[]
+            {
+                new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true),
+                new ColumnInfo("Status", "status", "int", "int", false, ColumnKind.Standard, null, mods, isValueType: true),
+                new ColumnInfo("Name", "name", "string", "string", false, ColumnKind.Standard, null, mods),
+            },
+            navigations: Array.Empty<NavigationInfo>(),
+            indexes: Array.Empty<IndexInfo>(),
+            location: Location.None);
+        var contextInfo = new ContextInfo(
+            className: "AppDb",
+            @namespace: "App.Data",
+            dialect: Generators.Sql.SqlDialect.PostgreSQL,
+            schema: null,
+            entities: new[] { packageEntity },
+            entityMappings: new[] { new EntityMapping("Packages", packageEntity) },
+            location: Location.None);
+        var entityRegistry = EntityRegistry.Build(
+            ImmutableArray.Create(contextInfo), CancellationToken.None);
+
+        // Find the capturing lambda
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>()
+            .Last();
+
+        var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
+        Assert.That(dataFlow.Succeeded, Is.True);
+
+        var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(
+            dataFlow, semanticModel, entityRegistry);
+
+        Assert.That(resolved, Is.Not.Null);
+
+        // fetched: tuple from Select projection, nullable because ExecuteFetchFirstOrDefaultAsync
+        Assert.That(resolved!, Does.ContainKey("fetched"));
+        Assert.That(resolved!["fetched"], Is.EqualTo("(long Id, int Status, string Name)?"));
+
+        // derivedName: resolved via second pass from fetched tuple's "Name" element
+        Assert.That(resolved!, Does.ContainKey("derivedName"));
+        Assert.That(resolved!["derivedName"], Is.EqualTo("string"));
     }
 }

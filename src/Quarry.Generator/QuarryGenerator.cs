@@ -92,8 +92,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // in batch — computing closure analysis once per method instead of once per call site.
         var enrichedCallSites = rawCallSites.Collect()
             .Combine(context.CompilationProvider)
+            .Combine(entityRegistry)
             .SelectMany(static (data, ct) =>
-                DisplayClassEnricher.EnrichAll(data.Left, data.Right, ct));
+                DisplayClassEnricher.EnrichAll(data.Left.Left, data.Left.Right, data.Right, ct));
 
         // === Stage 3: Per-Site Binding (individually cached) ===
         var boundCallSites = enrichedCallSites
