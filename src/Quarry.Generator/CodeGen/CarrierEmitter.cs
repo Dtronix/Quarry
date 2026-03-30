@@ -1081,9 +1081,17 @@ internal static class CarrierEmitter
         StringBuilder sb, int globalIdx, QueryParameter carrierParam,
         CarrierPlan carrier, string delegateParamName = "func")
     {
-        var fieldType = carrierParam.ElementTypeName != null
-            ? $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>"
-            : carrierParam.ClrType;
+        string fieldType;
+        if (carrierParam.ElementTypeName != null)
+        {
+            fieldType = carrierParam.IsEnumerableCollection
+                ? $"System.Collections.Generic.IEnumerable<{carrierParam.ElementTypeName}>"
+                : $"System.Collections.Generic.IReadOnlyList<{carrierParam.ElementTypeName}>";
+        }
+        else
+        {
+            fieldType = carrierParam.ClrType;
+        }
 
         if (carrierParam.IsDirectAccessible && carrierParam.CollectionAccessExpression != null)
         {

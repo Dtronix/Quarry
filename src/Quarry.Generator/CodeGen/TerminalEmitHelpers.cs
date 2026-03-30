@@ -46,7 +46,10 @@ internal static class TerminalEmitHelpers
         {
             if (!param.IsCollection) continue;
 
-            sb.AppendLine($"        var __col{param.GlobalIndex} = __c.P{param.GlobalIndex};");
+            if (param.IsEnumerableCollection)
+                sb.AppendLine($"        var __col{param.GlobalIndex} = Quarry.Internal.CollectionHelper.Materialize(__c.P{param.GlobalIndex});");
+            else
+                sb.AppendLine($"        var __col{param.GlobalIndex} = __c.P{param.GlobalIndex};");
             sb.AppendLine($"        var __col{param.GlobalIndex}Len = __col{param.GlobalIndex}.Count;");
 
             var dialectPrefix = chain.Dialect switch
