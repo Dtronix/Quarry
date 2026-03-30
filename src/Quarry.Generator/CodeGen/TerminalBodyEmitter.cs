@@ -52,7 +52,11 @@ internal static class TerminalBodyEmitter
         // For ExecuteFetchFirstOrDefault: the interface uses unconstrained TResult?, which
         // does NOT create Nullable<T> for value types. The interceptor must match the
         // interface signature, so skip the ? suffix for value-type results.
-        var firstOrDefaultSuffix = site.IsValueTypeResult ? "" : "?";
+        // IsValueTypeResult comes from the semantic model at discovery time; when the result
+        // type was unresolved then (type parameter), fall back to string-based detection on
+        // the final resolved type.
+        var isValueType = site.IsValueTypeResult || IsKnownValueTypeName(resultType);
+        var firstOrDefaultSuffix = isValueType ? "" : "?";
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
@@ -137,7 +141,8 @@ internal static class TerminalBodyEmitter
         // for non-prepared terminals, TScalar remains a generic type parameter.
         var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
 
-        var firstOrDefaultSuffix = site.IsValueTypeResult ? "" : "?";
+        var isValueType = site.IsValueTypeResult || IsKnownValueTypeName(resultType);
+        var firstOrDefaultSuffix = isValueType ? "" : "?";
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
@@ -705,5 +710,22 @@ internal static class TerminalBodyEmitter
         sb.AppendLine($"        return Unsafe.As<PreparedQuery<{preparedResultType}>>(builder);");
 
         sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// String-based fallback for detecting value-type result names when the semantic
+    /// model flag was unavailable at discovery time (e.g., unresolved type parameter
+    /// that was patched later in the pipeline).
+    /// </summary>
+    private static bool IsKnownValueTypeName(string typeName)
+    {
+        // Tuples are always ValueTuple<> (value types)
+        if (typeName.Length > 0 && typeName[0] == '(')
+            return true;
+
+        // C# keyword value types
+        return typeName is "bool" or "byte" or "sbyte" or "short" or "ushort"
+            or "int" or "uint" or "long" or "ulong" or "float" or "double"
+            or "decimal" or "char" or "nint" or "nuint";
     }
 }

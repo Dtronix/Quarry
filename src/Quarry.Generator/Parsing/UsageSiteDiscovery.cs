@@ -287,6 +287,7 @@ internal static class UsageSiteDiscovery
                 : null;
 
             var crChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+            var crIsInsideLoop = DetectLoopAncestor(invocation);
 
             return new RawCallSite(
                 methodName: methodName,
@@ -306,7 +307,8 @@ internal static class UsageSiteDiscovery
                 contextClassName: contextClassName,
                 contextNamespace: contextNamespace,
                 builderTypeName: "IQueryBuilder",
-                chainId: crChainId);
+                chainId: crChainId,
+                isInsideLoop: crIsInsideLoop);
         }
 
         // ── Step 5: Builder type / extension method check ──────────────────
@@ -1250,7 +1252,7 @@ internal static class UsageSiteDiscovery
             var t = rootType;
             while (t != null)
             {
-                if (t.Name == "QuarryContext")
+                if (t.Name == "QuarryContext" && t.ContainingNamespace?.Name == "Quarry")
                     return (false, false);
                 t = t.BaseType;
             }

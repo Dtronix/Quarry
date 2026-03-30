@@ -160,6 +160,8 @@ No terminals on PreparedQuery → QRY036 error.
 
 `ExecuteFetchAllAsync()` → `Task<List<T>>`, `ExecuteFetchFirstAsync()` → `Task<T>`, `ExecuteFetchFirstOrDefaultAsync()` → `Task<T?>`, `ExecuteFetchSingleAsync()` → `Task<T>`, `ExecuteScalarAsync<T>()` → `Task<T>`, `ExecuteNonQueryAsync()` → `Task<int>`, `ToAsyncEnumerable()` → `IAsyncEnumerable<T>`, `ToDiagnostics()` → `QueryDiagnostics`.
 
+**Value-type FirstOrDefault caveat:** The interface uses unconstrained `TResult?`, which for value types (tuples, primitives, enums) does NOT produce `Nullable<T>` — it returns `default(T)` when no rows match (same as LINQ's `FirstOrDefault()`). This means callers cannot distinguish "no rows" from "a row whose value is `default`" (e.g., `0` for `long`, `default` for a tuple). Workarounds: use `ExecuteFetchFirstAsync` (throws on empty result), or project to a reference type (entity or DTO) where `null` signals "no rows".
+
 ### Raw SQL
 
 ```csharp
