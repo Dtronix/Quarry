@@ -1996,6 +1996,8 @@ public static class Queries
         var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
         Assert.That(qry032, Is.Not.Empty,
             "Chain crossing a loop boundary should produce QRY032");
+        Assert.That(qry032[0].GetMessage(), Does.Contain("loop boundary"),
+            "Diagnostic should specifically cite loop boundary, not fork or other reason");
     }
 
     [Test]

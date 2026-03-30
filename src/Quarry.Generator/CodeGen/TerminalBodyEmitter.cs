@@ -723,9 +723,11 @@ internal static class TerminalBodyEmitter
         if (typeName.Length > 0 && typeName[0] == '(')
             return true;
 
-        // C# keyword value types
+        // C# keyword value types and common BCL value types used in DB projections
         return typeName is "bool" or "byte" or "sbyte" or "short" or "ushort"
             or "int" or "uint" or "long" or "ulong" or "float" or "double"
-            or "decimal" or "char" or "nint" or "nuint";
+            or "decimal" or "char" or "nint" or "nuint"
+            or "DateTime" or "DateTimeOffset" or "TimeSpan" or "Guid"
+            or "DateOnly" or "TimeOnly";
     }
 }
