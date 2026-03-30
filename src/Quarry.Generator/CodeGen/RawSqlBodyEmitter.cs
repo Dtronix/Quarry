@@ -1,6 +1,7 @@
 using System.Text;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -44,7 +45,7 @@ internal static class RawSqlBodyEmitter
         if (rawSqlInfo.TypeKind == RawSqlTypeKind.Scalar)
         {
             var readerMethod = rawSqlInfo.ScalarReaderMethod ?? "GetValue";
-            var scalarRead = NeedsSignCast(resultType)
+            var scalarRead = TypeClassification.NeedsSignCast(resultType)
                 ? $"({resultType})r.{readerMethod}(0)"
                 : $"r.{readerMethod}(0)";
             sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
@@ -151,7 +152,7 @@ internal static class RawSqlBodyEmitter
             return $"({prop.FullClrType})r.{prop.ReaderMethodName}(i)";
         }
 
-        if (NeedsSignCast(prop.ClrType))
+        if (TypeClassification.NeedsSignCast(prop.ClrType))
         {
             return $"({prop.ClrType})r.{prop.ReaderMethodName}(i)";
         }
@@ -184,9 +185,4 @@ internal static class RawSqlBodyEmitter
         };
     }
 
-    private static bool NeedsSignCast(string clrType)
-        => clrType is "uint" or "UInt32" or "System.UInt32"
-            or "ushort" or "UInt16" or "System.UInt16"
-            or "ulong" or "UInt64" or "System.UInt64"
-            or "sbyte" or "SByte" or "System.SByte";
 }

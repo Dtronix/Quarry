@@ -2,6 +2,7 @@ using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Utilities;
 using Quarry;
 
 namespace Quarry.Generators.Projection;
@@ -223,7 +224,7 @@ internal static class ReaderCodeGenerator
 
         // Handle mismatched-sign integer types — cast from reader method to target type
         // (e.g., (uint)r.GetInt32(0) for unsigned, (sbyte)r.GetByte(0) for signed byte)
-        if (NeedsSignCast(column.ClrType))
+        if (TypeClassification.NeedsSignCast(column.ClrType))
         {
             if (column.IsNullable)
             {
@@ -320,13 +321,4 @@ internal static class ReaderCodeGenerator
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Returns true if the CLR type needs an explicit cast from its DbDataReader method
-    /// due to a sign mismatch (e.g., GetInt32 → uint, GetByte → sbyte).
-    /// </summary>
-    private static bool NeedsSignCast(string clrType)
-        => clrType is "uint" or "UInt32" or "System.UInt32"
-            or "ushort" or "UInt16" or "System.UInt16"
-            or "ulong" or "UInt64" or "System.UInt64"
-            or "sbyte" or "SByte" or "System.SByte";
 }

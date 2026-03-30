@@ -261,7 +261,7 @@ public class SignCastReaderTests
     [TestCase("uint", "(uint)Convert.ToInt64")]
     [TestCase("ushort", "(ushort)Convert.ToInt64")]
     [TestCase("ulong", "(ulong)Convert.ToInt64")]
-    public void RawSqlScalarAsync_UnsignedType_GeneratesCorrectConverter(string clrType, string expectedConvert)
+    public void RawSqlScalarAsync_UnsignedType_NonNullable_GeneratesCorrectConverter(string clrType, string expectedConvert)
     {
         var rawSqlTypeInfo = new RawSqlTypeInfo(
             clrType,
@@ -283,6 +283,33 @@ public class SignCastReaderTests
         Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"));
         Assert.That(result, Does.Contain(expectedConvert),
             $"Scalar converter for {clrType} should use {expectedConvert}");
+    }
+
+    [TestCase("uint?", "(uint?)Convert.ToUInt32")]
+    [TestCase("ushort?", "(ushort?)Convert.ToUInt16")]
+    [TestCase("ulong?", "(ulong?)Convert.ToUInt64")]
+    public void RawSqlScalarAsync_UnsignedType_Nullable_GeneratesCorrectConverter(string clrType, string expectedConvert)
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            clrType,
+            RawSqlTypeKind.Scalar,
+            System.Array.Empty<RawSqlPropertyInfo>(),
+            scalarReaderMethod: "GetInt32");
+
+        var site = new TestCallSiteBuilder()
+            .WithMethodName("RawSqlScalarAsync")
+            .WithKind(InterceptorKind.RawSqlScalarAsync)
+            .WithEntityType(clrType)
+            .WithRawSqlTypeInfo(rawSqlTypeInfo)
+            .WithUniqueId("test_scalar_nullable_uint")
+            .Build();
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"));
+        Assert.That(result, Does.Contain(expectedConvert),
+            $"Nullable scalar converter for {clrType} should use {expectedConvert}");
     }
 
     #endregion
