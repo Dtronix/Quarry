@@ -541,7 +541,7 @@ public static class Queries
     {
         // Regression: chains at absolute nesting depth 3 must not trigger QRY032
         // ("conditional nesting depth exceeds maximum") or QRY900 (crash from
-        // ConditionalInfo present without a matching ConditionalTerm).
+        // NestingContext present without a matching ConditionalTerm).
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
@@ -590,7 +590,7 @@ public static class Queries
         Assert.That(qry033, Is.Null, "Should NOT report QRY033 for chains in mutually exclusive branches");
 
         var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
-        Assert.That(qry900, Is.Null, "Should NOT crash (QRY900) when emitting chains with ConditionalInfo but no conditional terms");
+        Assert.That(qry900, Is.Null, "Should NOT crash (QRY900) when emitting chains with NestingContext but no conditional terms");
 
         // Verify interceptors were actually generated (chains compiled successfully)
         var interceptorsTree = result.GeneratedTrees

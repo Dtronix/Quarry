@@ -306,18 +306,18 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Identify conditional clauses from ConditionalInfo
+        // Identify conditional clauses from NestingContext
         var conditionalTerms = new List<ConditionalTerm>();
         var bitIndex = 0;
         var branchGroups = new Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>>(StringComparer.Ordinal);
 
         // Baseline nesting depth: clauses at or below the execution terminal's depth
         // are not conditionally included — the entire chain is simply inside nested control flow.
-        var baselineDepth = executionSite.Bound.Raw.ConditionalInfo?.NestingDepth ?? 0;
+        var baselineDepth = executionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
 
         foreach (var site in clauseSites)
         {
-            var condInfo = site.Bound.Raw.ConditionalInfo;
+            var condInfo = site.Bound.Raw.NestingContext;
             if (condInfo == null)
                 continue;
 
@@ -408,7 +408,7 @@ internal static class ChainAnalyzer
             int? clauseBitIndex = null;
 
             // Check if this clause is conditional
-            if (raw.ConditionalInfo != null)
+            if (raw.NestingContext != null)
             {
                 // Find its bit index — match by role and consume each term only once
                 for (int ci = 0; ci < conditionalTerms.Count; ci++)
@@ -1438,7 +1438,7 @@ internal static class ChainAnalyzer
             var group = kvp.Value;
             // Determine if this branch group is mutually exclusive
             var hasMutuallyExclusive = group.Any(g =>
-                g.Site.Bound.Raw.ConditionalInfo?.BranchKind == BranchKind.MutuallyExclusive);
+                g.Site.Bound.Raw.NestingContext?.BranchKind == BranchKind.MutuallyExclusive);
 
             if (hasMutuallyExclusive && group.Count >= 2)
             {
@@ -1628,8 +1628,8 @@ internal static class ChainAnalyzer
             log(chainUid, $"  joinedEntityType={raw.JoinedEntityTypeName}, isNavigationJoin={raw.IsNavigationJoin}");
         if (raw.JoinedEntityTypeNames != null)
             log(chainUid, $"  joinedEntityTypes=[{string.Join(", ", raw.JoinedEntityTypeNames)}]");
-        if (raw.ConditionalInfo != null)
-            log(chainUid, $"  conditional: depth={raw.ConditionalInfo.NestingDepth}, condition=\"{raw.ConditionalInfo.ConditionText}\", branch={raw.ConditionalInfo.BranchKind}");
+        if (raw.NestingContext != null)
+            log(chainUid, $"  conditional: depth={raw.NestingContext.NestingDepth}, condition=\"{raw.NestingContext.ConditionText}\", branch={raw.NestingContext.BranchKind}");
         if (raw.ConstantIntValue.HasValue)
             log(chainUid, $"  constantIntValue={raw.ConstantIntValue.Value}");
         if (raw.ProjectionInfo != null)

@@ -497,9 +497,9 @@ internal static class TerminalEmitHelpers
                 ? $", conditionalBitIndex: {clause.BitIndex.Value}"
                 : "";
             var branchKindArg = "";
-            if (clause.IsConditional && clause.Site.Bound.Raw.ConditionalInfo != null)
+            if (clause.IsConditional && clause.Site.Bound.Raw.NestingContext != null)
             {
-                var bk = clause.Site.Bound.Raw.ConditionalInfo.BranchKind == Models.BranchKind.MutuallyExclusive
+                var bk = clause.Site.Bound.Raw.NestingContext.BranchKind == Models.BranchKind.MutuallyExclusive
                     ? "DiagnosticBranchKind.MutuallyExclusive"
                     : "DiagnosticBranchKind.Independent";
                 branchKindArg = $", branchKind: {bk}";

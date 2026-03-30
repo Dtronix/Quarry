@@ -650,7 +650,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
@@ -734,7 +734,7 @@ internal static class UsageSiteDiscovery
             isCapturedInLambda: isCapturedInLambda,
             isPassedAsArgument: isPassedAsArgument,
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId,
             builderTypeName: containingType.Name,
             joinedEntityTypeNames: joinedEntityTypeNames,
@@ -888,7 +888,7 @@ internal static class UsageSiteDiscovery
             var isInsideLoop = DetectLoopAncestor(parentInvoc);
             var isInsideTryCatch = DetectTryCatchAncestor(parentInvoc);
             var isCapturedInLambda = DetectLambdaCaptureAncestor(parentInvoc);
-            var conditionalInfo = DetectConditionalAncestor(parentInvoc);
+            var nestingContext = DetectNestingContext(parentInvoc);
 
             // For Select(), analyze the projection syntactically
             ProjectionInfo? projectionInfo = null;
@@ -944,7 +944,7 @@ internal static class UsageSiteDiscovery
                 isInsideLoop: isInsideLoop,
                 isInsideTryCatch: isInsideTryCatch,
                 isCapturedInLambda: isCapturedInLambda,
-                conditionalInfo: conditionalInfo,
+                nestingContext: nestingContext,
                 chainId: chainId,
                 builderTypeName: "IJoinedQueryBuilder",
                 joinedEntityTypeNames: joinedEntityTypeNames);
@@ -1421,9 +1421,9 @@ internal static class UsageSiteDiscovery
 
     /// <summary>
     /// Detects if the invocation is inside an if statement or ternary expression.
-    /// Returns ConditionalInfo with the condition text and nesting depth.
+    /// Returns NestingContext with the condition text and nesting depth.
     /// </summary>
-    private static ConditionalInfo? DetectConditionalAncestor(SyntaxNode node)
+    private static NestingContext? DetectNestingContext(SyntaxNode node)
     {
         // Walk all ancestors to count total nesting depth and capture innermost if info
         int totalIfDepth = 0;
@@ -1463,7 +1463,7 @@ internal static class UsageSiteDiscovery
         if (innermostCondition == null)
             return null;
 
-        return new ConditionalInfo(innermostCondition, totalIfDepth, innermostBranchKind);
+        return new NestingContext(innermostCondition, totalIfDepth, innermostBranchKind);
     }
 
     /// <summary>
@@ -2309,7 +2309,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
             DetectVariableDisqualifiers(invocation, semanticModel);
@@ -2336,7 +2336,7 @@ internal static class UsageSiteDiscovery
             isCapturedInLambda: isCapturedInLambda,
             isPassedAsArgument: isPassedAsArgument,
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId);
     }
 
@@ -3108,7 +3108,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
         return new RawCallSite(
@@ -3132,7 +3132,7 @@ internal static class UsageSiteDiscovery
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId);
     }
 

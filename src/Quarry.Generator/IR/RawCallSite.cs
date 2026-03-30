@@ -43,7 +43,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isCapturedInLambda = false,
         bool isPassedAsArgument = false,
         bool isAssignedFromNonQuarryMethod = false,
-        ConditionalInfo? conditionalInfo = null,
+        NestingContext? nestingContext = null,
         string? chainId = null,
         string? builderTypeName = null,
         IReadOnlyList<string>? joinedEntityTypeNames = null,
@@ -86,7 +86,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsCapturedInLambda = isCapturedInLambda;
         IsPassedAsArgument = isPassedAsArgument;
         IsAssignedFromNonQuarryMethod = isAssignedFromNonQuarryMethod;
-        ConditionalInfo = conditionalInfo;
+        NestingContext = nestingContext;
         ChainId = chainId;
         BuilderTypeName = builderTypeName;
         JoinedEntityTypeNames = joinedEntityTypeNames;
@@ -145,7 +145,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     public bool IsCapturedInLambda { get; }
     public bool IsPassedAsArgument { get; }
     public bool IsAssignedFromNonQuarryMethod { get; }
-    public ConditionalInfo? ConditionalInfo { get; }
+    public NestingContext? NestingContext { get; }
     public string? ChainId { get; }
 
     // Builder type name for codegen
@@ -229,7 +229,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             isCapturedInLambda: IsCapturedInLambda,
             isPassedAsArgument: IsPassedAsArgument,
             isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
-            conditionalInfo: ConditionalInfo,
+            nestingContext: NestingContext,
             chainId: ChainId,
             builderTypeName: BuilderTypeName,
             joinedEntityTypeNames: JoinedEntityTypeNames,
@@ -283,7 +283,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && BuilderTypeName == other.BuilderTypeName
             && Equals(Expression, other.Expression)
             && Equals(ProjectionInfo, other.ProjectionInfo)
-            && Equals(ConditionalInfo, other.ConditionalInfo)
+            && Equals(NestingContext, other.NestingContext)
             && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo)
             && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames)
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
@@ -351,12 +351,13 @@ internal enum CaptureKind
 }
 
 /// <summary>
-/// Records whether a call site is inside a conditional branch (if/else or ternary).
-/// Used by ChainAnalyzer to assign bitmask indices for conditional clause dispatch.
+/// Structural metadata about where a call site lives in the control flow graph.
+/// Always present for sites inside if/else/ternary. Whether the site is genuinely
+/// conditionally included is determined later by ChainAnalyzer via baseline depth comparison.
 /// </summary>
-internal sealed class ConditionalInfo : IEquatable<ConditionalInfo>
+internal sealed class NestingContext : IEquatable<NestingContext>
 {
-    public ConditionalInfo(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent)
+    public NestingContext(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent)
     {
         ConditionText = conditionText;
         NestingDepth = nestingDepth;
@@ -367,7 +368,7 @@ internal sealed class ConditionalInfo : IEquatable<ConditionalInfo>
     public int NestingDepth { get; }
     public BranchKind BranchKind { get; }
 
-    public bool Equals(ConditionalInfo? other)
+    public bool Equals(NestingContext? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
@@ -376,6 +377,6 @@ internal sealed class ConditionalInfo : IEquatable<ConditionalInfo>
             && BranchKind == other.BranchKind;
     }
 
-    public override bool Equals(object? obj) => Equals(obj as ConditionalInfo);
+    public override bool Equals(object? obj) => Equals(obj as NestingContext);
     public override int GetHashCode() => HashCode.Combine(ConditionText, NestingDepth, BranchKind);
 }

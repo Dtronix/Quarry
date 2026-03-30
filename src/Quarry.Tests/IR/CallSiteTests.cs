@@ -119,22 +119,22 @@ public class CallSiteTests
     }
 
     [Test]
-    public void RawCallSite_DifferentConditionalInfo_NotEqual()
+    public void RawCallSite_DifferentNestingContext_NotEqual()
     {
         var a = CreateRawCallSite("Where", "file.cs", 10, 5, "id1",
-            conditionalInfo: new ConditionalInfo("x > 0", 1));
+            nestingContext: new NestingContext("x > 0", 1));
         var b = CreateRawCallSite("Where", "file.cs", 10, 5, "id1",
-            conditionalInfo: new ConditionalInfo("x < 0", 1));
+            nestingContext: new NestingContext("x < 0", 1));
 
         Assert.That(a.Equals(b), Is.False);
     }
 
     [Test]
-    public void ConditionalInfo_Equality()
+    public void NestingContext_Equality()
     {
-        var a = new ConditionalInfo("x > 0", 1, BranchKind.Independent);
-        var b = new ConditionalInfo("x > 0", 1, BranchKind.Independent);
-        var c = new ConditionalInfo("x > 0", 1, BranchKind.MutuallyExclusive);
+        var a = new NestingContext("x > 0", 1, BranchKind.Independent);
+        var b = new NestingContext("x > 0", 1, BranchKind.Independent);
+        var c = new NestingContext("x > 0", 1, BranchKind.MutuallyExclusive);
 
         Assert.That(a.Equals(b), Is.True);
         Assert.That(a.GetHashCode(), Is.EqualTo(b.GetHashCode()));
@@ -260,7 +260,7 @@ public class CallSiteTests
         bool isCapturedInLambda = false,
         bool isPassedAsArgument = false,
         bool isAssignedFromNonQuarryMethod = false,
-        ConditionalInfo? conditionalInfo = null,
+        NestingContext? nestingContext = null,
         string? chainId = null)
     {
         return new RawCallSite(
@@ -285,7 +285,7 @@ public class CallSiteTests
             isCapturedInLambda: isCapturedInLambda,
             isPassedAsArgument: isPassedAsArgument,
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId);
     }
 
