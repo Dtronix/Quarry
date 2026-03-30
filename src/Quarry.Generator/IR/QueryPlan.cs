@@ -386,6 +386,24 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public bool IsStaticCapture { get; }
     public bool IsEnumerableCollection { get; }
 
+    /// <summary>
+    /// Creates a copy with updated column enrichment metadata. All other fields are preserved.
+    /// This is the single copy-point for enrichment — avoids the fragile pattern of manually
+    /// reconstructing all 19 constructor arguments at each enrichment call site.
+    /// </summary>
+    internal QueryParameter WithEnrichment(bool isEnum, string? enumUnderlyingType, bool isSensitive)
+    {
+        if (IsEnum == isEnum && EnumUnderlyingType == enumUnderlyingType && IsSensitive == isSensitive)
+            return this;
+        return new QueryParameter(
+            GlobalIndex, ClrType, ValueExpression, IsCaptured, ExpressionPath,
+            IsCollection, ElementTypeName, TypeMappingClass,
+            isEnum, enumUnderlyingType, isSensitive,
+            EntityPropertyExpression, NeedsUnsafeAccessor, IsDirectAccessible,
+            CollectionAccessExpression, CapturedFieldName, CapturedFieldType,
+            IsStaticCapture, IsEnumerableCollection);
+    }
+
     public bool Equals(QueryParameter? other)
     {
         if (other is null) return false;

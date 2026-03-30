@@ -869,30 +869,7 @@ internal static class ChainAnalyzer
             // Default to "int" — the most common underlying type for C# enums.
             var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
-            // Skip if nothing changed
-            if (isEnum == p.IsEnum && isSensitive == p.IsSensitive && enumUnderlying == p.EnumUnderlyingType)
-                continue;
-
-            clauseParams[i] = new QueryParameter(
-                globalIndex: p.GlobalIndex,
-                clrType: p.ClrType,
-                valueExpression: p.ValueExpression,
-                isCaptured: p.IsCaptured,
-                expressionPath: p.ExpressionPath,
-                isCollection: p.IsCollection,
-                elementTypeName: p.ElementTypeName,
-                typeMappingClass: p.TypeMappingClass,
-                isEnum: isEnum,
-                enumUnderlyingType: enumUnderlying,
-                isSensitive: isSensitive,
-                entityPropertyExpression: p.EntityPropertyExpression,
-                needsUnsafeAccessor: p.NeedsUnsafeAccessor,
-                isDirectAccessible: p.IsDirectAccessible,
-                collectionAccessExpression: p.CollectionAccessExpression,
-                capturedFieldName: p.CapturedFieldName,
-                capturedFieldType: p.CapturedFieldType,
-                isStaticCapture: p.IsStaticCapture,
-                isEnumerableCollection: p.IsEnumerableCollection);
+            clauseParams[i] = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
         }
     }
 
@@ -933,28 +910,9 @@ internal static class ChainAnalyzer
                 var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
                 var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
-                if (isEnum != p.IsEnum || isSensitive != p.IsSensitive || enumUnderlying != p.EnumUnderlyingType)
+                var enriched = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+                if (!ReferenceEquals(enriched, p))
                 {
-                    var enriched = new QueryParameter(
-                        globalIndex: p.GlobalIndex,
-                        clrType: p.ClrType,
-                        valueExpression: p.ValueExpression,
-                        isCaptured: p.IsCaptured,
-                        expressionPath: p.ExpressionPath,
-                        isCollection: p.IsCollection,
-                        elementTypeName: p.ElementTypeName,
-                        typeMappingClass: p.TypeMappingClass,
-                        isEnum: isEnum,
-                        enumUnderlyingType: enumUnderlying,
-                        isSensitive: isSensitive,
-                        entityPropertyExpression: p.EntityPropertyExpression,
-                        needsUnsafeAccessor: p.NeedsUnsafeAccessor,
-                        isDirectAccessible: p.IsDirectAccessible,
-                        collectionAccessExpression: p.CollectionAccessExpression,
-                        capturedFieldName: p.CapturedFieldName,
-                        capturedFieldType: p.CapturedFieldType,
-                        isStaticCapture: p.IsStaticCapture,
-                        isEnumerableCollection: p.IsEnumerableCollection);
                     clauseParams[paramIdx] = enriched;
 
                     // Also update in allParameters if already added
