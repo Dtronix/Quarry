@@ -488,4 +488,118 @@ namespace App.Services
         // Without a context class, falls back to schema namespace
         Assert.That(result[0].CapturedVariableTypes!["deletedFile"], Is.EqualTo("global::App.Schemas.File"));
     }
+
+    [Test]
+    public void Inspect_CapturedChainResultVariable_TypeInfo()
+    {
+        // Mirrors the real pattern: var result = await chain.Select(...).ExecuteFetchFirstOrDefaultAsync()
+        // then result is captured in a subsequent lambda.
+        // Uses the real Quarry IQueryBuilder interfaces so the semantic model sees concrete return types.
+        var source = @"
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace Quarry
+{
+    public interface IQueryBuilder<T> where T : class
+    {
+        IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
+        IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
+    }
+
+    public interface IQueryBuilder<TEntity, TResult> where TEntity : class
+    {
+        Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+    }
+}
+
+namespace App.Schemas
+{
+    public class PackageSchema
+    {
+        public long Id { get; set; }
+        public string Name { get; set; }
+        public int Status { get; set; }
+    }
+}
+
+namespace App
+{
+    using App.Schemas;
+
+    class Service
+    {
+        Quarry.IQueryBuilder<PackageSchema> Packages() => throw new NotImplementedException();
+
+        async Task DoWork()
+        {
+            var fetched = await Packages()
+                .Where(p => p.Id == 1)
+                .Select(p => (p.Id, p.Status, p.Name))
+                .ExecuteFetchFirstOrDefaultAsync();
+
+            var derivedName = fetched?.Name;
+
+            Func<bool> capturer = () => fetched != null && derivedName != null;
+        }
+    }
+}
+";
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var references = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Threading.Tasks.dll")),
+        };
+        var compilation = CSharpCompilation.Create("TestAssembly",
+            new[] { syntaxTree }, references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        var tree = compilation.SyntaxTrees.First();
+        var semanticModel = compilation.GetSemanticModel(tree);
+
+        // Find the lambda: () => fetched != null && derivedName != null
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>()
+            .Last(); // The capturing lambda (not the Where/Select lambdas)
+
+        var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
+        Assert.That(dataFlow.Succeeded, Is.True, "DataFlow analysis should succeed");
+
+        var capturedVars = dataFlow.CapturedInside
+            .Where(s => s is ILocalSymbol)
+            .Cast<ILocalSymbol>()
+            .ToArray();
+
+        // Dump type info for each captured variable
+        foreach (var local in capturedVars)
+        {
+            var ts = local.Type;
+            var namedInfo = ts is INamedTypeSymbol nts
+                ? $"IsGeneric={nts.IsGenericType}, Arity={nts.Arity}, IsTuple={nts.IsTupleType}, " +
+                  $"TypeArgs=[{string.Join(", ", nts.TypeArguments.Select(ta => $"{ta.Name}({ta.TypeKind})"))}], " +
+                  $"ConstructedFrom={nts.ConstructedFrom?.ToDisplayString() ?? "(null)"}"
+                : $"(not named: {ts.GetType().Name})";
+
+            TestContext.Out.WriteLine(
+                $"  var={local.Name}, TypeKind={ts.TypeKind}, Name={ts.Name}, " +
+                $"Display={ts.ToDisplayString()}, " +
+                $"FullyQualified={ts.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}, " +
+                $"Nullable={ts.NullableAnnotation}, OrigDef={ts.OriginalDefinition?.ToDisplayString()}, " +
+                $"{namedInfo}");
+        }
+
+        // Also inspect what CollectCapturedVariableTypes produces
+        var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, semanticModel);
+        TestContext.Out.WriteLine("\nCollectCapturedVariableTypes result:");
+        if (resolved != null)
+            foreach (var kvp in resolved)
+                TestContext.Out.WriteLine($"  {kvp.Key} => {kvp.Value}");
+        else
+            TestContext.Out.WriteLine("  (null)");
+    }
 }
