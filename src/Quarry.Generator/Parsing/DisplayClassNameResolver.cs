@@ -110,19 +110,23 @@ internal static class DisplayClassNameResolver
         var compilation = semanticModel.Compilation;
         var schemaName = typeName + "Schema";
 
+        // Collect all imported namespaces for context disambiguation
+        var importedNamespaces = new HashSet<string>(System.StringComparer.Ordinal);
         foreach (var usingDir in root.Usings)
         {
-            if (usingDir.Alias != null || usingDir.Name == null)
-                continue;
+            if (usingDir.Alias == null && usingDir.Name != null)
+                importedNamespaces.Add(usingDir.Name.ToString());
+        }
 
-            var ns = usingDir.Name.ToString();
+        foreach (var ns in importedNamespaces)
+        {
             var candidate = ns + "." + schemaName;
             var schemaType = compilation.GetTypeByMetadataName(candidate);
             if (schemaType != null)
             {
                 // The schema lives in ns, but the generated entity is placed in
                 // the owning context's namespace (which may differ from the schema's).
-                var contextNs = FindContextNamespaceForSchema(compilation, schemaType);
+                var contextNs = FindContextNamespaceForSchema(compilation, schemaType, importedNamespaces);
                 if (contextNs != null)
                     return "global::" + contextNs + "." + typeName;
                 return "global::" + ns + "." + typeName;
@@ -136,11 +140,15 @@ internal static class DisplayClassNameResolver
     /// Searches the compilation for a [QuarryContext]-decorated class that references
     /// the given schema type via a QueryBuilder&lt;T&gt; member. Returns the context
     /// class's namespace, since generated entity types are placed there rather than
-    /// in the schema namespace. Returns null if no owning context is found.
+    /// in the schema namespace. When multiple contexts reference the same schema,
+    /// prefers the context whose namespace is imported by the source file.
+    /// Returns null if no owning context is found.
     /// </summary>
     private static string? FindContextNamespaceForSchema(
-        Compilation compilation, INamedTypeSymbol schemaType)
+        Compilation compilation, INamedTypeSymbol schemaType, HashSet<string>? importedNamespaces = null)
     {
+        string? firstMatch = null;
+
         foreach (var tree in compilation.SyntaxTrees)
         {
             foreach (var node in tree.GetRoot().DescendantNodes())
@@ -188,13 +196,18 @@ internal static class DisplayClassNameResolver
                     {
                         var ns = classSymbol.ContainingNamespace?.ToDisplayString();
                         if (!string.IsNullOrEmpty(ns))
-                            return ns;
+                        {
+                            // When the source file imports this context's namespace, it's the right one
+                            if (importedNamespaces != null && importedNamespaces.Contains(ns))
+                                return ns;
+                            firstMatch ??= ns;
+                        }
                     }
                 }
             }
         }
 
-        return null;
+        return firstMatch;
     }
 
     private static void AssignOrdinalsPreOrder(
