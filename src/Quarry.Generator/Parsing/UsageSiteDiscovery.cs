@@ -1549,7 +1549,11 @@ internal static class UsageSiteDiscovery
             }
             if (ancestor is StatementSyntax stmt && !(ancestor is BlockSyntax))
             {
-                statementStart = stmt.SpanStart;
+                // Capture the innermost statement only. Using the outermost statement would
+                // collapse standalone chains in different branches (if/else, try/catch) into
+                // a single ChainId, causing false-positive QRY033 "forked query chain" errors.
+                if (statementStart < 0)
+                    statementStart = stmt.SpanStart;
                 continue; // Keep walking to find the containing method too
             }
             if (ancestor is MethodDeclarationSyntax method)

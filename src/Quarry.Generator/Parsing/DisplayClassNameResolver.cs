@@ -198,7 +198,7 @@ internal static class DisplayClassNameResolver
                         if (!string.IsNullOrEmpty(ns))
                         {
                             // When the source file imports this context's namespace, it's the right one
-                            if (importedNamespaces != null && importedNamespaces.Contains(ns))
+                            if (importedNamespaces != null && importedNamespaces.Contains(ns!))
                                 return ns;
                             firstMatch ??= ns;
                         }
