@@ -310,14 +310,23 @@ internal static class ChainAnalyzer
         var bitIndex = 0;
         var branchGroups = new Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>>(StringComparer.Ordinal);
 
+        // Baseline nesting depth: clauses at or below the execution terminal's depth
+        // are not conditionally included — the entire chain is simply inside nested control flow.
+        var baselineDepth = executionSite.Bound.Raw.ConditionalInfo?.NestingDepth ?? 0;
+
         foreach (var site in clauseSites)
         {
             var condInfo = site.Bound.Raw.ConditionalInfo;
             if (condInfo == null)
                 continue;
 
-            // Check nesting depth
-            if (condInfo.NestingDepth > MaxIfNestingDepth)
+            // Only clauses deeper than the execution terminal are genuinely conditional.
+            var relativeDepth = condInfo.NestingDepth - baselineDepth;
+            if (relativeDepth <= 0)
+                continue;
+
+            // Check relative nesting depth
+            if (relativeDepth > MaxIfNestingDepth)
             {
                 return MakeRuntimeBuildChain(executionSite, clauseSites, "Conditional nesting depth exceeds maximum", registry, isTraced);
             }
