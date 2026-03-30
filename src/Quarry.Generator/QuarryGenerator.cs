@@ -105,6 +105,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 catch (System.Exception ex)
                 {
                     System.Diagnostics.Debug.WriteLine($"[Quarry] Bind failed: {ex}");
+                    var raw = pair.Left;
+                    IR.PipelineErrorBag.Report(raw.FilePath, raw.Line, raw.Column,
+                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
                     return ImmutableArray<IR.BoundCallSite>.Empty;
                 }
             });
@@ -388,16 +391,48 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         }
 
         // Report pipeline errors captured during binding/translation
+        // Check both Sites and ChainMemberSites — either can carry pipeline errors
         foreach (var site in group.Sites)
         {
             if (site.PipelineError != null)
             {
-                var errorLoc = syntaxTree != null && site.Line > 0
-                    ? Location.Create(syntaxTree, default)
+                var errorLoc = site.FilePath != null && site.Line > 0
+                    ? Location.Create(site.FilePath, default,
+                        new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1)))
                     : Location.None;
                 spc.ReportDiagnostic(Diagnostic.Create(
                     DiagnosticDescriptors.InternalError, errorLoc, site.PipelineError));
             }
+        }
+
+        foreach (var site in group.ChainMemberSites)
+        {
+            if (site.PipelineError != null)
+            {
+                var errorLoc = site.FilePath != null && site.Line > 0
+                    ? Location.Create(site.FilePath, default,
+                        new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
+                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1)))
+                    : Location.None;
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.InternalError, errorLoc, site.PipelineError));
+            }
+        }
+
+        // Drain side-channel errors from Stage 3 (Bind failures that couldn't attach to a site)
+        foreach (var err in IR.PipelineErrorBag.DrainErrors())
+        {
+            var errorLoc = err.SourceFilePath != null && err.Line > 0
+                ? Location.Create(err.SourceFilePath, default,
+                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
+                        new Microsoft.CodeAnalysis.Text.LinePosition(err.Line - 1, err.Column - 1),
+                        new Microsoft.CodeAnalysis.Text.LinePosition(err.Line - 1, err.Column - 1)))
+                : Location.None;
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.InternalError, errorLoc, err.Error));
         }
 
         // Report all deferred diagnostics

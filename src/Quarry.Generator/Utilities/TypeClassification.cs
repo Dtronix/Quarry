@@ -154,16 +154,6 @@ internal static class TypeClassification
     }
 
     /// <summary>
-    /// Gets the DbDataReader method name for a CLR type string, also reporting
-    /// whether a sign cast is needed.
-    /// </summary>
-    public static string GetReaderMethod(string clrType, out bool needsSignCast)
-    {
-        needsSignCast = NeedsSignCast(clrType.TrimEnd('?'));
-        return GetReaderMethod(clrType);
-    }
-
-    /// <summary>
     /// Checks if a type name is unresolved (error type from semantic model, empty, or missing).
     /// By default includes "object" check — semantic model uses "object" for error types.
     /// Pass <paramref name="treatObjectAsUnresolved"/> = false for contexts where "object"

@@ -93,7 +93,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         IReadOnlyList<EntityRef>? joinedEntities)
     {
         var newBound = Bound.WithJoinedEntities(joinedEntityTypeNames, joinedEntities);
-        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName, PipelineError);
     }
 
     /// <summary>
@@ -105,7 +105,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     {
         var newRaw = Bound.Raw.WithResultTypeName(resolvedResultTypeName);
         var newBound = Bound.WithRaw(newRaw);
-        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName, PipelineError);
     }
 
     public bool Equals(TranslatedCallSite? other)
