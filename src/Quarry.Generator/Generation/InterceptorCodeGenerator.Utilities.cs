@@ -374,12 +374,27 @@ internal static partial class InterceptorCodeGenerator
         {
             var baseType = GetNonNullableType(clrType);
             var baseReaderMethod = GetReaderMethod(baseType);
-            return $"r.IsDBNull({ordinal}) ? default({clrType}) : r.{baseReaderMethod}({ordinal})";
+            var readExpr = NeedsSignCast(baseType)
+                ? $"({baseType})r.{baseReaderMethod}({ordinal})"
+                : $"r.{baseReaderMethod}({ordinal})";
+            return $"r.IsDBNull({ordinal}) ? default({clrType}) : {readExpr}";
         }
 
         var readerMethod = GetReaderMethod(clrType);
+        if (NeedsSignCast(clrType))
+            return $"({clrType})r.{readerMethod}({ordinal})";
         return $"r.{readerMethod}({ordinal})";
     }
+
+    /// <summary>
+    /// Returns true if the CLR type needs an explicit cast from its DbDataReader method
+    /// due to a sign mismatch (e.g., GetInt32 → uint, GetByte → sbyte).
+    /// </summary>
+    private static bool NeedsSignCast(string clrType)
+        => clrType is "uint" or "UInt32" or "System.UInt32"
+            or "ushort" or "UInt16" or "System.UInt16"
+            or "ulong" or "UInt64" or "System.UInt64"
+            or "sbyte" or "SByte" or "System.SByte";
 
     /// <summary>
     /// Gets the appropriate DbDataReader method for a CLR type.

@@ -221,6 +221,18 @@ internal static class ReaderCodeGenerator
             return $"({column.FullClrType}){rawRead}";
         }
 
+        // Handle mismatched-sign integer types — cast from reader method to target type
+        // (e.g., (uint)r.GetInt32(0) for unsigned, (sbyte)r.GetByte(0) for signed byte)
+        if (NeedsSignCast(column.ClrType))
+        {
+            if (column.IsNullable)
+            {
+                return $"r.IsDBNull({ordinal}) ? default({column.ClrType}?) : ({column.ClrType}){rawRead}";
+            }
+
+            return $"({column.ClrType}){rawRead}";
+        }
+
         // Handle custom type mapping - wrap with FromDb()
         if (column.CustomTypeMapping != null)
         {
@@ -307,4 +319,14 @@ internal static class ReaderCodeGenerator
         sb.Append(" }");
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Returns true if the CLR type needs an explicit cast from its DbDataReader method
+    /// due to a sign mismatch (e.g., GetInt32 → uint, GetByte → sbyte).
+    /// </summary>
+    private static bool NeedsSignCast(string clrType)
+        => clrType is "uint" or "UInt32" or "System.UInt32"
+            or "ushort" or "UInt16" or "System.UInt16"
+            or "ulong" or "UInt64" or "System.UInt64"
+            or "sbyte" or "SByte" or "System.SByte";
 }
