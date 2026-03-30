@@ -769,9 +769,44 @@ internal static class ChainAnalyzer
                 collectionAccessExpression: null, // Computed during carrier analysis
                 capturedFieldName: p.CapturedFieldName,
                 capturedFieldType: p.CapturedFieldType,
-                isStaticCapture: p.IsStaticCapture));
+                isStaticCapture: p.IsStaticCapture,
+                isEnumerableCollection: IsEnumerableOnlyCollection(p)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Determines whether a collection parameter's type only implements IEnumerable&lt;T&gt;
+    /// (not IReadOnlyList&lt;T&gt;). Arrays and types implementing IReadOnlyList return false.
+    /// </summary>
+    private static bool IsEnumerableOnlyCollection(ParameterInfo p)
+    {
+        if (!p.IsCollection || p.CollectionReceiverSymbol is not Microsoft.CodeAnalysis.ITypeSymbol typeSymbol)
+            return false;
+
+        // Arrays implement IReadOnlyList<T>
+        if (typeSymbol is Microsoft.CodeAnalysis.IArrayTypeSymbol)
+            return false;
+
+        // Check the type itself (if it's an interface like IReadOnlyList<T>)
+        if (IsReadOnlyListInterface(typeSymbol))
+            return false;
+
+        // Check all implemented interfaces
+        foreach (var iface in typeSymbol.AllInterfaces)
+        {
+            if (IsReadOnlyListInterface(iface))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsReadOnlyListInterface(Microsoft.CodeAnalysis.ITypeSymbol type)
+    {
+        return type is Microsoft.CodeAnalysis.INamedTypeSymbol named
+            && named.Name == "IReadOnlyList"
+            && named.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
     }
 
     /// <summary>
@@ -855,7 +890,9 @@ internal static class ChainAnalyzer
                 isDirectAccessible: p.IsDirectAccessible,
                 collectionAccessExpression: p.CollectionAccessExpression,
                 capturedFieldName: p.CapturedFieldName,
-                capturedFieldType: p.CapturedFieldType);
+                capturedFieldType: p.CapturedFieldType,
+                isStaticCapture: p.IsStaticCapture,
+                isEnumerableCollection: p.IsEnumerableCollection);
         }
     }
 
@@ -915,7 +952,9 @@ internal static class ChainAnalyzer
                         isDirectAccessible: p.IsDirectAccessible,
                         collectionAccessExpression: p.CollectionAccessExpression,
                         capturedFieldName: p.CapturedFieldName,
-                        capturedFieldType: p.CapturedFieldType);
+                        capturedFieldType: p.CapturedFieldType,
+                        isStaticCapture: p.IsStaticCapture,
+                        isEnumerableCollection: p.IsEnumerableCollection);
                     clauseParams[paramIdx] = enriched;
 
                     // Also update in allParameters if already added

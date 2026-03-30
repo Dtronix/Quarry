@@ -400,7 +400,13 @@ internal sealed class CapturedValueExpr : SqlExpr
     public bool IsStaticField { get; }
     public bool CanGenerateDirectPath => ExpressionPath != null;
 
-    public CapturedValueExpr(string variableName, string syntaxText, string clrType = "object", string? expressionPath = null, bool isStaticField = false)
+    /// <summary>
+    /// Semantic type symbol for carrier analysis (e.g., IReadOnlyList vs IEnumerable detection).
+    /// Not included in equality/hash — enrichment field only.
+    /// </summary>
+    public Microsoft.CodeAnalysis.ITypeSymbol? TypeSymbol { get; }
+
+    public CapturedValueExpr(string variableName, string syntaxText, string clrType = "object", string? expressionPath = null, bool isStaticField = false, Microsoft.CodeAnalysis.ITypeSymbol? typeSymbol = null)
         : base(HashCode.Combine(SqlExprKind.CapturedValue, variableName, syntaxText, expressionPath))
     {
         VariableName = variableName;
@@ -408,20 +414,21 @@ internal sealed class CapturedValueExpr : SqlExpr
         ClrType = clrType;
         ExpressionPath = expressionPath;
         IsStaticField = isStaticField;
+        TypeSymbol = typeSymbol;
     }
 
-    /// <summary>Creates a copy with an updated CLR type.</summary>
-    public CapturedValueExpr WithClrType(string clrType)
+    /// <summary>Creates a copy with an updated CLR type and optional type symbol.</summary>
+    public CapturedValueExpr WithClrType(string clrType, Microsoft.CodeAnalysis.ITypeSymbol? typeSymbol = null)
     {
-        if (ClrType == clrType) return this;
-        return new CapturedValueExpr(VariableName, SyntaxText, clrType, ExpressionPath, IsStaticField);
+        if (ClrType == clrType && typeSymbol == null && TypeSymbol == null) return this;
+        return new CapturedValueExpr(VariableName, SyntaxText, clrType, ExpressionPath, IsStaticField, typeSymbol ?? TypeSymbol);
     }
 
     /// <summary>Creates a copy with the IsStaticField flag set.</summary>
     public CapturedValueExpr WithStaticField(bool isStaticField)
     {
         if (IsStaticField == isStaticField) return this;
-        return new CapturedValueExpr(VariableName, SyntaxText, ClrType, ExpressionPath, isStaticField);
+        return new CapturedValueExpr(VariableName, SyntaxText, ClrType, ExpressionPath, isStaticField, TypeSymbol);
     }
 
     protected override bool DeepEquals(SqlExpr other)
