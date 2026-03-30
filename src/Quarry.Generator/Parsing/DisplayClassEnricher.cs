@@ -18,6 +18,7 @@ internal static class DisplayClassEnricher
     public static ImmutableArray<RawCallSite> EnrichAll(
         ImmutableArray<RawCallSite> sites,
         Compilation compilation,
+        EntityRegistry entityRegistry,
         CancellationToken cancellationToken)
     {
         if (sites.Length == 0)
@@ -106,7 +107,7 @@ internal static class DisplayClassEnricher
             {
                 site.CaptureKind = CaptureKind.ClosureCapture;
                 site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(
-                    dataFlow, analysisResult.SemanticModel);
+                    dataFlow, analysisResult.SemanticModel, entityRegistry);
             }
             else
             {
