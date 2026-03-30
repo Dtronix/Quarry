@@ -54,7 +54,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         ImmutableArray<string>? lambdaParameterNames = null,
         ImmutableArray<string>? batchInsertColumnNames = null,
         bool isPreparedTerminal = false,
-        string? preparedQueryEscapeReason = null)
+        string? preparedQueryEscapeReason = null,
+        bool isValueTypeResult = false)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -97,6 +98,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         BatchInsertColumnNames = batchInsertColumnNames;
         IsPreparedTerminal = isPreparedTerminal;
         PreparedQueryEscapeReason = preparedQueryEscapeReason;
+        IsValueTypeResult = isValueTypeResult;
     }
 
     // Identity and location
@@ -174,6 +176,11 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Non-null when a .Prepare() result variable escapes scope (returned, field-assigned, passed as arg, captured in lambda)
     public string? PreparedQueryEscapeReason { get; }
 
+    // True when TResult is a value type (tuple, primitive, enum, struct).
+    // For ExecuteFetchFirstOrDefault, the interceptor must NOT append ? for value types
+    // because the interface uses unconstrained TResult? which doesn't create Nullable<T> for value types.
+    public bool IsValueTypeResult { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -233,7 +240,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             lambdaParameterNames: LambdaParameterNames,
             batchInsertColumnNames: BatchInsertColumnNames,
             isPreparedTerminal: IsPreparedTerminal,
-            preparedQueryEscapeReason: PreparedQueryEscapeReason);
+            preparedQueryEscapeReason: PreparedQueryEscapeReason,
+            isValueTypeResult: IsValueTypeResult);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -285,7 +293,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && ImmutableArrayEqual(LambdaParameterNames, other.LambdaParameterNames)
             && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames)
             && IsPreparedTerminal == other.IsPreparedTerminal
-            && PreparedQueryEscapeReason == other.PreparedQueryEscapeReason;
+            && PreparedQueryEscapeReason == other.PreparedQueryEscapeReason
+            && IsValueTypeResult == other.IsValueTypeResult;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

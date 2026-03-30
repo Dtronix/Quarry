@@ -1880,4 +1880,223 @@ static async Task<int> Scenario2(TestDbContext db)
         Assert.That(carrierCount, Is.GreaterThanOrEqualTo(2),
             "Each local function's chain should produce a separate carrier class");
     }
+
+    // ── Fix regression tests ──────────────────────────────────────────────
+
+    [Test]
+    public void QuarryContextPassedToHelper_DoesNotTriggerQRY032()
+    {
+        // Reproduces a common pattern: a method uses db for its own
+        // chains AND passes db to a helper method that also uses Quarry chains.
+        var source = SharedSchema + @"
+public class LogSchema : Schema
+{
+    public static string Table => ""logs"";
+    public Key<int> LogId => Identity();
+    public Col<string> Text => Length(500);
+    public Col<int> UserId { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Log> Logs();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Create(TestDbContext db, string name)
+    {
+        var id = await db.Users().Insert(new User { UserName = name }).ExecuteScalarAsync<int>();
+
+        // Passing the context to a helper must not flag the chain above
+        await InsertLog(db, id);
+    }
+
+    private static async System.Threading.Tasks.Task InsertLog(TestDbContext db, int userId)
+    {
+        await db.Logs().Insert(new Log { Text = ""created"", UserId = userId }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Empty,
+            $"Passing QuarryContext to a helper should not trigger QRY032. Got: {string.Join("; ", qry032.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors for both methods");
+    }
+
+    [Test]
+    public void ChainFullyInsideLoop_DoesNotTriggerQRY032()
+    {
+        // A chain that starts AND terminates inside a loop body is fine:
+        // the SQL shape is constant, only parameter values change per iteration.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task DeleteMany(TestDbContext db, int[] ids)
+    {
+        foreach (var id in ids)
+        {
+            await db.Users().Delete().Where(u => u.UserId == id).ExecuteNonQueryAsync();
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Empty,
+            $"Chain fully inside loop should not trigger QRY032. Got: {string.Join("; ", qry032.Select(d => d.GetMessage()))}");
+    }
+
+    [Test]
+    public void ChainCrossingLoopBoundary_TriggersQRY032()
+    {
+        // A chain where the root is outside a loop but a clause is inside
+        // crosses a loop boundary and must be rejected.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task CrossBoundary(TestDbContext db, int[] ids)
+    {
+        var q = db.Users().Delete();
+        foreach (var id in ids)
+        {
+            await q.Where(u => u.UserId == id).ExecuteNonQueryAsync();
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Not.Empty,
+            "Chain crossing a loop boundary should produce QRY032");
+        Assert.That(qry032[0].GetMessage(), Does.Contain("loop boundary"),
+            "Diagnostic should specifically cite loop boundary, not fork or other reason");
+    }
+
+    [Test]
+    public void FirstOrDefault_ValueTypeResult_NoNullableSuffix()
+    {
+        // For value-type TResult (tuple), the interceptor return type must be
+        // Task<T> (not Task<T?>) because unconstrained TResult? on the interface
+        // doesn't create Nullable<T> for value types.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db, int id)
+    {
+        // Tuple projection → value type
+        var tuple = await db.Users()
+            .Where(u => u.UserId == id)
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchFirstOrDefaultAsync();
+
+        // Single value-type column projection
+        var scalar = await db.Users()
+            .Where(u => u.UserId == id)
+            .Select(u => u.UserId)
+            .ExecuteFetchFirstOrDefaultAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Empty,
+            $"Should not produce QRY032. Got: {string.Join("; ", qry032.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null);
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Tuple: must be Task<(int, string)> not Task<(int, string)?>
+        Assert.That(code, Does.Contain("Task<(int UserId, string UserName)>"),
+            "Tuple value-type result should NOT have nullable suffix");
+        Assert.That(code, Does.Not.Contain("Task<(int UserId, string UserName)?>"),
+            "Tuple value-type result must not produce Nullable<ValueTuple>");
+
+        // Single int column: must be Task<int> not Task<int?>
+        Assert.That(code, Does.Contain("Task<int>"),
+            "Primitive value-type result should NOT have nullable suffix");
+    }
+
+    [Test]
+    public void FirstOrDefault_ReferenceTypeResult_HasNullableSuffix()
+    {
+        // For reference-type TResult (entity class), the interceptor return type
+        // must be Task<T?> because unconstrained TResult? adds nullable annotation
+        // for reference types.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db, int id)
+    {
+        var user = await db.Users()
+            .Where(u => u.UserId == id)
+            .Select(u => u)
+            .ExecuteFetchFirstOrDefaultAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.Where(d => d.Id == "QRY032").ToList();
+        Assert.That(qry032, Is.Empty,
+            $"Should not produce QRY032. Got: {string.Join("; ", qry032.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null);
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Entity (reference type): must be Task<User?> with nullable suffix
+        Assert.That(code, Does.Contain("Task<User?>"),
+            "Reference-type result should have nullable suffix for FirstOrDefault");
+    }
+
 }
