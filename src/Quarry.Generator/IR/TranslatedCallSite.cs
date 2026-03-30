@@ -84,20 +84,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         IReadOnlyList<string> joinedEntityTypeNames,
         IReadOnlyList<EntityRef>? joinedEntities)
     {
-        var newBound = new BoundCallSite(
-            raw: Bound.Raw,
-            contextClassName: Bound.ContextClassName,
-            contextNamespace: Bound.ContextNamespace,
-            dialect: Bound.Dialect,
-            tableName: Bound.TableName,
-            schemaName: Bound.SchemaName,
-            entity: Bound.Entity,
-            joinedEntity: Bound.JoinedEntity,
-            joinedEntityTypeNames: joinedEntityTypeNames,
-            joinedEntities: joinedEntities,
-            insertInfo: Bound.InsertInfo,
-            updateInfo: Bound.UpdateInfo,
-            rawSqlTypeInfo: Bound.RawSqlTypeInfo);
+        var newBound = Bound.WithJoinedEntities(joinedEntityTypeNames, joinedEntities);
         return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
     }
 

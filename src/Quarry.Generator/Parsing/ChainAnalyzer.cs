@@ -290,27 +290,14 @@ internal static class ChainAnalyzer
                     }
                     if (!seenJoin && clauseSites[i].Clause != null && clauseSites[i].Bound.Raw.Expression != null)
                     {
-                        var origBound = clauseSites[i].Bound;
-                        var enrichedBound = new BoundCallSite(
-                            raw: origBound.Raw,
-                            contextClassName: origBound.ContextClassName,
-                            contextNamespace: origBound.ContextNamespace,
-                            dialect: origBound.Dialect,
-                            tableName: origBound.TableName,
-                            schemaName: origBound.SchemaName,
-                            entity: origBound.Entity,
-                            joinedEntity: origBound.JoinedEntity,
-                            joinedEntityTypeNames: origBound.JoinedEntityTypeNames,
-                            joinedEntities: resolvedJoinEntities,
-                            insertInfo: origBound.InsertInfo,
-                            updateInfo: origBound.UpdateInfo,
-                            rawSqlTypeInfo: origBound.RawSqlTypeInfo);
+                        var enrichedBound = clauseSites[i].Bound.WithJoinedEntities(
+                            joinedEntities: resolvedJoinEntities);
 
                         var retranslated = CallSiteTranslator.Translate(enrichedBound, registry, ct);
                         if (retranslated.Clause != null)
                         {
                             clauseSites[i] = new TranslatedCallSite(
-                                origBound, retranslated.Clause,
+                                clauseSites[i].Bound, retranslated.Clause,
                                 retranslated.KeyTypeName, retranslated.ValueTypeName);
                         }
                     }

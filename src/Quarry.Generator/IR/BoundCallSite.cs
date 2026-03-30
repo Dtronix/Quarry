@@ -92,6 +92,30 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             rawSqlTypeInfo: RawSqlTypeInfo);
     }
 
+    /// <summary>
+    /// Creates a copy with updated joined entity metadata, preserving all other binding state.
+    /// Used during chain analysis to propagate resolved join entities to pre-join clause sites.
+    /// </summary>
+    internal BoundCallSite WithJoinedEntities(
+        IReadOnlyList<string>? joinedEntityTypeNames = null,
+        IReadOnlyList<EntityRef>? joinedEntities = null)
+    {
+        return new BoundCallSite(
+            raw: Raw,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            dialect: Dialect,
+            tableName: TableName,
+            schemaName: SchemaName,
+            entity: Entity,
+            joinedEntity: JoinedEntity,
+            joinedEntityTypeNames: joinedEntityTypeNames ?? JoinedEntityTypeNames,
+            joinedEntities: joinedEntities ?? JoinedEntities,
+            insertInfo: InsertInfo,
+            updateInfo: UpdateInfo,
+            rawSqlTypeInfo: RawSqlTypeInfo);
+    }
+
     public bool Equals(BoundCallSite? other)
     {
         if (other is null) return false;
