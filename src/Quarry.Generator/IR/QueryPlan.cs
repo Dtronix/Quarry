@@ -342,7 +342,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         string? collectionAccessExpression = null,
         string? capturedFieldName = null,
         string? capturedFieldType = null,
-        bool isStaticCapture = false)
+        bool isStaticCapture = false,
+        bool isEnumerableCollection = false)
     {
         GlobalIndex = globalIndex;
         ClrType = clrType;
@@ -362,6 +363,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
         CapturedFieldName = capturedFieldName;
         CapturedFieldType = capturedFieldType;
         IsStaticCapture = isStaticCapture;
+        IsEnumerableCollection = isEnumerableCollection;
     }
 
     public int GlobalIndex { get; }
@@ -382,6 +384,38 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
     public string? CapturedFieldName { get; }
     public string? CapturedFieldType { get; }
     public bool IsStaticCapture { get; }
+    public bool IsEnumerableCollection { get; }
+
+    /// <summary>
+    /// Creates a copy with updated column enrichment metadata. All other fields are preserved.
+    /// This is the single copy-point for enrichment — avoids the fragile pattern of manually
+    /// reconstructing all 19 constructor arguments at each enrichment call site.
+    /// </summary>
+    internal QueryParameter WithEnrichment(bool isEnum, string? enumUnderlyingType, bool isSensitive)
+    {
+        if (IsEnum == isEnum && EnumUnderlyingType == enumUnderlyingType && IsSensitive == isSensitive)
+            return this;
+        return new QueryParameter(
+            globalIndex: GlobalIndex,
+            clrType: ClrType,
+            valueExpression: ValueExpression,
+            isCaptured: IsCaptured,
+            expressionPath: ExpressionPath,
+            isCollection: IsCollection,
+            elementTypeName: ElementTypeName,
+            typeMappingClass: TypeMappingClass,
+            isEnum: isEnum,
+            enumUnderlyingType: enumUnderlyingType,
+            isSensitive: isSensitive,
+            entityPropertyExpression: EntityPropertyExpression,
+            needsUnsafeAccessor: NeedsUnsafeAccessor,
+            isDirectAccessible: IsDirectAccessible,
+            collectionAccessExpression: CollectionAccessExpression,
+            capturedFieldName: CapturedFieldName,
+            capturedFieldType: CapturedFieldType,
+            isStaticCapture: IsStaticCapture,
+            isEnumerableCollection: IsEnumerableCollection);
+    }
 
     public bool Equals(QueryParameter? other)
     {
@@ -400,7 +434,8 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
             && IsSensitive == other.IsSensitive
             && CapturedFieldName == other.CapturedFieldName
             && CapturedFieldType == other.CapturedFieldType
-            && IsStaticCapture == other.IsStaticCapture;
+            && IsStaticCapture == other.IsStaticCapture
+            && IsEnumerableCollection == other.IsEnumerableCollection;
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryParameter);

@@ -46,8 +46,24 @@ internal static class TerminalEmitHelpers
         {
             if (!param.IsCollection) continue;
 
-            sb.AppendLine($"        var __col{param.GlobalIndex} = __c.P{param.GlobalIndex};");
-            sb.AppendLine($"        var __col{param.GlobalIndex}Len = __col{param.GlobalIndex}.Count;");
+            var idx = param.GlobalIndex;
+
+            if (param.IsEnumerableCollection)
+                sb.AppendLine($"        var __col{idx} = Quarry.Internal.CollectionHelper.Materialize(__c.P{idx});");
+            else
+                sb.AppendLine($"        var __col{idx} = __c.P{idx};");
+            sb.AppendLine($"        var __col{idx}Len = __col{idx}.Count;");
+            sb.AppendLine($"        string[] __col{idx}Parts;");
+
+            // Empty collection guard: replace the IN token with a subquery returning no rows.
+            // This makes IN (...) always false and NOT IN (...) always true — correct for both.
+            sb.AppendLine($"        if (__col{idx}Len == 0)");
+            sb.AppendLine($"        {{");
+            sb.AppendLine($"            __col{idx}Parts = System.Array.Empty<string>();");
+            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", \"SELECT 1 WHERE 1=0\");");
+            sb.AppendLine($"        }}");
+            sb.AppendLine($"        else");
+            sb.AppendLine($"        {{");
 
             var dialectPrefix = chain.Dialect switch
             {
@@ -57,15 +73,16 @@ internal static class TerminalEmitHelpers
             var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
             var isMySQL = chain.Dialect == SqlDialect.MySQL;
 
-            sb.AppendLine($"        var __col{param.GlobalIndex}Parts = new string[__col{param.GlobalIndex}Len];");
-            sb.AppendLine($"        for (int __i = 0; __i < __col{param.GlobalIndex}Len; __i++)");
+            sb.AppendLine($"            __col{idx}Parts = new string[__col{idx}Len];");
+            sb.AppendLine($"            for (int __i = 0; __i < __col{idx}Len; __i++)");
             if (isMySQL)
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"?\";");
+                sb.AppendLine($"                __col{idx}Parts[__i] = \"?\";");
             else if (isPostgres)
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"$\" + (__i + 1);");
+                sb.AppendLine($"                __col{idx}Parts[__i] = \"$\" + (__i + 1);");
             else
-                sb.AppendLine($"            __col{param.GlobalIndex}Parts[__i] = \"{dialectPrefix}\" + __i;");
-            sb.AppendLine($"        sql = sql.Replace(\"{{__COL_P{param.GlobalIndex}__}}\", string.Join(\", \", __col{param.GlobalIndex}Parts));");
+                sb.AppendLine($"                __col{idx}Parts[__i] = \"{dialectPrefix}\" + __i;");
+            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", string.Join(\", \", __col{idx}Parts));");
+            sb.AppendLine($"        }}");
         }
     }
 
@@ -314,7 +331,7 @@ internal static class TerminalEmitHelpers
             foreach (var p in clause.Site.Clause!.Parameters.Where(p => p.IsCollection))
             {
                 var globalIdx = offset + p.Index;
-                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", string.Join(\", \", __col{globalIdx}Parts));");
+                sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", __col{globalIdx}Len == 0 ? \"SELECT 1 WHERE 1=0\" : string.Join(\", \", __col{globalIdx}Parts));");
             }
         }
 

@@ -101,6 +101,7 @@ internal static class SqlExprClauseTranslator
                         paramInfo.CollectionElementType = elementType;
                         paramInfo.CapturedFieldName = captured.VariableName;
                         paramInfo.IsStaticCapture = captured.IsStaticField;
+                        paramInfo.CollectionReceiverSymbol = captured.TypeSymbol;
                         parameters.Add(paramInfo);
                         newValues[i] = new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
                             isCaptured: true, expressionPath: "__CONTAINS_COLLECTION__",

@@ -290,27 +290,14 @@ internal static class ChainAnalyzer
                     }
                     if (!seenJoin && clauseSites[i].Clause != null && clauseSites[i].Bound.Raw.Expression != null)
                     {
-                        var origBound = clauseSites[i].Bound;
-                        var enrichedBound = new BoundCallSite(
-                            raw: origBound.Raw,
-                            contextClassName: origBound.ContextClassName,
-                            contextNamespace: origBound.ContextNamespace,
-                            dialect: origBound.Dialect,
-                            tableName: origBound.TableName,
-                            schemaName: origBound.SchemaName,
-                            entity: origBound.Entity,
-                            joinedEntity: origBound.JoinedEntity,
-                            joinedEntityTypeNames: origBound.JoinedEntityTypeNames,
-                            joinedEntities: resolvedJoinEntities,
-                            insertInfo: origBound.InsertInfo,
-                            updateInfo: origBound.UpdateInfo,
-                            rawSqlTypeInfo: origBound.RawSqlTypeInfo);
+                        var enrichedBound = clauseSites[i].Bound.WithJoinedEntities(
+                            joinedEntities: resolvedJoinEntities);
 
                         var retranslated = CallSiteTranslator.Translate(enrichedBound, registry, ct);
                         if (retranslated.Clause != null)
                         {
                             clauseSites[i] = new TranslatedCallSite(
-                                origBound, retranslated.Clause,
+                                clauseSites[i].Bound, retranslated.Clause,
                                 retranslated.KeyTypeName, retranslated.ValueTypeName);
                         }
                     }
@@ -769,9 +756,44 @@ internal static class ChainAnalyzer
                 collectionAccessExpression: null, // Computed during carrier analysis
                 capturedFieldName: p.CapturedFieldName,
                 capturedFieldType: p.CapturedFieldType,
-                isStaticCapture: p.IsStaticCapture));
+                isStaticCapture: p.IsStaticCapture,
+                isEnumerableCollection: IsEnumerableOnlyCollection(p)));
         }
         return result;
+    }
+
+    /// <summary>
+    /// Determines whether a collection parameter's type only implements IEnumerable&lt;T&gt;
+    /// (not IReadOnlyList&lt;T&gt;). Arrays and types implementing IReadOnlyList return false.
+    /// </summary>
+    private static bool IsEnumerableOnlyCollection(ParameterInfo p)
+    {
+        if (!p.IsCollection || p.CollectionReceiverSymbol is not Microsoft.CodeAnalysis.ITypeSymbol typeSymbol)
+            return false;
+
+        // Arrays implement IReadOnlyList<T>
+        if (typeSymbol is Microsoft.CodeAnalysis.IArrayTypeSymbol)
+            return false;
+
+        // Check the type itself (if it's an interface like IReadOnlyList<T>)
+        if (IsReadOnlyListInterface(typeSymbol))
+            return false;
+
+        // Check all implemented interfaces
+        foreach (var iface in typeSymbol.AllInterfaces)
+        {
+            if (IsReadOnlyListInterface(iface))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsReadOnlyListInterface(Microsoft.CodeAnalysis.ITypeSymbol type)
+    {
+        return type is Microsoft.CodeAnalysis.INamedTypeSymbol named
+            && named.Name == "IReadOnlyList"
+            && named.ContainingNamespace?.ToDisplayString() == "System.Collections.Generic";
     }
 
     /// <summary>
@@ -834,28 +856,7 @@ internal static class ChainAnalyzer
             // Default to "int" — the most common underlying type for C# enums.
             var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
-            // Skip if nothing changed
-            if (isEnum == p.IsEnum && isSensitive == p.IsSensitive && enumUnderlying == p.EnumUnderlyingType)
-                continue;
-
-            clauseParams[i] = new QueryParameter(
-                globalIndex: p.GlobalIndex,
-                clrType: p.ClrType,
-                valueExpression: p.ValueExpression,
-                isCaptured: p.IsCaptured,
-                expressionPath: p.ExpressionPath,
-                isCollection: p.IsCollection,
-                elementTypeName: p.ElementTypeName,
-                typeMappingClass: p.TypeMappingClass,
-                isEnum: isEnum,
-                enumUnderlyingType: enumUnderlying,
-                isSensitive: isSensitive,
-                entityPropertyExpression: p.EntityPropertyExpression,
-                needsUnsafeAccessor: p.NeedsUnsafeAccessor,
-                isDirectAccessible: p.IsDirectAccessible,
-                collectionAccessExpression: p.CollectionAccessExpression,
-                capturedFieldName: p.CapturedFieldName,
-                capturedFieldType: p.CapturedFieldType);
+            clauseParams[i] = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
         }
     }
 
@@ -896,26 +897,9 @@ internal static class ChainAnalyzer
                 var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
                 var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
 
-                if (isEnum != p.IsEnum || isSensitive != p.IsSensitive || enumUnderlying != p.EnumUnderlyingType)
+                var enriched = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+                if (!ReferenceEquals(enriched, p))
                 {
-                    var enriched = new QueryParameter(
-                        globalIndex: p.GlobalIndex,
-                        clrType: p.ClrType,
-                        valueExpression: p.ValueExpression,
-                        isCaptured: p.IsCaptured,
-                        expressionPath: p.ExpressionPath,
-                        isCollection: p.IsCollection,
-                        elementTypeName: p.ElementTypeName,
-                        typeMappingClass: p.TypeMappingClass,
-                        isEnum: isEnum,
-                        enumUnderlyingType: enumUnderlying,
-                        isSensitive: isSensitive,
-                        entityPropertyExpression: p.EntityPropertyExpression,
-                        needsUnsafeAccessor: p.NeedsUnsafeAccessor,
-                        isDirectAccessible: p.IsDirectAccessible,
-                        collectionAccessExpression: p.CollectionAccessExpression,
-                        capturedFieldName: p.CapturedFieldName,
-                        capturedFieldType: p.CapturedFieldType);
                     clauseParams[paramIdx] = enriched;
 
                     // Also update in allParameters if already added

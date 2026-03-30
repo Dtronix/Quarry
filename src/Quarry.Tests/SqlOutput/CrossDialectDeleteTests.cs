@@ -136,6 +136,36 @@ internal class CrossDialectDeleteTests
 
     #endregion
 
+    #region Contains (IN clause)
+
+    private static readonly int[] _deleteIds = new[] { 1, 2 };
+
+    [Test]
+    public async Task Delete_Where_Contains()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Delete().Where(u => _deleteIds.Contains(u.UserId)).Prepare();
+        var pg = Pg.Users().Delete().Where(u => _deleteIds.Contains(u.UserId)).Prepare();
+        var my = My.Users().Delete().Where(u => _deleteIds.Contains(u.UserId)).Prepare();
+        var ss = Ss.Users().Delete().Where(u => _deleteIds.Contains(u.UserId)).Prepare();
+
+        // Static readonly with constant initializer → inlined literals
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "DELETE FROM \"users\" WHERE \"UserId\" IN (1, 2)",
+            pg:     "DELETE FROM \"users\" WHERE \"UserId\" IN (1, 2)",
+            mysql:  "DELETE FROM `users` WHERE `UserId` IN (1, 2)",
+            ss:     "DELETE FROM [users] WHERE [UserId] IN (1, 2)");
+
+        var affected = await lt.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(2)); // Alice (1) and Bob (2)
+    }
+
+    #endregion
+
     #region Other Entities
 
     [Test]
