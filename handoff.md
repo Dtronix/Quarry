@@ -9,40 +9,50 @@
 - `src/Quarry.Generator/Models/InsertInfo.cs` — Added `EnumUnderlyingType` to `InsertColumnInfo`
 
 ## Completions (This Session)
-- **Phase 1**: Consolidated `TypeClassification` — unified 4 ValueType HashSets, 4 GetReaderMethod implementations, 3 IsUnresolvedTypeName implementations, 3 BuildTupleTypeName implementations into single class. ~200 lines removed across 11 files.
-- **Phase 2**: Extracted `ResolveSiteParams` helper — replaced 7 duplicated parameter offset loops in ClauseBodyEmitter, JoinBodyEmitter, CarrierEmitter. Added comprehensive 3-source offset counting to diagnostic methods.
-- **Phase 3**: Renamed `ConditionalInfo` → `NestingContext` and `DetectConditionalAncestor` → `DetectNestingContext` across 7 files. Clarifies structural metadata vs conditional-inclusion semantics.
-- **Phase 4**: Fixed enum underlying type in insert path — `GetColumnValueExpression` now uses dynamic type instead of hardcoded `(int)`. Extracted `EnrichParameterFromColumn` helper in ChainAnalyzer.
-- **Phase 5**: Deleted duplicate `JoinBodyEmitter.GetJoinedBuilderTypeName`. Extracted `IsBrokenTupleType` helper replacing 4 inline expressions.
-- **Phase 6**: Added `PipelineError` to `TranslatedCallSite`. Replaced silent catch blocks with exception capture, surfaced as QRY900 diagnostics.
-- **Phase 7**: Deleted dead `CarrierStrategy`/`CarrierField`/`CarrierStaticField` (replaced by `CarrierPlan`). Moved `CarrierParameter` to own file. Merged `EmitCarrierNonQueryTerminal` into `EmitCarrierExecutionTerminal`.
+- Wrote `impl-plan-gen-consolidation2.md` — 6-phase follow-up plan addressing code review findings
 
 ## Previous Session Completions
-- None (first session)
+- **Phase 1**: Consolidated `TypeClassification` — unified 4 ValueType HashSets, 4 GetReaderMethod implementations, 3 IsUnresolvedTypeName implementations, 3 BuildTupleTypeName implementations. ~200 lines removed across 11 files.
+- **Phase 2**: Extracted `ResolveSiteParams` helper — replaced 7 duplicated parameter offset loops. Added comprehensive 3-source offset counting to diagnostic methods.
+- **Phase 3**: Renamed `ConditionalInfo` → `NestingContext` and `DetectConditionalAncestor` → `DetectNestingContext` across 7 files.
+- **Phase 4**: Fixed enum underlying type in insert path. Extracted `EnrichParameterFromColumn` helper.
+- **Phase 5**: Deleted duplicate `JoinBodyEmitter.GetJoinedBuilderTypeName`. Extracted `IsBrokenTupleType` helper.
+- **Phase 6**: Added `PipelineError` to `TranslatedCallSite`. Replaced silent catch blocks with exception capture.
+- **Phase 7**: Deleted dead `CarrierStrategy`/`CarrierField`/`CarrierStaticField`. Merged `EmitCarrierNonQueryTerminal`.
 
 ## Progress
-All 7 phases from `impl-plan-gen-consolidation.md` completed. 7 commits, 26 files changed, ~550 net lines removed. All 2259 tests pass.
+Phase 1 consolidation: 7/7 phases complete (8 commits on `feat/generator-consolidation`). Phase 2 plan written, 0/6 phases implemented.
 
 ## Current State
-Branch `feat/generator-consolidation` is ready for review. All phases implemented and tested.
+Branch `feat/generator-consolidation` has all Phase 1 work. Phase 2 plan is in `impl-plan-gen-consolidation2.md` and covers 6 follow-up phases (A–F) addressing code review findings.
 
 ## Known Issues / Bugs
-- `ProjectionAnalyzer` uses `treatObjectAsUnresolved: false` to preserve its original semantics where `"object"` is a valid fallback type. The plan called this a "correctness fix" to treat `"object"` as unresolved everywhere, but this breaks identity Select projections (`.Select(p => p)` on generated entities produces `Func<Product, string>` instead of `Func<Product, Product>`). The root cause: when all projection columns have `ClrType == "object"` and enrichment reduces columns to 1, ChainAnalyzer takes the first column's type as the result type.
-- Phase 5 steps 5.2.1 (compound expression wrapping), 5.2.2 (EmitCarrierClauseBody consolidation), 5.2.4 (terminal return type helpers), and 5.2.6 (insert column binding helper) were not implemented — they are lower-priority refactors with higher risk/complexity ratio.
-- Phase 7 steps 7.1 (ChainResultTypeResolver extraction) and 7.2 (subquery parameter walker unification) were not implemented — these are high-disruption changes best done as separate PRs.
+- **Stage 3 (Bind) silent drop**: Binding failures return `Empty` with only `Debug.WriteLine`. No QRY900 diagnostic. User sees runtime `InvalidOperationException`. Plan Phase A fixes via side-channel error bag.
+- **`WithResolvedResultType` drops `PipelineError`**: Copy method constructs new `TranslatedCallSite` without forwarding `pipelineError`. Plan Phase A.2.3 fixes.
+- **`ChainMemberSites` not checked for pipeline errors**: Error reporting loop only iterates `group.Sites`. Plan Phase A.2.2 fixes.
+- **`IsUnresolvedResultType` nested tuple parsing**: `string.Split(',')` fails on `(int, (string, object))`. Plan Phase C fixes with depth-aware splitter.
+- **`GetFieldValue<DateTimeOffset>` provider compatibility**: `ColumnInfo.GetReaderMethodByTypeName` changed from `GetValue` to `GetFieldValue<T>`. Needs integration test. Plan Phase D.
+- **`IsUnresolvedTypeName` boolean parameter trap**: `treatObjectAsUnresolved` default caused identity-Select regression during Phase 1 development. Plan Phase B renames to separate methods.
+- **Dead `GetReaderMethod(string, out bool)` overload**: Zero callers. Plan Phase A.2.5 removes.
+
+## Dependencies / Blockers
+- None. All work is self-contained within the generator project.
 
 ## Architecture Decisions
-- **`IsUnresolvedTypeName` has `treatObjectAsUnresolved` parameter**: ProjectionAnalyzer and ChainAnalyzer had intentionally different semantics about `"object"`. Forcing the unified `"object"` check everywhere broke identity Select. The parameter preserves both behaviors while consolidating into one method.
-- **`BuildTupleTypeName` always wraps in parens**: The plan suggested returning raw type for single columns, but callers depend on tuple syntax. Removed the optimization.
-- **`ColumnInfo.GetReaderMethodByTypeName` now uses `GetFieldValue<T>` for DateTimeOffset/TimeSpan/DateOnly/TimeOnly**: This is a correctness fix (ADO.NET spec). The old `GetValue` returns `object` requiring boxing; `GetFieldValue<T>` returns typed values directly.
-- **Phase 6 captures exceptions on `TranslatedCallSite` only**: The Bind stage's catch block still returns `Empty` (no individual site to carry the error on), but logs to `Debug.WriteLine`. Only the Translate stage carries errors through the pipeline to the output stage.
+- **Side-channel error bag for Stage 3**: Incremental pipeline `SelectMany` cannot carry per-site errors because failed Bind produces no `BoundCallSite`. A static `ConcurrentBag` scoped by generation is the pragmatic solution. The bag is global (not per-file), so errors may be reported in the first file's output stage call.
+- **`IsUnresolvedTypeName` vs `IsUnresolvedTypeNameLenient`**: Separate methods replace boolean parameter. Self-documenting names prevent the identity-Select regression class of bugs.
+- **`BuildTupleTypeName` always wraps in parens**: The plan suggested returning raw type for single columns, but callers depend on tuple syntax. Optimization removed.
+- **`ColumnInfo.GetReaderMethodByTypeName` uses `GetFieldValue<T>`**: Correctness fix per ADO.NET spec. Pending integration test verification.
+- **Phase 6 captures exceptions on `TranslatedCallSite` only**: Stage 4 (Translate) carries errors through the pipeline. Stage 3 (Bind) uses a side-channel bag since there's no site to attach to.
 
 ## Open Questions
-- Should the `ProjectionAnalyzer` eventually adopt `treatObjectAsUnresolved: true`? This would require ChainAnalyzer to handle the identity Select result type resolution differently (e.g., falling back to entity type name when all columns need enrichment).
-- Phase 5's remaining sub-steps (5.2.1, 5.2.2, 5.2.4, 5.2.6) — worth implementing in a follow-up or defer indefinitely?
+- Should `ColumnInfo.GetReaderMethodByTypeName` be dialect-aware for `DateTimeOffset`? Current implementation is dialect-agnostic. Only needed if a provider fails with `GetFieldValue<DateTimeOffset>`.
+- Phase 7.1 (ChainResultTypeResolver extraction) and 7.2 (subquery parameter walker unification) — continue deferring or include in a future plan?
 
 ## Next Work (Priority Order)
-1. **Review and merge** — All phases pass the full test suite. Ready for code review.
-2. **Phase 5 remaining sub-steps** (optional) — Compound expression wrapping, EmitCarrierClauseBody consolidation, terminal return type helpers, insert column binding helper. Lower priority, moderate complexity.
-3. **Phase 7.1: ChainResultTypeResolver** (optional) — Extract type resolution from DisplayClassNameResolver into dedicated class. High disruption, defer until the resolver accumulates more fallback cases.
-4. **Phase 7.2: Subquery parameter walker** (optional) — Merge ExtractParameters and ExtractSubqueryPredicateParams. The subquery version misses InExpr/IsNullCheckExpr/RawCallExpr node types.
+1. **Phase A: Pipeline error reliability fixes** — Side-channel error bag for Stage 3, forward PipelineError in copy methods, fix error location, check ChainMemberSites, remove dead overload.
+2. **Phase B: Rename IsUnresolvedTypeName** — Split into `IsUnresolvedTypeName` + `IsUnresolvedTypeNameLenient`. Mechanical rename, 8 files.
+3. **Phase C: Fix nested tuple parsing** — Depth-aware comma splitting in `IsUnresolvedResultType`.
+4. **Phase D: DateTimeOffset integration test** — Verify `GetFieldValue<DateTimeOffset>` round-trips correctly across providers.
+5. **Phase E: Remaining Phase 5 emitter sub-steps** — Compound wrapping helper, EmitCarrierClauseBody consolidation, terminal return type helpers, insert column binding helper.
+6. **Phase F: TypeClassification unit tests** — ~80-100 unit tests covering all consolidated methods.
