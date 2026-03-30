@@ -915,7 +915,10 @@ internal static class CarrierEmitter
                 else
                 {
                     sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
-                    sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
+                    if (param.ElementTypeName != null && IsNonNullableValueType(param.ElementTypeName))
+                        sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li].ToString());");
+                    else
+                        sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
                 }
             }
             else if (param.IsSensitive)
