@@ -307,7 +307,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             var diagnostic = Diagnostic.Create(
                 DiagnosticDescriptors.InternalError,
                 contextInfo.Location,
-                $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}");
+                $"Failed to generate code for context '{contextInfo.ClassName}': {ex.Message}\n{ex.StackTrace}");
 
             context.ReportDiagnostic(diagnostic);
         }
@@ -603,7 +603,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             spc.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.InternalError,
                 Location.None,
-                $"Failed to generate interceptors: {ex.Message}"));
+                $"Failed to generate interceptors: {ex.Message}\n{ex.StackTrace}"));
         }
     }
 
