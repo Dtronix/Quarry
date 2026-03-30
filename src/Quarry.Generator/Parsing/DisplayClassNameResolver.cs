@@ -589,8 +589,12 @@ internal static class DisplayClassNameResolver
         if (entityInfo == null)
             return null;
 
+        // Note: we intentionally do NOT append "?" for nullable results (FirstOrDefault).
+        // The CapturedVariableTypes value is used for carrier field types and value expressions
+        // (e.g., fetchedPackage.Id). Nullable wrapping would make member access invalid.
+        // The UnsafeAccessor field type is resolved separately by CarrierAnalyzer.
         if (selectLambda != null)
-            return ResolveProjectionType(selectLambda, entityInfo, isNullableResult, isListResult);
+            return ResolveProjectionType(selectLambda, entityInfo, isListResult);
 
         var contextNs = FindContextNamespaceForEntityInfo(entityInfo, entityRegistry);
         var entityNs = contextNs ?? entityInfo.SchemaNamespace;
@@ -598,8 +602,6 @@ internal static class DisplayClassNameResolver
 
         if (isListResult)
             return "global::System.Collections.Generic.List<" + entityType + ">";
-        if (isNullableResult)
-            return entityType + "?";
         return entityType;
     }
 
@@ -631,8 +633,7 @@ internal static class DisplayClassNameResolver
     /// For tuple projections like <c>p => (p.Id, p.Status, p.Name)</c>, builds a ValueTuple type string.
     /// </summary>
     private static string? ResolveProjectionType(
-        LambdaExpressionSyntax selectLambda, EntityInfo entityInfo,
-        bool isNullableResult, bool isListResult)
+        LambdaExpressionSyntax selectLambda, EntityInfo entityInfo, bool isListResult)
     {
         var body = selectLambda.Body;
 
@@ -666,8 +667,6 @@ internal static class DisplayClassNameResolver
             var tupleType = "(" + string.Join(", ", elementTypes) + ")";
             if (isListResult)
                 return "global::System.Collections.Generic.List<" + tupleType + ">";
-            if (isNullableResult)
-                return tupleType + "?";
             return tupleType;
         }
 
@@ -687,8 +686,6 @@ internal static class DisplayClassNameResolver
 
             if (isListResult)
                 return "global::System.Collections.Generic.List<" + elementType + ">";
-            if (isNullableResult)
-                return elementType + "?";
             return elementType;
         }
 

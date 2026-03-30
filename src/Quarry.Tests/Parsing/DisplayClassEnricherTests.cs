@@ -716,7 +716,9 @@ namespace App
 
         // fetched: tuple from Select projection, nullable because ExecuteFetchFirstOrDefaultAsync
         Assert.That(resolved!, Does.ContainKey("fetched"));
-        Assert.That(resolved!["fetched"], Is.EqualTo("(long Id, int Status, string Name)?"));
+        // Non-nullable: CapturedVariableTypes stores the value-expression type (for carrier fields
+        // and member access). The UnsafeAccessor field type handles nullability separately.
+        Assert.That(resolved!["fetched"], Is.EqualTo("(long Id, int Status, string Name)"));
 
         // derivedName: resolved via second pass from fetched tuple's "Name" element
         Assert.That(resolved!, Does.ContainKey("derivedName"));
