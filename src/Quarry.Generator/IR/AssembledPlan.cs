@@ -134,7 +134,10 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
                 condIdx++;
             }
 
-            entries.Add(new ChainClauseEntry(cs, cs.Bound.Raw.ConditionalInfo != null, bitIndex, role.Value));
+            // A clause is only conditional if it has a matching ConditionalTerm (bitIndex assigned).
+            // Clause sites may have ConditionalInfo from being inside nested control flow without
+            // being genuinely conditional (relative depth <= baseline).
+            entries.Add(new ChainClauseEntry(cs, bitIndex.HasValue, bitIndex, role.Value));
         }
         return entries;
     }
