@@ -805,7 +805,7 @@ internal static class ProjectionAnalyzer
         var result = AnalyzeExpression(body, semanticModel, columns, columnLookup, lambdaParameterName, resultType, entityName, dialect);
 
         // Post-analysis fixup: If result type is still invalid and we have column info, derive from columns
-        if (TypeClassification.IsUnresolvedTypeName(result.ResultTypeName, treatObjectAsUnresolved: false) && result.Columns.Count > 0)
+        if (TypeClassification.IsUnresolvedTypeNameLenient(result.ResultTypeName) && result.Columns.Count > 0)
         {
             // For single column, use the column's type
             if (result.Columns.Count == 1)
@@ -1319,7 +1319,7 @@ internal static class ProjectionAnalyzer
         }
 
         // Fix: If resultType is invalid (e.g., "?"), use the column's type instead
-        var actualResultType = !TypeClassification.IsUnresolvedTypeName(resultType, treatObjectAsUnresolved: false)
+        var actualResultType = !TypeClassification.IsUnresolvedTypeNameLenient(resultType)
             ? resultType
             : (column.IsNullable ? $"{column.FullClrType}?" : column.FullClrType);
 
@@ -1662,7 +1662,7 @@ internal static class ProjectionAnalyzer
         if (argTypeInfo.Type != null && argTypeInfo.Type.TypeKind != TypeKind.Error)
         {
             var name = GetSimpleTypeName(argTypeInfo.Type);
-            if (!TypeClassification.IsUnresolvedTypeName(name, treatObjectAsUnresolved: false))
+            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
                 return name;
         }
 
@@ -1671,7 +1671,7 @@ internal static class ProjectionAnalyzer
         if (invMethodSymbol?.ReturnType != null && invMethodSymbol.ReturnType.TypeKind != TypeKind.Error)
         {
             var name = GetSimpleTypeName(invMethodSymbol.ReturnType);
-            if (!TypeClassification.IsUnresolvedTypeName(name, treatObjectAsUnresolved: false))
+            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
                 return name;
         }
 
@@ -1682,7 +1682,7 @@ internal static class ProjectionAnalyzer
             identifier.Identifier.Text == lambdaParameterName)
         {
             var propertyName = memberAccess.Name.Identifier.Text;
-            if (columnLookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeName(column.ClrType, treatObjectAsUnresolved: false))
+            if (columnLookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
             {
                 return column.ClrType;
             }
@@ -1820,7 +1820,7 @@ internal static class ProjectionAnalyzer
             perParamLookup.TryGetValue(identifier.Identifier.Text, out var info))
         {
             var propertyName = memberAccess.Name.Identifier.Text;
-            if (info.Lookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeName(column.ClrType, treatObjectAsUnresolved: false))
+            if (info.Lookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
                 return column.ClrType;
         }
 
@@ -1901,7 +1901,7 @@ internal static class ProjectionAnalyzer
             return null;
 
         // String methods always return string
-        var actualResultType = !TypeClassification.IsUnresolvedTypeName(resultType, treatObjectAsUnresolved: false) ? resultType : "string";
+        var actualResultType = !TypeClassification.IsUnresolvedTypeNameLenient(resultType) ? resultType : "string";
         return new ProjectionInfo(ProjectionKind.SingleColumn, actualResultType, new[] { col });
     }
 

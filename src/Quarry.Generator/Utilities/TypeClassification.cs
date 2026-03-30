@@ -154,12 +154,31 @@ internal static class TypeClassification
     }
 
     /// <summary>
-    /// Checks if a type name is unresolved (error type from semantic model, empty, or missing).
-    /// By default includes "object" check — semantic model uses "object" for error types.
-    /// Pass <paramref name="treatObjectAsUnresolved"/> = false for contexts where "object"
-    /// is a valid fallback type (e.g., projection analysis before chain-level enrichment).
+    /// Checks if a type name is unresolved. Treats "object" as unresolved because
+    /// the semantic model uses "object" for error types on generated entities.
+    /// Use this in chain analysis and pipeline orchestration.
     /// </summary>
-    public static bool IsUnresolvedTypeName(string? typeName, bool treatObjectAsUnresolved = true)
+    public static bool IsUnresolvedTypeName(string? typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName))
+            return true;
+
+        if (typeName == "?" || typeName == "object")
+            return true;
+
+        // "? " (question mark followed by space) means unresolved type with trailing info
+        if (typeName!.StartsWith("? "))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a type name is unresolved, but treats "object" as a valid resolved type.
+    /// Use this in projection analysis where "object" is a legitimate fallback type
+    /// that will be enriched later by chain-level analysis.
+    /// </summary>
+    public static bool IsUnresolvedTypeNameLenient(string? typeName)
     {
         if (string.IsNullOrWhiteSpace(typeName))
             return true;
@@ -167,10 +186,6 @@ internal static class TypeClassification
         if (typeName == "?")
             return true;
 
-        if (treatObjectAsUnresolved && typeName == "object")
-            return true;
-
-        // "? " (question mark followed by space) means unresolved type with trailing info
         if (typeName!.StartsWith("? "))
             return true;
 
@@ -234,12 +249,12 @@ internal static class TypeClassification
         foreach (var col in columns)
         {
             var typeName = col.ClrType;
-            // Use treatObjectAsUnresolved: false here because this method handles
-            // the "object" fallback explicitly via the fallbackToObject parameter.
-            if (IsUnresolvedTypeName(typeName, treatObjectAsUnresolved: false))
+            // Use lenient check — this method handles the "object" fallback
+            // explicitly via the fallbackToObject parameter.
+            if (IsUnresolvedTypeNameLenient(typeName))
                 typeName = col.FullClrType;
 
-            if (IsUnresolvedTypeName(typeName, treatObjectAsUnresolved: false))
+            if (IsUnresolvedTypeNameLenient(typeName))
             {
                 if (!fallbackToObject)
                     return "";
