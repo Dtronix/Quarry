@@ -537,6 +537,68 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_DeeplyNestedBranches_NoQRY032OrCrash()
+    {
+        // Regression: chains at absolute nesting depth 3 must not trigger QRY032
+        // ("conditional nesting depth exceeds maximum") or QRY900 (crash from
+        // ConditionalInfo present without a matching ConditionalTerm).
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int status, int handler)
+    {
+        if (status == 0)
+        {
+            if (handler == 1)
+            {
+                if (handler == 2)
+                {
+                    await db.Users().Update().Set(u => u.UserName = ""a"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+                }
+
+                await db.Users().Update().Set(u => u.UserName = ""b"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+            }
+            else if (handler == 3)
+            {
+                try
+                {
+                    await db.Users().Update().Set(u => u.UserName = ""c"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+                }
+                catch
+                {
+                    await db.Users().Update().Set(u => u.UserName = ""d"").Where(u => u.UserId == 1).ExecuteNonQueryAsync();
+                }
+            }
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry032 = diagnostics.FirstOrDefault(d => d.Id == "QRY032");
+        Assert.That(qry032, Is.Null, "Should NOT report QRY032 for chains in deeply nested control flow");
+
+        var qry033 = diagnostics.FirstOrDefault(d => d.Id == "QRY033");
+        Assert.That(qry033, Is.Null, "Should NOT report QRY033 for chains in mutually exclusive branches");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Should NOT crash (QRY900) when emitting chains with ConditionalInfo but no conditional terms");
+
+        // Verify interceptors were actually generated (chains compiled successfully)
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptor file for deeply nested chains");
+    }
+
+    [Test]
     public void CarrierGeneration_DeleteWithWhere()
     {
         var source = SharedSchema + @"
