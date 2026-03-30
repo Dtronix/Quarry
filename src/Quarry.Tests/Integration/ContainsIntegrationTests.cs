@@ -97,4 +97,59 @@ internal class ContainsIntegrationTests
     }
 
     #endregion
+
+    #region Empty collection
+
+    [Test]
+    public async Task Select_Where_EmptyListContains_ReturnsNoRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var ids = new List<int>();
+        var results = await Lite.Users()
+            .Where(u => ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Select_Where_EmptyEnumerableContains_ReturnsNoRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        IEnumerable<int> ids = Enumerable.Empty<int>();
+        var results = await Lite.Users()
+            .Where(u => ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Delete_Where_EmptyListContains_DeletesNothing()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var ids = new List<int>();
+        var affected = await Lite.Users()
+            .Delete()
+            .Where(u => ids.Contains(u.UserId))
+            .ExecuteNonQueryAsync();
+
+        Assert.That(affected, Is.EqualTo(0));
+
+        // All 3 users should remain
+        var remaining = await Lite.Users()
+            .Select(u => u.UserName)
+            .ExecuteFetchAllAsync();
+        Assert.That(remaining, Has.Count.EqualTo(3));
+    }
+
+    #endregion
 }
