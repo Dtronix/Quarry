@@ -590,7 +590,12 @@ internal static class DisplayClassNameResolver
         // (e.g., fetchedPackage.Id). Nullable wrapping would make member access invalid.
         // The UnsafeAccessor field type is resolved separately by CarrierAnalyzer.
         if (selectLambda != null)
-            return ResolveProjectionType(selectLambda, entityInfo, isListResult);
+        {
+            var projectionType = ResolveProjectionType(selectLambda, entityInfo, isListResult);
+            if (projectionType != null)
+                return projectionType;
+            // Identity projection (f => f) returns null — fall through to entity type path
+        }
 
         var contextNs = FindContextNamespaceForEntityInfo(entityInfo, entityRegistry);
         var entityNs = contextNs ?? entityInfo.SchemaNamespace;

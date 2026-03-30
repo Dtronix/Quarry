@@ -874,6 +874,33 @@ namespace App
     }
 
     [Test]
+    public void ChainResult_IdentitySelect_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .Select(p => p)
+                .ExecuteFetchFirstOrDefaultAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
     public void ChainResult_MultiContext_DisambiguatesByImportedNamespace()
     {
         // Two contexts reference UserSchema, but the source file imports Quarry.Tests.Samples
