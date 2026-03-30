@@ -264,6 +264,12 @@ internal static partial class InterceptorCodeGenerator
     /// This prevents element names from being emitted as types in interceptor signatures
     /// when the semantic model produces unresolved element types.
     /// </summary>
+    /// <summary>
+    /// Returns true if the result type is a tuple containing unresolved "object" elements.
+    /// </summary>
+    internal static bool IsBrokenTupleType(string resultType)
+        => resultType.StartsWith("(") && resultType.Contains("object");
+
     internal static string SanitizeTupleResultType(string tupleType)
     {
         // Delegate to the full implementation

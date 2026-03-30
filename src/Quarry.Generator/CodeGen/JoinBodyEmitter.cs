@@ -19,20 +19,6 @@ namespace Quarry.Generators.CodeGen;
 internal static class JoinBodyEmitter
 {
     /// <summary>
-    /// Gets the builder type name for a given entity count in joins.
-    /// </summary>
-    private static string GetJoinedBuilderTypeName(int entityCount)
-    {
-        return entityCount switch
-        {
-            2 => "IJoinedQueryBuilder",
-            3 => "IJoinedQueryBuilder3",
-            4 => "IJoinedQueryBuilder4",
-            _ => throw new System.ArgumentOutOfRangeException(nameof(entityCount), $"Unsupported entity count: {entityCount}")
-        };
-    }
-
-    /// <summary>
     /// Emits a Join/LeftJoin/RightJoin interceptor body.
     /// Appends ON clause and returns joined builder type.
     /// </summary>
@@ -60,8 +46,8 @@ internal static class JoinBodyEmitter
             var allTypes = priorTypes.Concat(new[] { joinedType }).ToArray();
 
             // Determine receiver and return builder type names
-            var receiverBuilderName = GetJoinedBuilderTypeName(priorTypes.Length);
-            var returnBuilderName = GetJoinedBuilderTypeName(allTypes.Length);
+            var receiverBuilderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(priorTypes.Length);
+            var returnBuilderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(allTypes.Length);
             var receiverTypeArgs = string.Join(", ", priorTypes);
             var returnTypeArgs = string.Join(", ", allTypes);
             var funcTypeArgs = string.Join(", ", allTypes) + ", bool";
@@ -143,7 +129,7 @@ internal static class JoinBodyEmitter
         CarrierPlan? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
+        var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         var clauseInfo = site.Clause;
@@ -161,7 +147,7 @@ internal static class JoinBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
 
             if (isBrokenTuple)
             {
@@ -229,7 +215,7 @@ internal static class JoinBodyEmitter
         CarrierPlan? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
+        var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
 
@@ -239,7 +225,7 @@ internal static class JoinBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.SanitizeTupleResultType(InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName));
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
 
             // Broken tuple result types cannot use concrete arity-0 signatures;
             // fall back to full arity-matching with TKey to preserve interceptor arity.
@@ -338,7 +324,7 @@ internal static class JoinBodyEmitter
         CarrierPlan? carrier = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
-        var builderName = GetJoinedBuilderTypeName(entityTypes.Length);
+        var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
         var thisBuilderName = builderName;
         var typeArgs = string.Join(", ", entityTypes);
         // Prefer chain's enriched ProjectionInfo over site's discovery-time projection

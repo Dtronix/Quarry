@@ -108,7 +108,7 @@ internal static class ClauseBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
             if (isBrokenTuple)
                 keyType = null;
 
@@ -249,7 +249,7 @@ internal static class ClauseBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
             if (isBrokenTuple)
                 keyType = null;
 
