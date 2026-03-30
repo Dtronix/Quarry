@@ -8,6 +8,7 @@ using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Generators.Projection;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.Generation;
 
@@ -374,10 +375,15 @@ internal static partial class InterceptorCodeGenerator
         {
             var baseType = GetNonNullableType(clrType);
             var baseReaderMethod = GetReaderMethod(baseType);
-            return $"r.IsDBNull({ordinal}) ? default({clrType}) : r.{baseReaderMethod}({ordinal})";
+            var readExpr = TypeClassification.NeedsSignCast(baseType)
+                ? $"({baseType})r.{baseReaderMethod}({ordinal})"
+                : $"r.{baseReaderMethod}({ordinal})";
+            return $"r.IsDBNull({ordinal}) ? default({clrType}) : {readExpr}";
         }
 
         var readerMethod = GetReaderMethod(clrType);
+        if (TypeClassification.NeedsSignCast(clrType))
+            return $"({clrType})r.{readerMethod}({ordinal})";
         return $"r.{readerMethod}({ordinal})";
     }
 

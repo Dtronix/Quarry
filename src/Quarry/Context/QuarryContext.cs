@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
@@ -362,13 +363,14 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 
     #endregion
 
-    #region Internal helpers for generated interceptors
+    #region Helpers for generated interceptors
 
     /// <summary>
     /// Executes a raw SQL query using a generated reader delegate instead of reflection.
     /// Called by source-generated interceptors for RawSqlAsync&lt;T&gt;.
     /// </summary>
-    internal async Task<List<T>> RawSqlAsyncWithReader<T>(
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public async Task<List<T>> RawSqlAsyncWithReader<T>(
         string sql,
         Func<DbDataReader, T> reader,
         CancellationToken cancellationToken,
@@ -420,7 +422,8 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Executes a raw SQL scalar query with typed conversion instead of Convert.ChangeType.
     /// Called by source-generated interceptors for RawSqlScalarAsync&lt;T&gt;.
     /// </summary>
-    internal async Task<T> RawSqlScalarAsyncWithConverter<T>(
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public async Task<T> RawSqlScalarAsyncWithConverter<T>(
         string sql,
         Func<object, T> converter,
         CancellationToken cancellationToken,

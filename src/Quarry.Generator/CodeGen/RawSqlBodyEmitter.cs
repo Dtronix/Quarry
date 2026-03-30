@@ -1,6 +1,7 @@
 using System.Text;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -44,9 +45,12 @@ internal static class RawSqlBodyEmitter
         if (rawSqlInfo.TypeKind == RawSqlTypeKind.Scalar)
         {
             var readerMethod = rawSqlInfo.ScalarReaderMethod ?? "GetValue";
+            var scalarRead = TypeClassification.NeedsSignCast(resultType)
+                ? $"({resultType})r.{readerMethod}(0)"
+                : $"r.{readerMethod}(0)";
             sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
             sb.AppendLine($"            sql,");
-            sb.AppendLine($"            static r => r.{readerMethod}(0),");
+            sb.AppendLine($"            static r => {scalarRead},");
             sb.AppendLine($"            {ctArg},");
             sb.AppendLine($"            parameters);");
         }
@@ -148,6 +152,11 @@ internal static class RawSqlBodyEmitter
             return $"({prop.FullClrType})r.{prop.ReaderMethodName}(i)";
         }
 
+        if (TypeClassification.NeedsSignCast(prop.ClrType))
+        {
+            return $"({prop.ClrType})r.{prop.ReaderMethodName}(i)";
+        }
+
         return $"r.{prop.ReaderMethodName}(i)";
     }
 
@@ -166,10 +175,14 @@ internal static class RawSqlBodyEmitter
             "float" or "Single" => isNullable ? "(float?)Convert.ToSingle(v)" : "Convert.ToSingle(v)",
             "double" or "Double" => isNullable ? "(double?)Convert.ToDouble(v)" : "Convert.ToDouble(v)",
             "decimal" or "Decimal" => isNullable ? "(decimal?)Convert.ToDecimal(v)" : "Convert.ToDecimal(v)",
+            "uint" or "UInt32" => isNullable ? "(uint?)Convert.ToUInt32(v)" : "(uint)Convert.ToInt64(v)",
+            "ushort" or "UInt16" => isNullable ? "(ushort?)Convert.ToUInt16(v)" : "(ushort)Convert.ToInt64(v)",
+            "ulong" or "UInt64" => isNullable ? "(ulong?)Convert.ToUInt64(v)" : "(ulong)Convert.ToInt64(v)",
             "string" or "String" => "v?.ToString() ?? string.Empty",
             "Guid" => isNullable ? "(Guid?)(Guid)v" : "(Guid)v",
             "DateTime" => isNullable ? "(DateTime?)Convert.ToDateTime(v)" : "Convert.ToDateTime(v)",
             _ => $"({resultType})v"
         };
     }
+
 }
