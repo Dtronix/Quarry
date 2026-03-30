@@ -87,7 +87,9 @@ internal static class DisplayClassNameResolver
     /// against known schema types in the compilation. Generated entity types are error
     /// types at generator time, but the corresponding Schema classes (user-defined) are
     /// resolvable. E.g., for error type "User", checks each imported namespace for
-    /// "UserSchema" — if found, the entity will be generated as {namespace}.User.
+    /// "UserSchema". The entity is generated into the owning QuarryContext's namespace
+    /// (not the schema namespace), so we search for the context class to resolve the
+    /// correct namespace.
     /// </summary>
     private static string? TryQualifyErrorTypeFromUsings(
         ITypeSymbol errorType, ISymbol symbol, SemanticModel semanticModel)
@@ -113,8 +115,80 @@ internal static class DisplayClassNameResolver
 
             var ns = usingDir.Name.ToString();
             var candidate = ns + "." + schemaName;
-            if (compilation.GetTypeByMetadataName(candidate) != null)
+            var schemaType = compilation.GetTypeByMetadataName(candidate);
+            if (schemaType != null)
+            {
+                // The schema lives in ns, but the generated entity is placed in
+                // the owning context's namespace (which may differ from the schema's).
+                var contextNs = FindContextNamespaceForSchema(compilation, schemaType);
+                if (contextNs != null)
+                    return "global::" + contextNs + "." + typeName;
                 return "global::" + ns + "." + typeName;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Searches the compilation for a [QuarryContext]-decorated class that references
+    /// the given schema type via a QueryBuilder&lt;T&gt; member. Returns the context
+    /// class's namespace, since generated entity types are placed there rather than
+    /// in the schema namespace. Returns null if no owning context is found.
+    /// </summary>
+    private static string? FindContextNamespaceForSchema(
+        Compilation compilation, INamedTypeSymbol schemaType)
+    {
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            foreach (var node in tree.GetRoot().DescendantNodes())
+            {
+                if (node is not ClassDeclarationSyntax classDecl)
+                    continue;
+
+                // Quick syntax filter: skip classes without a QuarryContext attribute
+                bool maybeContext = false;
+                foreach (var attrList in classDecl.AttributeLists)
+                {
+                    foreach (var attr in attrList.Attributes)
+                    {
+                        var name = attr.Name.ToString();
+                        if (name == "QuarryContext" || name == "QuarryContextAttribute"
+                            || name.EndsWith(".QuarryContext") || name.EndsWith(".QuarryContextAttribute"))
+                        {
+                            maybeContext = true;
+                            break;
+                        }
+                    }
+                    if (maybeContext) break;
+                }
+                if (!maybeContext) continue;
+
+                var sm = compilation.GetSemanticModel(tree);
+                if (sm.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classSymbol)
+                    continue;
+
+                // Check if any member returns a generic type parameterized with the schema
+                // (e.g., QueryBuilder<FileSchema>)
+                foreach (var member in classSymbol.GetMembers())
+                {
+                    ITypeSymbol? returnType = null;
+                    if (member is IMethodSymbol m)
+                        returnType = m.ReturnType;
+                    else if (member is IPropertySymbol p)
+                        returnType = p.Type;
+
+                    if (returnType is INamedTypeSymbol nt
+                        && nt.IsGenericType
+                        && nt.TypeArguments.Length == 1
+                        && SymbolEqualityComparer.Default.Equals(nt.TypeArguments[0], schemaType))
+                    {
+                        var ns = classSymbol.ContainingNamespace?.ToDisplayString();
+                        if (!string.IsNullOrEmpty(ns))
+                            return ns;
+                    }
+                }
+            }
         }
 
         return null;

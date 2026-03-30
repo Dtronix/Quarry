@@ -384,4 +384,108 @@ class TestClass
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("threshold"));
     }
+
+    [Test]
+    public void EnrichAll_CapturedEntityVariable_UsesContextNamespaceNotSchemaNamespace()
+    {
+        // Simulates the MepSuite scenario: schema in App.Schemas, context in App.Data,
+        // captured variable of generated entity type (error type at generator time).
+        // The fix ensures the entity namespace resolves to the context namespace.
+        var source = @"
+using System;
+using App.Schemas;
+using App.Data;
+
+namespace Quarry
+{
+    [AttributeUsage(AttributeTargets.Class)]
+    public class QuarryContextAttribute : Attribute { }
+    public class QueryBuilder<T> { }
+}
+
+namespace App.Schemas
+{
+    public class FileSchema { }
+}
+
+namespace App.Data
+{
+    [Quarry.QuarryContext]
+    public partial class AppDb
+    {
+        public Quarry.QueryBuilder<App.Schemas.FileSchema> Files() => null!;
+    }
+}
+
+namespace App.Services
+{
+    class FileService
+    {
+        void DeleteFile()
+        {
+            File deletedFile = default!;
+            Func<bool> pred = () => deletedFile != null;
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>().First();
+
+        var site = CreateSite("test-entity-ns", lambda);
+        var sites = ImmutableArray.Create(site);
+
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+
+        Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
+        Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
+        // Entity type should resolve to the context namespace (App.Data), not schema namespace (App.Schemas)
+        Assert.That(result[0].CapturedVariableTypes!["deletedFile"], Is.EqualTo("global::App.Data.File"));
+    }
+
+    [Test]
+    public void EnrichAll_CapturedEntityVariable_FallsBackToSchemaNamespaceWithoutContext()
+    {
+        // When no [QuarryContext] class exists, the entity type should fall back
+        // to the schema namespace (the pre-fix behavior).
+        var source = @"
+using System;
+using App.Schemas;
+
+namespace App.Schemas
+{
+    public class FileSchema { }
+}
+
+namespace App.Services
+{
+    class FileService
+    {
+        void DeleteFile()
+        {
+            File deletedFile = default!;
+            Func<bool> pred = () => deletedFile != null;
+        }
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>().First();
+
+        var site = CreateSite("test-fallback-ns", lambda);
+        var sites = ImmutableArray.Create(site);
+
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, CancellationToken.None);
+
+        Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
+        Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
+        // Without a context class, falls back to schema namespace
+        Assert.That(result[0].CapturedVariableTypes!["deletedFile"], Is.EqualTo("global::App.Schemas.File"));
+    }
 }
