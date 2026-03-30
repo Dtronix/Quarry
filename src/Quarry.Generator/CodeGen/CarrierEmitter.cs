@@ -12,45 +12,11 @@ namespace Quarry.Generators.CodeGen;
 
 /// <summary>
 /// Emits carrier class definitions and carrier-path interceptor method bodies.
-/// Works from <see cref="CarrierStrategy"/> (produced by <see cref="CarrierAnalyzer"/>)
+/// Works from <see cref="CarrierPlan"/> (produced by <see cref="CarrierAnalyzer"/>)
 /// rather than computing eligibility inline.
 /// </summary>
 internal static class CarrierEmitter
 {
-    /// <summary>
-    /// Emits the carrier class declaration (fields, static caches, base class).
-    /// </summary>
-    public static void EmitClassDeclaration(StringBuilder sb, CarrierStrategy strategy, string className)
-    {
-        sb.AppendLine($"/// <remarks>Chain: PrebuiltDispatch (1 allocation: carrier)</remarks>");
-        sb.Append($"file sealed class {className}");
-
-        if (!string.IsNullOrEmpty(strategy.BaseClassName))
-        {
-            sb.Append($" : {strategy.BaseClassName}");
-        }
-        sb.AppendLine();
-        sb.AppendLine("{");
-
-        // Instance fields
-        foreach (var field in strategy.Fields)
-        {
-            sb.AppendLine($"    public {field.Type} {field.Name};");
-        }
-
-        // [UnsafeAccessor] extern methods for captured parameter extraction
-        foreach (var sf in strategy.StaticFields)
-        {
-            // Old pipeline: StaticFields may not have UnsafeAccessor metadata; emit legacy format as fallback
-            sb.Append($"    private static {sf.Type} {sf.Name}");
-            if (sf.Initializer != null)
-                sb.Append($" = {sf.Initializer}");
-            sb.AppendLine(";");
-        }
-
-        sb.AppendLine("}");
-    }
-
     /// <summary>
     /// Emits a carrier ChainRoot interceptor body (db.Users() → new Carrier { Ctx = ctx }).
     /// </summary>
@@ -71,53 +37,6 @@ internal static class CarrierEmitter
         StringBuilder sb, string receiverType, string returnType)
     {
         sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
-    }
-
-    /// <summary>
-    /// Emits a carrier clause body: cast to carrier, extract params, set mask bit, return.
-    /// </summary>
-    public static void EmitClauseBody(
-        StringBuilder sb,
-        string className,
-        CarrierStrategy strategy,
-        IReadOnlyList<CarrierParameter> clauseParameters,
-        int globalParamOffset,
-        int? clauseBit,
-        bool isFirstInChain,
-        string concreteBuilderType,
-        string returnInterface,
-        string maskType)
-    {
-        if (isFirstInChain)
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderType}>(builder);");
-            sb.AppendLine($"        var __c = new {className} {{ Ctx = __b.State.ExecutionContext }};");
-        }
-        else
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{className}>(builder);");
-        }
-
-        // Bind parameters to carrier fields
-        foreach (var param in clauseParameters)
-        {
-            if (param.IsEntitySourced)
-                continue;
-            if (param.ExtractionCode != null)
-            {
-                sb.AppendLine($"        __c.{param.FieldName} = ({param.FieldType}){param.ExtractionCode}!;");
-            }
-        }
-
-        // Set conditional clause bit
-        if (clauseBit.HasValue)
-            sb.AppendLine($"        __c.Mask |= unchecked(({maskType})(1 << {clauseBit.Value}));");
-
-        // Return
-        if (isFirstInChain)
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
-        else
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
     }
 
     /// <summary>
@@ -826,19 +745,9 @@ internal static class CarrierEmitter
     internal static void EmitCarrierNonQueryTerminal(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
-        EmitCarrierPreamble(sb, carrier, chain);
-
-        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
-        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
-
-        EmitInlineParameterLogging(sb, chain, carrier);
-
-        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __ctx.DefaultTimeout"
-            : "__ctx.DefaultTimeout";
-        EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
-
-        sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __ctx, __cmd, cancellationToken);");
+        EmitCarrierExecutionTerminal(sb, carrier, chain,
+            readerExpression: null,
+            executorMethod: "ExecuteCarrierNonQueryWithCommandAsync");
     }
 
     /// <summary>
