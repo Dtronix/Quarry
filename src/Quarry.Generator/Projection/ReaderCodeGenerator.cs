@@ -2,6 +2,7 @@ using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Utilities;
 using Quarry;
 
 namespace Quarry.Generators.Projection;
@@ -221,6 +222,18 @@ internal static class ReaderCodeGenerator
             return $"({column.FullClrType}){rawRead}";
         }
 
+        // Handle mismatched-sign integer types — cast from reader method to target type
+        // (e.g., (uint)r.GetInt32(0) for unsigned, (sbyte)r.GetByte(0) for signed byte)
+        if (TypeClassification.NeedsSignCast(column.ClrType))
+        {
+            if (column.IsNullable)
+            {
+                return $"r.IsDBNull({ordinal}) ? default({column.ClrType}?) : ({column.ClrType}){rawRead}";
+            }
+
+            return $"({column.ClrType}){rawRead}";
+        }
+
         // Handle custom type mapping - wrap with FromDb()
         if (column.CustomTypeMapping != null)
         {
@@ -307,4 +320,5 @@ internal static class ReaderCodeGenerator
         sb.Append(" }");
         return sb.ToString();
     }
+
 }
