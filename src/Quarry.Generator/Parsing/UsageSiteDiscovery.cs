@@ -481,7 +481,7 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        var (entityTypeName, resultTypeName) = ExtractTypeArguments(containingType);
+        var (entityTypeName, resultTypeName, isValueTypeResult) = ExtractTypeArguments(containingType);
         if (entityTypeName == null)
             return null;
 
@@ -494,7 +494,7 @@ internal static class UsageSiteDiscovery
             if (concreteType != null)
             {
                 containingType = containingType.OriginalDefinition.Construct(concreteType);
-                (entityTypeName, resultTypeName) = ExtractTypeArguments(containingType);
+                (entityTypeName, resultTypeName, isValueTypeResult) = ExtractTypeArguments(containingType);
                 if (entityTypeName == null)
                     return null;
             }
@@ -742,7 +742,8 @@ internal static class UsageSiteDiscovery
             lambdaParameterNames: lambdaParamNames,
             batchInsertColumnNames: batchInsertColumnNames,
             isPreparedTerminal: isPreparedTerminal,
-            preparedQueryEscapeReason: preparedQueryEscapeReason);
+            preparedQueryEscapeReason: preparedQueryEscapeReason,
+            isValueTypeResult: isValueTypeResult);
     }
 
     /// <summary>
@@ -1233,6 +1234,27 @@ internal static class UsageSiteDiscovery
 
         if (receiver is not IdentifierNameSyntax rootId)
             return (false, false);
+
+        // If the root variable is a QuarryContext (not a builder), passing it to helper
+        // methods is fine — the context is a shared resource, not a chain variable.
+        var rootSymbol = semanticModel.GetSymbolInfo(rootId).Symbol;
+        ITypeSymbol? rootType = rootSymbol switch
+        {
+            ILocalSymbol local => local.Type,
+            IParameterSymbol param => param.Type,
+            IFieldSymbol field => field.Type,
+            _ => null
+        };
+        if (rootType != null)
+        {
+            var t = rootType;
+            while (t != null)
+            {
+                if (t.Name == "QuarryContext")
+                    return (false, false);
+                t = t.BaseType;
+            }
+        }
 
         var varName = rootId.Identifier.Text;
         var methodBody = invocation.Ancestors()
@@ -2804,41 +2826,48 @@ internal static class UsageSiteDiscovery
 
     /// <summary>
     /// Extracts the entity and result type arguments from a builder type.
+    /// Also reports whether the result type is a value type (needed for nullable return type handling).
     /// </summary>
-    private static (string? EntityTypeName, string? ResultTypeName) ExtractTypeArguments(INamedTypeSymbol builderType)
+    private static (string? EntityTypeName, string? ResultTypeName, bool IsValueTypeResult) ExtractTypeArguments(INamedTypeSymbol builderType)
     {
         if (!builderType.IsGenericType || builderType.TypeArguments.Length == 0)
-            return (null, null);
+            return (null, null, false);
 
         var entityType = builderType.TypeArguments[0];
         var entityTypeName = entityType.ToFullyQualifiedDisplayString();
 
         string? resultTypeName = null;
+        ITypeSymbol? resultTypeSymbol = null;
         var name = builderType.Name;
 
         // For joined builder types, only the last type arg is TResult when it exceeds the entity count
         if (name == "IJoinedQueryBuilder" && builderType.TypeArguments.Length > 2)
         {
             // IJoinedQueryBuilder<T1,T2,TResult> — TResult is index 2
-            resultTypeName = builderType.TypeArguments[2].ToFullyQualifiedDisplayString();
+            resultTypeSymbol = builderType.TypeArguments[2];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
         }
         else if (name == "IJoinedQueryBuilder3" && builderType.TypeArguments.Length > 3)
         {
             // IJoinedQueryBuilder3<T1,T2,T3,TResult> — TResult is index 3
-            resultTypeName = builderType.TypeArguments[3].ToFullyQualifiedDisplayString();
+            resultTypeSymbol = builderType.TypeArguments[3];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
         }
         else if (name == "IJoinedQueryBuilder4" && builderType.TypeArguments.Length > 4)
         {
             // IJoinedQueryBuilder4<T1,T2,T3,T4,TResult> — TResult is index 4
-            resultTypeName = builderType.TypeArguments[4].ToFullyQualifiedDisplayString();
+            resultTypeSymbol = builderType.TypeArguments[4];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
         }
         else if (!IsJoinedBuilderName(name) && builderType.TypeArguments.Length > 1)
         {
             // QueryBuilder<T, TResult> — TResult is index 1
-            resultTypeName = builderType.TypeArguments[1].ToFullyQualifiedDisplayString();
+            resultTypeSymbol = builderType.TypeArguments[1];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
         }
 
-        return (entityTypeName, resultTypeName);
+        var isValueType = resultTypeSymbol?.IsValueType == true;
+        return (entityTypeName, resultTypeName, isValueType);
     }
 
     private static bool IsJoinedBuilderName(string name)

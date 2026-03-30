@@ -1442,11 +1442,16 @@ internal static class ChainAnalyzer
     /// </summary>
     private static string? CheckDisqualifiers(List<TranslatedCallSite> chainSites)
     {
+        // Chains entirely inside a loop body are allowed: SQL shape is constant across
+        // iterations, only parameter values change, and those are read from captures at
+        // execution time. However, chains that CROSS a loop boundary (some sites inside,
+        // some outside) are not analyzable.
+        bool anyInLoop = false, anyOutsideLoop = false;
         foreach (var site in chainSites)
         {
             var raw = site.Bound.Raw;
-            if (raw.IsInsideLoop)
-                return "Chain contains a clause inside a loop body";
+            if (raw.IsInsideLoop) anyInLoop = true;
+            else anyOutsideLoop = true;
             if (raw.IsCapturedInLambda)
                 return "Chain variable captured in a lambda expression";
             if (raw.IsPassedAsArgument)
@@ -1454,6 +1459,8 @@ internal static class ChainAnalyzer
             if (raw.IsAssignedFromNonQuarryMethod)
                 return "Chain variable assigned from non-Quarry method";
         }
+        if (anyInLoop && anyOutsideLoop)
+            return "Chain crosses a loop boundary (some clauses inside loop, some outside)";
         return null;
     }
 

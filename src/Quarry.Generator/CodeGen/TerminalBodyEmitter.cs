@@ -49,11 +49,15 @@ internal static class TerminalBodyEmitter
         var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
 
         // Determine return type from the execution kind.
+        // For ExecuteFetchFirstOrDefault: the interface uses unconstrained TResult?, which
+        // does NOT create Nullable<T> for value types. The interceptor must match the
+        // interface signature, so skip the ? suffix for value-type results.
+        var firstOrDefaultSuffix = site.IsValueTypeResult ? "" : "?";
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
             InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
-            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
             InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
             InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
@@ -133,11 +137,12 @@ internal static class TerminalBodyEmitter
         // for non-prepared terminals, TScalar remains a generic type parameter.
         var scalarTypeArg = site.IsPreparedTerminal ? resultType : "TScalar";
 
+        var firstOrDefaultSuffix = site.IsValueTypeResult ? "" : "?";
         string returnType = site.Kind switch
         {
             InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
             InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
-            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}?>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
             InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
             InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
