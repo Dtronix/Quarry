@@ -25,7 +25,8 @@ internal class DateTimeOffsetIntegrationTests
         Assert.That(events[0].CancelledAt, Is.Null);
 
         Assert.That(events[1].EventName, Is.EqualTo("Review"));
-        Assert.That(events[1].CancelledAt, Is.Not.Null);
+        Assert.That(events[1].ScheduledAt, Is.EqualTo(new DateTimeOffset(2024, 7, 1, 14, 0, 0, TimeSpan.FromHours(2))));
+        Assert.That(events[1].CancelledAt, Is.EqualTo(new DateTimeOffset(2024, 6, 28, 9, 0, 0, TimeSpan.FromHours(2))));
     }
 
     [Test]
@@ -34,7 +35,7 @@ internal class DateTimeOffsetIntegrationTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var scheduled = new DateTimeOffset(2025, 3, 15, 9, 0, 0, TimeSpan.Zero);
+        var scheduled = new DateTimeOffset(2025, 3, 15, 9, 0, 0, TimeSpan.FromHours(-5));
         await Lite.Events().Insert(new Event
         {
             EventName = "Deployment",

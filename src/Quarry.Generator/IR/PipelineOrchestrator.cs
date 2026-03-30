@@ -40,6 +40,7 @@ internal static class PipelineOrchestrator
         CancellationToken ct)
     {
         TraceCapture.Clear();
+        PipelineErrorBag.DrainErrors(); // discard stale errors from prior compilations on this thread
 
         ct.ThrowIfCancellationRequested();
 

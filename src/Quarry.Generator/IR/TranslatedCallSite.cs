@@ -115,14 +115,15 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         return Bound.Equals(other.Bound)
             && Equals(Clause, other.Clause)
             && KeyTypeName == other.KeyTypeName
-            && ValueTypeName == other.ValueTypeName;
+            && ValueTypeName == other.ValueTypeName
+            && PipelineError == other.PipelineError;
     }
 
     public override bool Equals(object? obj) => Equals(obj as TranslatedCallSite);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Bound.GetHashCode(), KeyTypeName, ValueTypeName);
+        return HashCode.Combine(Bound.GetHashCode(), KeyTypeName, ValueTypeName, PipelineError);
     }
 }
 

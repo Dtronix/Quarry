@@ -334,7 +334,7 @@ internal static class CarrierEmitter
 
                 if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
                 {
-                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier, delegateParamName);
+                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier);
                 }
                 else
                 {
@@ -971,7 +971,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCollectionContainsExtraction(
         StringBuilder sb, int globalIdx, QueryParameter carrierParam,
-        CarrierPlan carrier, string delegateParamName = "func")
+        CarrierPlan carrier)
     {
         string fieldType;
         if (carrierParam.ElementTypeName != null)

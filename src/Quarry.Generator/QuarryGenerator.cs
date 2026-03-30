@@ -392,47 +392,24 @@ public sealed class QuarryGenerator : IIncrementalGenerator
 
         // Report pipeline errors captured during binding/translation
         // Check both Sites and ChainMemberSites — either can carry pipeline errors
-        foreach (var site in group.Sites)
+        foreach (var site in group.Sites.Concat(group.ChainMemberSites))
         {
             if (site.PipelineError != null)
             {
-                var errorLoc = site.FilePath != null && site.Line > 0
-                    ? Location.Create(site.FilePath, default,
-                        new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
-                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1)))
-                    : Location.None;
                 spc.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.InternalError, errorLoc, site.PipelineError));
-            }
-        }
-
-        foreach (var site in group.ChainMemberSites)
-        {
-            if (site.PipelineError != null)
-            {
-                var errorLoc = site.FilePath != null && site.Line > 0
-                    ? Location.Create(site.FilePath, default,
-                        new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1),
-                            new Microsoft.CodeAnalysis.Text.LinePosition(site.Line - 1, site.Column - 1)))
-                    : Location.None;
-                spc.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.InternalError, errorLoc, site.PipelineError));
+                    DiagnosticDescriptors.InternalError,
+                    CreateLineLocation(site.FilePath, site.Line, site.Column),
+                    site.PipelineError));
             }
         }
 
         // Drain side-channel errors from Stage 3 (Bind failures that couldn't attach to a site)
         foreach (var err in IR.PipelineErrorBag.DrainErrors())
         {
-            var errorLoc = err.SourceFilePath != null && err.Line > 0
-                ? Location.Create(err.SourceFilePath, default,
-                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                        new Microsoft.CodeAnalysis.Text.LinePosition(err.Line - 1, err.Column - 1),
-                        new Microsoft.CodeAnalysis.Text.LinePosition(err.Line - 1, err.Column - 1)))
-                : Location.None;
             spc.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.InternalError, errorLoc, err.Error));
+                DiagnosticDescriptors.InternalError,
+                CreateLineLocation(err.SourceFilePath, err.Line, err.Column),
+                err.Error));
         }
 
         // Report all deferred diagnostics
@@ -446,17 +423,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 location = Location.Create(syntaxTree, diag.Location.Span);
             }
-            else if (diag.Location.FilePath != null)
-            {
-                location = Location.Create(diag.Location.FilePath,
-                    default,
-                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1),
-                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)));
-            }
             else
             {
-                location = Location.None;
+                location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
             }
 
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
@@ -685,6 +654,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
         s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
+    private static Location CreateLineLocation(string? filePath, int line, int column)
+    {
+        if (filePath == null || line <= 0) return Location.None;
+        var pos = new Microsoft.CodeAnalysis.Text.LinePosition(line - 1, column - 1);
+        return Location.Create(filePath, default, new Microsoft.CodeAnalysis.Text.LinePositionSpan(pos, pos));
+    }
 
     /// <summary>
     /// Builds an entity projection from EntityInfo for identity projections (no Select clause).
