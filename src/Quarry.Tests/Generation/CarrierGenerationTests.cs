@@ -1886,7 +1886,7 @@ static async Task<int> Scenario2(TestDbContext db)
     [Test]
     public void QuarryContextPassedToHelper_DoesNotTriggerQRY032()
     {
-        // Reproduces the MepServer.Upload pattern: a method uses db for its own
+        // Reproduces a common pattern: a method uses db for its own
         // chains AND passes db to a helper method that also uses Quarry chains.
         var source = SharedSchema + @"
 public class LogSchema : Schema
