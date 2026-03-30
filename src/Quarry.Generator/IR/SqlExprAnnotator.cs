@@ -94,7 +94,7 @@ internal static class SqlExprAnnotator
         if (typeInfo.Type != null)
         {
             var clrType = typeInfo.Type.ToDisplayString();
-            return captured.WithClrType(clrType);
+            return captured.WithClrType(clrType, typeInfo.Type);
         }
 
         return captured;
@@ -134,10 +134,12 @@ internal static class SqlExprAnnotator
         var constantMap = new System.Collections.Generic.Dictionary<string, (string Value, string ClrType)>(StringComparer.Ordinal);
         // Track which identifiers are static fields (for UnsafeAccessor kind selection)
         var staticFields = new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
-        CollectCapturedTypes(lambdaBody, semanticModel, typeMap, constantMap, staticFields);
+        // Build a map of identifier/expression -> ITypeSymbol for carrier analysis (IReadOnlyList vs IEnumerable)
+        var typeSymbolMap = new System.Collections.Generic.Dictionary<string, ITypeSymbol>(StringComparer.Ordinal);
+        CollectCapturedTypes(lambdaBody, semanticModel, typeMap, constantMap, staticFields, typeSymbolMap);
         if (typeMap.Count == 0 && constantMap.Count == 0 && staticFields.Count == 0) return expr;
 
-        return ApplyCapturedTypes(expr, typeMap, constantMap, staticFields);
+        return ApplyCapturedTypes(expr, typeMap, constantMap, staticFields, typeSymbolMap);
     }
 
     private static void CollectCapturedTypes(
@@ -145,7 +147,8 @@ internal static class SqlExprAnnotator
         SemanticModel semanticModel,
         System.Collections.Generic.Dictionary<string, string> typeMap,
         System.Collections.Generic.Dictionary<string, (string Value, string ClrType)> constantMap,
-        System.Collections.Generic.HashSet<string> staticFields)
+        System.Collections.Generic.HashSet<string> staticFields,
+        System.Collections.Generic.Dictionary<string, ITypeSymbol>? typeSymbolMap = null)
     {
         foreach (var identifier in node.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
@@ -156,6 +159,8 @@ internal static class SqlExprAnnotator
                 if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
                 {
                     typeMap[name] = typeInfo.Type.ToDisplayString();
+                    if (typeSymbolMap != null && !typeSymbolMap.ContainsKey(name))
+                        typeSymbolMap[name] = typeInfo.Type;
                 }
             }
 
@@ -200,6 +205,8 @@ internal static class SqlExprAnnotator
                 if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
                 {
                     typeMap[text] = typeInfo.Type.ToDisplayString();
+                    if (typeSymbolMap != null && !typeSymbolMap.ContainsKey(text))
+                        typeSymbolMap[text] = typeInfo.Type;
                 }
             }
         }
@@ -209,7 +216,8 @@ internal static class SqlExprAnnotator
         SqlExpr expr,
         System.Collections.Generic.Dictionary<string, string> typeMap,
         System.Collections.Generic.Dictionary<string, (string Value, string ClrType)>? constantMap = null,
-        System.Collections.Generic.HashSet<string>? staticFields = null)
+        System.Collections.Generic.HashSet<string>? staticFields = null,
+        System.Collections.Generic.Dictionary<string, ITypeSymbol>? typeSymbolMap = null)
     {
         switch (expr)
         {
@@ -219,10 +227,14 @@ internal static class SqlExprAnnotator
                     return new LiteralExpr(constInfo.Value, constInfo.ClrType);
                 var result = captured;
                 // Prefer the full expression type (e.g., "user.UserId" → int) over the variable type (e.g., "user" → User)
+                ITypeSymbol? resolvedSymbol = null;
+                typeSymbolMap?.TryGetValue(captured.SyntaxText, out resolvedSymbol);
+                if (resolvedSymbol == null)
+                    typeSymbolMap?.TryGetValue(captured.VariableName, out resolvedSymbol);
                 if (typeMap.TryGetValue(captured.SyntaxText, out var exprType))
-                    result = result.WithClrType(exprType);
+                    result = result.WithClrType(exprType, resolvedSymbol);
                 else if (typeMap.TryGetValue(captured.VariableName, out var clrType))
-                    result = result.WithClrType(clrType);
+                    result = result.WithClrType(clrType, resolvedSymbol);
                 // Apply static field flag based on the root variable
                 if (staticFields != null && staticFields.Contains(captured.VariableName))
                     result = result.WithStaticField(true);
@@ -230,8 +242,8 @@ internal static class SqlExprAnnotator
 
             case BinaryOpExpr bin:
             {
-                var left = ApplyCapturedTypes(bin.Left, typeMap, constantMap, staticFields);
-                var right = ApplyCapturedTypes(bin.Right, typeMap, constantMap, staticFields);
+                var left = ApplyCapturedTypes(bin.Left, typeMap, constantMap, staticFields, typeSymbolMap);
+                var right = ApplyCapturedTypes(bin.Right, typeMap, constantMap, staticFields, typeSymbolMap);
                 if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
                     return bin;
                 return new BinaryOpExpr(left, bin.Operator, right);
@@ -239,19 +251,19 @@ internal static class SqlExprAnnotator
 
             case UnaryOpExpr unary:
             {
-                var operand = ApplyCapturedTypes(unary.Operand, typeMap, constantMap, staticFields);
+                var operand = ApplyCapturedTypes(unary.Operand, typeMap, constantMap, staticFields, typeSymbolMap);
                 if (ReferenceEquals(operand, unary.Operand)) return unary;
                 return new UnaryOpExpr(unary.Operator, operand);
             }
 
             case InExpr inExpr:
             {
-                var operand = ApplyCapturedTypes(inExpr.Operand, typeMap, constantMap, staticFields);
+                var operand = ApplyCapturedTypes(inExpr.Operand, typeMap, constantMap, staticFields, typeSymbolMap);
                 var changed = !ReferenceEquals(operand, inExpr.Operand);
                 var newValues = new SqlExpr[inExpr.Values.Count];
                 for (int i = 0; i < inExpr.Values.Count; i++)
                 {
-                    newValues[i] = ApplyCapturedTypes(inExpr.Values[i], typeMap, constantMap, staticFields);
+                    newValues[i] = ApplyCapturedTypes(inExpr.Values[i], typeMap, constantMap, staticFields, typeSymbolMap);
                     if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
                 }
                 return changed ? new InExpr(operand, newValues, inExpr.IsNegated) : inExpr;
@@ -263,7 +275,7 @@ internal static class SqlExprAnnotator
                 var newArgs = new SqlExpr[func.Arguments.Count];
                 for (int i = 0; i < func.Arguments.Count; i++)
                 {
-                    newArgs[i] = ApplyCapturedTypes(func.Arguments[i], typeMap, constantMap, staticFields);
+                    newArgs[i] = ApplyCapturedTypes(func.Arguments[i], typeMap, constantMap, staticFields, typeSymbolMap);
                     if (!ReferenceEquals(newArgs[i], func.Arguments[i])) changed = true;
                 }
                 return changed ? new FunctionCallExpr(func.FunctionName, newArgs, func.IsAggregate) : func;
@@ -271,15 +283,15 @@ internal static class SqlExprAnnotator
 
             case IsNullCheckExpr isNull:
             {
-                var operand = ApplyCapturedTypes(isNull.Operand, typeMap, constantMap, staticFields);
+                var operand = ApplyCapturedTypes(isNull.Operand, typeMap, constantMap, staticFields, typeSymbolMap);
                 if (ReferenceEquals(operand, isNull.Operand)) return isNull;
                 return new IsNullCheckExpr(operand, isNull.IsNegated);
             }
 
             case LikeExpr like:
             {
-                var operand = ApplyCapturedTypes(like.Operand, typeMap, constantMap, staticFields);
-                var pattern = ApplyCapturedTypes(like.Pattern, typeMap, constantMap, staticFields);
+                var operand = ApplyCapturedTypes(like.Operand, typeMap, constantMap, staticFields, typeSymbolMap);
+                var pattern = ApplyCapturedTypes(like.Pattern, typeMap, constantMap, staticFields, typeSymbolMap);
                 if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
                     return like;
                 return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);
@@ -287,7 +299,7 @@ internal static class SqlExprAnnotator
 
             case SubqueryExpr subquery when subquery.Predicate != null:
             {
-                var predicate = ApplyCapturedTypes(subquery.Predicate, typeMap, constantMap, staticFields);
+                var predicate = ApplyCapturedTypes(subquery.Predicate, typeMap, constantMap, staticFields, typeSymbolMap);
                 if (ReferenceEquals(predicate, subquery.Predicate))
                     return subquery;
                 return new SubqueryExpr(subquery.OuterParameterName, subquery.NavigationPropertyName,

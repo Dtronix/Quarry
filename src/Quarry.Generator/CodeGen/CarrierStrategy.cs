@@ -151,7 +151,8 @@ internal sealed class CarrierParameter : IEquatable<CarrierParameter>
         string? typeMappingClass = null,
         bool isCollection = false,
         bool isSensitive = false,
-        bool isEntitySourced = false)
+        bool isEntitySourced = false,
+        bool isEnumerableCollection = false)
     {
         GlobalIndex = globalIndex;
         FieldName = fieldName;
@@ -162,6 +163,7 @@ internal sealed class CarrierParameter : IEquatable<CarrierParameter>
         IsCollection = isCollection;
         IsSensitive = isSensitive;
         IsEntitySourced = isEntitySourced;
+        IsEnumerableCollection = isEnumerableCollection;
     }
 
     public int GlobalIndex { get; }
@@ -179,6 +181,8 @@ internal sealed class CarrierParameter : IEquatable<CarrierParameter>
     public bool IsSensitive { get; }
     /// <summary>Read from Entity field, not P{n}.</summary>
     public bool IsEntitySourced { get; }
+    /// <summary>Whether the collection is IEnumerable-only (needs materialization at terminal).</summary>
+    public bool IsEnumerableCollection { get; }
 
     public bool Equals(CarrierParameter? other)
     {
@@ -192,7 +196,8 @@ internal sealed class CarrierParameter : IEquatable<CarrierParameter>
             && TypeMappingClass == other.TypeMappingClass
             && IsCollection == other.IsCollection
             && IsSensitive == other.IsSensitive
-            && IsEntitySourced == other.IsEntitySourced;
+            && IsEntitySourced == other.IsEntitySourced
+            && IsEnumerableCollection == other.IsEnumerableCollection;
     }
 
     public override bool Equals(object? obj) => Equals(obj as CarrierParameter);

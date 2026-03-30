@@ -180,7 +180,11 @@ internal static class CarrierAnalyzer
             if (param.IsCollection && param.ElementTypeName != null)
             {
                 var elementType = NormalizeFieldType(param.ElementTypeName);
-                var fieldType = $"System.Collections.Generic.IReadOnlyList<{elementType}>";
+                string fieldType;
+                if (param.IsEnumerableCollection)
+                    fieldType = $"System.Collections.Generic.IEnumerable<{elementType}>";
+                else
+                    fieldType = $"System.Collections.Generic.IReadOnlyList<{elementType}>";
                 fields.Add(new Models.CarrierField($"P{param.GlobalIndex}", fieldType, Models.FieldRole.Parameter, isReferenceType: true));
                 parameters.Add(new CarrierParameter(
                     globalIndex: param.GlobalIndex,
@@ -188,7 +192,8 @@ internal static class CarrierAnalyzer
                     fieldType: fieldType,
                     extractionCode: param.ValueExpression,
                     bindingCode: null,
-                    isCollection: true));
+                    isCollection: true,
+                    isEnumerableCollection: param.IsEnumerableCollection));
             }
             else
             {
