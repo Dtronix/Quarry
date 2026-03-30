@@ -853,43 +853,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Builds a tuple type name from projected columns.
-    /// </summary>
-    private static string BuildTupleTypeName(List<ProjectedColumn> columns)
-    {
-        var elements = columns.Select(c =>
-        {
-            var typeName = c.ClrType;
-
-            // Check for empty, whitespace, or unresolved type names
-            if (string.IsNullOrWhiteSpace(typeName) || typeName == "?")
-            {
-                typeName = c.FullClrType;
-            }
-
-            if (string.IsNullOrWhiteSpace(typeName) || typeName == "?")
-            {
-                typeName = "object";
-            }
-
-            // Add nullable suffix if needed and not already present
-            if (c.IsNullable && !typeName.EndsWith("?"))
-            {
-                typeName += "?";
-            }
-
-            // Omit default ItemN names — they cause CS9154 warnings when the
-            // original tuple has unnamed elements (e.g., (string, int) vs (string, int Item2))
-            var isDefaultName = c.PropertyName.StartsWith("Item") &&
-                                int.TryParse(c.PropertyName.Substring(4), out var idx) &&
-                                idx == c.Ordinal + 1;
-            return isDefaultName ? typeName : $"{typeName} {c.PropertyName}";
-        });
-        return $"({string.Join(", ", elements)})";
-    }
-
-
-    /// <summary>
     /// Checks if a type is a known type that uses GetValue fallback but is still valid
     /// (e.g. DateTimeOffset, TimeSpan). These types legitimately use GetValue and should
     /// not trigger QRY003.

@@ -6,6 +6,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -915,7 +916,7 @@ internal static class CarrierEmitter
                 else
                 {
                     sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
-                    if (param.ElementTypeName != null && IsNonNullableValueType(param.ElementTypeName))
+                    if (param.ElementTypeName != null && TypeClassification.IsNonNullableValueType(param.ElementTypeName))
                         sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li].ToString());");
                     else
                         sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
@@ -929,7 +930,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (IsNonNullableValueType(GetEffectiveCastType(i, param, carrier)))
+                else if (TypeClassification.IsNonNullableValueType(GetEffectiveCastType(i, param, carrier)))
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -1230,32 +1231,4 @@ internal static class CarrierEmitter
         return queryParam.ClrType;
     }
 
-    /// <summary>
-    /// Checks if the given CLR type name is a non-nullable value type.
-    /// Used by the logging emitter to decide between .ToString() and ?.ToString() ?? "null".
-    /// </summary>
-    private static bool IsNonNullableValueType(string typeName)
-    {
-        if (typeName.EndsWith("?"))
-            return false;
-        if (ValueTypes.Contains(typeName))
-            return true;
-        // Check unqualified name (e.g., "System.DateTime" → "DateTime")
-        var dotIndex = typeName.LastIndexOf('.');
-        if (dotIndex >= 0 && ValueTypes.Contains(typeName.Substring(dotIndex + 1)))
-            return true;
-        return false;
-    }
-
-    /// <summary>
-    /// Known value types that don't need nullable annotation.
-    /// </summary>
-    private static readonly HashSet<string> ValueTypes = new(System.StringComparer.Ordinal)
-    {
-        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
-        "float", "double", "decimal", "bool", "char",
-        "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DateOnly", "TimeOnly",
-        "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
-        "Single", "Double", "Decimal", "Boolean", "Char"
-    };
 }

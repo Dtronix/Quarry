@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Reflection;
 using NUnit.Framework;
 using Quarry.Generators.IR;
+using Quarry.Generators.Utilities;
 using Quarry.Generators.Models;
 using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
@@ -372,10 +373,7 @@ public class PipelineOrchestratorTests
 
     private static bool InvokeIsUnresolvedResultType(string? resultTypeName)
     {
-        var method = typeof(PipelineOrchestrator).GetMethod(
-            "IsUnresolvedResultType",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (bool)method.Invoke(null, new object?[] { resultTypeName })!;
+        return TypeClassification.IsUnresolvedResultType(resultTypeName);
     }
 
     private static Dictionary<string, string> InvokeBuildResultTypePatches(

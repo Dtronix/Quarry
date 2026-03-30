@@ -3147,7 +3147,7 @@ internal static class UsageSiteDiscovery
         // Check if T is a scalar type
         if (IsScalarType(typeSymbol))
         {
-            var scalarReaderMethod = GetReaderMethodForType(shortName);
+            var scalarReaderMethod = TypeClassification.GetReaderMethod(shortName);
             return new RawSqlTypeInfo(
                 shortName,
                 RawSqlTypeKind.Scalar,
@@ -3191,7 +3191,7 @@ internal static class UsageSiteDiscovery
                 effectiveClrType = namedProp.TypeArguments[1].ToMinimallyQualifiedDisplayString();
             }
 
-            var readerMethod = GetReaderMethodForType(isEnum ? GetEnumUnderlyingType(propType) : effectiveClrType);
+            var readerMethod = TypeClassification.GetReaderMethod(isEnum ? GetEnumUnderlyingType(propType) : effectiveClrType);
 
             properties.Add(new RawSqlPropertyInfo(
                 propertyName: prop.Name,
@@ -3268,37 +3268,6 @@ internal static class UsageSiteDiscovery
         return type.ToMinimallyQualifiedDisplayString();
     }
 
-    /// <summary>
-    /// Gets the DbDataReader method name for a CLR type string.
-    /// </summary>
-    private static string GetReaderMethodForType(string clrType)
-    {
-        var baseType = clrType.TrimEnd('?');
-        return baseType switch
-        {
-            "bool" or "Boolean" or "System.Boolean" => "GetBoolean",
-            "byte" or "Byte" or "System.Byte" => "GetByte",
-            "sbyte" or "SByte" or "System.SByte" => "GetByte",
-            "short" or "Int16" or "System.Int16" => "GetInt16",
-            "ushort" or "UInt16" or "System.UInt16" => "GetInt16",
-            "int" or "Int32" or "System.Int32" => "GetInt32",
-            "uint" or "UInt32" or "System.UInt32" => "GetInt32",
-            "long" or "Int64" or "System.Int64" => "GetInt64",
-            "ulong" or "UInt64" or "System.UInt64" => "GetInt64",
-            "float" or "Single" or "System.Single" => "GetFloat",
-            "double" or "Double" or "System.Double" => "GetDouble",
-            "decimal" or "Decimal" or "System.Decimal" => "GetDecimal",
-            "string" or "String" or "System.String" => "GetString",
-            "char" or "Char" or "System.Char" => "GetChar",
-            "Guid" or "System.Guid" => "GetGuid",
-            "DateTime" or "System.DateTime" => "GetDateTime",
-            "DateTimeOffset" or "System.DateTimeOffset" => "GetFieldValue<DateTimeOffset>",
-            "TimeSpan" or "System.TimeSpan" => "GetFieldValue<TimeSpan>",
-            "DateOnly" or "System.DateOnly" => "GetFieldValue<DateOnly>",
-            "TimeOnly" or "System.TimeOnly" => "GetFieldValue<TimeOnly>",
-            _ => "GetValue"
-        };
-    }
 
     /// <summary>
     /// Stores the lambda syntax reference on a RawCallSite for deferred batch enrichment

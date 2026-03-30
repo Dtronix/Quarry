@@ -374,49 +374,19 @@ internal static partial class InterceptorCodeGenerator
         if (isNullable)
         {
             var baseType = GetNonNullableType(clrType);
-            var baseReaderMethod = GetReaderMethod(baseType);
+            var baseReaderMethod = TypeClassification.GetReaderMethod(baseType);
             var readExpr = TypeClassification.NeedsSignCast(baseType)
                 ? $"({baseType})r.{baseReaderMethod}({ordinal})"
                 : $"r.{baseReaderMethod}({ordinal})";
             return $"r.IsDBNull({ordinal}) ? default({clrType}) : {readExpr}";
         }
 
-        var readerMethod = GetReaderMethod(clrType);
+        var readerMethod = TypeClassification.GetReaderMethod(clrType);
         if (TypeClassification.NeedsSignCast(clrType))
             return $"({clrType})r.{readerMethod}({ordinal})";
         return $"r.{readerMethod}({ordinal})";
     }
 
-    /// <summary>
-    /// Gets the appropriate DbDataReader method for a CLR type.
-    /// </summary>
-    private static string GetReaderMethod(string clrType)
-    {
-        return clrType switch
-        {
-            "bool" or "Boolean" or "System.Boolean" => "GetBoolean",
-            "byte" or "Byte" or "System.Byte" => "GetByte",
-            "sbyte" or "SByte" or "System.SByte" => "GetByte",
-            "short" or "Int16" or "System.Int16" => "GetInt16",
-            "ushort" or "UInt16" or "System.UInt16" => "GetInt16",
-            "int" or "Int32" or "System.Int32" => "GetInt32",
-            "uint" or "UInt32" or "System.UInt32" => "GetInt32",
-            "long" or "Int64" or "System.Int64" => "GetInt64",
-            "ulong" or "UInt64" or "System.UInt64" => "GetInt64",
-            "float" or "Single" or "System.Single" => "GetFloat",
-            "double" or "Double" or "System.Double" => "GetDouble",
-            "decimal" or "Decimal" or "System.Decimal" => "GetDecimal",
-            "string" or "String" or "System.String" => "GetString",
-            "char" or "Char" or "System.Char" => "GetChar",
-            "Guid" or "System.Guid" => "GetGuid",
-            "DateTime" or "System.DateTime" => "GetDateTime",
-            "DateTimeOffset" or "System.DateTimeOffset" => "GetValue",
-            "TimeSpan" or "System.TimeSpan" => "GetValue",
-            "DateOnly" or "System.DateOnly" => "GetValue",
-            "TimeOnly" or "System.TimeOnly" => "GetValue",
-            _ => "GetValue"
-        };
-    }
 
     /// <summary>
     /// Gets the non-nullable version of a nullable type.
