@@ -48,12 +48,18 @@ db.Users().Where(u => u.UserName.Substring(0, 3) == "adm");      // SUBSTR/SUBST
 
 ### IN Clauses
 
-Use `Contains` on an array or list to generate an `IN` clause.
+Use `Contains` on any collection to generate an `IN` clause. Arrays, lists, and any `IEnumerable<T>` (including LINQ projections) are supported.
 
 ```csharp
 var ids = new[] { 1, 2, 3 };
 db.Users().Where(u => ids.Contains(u.UserId));                    // WHERE "UserId" IN (1, 2, 3)
+
+// LINQ projections work too
+IEnumerable<int> activeIds = users.Select(u => u.Id);
+db.Orders().Where(o => activeIds.Contains(o.UserId));             // WHERE "UserId" IN (@p0, @p1, ...)
 ```
+
+Arrays and lists with compile-time constant elements are inlined as literals. Other collections are parameterized and expanded at runtime. Empty collections produce a no-match clause (`WHERE 1=0` semantics) rather than a SQL error.
 
 ### Raw SQL in Where
 
