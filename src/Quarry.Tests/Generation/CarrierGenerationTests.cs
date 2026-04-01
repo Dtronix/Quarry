@@ -2268,4 +2268,258 @@ public static class Queries
             "Reference-type result should have nullable suffix for FirstOrDefault");
     }
 
+    #region Issue: Computed column expressions in Set() lambdas
+
+    [Test]
+    public void SetAction_ColumnExpression_ProducesColumnRefsInSql()
+    {
+        var source = SharedSchema + @"
+public class OrderItemSchema : Schema
+{
+    public static string Table => ""order_items"";
+    public Key<int> OrderItemId => Identity();
+    public Col<int> Quantity { get; }
+    public Col<decimal> UnitPrice { get; }
+    public Col<decimal> LineTotal { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<OrderItem> OrderItems();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // Column-to-column computation: should produce SQL column refs, not C# variable refs
+        await db.OrderItems().Update()
+            .Set(o => o.LineTotal = o.Quantity * o.UnitPrice)
+            .Where(o => o.OrderItemId == 1)
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // Should not produce internal errors
+        var qry900 = diagnostics.Where(d => d.Id == "QRY900").ToList();
+        Assert.That(qry900, Is.Empty,
+            $"Should not produce QRY900. Got: {string.Join("; ", qry900.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // The SET clause SQL must contain column references, not parameter-only
+        // Expected SQL pattern: SET "LineTotal" = "Quantity" * "UnitPrice"
+        Assert.That(code, Does.Contain("\"Quantity\"").Or.Contain("`Quantity`"),
+            "SET expression should contain column reference for Quantity, not treat entire expression as captured variable");
+        Assert.That(code, Does.Contain("\"UnitPrice\"").Or.Contain("`UnitPrice`"),
+            "SET expression should contain column reference for UnitPrice, not treat entire expression as captured variable");
+    }
+
+    [Test]
+    public void SetAction_ColumnPlusCapturedVar_ProducesMixedSql()
+    {
+        var source = SharedSchema + @"
+public class OrderItemSchema : Schema
+{
+    public static string Table => ""order_items"";
+    public Key<int> OrderItemId => Identity();
+    public Col<int> Quantity { get; }
+    public Col<decimal> UnitPrice { get; }
+    public Col<decimal> LineTotal { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<OrderItem> OrderItems();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var bonus = 10m;
+        // Mixed: column reference + captured variable
+        await db.OrderItems().Update()
+            .Set(o => o.LineTotal = o.UnitPrice + bonus)
+            .Where(o => o.OrderItemId == 1)
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.Where(d => d.Id == "QRY900").ToList();
+        Assert.That(qry900, Is.Empty,
+            $"Should not produce QRY900. Got: {string.Join("; ", qry900.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Should contain a column reference for UnitPrice and a parameter for bonus
+        Assert.That(code, Does.Contain("\"UnitPrice\"").Or.Contain("`UnitPrice`"),
+            "SET expression should contain column reference for UnitPrice");
+    }
+
+    [Test]
+    public void SetAction_MultiAssign_ColumnExprAndLiteral_ProducesCorrectSql()
+    {
+        var source = SharedSchema + @"
+public class OrderItemSchema : Schema
+{
+    public static string Table => ""order_items"";
+    public Key<int> OrderItemId => Identity();
+    public Col<int> Quantity { get; }
+    public Col<decimal> UnitPrice { get; }
+    public Col<decimal> LineTotal { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<OrderItem> OrderItems();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var startTime = 1000L;
+        // Multi-assignment: one with column expr, one with captured var
+        await db.OrderItems().Update()
+            .Set(o => { o.LineTotal = o.UnitPrice * o.Quantity; o.Quantity = 0; })
+            .Where(o => o.OrderItemId == 1)
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.Where(d => d.Id == "QRY900").ToList();
+        Assert.That(qry900, Is.Empty,
+            $"Should not produce QRY900. Got: {string.Join("; ", qry900.Select(d => d.GetMessage()))}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // First assignment should produce column refs
+        Assert.That(code, Does.Contain("\"UnitPrice\"").Or.Contain("`UnitPrice`"),
+            "First assignment should reference UnitPrice column");
+        Assert.That(code, Does.Contain("\"Quantity\"").Or.Contain("`Quantity`"),
+            "First assignment should reference Quantity column");
+    }
+
+    #endregion
+
+    #region Issue: No concrete QueryBuilder<T> references in generated code
+
+    [Test]
+    public void GeneratedCode_NeverReferences_ConcreteQueryBuilderType()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => u)
+            .OrderBy(u => u.UserName)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Generated code must never reference QueryBuilder<T> — it was removed
+        // from the runtime. Only IQueryBuilder<T> (interface) should appear.
+        Assert.That(code, Does.Not.Match(@"(?<!I)QueryBuilder<"),
+            "Generated code should not reference concrete QueryBuilder<T> type — only IQueryBuilder<T> interface");
+    }
+
+    [Test]
+    public void FallbackPath_Uses_InterfaceType_NotConcreteQueryBuilder()
+    {
+        // This test verifies that when a clause falls back to the non-carrier path
+        // (e.g., untranslatable clause), the fallback cast uses interface types,
+        // not the nonexistent concrete QueryBuilder<T>.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // Simple chain that should work
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchAllAsync();
+
+        // Another chain with identity select
+        await db.Users()
+            .Select(u => u)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // Get all generated interceptor files
+        var interceptorTrees = result.GeneratedTrees
+            .Where(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"))
+            .ToList();
+
+        foreach (var tree in interceptorTrees)
+        {
+            var code = tree.GetText().ToString();
+
+            // No generated file should reference concrete QueryBuilder<T>
+            Assert.That(code, Does.Not.Match(@"(?<!I)QueryBuilder<"),
+                $"File {tree.FilePath} references concrete QueryBuilder<T> — should use IQueryBuilder<T> or carrier class");
+        }
+    }
+
+    #endregion
+
 }

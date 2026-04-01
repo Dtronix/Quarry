@@ -1800,6 +1800,20 @@ internal static class UsageSiteDiscovery
                 }
             }
 
+            // Check if the value expression contains column references (lambda parameter member accesses).
+            // If so, parse through SqlExprParser to decompose into column refs + captured vars.
+            if (ContainsLambdaParamRef(valueExpr, parameterName))
+            {
+                // Store the expression text and lambda param name as strings.
+                // The SqlExpr parsing/binding happens in CallSiteTranslator where the
+                // result is stored on TranslatedClause (not cached through the pipeline).
+                assignments.Add(new Models.SetActionAssignment(
+                    columnSql, valueTypeName: null, customTypeMappingClass: null,
+                    columnExpressionText: valueExpr.ToFullString().Trim(),
+                    columnExpressionLambdaParam: parameterName));
+                continue;
+            }
+
             var paramIndex = parameters.Count;
             var isCaptured = IsSetActionCapturedVariable(valueExpr, parameterName);
 
@@ -2008,6 +2022,26 @@ internal static class UsageSiteDiscovery
 
         var result = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         return string.IsNullOrWhiteSpace(result) ? "object" : result;
+    }
+
+    /// <summary>
+    /// Recursively checks whether an expression contains any member access on the lambda parameter
+    /// (e.g., e.EndTime, e.StartTime). When true, the expression must be parsed through
+    /// the SqlExpr pipeline to decompose into SQL column references + captured variable parameters.
+    /// </summary>
+    private static bool ContainsLambdaParamRef(ExpressionSyntax expr, string lambdaParamName)
+    {
+        if (expr is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression is IdentifierNameSyntax memberId
+            && memberId.Identifier.Text == lambdaParamName)
+            return true;
+
+        foreach (var child in expr.ChildNodes())
+        {
+            if (child is ExpressionSyntax childExpr && ContainsLambdaParamRef(childExpr, lambdaParamName))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

@@ -39,10 +39,23 @@ internal static class CallSiteTranslator
 
         var raw = bound.Raw;
 
-        // UpdateSetAction: Action<T> lambdas can't be parsed into SqlExpr.
+        // UpdateSetAction: Action<T> lambdas can't be fully parsed into SqlExpr.
         // Pass through SetActionAssignments from discovery as a TranslatedClause.
+        // However, assignments with column expressions (e.g., e.EndTime - e.StartTime + captured)
+        // need binding and parameter extraction through the SqlExpr pipeline.
         if (raw.Kind == InterceptorKind.UpdateSetAction && raw.SetActionAssignments != null)
         {
+            var hasColumnExprs = false;
+            foreach (var a in raw.SetActionAssignments)
+            {
+                if (a.HasColumnExpression) { hasColumnExprs = true; break; }
+            }
+
+            if (hasColumnExprs)
+            {
+                return TranslateSetActionWithColumnExpressions(bound, raw);
+            }
+
             var clause = new TranslatedClause(
                 ClauseKind.Set,
                 new LiteralExpr("1", "int"), // placeholder — not used for SetAction
@@ -238,6 +251,104 @@ internal static class CallSiteTranslator
             joinedSchemaName: joinedSchemaName);
 
         return new TranslatedCallSite(bound, clause, keyTypeName, valueTypeName);
+    }
+
+    /// <summary>
+    /// Translates SetAction assignments that contain column expressions (e.g., e.EndTime - e.StartTime + captured).
+    /// Binds column references and extracts parameters for each computed assignment.
+    /// Parameters are collected in assignment order to match the SQL rendering order.
+    /// </summary>
+    private static TranslatedCallSite TranslateSetActionWithColumnExpressions(
+        BoundCallSite bound, RawCallSite raw)
+    {
+        var entityInfo = ReconstructEntityInfo(bound);
+        if (entityInfo == null)
+        {
+            // Can't bind columns — fall back to passthrough
+            var fallbackClause = new TranslatedClause(
+                ClauseKind.Set, new LiteralExpr("1", "int"),
+                raw.SetActionParameters ?? (IReadOnlyList<Translation.ParameterInfo>)Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: true,
+                setAssignments: raw.SetActionAssignments!);
+            return new TranslatedCallSite(bound, fallbackClause);
+        }
+
+        // Determine lambda parameter name from the first column expression
+        string? lambdaParamName = null;
+        foreach (var a in raw.SetActionAssignments!)
+        {
+            if (a.ColumnExpressionLambdaParam != null)
+            {
+                lambdaParamName = a.ColumnExpressionLambdaParam;
+                break;
+            }
+        }
+        lambdaParamName ??= "_";
+
+        // Process assignments in order, creating new assignment objects with bound expressions.
+        // Parameters are interleaved in assignment order to match SQL rendering.
+        var allParameters = new List<Translation.ParameterInfo>();
+        var boundAssignments = new List<Models.SetActionAssignment>();
+        int paramIndex = 0;
+        int discoveryParamIdx = 0; // index into raw.SetActionParameters
+
+        foreach (var assignment in raw.SetActionAssignments)
+        {
+            if (assignment.HasColumnExpression)
+            {
+                // Re-parse the expression text into a syntax tree, then through SqlExprParser
+                var exprSyntax = Microsoft.CodeAnalysis.CSharp.SyntaxFactory.ParseExpression(assignment.ColumnExpressionText!);
+                var lambdaParams = new HashSet<string>(StringComparer.Ordinal) { lambdaParamName };
+                var parsedExpr = SqlExprParser.Parse(exprSyntax, lambdaParams);
+
+                // Bind column references to resolved column names
+                var boundExpr = SqlExprBinder.Bind(
+                    parsedExpr,
+                    entityInfo,
+                    bound.Dialect,
+                    lambdaParamName,
+                    inBooleanContext: false);
+
+                // Extract captured variables as parameters
+                boundExpr = SqlExprClauseTranslator.ExtractParametersPublic(boundExpr, allParameters, ref paramIndex);
+
+                // Create new assignment with bound expression stored on BoundValueExpression
+                var boundAssignment = new Models.SetActionAssignment(
+                    assignment.ColumnSql, assignment.ValueTypeName, assignment.CustomTypeMappingClass,
+                    columnExpressionText: assignment.ColumnExpressionText,
+                    columnExpressionLambdaParam: assignment.ColumnExpressionLambdaParam);
+                boundAssignment.BoundValueExpression = boundExpr;
+                boundAssignments.Add(boundAssignment);
+            }
+            else if (!assignment.IsInlined && raw.SetActionParameters != null
+                     && discoveryParamIdx < raw.SetActionParameters.Count)
+            {
+                // Simple captured variable — take next discovery-time param
+                var p = raw.SetActionParameters[discoveryParamIdx];
+                var remapped = new Translation.ParameterInfo(
+                    paramIndex, $"@p{paramIndex}", p.ClrType, p.ValueExpression,
+                    isCaptured: p.IsCaptured, expressionPath: p.ExpressionPath);
+                remapped.CapturedFieldName = p.CapturedFieldName;
+                remapped.CapturedFieldType = p.CapturedFieldType;
+                allParameters.Add(remapped);
+                paramIndex++;
+                discoveryParamIdx++;
+                boundAssignments.Add(assignment);
+            }
+            else
+            {
+                // Inlined constant — pass through unchanged
+                boundAssignments.Add(assignment);
+            }
+        }
+
+        var clause = new TranslatedClause(
+            ClauseKind.Set,
+            new LiteralExpr("1", "int"),
+            allParameters,
+            isSuccess: true,
+            setAssignments: boundAssignments);
+        return new TranslatedCallSite(bound, clause);
     }
 
     /// <summary>
