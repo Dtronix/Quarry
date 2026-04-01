@@ -40,6 +40,7 @@ internal static class PipelineOrchestrator
         CancellationToken ct)
     {
         TraceCapture.Clear();
+        PipelineErrorBag.DrainErrors(); // discard stale errors from prior compilations on this thread
 
         ct.ThrowIfCancellationRequested();
 
@@ -158,17 +159,17 @@ internal static class PipelineOrchestrator
         foreach (var plan in assembledPlans)
         {
             var resolvedType = plan.Plan.Projection?.ResultTypeName;
-            if (resolvedType == null || resolvedType.Length == 0 || IsUnresolvedResultType(resolvedType))
+            if (resolvedType == null || resolvedType.Length == 0 || TypeClassification.IsUnresolvedResultType(resolvedType))
                 continue;
 
             // Patch execution site if its result type is unresolved
-            if (IsUnresolvedResultType(plan.ExecutionSite.ResultTypeName))
+            if (TypeClassification.IsUnresolvedResultType(plan.ExecutionSite.ResultTypeName))
                 patches[plan.ExecutionSite.UniqueId] = resolvedType;
 
             // Patch clause sites with unresolved result types
             foreach (var cs in plan.ClauseSites)
             {
-                if (IsUnresolvedResultType(cs.ResultTypeName))
+                if (TypeClassification.IsUnresolvedResultType(cs.ResultTypeName))
                     patches[cs.UniqueId] = resolvedType;
             }
         }
@@ -176,55 +177,6 @@ internal static class PipelineOrchestrator
         return patches;
     }
 
-    /// <summary>
-    /// Determines whether a non-null ResultTypeName is unresolved and needs patching.
-    /// A null ResultTypeName means "no result type" (entity-only query), which is valid.
-    /// </summary>
-    private static bool IsUnresolvedResultType(string? resultTypeName)
-    {
-        if (resultTypeName == null)
-            return false;
-        if (resultTypeName.Length == 0 || resultTypeName == "?" || resultTypeName == "object")
-            return true;
-
-        // Tuple types with unresolved elements: "object" type parts, "?" type parts,
-        // or missing type parts (e.g., "( OrderId,  Total)" where types are empty)
-        if (resultTypeName.StartsWith("(") && resultTypeName.EndsWith(")"))
-        {
-            var inner = resultTypeName.Substring(1, resultTypeName.Length - 2);
-            foreach (var element in inner.Split(','))
-            {
-                var trimmed = element.Trim();
-                if (trimmed.Length == 0)
-                    return true;
-
-                // Named tuple element: "type name" format. Check the type part.
-                var spaceIdx = trimmed.LastIndexOf(' ');
-                if (spaceIdx >= 0)
-                {
-                    var typePart = trimmed.Substring(0, spaceIdx).Trim();
-                    // Empty type part means unresolved (e.g., " OrderId" → type is empty, name is "OrderId")
-                    if (typePart.Length == 0 || typePart == "object" || typePart == "?")
-                        return true;
-                }
-                else
-                {
-                    // Single token — no space. Could be a type-only element like "int"
-                    // or a bare "object"/"?" error type.
-                    if (trimmed == "object" || trimmed == "?")
-                        return true;
-                }
-
-            }
-
-            // If the inner string starts with a space, the first element's type is empty
-            // e.g., "( OrderId, decimal Total)" → first element has no type
-            if (inner.Length > 0 && inner[0] == ' ')
-                return true;
-        }
-
-        return false;
-    }
 
     /// <summary>
     /// Replaces sites in the main array with chain-updated versions from AssembledPlans.

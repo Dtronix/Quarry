@@ -16,12 +16,14 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         BoundCallSite bound,
         TranslatedClause? clause = null,
         string? keyTypeName = null,
-        string? valueTypeName = null)
+        string? valueTypeName = null,
+        string? pipelineError = null)
     {
         Bound = bound;
         Clause = clause;
         KeyTypeName = keyTypeName;
         ValueTypeName = valueTypeName;
+        PipelineError = pipelineError;
     }
 
     /// <summary>Underlying bound call site (composition).</summary>
@@ -38,6 +40,12 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
 
     /// <summary>Resolved value type for Set.</summary>
     public string? ValueTypeName { get; }
+
+    /// <summary>
+    /// Pipeline error captured during binding or translation.
+    /// Non-null indicates the site failed to process and should produce a QRY900 diagnostic.
+    /// </summary>
+    public string? PipelineError { get; }
 
     // Convenience accessors to reduce verbosity in emitters
     public string UniqueId => Bound.Raw.UniqueId;
@@ -85,7 +93,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         IReadOnlyList<EntityRef>? joinedEntities)
     {
         var newBound = Bound.WithJoinedEntities(joinedEntityTypeNames, joinedEntities);
-        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName, PipelineError);
     }
 
     /// <summary>
@@ -97,7 +105,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     {
         var newRaw = Bound.Raw.WithResultTypeName(resolvedResultTypeName);
         var newBound = Bound.WithRaw(newRaw);
-        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName);
+        return new TranslatedCallSite(newBound, Clause, KeyTypeName, ValueTypeName, PipelineError);
     }
 
     public bool Equals(TranslatedCallSite? other)
@@ -107,14 +115,15 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
         return Bound.Equals(other.Bound)
             && Equals(Clause, other.Clause)
             && KeyTypeName == other.KeyTypeName
-            && ValueTypeName == other.ValueTypeName;
+            && ValueTypeName == other.ValueTypeName
+            && PipelineError == other.PipelineError;
     }
 
     public override bool Equals(object? obj) => Equals(obj as TranslatedCallSite);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Bound.GetHashCode(), KeyTypeName, ValueTypeName);
+        return HashCode.Combine(Bound.GetHashCode(), KeyTypeName, ValueTypeName, PipelineError);
     }
 }
 

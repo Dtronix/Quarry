@@ -650,7 +650,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
@@ -734,7 +734,7 @@ internal static class UsageSiteDiscovery
             isCapturedInLambda: isCapturedInLambda,
             isPassedAsArgument: isPassedAsArgument,
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId,
             builderTypeName: containingType.Name,
             joinedEntityTypeNames: joinedEntityTypeNames,
@@ -888,7 +888,7 @@ internal static class UsageSiteDiscovery
             var isInsideLoop = DetectLoopAncestor(parentInvoc);
             var isInsideTryCatch = DetectTryCatchAncestor(parentInvoc);
             var isCapturedInLambda = DetectLambdaCaptureAncestor(parentInvoc);
-            var conditionalInfo = DetectConditionalAncestor(parentInvoc);
+            var nestingContext = DetectNestingContext(parentInvoc);
 
             // For Select(), analyze the projection syntactically
             ProjectionInfo? projectionInfo = null;
@@ -944,7 +944,7 @@ internal static class UsageSiteDiscovery
                 isInsideLoop: isInsideLoop,
                 isInsideTryCatch: isInsideTryCatch,
                 isCapturedInLambda: isCapturedInLambda,
-                conditionalInfo: conditionalInfo,
+                nestingContext: nestingContext,
                 chainId: chainId,
                 builderTypeName: "IJoinedQueryBuilder",
                 joinedEntityTypeNames: joinedEntityTypeNames);
@@ -1421,9 +1421,9 @@ internal static class UsageSiteDiscovery
 
     /// <summary>
     /// Detects if the invocation is inside an if statement or ternary expression.
-    /// Returns ConditionalInfo with the condition text and nesting depth.
+    /// Returns NestingContext with the condition text and nesting depth.
     /// </summary>
-    private static ConditionalInfo? DetectConditionalAncestor(SyntaxNode node)
+    private static NestingContext? DetectNestingContext(SyntaxNode node)
     {
         // Walk all ancestors to count total nesting depth and capture innermost if info
         int totalIfDepth = 0;
@@ -1463,7 +1463,7 @@ internal static class UsageSiteDiscovery
         if (innermostCondition == null)
             return null;
 
-        return new ConditionalInfo(innermostCondition, totalIfDepth, innermostBranchKind);
+        return new NestingContext(innermostCondition, totalIfDepth, innermostBranchKind);
     }
 
     /// <summary>
@@ -2309,7 +2309,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
             DetectVariableDisqualifiers(invocation, semanticModel);
@@ -2336,7 +2336,7 @@ internal static class UsageSiteDiscovery
             isCapturedInLambda: isCapturedInLambda,
             isPassedAsArgument: isPassedAsArgument,
             isAssignedFromNonQuarryMethod: isAssignedFromNonQuarryMethod,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId);
     }
 
@@ -3108,7 +3108,7 @@ internal static class UsageSiteDiscovery
         var isInsideLoop = DetectLoopAncestor(invocation);
         var isInsideTryCatch = DetectTryCatchAncestor(invocation);
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
-        var conditionalInfo = DetectConditionalAncestor(invocation);
+        var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
 
         return new RawCallSite(
@@ -3132,7 +3132,7 @@ internal static class UsageSiteDiscovery
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
-            conditionalInfo: conditionalInfo,
+            nestingContext: nestingContext,
             chainId: chainId);
     }
 
@@ -3147,7 +3147,7 @@ internal static class UsageSiteDiscovery
         // Check if T is a scalar type
         if (IsScalarType(typeSymbol))
         {
-            var scalarReaderMethod = GetReaderMethodForType(shortName);
+            var scalarReaderMethod = TypeClassification.GetReaderMethod(shortName);
             return new RawSqlTypeInfo(
                 shortName,
                 RawSqlTypeKind.Scalar,
@@ -3191,7 +3191,7 @@ internal static class UsageSiteDiscovery
                 effectiveClrType = namedProp.TypeArguments[1].ToMinimallyQualifiedDisplayString();
             }
 
-            var readerMethod = GetReaderMethodForType(isEnum ? GetEnumUnderlyingType(propType) : effectiveClrType);
+            var readerMethod = TypeClassification.GetReaderMethod(isEnum ? GetEnumUnderlyingType(propType) : effectiveClrType);
 
             properties.Add(new RawSqlPropertyInfo(
                 propertyName: prop.Name,
@@ -3268,37 +3268,6 @@ internal static class UsageSiteDiscovery
         return type.ToMinimallyQualifiedDisplayString();
     }
 
-    /// <summary>
-    /// Gets the DbDataReader method name for a CLR type string.
-    /// </summary>
-    private static string GetReaderMethodForType(string clrType)
-    {
-        var baseType = clrType.TrimEnd('?');
-        return baseType switch
-        {
-            "bool" or "Boolean" or "System.Boolean" => "GetBoolean",
-            "byte" or "Byte" or "System.Byte" => "GetByte",
-            "sbyte" or "SByte" or "System.SByte" => "GetByte",
-            "short" or "Int16" or "System.Int16" => "GetInt16",
-            "ushort" or "UInt16" or "System.UInt16" => "GetInt16",
-            "int" or "Int32" or "System.Int32" => "GetInt32",
-            "uint" or "UInt32" or "System.UInt32" => "GetInt32",
-            "long" or "Int64" or "System.Int64" => "GetInt64",
-            "ulong" or "UInt64" or "System.UInt64" => "GetInt64",
-            "float" or "Single" or "System.Single" => "GetFloat",
-            "double" or "Double" or "System.Double" => "GetDouble",
-            "decimal" or "Decimal" or "System.Decimal" => "GetDecimal",
-            "string" or "String" or "System.String" => "GetString",
-            "char" or "Char" or "System.Char" => "GetChar",
-            "Guid" or "System.Guid" => "GetGuid",
-            "DateTime" or "System.DateTime" => "GetDateTime",
-            "DateTimeOffset" or "System.DateTimeOffset" => "GetFieldValue<DateTimeOffset>",
-            "TimeSpan" or "System.TimeSpan" => "GetFieldValue<TimeSpan>",
-            "DateOnly" or "System.DateOnly" => "GetFieldValue<DateOnly>",
-            "TimeOnly" or "System.TimeOnly" => "GetFieldValue<TimeOnly>",
-            _ => "GetValue"
-        };
-    }
 
     /// <summary>
     /// Stores the lambda syntax reference on a RawCallSite for deferred batch enrichment

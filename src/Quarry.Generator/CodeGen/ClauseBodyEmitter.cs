@@ -108,7 +108,7 @@ internal static class ClauseBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
             if (isBrokenTuple)
                 keyType = null;
 
@@ -211,20 +211,7 @@ internal static class ClauseBodyEmitter
                 var targetInterface = $"IQueryBuilder<{entityType}, {resultType}>";
                 if (isFirstInChain)
                 {
-                    var siteParams = new List<QueryParameter>();
-                    var globalParamOffset = 0;
-                    foreach (var clause in prebuiltChain.GetClauseEntries())
-                    {
-                        if (clause.Site.UniqueId == site.UniqueId)
-                        {
-                            if (clause.Site.Clause != null)
-                                for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < prebuiltChain.ChainParameters.Count; i++)
-                                    siteParams.Add(prebuiltChain.ChainParameters[globalParamOffset + i]);
-                            break;
-                        }
-                        if (clause.Site.Clause != null)
-                            globalParamOffset += clause.Site.Clause.Parameters.Count;
-                    }
+                    var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     int? clauseBit = null;
                     CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
                 }
@@ -262,7 +249,7 @@ internal static class ClauseBodyEmitter
         if (site.ResultTypeName != null)
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName);
-            var isBrokenTuple = resultType.Contains("object") && resultType.StartsWith("(");
+            var isBrokenTuple = InterceptorCodeGenerator.IsBrokenTupleType(resultType);
             if (isBrokenTuple)
                 keyType = null;
 

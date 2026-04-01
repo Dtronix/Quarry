@@ -675,4 +675,96 @@ internal class CrossDialectSubqueryTests
     private static string GetSubquerySearchValue() => "hipp";
 
     #endregion
+
+    #region Null checks in subquery predicates
+
+    [Test]
+    public async Task Where_Any_NullCheck_IsNull()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Orders with NULL Notes: Order 2 (Alice), Order 3 (Bob)
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Notes == null)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Notes == null)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Notes == null)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Notes == null)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NULL))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NULL))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Notes` IS NULL))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Notes] IS NULL))");
+
+        // Alice has Order 2 (Notes=NULL), Bob has Order 3 (Notes=NULL)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+    }
+
+    [Test]
+    public async Task Where_Any_NullCheck_IsNotNull()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Orders with non-NULL Notes: Order 1 (Alice, Notes='Express')
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Notes != null)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Notes != null)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Notes != null)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Notes != null)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NOT NULL))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NOT NULL))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Notes` IS NOT NULL))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Notes] IS NOT NULL))");
+
+        // Only Alice has Order 1 with Notes='Express'
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Where_Any_NullCheck_WithCapturedVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Combine null check with captured variable comparison
+        var minTotal = 100m;
+        var lt = Lite.Users().Where(u => u.Orders.Any(o => o.Notes != null && o.Total > minTotal)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any(o => o.Notes != null && o.Total > minTotal)).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any(o => o.Notes != null && o.Total > minTotal)).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any(o => o.Notes != null && o.Total > minTotal)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NOT NULL AND (\"sq0\".\"Total\" > @p0)))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"sq0\".\"Notes\" IS NOT NULL AND (\"sq0\".\"Total\" > $1)))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Notes` IS NOT NULL AND (`sq0`.`Total` > ?)))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Notes] IS NOT NULL AND ([sq0].[Total] > @p0)))");
+
+        Assert.That(lt.ToDiagnostics().Parameters, Has.Count.EqualTo(1));
+
+        // Only Order 1 (Alice) has Notes='Express' AND Total=250 > 100
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    #endregion
 }

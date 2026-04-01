@@ -1,9 +1,11 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
+using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -14,6 +16,36 @@ namespace Quarry.Generators.CodeGen;
 /// </summary>
 internal static class TerminalEmitHelpers
 {
+    /// <summary>
+    /// Resolves a clause site's parameters and their global offset within the chain.
+    /// Handles all three parameter sources: UpdateSetPoco columns, standard clause
+    /// parameters, and UpdateSetAction parameters.
+    /// </summary>
+    internal static (List<QueryParameter> SiteParams, int GlobalOffset) ResolveSiteParams(
+        AssembledPlan chain,
+        string siteUniqueId)
+    {
+        var globalParamOffset = 0;
+        foreach (var clause in chain.GetClauseEntries())
+        {
+            if (clause.Site.UniqueId == siteUniqueId)
+            {
+                var siteParams = new List<QueryParameter>();
+                if (clause.Site.Clause != null)
+                    for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < chain.ChainParameters.Count; i++)
+                        siteParams.Add(chain.ChainParameters[globalParamOffset + i]);
+                return (siteParams, globalParamOffset);
+            }
+            if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
+            else if (clause.Site.Clause != null)
+                globalParamOffset += clause.Site.Clause.Parameters.Count;
+            else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
+                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
+        }
+        return (new List<QueryParameter>(), globalParamOffset);
+    }
+
     /// <summary>
     /// Emits parameter value extraction into __pVal* local variables from carrier fields.
     /// </summary>
@@ -131,12 +163,26 @@ internal static class TerminalEmitHelpers
         var globalOffset = 0;
         foreach (var clause in chain.GetClauseEntries())
         {
-            var paramCount = clause.Site.Clause?.Parameters.Count ?? 0;
+            var paramCount = GetClauseParamCount(clause);
             for (int i = 0; i < paramCount; i++)
                 map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
             globalOffset += paramCount;
         }
         return map;
+    }
+
+    /// <summary>
+    /// Gets the parameter count for a clause entry, handling all three parameter sources.
+    /// </summary>
+    private static int GetClauseParamCount(ChainClauseEntry clause)
+    {
+        if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+            return clause.Site.UpdateInfo.Columns.Count;
+        if (clause.Site.Clause != null)
+            return clause.Site.Clause.Parameters.Count;
+        if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
+            return clause.Site.Bound.Raw.SetActionParameters.Count;
+        return 0;
     }
 
     /// <summary>
@@ -276,8 +322,7 @@ internal static class TerminalEmitHelpers
         foreach (var clause in chain.GetClauseEntries())
         {
             clauseParamOffsets[clause.Site.UniqueId] = globalParamOffset;
-            if (clause.Site.Clause != null)
-                globalParamOffset += clause.Site.Clause.Parameters.Count;
+            globalParamOffset += GetClauseParamCount(clause);
         }
 
         var paginationBaseIdx = chain.ChainParameters.Count;
@@ -452,9 +497,9 @@ internal static class TerminalEmitHelpers
                 ? $", conditionalBitIndex: {clause.BitIndex.Value}"
                 : "";
             var branchKindArg = "";
-            if (clause.IsConditional && clause.Site.Bound.Raw.ConditionalInfo != null)
+            if (clause.IsConditional && clause.Site.Bound.Raw.NestingContext != null)
             {
-                var bk = clause.Site.Bound.Raw.ConditionalInfo.BranchKind == Models.BranchKind.MutuallyExclusive
+                var bk = clause.Site.Bound.Raw.NestingContext.BranchKind == Models.BranchKind.MutuallyExclusive
                     ? "DiagnosticBranchKind.MutuallyExclusive"
                     : "DiagnosticBranchKind.Independent";
                 branchKindArg = $", branchKind: {bk}";
@@ -614,6 +659,58 @@ internal static class TerminalEmitHelpers
         sb.AppendLine($"            offset: {offsetArg},");
         sb.AppendLine($"            identityColumnName: {identityLiteral},");
         sb.AppendLine($"            unmatchedMethodNames: {(hasUnmatched ? "__unmatched" : "null")});");
+    }
+
+    /// <summary>
+    /// Resolves the return type for a terminal interceptor method based on the execution kind.
+    /// </summary>
+    internal static string ResolveTerminalReturnType(
+        InterceptorKind kind, string resultType, string scalarTypeArg, bool isValueType)
+    {
+        var firstOrDefaultSuffix = isValueType ? "" : "?";
+        return kind switch
+        {
+            InterceptorKind.ExecuteFetchAll => $"Task<List<{resultType}>>",
+            InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
+            InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
+            InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Resolves the carrier executor method name for a terminal execution kind.
+    /// </summary>
+    internal static string ResolveCarrierExecutorMethod(
+        InterceptorKind kind, string resultType, string scalarTypeArg)
+    {
+        return kind switch
+        {
+            InterceptorKind.ExecuteFetchAll => $"ExecuteCarrierWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
+            InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
+            _ => ""
+        };
+    }
+
+    /// <summary>
+    /// Computes the value expression and DbType flag for an insert column binding.
+    /// Consolidates the GetColumnValueExpression call arguments (9 parameters) into a single source of truth.
+    /// </summary>
+    internal static (string ValueExpr, bool NeedsIntType) GetInsertColumnBinding(
+        InsertColumnInfo col, string entityVar, bool convertBool)
+    {
+        var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
+        var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression(
+            entityVar, col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass,
+            col.IsBoolean, col.IsEnum, col.IsNullable, convertBool,
+            col.EnumUnderlyingType ?? "int");
+        return (valueExpr, needsIntType);
     }
 
     /// <summary>

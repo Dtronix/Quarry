@@ -176,6 +176,15 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             )
             """);
 
+        await SqlAsync("""
+            CREATE TABLE "events" (
+                "EventId" INTEGER PRIMARY KEY,
+                "EventName" TEXT NOT NULL,
+                "ScheduledAt" TEXT NOT NULL,
+                "CancelledAt" TEXT
+            )
+            """);
+
         // View to alias "orders" as "Order" for join table name compatibility.
         await SqlAsync("""
             CREATE VIEW "Order" AS SELECT * FROM "orders"
@@ -210,6 +219,12 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 (1, 1, 'Savings',  1000.50, 5000.00, 1),
                 (2, 1, 'Checking', 250.75,  1000.00, 1),
                 (3, 2, 'Savings',  500.00,  2000.00, 0)
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "events" ("EventId", "EventName", "ScheduledAt", "CancelledAt") VALUES
+                (1, 'Launch', '2024-06-15 10:30:00+00:00', NULL),
+                (2, 'Review', '2024-07-01 14:00:00+02:00', '2024-06-28 09:00:00+02:00')
             """);
     }
 }
