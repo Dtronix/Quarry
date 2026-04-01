@@ -632,6 +632,140 @@ internal class CrossDialectUpdateTests
 
     #endregion
 
+    #region Set(Action<T>) — Column Expression in RHS
+
+    [Test]
+    public async Task Update_SetAction_PureColumnExpression()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.OrderItems().Update().Set(o => o.LineTotal = o.Quantity * o.UnitPrice).Where(o => o.OrderItemId == 1).Prepare();
+        var pg = Pg.OrderItems().Update().Set(o => o.LineTotal = o.Quantity * o.UnitPrice).Where(o => o.OrderItemId == 1).Prepare();
+        var my = My.OrderItems().Update().Set(o => o.LineTotal = o.Quantity * o.UnitPrice).Where(o => o.OrderItemId == 1).Prepare();
+        var ss = Ss.OrderItems().Update().Set(o => o.LineTotal = o.Quantity * o.UnitPrice).Where(o => o.OrderItemId == 1).Prepare();
+
+        // Pure column expression: no captured variables, both operands are entity columns
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"order_items\" SET \"LineTotal\" = (\"Quantity\" * \"UnitPrice\") WHERE \"OrderItemId\" = 1",
+            pg:     "UPDATE \"order_items\" SET \"LineTotal\" = (\"Quantity\" * \"UnitPrice\") WHERE \"OrderItemId\" = 1",
+            mysql:  "UPDATE `order_items` SET `LineTotal` = (`Quantity` * `UnitPrice`) WHERE `OrderItemId` = 1",
+            ss:     "UPDATE [order_items] SET [LineTotal] = ([Quantity] * [UnitPrice]) WHERE [OrderItemId] = 1");
+
+        // Execute on SQLite: item 1 has Quantity=2, UnitPrice=125.00 → LineTotal should be 250.00
+        var affected = await lt.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var lineTotal = await Lite.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(lineTotal, Is.EqualTo(250.00m));
+    }
+
+    [Test]
+    public async Task Update_SetAction_ColumnPlusCapturedVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var bonus = 10.00m;
+
+        var lt = Lite.OrderItems().Update().Set(o => o.LineTotal = o.UnitPrice + bonus).Where(o => o.OrderItemId == 2).Prepare();
+        var pg = Pg.OrderItems().Update().Set(o => o.LineTotal = o.UnitPrice + bonus).Where(o => o.OrderItemId == 2).Prepare();
+        var my = My.OrderItems().Update().Set(o => o.LineTotal = o.UnitPrice + bonus).Where(o => o.OrderItemId == 2).Prepare();
+        var ss = Ss.OrderItems().Update().Set(o => o.LineTotal = o.UnitPrice + bonus).Where(o => o.OrderItemId == 2).Prepare();
+
+        // Mixed: column reference + captured variable → column ref in SQL + one parameter
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"order_items\" SET \"LineTotal\" = (\"UnitPrice\" + @p0) WHERE \"OrderItemId\" = 2",
+            pg:     "UPDATE \"order_items\" SET \"LineTotal\" = (\"UnitPrice\" + $1) WHERE \"OrderItemId\" = 2",
+            mysql:  "UPDATE `order_items` SET `LineTotal` = (`UnitPrice` + ?) WHERE `OrderItemId` = 2",
+            ss:     "UPDATE [order_items] SET [LineTotal] = ([UnitPrice] + @p0) WHERE [OrderItemId] = 2");
+
+        // Execute on SQLite: item 2 has UnitPrice=75.50, bonus=10 → LineTotal should be 85.50
+        var affected = await lt.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var lineTotal = await Lite.OrderItems()
+            .Where(o => o.OrderItemId == 2)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(lineTotal, Is.EqualTo(85.50m));
+    }
+
+    [Test]
+    public async Task Update_SetAction_ColumnSubtractionPlusCaptured()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var offset = 1000.00m;
+
+        var lt = Lite.OrderItems().Update().Set(o => o.LineTotal = (o.LineTotal - o.UnitPrice) + offset).Where(o => o.OrderItemId == 1).Prepare();
+        var pg = Pg.OrderItems().Update().Set(o => o.LineTotal = (o.LineTotal - o.UnitPrice) + offset).Where(o => o.OrderItemId == 1).Prepare();
+        var my = My.OrderItems().Update().Set(o => o.LineTotal = (o.LineTotal - o.UnitPrice) + offset).Where(o => o.OrderItemId == 1).Prepare();
+        var ss = Ss.OrderItems().Update().Set(o => o.LineTotal = (o.LineTotal - o.UnitPrice) + offset).Where(o => o.OrderItemId == 1).Prepare();
+
+        // Mirrors TimeSheet pattern: (column - column) + captured
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"order_items\" SET \"LineTotal\" = ((\"LineTotal\" - \"UnitPrice\") + @p0) WHERE \"OrderItemId\" = 1",
+            pg:     "UPDATE \"order_items\" SET \"LineTotal\" = ((\"LineTotal\" - \"UnitPrice\") + $1) WHERE \"OrderItemId\" = 1",
+            mysql:  "UPDATE `order_items` SET `LineTotal` = ((`LineTotal` - `UnitPrice`) + ?) WHERE `OrderItemId` = 1",
+            ss:     "UPDATE [order_items] SET [LineTotal] = (([LineTotal] - [UnitPrice]) + @p0) WHERE [OrderItemId] = 1");
+
+        // Execute on SQLite: item 1 has LineTotal=250, UnitPrice=125, offset=1000
+        // → (250 - 125) + 1000 = 1125
+        var affected = await lt.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var lineTotal = await Lite.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(lineTotal, Is.EqualTo(1125.00m));
+    }
+
+    [Test]
+    public async Task Update_SetAction_MultiAssignment_ColumnExprAndInlined()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.OrderItems().Update().Set(o => { o.LineTotal = o.Quantity * o.UnitPrice; o.Quantity = 0; }).Where(o => o.OrderItemId == 3).Prepare();
+        var pg = Pg.OrderItems().Update().Set(o => { o.LineTotal = o.Quantity * o.UnitPrice; o.Quantity = 0; }).Where(o => o.OrderItemId == 3).Prepare();
+        var my = My.OrderItems().Update().Set(o => { o.LineTotal = o.Quantity * o.UnitPrice; o.Quantity = 0; }).Where(o => o.OrderItemId == 3).Prepare();
+        var ss = Ss.OrderItems().Update().Set(o => { o.LineTotal = o.Quantity * o.UnitPrice; o.Quantity = 0; }).Where(o => o.OrderItemId == 3).Prepare();
+
+        // Block lambda: first assignment is column expression, second is inlined constant
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"order_items\" SET \"LineTotal\" = (\"Quantity\" * \"UnitPrice\"), \"Quantity\" = 0 WHERE \"OrderItemId\" = 3",
+            pg:     "UPDATE \"order_items\" SET \"LineTotal\" = (\"Quantity\" * \"UnitPrice\"), \"Quantity\" = 0 WHERE \"OrderItemId\" = 3",
+            mysql:  "UPDATE `order_items` SET `LineTotal` = (`Quantity` * `UnitPrice`), `Quantity` = 0 WHERE `OrderItemId` = 3",
+            ss:     "UPDATE [order_items] SET [LineTotal] = ([Quantity] * [UnitPrice]), [Quantity] = 0 WHERE [OrderItemId] = 3");
+
+        // Execute on SQLite: item 3 has Quantity=3, UnitPrice=50 → LineTotal=150, Quantity→0
+        var affected = await lt.ExecuteNonQueryAsync();
+        Assert.That(affected, Is.EqualTo(1));
+
+        var result = await Lite.OrderItems()
+            .Where(o => o.OrderItemId == 3)
+            .Select(o => (o.LineTotal, o.Quantity))
+            .ExecuteFetchFirstAsync();
+        Assert.That(result.LineTotal, Is.EqualTo(150.00m));
+        Assert.That(result.Quantity, Is.EqualTo(0));
+    }
+
+    #endregion
+
     #region Set(Action<T>) — Type-Mapped Column
 
     [Test]

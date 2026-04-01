@@ -299,7 +299,7 @@ internal static class CallSiteTranslator
                 // Re-parse the expression text into a syntax tree, then through SqlExprParser
                 var exprSyntax = Microsoft.CodeAnalysis.CSharp.SyntaxFactory.ParseExpression(assignment.ColumnExpressionText!);
                 var lambdaParams = new HashSet<string>(StringComparer.Ordinal) { lambdaParamName };
-                var parsedExpr = SqlExprParser.Parse(exprSyntax, lambdaParams);
+                var parsedExpr = SqlExprParser.ParseWithPathTracking(exprSyntax, lambdaParams);
 
                 // Bind column references to resolved column names
                 var boundExpr = SqlExprBinder.Bind(

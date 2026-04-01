@@ -1846,7 +1846,10 @@ internal static class UsageSiteDiscovery
 
         // Collect all external identifiers from non-inlined value expressions
         // so BuildExtractionPlans can create extractors for computed expressions (a + b)
+        // and column expressions with captured variables (e.EndTime - e.StartTime + captured)
         Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? allCapturedIdentifiers = null;
+
+        // From simple captured parameters
         if (parameters.Count > 0)
         {
             foreach (var p in parameters)
@@ -1870,6 +1873,23 @@ internal static class UsageSiteDiscovery
                         if (!allCapturedIdentifiers.ContainsKey(kvp.Key))
                             allCapturedIdentifiers[kvp.Key] = kvp.Value;
                     }
+                }
+            }
+        }
+
+        // From column expression assignments (which may contain captured variables mixed with columns)
+        foreach (var asgn in assignmentExprs)
+        {
+            if (!ContainsLambdaParamRef(asgn.Right, parameterName))
+                continue;
+            var identifiers = CollectExternalIdentifiers(asgn.Right, semanticModel, parameterName);
+            if (identifiers != null)
+            {
+                allCapturedIdentifiers ??= new Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>(StringComparer.Ordinal);
+                foreach (var kvp in identifiers)
+                {
+                    if (!allCapturedIdentifiers.ContainsKey(kvp.Key))
+                        allCapturedIdentifiers[kvp.Key] = kvp.Value;
                 }
             }
         }

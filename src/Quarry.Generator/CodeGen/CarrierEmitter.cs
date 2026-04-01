@@ -295,10 +295,11 @@ internal static class CarrierEmitter
         // (created by the ChainRoot interceptor). Just cast to it.
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        // Determine which parameters to bind: clause params or SetAction params
+        // Determine which parameters to bind: prefer translated clause params (handles
+        // column expression assignments), fall back to raw SetAction params.
         IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
         if (site.Kind == InterceptorKind.UpdateSetAction)
-            clauseParams = site.Bound.Raw.SetActionParameters;
+            clauseParams = site.Clause?.Parameters ?? site.Bound.Raw.SetActionParameters;
         else if (site.Clause != null)
             clauseParams = site.Clause.Parameters;
 
