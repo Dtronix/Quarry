@@ -86,10 +86,16 @@ internal static class CallSiteTranslator
         }
         catch (Exception ex)
         {
-            // Translation failed — produce a TranslatedCallSite with null Clause.
-            // QRY019 diagnostic will be reported in the collected stage.
+            // Translation failed — produce a failed clause so QRY019 is emitted.
             TraceCapture.Log(raw.UniqueId, $"Translation failed: {ex.GetType().Name}: {ex.Message}");
-            return new TranslatedCallSite(bound);
+            var clauseKind = raw.ClauseKind ?? ClauseKind.Where;
+            var failedClause = new TranslatedClause(
+                clauseKind,
+                new LiteralExpr("1", "int"),
+                Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: false,
+                errorMessage: $"{clauseKind} clause translation failed: {ex.Message}");
+            return new TranslatedCallSite(bound, failedClause);
         }
     }
 
@@ -102,7 +108,13 @@ internal static class CallSiteTranslator
         // Check for unsupported SqlRawExpr nodes before attempting translation
         if (ContainsUnsupportedRawExpr(expression))
         {
-            return new TranslatedCallSite(bound);
+            var failedClause = new TranslatedClause(
+                raw.ClauseKind ?? ClauseKind.Where,
+                new LiteralExpr("1", "int"),
+                Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: false,
+                errorMessage: $"{raw.ClauseKind ?? ClauseKind.Where} clause contains an expression that cannot be translated to SQL");
+            return new TranslatedCallSite(bound, failedClause);
         }
 
         // Build column lookup for key/value type resolution
@@ -118,7 +130,13 @@ internal static class CallSiteTranslator
         var entityInfo = ReconstructEntityInfo(bound);
         if (entityInfo == null)
         {
-            return new TranslatedCallSite(bound);
+            var failedClause = new TranslatedClause(
+                clauseKind,
+                new LiteralExpr("1", "int"),
+                Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: false,
+                errorMessage: $"{clauseKind} clause could not resolve entity metadata for column binding");
+            return new TranslatedCallSite(bound, failedClause);
         }
 
         // Determine lambda parameter name from the expression tree.
@@ -206,7 +224,13 @@ internal static class CallSiteTranslator
 
         if (string.IsNullOrEmpty(sql))
         {
-            return new TranslatedCallSite(bound);
+            var failedClause = new TranslatedClause(
+                clauseKind,
+                new LiteralExpr("1", "int"),
+                Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: false,
+                errorMessage: $"{clauseKind} clause rendered to empty SQL");
+            return new TranslatedCallSite(bound, failedClause);
         }
 
         // Resolve key type for OrderBy/ThenBy/GroupBy

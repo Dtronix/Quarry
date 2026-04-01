@@ -150,6 +150,18 @@ internal static class SqlExprParser
                     return new ColumnRefExpr(propAccess.ParameterName, propAccess.PropertyName, nestedProperty: "Id");
                 }
 
+                // Nullable<T>.Value — unwrap to just the column (SQL uses the column directly)
+                if (memberName == "Value")
+                {
+                    return propAccess;
+                }
+
+                // Nullable<T>.HasValue — translate to IS NOT NULL check
+                if (memberName == "HasValue")
+                {
+                    return new IsNullCheckExpr(propAccess, isNegated: true);
+                }
+
                 // e.g., u.Name.Length — member access on a column
                 return new SqlRawExpr(memberAccess.ToString());
             }
