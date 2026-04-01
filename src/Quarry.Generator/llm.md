@@ -245,9 +245,8 @@ Key types: `InterceptorKind` (40+ enum values), `ClauseKind`, `QueryKind`, `Colu
 
 ## Testing
 
-- **2465 tests** (2404 Quarry.Tests + 61 Analyzers.Tests)
 - Cross-dialect SQL output tests in `Quarry.Tests/SqlOutput/CrossDialect*.cs` — primary regression gate
 - `QueryTestHarness` seeds SQLite with known data, runs queries, asserts SQL + result values across all 4 dialects
-- `TypeClassificationTests` — 135 unit tests for type classification utilities
+- `TypeClassificationTests` — unit tests for type classification utilities
 - `DisplayClassEnricherTests` — closure analysis and type resolution tests
 - `DateTimeOffsetIntegrationTests` — GetFieldValue round-trip tests
