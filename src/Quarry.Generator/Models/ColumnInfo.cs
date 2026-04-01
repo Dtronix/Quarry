@@ -1,6 +1,7 @@
 using System;
 using Microsoft.CodeAnalysis;
 using Quarry.Shared.Migration;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.Models;
 
@@ -184,16 +185,7 @@ internal sealed class ColumnInfo : IEquatable<ColumnInfo>
     private static string GetReaderMethodByTypeName(ITypeSymbol type)
     {
         var fullName = type.ToDisplayString();
-        return fullName switch
-        {
-            "Guid" or "System.Guid" => "GetGuid",
-            "DateTime" or "System.DateTime" => "GetDateTime",
-            "DateTimeOffset" or "System.DateTimeOffset" => "GetValue", // Needs conversion
-            "TimeSpan" or "System.TimeSpan" => "GetValue", // Needs conversion
-            "DateOnly" or "System.DateOnly" => "GetValue", // Needs conversion
-            "TimeOnly" or "System.TimeOnly" => "GetValue", // Needs conversion
-            _ => "GetValue" // Fallback for custom types
-        };
+        return TypeClassification.GetReaderMethod(fullName);
     }
 
     public bool Equals(ColumnInfo? other)

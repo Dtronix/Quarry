@@ -102,7 +102,14 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .SelectMany(static (pair, ct) =>
             {
                 try { return IR.CallSiteBinder.Bind(pair.Left, pair.Right, ct); }
-                catch { return ImmutableArray<IR.BoundCallSite>.Empty; }
+                catch (System.Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Quarry] Bind failed: {ex}");
+                    var raw = pair.Left;
+                    IR.PipelineErrorBag.Report(raw.FilePath, raw.Line, raw.Column,
+                        $"Bind: {ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                    return ImmutableArray<IR.BoundCallSite>.Empty;
+                }
             });
 
         // === Stage 4: Per-Site Translation (individually cached) ===
@@ -111,7 +118,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             .Select(static (pair, ct) =>
             {
                 try { return IR.CallSiteTranslator.Translate(pair.Left, pair.Right, ct); }
-                catch { return new IR.TranslatedCallSite(pair.Left); }
+                catch (System.Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Quarry] Translate failed: {ex}");
+                    return new IR.TranslatedCallSite(pair.Left, pipelineError: $"{ex.GetType().Name}: {ex.Message}\n{ex.StackTrace}");
+                }
             });
 
         // === Stage 5: Collected Analysis + File Grouping (new pipeline) ===
@@ -379,6 +390,28 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
+        // Report pipeline errors captured during binding/translation
+        // Check both Sites and ChainMemberSites — either can carry pipeline errors
+        foreach (var site in group.Sites.Concat(group.ChainMemberSites))
+        {
+            if (site.PipelineError != null)
+            {
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.InternalError,
+                    CreateLineLocation(site.FilePath, site.Line, site.Column),
+                    site.PipelineError));
+            }
+        }
+
+        // Drain side-channel errors from Stage 3 (Bind failures that couldn't attach to a site)
+        foreach (var err in IR.PipelineErrorBag.DrainErrors())
+        {
+            spc.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.InternalError,
+                CreateLineLocation(err.SourceFilePath, err.Line, err.Column),
+                err.Error));
+        }
+
         // Report all deferred diagnostics
         foreach (var diag in group.Diagnostics)
         {
@@ -390,17 +423,9 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             {
                 location = Location.Create(syntaxTree, diag.Location.Span);
             }
-            else if (diag.Location.FilePath != null)
-            {
-                location = Location.Create(diag.Location.FilePath,
-                    default,
-                    new Microsoft.CodeAnalysis.Text.LinePositionSpan(
-                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1),
-                        new Microsoft.CodeAnalysis.Text.LinePosition(diag.Location.Line - 1, diag.Location.Column - 1)));
-            }
             else
             {
-                location = Location.None;
+                location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
             }
 
             spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
@@ -629,6 +654,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>
         s_deferredDescriptors.TryGetValue(id, out var descriptor) ? descriptor : null;
 
+    private static Location CreateLineLocation(string? filePath, int line, int column)
+    {
+        if (filePath == null || line <= 0) return Location.None;
+        var pos = new Microsoft.CodeAnalysis.Text.LinePosition(line - 1, column - 1);
+        return Location.Create(filePath, default, new Microsoft.CodeAnalysis.Text.LinePositionSpan(pos, pos));
+    }
 
     /// <summary>
     /// Builds an entity projection from EntityInfo for identity projections (no Select clause).
@@ -851,43 +882,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             _ => $"\"{identifier}\"" // SQLite, PostgreSQL
         };
     }
-
-    /// <summary>
-    /// Builds a tuple type name from projected columns.
-    /// </summary>
-    private static string BuildTupleTypeName(List<ProjectedColumn> columns)
-    {
-        var elements = columns.Select(c =>
-        {
-            var typeName = c.ClrType;
-
-            // Check for empty, whitespace, or unresolved type names
-            if (string.IsNullOrWhiteSpace(typeName) || typeName == "?")
-            {
-                typeName = c.FullClrType;
-            }
-
-            if (string.IsNullOrWhiteSpace(typeName) || typeName == "?")
-            {
-                typeName = "object";
-            }
-
-            // Add nullable suffix if needed and not already present
-            if (c.IsNullable && !typeName.EndsWith("?"))
-            {
-                typeName += "?";
-            }
-
-            // Omit default ItemN names — they cause CS9154 warnings when the
-            // original tuple has unnamed elements (e.g., (string, int) vs (string, int Item2))
-            var isDefaultName = c.PropertyName.StartsWith("Item") &&
-                                int.TryParse(c.PropertyName.Substring(4), out var idx) &&
-                                idx == c.Ordinal + 1;
-            return isDefaultName ? typeName : $"{typeName} {c.PropertyName}";
-        });
-        return $"({string.Join(", ", elements)})";
-    }
-
 
     /// <summary>
     /// Checks if a type is a known type that uses GetValue fallback but is still valid

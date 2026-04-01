@@ -8,6 +8,7 @@ using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Shared.Migration;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.Projection;
 
@@ -384,7 +385,7 @@ internal static class ProjectionAnalyzer
         // Tuple type fixup
         if (result.Kind == ProjectionKind.Tuple && result.Columns.Count > 0)
         {
-            var tupleTypeName = BuildTupleTypeName(result.Columns);
+            var tupleTypeName = TypeClassification.BuildTupleTypeName(result.Columns);
             if (IsValidTupleTypeName(tupleTypeName) && !IsValidTupleTypeName(result.ResultTypeName))
             {
                 return new ProjectionInfo(result.Kind, tupleTypeName, result.Columns, result.IsOptimalPath, result.NonOptimalReason, result.FailureReason);
@@ -521,7 +522,7 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true,
-                    readerMethodName: GetReaderMethodForAggregate(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, aggregateClrType, new[] { column });
             }
@@ -642,7 +643,7 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true,
-                    readerMethodName: GetReaderMethodForAggregate(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
             }
         }
 
@@ -804,7 +805,7 @@ internal static class ProjectionAnalyzer
         var result = AnalyzeExpression(body, semanticModel, columns, columnLookup, lambdaParameterName, resultType, entityName, dialect);
 
         // Post-analysis fixup: If result type is still invalid and we have column info, derive from columns
-        if (!IsValidTypeName(result.ResultTypeName) && result.Columns.Count > 0)
+        if (TypeClassification.IsUnresolvedTypeNameLenient(result.ResultTypeName) && result.Columns.Count > 0)
         {
             // For single column, use the column's type
             if (result.Columns.Count == 1)
@@ -825,7 +826,7 @@ internal static class ProjectionAnalyzer
         // This is more reliable than using the semantic model which may have unresolved types
         if (result.Kind == ProjectionKind.Tuple && result.Columns.Count > 0)
         {
-            var tupleTypeName = BuildTupleTypeName(result.Columns);
+            var tupleTypeName = TypeClassification.BuildTupleTypeName(result.Columns);
             if (IsValidTupleTypeName(tupleTypeName) && !IsValidTupleTypeName(result.ResultTypeName))
             {
                 return new ProjectionInfo(
@@ -1289,65 +1290,6 @@ internal static class ProjectionAnalyzer
         };
     }
 
-    /// <summary>
-    /// Builds a tuple type name from projected columns.
-    /// </summary>
-    private static string BuildTupleTypeName(IReadOnlyList<ProjectedColumn> columns)
-    {
-        // Use ClrType which is the simple type name (int, string, etc.)
-        // Fall back to FullClrType or "object" if ClrType is empty/unknown
-        var elements = columns.Select(c =>
-        {
-            var typeName = c.ClrType;
-
-            // Check for empty, whitespace, or unresolved type names
-            // Note: "?" alone means unresolved, but "int?" is a valid nullable type
-            if (IsUnresolvedTypeName(typeName))
-            {
-                typeName = c.FullClrType;
-            }
-
-            if (IsUnresolvedTypeName(typeName))
-            {
-                typeName = "object";
-            }
-
-            // Add nullable suffix if needed and not already present
-            if (c.IsNullable && !typeName.EndsWith("?"))
-            {
-                typeName += "?";
-            }
-
-            // Omit default ItemN names — they cause CS9154 warnings when the
-            // original tuple has unnamed elements (e.g., (string, int) vs (string, int Item2))
-            var isDefaultName = c.PropertyName.StartsWith("Item") &&
-                                int.TryParse(c.PropertyName.Substring(4), out var idx) &&
-                                idx == c.Ordinal + 1;
-
-            return isDefaultName ? typeName : $"{typeName} {c.PropertyName}";
-        });
-        return $"({string.Join(", ", elements)})";
-    }
-
-    /// <summary>
-    /// Checks if a type name represents an unresolved type (not just a nullable type).
-    /// </summary>
-    private static bool IsUnresolvedTypeName(string? typeName)
-    {
-        if (string.IsNullOrWhiteSpace(typeName))
-            return true;
-
-        // Just "?" alone means unresolved type
-        if (typeName == "?")
-            return true;
-
-        // "? " (question mark followed by space) means unresolved type with a name
-        // This shouldn't happen in ClrType but could happen in some edge cases
-        if (typeName?.StartsWith("? ") == true)
-            return true;
-
-        return false;
-    }
 
     /// <summary>
     /// Analyzes a single column projection.
@@ -1377,7 +1319,7 @@ internal static class ProjectionAnalyzer
         }
 
         // Fix: If resultType is invalid (e.g., "?"), use the column's type instead
-        var actualResultType = IsValidTypeName(resultType)
+        var actualResultType = !TypeClassification.IsUnresolvedTypeNameLenient(resultType)
             ? resultType
             : (column.IsNullable ? $"{column.FullClrType}?" : column.FullClrType);
 
@@ -1416,7 +1358,7 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true, // Aggregate results are always value types
-                    readerMethodName: GetReaderMethodForAggregate(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, resultType, new[] { column });
             }
@@ -1547,7 +1489,7 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true, // Aggregate results are always value types
-                    readerMethodName: GetReaderMethodForAggregate(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
             }
         }
 
@@ -1720,7 +1662,7 @@ internal static class ProjectionAnalyzer
         if (argTypeInfo.Type != null && argTypeInfo.Type.TypeKind != TypeKind.Error)
         {
             var name = GetSimpleTypeName(argTypeInfo.Type);
-            if (!IsUnresolvedTypeName(name))
+            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
                 return name;
         }
 
@@ -1729,7 +1671,7 @@ internal static class ProjectionAnalyzer
         if (invMethodSymbol?.ReturnType != null && invMethodSymbol.ReturnType.TypeKind != TypeKind.Error)
         {
             var name = GetSimpleTypeName(invMethodSymbol.ReturnType);
-            if (!IsUnresolvedTypeName(name))
+            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
                 return name;
         }
 
@@ -1740,7 +1682,7 @@ internal static class ProjectionAnalyzer
             identifier.Identifier.Text == lambdaParameterName)
         {
             var propertyName = memberAccess.Name.Identifier.Text;
-            if (columnLookup.TryGetValue(propertyName, out var column) && !IsUnresolvedTypeName(column.ClrType))
+            if (columnLookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
             {
                 return column.ClrType;
             }
@@ -1878,7 +1820,7 @@ internal static class ProjectionAnalyzer
             perParamLookup.TryGetValue(identifier.Identifier.Text, out var info))
         {
             var propertyName = memberAccess.Name.Identifier.Text;
-            if (info.Lookup.TryGetValue(propertyName, out var column) && !IsUnresolvedTypeName(column.ClrType))
+            if (info.Lookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
                 return column.ClrType;
         }
 
@@ -1898,29 +1840,6 @@ internal static class ProjectionAnalyzer
         };
     }
 
-    /// <summary>
-    /// Gets the DbDataReader method name for an aggregate result type.
-    /// </summary>
-    private static string GetReaderMethodForAggregate(string clrType)
-    {
-        return clrType switch
-        {
-            "int" or "Int32" => "GetInt32",
-            "long" or "Int64" => "GetInt64",
-            "decimal" or "Decimal" => "GetDecimal",
-            "double" or "Double" => "GetDouble",
-            "float" or "Single" => "GetFloat",
-            _ => "GetValue"
-        };
-    }
-
-    /// <summary>
-    /// Checks if a type name is valid (not null, empty, whitespace, or unresolved "?").
-    /// </summary>
-    private static bool IsValidTypeName(string? typeName)
-    {
-        return !IsUnresolvedTypeName(typeName);
-    }
 
     /// <summary>
     /// Gets a simple type name from a type symbol.
@@ -1982,7 +1901,7 @@ internal static class ProjectionAnalyzer
             return null;
 
         // String methods always return string
-        var actualResultType = IsValidTypeName(resultType) ? resultType : "string";
+        var actualResultType = !TypeClassification.IsUnresolvedTypeNameLenient(resultType) ? resultType : "string";
         return new ProjectionInfo(ProjectionKind.SingleColumn, actualResultType, new[] { col });
     }
 

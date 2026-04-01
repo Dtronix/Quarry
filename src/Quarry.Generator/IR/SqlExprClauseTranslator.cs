@@ -13,14 +13,63 @@ internal static class SqlExprClauseTranslator
     /// Public entry point for parameter extraction, used by CallSiteTranslator.
     /// </summary>
     internal static SqlExpr ExtractParametersPublic(SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex)
-        => ExtractParameters(expr, parameters, ref paramIndex);
+        => ExtractParametersCore(expr, parameters, ref paramIndex, subqueryPredicate: false);
 
-    private static SqlExpr ExtractParameters(SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex)
+    /// <summary>
+    /// Extracts parameters from a SubqueryExpr predicate.
+    /// </summary>
+    private static SqlExpr ExtractSubqueryParameters(SubqueryExpr sub, List<ParameterInfo> parameters, ref int paramIndex)
+    {
+        if (sub.Predicate == null) return sub;
+
+        var newPredicate = ExtractParametersCore(sub.Predicate, parameters, ref paramIndex, subqueryPredicate: true);
+        if (ReferenceEquals(newPredicate, sub.Predicate)) return sub;
+
+        if (sub.IsResolved)
+        {
+            return new SubqueryExpr(
+                sub.OuterParameterName,
+                sub.NavigationPropertyName,
+                sub.SubqueryKind,
+                newPredicate,
+                sub.InnerParameterName,
+                sub.InnerTableQuoted!,
+                sub.InnerAliasQuoted!,
+                sub.CorrelationSql!);
+        }
+        return new SubqueryExpr(
+            sub.OuterParameterName,
+            sub.NavigationPropertyName,
+            sub.SubqueryKind,
+            newPredicate,
+            sub.InnerParameterName);
+    }
+
+    /// <summary>
+    /// Unified parameter extraction that walks an SqlExpr tree and replaces captured values
+    /// and (optionally) literals with ParamSlotExpr nodes.
+    /// <para>
+    /// When <paramref name="subqueryPredicate"/> is false (standard mode):
+    ///   - All CapturedValueExpr nodes are parameterized.
+    ///   - String/char LiteralExpr nodes are parameterized.
+    /// </para>
+    /// <para>
+    /// When <paramref name="subqueryPredicate"/> is true (subquery predicate mode):
+    ///   - All CapturedValueExpr nodes are still parameterized (enum constants are already
+    ///     folded to LiteralExpr by SqlExprAnnotator before reaching this method).
+    ///   - String/char LiteralExpr nodes are left inline (rendered as 'value' by SqlExprRenderer).
+    /// </para>
+    /// </summary>
+    private static SqlExpr ExtractParametersCore(
+        SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex, bool subqueryPredicate)
     {
         switch (expr)
         {
             case CapturedValueExpr captured:
             {
+                // Note: enum/constant member accesses (e.g., OrderPriority.Urgent) are already
+                // folded to LiteralExpr by SqlExprAnnotator before reaching parameter extraction.
+                // Any CapturedValueExpr here is a genuine runtime capture that must be parameterized.
                 var idx = paramIndex++;
                 var name = $"@p{idx}";
                 var paramInfo = new ParameterInfo(
@@ -33,7 +82,7 @@ internal static class SqlExprClauseTranslator
                     isCaptured: true, expressionPath: captured.ExpressionPath);
             }
 
-            case LiteralExpr literal when literal.ClrType == "string" && !literal.IsNull:
+            case LiteralExpr literal when !subqueryPredicate && literal.ClrType == "string" && !literal.IsNull:
             {
                 var idx = paramIndex++;
                 var name = $"@p{idx}";
@@ -43,19 +92,20 @@ internal static class SqlExprClauseTranslator
                 return new ParamSlotExpr(idx, "string", valueExpression);
             }
 
-            case LiteralExpr literal when literal.ClrType == "char" && !literal.IsNull:
+            case LiteralExpr literal when !subqueryPredicate && literal.ClrType == "char" && !literal.IsNull:
             {
                 var idx = paramIndex++;
                 var name = $"@p{idx}";
-                var valueExpression = $"'{literal.SqlText}'";
+                var escaped = EscapeString(literal.SqlText);
+                var valueExpression = $"'{escaped}'";
                 parameters.Add(new ParameterInfo(idx, name, "char", valueExpression));
                 return new ParamSlotExpr(idx, "char", valueExpression);
             }
 
             case BinaryOpExpr bin:
             {
-                var left = ExtractParameters(bin.Left, parameters, ref paramIndex);
-                var right = ExtractParameters(bin.Right, parameters, ref paramIndex);
+                var left = ExtractParametersCore(bin.Left, parameters, ref paramIndex, subqueryPredicate);
+                var right = ExtractParametersCore(bin.Right, parameters, ref paramIndex, subqueryPredicate);
                 if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
                     return bin;
                 return new BinaryOpExpr(left, bin.Operator, right);
@@ -63,7 +113,7 @@ internal static class SqlExprClauseTranslator
 
             case UnaryOpExpr unary:
             {
-                var operand = ExtractParameters(unary.Operand, parameters, ref paramIndex);
+                var operand = ExtractParametersCore(unary.Operand, parameters, ref paramIndex, subqueryPredicate);
                 if (ReferenceEquals(operand, unary.Operand))
                     return unary;
                 return new UnaryOpExpr(unary.Operator, operand);
@@ -75,7 +125,7 @@ internal static class SqlExprClauseTranslator
                 var newArgs = new SqlExpr[func.Arguments.Count];
                 for (int i = 0; i < func.Arguments.Count; i++)
                 {
-                    newArgs[i] = ExtractParameters(func.Arguments[i], parameters, ref paramIndex);
+                    newArgs[i] = ExtractParametersCore(func.Arguments[i], parameters, ref paramIndex, subqueryPredicate);
                     if (!ReferenceEquals(newArgs[i], func.Arguments[i])) changed = true;
                 }
                 return changed ? new FunctionCallExpr(func.FunctionName, newArgs, func.IsAggregate) : func;
@@ -83,7 +133,7 @@ internal static class SqlExprClauseTranslator
 
             case InExpr inExpr:
             {
-                var operand = ExtractParameters(inExpr.Operand, parameters, ref paramIndex);
+                var operand = ExtractParametersCore(inExpr.Operand, parameters, ref paramIndex, subqueryPredicate);
                 var changed = !ReferenceEquals(operand, inExpr.Operand);
                 var newValues = new SqlExpr[inExpr.Values.Count];
                 for (int i = 0; i < inExpr.Values.Count; i++)
@@ -115,7 +165,7 @@ internal static class SqlExprClauseTranslator
                     }
                     else
                     {
-                        newValues[i] = ExtractParameters(inExpr.Values[i], parameters, ref paramIndex);
+                        newValues[i] = ExtractParametersCore(inExpr.Values[i], parameters, ref paramIndex, subqueryPredicate);
                         if (!ReferenceEquals(newValues[i], inExpr.Values[i])) changed = true;
                     }
                 }
@@ -124,18 +174,18 @@ internal static class SqlExprClauseTranslator
 
             case IsNullCheckExpr isNull:
             {
-                var operand = ExtractParameters(isNull.Operand, parameters, ref paramIndex);
+                var operand = ExtractParametersCore(isNull.Operand, parameters, ref paramIndex, subqueryPredicate);
                 if (ReferenceEquals(operand, isNull.Operand)) return isNull;
                 return new IsNullCheckExpr(operand, isNull.IsNegated);
             }
 
             case LikeExpr like:
             {
-                var operand = ExtractParameters(like.Operand, parameters, ref paramIndex);
+                var operand = ExtractParametersCore(like.Operand, parameters, ref paramIndex, subqueryPredicate);
                 // String literals in LIKE patterns are inlined directly — no parameterization needed
                 var pattern = like.Pattern is LiteralExpr { ClrType: "string", IsNull: false }
                     ? like.Pattern
-                    : ExtractParameters(like.Pattern, parameters, ref paramIndex);
+                    : ExtractParametersCore(like.Pattern, parameters, ref paramIndex, subqueryPredicate: false);
                 if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
                     return like;
                 return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);
@@ -150,7 +200,7 @@ internal static class SqlExprClauseTranslator
                 var newArgs = new SqlExpr[rawCall.Arguments.Count];
                 for (int i = 0; i < rawCall.Arguments.Count; i++)
                 {
-                    newArgs[i] = ExtractParameters(rawCall.Arguments[i], parameters, ref paramIndex);
+                    newArgs[i] = ExtractParametersCore(rawCall.Arguments[i], parameters, ref paramIndex, subqueryPredicate);
                     if (!ReferenceEquals(newArgs[i], rawCall.Arguments[i])) changed = true;
                 }
                 return changed ? new RawCallExpr(rawCall.Template, newArgs) : rawCall;
@@ -163,115 +213,9 @@ internal static class SqlExprClauseTranslator
     }
 
     /// <summary>
-    /// Extracts parameters from a SubqueryExpr predicate.
-    /// </summary>
-    private static SqlExpr ExtractSubqueryParameters(SubqueryExpr sub, List<ParameterInfo> parameters, ref int paramIndex)
-    {
-        if (sub.Predicate == null) return sub;
-
-        var newPredicate = ExtractSubqueryPredicateParams(sub.Predicate, parameters, ref paramIndex);
-        if (ReferenceEquals(newPredicate, sub.Predicate)) return sub;
-
-        if (sub.IsResolved)
-        {
-            return new SubqueryExpr(
-                sub.OuterParameterName,
-                sub.NavigationPropertyName,
-                sub.SubqueryKind,
-                newPredicate,
-                sub.InnerParameterName,
-                sub.InnerTableQuoted!,
-                sub.InnerAliasQuoted!,
-                sub.CorrelationSql!);
-        }
-        return new SubqueryExpr(
-            sub.OuterParameterName,
-            sub.NavigationPropertyName,
-            sub.SubqueryKind,
-            newPredicate,
-            sub.InnerParameterName);
-    }
-
-    /// <summary>
-    /// Walks a subquery predicate tree and only extracts CapturedValueExpr nodes as parameters.
-    /// String/char LiteralExpr are left inline (rendered as 'value' by SqlExprRenderer).
-    /// LIKE patterns are routed through the full ExtractParameters to parameterize the pattern.
-    /// </summary>
-    private static SqlExpr ExtractSubqueryPredicateParams(SqlExpr expr, List<ParameterInfo> parameters, ref int paramIndex)
-    {
-        switch (expr)
-        {
-            case CapturedValueExpr captured:
-            {
-                // Skip enum/constant member accesses (e.g., OrderPriority.Urgent) which are
-                // compile-time constants, not closure captures. These render inline as literals.
-                // Real closure captures are simple variable names without dots.
-                if (captured.SyntaxText.Contains('.'))
-                    return captured;
-
-                var idx = paramIndex++;
-                var name = $"@p{idx}";
-                var paramInfo = new ParameterInfo(
-                    idx, name, captured.ClrType, captured.SyntaxText,
-                    isCaptured: true, expressionPath: captured.ExpressionPath);
-                paramInfo.CapturedFieldName = captured.VariableName;
-                parameters.Add(paramInfo);
-                return new ParamSlotExpr(idx, captured.ClrType, captured.SyntaxText,
-                    isCaptured: true, expressionPath: captured.ExpressionPath);
-            }
-
-            case BinaryOpExpr bin:
-            {
-                var left = ExtractSubqueryPredicateParams(bin.Left, parameters, ref paramIndex);
-                var right = ExtractSubqueryPredicateParams(bin.Right, parameters, ref paramIndex);
-                if (ReferenceEquals(left, bin.Left) && ReferenceEquals(right, bin.Right))
-                    return bin;
-                return new BinaryOpExpr(left, bin.Operator, right);
-            }
-
-            case UnaryOpExpr unary:
-            {
-                var operand = ExtractSubqueryPredicateParams(unary.Operand, parameters, ref paramIndex);
-                if (ReferenceEquals(operand, unary.Operand))
-                    return unary;
-                return new UnaryOpExpr(unary.Operator, operand);
-            }
-
-            case FunctionCallExpr func:
-            {
-                var changed = false;
-                var newArgs = new SqlExpr[func.Arguments.Count];
-                for (int i = 0; i < func.Arguments.Count; i++)
-                {
-                    newArgs[i] = ExtractSubqueryPredicateParams(func.Arguments[i], parameters, ref paramIndex);
-                    if (!ReferenceEquals(newArgs[i], func.Arguments[i])) changed = true;
-                }
-                return changed ? new FunctionCallExpr(func.FunctionName, newArgs, func.IsAggregate) : func;
-            }
-
-            case LikeExpr like:
-            {
-                var operand = ExtractSubqueryPredicateParams(like.Operand, parameters, ref paramIndex);
-                // String literals in LIKE patterns are inlined directly — no parameterization needed
-                var pattern = like.Pattern is LiteralExpr { ClrType: "string", IsNull: false }
-                    ? like.Pattern
-                    : ExtractParameters(like.Pattern, parameters, ref paramIndex);
-                if (ReferenceEquals(operand, like.Operand) && ReferenceEquals(pattern, like.Pattern))
-                    return like;
-                return new LikeExpr(operand, pattern, like.IsNegated, like.LikePrefix, like.LikeSuffix, like.NeedsEscape);
-            }
-
-            case SubqueryExpr nestedSub:
-                return ExtractSubqueryParameters(nestedSub, parameters, ref paramIndex);
-
-            // LiteralExpr (including strings), ParamSlotExpr, etc. pass through unchanged
-            default:
-                return expr;
-        }
-    }
-
-    /// <summary>
     /// Escapes a string for use as a C# string literal value expression.
+    /// Input is Roslyn's Token.ValueText (evaluated bytes, not raw source text),
+    /// so control characters appear as actual bytes that must be escaped.
     /// </summary>
     private static string EscapeString(string value)
     {
@@ -283,6 +227,10 @@ internal static class SqlExprClauseTranslator
                 case '\\': sb.Append("\\\\"); break;
                 case '"': sb.Append("\\\""); break;
                 case '\'': sb.Append("''"); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                case '\0': sb.Append("\\0"); break;
                 default: sb.Append(c); break;
             }
         }

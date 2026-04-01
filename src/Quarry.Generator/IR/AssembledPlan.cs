@@ -128,14 +128,14 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             if (role == null) continue;
 
             int? bitIndex = null;
-            if (cs.Bound.Raw.ConditionalInfo != null && condIdx < Plan.ConditionalTerms.Count)
+            if (cs.Bound.Raw.NestingContext != null && condIdx < Plan.ConditionalTerms.Count)
             {
                 bitIndex = Plan.ConditionalTerms[condIdx].BitIndex;
                 condIdx++;
             }
 
             // A clause is only conditional if it has a matching ConditionalTerm (bitIndex assigned).
-            // Clause sites may have ConditionalInfo from being inside nested control flow without
+            // Clause sites may have NestingContext from being inside nested control flow without
             // being genuinely conditional (relative depth <= baseline).
             entries.Add(new ChainClauseEntry(cs, bitIndex.HasValue, bitIndex, role.Value));
         }

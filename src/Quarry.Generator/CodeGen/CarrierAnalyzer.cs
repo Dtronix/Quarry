@@ -6,6 +6,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.CodeGen;
 
@@ -40,17 +41,9 @@ internal static class CarrierAnalyzer
         if (typeName.EndsWith("?"))
             return typeName;
 
-        // Known value types by short name (int, DateTime, Guid, etc.)
-        if (ValueTypes.Contains(typeName))
+        // Known value types keep their type name as-is
+        if (TypeClassification.IsValueType(typeName))
             return typeName;
-
-        // Qualified value types (e.g. System.Int32, System.DateTime)
-        if (typeName.Contains('.'))
-        {
-            var unqualified = typeName.Substring(typeName.LastIndexOf('.') + 1);
-            if (ValueTypes.Contains(unqualified))
-                return typeName;
-        }
 
         // Everything remaining is a reference type: arrays (byte[]),
         // generics (IReadOnlyList<T>), qualified names (System.String),
@@ -58,41 +51,11 @@ internal static class CarrierAnalyzer
         return typeName + "?";
     }
 
-    private static readonly HashSet<string> ValueTypes = new(StringComparer.Ordinal)
-    {
-        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
-        "float", "double", "decimal", "bool", "char",
-        "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DateOnly", "TimeOnly",
-        "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
-        "Single", "Double", "Decimal", "Boolean", "Char"
-    };
-
     /// <summary>
     /// Determines whether a CLR type name represents a reference type.
     /// </summary>
     internal static bool IsReferenceTypeName(string typeName)
-    {
-        var baseName = typeName.EndsWith("?") ? typeName.Substring(0, typeName.Length - 1) : typeName;
-
-        if (baseName.StartsWith("Nullable<") || baseName.StartsWith("System.Nullable<"))
-            return false;
-
-        if (baseName.EndsWith("[]"))
-            return true;
-
-        if (ValueTypes.Contains(baseName))
-            return false;
-
-        // Qualified value types (e.g. System.Int32)
-        if (baseName.Contains('.'))
-        {
-            var unqualified = baseName.Substring(baseName.LastIndexOf('.') + 1);
-            if (ValueTypes.Contains(unqualified))
-                return false;
-        }
-
-        return true;
-    }
+        => TypeClassification.IsReferenceType(typeName);
 
     #region New pipeline (AssembledPlan → CarrierPlan)
 

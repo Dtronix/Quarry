@@ -6,50 +6,17 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.CodeGen;
 
 /// <summary>
 /// Emits carrier class definitions and carrier-path interceptor method bodies.
-/// Works from <see cref="CarrierStrategy"/> (produced by <see cref="CarrierAnalyzer"/>)
+/// Works from <see cref="CarrierPlan"/> (produced by <see cref="CarrierAnalyzer"/>)
 /// rather than computing eligibility inline.
 /// </summary>
 internal static class CarrierEmitter
 {
-    /// <summary>
-    /// Emits the carrier class declaration (fields, static caches, base class).
-    /// </summary>
-    public static void EmitClassDeclaration(StringBuilder sb, CarrierStrategy strategy, string className)
-    {
-        sb.AppendLine($"/// <remarks>Chain: PrebuiltDispatch (1 allocation: carrier)</remarks>");
-        sb.Append($"file sealed class {className}");
-
-        if (!string.IsNullOrEmpty(strategy.BaseClassName))
-        {
-            sb.Append($" : {strategy.BaseClassName}");
-        }
-        sb.AppendLine();
-        sb.AppendLine("{");
-
-        // Instance fields
-        foreach (var field in strategy.Fields)
-        {
-            sb.AppendLine($"    public {field.Type} {field.Name};");
-        }
-
-        // [UnsafeAccessor] extern methods for captured parameter extraction
-        foreach (var sf in strategy.StaticFields)
-        {
-            // Old pipeline: StaticFields may not have UnsafeAccessor metadata; emit legacy format as fallback
-            sb.Append($"    private static {sf.Type} {sf.Name}");
-            if (sf.Initializer != null)
-                sb.Append($" = {sf.Initializer}");
-            sb.AppendLine(";");
-        }
-
-        sb.AppendLine("}");
-    }
-
     /// <summary>
     /// Emits a carrier ChainRoot interceptor body (db.Users() → new Carrier { Ctx = ctx }).
     /// </summary>
@@ -70,53 +37,6 @@ internal static class CarrierEmitter
         StringBuilder sb, string receiverType, string returnType)
     {
         sb.AppendLine($"        return Unsafe.As<{returnType}>(builder);");
-    }
-
-    /// <summary>
-    /// Emits a carrier clause body: cast to carrier, extract params, set mask bit, return.
-    /// </summary>
-    public static void EmitClauseBody(
-        StringBuilder sb,
-        string className,
-        CarrierStrategy strategy,
-        IReadOnlyList<CarrierParameter> clauseParameters,
-        int globalParamOffset,
-        int? clauseBit,
-        bool isFirstInChain,
-        string concreteBuilderType,
-        string returnInterface,
-        string maskType)
-    {
-        if (isFirstInChain)
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderType}>(builder);");
-            sb.AppendLine($"        var __c = new {className} {{ Ctx = __b.State.ExecutionContext }};");
-        }
-        else
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{className}>(builder);");
-        }
-
-        // Bind parameters to carrier fields
-        foreach (var param in clauseParameters)
-        {
-            if (param.IsEntitySourced)
-                continue;
-            if (param.ExtractionCode != null)
-            {
-                sb.AppendLine($"        __c.{param.FieldName} = ({param.FieldType}){param.ExtractionCode}!;");
-            }
-        }
-
-        // Set conditional clause bit
-        if (clauseBit.HasValue)
-            sb.AppendLine($"        __c.Mask |= unchecked(({maskType})(1 << {clauseBit.Value}));");
-
-        // Return
-        if (isFirstInChain)
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
-        else
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
     }
 
     /// <summary>
@@ -369,18 +289,7 @@ internal static class CarrierEmitter
         string delegateParamName = "func")
     {
         // Compute global parameter offset for this clause's params
-        var globalParamOffset = 0;
-        foreach (var clause in chain.GetClauseEntries())
-        {
-            if (clause.Site.UniqueId == site.UniqueId)
-                break;
-            if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-            else if (clause.Site.Clause != null)
-                globalParamOffset += clause.Site.Clause.Parameters.Count;
-            else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
-                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
-        }
+        var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
 
         if (isFirstInChain)
         {
@@ -425,7 +334,7 @@ internal static class CarrierEmitter
 
                 if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
                 {
-                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier, delegateParamName);
+                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier);
                 }
                 else
                 {
@@ -437,15 +346,7 @@ internal static class CarrierEmitter
                     }
                     else if (hasExtraction && p.IsCaptured)
                     {
-                        // Per-variable extraction locals are already typed by the [UnsafeAccessor]
-                        // return type, so ValueExpression is type-safe C# — no cast needed.
-                        // For compound expressions (a + b), parenthesize so ! applies to the full result.
-                        // For simple identifiers/member-access, bare ! is correct and avoids C# cast ambiguity.
-                        var ve = p.ValueExpression;
-                        var wrap = ve.Contains(' ') || ve.Contains('(');
-                        sb.AppendLine(wrap
-                            ? $"        __c.P{globalIdx} = ({ve})!;"
-                            : $"        __c.P{globalIdx} = {ve}!;");
+                        sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, p.ValueExpression));
                     }
                     else
                     {
@@ -836,19 +737,9 @@ internal static class CarrierEmitter
     internal static void EmitCarrierNonQueryTerminal(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
-        EmitCarrierPreamble(sb, carrier, chain);
-
-        sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
-        sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
-
-        EmitInlineParameterLogging(sb, chain, carrier);
-
-        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __ctx.DefaultTimeout"
-            : "__ctx.DefaultTimeout";
-        EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
-
-        sb.AppendLine("        return QueryExecutor.ExecuteCarrierNonQueryWithCommandAsync(__opId, __ctx, __cmd, cancellationToken);");
+        EmitCarrierExecutionTerminal(sb, carrier, chain,
+            readerExpression: null,
+            executorMethod: "ExecuteCarrierNonQueryWithCommandAsync");
     }
 
     /// <summary>
@@ -915,7 +806,7 @@ internal static class CarrierEmitter
                 else
                 {
                     sb.AppendLine($"{indent}for (int __li = 0; __li < __col{i}Len; __li++)");
-                    if (param.ElementTypeName != null && IsNonNullableValueType(param.ElementTypeName))
+                    if (param.ElementTypeName != null && TypeClassification.IsNonNullableValueType(param.ElementTypeName))
                         sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li].ToString());");
                     else
                         sb.AppendLine($"{indent}    ParameterLog.Bound(__opId, {i}, __col{i}[__li]?.ToString() ?? \"null\");");
@@ -929,7 +820,7 @@ internal static class CarrierEmitter
             {
                 if (param.EntityPropertyExpression != null)
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, ((object?){param.EntityPropertyExpression})?.ToString() ?? \"null\");");
-                else if (IsNonNullableValueType(GetEffectiveCastType(i, param, carrier)))
+                else if (TypeClassification.IsNonNullableValueType(GetEffectiveCastType(i, param, carrier)))
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}.ToString());");
                 else
                     sb.AppendLine($"{indent}ParameterLog.Bound(__opId, {i}, __c.P{i}?.ToString() ?? \"null\");");
@@ -993,9 +884,7 @@ internal static class CarrierEmitter
             var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);
             for (int i = 0; i < insertInfo.Columns.Count; i++)
             {
-                var col = insertInfo.Columns[i];
-                var needsIntType = col.IsEnum || (col.IsBoolean && convertBool);
-                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
+                var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__c.Entity!", convertBool);
                 sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
                 sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
                 sb.AppendLine($"        __p{i}.Value = (object?){valueExpr} ?? DBNull.Value;");
@@ -1045,7 +934,7 @@ internal static class CarrierEmitter
             for (int i = 0; i < insertInfo.Columns.Count; i++)
             {
                 var col = insertInfo.Columns[i];
-                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool);
+                var valueExpr = InterceptorCodeGenerator.GetColumnValueExpression("__c.Entity!", col.PropertyName, col.IsForeignKey, col.CustomTypeMappingClass, col.IsBoolean, col.IsEnum, col.IsNullable, convertBool, col.EnumUnderlyingType ?? "int");
                 sb.AppendLine($"            new(\"@p{i}\", (object?){valueExpr} ?? DBNull.Value),");
             }
             sb.AppendLine("        };");
@@ -1082,7 +971,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCollectionContainsExtraction(
         StringBuilder sb, int globalIdx, QueryParameter carrierParam,
-        CarrierPlan carrier, string delegateParamName = "func")
+        CarrierPlan carrier)
     {
         string fieldType;
         if (carrierParam.ElementTypeName != null)
@@ -1123,13 +1012,7 @@ internal static class CarrierEmitter
             }
             else if (hasExtraction && param.IsCaptured)
             {
-                // Per-variable extraction locals are already typed — no cast needed.
-                // For compound expressions, parenthesize so ! applies to the full result.
-                var ve = param.ValueExpression;
-                var wrap = ve.Contains(' ') || ve.Contains('(');
-                sb.AppendLine(wrap
-                    ? $"        __c.P{globalIdx} = ({ve})!;"
-                    : $"        __c.P{globalIdx} = {ve}!;");
+                sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, param.ValueExpression));
             }
             else
             {
@@ -1205,6 +1088,18 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
+    /// Formats a carrier field assignment for a captured parameter with extraction.
+    /// Parenthesizes compound expressions so the null-forgiving ! applies to the full result.
+    /// </summary>
+    private static string FormatCarrierFieldAssignment(int globalIndex, string valueExpression)
+    {
+        var wrap = valueExpression.Contains(' ') || valueExpression.Contains('(');
+        return wrap
+            ? $"        __c.P{globalIndex} = ({valueExpression})!;"
+            : $"        __c.P{globalIndex} = {valueExpression}!;";
+    }
+
+    /// <summary>
     /// Gets the effective CLR type for a parameter, using the carrier parameter's
     /// resolved field type when the QueryParameter's type is unresolved ("?" or "object").
     /// Returns the non-nullable base type suitable for casts.
@@ -1230,32 +1125,4 @@ internal static class CarrierEmitter
         return queryParam.ClrType;
     }
 
-    /// <summary>
-    /// Checks if the given CLR type name is a non-nullable value type.
-    /// Used by the logging emitter to decide between .ToString() and ?.ToString() ?? "null".
-    /// </summary>
-    private static bool IsNonNullableValueType(string typeName)
-    {
-        if (typeName.EndsWith("?"))
-            return false;
-        if (ValueTypes.Contains(typeName))
-            return true;
-        // Check unqualified name (e.g., "System.DateTime" → "DateTime")
-        var dotIndex = typeName.LastIndexOf('.');
-        if (dotIndex >= 0 && ValueTypes.Contains(typeName.Substring(dotIndex + 1)))
-            return true;
-        return false;
-    }
-
-    /// <summary>
-    /// Known value types that don't need nullable annotation.
-    /// </summary>
-    private static readonly HashSet<string> ValueTypes = new(System.StringComparer.Ordinal)
-    {
-        "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
-        "float", "double", "decimal", "bool", "char",
-        "DateTime", "DateTimeOffset", "TimeSpan", "Guid", "DateOnly", "TimeOnly",
-        "Int32", "Int64", "Int16", "Byte", "SByte", "UInt32", "UInt64", "UInt16",
-        "Single", "Double", "Decimal", "Boolean", "Char"
-    };
 }

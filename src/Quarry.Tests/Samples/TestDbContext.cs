@@ -15,4 +15,5 @@ public partial class TestDbContext : QuarryContext
     public partial IEntityAccessor<Account> Accounts();
     public partial IEntityAccessor<Product> Products();
     public partial IEntityAccessor<Widget> Widgets();
+    public partial IEntityAccessor<Event> Events();
 }

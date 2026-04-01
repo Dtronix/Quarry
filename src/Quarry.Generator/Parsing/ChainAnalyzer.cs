@@ -10,6 +10,7 @@ using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
+using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.Parsing;
 
@@ -305,18 +306,18 @@ internal static class ChainAnalyzer
             }
         }
 
-        // Identify conditional clauses from ConditionalInfo
+        // Identify conditional clauses from NestingContext
         var conditionalTerms = new List<ConditionalTerm>();
         var bitIndex = 0;
         var branchGroups = new Dictionary<string, List<(TranslatedCallSite Site, int BitIndex)>>(StringComparer.Ordinal);
 
         // Baseline nesting depth: clauses at or below the execution terminal's depth
         // are not conditionally included — the entire chain is simply inside nested control flow.
-        var baselineDepth = executionSite.Bound.Raw.ConditionalInfo?.NestingDepth ?? 0;
+        var baselineDepth = executionSite.Bound.Raw.NestingContext?.NestingDepth ?? 0;
 
         foreach (var site in clauseSites)
         {
-            var condInfo = site.Bound.Raw.ConditionalInfo;
+            var condInfo = site.Bound.Raw.NestingContext;
             if (condInfo == null)
                 continue;
 
@@ -407,7 +408,7 @@ internal static class ChainAnalyzer
             int? clauseBitIndex = null;
 
             // Check if this clause is conditional
-            if (raw.ConditionalInfo != null)
+            if (raw.NestingContext != null)
             {
                 // Find its bit index — match by role and consume each term only once
                 for (int ci = 0; ci < conditionalTerms.Count; ci++)
@@ -859,14 +860,19 @@ internal static class ChainAnalyzer
             if (!paramColumnMap.TryGetValue(i, out var col))
                 continue;
 
-            var isEnum = col.IsEnum || p.IsEnum;
-            var isSensitive = col.Modifiers.IsSensitive || p.IsSensitive;
-            // Derive enum underlying type when enriching from column metadata.
-            // Default to "int" — the most common underlying type for C# enums.
-            var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
-
-            clauseParams[i] = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+            clauseParams[i] = EnrichParameterFromColumn(p, col);
         }
+    }
+
+    /// <summary>
+    /// Enriches a single parameter with column metadata (IsEnum, EnumUnderlyingType, IsSensitive).
+    /// </summary>
+    private static QueryParameter EnrichParameterFromColumn(QueryParameter param, ColumnInfo col)
+    {
+        var isEnum = col.IsEnum || param.IsEnum;
+        var isSensitive = col.Modifiers.IsSensitive || param.IsSensitive;
+        var enumUnderlying = param.EnumUnderlyingType ?? (isEnum ? (col.DbClrType ?? "int") : null);
+        return param.WithEnrichment(isEnum, enumUnderlying, isSensitive);
     }
 
     /// <summary>
@@ -902,11 +908,7 @@ internal static class ChainAnalyzer
             if (columnByProperty.TryGetValue(assignment.ColumnSql, out var colInfo))
             {
                 var p = clauseParams[paramIdx];
-                var isEnum = colInfo.IsEnum || p.IsEnum;
-                var isSensitive = colInfo.Modifiers.IsSensitive || p.IsSensitive;
-                var enumUnderlying = p.EnumUnderlyingType ?? (isEnum && p.EnumUnderlyingType == null ? "int" : null);
-
-                var enriched = p.WithEnrichment(isEnum, enumUnderlying, isSensitive);
+                var enriched = EnrichParameterFromColumn(p, colInfo);
                 if (!ReferenceEquals(enriched, p))
                 {
                     clauseParams[paramIdx] = enriched;
@@ -1098,7 +1100,7 @@ internal static class ChainAnalyzer
                 // Aggregate columns with unresolved type ("object"): resolve from the
                 // referenced entity column. During discovery, Min/Max default to "object"
                 // because the semantic model can't resolve generated entity property types.
-                if (col.IsAggregateFunction && IsUnresolvedAggregateType(col.ClrType) && col.SqlExpression != null)
+                if (col.IsAggregateFunction && TypeClassification.IsUnresolvedTypeName(col.ClrType) && col.SqlExpression != null)
                 {
                     var resolvedType = TryResolveAggregateTypeFromSql(col.SqlExpression, entityColumnLookup, perAliasLookup, col.TableAlias);
                     if (resolvedType != null)
@@ -1114,7 +1116,7 @@ internal static class ChainAnalyzer
                             sqlExpression: col.SqlExpression,
                             isAggregateFunction: true,
                             isValueType: true,
-                            readerMethodName: GetReaderMethodForType(resolvedType),
+                            readerMethodName: TypeClassification.GetReaderMethod(resolvedType),
                             tableAlias: col.TableAlias));
                         continue;
                     }
@@ -1157,8 +1159,8 @@ internal static class ChainAnalyzer
                         columns.Add(new ProjectedColumn(
                             propertyName: col.PropertyName,
                             columnName: entityCol.ColumnName,
-                            clrType: IsUnresolvedTypeName(col.ClrType) ? entityCol.ClrType : col.ClrType,
-                            fullClrType: IsUnresolvedTypeName(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            clrType: TypeClassification.IsUnresolvedTypeName(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            fullClrType: TypeClassification.IsUnresolvedTypeName(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
                             isNullable: entityCol.IsNullable,
                             ordinal: col.Ordinal,
                             alias: col.Alias,
@@ -1215,7 +1217,7 @@ internal static class ChainAnalyzer
         var resultTypeName = projInfo.ResultTypeName ?? executionSite.Bound.Raw.ResultTypeName ?? executionSite.Bound.Raw.EntityTypeName;
         if (projInfo.Kind == ProjectionKind.Tuple && columns.Count > 0)
         {
-            var rebuilt = BuildTupleResultTypeName(columns);
+            var rebuilt = TypeClassification.BuildTupleTypeName(columns, fallbackToObject: false);
             if (!string.IsNullOrEmpty(rebuilt))
                 resultTypeName = rebuilt;
         }
@@ -1231,14 +1233,14 @@ internal static class ChainAnalyzer
             }
         }
         // Resolve result type for joined entity projection from alias
-        if (IsUnresolvedTypeName(resultTypeName) && projInfo.JoinedEntityAlias != null && isJoined)
+        if (TypeClassification.IsUnresolvedTypeName(resultTypeName) && projInfo.JoinedEntityAlias != null && isJoined)
         {
             var aliasIndex = int.Parse(projInfo.JoinedEntityAlias.Substring(1));
             if (aliasIndex >= 0 && aliasIndex < joinedEntityTypeNames!.Count)
                 resultTypeName = joinedEntityTypeNames[aliasIndex];
         }
         // Fix unresolved "?" result type by checking enriched columns
-        if (IsUnresolvedTypeName(resultTypeName) && columns.Count > 0)
+        if (TypeClassification.IsUnresolvedTypeName(resultTypeName) && columns.Count > 0)
         {
             if (columns.Count == 1)
             {
@@ -1249,7 +1251,7 @@ internal static class ChainAnalyzer
             }
             else
             {
-                var rebuilt = BuildTupleResultTypeName(columns);
+                var rebuilt = TypeClassification.BuildTupleTypeName(columns, fallbackToObject: false);
                 if (!string.IsNullOrEmpty(rebuilt))
                     resultTypeName = rebuilt;
             }
@@ -1270,26 +1272,10 @@ internal static class ChainAnalyzer
     {
         // Aggregates have empty ColumnName by design — don't trigger enrichment for them
         if (col.IsAggregateFunction)
-            return IsUnresolvedTypeName(col.ClrType);
-        return IsUnresolvedTypeName(col.ClrType)
-            || IsUnresolvedTypeName(col.FullClrType)
+            return TypeClassification.IsUnresolvedTypeName(col.ClrType);
+        return TypeClassification.IsUnresolvedTypeName(col.ClrType)
+            || TypeClassification.IsUnresolvedTypeName(col.FullClrType)
             || string.IsNullOrWhiteSpace(col.ColumnName);
-    }
-
-    /// <summary>
-    /// Checks if a type name is unresolved (error type from semantic model, empty, or missing).
-    /// </summary>
-    private static bool IsUnresolvedTypeName(string? typeName)
-    {
-        return string.IsNullOrWhiteSpace(typeName) || typeName == "?" || typeName == "object";
-    }
-
-    /// <summary>
-    /// Checks if an aggregate's CLR type is unresolved and needs enrichment.
-    /// </summary>
-    private static bool IsUnresolvedAggregateType(string clrType)
-    {
-        return clrType == "object" || clrType == "?" || string.IsNullOrWhiteSpace(clrType);
     }
 
     /// <summary>
@@ -1307,7 +1293,7 @@ internal static class ChainAnalyzer
     /// </summary>
     internal static string GetReaderMethodForTypePublic(string clrType)
     {
-        return GetReaderMethodForType(clrType);
+        return TypeClassification.GetReaderMethod(clrType);
     }
 
     /// <summary>
@@ -1381,54 +1367,6 @@ internal static class ChainAnalyzer
         return null;
     }
 
-    /// <summary>
-    /// Gets the DbDataReader method for a CLR type.
-    /// </summary>
-    private static string GetReaderMethodForType(string clrType)
-    {
-        return clrType switch
-        {
-            "int" or "Int32" => "GetInt32",
-            "long" or "Int64" => "GetInt64",
-            "decimal" or "Decimal" => "GetDecimal",
-            "double" or "Double" => "GetDouble",
-            "float" or "Single" => "GetFloat",
-            "string" or "String" => "GetString",
-            "bool" or "Boolean" => "GetBoolean",
-            "DateTime" => "GetDateTime",
-            "Guid" => "GetGuid",
-            "byte" or "Byte" => "GetByte",
-            "short" or "Int16" => "GetInt16",
-            _ => "GetValue"
-        };
-    }
-
-    /// <summary>
-    /// Builds a tuple result type name from enriched columns.
-    /// </summary>
-    private static string BuildTupleResultTypeName(List<ProjectedColumn> columns)
-    {
-        var parts = new List<string>();
-        foreach (var col in columns)
-        {
-            var typeName = col.ClrType;
-            if (string.IsNullOrWhiteSpace(typeName))
-                typeName = col.FullClrType;
-            if (string.IsNullOrWhiteSpace(typeName))
-                return ""; // Can't build a valid type name
-
-            if (col.IsNullable && !typeName.EndsWith("?"))
-                typeName += "?";
-
-            // Omit default ItemN names
-            var isDefaultName = col.PropertyName.StartsWith("Item") &&
-                int.TryParse(col.PropertyName.Substring(4), out var idx) &&
-                idx == col.Ordinal + 1;
-
-            parts.Add(isDefaultName ? typeName : $"{typeName} {col.PropertyName}");
-        }
-        return $"({string.Join(", ", parts)})";
-    }
 
     /// <summary>
     /// Checks for disqualifying conditions from RawCallSite flags.
@@ -1501,7 +1439,7 @@ internal static class ChainAnalyzer
             var group = kvp.Value;
             // Determine if this branch group is mutually exclusive
             var hasMutuallyExclusive = group.Any(g =>
-                g.Site.Bound.Raw.ConditionalInfo?.BranchKind == BranchKind.MutuallyExclusive);
+                g.Site.Bound.Raw.NestingContext?.BranchKind == BranchKind.MutuallyExclusive);
 
             if (hasMutuallyExclusive && group.Count >= 2)
             {
@@ -1691,8 +1629,8 @@ internal static class ChainAnalyzer
             log(chainUid, $"  joinedEntityType={raw.JoinedEntityTypeName}, isNavigationJoin={raw.IsNavigationJoin}");
         if (raw.JoinedEntityTypeNames != null)
             log(chainUid, $"  joinedEntityTypes=[{string.Join(", ", raw.JoinedEntityTypeNames)}]");
-        if (raw.ConditionalInfo != null)
-            log(chainUid, $"  conditional: depth={raw.ConditionalInfo.NestingDepth}, condition=\"{raw.ConditionalInfo.ConditionText}\", branch={raw.ConditionalInfo.BranchKind}");
+        if (raw.NestingContext != null)
+            log(chainUid, $"  conditional: depth={raw.NestingContext.NestingDepth}, condition=\"{raw.NestingContext.ConditionText}\", branch={raw.NestingContext.BranchKind}");
         if (raw.ConstantIntValue.HasValue)
             log(chainUid, $"  constantIntValue={raw.ConstantIntValue.Value}");
         if (raw.ProjectionInfo != null)

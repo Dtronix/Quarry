@@ -4,6 +4,7 @@ using System.Collections.Immutable;
 using System.Reflection;
 using NUnit.Framework;
 using Quarry.Generators.IR;
+using Quarry.Generators.Utilities;
 using Quarry.Generators.Models;
 using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
@@ -116,6 +117,10 @@ public class PipelineOrchestratorTests
     [TestCase("(object OrderId, object UserName)", ExpectedResult = true, Description = "Named tuple with object types")]
     [TestCase("( OrderId,  Total,  Priority)", ExpectedResult = true, Description = "Tuple with empty type parts (leading space)")]
     [TestCase("( OrderId)", ExpectedResult = true, Description = "Single-element tuple with empty type")]
+    [TestCase("(int, (string, object))", ExpectedResult = true, Description = "Nested tuple with unresolved inner element")]
+    [TestCase("(int, (string, decimal))", ExpectedResult = false, Description = "Nested tuple, all resolved")]
+    [TestCase("((object, int), string)", ExpectedResult = true, Description = "Unresolved element in first nested tuple")]
+    [TestCase("(int, (string, decimal) Named)", ExpectedResult = false, Description = "Nested named tuple, all resolved")]
     public bool IsUnresolvedResultType_DetectsPatterns(string? resultTypeName)
     {
         return InvokeIsUnresolvedResultType(resultTypeName);
@@ -372,10 +377,7 @@ public class PipelineOrchestratorTests
 
     private static bool InvokeIsUnresolvedResultType(string? resultTypeName)
     {
-        var method = typeof(PipelineOrchestrator).GetMethod(
-            "IsUnresolvedResultType",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (bool)method.Invoke(null, new object?[] { resultTypeName })!;
+        return TypeClassification.IsUnresolvedResultType(resultTypeName);
     }
 
     private static Dictionary<string, string> InvokeBuildResultTypePatches(

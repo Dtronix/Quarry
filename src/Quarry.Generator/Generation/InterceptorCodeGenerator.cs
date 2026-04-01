@@ -325,7 +325,8 @@ internal static partial class InterceptorCodeGenerator
     internal static string GetColumnValueExpression(
         string entityVar, string propertyName, bool isForeignKey,
         string? customTypeMappingClass, bool isBoolean = false, bool isEnum = false,
-        bool isNullable = false, bool convertBoolToInt = false)
+        bool isNullable = false, bool convertBoolToInt = false,
+        string? enumUnderlyingType = "int")
     {
         var valueExpr = isForeignKey
             ? $"{entityVar}.{propertyName}.Id"
@@ -344,12 +345,13 @@ internal static partial class InterceptorCodeGenerator
         }
         else if (isEnum)
         {
-            // All dialects: enums must be cast to their underlying integer type.
+            // All dialects: enums must be cast to their underlying type.
             // Same nullable convention as bool — return null, let caller wrap with DBNull.
+            var castType = enumUnderlyingType ?? "int";
             if (isNullable)
-                valueExpr = $"({valueExpr} != null ? (object)(int){valueExpr}.Value : null)";
+                valueExpr = $"({valueExpr} != null ? (object)({castType}){valueExpr}.Value : null)";
             else
-                valueExpr = $"(int){valueExpr}";
+                valueExpr = $"({castType}){valueExpr}";
         }
         return valueExpr;
     }
