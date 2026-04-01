@@ -50,18 +50,34 @@ DML: `.Delete().Where(...)`, `.Update().Set(u => u.Name, "val").Where(...)`, `.I
 
 ## Architecture Overview
 
-### Pipeline Stages (Stages 2-5)
+### Pipeline Stages
 
+Three parallel Roslyn incremental pipelines registered in `QuarryGenerator.Initialize()`:
+
+**Pipeline A: Schema/Context** (design-time + build-time via RegisterSourceOutput)
 ```
-Stage 2: Discovery        UsageSiteDiscovery → RawCallSite[]
-Stage 2.5: Enrichment     DisplayClassEnricher → enriched RawCallSite[] (display class names, captured variable types)
-Stage 3: Binding           CallSiteBinder → BoundCallSite (entity refs, context resolved)
-         Translation       CallSiteTranslator → TranslatedCallSite (SQL expression bound, parameters extracted)
-Stage 5: Orchestration     PipelineOrchestrator →
-           ChainAnalyzer → QueryPlan[]
-           SqlAssembler → AssembledPlan[] (rendered SQL per conditional mask)
-           CarrierAnalyzer → CarrierPlan[]
-           FileEmitter → generated .g.cs files
+Stage 1: Schema/Context    ContextParser + SchemaParser → ContextInfo[] + EntityInfo[]
+                           EntityCodeGenerator → entity .g.cs files
+                           ContextCodeGenerator → context partial .g.cs files
+```
+
+**Pipeline B: Interceptors** (build-time only via RegisterImplementationSourceOutput)
+```
+Stage 2: Discovery         UsageSiteDiscovery → RawCallSite[]
+Stage 2.5: Enrichment      DisplayClassEnricher → enriched RawCallSite[] (display class names, captured variable types)
+Stage 3: Bind + Translate   CallSiteBinder → BoundCallSite (entity refs, context resolved)
+                            CallSiteTranslator → TranslatedCallSite (SQL expression bound, parameters extracted)
+Stage 4: Chain Analysis     ChainAnalyzer → QueryPlan[] (groups by ChainId, classifies optimization tier)
+Stage 5: Assembly + Emit    SqlAssembler → AssembledPlan[] (rendered SQL per conditional mask)
+                            CarrierAnalyzer → CarrierPlan[]
+                            FileEmitter → interceptor .g.cs files
+```
+Stages 4-5 run inside PipelineOrchestrator.AnalyzeAndGroupTranslated() after all sites are collected.
+
+**Pipeline C: Migrations** (build-time only)
+```
+Stage 1: Migration discovery → MigrationInfo[]
+         MigrateAsyncCodeGenerator → MigrateAsync .g.cs
 ```
 
 ### Call Site Lifecycle
