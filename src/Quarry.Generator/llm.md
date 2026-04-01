@@ -64,15 +64,24 @@ Stage 1: Schema/Context    ContextParser + SchemaParser → ContextInfo[] + Enti
 **Pipeline B: Interceptors** (build-time only via RegisterImplementationSourceOutput)
 ```
 Stage 2: Discovery         UsageSiteDiscovery → RawCallSite[]
+                           ── .Collect() barrier: all sites gathered ──
 Stage 2.5: Enrichment      DisplayClassEnricher → enriched RawCallSite[] (display class names, captured variable types)
-Stage 3: Bind + Translate   CallSiteBinder → BoundCallSite (entity refs, context resolved)
-                            CallSiteTranslator → TranslatedCallSite (SQL expression bound, parameters extracted)
-Stage 4: Chain Analysis     ChainAnalyzer → QueryPlan[] (groups by ChainId, classifies optimization tier)
-Stage 5: Assembly + Emit    SqlAssembler → AssembledPlan[] (rendered SQL per conditional mask)
-                            CarrierAnalyzer → CarrierPlan[]
-                            FileEmitter → interceptor .g.cs files
+Stage 3a: Bind             CallSiteBinder → BoundCallSite[] (entity refs, context resolved)
+                           Returns ImmutableArray (1:N for navigation joins). Errors → PipelineErrorBag side-channel.
+Stage 3b: Translate        CallSiteTranslator → TranslatedCallSite (SQL expression bound, parameters extracted)
+                           Returns single site. Errors → TranslatedCallSite.PipelineError field.
+                           ── .Collect() barrier: all translated sites gathered ──
+Stage 4: Chain Analysis     ChainAnalyzer → AnalyzedChain[] (groups by ChainId, classifies optimization tier)
+Stage 5a: SQL Assembly      SqlAssembler → AssembledPlan[] (rendered SQL per conditional mask)
+Stage 5b: Carrier Analysis  CarrierAnalyzer → CarrierPlan[] (eligibility gates, field layout, extraction plans)
+Stage 5c: Post-analysis     BuildResultTypePatches: resolves unresolved tuple types from chain projections
+                            PropagateChainUpdatedSites: replaces original sites with chain-enriched versions
+                              (e.g., JoinedEntityTypeNames on post-join sites, patched ResultTypeName)
+Stage 5d: File Grouping     GroupTranslatedIntoFiles → FileInterceptorGroup[] (keyed by context + source file)
+Stage 5e: Emission          FileEmitter → interceptor .g.cs files
 ```
-Stages 4-5 run inside PipelineOrchestrator.AnalyzeAndGroupTranslated() after all sites are collected.
+Stages 4-5d run inside PipelineOrchestrator.AnalyzeAndGroupTranslated() after all sites are collected.
+Stage 5e runs per FileInterceptorGroup in RegisterImplementationSourceOutput.
 
 **Pipeline C: Migrations** (build-time only)
 ```
@@ -108,7 +117,109 @@ Interceptors cast the builder to the carrier via `Unsafe.As<Chain_N>()`, extract
 
 ### Conditional Clause Masking
 
-Clauses inside `if/else` blocks get assigned bit indices. At runtime, the carrier accumulates a mask. The terminal dispatches to the correct pre-rendered SQL variant via `mask switch { 0 => sql0, 1 => sql1, ... }`. Max 8 conditional bits (256 variants); beyond that, falls back to RuntimeBuild.
+Clauses inside `if/else` blocks deeper than the execution terminal's nesting depth get assigned bit indices. Constants: `MaxConditionalBits = 8`, `MaxIfNestingDepth = 2`. Beyond either → QRY032.
+
+**Bit assignment** (ChainAnalyzer): For each clause site, compute `relativeDepth = clause.NestingDepth - terminal.NestingDepth`. If `relativeDepth <= 0`, the clause is unconditional (same scope as terminal). If `relativeDepth > MaxIfNestingDepth`, the chain is RuntimeBuild. Otherwise, assign a `BitIndex` (0-7). Clauses sharing the same `ConditionText` form mutually exclusive branch groups.
+
+**Mask enumeration** (ChainAnalyzer.EnumerateMaskCombinations): Independent bits double the mask count (on/off). Mutually exclusive groups multiply by group size (exactly one bit set). Only reachable combinations are enumerated.
+
+**SQL rendering** (SqlAssembler): For each mask, evaluate which terms are active (`BitIndex == null` or bit set in mask), then render the full SQL statement. Parameter indices are globally stable — skipped conditional terms still occupy their parameter slots to keep `@p0, @p1, ...` aligned.
+
+**Code generation** (CarrierEmitter): Single variant → `static readonly string _sql`. Multiple variants → `static readonly string[] _sql` indexed by mask value (gaps filled with `null!`). Carrier accumulates a `byte` mask field via `Mask |= (1 << bitIndex)` as conditional clause interceptors execute. Terminal dispatches via direct array index: `_sql[__c.Mask]`.
+
+### Error Propagation & QRY900
+
+Errors propagate through two channels due to the Bind/Translate return type asymmetry:
+
+| Stage | Return Type | Error Channel | Rationale |
+|-------|-------------|---------------|-----------|
+| 3a Bind | `ImmutableArray<BoundCallSite>` | `PipelineErrorBag.Report()` (ThreadStatic side-channel) | Returns empty array on failure — no site to attach error to. 1:N expansion for navigation joins prevents a single error-bearing return. |
+| 3b Translate | `TranslatedCallSite` | `TranslatedCallSite.PipelineError` field | Scalar return allows natural error field. Equality includes PipelineError for incremental cache invalidation on error state changes. |
+
+**QRY900 has three source paths**, all drained in `EmitFileInterceptors()`:
+1. `site.PipelineError != null` on TranslatedCallSite → Translate-stage exceptions
+2. `PipelineErrorBag.DrainErrors()` → Bind-stage exceptions (side-channel)
+3. Exception catch in `EmitFileInterceptorsNewPipeline()` → Emission-stage exceptions
+
+**ThreadStatic lifecycle**: `PipelineOrchestrator.AnalyzeAndGroupTranslated()` calls `PipelineErrorBag.DrainErrors()` at entry to discard stale errors from prior compilations on the same thread. Safe because the incremental pipeline is single-threaded per compilation.
+
+### Caching Boundaries
+
+| Stage | Granularity | Invalidation Blast Radius |
+|-------|-------------|---------------------------|
+| 2-2.5 | Per-site (individual transforms) | One changed call site re-enriches only that site |
+| 3a-3b | Per-site (Select/SelectMany) | One changed site re-binds/re-translates only that site |
+| 4-5d | **All sites** (`.Collect()` barrier) | One new/changed TranslatedCallSite triggers re-analysis of ALL chains for ALL contexts |
+| 5e | Per FileInterceptorGroup | FileInterceptorGroup equality gates per-file code generation |
+
+**EntityRegistry as cross-pipeline bridge**: Built from all `ContextInfo` objects (Pipeline A output). Passed via `.Combine(entityRegistry)` into Pipeline B stages 2.5, 3a, 3b, and 4. Consequence: changing a Schema class invalidates all call site binding for entities in that schema.
+
+### Chain Disqualification
+
+Chains that cannot be statically analyzed receive `OptimizationTier.RuntimeBuild` → QRY032 compile error. Disqualifiers (from `ChainAnalyzer.CheckDisqualifiers`):
+
+| Disqualifier | Example |
+|-------------|---------|
+| Forked query chain | `var q = db.T().Where(...); q.Select(A).Execute(); q.Select(B).Execute();` |
+| Chain variable captured in lambda | `var q = db.T(); items.Select(x => q.Where(...))` |
+| Chain variable passed to non-Quarry method | `var q = db.T(); SomeMethod(q);` |
+| Chain variable assigned from non-Quarry method | `var q = GetQuery();` |
+| Chain crosses loop boundary | Some clauses inside loop, terminal outside (or vice versa) |
+| Conditional nesting depth > 2 | Triple-nested `if/else` with conditional clauses |
+| Conditional bits > 8 | More than 8 independent conditional clause groups |
+
+### Display Class Prediction
+
+The generator predicts compiler-generated closure class names to emit `[UnsafeAccessor]` methods for captured variable extraction without reflection.
+
+**Algorithm** (DisplayClassEnricher + DisplayClassNameResolver):
+1. Group all RawCallSites by enclosing method (walked up past local functions)
+2. Compute `methodOrdinal` = index of method in `containingType.GetMembers()` (linear scan)
+3. Analyze closures: pre-order traversal of lambda/local-function descendants, assign ordinals to scopes with captures
+4. Final name: `"{FullyQualifiedType}+<>c__DisplayClass{methodOrdinal}_{closureOrdinal}"`
+5. Classify capture kind (ClosureCapture vs FieldCapture) via `dataFlow.CapturedInside`
+
+**Compiler assumptions** (undocumented implementation details, not guaranteed contracts):
+- `GetMembers()` returns members in declaration order (all members count: backing fields, properties, accessors, methods)
+- Display class naming follows `<>c__DisplayClass{M}_{C}` pattern
+- Closure ordinals assigned in pre-order source traversal order
+- Partial classes contribute members in compilation unit order
+
+**Error type resolution cascade** (when `TypeKind.Error` for captured variable):
+1. `TryResolveErrorType` — extract generic type arg from `await expr.Method<T>()`
+2. `TryQualifyErrorTypeFromUsings` — search `{typeName}Schema` in source file's using namespaces
+3. `ChainResultTypeResolver.TryResolveChainResultType` — walk chain invocations to reconstruct projection type (depth limit: 3)
+4. Fallback to `"object"`
+
+**Known limitation**: `ResolveDerivedLocals` uses fixpoint iteration (loop until no progress) bounded by captured variable count, not an explicit iteration limit. Safe in practice but could hang on pathological circular captures.
+
+### Subquery & Aggregate Support
+
+**Navigation subquery methods** (recognized by `SqlExprParser.IsSubqueryMethod`):
+
+| Pattern | SQL | Notes |
+|---------|-----|-------|
+| `nav.Any()` | `EXISTS (SELECT 1 FROM t WHERE correlation)` | Parameterless |
+| `nav.Any(x => pred)` | `EXISTS (SELECT 1 FROM t WHERE correlation AND pred)` | With predicate |
+| `!nav.Any(...)` | `NOT EXISTS (...)` | Negation supported |
+| `nav.All(x => pred)` | `NOT EXISTS (SELECT 1 FROM t WHERE correlation AND NOT pred)` | Predicate required |
+| `nav.Count()` | `(SELECT COUNT(*) FROM t WHERE correlation)` | Scalar subquery |
+| `nav.Count(x => pred)` | `(SELECT COUNT(*) FROM t WHERE correlation AND pred)` | With predicate |
+
+Not supported on navigation: `.Sum()`, `.Min()`, `.Max()`, `.Average()`, `.FirstOrDefault()`, `.Exists()`.
+
+**Sql.* aggregate functions** (work in any expression context — Select, Where, Having):
+
+| Function | SQL |
+|----------|-----|
+| `Sql.Count()` | `COUNT(*)` |
+| `Sql.Count(expr)` | `COUNT(expr)` |
+| `Sql.Sum(expr)` | `SUM(expr)` |
+| `Sql.Avg(expr)` | `AVG(expr)` |
+| `Sql.Min(expr)` | `MIN(expr)` |
+| `Sql.Max(expr)` | `MAX(expr)` |
+
+Subquery aliases are generated as `sq0`, `sq1`, etc. Correlation is always `inner.FK = outer.PK` (automatic from navigation metadata). Nested subqueries are supported (e.g., `u.Orders.Any(o => o.Items.Any(i => ...))`).
 
 ## File Map
 
@@ -116,6 +227,7 @@ Clauses inside `if/else` blocks get assigned bit indices. At runtime, the carrie
 | File | Purpose |
 |------|---------|
 | `QuarryGenerator.cs` | IIncrementalGenerator. Registers 3 pipelines: schema/context, interceptors, migrations. Stages 2-5 orchestration. |
+| `DiagnosticDescriptors.cs` | Central registry of all QRY diagnostic descriptors (QRY001–QRY055, QRY900) with severity, title, and message format. |
 
 ### Parsing (Stage 1-2.5) — `Parsing/`
 | File | Purpose |
@@ -124,7 +236,7 @@ Clauses inside `if/else` blocks get assigned bit indices. At runtime, the carrie
 | `SchemaParser.cs` | Parses Schema classes → EntityInfo (columns, navigations, indexes, naming). |
 | `ContextParser.cs` | Parses [QuarryContext] classes → ContextInfo (dialect, entities, mappings). |
 | `ChainAnalyzer.cs` | Stage 4. Groups sites by ChainId → QueryPlan. Conditional classification, projection building, parameter enrichment. |
-| `AnalyzabilityChecker.cs` | Determines compile-time vs runtime fallback eligibility. Receiver tracing, lambda capture checks. |
+| `AnalyzabilityChecker.cs` | Per-site analyzability gate. Checks receiver is a fluent chain (not parameter/variable), lambda is present, traces up to 2 hops in variable chains. Sets IsAnalyzable + NonAnalyzableReason on RawCallSite. |
 | `DisplayClassEnricher.cs` | Stage 2.5. Batch closure analysis per method. Predicts display class names, collects captured variable types. |
 | `DisplayClassNameResolver.cs` | Display class name prediction utilities. Method ordinals, closure ordinals, error type resolution. |
 | `ChainResultTypeResolver.cs` | Resolves captured variable types from chain terminal results via EntityRegistry. |
@@ -161,6 +273,7 @@ Clauses inside `if/else` blocks get assigned bit indices. At runtime, the carrie
 |------|---------|
 | `CarrierAnalyzer.cs` | Analyzes AssembledPlan → CarrierPlan. Eligibility gates, field/parameter computation, extraction plans. |
 | `CarrierPlan.cs` | Carrier plan model: fields, parameters, mask, extraction plans, interfaces. |
+| `CarrierParameter.cs` | Extended carrier parameter with global index, field name/type, extraction/binding code, type mapping, collection/sensitivity flags. |
 | `CarrierEmitter.cs` | Emits carrier class + carrier-path method bodies (clause binding, terminal execution). |
 | `InterceptorRouter.cs` | Routes InterceptorKind → EmitterCategory (Clause, Terminal, Join, Transition, RawSql). |
 | `FileEmitter.cs` | Per-file orchestrator. Pass 1: carrier classes. Pass 2: interceptor methods via dispatcher. |
@@ -186,15 +299,51 @@ Clauses inside `if/else` blocks get assigned bit indices. At runtime, the carrie
 | `ProjectionAnalyzer.cs` | Analyzes Select() lambdas → ProjectionInfo (kind, columns, reader method). |
 | `ReaderCodeGenerator.cs` | Generates column list SQL + typed reader delegates (entity, DTO, tuple, scalar). |
 
+### Translation — `Translation/`
+| File | Purpose |
+|------|---------|
+| `ParameterInfo.cs` | Parameter extracted from SQL expressions: index, name, CLR type, value expression, collection flag, capture metadata. |
+| `SqlLikeHelpers.cs` | LIKE expression helpers: `EscapeLikeMetaChars()`, `FormatLikeWithParameter()`. Dialect-aware concatenation. |
+
 ### Utilities — `Utilities/`
 | File | Purpose |
 |------|---------|
-| `TypeClassification.cs` | Central type classification: IsValueType, GetReaderMethod, NeedsSignCast, IsUnresolvedTypeName, BuildTupleTypeName, SplitTupleElements. |
-| `SymbolDisplayCache.cs` | Caches SymbolDisplayFormat results. |
-| `FileHasher.cs` | Content hashing for incremental output. |
+| `TypeClassification.cs` | Central type classification: IsValueType, GetReaderMethod, NeedsSignCast, IsUnresolvedTypeName/IsUnresolvedResultType, BuildTupleTypeName, SplitTupleElements. |
+| `SymbolDisplayCache.cs` | Caches ITypeSymbol.ToDisplayString() results via ConditionalWeakTable. |
+| `FileHasher.cs` | Converts file paths into sanitized tags for generated file names and C# identifiers. |
 
 ### Models — `Models/`
-Key types: `InterceptorKind` (40+ enum values), `ClauseKind`, `QueryKind`, `ColumnInfo`, `EntityInfo`, `ContextInfo`, `InsertInfo`, `NavigationInfo`, `ProjectionInfo`, `ExecutionInfo`, `ClauseExtractionPlan`, `FileInterceptorGroup`.
+All pipeline models implement `IEquatable<T>` for incremental caching.
+
+| File | Type(s) | Purpose |
+|------|---------|---------|
+| `InterceptorKind.cs` | `enum InterceptorKind` | 40+ enum values for all interceptor categories. |
+| `ColumnInfo.cs` | `class ColumnInfo` | Column from schema: property name, column name, CLR type, modifiers. |
+| `ContextInfo.cs` | `class ContextInfo` | Discovered QuarryContext: configuration, dialect, entity mappings. |
+| `EntityInfo.cs` | `class EntityInfo` | Discovered entity: name, table name, columns, navigations, indexes. |
+| `EntityMapping.cs` | `class EntityMapping` | Maps context property name → EntityInfo. |
+| `NavigationInfo.cs` | `class NavigationInfo` | One-to-many navigation (Many<T>): property name, related entity, FK. |
+| `IndexInfo.cs` | `class IndexInfo` | Index: columns with sort directions, uniqueness, type (BTree/Hash), filter, includes. |
+| `ProjectionInfo.cs` | `class ProjectionInfo` | Analyzed Select() lambda: kind, result type, columns, reader method. |
+| `ExecutionInfo.cs` | `class ExecutionInfo` | Execution context for terminals: SQL, parameters, reader. |
+| `InsertInfo.cs` | `class InsertInfo` | Insert operation metadata: columns, identity column, RETURNING clause. |
+| `ClauseExtractionPlan.cs` | `class ClauseExtractionPlan` | Groups per-variable extractors for a single clause. |
+| `CapturedVariableExtractor.cs` | `class CapturedVariableExtractor` | Per-variable [UnsafeAccessor] extractor: method name, variable name/type, display class, capture kind. |
+| `CarrierField.cs` | `enum FieldRole`, `class CarrierField` | FieldRole (ExecutionContext, Parameter, Collection, ClauseMask, Limit, Offset, Timeout, Entity). CarrierField describes a field on the generated carrier class. |
+| `SetActionAssignment.cs` | `class SetActionAssignment` | Single assignment from `Set(Action<T>)` lambda: column SQL, value type, inlined value. |
+| `FileInterceptorGroup.cs` | `class FileInterceptorGroup` | Groups all interceptor data for a (context, source file) pair. Output of PipelineOrchestrator. |
+| `OptimizationTier.cs` | `enum OptimizationTier`, `enum ClauseRole` | PrebuiltDispatch vs RuntimeBuild. ClauseRole tracks clause position. |
+| `QueryKind.cs` | `enum QueryKind` | Query routing: Select, Delete, Update, Insert, BatchInsert. |
+| `ClauseKind.cs` | `enum ClauseKind` | Clause types: Where, OrderBy, GroupBy, Having, Set. |
+| `RawSqlTypeInfo.cs` | `class RawSqlTypeInfo` | Resolved result type T for RawSqlAsync<T>/RawSqlScalarAsync<T>. |
+| `DiagnosticInfo.cs` | `class DiagnosticInfo` | Deferred diagnostic: ID, location, message args. Carried through pipeline for reporting in emission. |
+| `DiagnosticLocation.cs` | `struct DiagnosticLocation` | Structural source location (file, line, column, span). Replaces Roslyn Location for IEquatable. |
+| `MigrationInfo.cs` | `class MigrationInfo` | Migration class metadata: version, name, flags (HasDestructiveSteps, HasBackup, etc). |
+| `SnapshotInfo.cs` | `class SnapshotInfo` | [MigrationSnapshot] metadata: version, name, schema hash. |
+| `EquatableArray.cs` | `struct EquatableArray<T>` | ImmutableArray wrapper with element-wise equality for incremental caching. |
+| `EquatableDictionary.cs` | `struct EquatableDictionary<K,V>` | ImmutableDictionary wrapper with key-value equality for incremental caching. |
+| `EqualityHelpers.cs` | `static class EqualityHelpers` | SequenceEqual, HashSequence, NullableSequenceEqual, DictionaryEqual utilities. |
+| `HashCodePolyfill.cs` | `struct HashCode` | System.HashCode polyfill for netstandard2.0 compatibility. |
 
 ## InterceptorKind Categories
 
@@ -214,7 +363,7 @@ Key types: `InterceptorKind` (40+ enum values), `ClauseKind`, `QueryKind`, `Colu
 
 | Code | Severity | Meaning |
 |------|----------|---------|
-| QRY001 | Warning | Query not fully analyzable (runtime fallback) |
+| QRY001 | Warning | Query not fully analyzable (non-analyzable receiver/lambda) |
 | QRY002 | Error | Missing Table property on schema |
 | QRY003 | Error | Invalid column type / no TypeMapping |
 | QRY006 | Error | Unsupported Where operation |
@@ -241,7 +390,16 @@ Key types: `InterceptorKind` (40+ enum values), `ClauseKind`, `QueryKind`, `Colu
 4. **Error type resolution cascade**: When SemanticModel reports TypeKind.Error for a captured variable: TryResolveErrorType (generic type args) → TryQualifyErrorTypeFromUsings (namespace search) → ChainResultTypeResolver (chain terminal analysis) → fallback "object".
 5. **IsUnresolvedTypeName strict/lenient split**: Strict treats "object" as unresolved (chain analysis). Lenient allows "object" (projection analysis where it is a valid placeholder via fallbackToObject).
 6. **Enum constant folding**: SqlExprAnnotator folds enum member accesses to LiteralExpr before parameter extraction. CapturedValueExpr reaching the translator are always genuine runtime captures.
-7. **Conditional mask limit**: Max 8 conditional bits (256 SQL variants). Beyond that, tier falls back to RuntimeBuild.
+7. **Conditional mask limit**: Max 8 conditional bits (256 SQL variants) and max nesting depth 2. Beyond either limit → QRY032 compile error.
+8. **RuntimeBuild is a compile-error path, not a runtime fallback**: There is no runtime query builder. When ChainAnalyzer classifies a chain as `OptimizationTier.RuntimeBuild` (forked chain, excessive conditional depth, unanalyzable projection, disqualified chain), no SQL is rendered, no carrier is generated, and QRY032 is reported as a compile error directing the user to restructure. `CarrierAnalyzer` immediately marks RuntimeBuild chains as `Ineligible`; `SqlAssembler` produces empty SQL variants.
+
+## Project Boundaries
+
+| Project | Target | Role |
+|---------|--------|------|
+| `Quarry.Generator` | netstandard2.0 | Roslyn source generator. Compile-time analysis and code generation. |
+| `Quarry` | net10.0 | Runtime library. QuarryContext, IEntityAccessor<T>, QueryBuilder<T>, execution, type mappings. |
+| `Quarry.Shared` | shared projitems | Shared code compiled into both Generator and Runtime. Contains Migration/ (schema diffing, builders, DDL), Scaffold/ (database introspection for 4 dialects), and Sql/ (dialect enum, formatting). Generator excludes Migration/ and Scaffold/ directories. |
 
 ## Testing
 
