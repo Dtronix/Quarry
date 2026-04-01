@@ -762,14 +762,14 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Remaps clause-local parameters to global parameter indices.
-    /// </summary>
-    /// <summary>
     /// Counts the number of ParamSlotExpr nodes in an SqlExpr tree.
     /// </summary>
     private static int CountParamSlots(SqlExpr expr)
         => SqlExprRenderer.CollectParameters(expr).Count;
 
+    /// <summary>
+    /// Remaps clause-local parameters to global parameter indices.
+    /// </summary>
     private static List<QueryParameter> RemapParameters(
         IReadOnlyList<ParameterInfo> clauseParams,
         ref int globalIndex)
