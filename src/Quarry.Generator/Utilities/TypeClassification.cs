@@ -272,7 +272,7 @@ internal static class TypeClassification
     /// <summary>
     /// Splits tuple element strings at top-level commas only, respecting nested parentheses.
     /// </summary>
-    private static List<string> SplitTupleElements(string inner)
+    internal static List<string> SplitTupleElements(string inner)
     {
         var elements = new List<string>();
         int depth = 0;
