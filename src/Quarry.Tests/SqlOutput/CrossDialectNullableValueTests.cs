@@ -111,10 +111,10 @@ internal class CrossDialectNullableValueTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"LastLogin\" IS NOT NULL)",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"LastLogin\" IS NOT NULL)",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE NOT (`LastLogin` IS NOT NULL)",
-            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE NOT ([LastLogin] IS NOT NULL)");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"LastLogin\" IS NULL",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"LastLogin\" IS NULL",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `LastLogin` IS NULL",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [LastLogin] IS NULL");
 
         // Execution: Only Bob has NULL LastLogin
         var results = await lt.ExecuteFetchAllAsync();

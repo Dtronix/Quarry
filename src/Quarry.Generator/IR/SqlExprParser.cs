@@ -340,9 +340,17 @@ internal static class SqlExprParser
             operand = ParseExpression(prefixUnary.Operand, lambdaParameters, context);
         }
 
+        if (prefixUnary.Kind() == SyntaxKind.LogicalNotExpression)
+        {
+            // !IsNullCheck → flip IS NULL ↔ IS NOT NULL instead of wrapping in NOT(...)
+            if (operand is IsNullCheckExpr isNull)
+                return new IsNullCheckExpr(isNull.Operand, isNegated: !isNull.IsNegated);
+
+            return new UnaryOpExpr(SqlUnaryOperator.Not, operand);
+        }
+
         return prefixUnary.Kind() switch
         {
-            SyntaxKind.LogicalNotExpression => new UnaryOpExpr(SqlUnaryOperator.Not, operand),
             SyntaxKind.UnaryMinusExpression => new UnaryOpExpr(SqlUnaryOperator.Negate, operand),
             SyntaxKind.UnaryPlusExpression => operand,
             _ => new SqlRawExpr(prefixUnary.ToString())
