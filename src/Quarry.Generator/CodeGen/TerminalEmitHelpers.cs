@@ -846,4 +846,90 @@ internal static class TerminalEmitHelpers
 
         return segments;
     }
+
+    /// <summary>
+    /// Emits StringBuilder.Append() calls for each parsed SQL segment.
+    /// Literal → verbatim append. ScalarParam → append shifted index.
+    /// CollectionExpand → empty guard + join parts array + shift accumulation.
+    /// </summary>
+    internal static void EmitInlineSqlBuilder(
+        StringBuilder sb,
+        string indent,
+        List<SqlSegment> segments,
+        SqlDialect dialect,
+        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections)
+    {
+        var esc = InterceptorCodeGenerator.EscapeStringLiteral;
+
+        foreach (var seg in segments)
+        {
+            switch (seg.Kind)
+            {
+                case SqlSegmentKind.Literal:
+                    sb.AppendLine($"{indent}__sb.Append(@\"{esc(seg.Text!)}\");");
+                    break;
+
+                case SqlSegmentKind.ScalarParam:
+                    if (dialect == SqlDialect.PostgreSQL)
+                    {
+                        sb.AppendLine($"{indent}__sb.Append('$');");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + 1 + __colShift);");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}__sb.Append(\"@p\");");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + __colShift);");
+                    }
+                    break;
+
+                case SqlSegmentKind.CollectionExpand:
+                {
+                    var colOrd = GetCollectionOrdinal(collections, seg.ParamIndex);
+                    sb.AppendLine($"{indent}if (__col{seg.ParamIndex}Len == 0)");
+                    sb.AppendLine($"{indent}    __sb.Append(\"SELECT 1 WHERE 1=0\");");
+                    sb.AppendLine($"{indent}else");
+                    sb.AppendLine($"{indent}    __sb.Append(string.Join(\", \", __col{seg.ParamIndex}Parts));");
+                    sb.AppendLine($"{indent}__colShift += __col{seg.ParamIndex}Len - 1;");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits the __col{N}Parts array population loop for a collection parameter.
+    /// </summary>
+    internal static void EmitCollectionPartsPopulation(
+        StringBuilder sb,
+        string indent,
+        int globalIndex,
+        SqlDialect dialect)
+    {
+        if (dialect == SqlDialect.MySQL)
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = \"?\";");
+        }
+        else if (dialect == SqlDialect.PostgreSQL)
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.Dollar({globalIndex} + __colShift + __i);");
+        }
+        else
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.AtP({globalIndex} + __colShift + __i);");
+        }
+    }
+
+    private static int GetCollectionOrdinal(
+        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections, int globalIndex)
+    {
+        foreach (var c in collections)
+            if (c.GlobalIndex == globalIndex) return c.CollectionOrdinal;
+        return 0;
+    }
 }
