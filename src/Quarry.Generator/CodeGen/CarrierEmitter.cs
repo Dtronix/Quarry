@@ -598,9 +598,14 @@ internal static class CarrierEmitter
         var hasConditional = chain.ConditionalTerms.Count > 0;
         var maskType = hasConditional ? GetMaskType(chain) : null;
 
-        // When collections exist, emit a running __bindShift variable that accumulates
-        // (colLen - 1) for each preceding collection. This ensures each scalar gets its
-        // correct shifted parameter name based on how many collection slots preceded it.
+        // Shift variable design (three variables serve different purposes):
+        //   __colShift  — set in the preamble's inline SQL builder, accumulates left-to-right
+        //                 as SQL text is built. Used for SQL construction + cache entry.
+        //   __bindShift — set here in command binding, accumulates in GlobalIndex order as
+        //                 DbParameters are created. Used for scalar/pagination ParameterName.
+        //   __diagShift — set in diagnostic emission, same accumulation as __bindShift.
+        // Invariant: after all chain params, __bindShift == __colShift (same collections,
+        // same order, same accumulation formula). Pagination uses __bindShift.
         if (hasCollections)
             sb.AppendLine("        var __bindShift = 0;");
 
@@ -678,13 +683,15 @@ internal static class CarrierEmitter
         if (inConditionalBlock)
             sb.AppendLine("        }");
 
-        // Pagination parameters — always unconditional, use __colShift (total accumulated from preamble)
+        // Pagination parameters — always unconditional.
+        // __bindShift == __colShift here: both accumulate (colLen-1) per collection
+        // in GlobalIndex order. Using __bindShift keeps the binding self-contained.
         var nextIdx = paramCount;
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
             if (hasCollections)
-                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__colShift")};");
+                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
             else
                 sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
@@ -695,7 +702,7 @@ internal static class CarrierEmitter
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
             if (hasCollections)
-                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__colShift")};");
+                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
             else
                 sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
@@ -1084,7 +1091,7 @@ internal static class CarrierEmitter
         }
         else
         {
-            var primes = new[] { 16777619, 486187739, 1099511628211L, 2654435761L, 40343L, 999979L, 15485863L, 32452843L };
+            var primes = new[] { 16777619, 486187739, 1073741827, 2013265921, 40343, 999979, 15485863, 32452843 };
             var parts = new List<string>();
             for (int i = 0; i < collections.Count; i++)
             {

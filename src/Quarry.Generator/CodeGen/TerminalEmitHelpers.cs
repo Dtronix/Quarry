@@ -338,6 +338,23 @@ internal static class TerminalEmitHelpers
                 var globalIdx = offset + p.Index;
                 sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", __col{globalIdx}Len == 0 ? \"SELECT 1 WHERE 1=0\" : string.Join(\", \", __col{globalIdx}Parts));");
             }
+
+            // Shift scalar parameter references in the fragment so diagnostic SQL
+            // matches the actual expanded SQL (where indices are shifted by collections).
+            if (chain.Dialect != SqlDialect.MySQL)
+            {
+                foreach (var p in clause.Site.Clause!.Parameters.Where(p => !p.IsCollection))
+                {
+                    var globalIdx = offset + p.Index;
+                    var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                    if (shiftExpr == "0") continue; // no preceding collections → no shift needed
+                    var originalPlaceholder = chain.Dialect == SqlDialect.PostgreSQL
+                        ? $"${globalIdx + 1}"
+                        : $"@p{globalIdx}";
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
+                    sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{originalPlaceholder}\", {nameExpr});");
+                }
+            }
         }
 
         // Section 2: Collection parameter array construction
@@ -895,7 +912,6 @@ internal static class TerminalEmitHelpers
 
                 case SqlSegmentKind.CollectionExpand:
                 {
-                    var colOrd = GetCollectionOrdinal(collections, seg.ParamIndex);
                     sb.AppendLine($"{indent}if (__col{seg.ParamIndex}Len == 0)");
                     sb.AppendLine($"{indent}    __sb.Append(\"SELECT 1 WHERE 1=0\");");
                     sb.AppendLine($"{indent}else");
@@ -936,11 +952,4 @@ internal static class TerminalEmitHelpers
         }
     }
 
-    private static int GetCollectionOrdinal(
-        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections, int globalIndex)
-    {
-        foreach (var c in collections)
-            if (c.GlobalIndex == globalIndex) return c.CollectionOrdinal;
-        return 0;
-    }
 }

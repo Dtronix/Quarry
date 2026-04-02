@@ -130,6 +130,116 @@ internal class CollectionParameterCollisionTests
 
     #endregion
 
+    #region Scalar before collection — cross-dialect (Issue 8)
+
+    [Test]
+    public async Task Where_ScalarBeforeCollection_CrossDialect_IndicesCorrect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Scalar param at GlobalIndex 0, collection at GlobalIndex 1
+        var ids = new List<int> { 1, 2, 3 };
+        var maxId = 10;
+
+        var ltDiag = Lite.Users()
+            .Where(u => u.UserId <= maxId && ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ToDiagnostics();
+
+        var pgDiag = Pg.Users()
+            .Where(u => u.UserId <= maxId && ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ToDiagnostics();
+
+        var myDiag = My.Users()
+            .Where(u => u.UserId <= maxId && ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ToDiagnostics();
+
+        var ssDiag = Ss.Users()
+            .Where(u => u.UserId <= maxId && ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .ToDiagnostics();
+
+        // Scalar @p0 stays at @p0 (no preceding collections), collection expands to @p1,@p2,@p3
+        Assert.Multiple(() =>
+        {
+            Assert.That(ltDiag.Sql, Does.Contain("@p0"), "SQLite: scalar at original index");
+            Assert.That(ltDiag.Sql, Does.Contain("IN (@p1, @p2, @p3)"), "SQLite: collection shifted");
+            Assert.That(ltDiag.Parameters, Has.Count.EqualTo(4));
+
+            Assert.That(pgDiag.Sql, Does.Contain("$1"), "PG: scalar at $1");
+            Assert.That(pgDiag.Sql, Does.Contain("IN ($2, $3, $4)"), "PG: collection shifted");
+            Assert.That(pgDiag.Parameters, Has.Count.EqualTo(4));
+
+            Assert.That(myDiag.Sql, Does.Contain("IN (?, ?, ?)"), "MySQL: collection expansion");
+            Assert.That(myDiag.Parameters, Has.Count.EqualTo(4));
+
+            Assert.That(ssDiag.Sql, Does.Contain("@p0"), "SS: scalar at original index");
+            Assert.That(ssDiag.Sql, Does.Contain("IN (@p1, @p2, @p3)"), "SS: collection shifted");
+            Assert.That(ssDiag.Parameters, Has.Count.EqualTo(4));
+        });
+    }
+
+    #endregion
+
+    #region Multiple collections (Issue 7)
+
+    [Test]
+    public async Task Where_TwoCollections_IndicesAccumulateCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, _, _) = t;
+
+        var orderIds = new List<int> { 1, 2, 3 };
+        var statuses = new List<string> { "Shipped", "Pending" };
+
+        var ltDiag = Lite.Orders()
+            .Where(o => orderIds.Contains(o.OrderId) && statuses.Contains(o.Status))
+            .Select(o => o.Total)
+            .ToDiagnostics();
+
+        var pgDiag = Pg.Orders()
+            .Where(o => orderIds.Contains(o.OrderId) && statuses.Contains(o.Status))
+            .Select(o => o.Total)
+            .ToDiagnostics();
+
+        // Both collections should be parameterized with shifted indices.
+        // Collection 1 (3 ints): @p0,@p1,@p2. Shift = 2.
+        // Collection 2 (2 strings): starts at @p(1+2)=@p3, occupies @p3,@p4.
+        Assert.Multiple(() =>
+        {
+            Assert.That(ltDiag.Sql, Does.Contain("IN (@p0, @p1, @p2)"), "SQLite: first collection");
+            Assert.That(ltDiag.Sql, Does.Contain("IN (@p3, @p4)"), "SQLite: second collection shifted");
+
+            Assert.That(pgDiag.Sql, Does.Contain("IN ($1, $2, $3)"), "PG: first collection");
+            Assert.That(pgDiag.Sql, Does.Contain("IN ($4, $5)"), "PG: second collection shifted");
+        });
+    }
+
+    [Test]
+    public async Task Where_TwoCollections_ExecutionCorrect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var orderIds = new List<int> { 1, 2, 3 };
+        var statuses = new List<string> { "Shipped" };
+
+        var results = await Lite.Orders()
+            .Where(o => orderIds.Contains(o.OrderId) && statuses.Contains(o.Status))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+
+        // Orders 1 and 3 are Shipped, Order 2 is Pending
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results, Does.Contain(1));
+        Assert.That(results, Does.Contain(3));
+    }
+
+    #endregion
+
     #region Execution correctness — exact reproduction from #140
 
     [Test]
