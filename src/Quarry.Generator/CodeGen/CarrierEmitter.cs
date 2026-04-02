@@ -598,6 +598,12 @@ internal static class CarrierEmitter
         var hasConditional = chain.ConditionalTerms.Count > 0;
         var maskType = hasConditional ? GetMaskType(chain) : null;
 
+        // When collections exist, emit a running __bindShift variable that accumulates
+        // (colLen - 1) for each preceding collection. This ensures each scalar gets its
+        // correct shifted parameter name based on how many collection slots preceded it.
+        if (hasCollections)
+            sb.AppendLine("        var __bindShift = 0;");
+
         int? currentBitIndex = null;
         bool inConditionalBlock = false;
 
@@ -644,6 +650,8 @@ internal static class CarrierEmitter
                 sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
                 sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
                 sb.AppendLine($"{indent}}}");
+                // Accumulate shift after this collection's parameters are bound
+                sb.AppendLine($"{indent}__bindShift += __col{i}Len - 1;");
             }
             else
             {
@@ -651,7 +659,7 @@ internal static class CarrierEmitter
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
                 if (hasCollections)
-                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, withShift: true)};");
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, "__bindShift")};");
                 else
                     sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
                 sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
@@ -670,13 +678,13 @@ internal static class CarrierEmitter
         if (inConditionalBlock)
             sb.AppendLine("        }");
 
-        // Pagination parameters — always unconditional
+        // Pagination parameters — always unconditional, use __colShift (total accumulated from preamble)
         var nextIdx = paramCount;
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
             if (hasCollections)
-                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, withShift: true)};");
+                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__colShift")};");
             else
                 sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
@@ -687,7 +695,7 @@ internal static class CarrierEmitter
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
             if (hasCollections)
-                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, withShift: true)};");
+                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__colShift")};");
             else
                 sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
@@ -1222,15 +1230,14 @@ internal static class CarrierEmitter
     /// Returns a C# expression that evaluates to the shifted parameter name at runtime.
     /// Uses ParameterNames.AtP/Dollar for zero-allocation lookup.
     /// </summary>
-    private static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, bool withShift)
+    private static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, string shiftVar)
     {
         if (dialect == SqlDialect.MySQL)
             return "\"?\"";
 
-        var shiftExpr = withShift ? " + __colShift" : "";
         return dialect == SqlDialect.PostgreSQL
-            ? $"Quarry.Internal.ParameterNames.Dollar({originalIndex}{shiftExpr})"
-            : $"Quarry.Internal.ParameterNames.AtP({originalIndex}{shiftExpr})";
+            ? $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})"
+            : $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})";
     }
 
     /// <summary>

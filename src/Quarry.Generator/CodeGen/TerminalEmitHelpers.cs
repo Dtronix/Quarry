@@ -207,6 +207,7 @@ internal static class TerminalEmitHelpers
             : string.Join(" + ", collectionLenExprs);
 
         sb.AppendLine($"        var __paramList = new System.Collections.Generic.List<DiagnosticParameter>({capacityExpr});");
+        sb.AppendLine("        var __diagShift = 0;");
 
         foreach (var p in chain.ChainParameters.OrderBy(p => p.GlobalIndex))
         {
@@ -216,24 +217,26 @@ internal static class TerminalEmitHelpers
                 var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
                 sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.GlobalIndex}Len; __pi++)");
                 sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.GlobalIndex}Parts[__pi], __col{p.GlobalIndex}[__pi]{meta}));");
+                sb.AppendLine($"        __diagShift += __col{p.GlobalIndex}Len - 1;");
             }
             else
             {
                 var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
-                var nameExpr = EmitDiagParamNameExpr(chain.Dialect, p.GlobalIndex);
+                var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, p.GlobalIndex, "__diagShift");
                 sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({nameExpr}, __pVal{p.GlobalIndex}{meta}));");
             }
         }
 
         if (hasLimitField)
         {
-            var limitNameExpr = EmitDiagParamNameExpr(chain.Dialect, paginationBaseIdx);
+            // Pagination uses total __colShift (all collections already processed)
+            var limitNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, "__colShift");
             sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"));");
         }
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-            var offsetNameExpr = EmitDiagParamNameExpr(chain.Dialect, offsetIdx);
+            var offsetNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, "__colShift");
             sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"));");
         }
 
@@ -377,7 +380,8 @@ internal static class TerminalEmitHelpers
                     }
                     else
                     {
-                        var nameExpr = EmitDiagParamNameExpr(chain.Dialect, globalIdx);
+                        var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                        var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
                         sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter({nameExpr}, __pVal{globalIdx}{meta}));");
                     }
                 }
@@ -424,7 +428,8 @@ internal static class TerminalEmitHelpers
             {
                 if (hasChainCollections)
                 {
-                    var nameExpr = EmitDiagParamNameExpr(chain.Dialect, paginationBaseIdx);
+                    var shiftExpr = ComputeShiftExprForIndex(chain, paginationBaseIdx);
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, shiftExpr);
                     paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValL, typeName: \"Int32\") }}";
                 }
                 else
@@ -435,7 +440,8 @@ internal static class TerminalEmitHelpers
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
                 if (hasChainCollections)
                 {
-                    var nameExpr = EmitDiagParamNameExpr(chain.Dialect, offsetIdx);
+                    var shiftExpr = ComputeShiftExprForIndex(chain, offsetIdx);
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, shiftExpr);
                     paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValO, typeName: \"Int32\") }}";
                 }
                 else
@@ -451,7 +457,8 @@ internal static class TerminalEmitHelpers
                     var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
                     if (hasChainCollections)
                     {
-                        var nameExpr = EmitDiagParamNameExpr(chain.Dialect, globalIdx);
+                        var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                        var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
                         paramEntries.Add($"new({nameExpr}, __pVal{globalIdx}{meta})");
                     }
                     else
@@ -720,16 +727,31 @@ internal static class TerminalEmitHelpers
     }
 
     /// <summary>
-    /// Returns a C# expression for a shifted parameter name at runtime, for use in diagnostic emission.
+    /// Returns a C# expression for a shifted parameter name at runtime, using the specified shift variable.
     /// </summary>
-    private static string EmitDiagParamNameExpr(SqlDialect dialect, int originalIndex)
+    private static string EmitDiagParamNameExprWithVar(SqlDialect dialect, int originalIndex, string shiftVar)
     {
         return dialect switch
         {
             SqlDialect.MySQL => "\"?\"",
-            SqlDialect.PostgreSQL => $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + __colShift)",
-            _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + __colShift)"
+            SqlDialect.PostgreSQL => $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})",
+            _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})"
         };
+    }
+
+    /// <summary>
+    /// Computes the shift expression for a parameter at the given globalIndex, based on preceding collections.
+    /// Returns the sum of (__col{j}Len - 1) for all collection params with GlobalIndex &lt; globalIndex.
+    /// </summary>
+    private static string ComputeShiftExprForIndex(AssembledPlan chain, int globalIndex)
+    {
+        var precedingCollections = chain.ChainParameters
+            .Where(p => p.IsCollection && p.GlobalIndex < globalIndex)
+            .ToList();
+        if (precedingCollections.Count == 0)
+            return "0";
+        var parts = precedingCollections.Select(p => $"(__col{p.GlobalIndex}Len - 1)");
+        return string.Join(" + ", parts);
     }
 
     // ── SQL Segment Parser ─────────────────────────────────────────
