@@ -39,6 +39,11 @@ internal static class ChainResultTypeResolver
             return null;
 
         var declSyntax = declRef.GetSyntax();
+
+        // Handle out var declarations: out var dbEquip from receiver.TryGetValue(key, out var dbEquip)
+        if (declSyntax is SingleVariableDesignationSyntax svd)
+            return TryResolveOutVarType(svd, entityRegistry, depth);
+
         if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
             return null;
 
@@ -124,10 +129,16 @@ internal static class ChainResultTypeResolver
         if (initValue is AwaitExpressionSyntax awaitExpr)
             initValue = awaitExpr.Expression;
 
-        // Chain invocation
+        // Chain invocation (Quarry terminal or element-extracting method)
         if (initValue is InvocationExpressionSyntax invocation)
         {
-            return TryResolveChainInvocation(invocation, entityRegistry);
+            var quarryResult = TryResolveChainInvocation(invocation, entityRegistry);
+            if (quarryResult != null)
+                return quarryResult;
+
+            // Non-Quarry invocations: single-element methods (First, FirstOrDefault, etc.)
+            // return the collection's element type directly.
+            return TryResolveSingleElementMethod(invocation, declarator, entityRegistry, depth);
         }
 
         // Member access: sourceVar.Property
@@ -336,6 +347,165 @@ internal static class ChainResultTypeResolver
     {
         var entry = entityRegistry.Resolve(entityInfo.EntityName);
         return entry?.Context.Namespace;
+    }
+
+    /// <summary>
+    /// Resolves an <c>out var</c> declaration by walking up the syntax tree to the containing
+    /// invocation, then tracing the receiver's collection element type.
+    /// For <c>dict.TryGetValue(key, out var entity)</c>, the out var type equals the dictionary's
+    /// value type, which traces back to the original collection's element type.
+    /// </summary>
+    private static string? TryResolveOutVarType(
+        SingleVariableDesignationSyntax designation, EntityRegistry entityRegistry, int depth)
+    {
+        if (depth > 3) return null;
+
+        // Walk up: SingleVariableDesignation → DeclarationExpression → Argument → ArgumentList → Invocation
+        if (designation.Parent is not DeclarationExpressionSyntax)
+            return null;
+        if (designation.Parent.Parent is not ArgumentSyntax)
+            return null;
+        if (designation.Parent.Parent.Parent is not ArgumentListSyntax)
+            return null;
+        if (designation.Parent.Parent.Parent.Parent is not InvocationExpressionSyntax invocation)
+            return null;
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            return null;
+
+        var methodName = memberAccess.Name.Identifier.Text;
+
+        // TryGetValue(key, out var entity) — the out param type is the collection element type
+        if (methodName == "TryGetValue")
+            return TryResolveCollectionElementType(memberAccess.Expression, designation, entityRegistry, depth + 1);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Traces the element type of a collection expression through variable declarations
+    /// and element-preserving method chains back to a Quarry chain result.
+    /// </summary>
+    private static string? TryResolveCollectionElementType(
+        ExpressionSyntax expression, SyntaxNode contextNode, EntityRegistry entityRegistry, int depth)
+    {
+        if (depth > 3) return null;
+
+        if (expression is IdentifierNameSyntax ident)
+        {
+            var decl = FindLocalDeclarator(ident.Identifier.Text, contextNode);
+            if (decl == null || decl.Initializer?.Value == null)
+                return null;
+
+            var initValue = decl.Initializer.Value;
+            if (initValue is AwaitExpressionSyntax awaitExpr)
+                initValue = awaitExpr.Expression;
+
+            // Quarry chain invocation → extract element type from List<T> / T result
+            if (initValue is InvocationExpressionSyntax invocation)
+            {
+                var chainResult = TryResolveChainInvocation(invocation, entityRegistry);
+                if (chainResult != null)
+                    return ExtractCollectionElementType(chainResult) ?? chainResult;
+
+                // Element-preserving method (ToDictionary, ToList, Where, etc.) → recurse on receiver
+                if (invocation.Expression is MemberAccessExpressionSyntax ma)
+                {
+                    var methodName = ma.Name.Identifier.Text;
+                    if (IsElementPreservingMethod(methodName))
+                    {
+                        // ToDictionary with value selector (2+ lambda args) changes the value type — bail
+                        if (methodName == "ToDictionary" && invocation.ArgumentList.Arguments.Count > 1
+                            && invocation.ArgumentList.Arguments[1].Expression is LambdaExpressionSyntax)
+                            return null;
+
+                        return TryResolveCollectionElementType(ma.Expression, decl, entityRegistry, depth + 1);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves single-element extraction methods (First, FirstOrDefault, Single, etc.)
+    /// on collections to their element type.
+    /// </summary>
+    private static string? TryResolveSingleElementMethod(
+        InvocationExpressionSyntax invocation, SyntaxNode contextNode, EntityRegistry entityRegistry, int depth)
+    {
+        if (depth > 3) return null;
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax ma)
+            return null;
+
+        var methodName = ma.Name.Identifier.Text;
+        if (methodName != "First" && methodName != "FirstOrDefault"
+            && methodName != "Single" && methodName != "SingleOrDefault"
+            && methodName != "Last" && methodName != "LastOrDefault"
+            && methodName != "ElementAt" && methodName != "ElementAtOrDefault")
+            return null;
+
+        return TryResolveCollectionElementType(ma.Expression, contextNode, entityRegistry, depth + 1);
+    }
+
+    /// <summary>
+    /// Returns true for methods that preserve the collection's element type as
+    /// either the output element type or the dictionary value type.
+    /// </summary>
+    private static bool IsElementPreservingMethod(string methodName)
+    {
+        switch (methodName)
+        {
+            case "ToDictionary":
+            case "ToLookup":
+            case "ToList":
+            case "ToArray":
+            case "ToHashSet":
+            case "AsEnumerable":
+            case "Where":
+            case "OrderBy":
+            case "OrderByDescending":
+            case "ThenBy":
+            case "ThenByDescending":
+            case "Distinct":
+            case "Take":
+            case "Skip":
+            case "Reverse":
+            case "First":
+            case "FirstOrDefault":
+            case "Single":
+            case "SingleOrDefault":
+            case "Last":
+            case "LastOrDefault":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the element type from a collection type string.
+    /// <c>global::System.Collections.Generic.List&lt;T&gt;</c> → <c>T</c>.
+    /// Returns null if the type is not a recognized collection wrapper.
+    /// </summary>
+    internal static string? ExtractCollectionElementType(string typeString)
+    {
+        // Find the outermost generic argument: List<T> → T, IReadOnlyList<T> → T
+        var genericStart = typeString.IndexOf('<');
+        if (genericStart < 0) return null;
+
+        // Verify it's a single-type-arg collection (not Dictionary<K,V>)
+        var prefix = typeString.Substring(0, genericStart);
+        if (prefix.Contains("Dictionary") || prefix.Contains("IDictionary"))
+            return null;
+
+        // Extract content between outermost < and >
+        var genericEnd = typeString.LastIndexOf('>');
+        if (genericEnd <= genericStart) return null;
+
+        return typeString.Substring(genericStart + 1, genericEnd - genericStart - 1);
     }
 
     /// <summary>

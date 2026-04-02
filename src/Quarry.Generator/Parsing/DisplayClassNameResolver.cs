@@ -115,7 +115,18 @@ internal static class DisplayClassNameResolver
         foreach (var usingDir in root.Usings)
         {
             if (usingDir.Alias == null && usingDir.Name != null)
+            {
                 importedNamespaces.Add(usingDir.Name.ToString());
+            }
+            else if (usingDir.Alias != null && usingDir.Name != null)
+            {
+                // Extract namespace from using aliases: using DbUser = My.Namespace.User
+                // → adds "My.Namespace" so schema lookup can find "My.Namespace.UserSchema"
+                var fullName = usingDir.Name.ToString();
+                var lastDot = fullName.LastIndexOf('.');
+                if (lastDot > 0)
+                    importedNamespaces.Add(fullName.Substring(0, lastDot));
+            }
         }
 
         foreach (var ns in importedNamespaces)

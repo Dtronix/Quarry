@@ -69,7 +69,7 @@ internal static class PipelineOrchestrator
         var carrierPlans = new List<CarrierPlan>(assembledPlans.Count);
         foreach (var assembled in assembledPlans)
         {
-            var carrier = CarrierAnalyzer.AnalyzeNew(assembled);
+            var carrier = CarrierAnalyzer.AnalyzeNew(assembled, registry);
             carrierPlans.Add(carrier);
         }
 

@@ -4,6 +4,7 @@ using System.Linq;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
+using Quarry.Generators.Parsing;
 using Quarry.Generators.Sql;
 using Quarry.Generators.Translation;
 using Quarry.Generators.Utilities;
@@ -62,7 +63,7 @@ internal static class CarrierAnalyzer
     /// <summary>
     /// Analyzes an AssembledPlan to produce a CarrierPlan for the new pipeline.
     /// </summary>
-    public static CarrierPlan AnalyzeNew(AssembledPlan assembled)
+    public static CarrierPlan AnalyzeNew(AssembledPlan assembled, EntityRegistry? entityRegistry = null)
     {
         var plan = assembled.Plan;
 
@@ -162,11 +163,10 @@ internal static class CarrierAnalyzer
             {
                 // When param.ClrType is unresolved ("?" or "object"), try to use
                 // the resolved type from CapturedVariableTypes if available.
-                // Only apply the hint for simple captures where the variable IS the
-                // value (ValueExpression == CapturedFieldName). For property chains
-                // like source.UserName, the variable type (User) differs from the
-                // expression type (string), so the hint would be wrong.
                 var effectiveClrType = param.ClrType;
+
+                // Case 1: Simple capture where the variable IS the value
+                // (ValueExpression == CapturedFieldName). Direct type hint.
                 if ((effectiveClrType == "?" || effectiveClrType == "object")
                     && param.CapturedFieldName != null
                     && param.ValueExpression == param.CapturedFieldName
@@ -176,6 +176,25 @@ internal static class CarrierAnalyzer
                     && hintType != "object" && hintType != "?")
                 {
                     effectiveClrType = hintType;
+                }
+                // Case 2: Member access on captured variable (e.g., dbEquip.Id).
+                // Resolve the base variable type, then walk the member chain
+                // through EntityRegistry to derive the final property type.
+                else if ((effectiveClrType == "?" || effectiveClrType == "object")
+                    && param.CapturedFieldName != null
+                    && param.ValueExpression != null
+                    && param.ValueExpression.Length > param.CapturedFieldName.Length + 1
+                    && param.ValueExpression.StartsWith(param.CapturedFieldName + ".")
+                    && entityRegistry != null
+                    && displayClassByParam.TryGetValue(param.GlobalIndex, out var dcTypeHint2)
+                    && dcTypeHint2.VarTypes != null
+                    && dcTypeHint2.VarTypes.TryGetValue(param.CapturedFieldName, out var baseVarType)
+                    && baseVarType != "object" && baseVarType != "?")
+                {
+                    var memberPath = param.ValueExpression.Substring(param.CapturedFieldName.Length + 1);
+                    var resolvedType = ResolveMemberChain(baseVarType, memberPath, entityRegistry);
+                    if (resolvedType != null)
+                        effectiveClrType = resolvedType;
                 }
 
                 var fieldType = NormalizeFieldType(effectiveClrType);
@@ -243,6 +262,23 @@ internal static class CarrierAnalyzer
             maskType: maskType,
             maskBitCount: maskBitCount,
             extractionPlans: extractionPlans);
+    }
+
+    /// <summary>
+    /// Resolves a dotted member path (e.g., "Id" or "Address.City") on a base type
+    /// by walking each member through ChainResultTypeResolver.ResolveMemberOnType.
+    /// </summary>
+    private static string? ResolveMemberChain(string baseType, string memberPath, EntityRegistry entityRegistry)
+    {
+        var currentType = baseType;
+        foreach (var member in memberPath.Split('.'))
+        {
+            var resolved = ChainResultTypeResolver.ResolveMemberOnType(currentType, member, entityRegistry);
+            if (resolved == null)
+                return null;
+            currentType = resolved;
+        }
+        return currentType;
     }
 
     /// <summary>
