@@ -566,7 +566,7 @@ namespace App
             .OfType<LambdaExpressionSyntax>()
             .Last();
 
-        var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
+        var dataFlow = semanticModel.AnalyzeDataFlow(lambda)!;
         Assert.That(dataFlow.Succeeded, Is.True);
 
         var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, semanticModel);
@@ -678,7 +678,7 @@ namespace App
             .OfType<LambdaExpressionSyntax>()
             .Last();
 
-        var dataFlow = semanticModel.AnalyzeDataFlow(lambda);
+        var dataFlow = semanticModel.AnalyzeDataFlow(lambda)!;
         Assert.That(dataFlow.Succeeded, Is.True);
 
         var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(
@@ -743,7 +743,7 @@ namespace App
         var tree = compilation.SyntaxTrees.First();
         var sm = compilation.GetSemanticModel(tree);
         var lambda = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().Last();
-        var dataFlow = sm.AnalyzeDataFlow(lambda);
+        var dataFlow = sm.AnalyzeDataFlow(lambda)!;
         return DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, sm, registry);
     }
 
@@ -952,7 +952,7 @@ namespace App
         var tree = compilation.SyntaxTrees.First();
         var sm = compilation.GetSemanticModel(tree);
         var lambda = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().Last();
-        var dataFlow = sm.AnalyzeDataFlow(lambda);
+        var dataFlow = sm.AnalyzeDataFlow(lambda)!;
         var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, sm);
         Assert.That(resolved!["u"], Is.EqualTo("global::Quarry.Tests.Samples.User"));
     }
