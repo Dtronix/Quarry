@@ -395,4 +395,65 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Pre-Join Where (retranslation with join context)
+
+    [Test]
+    public async Task Where_BeforeJoin_GetsTableAliasQualification()
+    {
+        // Pre-join WHERE clauses are retranslated with join context to add table alias
+        // qualification (t0. prefix). The retranslation guard at ChainAnalyzer must
+        // preserve the original clause if retranslation fails (isSuccess check).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        // WHERE must have t0. qualification — proves retranslation succeeded
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`IsActive` = 1",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t0].[IsActive] = 1");
+
+        // Execution: Alice (active, 2 orders) + Bob (active, 1 order) = 3 rows
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(results[2], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    [Test]
+    public async Task Where_WithParam_BeforeJoin_GetsTableAliasQualification()
+    {
+        // Same retranslation path but with a captured parameter in the WHERE clause
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minId = 1;
+        var lt = Lite.Users().Where(u => u.UserId >= minId).Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId >= minId).Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().Where(u => u.UserId >= minId).Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId >= minId).Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"UserId\" >= @p0",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t0\".\"UserId\" >= $1",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`UserId` >= ?",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t0].[UserId] >= @p0");
+
+        // Execution: all 3 users have UserId >= 1, but Charlie has no orders → 3 rows
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    #endregion
 }
