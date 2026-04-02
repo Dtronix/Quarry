@@ -2268,4 +2268,96 @@ public static class Queries
             "Reference-type result should have nullable suffix for FirstOrDefault");
     }
 
+    #region Issue: No concrete QueryBuilder<T> references in generated code
+
+    [Test]
+    public void GeneratedCode_NeverReferences_ConcreteQueryBuilderType()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => u)
+            .OrderBy(u => u.UserName)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Generated code must never reference QueryBuilder<T> — it was removed
+        // from the runtime. Only IQueryBuilder<T> (interface) should appear.
+        Assert.That(code, Does.Not.Match(@"(?<!I)QueryBuilder<"),
+            "Generated code should not reference concrete QueryBuilder<T> type — only IQueryBuilder<T> interface");
+    }
+
+    [Test]
+    public void FallbackPath_Uses_InterfaceType_NotConcreteQueryBuilder()
+    {
+        // This test verifies that when a clause falls back to the non-carrier path
+        // (e.g., untranslatable clause), the fallback cast uses interface types,
+        // not the nonexistent concrete QueryBuilder<T>.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // Simple chain that should work
+        await db.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchAllAsync();
+
+        // Another chain with identity select
+        await db.Users()
+            .Select(u => u)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // Get all generated interceptor files
+        var interceptorTrees = result.GeneratedTrees
+            .Where(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"))
+            .ToList();
+
+        foreach (var tree in interceptorTrees)
+        {
+            var code = tree.GetText().ToString();
+
+            // No generated file should reference concrete QueryBuilder<T>
+            Assert.That(code, Does.Not.Match(@"(?<!I)QueryBuilder<"),
+                $"File {tree.FilePath} references concrete QueryBuilder<T> — should use IQueryBuilder<T> or carrier class");
+        }
+    }
+
+    #endregion
+
 }

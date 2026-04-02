@@ -123,8 +123,13 @@ internal static class SqlExprParser
     {
         var memberName = memberAccess.Name.Identifier.ValueText;
 
+        // Unwrap null-forgiving operator (e.g., u.LastLogin!.Value → treat as u.LastLogin.Value)
+        var target = memberAccess.Expression;
+        if (target is PostfixUnaryExpressionSyntax postfix && postfix.OperatorToken.IsKind(SyntaxKind.ExclamationToken))
+            target = postfix.Operand;
+
         // Direct property access on lambda parameter: u.PropertyName
-        if (memberAccess.Expression is IdentifierNameSyntax identifier)
+        if (target is IdentifierNameSyntax identifier)
         {
             var targetName = identifier.Identifier.ValueText;
             if (lambdaParameters.Contains(targetName))
@@ -138,7 +143,7 @@ internal static class SqlExprParser
         }
 
         // Chained access: u.Ref.Id
-        if (memberAccess.Expression is MemberAccessExpressionSyntax innerMemberAccess)
+        if (target is MemberAccessExpressionSyntax innerMemberAccess)
         {
             var innerExpr = ParseMemberAccess(innerMemberAccess, lambdaParameters, context);
 
@@ -148,6 +153,18 @@ internal static class SqlExprParser
                 if (memberName == "Id")
                 {
                     return new ColumnRefExpr(propAccess.ParameterName, propAccess.PropertyName, nestedProperty: "Id");
+                }
+
+                // Nullable<T>.Value — unwrap to just the column (SQL uses the column directly)
+                if (memberName == "Value")
+                {
+                    return propAccess;
+                }
+
+                // Nullable<T>.HasValue — translate to IS NOT NULL check
+                if (memberName == "HasValue")
+                {
+                    return new IsNullCheckExpr(propAccess, isNegated: true);
                 }
 
                 // e.g., u.Name.Length — member access on a column
@@ -163,9 +180,9 @@ internal static class SqlExprParser
         }
 
         // Generic member access
-        var target = ParseExpression(memberAccess.Expression, lambdaParameters, context);
+        var parsedTarget = ParseExpression(target, lambdaParameters, context);
 
-        if (target is CapturedValueExpr captured)
+        if (parsedTarget is CapturedValueExpr captured)
         {
             return new CapturedValueExpr(captured.VariableName, memberAccess.ToString(), captured.ClrType, captured.ExpressionPath);
         }
@@ -328,9 +345,17 @@ internal static class SqlExprParser
             operand = ParseExpression(prefixUnary.Operand, lambdaParameters, context);
         }
 
+        if (prefixUnary.Kind() == SyntaxKind.LogicalNotExpression)
+        {
+            // !IsNullCheck → flip IS NULL ↔ IS NOT NULL instead of wrapping in NOT(...)
+            if (operand is IsNullCheckExpr isNull)
+                return new IsNullCheckExpr(isNull.Operand, isNegated: !isNull.IsNegated);
+
+            return new UnaryOpExpr(SqlUnaryOperator.Not, operand);
+        }
+
         return prefixUnary.Kind() switch
         {
-            SyntaxKind.LogicalNotExpression => new UnaryOpExpr(SqlUnaryOperator.Not, operand),
             SyntaxKind.UnaryMinusExpression => new UnaryOpExpr(SqlUnaryOperator.Negate, operand),
             SyntaxKind.UnaryPlusExpression => operand,
             _ => new SqlRawExpr(prefixUnary.ToString())

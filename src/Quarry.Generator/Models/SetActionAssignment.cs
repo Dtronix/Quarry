@@ -1,4 +1,5 @@
 using System;
+using Quarry.Generators.IR;
 
 namespace Quarry.Generators.Models;
 
@@ -8,13 +9,16 @@ namespace Quarry.Generators.Models;
 internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
 {
     public SetActionAssignment(string columnSql, string? valueTypeName, string? customTypeMappingClass,
-        string? inlinedSqlValue = null, string? inlinedCSharpExpression = null)
+        string? inlinedSqlValue = null, string? inlinedCSharpExpression = null,
+        string? columnExpressionText = null, string? columnExpressionLambdaParam = null)
     {
         ColumnSql = columnSql;
         ValueTypeName = valueTypeName;
         CustomTypeMappingClass = customTypeMappingClass;
         InlinedSqlValue = inlinedSqlValue;
         InlinedCSharpExpression = inlinedCSharpExpression;
+        ColumnExpressionText = columnExpressionText;
+        ColumnExpressionLambdaParam = columnExpressionLambdaParam;
     }
 
     public string ColumnSql { get; }
@@ -35,9 +39,32 @@ internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
     public string? InlinedCSharpExpression { get; }
 
     /// <summary>
+    /// The RHS expression text when it contains column references (e.g., "e.EndTime - e.StartTime + startTimeUnix").
+    /// Stored as text (not SqlExpr) to survive incremental pipeline caching.
+    /// Null for simple captured-variable or inlined-constant assignments.
+    /// </summary>
+    public string? ColumnExpressionText { get; }
+
+    /// <summary>
+    /// The lambda parameter name for column expression parsing (e.g., "e").
+    /// </summary>
+    public string? ColumnExpressionLambdaParam { get; }
+
+    /// <summary>
+    /// Bound SqlExpr for column expressions, set during translation (not cached through pipeline).
+    /// </summary>
+    public SqlExpr? BoundValueExpression { get; internal set; }
+
+    /// <summary>
     /// Gets whether this assignment's value is a compile-time constant inlined into the SQL.
     /// </summary>
     public bool IsInlined => InlinedSqlValue != null;
+
+    /// <summary>
+    /// Gets whether this assignment contains a computed expression with column references
+    /// that must go through the SqlExpr bind/extract pipeline.
+    /// </summary>
+    public bool HasColumnExpression => ColumnExpressionText != null;
 
     public bool Equals(SetActionAssignment? other)
     {
@@ -47,9 +74,11 @@ internal sealed class SetActionAssignment : IEquatable<SetActionAssignment>
             && ValueTypeName == other.ValueTypeName
             && CustomTypeMappingClass == other.CustomTypeMappingClass
             && InlinedSqlValue == other.InlinedSqlValue
-            && InlinedCSharpExpression == other.InlinedCSharpExpression;
+            && InlinedCSharpExpression == other.InlinedCSharpExpression
+            && ColumnExpressionText == other.ColumnExpressionText
+            && ColumnExpressionLambdaParam == other.ColumnExpressionLambdaParam;
     }
 
     public override bool Equals(object? obj) => Equals(obj as SetActionAssignment);
-    public override int GetHashCode() => HashCode.Combine(ColumnSql, ValueTypeName, CustomTypeMappingClass, InlinedSqlValue);
+    public override int GetHashCode() => HashCode.Combine(ColumnSql, ValueTypeName, CustomTypeMappingClass, InlinedSqlValue, ColumnExpressionText);
 }

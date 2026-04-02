@@ -103,8 +103,8 @@ internal static class JoinBodyEmitter
             var joinReturnType = $"IJoinedQueryBuilder<{entityType}, {joinedEntityName}>";
             if (isFirstInChain)
             {
-                // For first join, the incoming builder is QueryBuilder<T>
-                CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, $"QueryBuilder<{entityType}>", joinReturnType, null, siteParams, globalParamOffset);
+                // For first join, the incoming builder is the carrier (from ChainRoot)
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, carrier!.ClassName, joinReturnType, null, siteParams, globalParamOffset);
             }
             else
             {

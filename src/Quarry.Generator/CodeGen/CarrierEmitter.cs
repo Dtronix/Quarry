@@ -291,20 +291,15 @@ internal static class CarrierEmitter
         // Compute global parameter offset for this clause's params
         var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
 
-        if (isFirstInChain)
-        {
-            sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilderType}>(builder);");
-            sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = __b.State.ExecutionContext }};");
-        }
-        else
-        {
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-        }
+        // In the carrier-only architecture, the builder is always the carrier
+        // (created by the ChainRoot interceptor). Just cast to it.
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
-        // Determine which parameters to bind: clause params or SetAction params
+        // Determine which parameters to bind: prefer translated clause params (handles
+        // column expression assignments), fall back to raw SetAction params.
         IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
         if (site.Kind == InterceptorKind.UpdateSetAction)
-            clauseParams = site.Bound.Raw.SetActionParameters;
+            clauseParams = site.Clause?.Parameters ?? site.Bound.Raw.SetActionParameters;
         else if (site.Clause != null)
             clauseParams = site.Clause.Parameters;
 
@@ -361,14 +356,7 @@ internal static class CarrierEmitter
             sb.AppendLine($"        __c.Mask |= unchecked(({GetMaskType(chain)})(1 << {clauseBit.Value}));");
 
         // Always use Unsafe.As for the return — handles interface crossings
-        if (isFirstInChain)
-        {
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
-        }
-        else
-        {
-            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
-        }
+        sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
     }
 
     /// <summary>
@@ -463,17 +451,9 @@ internal static class CarrierEmitter
         TranslatedCallSite site, string builderTypeName, string returnInterface,
         int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
     {
-        // Cast incoming builder to concrete type to extract ExecutionContext
-        sb.AppendLine($"        var __b = Unsafe.As<{builderTypeName}>(builder);");
-        sb.Append($"        var __c = new {carrier.ClassName} {{ ");
-
-        var isReadOnly = chain.ExecutionSite.Kind is InterceptorKind.ToDiagnostics;
-        if (!isReadOnly)
-        {
-            sb.Append("Ctx = __b.State.ExecutionContext");
-        }
-
-        sb.AppendLine(" };");
+        // In the carrier-only architecture, the builder is already the carrier
+        // (created by the ChainRoot interceptor). Just cast to it.
+        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         // Emit per-variable extraction locals and bind parameters
         EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
