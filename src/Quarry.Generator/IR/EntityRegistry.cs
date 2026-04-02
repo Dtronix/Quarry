@@ -251,11 +251,17 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         if (_byEntityName.Count != other._byEntityName.Count) return false;
+        if (_allContexts.Length != other._allContexts.Length) return false;
         foreach (var kvp in _byEntityName)
         {
             if (!other._byEntityName.TryGetValue(kvp.Key, out var otherEntity))
                 return false;
             if (!kvp.Value.Equals(otherEntity))
+                return false;
+        }
+        for (int i = 0; i < _allContexts.Length; i++)
+        {
+            if (!_allContexts[i].Equals(other._allContexts[i]))
                 return false;
         }
         return true;
@@ -265,7 +271,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(_byEntityName.Count);
+        return HashCode.Combine(_byEntityName.Count, _allContexts.Length);
     }
 }
 
