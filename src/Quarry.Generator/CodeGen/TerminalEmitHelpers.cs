@@ -70,55 +70,6 @@ internal static class TerminalEmitHelpers
     }
 
     /// <summary>
-    /// Emits code to expand collection parameter tokens in the SQL template.
-    /// </summary>
-    internal static void EmitCollectionExpansion(StringBuilder sb, AssembledPlan chain)
-    {
-        foreach (var param in chain.ChainParameters)
-        {
-            if (!param.IsCollection) continue;
-
-            var idx = param.GlobalIndex;
-
-            if (param.IsEnumerableCollection)
-                sb.AppendLine($"        var __col{idx} = Quarry.Internal.CollectionHelper.Materialize(__c.P{idx});");
-            else
-                sb.AppendLine($"        var __col{idx} = __c.P{idx};");
-            sb.AppendLine($"        var __col{idx}Len = __col{idx}.Count;");
-            sb.AppendLine($"        string[] __col{idx}Parts;");
-
-            // Empty collection guard: replace the IN token with a subquery returning no rows.
-            // This makes IN (...) always false and NOT IN (...) always true — correct for both.
-            sb.AppendLine($"        if (__col{idx}Len == 0)");
-            sb.AppendLine($"        {{");
-            sb.AppendLine($"            __col{idx}Parts = System.Array.Empty<string>();");
-            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", \"SELECT 1 WHERE 1=0\");");
-            sb.AppendLine($"        }}");
-            sb.AppendLine($"        else");
-            sb.AppendLine($"        {{");
-
-            var dialectPrefix = chain.Dialect switch
-            {
-                SqlDialect.PostgreSQL => "$",
-                _ => "@p"
-            };
-            var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
-            var isMySQL = chain.Dialect == SqlDialect.MySQL;
-
-            sb.AppendLine($"            __col{idx}Parts = new string[__col{idx}Len];");
-            sb.AppendLine($"            for (int __i = 0; __i < __col{idx}Len; __i++)");
-            if (isMySQL)
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"?\";");
-            else if (isPostgres)
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"$\" + (__i + 1);");
-            else
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"{dialectPrefix}\" + __i;");
-            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", string.Join(\", \", __col{idx}Parts));");
-            sb.AppendLine($"        }}");
-        }
-    }
-
-    /// <summary>
     /// Computes the longest common directory prefix from a list of file paths.
     /// Used to make source locations project-relative.
     /// </summary>
