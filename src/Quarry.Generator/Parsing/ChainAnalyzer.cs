@@ -295,7 +295,7 @@ internal static class ChainAnalyzer
                             joinedEntities: resolvedJoinEntities);
 
                         var retranslated = CallSiteTranslator.Translate(enrichedBound, registry, ct);
-                        if (retranslated.Clause != null)
+                        if (retranslated.Clause != null && retranslated.Clause.IsSuccess)
                         {
                             clauseSites[i] = new TranslatedCallSite(
                                 clauseSites[i].Bound, retranslated.Clause,
