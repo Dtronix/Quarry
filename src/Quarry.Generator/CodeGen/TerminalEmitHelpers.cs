@@ -70,55 +70,6 @@ internal static class TerminalEmitHelpers
     }
 
     /// <summary>
-    /// Emits code to expand collection parameter tokens in the SQL template.
-    /// </summary>
-    internal static void EmitCollectionExpansion(StringBuilder sb, AssembledPlan chain)
-    {
-        foreach (var param in chain.ChainParameters)
-        {
-            if (!param.IsCollection) continue;
-
-            var idx = param.GlobalIndex;
-
-            if (param.IsEnumerableCollection)
-                sb.AppendLine($"        var __col{idx} = Quarry.Internal.CollectionHelper.Materialize(__c.P{idx});");
-            else
-                sb.AppendLine($"        var __col{idx} = __c.P{idx};");
-            sb.AppendLine($"        var __col{idx}Len = __col{idx}.Count;");
-            sb.AppendLine($"        string[] __col{idx}Parts;");
-
-            // Empty collection guard: replace the IN token with a subquery returning no rows.
-            // This makes IN (...) always false and NOT IN (...) always true — correct for both.
-            sb.AppendLine($"        if (__col{idx}Len == 0)");
-            sb.AppendLine($"        {{");
-            sb.AppendLine($"            __col{idx}Parts = System.Array.Empty<string>();");
-            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", \"SELECT 1 WHERE 1=0\");");
-            sb.AppendLine($"        }}");
-            sb.AppendLine($"        else");
-            sb.AppendLine($"        {{");
-
-            var dialectPrefix = chain.Dialect switch
-            {
-                SqlDialect.PostgreSQL => "$",
-                _ => "@p"
-            };
-            var isPostgres = chain.Dialect == SqlDialect.PostgreSQL;
-            var isMySQL = chain.Dialect == SqlDialect.MySQL;
-
-            sb.AppendLine($"            __col{idx}Parts = new string[__col{idx}Len];");
-            sb.AppendLine($"            for (int __i = 0; __i < __col{idx}Len; __i++)");
-            if (isMySQL)
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"?\";");
-            else if (isPostgres)
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"$\" + (__i + 1);");
-            else
-                sb.AppendLine($"                __col{idx}Parts[__i] = \"{dialectPrefix}\" + __i;");
-            sb.AppendLine($"            sql = sql.Replace(\"{{__COL_P{idx}__}}\", string.Join(\", \", __col{idx}Parts));");
-            sb.AppendLine($"        }}");
-        }
-    }
-
-    /// <summary>
     /// Computes the longest common directory prefix from a list of file paths.
     /// Used to make source locations project-relative.
     /// </summary>
@@ -256,6 +207,7 @@ internal static class TerminalEmitHelpers
             : string.Join(" + ", collectionLenExprs);
 
         sb.AppendLine($"        var __paramList = new System.Collections.Generic.List<DiagnosticParameter>({capacityExpr});");
+        sb.AppendLine("        var __diagShift = 0;");
 
         foreach (var p in chain.ChainParameters.OrderBy(p => p.GlobalIndex))
         {
@@ -265,20 +217,27 @@ internal static class TerminalEmitHelpers
                 var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
                 sb.AppendLine($"        for (int __pi = 0; __pi < __col{p.GlobalIndex}Len; __pi++)");
                 sb.AppendLine($"            __paramList.Add(new DiagnosticParameter(__col{p.GlobalIndex}Parts[__pi], __col{p.GlobalIndex}[__pi]{meta}));");
+                sb.AppendLine($"        __diagShift += __col{p.GlobalIndex}Len - 1;");
             }
             else
             {
                 var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
-                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}{meta}));");
+                var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, p.GlobalIndex, "__diagShift");
+                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({nameExpr}, __pVal{p.GlobalIndex}{meta}));");
             }
         }
 
         if (hasLimitField)
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\"));");
+        {
+            // __diagShift == __colShift here: all collections processed, same accumulation.
+            var limitNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, "__diagShift");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"));");
+        }
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\"));");
+            var offsetNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, "__diagShift");
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"));");
         }
 
         sb.AppendLine("        var __params = __paramList.ToArray();");
@@ -306,6 +265,7 @@ internal static class TerminalEmitHelpers
     internal static void EmitDiagnosticClauseArray(
         StringBuilder sb, AssembledPlan chain, CarrierPlan? carrier = null)
     {
+        var hasChainCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var diagnosticClauses = chain.GetClauseEntries()
             .Where(c => InterceptorCodeGenerator.IsDiagnosticClauseRole(c.Role))
             .ToList();
@@ -378,6 +338,23 @@ internal static class TerminalEmitHelpers
                 var globalIdx = offset + p.Index;
                 sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{{__COL_P{globalIdx}__}}\", __col{globalIdx}Len == 0 ? \"SELECT 1 WHERE 1=0\" : string.Join(\", \", __col{globalIdx}Parts));");
             }
+
+            // Shift scalar parameter references in the fragment so diagnostic SQL
+            // matches the actual expanded SQL (where indices are shifted by collections).
+            if (chain.Dialect != SqlDialect.MySQL)
+            {
+                foreach (var p in clause.Site.Clause!.Parameters.Where(p => !p.IsCollection))
+                {
+                    var globalIdx = offset + p.Index;
+                    var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                    if (shiftExpr == "0") continue; // no preceding collections → no shift needed
+                    var originalPlaceholder = chain.Dialect == SqlDialect.PostgreSQL
+                        ? $"${globalIdx + 1}"
+                        : $"@p{globalIdx}";
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
+                    sb.AppendLine($"        __clauseSql{clauseIdx} = __clauseSql{clauseIdx}.Replace(\"{originalPlaceholder}\", {nameExpr});");
+                }
+            }
         }
 
         // Section 2: Collection parameter array construction
@@ -420,7 +397,9 @@ internal static class TerminalEmitHelpers
                     }
                     else
                     {
-                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter(\"@p{globalIdx}\", __pVal{globalIdx}{meta}));");
+                        var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                        var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
+                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter({nameExpr}, __pVal{globalIdx}{meta}));");
                     }
                 }
                 sb.AppendLine($"        var __clauseParams{clauseIdx} = __cpList{clauseIdx}.ToArray();");
@@ -464,12 +443,26 @@ internal static class TerminalEmitHelpers
             }
             else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
+                if (hasChainCollections)
+                {
+                    var shiftExpr = ComputeShiftExprForIndex(chain, paginationBaseIdx);
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, shiftExpr);
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValL, typeName: \"Int32\") }}";
+                }
+                else
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clause.Role == ClauseRole.Offset && hasOffsetField)
             {
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
+                if (hasChainCollections)
+                {
+                    var shiftExpr = ComputeShiftExprForIndex(chain, offsetIdx);
+                    var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, shiftExpr);
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValO, typeName: \"Int32\") }}";
+                }
+                else
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clauseParamCount > 0)
             {
@@ -479,7 +472,14 @@ internal static class TerminalEmitHelpers
                 {
                     var globalIdx = offset + i;
                     var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
-                    paramEntries.Add($"new(\"@p{globalIdx}\", __pVal{globalIdx}{meta})");
+                    if (hasChainCollections)
+                    {
+                        var shiftExpr = ComputeShiftExprForIndex(chain, globalIdx);
+                        var nameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, globalIdx, shiftExpr);
+                        paramEntries.Add($"new({nameExpr}, __pVal{globalIdx}{meta})");
+                    }
+                    else
+                        paramEntries.Add($"new(\"@p{globalIdx}\", __pVal{globalIdx}{meta})");
                 }
                 paramsArg = $", parameters: new DiagnosticParameter[] {{ {string.Join(", ", paramEntries)} }}";
             }
@@ -742,4 +742,214 @@ internal static class TerminalEmitHelpers
         // Default: null-safe boxing
         return $"(object?)__c.P{index} ?? DBNull.Value";
     }
+
+    /// <summary>
+    /// Returns a C# expression for a shifted parameter name at runtime, using the specified shift variable.
+    /// </summary>
+    private static string EmitDiagParamNameExprWithVar(SqlDialect dialect, int originalIndex, string shiftVar)
+    {
+        return dialect switch
+        {
+            SqlDialect.MySQL => "\"?\"",
+            SqlDialect.PostgreSQL => $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})",
+            _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})"
+        };
+    }
+
+    /// <summary>
+    /// Computes the shift expression for a parameter at the given globalIndex, based on preceding collections.
+    /// Returns the sum of (__col{j}Len - 1) for all collection params with GlobalIndex &lt; globalIndex.
+    /// </summary>
+    private static string ComputeShiftExprForIndex(AssembledPlan chain, int globalIndex)
+    {
+        var precedingCollections = chain.ChainParameters
+            .Where(p => p.IsCollection && p.GlobalIndex < globalIndex)
+            .ToList();
+        if (precedingCollections.Count == 0)
+            return "0";
+        var parts = precedingCollections.Select(p => $"(__col{p.GlobalIndex}Len - 1)");
+        return string.Join(" + ", parts);
+    }
+
+    // ── SQL Segment Parser ─────────────────────────────────────────
+
+    internal enum SqlSegmentKind { Literal, ScalarParam, CollectionExpand }
+
+    internal readonly struct SqlSegment
+    {
+        public readonly SqlSegmentKind Kind;
+        public readonly string? Text;       // Literal: verbatim SQL fragment
+        public readonly int ParamIndex;     // ScalarParam: original @pN index; CollectionExpand: GlobalIndex
+
+        public SqlSegment(SqlSegmentKind kind, string? text, int paramIndex)
+        {
+            Kind = kind;
+            Text = text;
+            ParamIndex = paramIndex;
+        }
+
+        public static SqlSegment Literal(string text) => new(SqlSegmentKind.Literal, text, -1);
+        public static SqlSegment Scalar(int globalIndex) => new(SqlSegmentKind.ScalarParam, null, globalIndex);
+        public static SqlSegment Collection(int globalIndex) => new(SqlSegmentKind.CollectionExpand, null, globalIndex);
+    }
+
+    /// <summary>
+    /// Parses tokenized SQL (containing {__COL_PN__} and @pN/$N placeholders)
+    /// into an ordered list of typed segments for inline StringBuilder emission.
+    /// MySQL: only splits at collection tokens (? markers have no index).
+    /// </summary>
+    internal static List<SqlSegment> ParseSqlSegments(string tokenizedSql, SqlDialect dialect)
+    {
+        var segments = new List<SqlSegment>();
+        var literal = new StringBuilder();
+        int i = 0;
+        int len = tokenizedSql.Length;
+
+        while (i < len)
+        {
+            // Try collection token: {__COL_P(\d+)__}
+            if (tokenizedSql[i] == '{' && i + 10 < len && tokenizedSql.Substring(i, 8) == "{__COL_P")
+            {
+                var endBrace = tokenizedSql.IndexOf("__}", i + 8);
+                if (endBrace > i + 8)
+                {
+                    var numStr = tokenizedSql.Substring(i + 8, endBrace - (i + 8));
+                    if (int.TryParse(numStr, out var colIdx))
+                    {
+                        if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                        segments.Add(SqlSegment.Collection(colIdx));
+                        i = endBrace + 3; // skip past "__}"
+                        continue;
+                    }
+                }
+            }
+
+            // Try scalar param: dialect-specific
+            if (dialect != SqlDialect.MySQL)
+            {
+                if (dialect == SqlDialect.PostgreSQL)
+                {
+                    // Match $(\d+) — 1-indexed
+                    if (tokenizedSql[i] == '$' && i + 1 < len && tokenizedSql[i + 1] >= '0' && tokenizedSql[i + 1] <= '9')
+                    {
+                        int numStart = i + 1;
+                        int numEnd = numStart;
+                        while (numEnd < len && tokenizedSql[numEnd] >= '0' && tokenizedSql[numEnd] <= '9') numEnd++;
+                        if (int.TryParse(tokenizedSql.Substring(numStart, numEnd - numStart), out var pgIdx))
+                        {
+                            if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                            segments.Add(SqlSegment.Scalar(pgIdx - 1)); // convert 1-based to GlobalIndex
+                            i = numEnd;
+                            continue;
+                        }
+                    }
+                }
+                else
+                {
+                    // SQLite / SQL Server: match @p(\d+)
+                    if (tokenizedSql[i] == '@' && i + 2 < len && tokenizedSql[i + 1] == 'p'
+                        && tokenizedSql[i + 2] >= '0' && tokenizedSql[i + 2] <= '9')
+                    {
+                        int numStart = i + 2;
+                        int numEnd = numStart;
+                        while (numEnd < len && tokenizedSql[numEnd] >= '0' && tokenizedSql[numEnd] <= '9') numEnd++;
+                        if (int.TryParse(tokenizedSql.Substring(numStart, numEnd - numStart), out var atIdx))
+                        {
+                            if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                            segments.Add(SqlSegment.Scalar(atIdx));
+                            i = numEnd;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Default: accumulate literal
+            literal.Append(tokenizedSql[i]);
+            i++;
+        }
+
+        if (literal.Length > 0)
+            segments.Add(SqlSegment.Literal(literal.ToString()));
+
+        return segments;
+    }
+
+    /// <summary>
+    /// Emits StringBuilder.Append() calls for each parsed SQL segment.
+    /// Literal → verbatim append. ScalarParam → append shifted index.
+    /// CollectionExpand → empty guard + join parts array + shift accumulation.
+    /// </summary>
+    internal static void EmitInlineSqlBuilder(
+        StringBuilder sb,
+        string indent,
+        List<SqlSegment> segments,
+        SqlDialect dialect,
+        IReadOnlyList<(int GlobalIndex, int CollectionOrdinal)> collections)
+    {
+        var esc = InterceptorCodeGenerator.EscapeStringLiteral;
+
+        foreach (var seg in segments)
+        {
+            switch (seg.Kind)
+            {
+                case SqlSegmentKind.Literal:
+                    sb.AppendLine($"{indent}__sb.Append(@\"{esc(seg.Text!)}\");");
+                    break;
+
+                case SqlSegmentKind.ScalarParam:
+                    if (dialect == SqlDialect.PostgreSQL)
+                    {
+                        sb.AppendLine($"{indent}__sb.Append('$');");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + 1 + __colShift);");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"{indent}__sb.Append(\"@p\");");
+                        sb.AppendLine($"{indent}__sb.Append({seg.ParamIndex} + __colShift);");
+                    }
+                    break;
+
+                case SqlSegmentKind.CollectionExpand:
+                {
+                    sb.AppendLine($"{indent}if (__col{seg.ParamIndex}Len == 0)");
+                    sb.AppendLine($"{indent}    __sb.Append(\"SELECT 1 WHERE 1=0\");");
+                    sb.AppendLine($"{indent}else");
+                    sb.AppendLine($"{indent}    __sb.Append(string.Join(\", \", __col{seg.ParamIndex}Parts));");
+                    sb.AppendLine($"{indent}__colShift += __col{seg.ParamIndex}Len - 1;");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Emits the __col{N}Parts array population loop for a collection parameter.
+    /// </summary>
+    internal static void EmitCollectionPartsPopulation(
+        StringBuilder sb,
+        string indent,
+        int globalIndex,
+        SqlDialect dialect)
+    {
+        if (dialect == SqlDialect.MySQL)
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = \"?\";");
+        }
+        else if (dialect == SqlDialect.PostgreSQL)
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.Dollar({globalIndex} + __colShift + __i);");
+        }
+        else
+        {
+            sb.AppendLine($"{indent}__col{globalIndex}Parts = new string[__col{globalIndex}Len];");
+            sb.AppendLine($"{indent}for (int __i = 0; __i < __col{globalIndex}Len; __i++)");
+            sb.AppendLine($"{indent}    __col{globalIndex}Parts[__i] = Quarry.Internal.ParameterNames.AtP({globalIndex} + __colShift + __i);");
+        }
+    }
+
 }
