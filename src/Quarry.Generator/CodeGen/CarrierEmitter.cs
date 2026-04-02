@@ -383,6 +383,10 @@ internal static class CarrierEmitter
         // Emit static SQL field: single string for single-variant, string[] for multi-variant
         EmitCarrierSqlField(sb, chain);
 
+        // Emit collection SQL cache field if needed
+        if (chain.ChainParameters.Any(p => p.IsCollection))
+            EmitCollectionSqlCacheField(sb, chain);
+
         // Emit the execution context field using the concrete context type for devirtualization
         sb.AppendLine($"    internal {contextTypeName}? Ctx;");
 
@@ -586,12 +590,24 @@ internal static class CarrierEmitter
 
         var dialectLiteral = GetDialectLiteral(chain.Dialect);
         var paramCount = chain.ChainParameters.Count;
+        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
 
         var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
         var hasConditional = chain.ConditionalTerms.Count > 0;
         var maskType = hasConditional ? GetMaskType(chain) : null;
+
+        // Shift variable design (three variables serve different purposes):
+        //   __colShift  — set in the preamble's inline SQL builder, accumulates left-to-right
+        //                 as SQL text is built. Used for SQL construction + cache entry.
+        //   __bindShift — set here in command binding, accumulates in GlobalIndex order as
+        //                 DbParameters are created. Used for scalar/pagination ParameterName.
+        //   __diagShift — set in diagnostic emission, same accumulation as __bindShift.
+        // Invariant: after all chain params, __bindShift == __colShift (same collections,
+        // same order, same accumulation formula). Pagination uses __bindShift.
+        if (hasCollections)
+            sb.AppendLine("        var __bindShift = 0;");
 
         int? currentBitIndex = null;
         bool inConditionalBlock = false;
@@ -631,10 +647,7 @@ internal static class CarrierEmitter
             if (param.IsCollection)
             {
                 // Collection parameters are expanded into N individual DbParameters.
-                // EmitCollectionExpansion (called in preamble) already declared:
-                //   __col{i} = __c.P{i}        (IReadOnlyList<T>)
-                //   __col{i}Len = count
-                //   __col{i}Parts = string[]    (parameter name per element)
+                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts
                 sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
@@ -642,13 +655,18 @@ internal static class CarrierEmitter
                 sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
                 sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
                 sb.AppendLine($"{indent}}}");
+                // Accumulate shift after this collection's parameters are bound
+                sb.AppendLine($"{indent}__bindShift += __col{i}Len - 1;");
             }
             else
             {
                 var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-                sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
+                if (hasCollections)
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, "__bindShift")};");
+                else
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
                 sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
 
                 if (param.TypeMappingClass != null)
@@ -665,12 +683,17 @@ internal static class CarrierEmitter
         if (inConditionalBlock)
             sb.AppendLine("        }");
 
-        // Pagination parameters — always unconditional
+        // Pagination parameters — always unconditional.
+        // __bindShift == __colShift here: both accumulate (colLen-1) per collection
+        // in GlobalIndex order. Using __bindShift keeps the binding self-contained.
         var nextIdx = paramCount;
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
+            if (hasCollections)
+                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
+            else
+                sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
             nextIdx++;
@@ -678,7 +701,10 @@ internal static class CarrierEmitter
         if (hasOffsetField)
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
+            if (hasCollections)
+                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, "__bindShift")};");
+            else
+                sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
         }
@@ -1005,26 +1031,153 @@ internal static class CarrierEmitter
 
     /// <summary>
     /// Emits SQL read from the carrier's static _sql field.
-    /// Single-variant: var sql = ClassName._sql; Multi-variant: var sql = ClassName._sql[__c.Mask];
-    /// Collection expansion tokens are still resolved at runtime in the terminal.
+    /// When no collections: direct read. When collections exist: cache check + inline StringBuilder builder.
     /// </summary>
     private static void EmitCarrierSqlDispatch(StringBuilder sb, CarrierPlan carrier, AssembledPlan chain)
     {
         var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
 
-        if (chain.SqlVariants.Count == 1)
+        if (!hasCollections)
         {
-            sb.AppendLine($"        var sql = {carrier.ClassName}._sql;");
+            if (chain.SqlVariants.Count == 1)
+                sb.AppendLine($"        var sql = {carrier.ClassName}._sql;");
+            else
+                sb.AppendLine($"        var sql = {carrier.ClassName}._sql[__c.Mask];");
+            return;
+        }
+
+        // Build ordered list of collection parameters with their ordinals
+        var collections = new List<(int GlobalIndex, int CollectionOrdinal)>();
+        int ord = 0;
+        foreach (var p in chain.ChainParameters)
+            if (p.IsCollection) collections.Add((p.GlobalIndex, ord++));
+
+        var condMap = TerminalEmitHelpers.BuildParamConditionalMap(chain);
+
+        // Step 1: Materialize collections (mask-gated if conditional)
+        foreach (var p in chain.ChainParameters.Where(p => p.IsCollection))
+        {
+            condMap.TryGetValue(p.GlobalIndex, out var ci);
+            var maskType = chain.ConditionalTerms.Count > 0 ? GetMaskType(chain) : null;
+
+            if (ci.IsConditional && ci.BitIndex.HasValue)
+            {
+                sb.AppendLine($"        System.Collections.Generic.IReadOnlyList<{p.ElementTypeName}>? __col{p.GlobalIndex} = null;");
+                sb.AppendLine($"        int __col{p.GlobalIndex}Len = 0;");
+                sb.AppendLine($"        if ((__c.Mask & unchecked(({maskType})(1 << {ci.BitIndex.Value}))) != 0)");
+                sb.AppendLine($"        {{");
+                if (p.IsEnumerableCollection)
+                    sb.AppendLine($"            __col{p.GlobalIndex} = Quarry.Internal.CollectionHelper.Materialize(__c.P{p.GlobalIndex});");
+                else
+                    sb.AppendLine($"            __col{p.GlobalIndex} = __c.P{p.GlobalIndex};");
+                sb.AppendLine($"            __col{p.GlobalIndex}Len = __col{p.GlobalIndex}.Count;");
+                sb.AppendLine($"        }}");
+            }
+            else
+            {
+                if (p.IsEnumerableCollection)
+                    sb.AppendLine($"        var __col{p.GlobalIndex} = Quarry.Internal.CollectionHelper.Materialize(__c.P{p.GlobalIndex});");
+                else
+                    sb.AppendLine($"        var __col{p.GlobalIndex} = __c.P{p.GlobalIndex};");
+                sb.AppendLine($"        var __col{p.GlobalIndex}Len = __col{p.GlobalIndex}.Count;");
+            }
+        }
+
+        // Step 2: Hash of collection sizes
+        sb.Append("        var __colHash = ");
+        if (collections.Count == 1)
+        {
+            sb.AppendLine($"__col{collections[0].GlobalIndex}Len * 16777619;");
         }
         else
         {
-            sb.AppendLine($"        var sql = {carrier.ClassName}._sql[__c.Mask];");
+            var primes = new[] { 16777619, 486187739, 1073741827, 2013265921, 40343, 999979, 15485863, 32452843 };
+            var parts = new List<string>();
+            for (int i = 0; i < collections.Count; i++)
+            {
+                var prime = primes[i % primes.Length];
+                parts.Add($"(__col{collections[i].GlobalIndex}Len * {prime})");
+            }
+            sb.AppendLine($"{string.Join(" ^ ", parts)};");
         }
 
-        if (hasCollections)
+        // Step 3: Cache check
+        var maskExpr = chain.SqlVariants.Count == 1 ? "0" : "__c.Mask";
+        sb.AppendLine($"        var __cached = {carrier.ClassName}._sqlCache[{maskExpr}];");
+
+        // Declare vars
+        foreach (var c in collections)
+            sb.AppendLine($"        string[] __col{c.GlobalIndex}Parts;");
+        sb.AppendLine("        int __colShift;");
+        sb.AppendLine("        string sql;");
+
+        // Cache hit
+        sb.AppendLine("        if (__cached != null && __cached.Hash == __colHash)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            sql = __cached.Sql;");
+        sb.AppendLine("            __colShift = __cached.ColShift;");
+        for (int i = 0; i < collections.Count; i++)
+            sb.AppendLine($"            __col{collections[i].GlobalIndex}Parts = __cached.ColParts[{i}];");
+        sb.AppendLine("        }");
+        sb.AppendLine("        else");
+        sb.AppendLine("        {");
+
+        // Cache miss: populate parts arrays
+        sb.AppendLine("            __colShift = 0;");
+        foreach (var c in collections)
         {
-            TerminalEmitHelpers.EmitCollectionExpansion(sb, chain);
+            TerminalEmitHelpers.EmitCollectionPartsPopulation(sb, "            ", c.GlobalIndex, chain.Dialect);
+            sb.AppendLine($"            __colShift += __col{c.GlobalIndex}Len - 1;");
         }
+
+        // Compute max template length for StringBuilder capacity
+        var maxTemplateLen = chain.SqlVariants.Values.Max(v => v.Sql.Length);
+        sb.AppendLine($"            var __sb = new System.Text.StringBuilder({maxTemplateLen + 64});");
+
+        // Reset __colShift before builder (parts already computed with correct offsets)
+        sb.AppendLine("            __colShift = 0;");
+
+        if (chain.SqlVariants.Count == 1)
+        {
+            // Single variant — inline builder directly
+            var variant = chain.SqlVariants.Values.First();
+            var segments = TerminalEmitHelpers.ParseSqlSegments(variant.Sql, chain.Dialect);
+            TerminalEmitHelpers.EmitInlineSqlBuilder(sb, "            ", segments, chain.Dialect, collections);
+        }
+        else
+        {
+            // Multi-variant — switch on mask
+            sb.AppendLine("            switch (__c.Mask)");
+            sb.AppendLine("            {");
+            foreach (var kvp in chain.SqlVariants.OrderBy(kv => kv.Key))
+            {
+                sb.AppendLine($"            case {kvp.Key}:");
+                var segments = TerminalEmitHelpers.ParseSqlSegments(kvp.Value.Sql, chain.Dialect);
+                TerminalEmitHelpers.EmitInlineSqlBuilder(sb, "                ", segments, chain.Dialect, collections);
+                // Reset __colShift between cases would be wrong — each case is mutually exclusive
+                sb.AppendLine("                break;");
+            }
+            sb.AppendLine("            default: break;");
+            sb.AppendLine("            }");
+        }
+
+        sb.AppendLine("            sql = __sb.ToString();");
+        // Store to cache
+        sb.Append($"            {carrier.ClassName}._sqlCache[{maskExpr}] = new Quarry.Internal.CollectionSqlCache(__colHash, sql, __colShift, new string[][] {{ ");
+        sb.Append(string.Join(", ", collections.Select(c => $"__col{c.GlobalIndex}Parts")));
+        sb.AppendLine(" });");
+
+        sb.AppendLine("        }");
+    }
+
+    /// <summary>
+    /// Emits the static _sqlCache field for carriers with collection parameters.
+    /// </summary>
+    private static void EmitCollectionSqlCacheField(StringBuilder sb, AssembledPlan chain)
+    {
+        var maxMask = chain.SqlVariants.Count == 1 ? 0 : chain.SqlVariants.Keys.Max();
+        var arraySize = maxMask + 1;
+        sb.AppendLine($"    internal static Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
     }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
@@ -1065,6 +1218,33 @@ internal static class CarrierEmitter
             SqlDialect.MySQL => "SqlDialect.MySQL",
             _ => $"(SqlDialect){(int)dialect}"
         };
+    }
+
+    /// <summary>
+    /// Formats a compile-time constant parameter name string (no shift).
+    /// </summary>
+    private static string FormatParamName(SqlDialect dialect, int index)
+    {
+        return dialect switch
+        {
+            SqlDialect.PostgreSQL => $"${index + 1}",
+            SqlDialect.MySQL => "?",
+            _ => $"@p{index}"
+        };
+    }
+
+    /// <summary>
+    /// Returns a C# expression that evaluates to the shifted parameter name at runtime.
+    /// Uses ParameterNames.AtP/Dollar for zero-allocation lookup.
+    /// </summary>
+    private static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, string shiftVar)
+    {
+        if (dialect == SqlDialect.MySQL)
+            return "\"?\"";
+
+        return dialect == SqlDialect.PostgreSQL
+            ? $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})"
+            : $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})";
     }
 
     /// <summary>
