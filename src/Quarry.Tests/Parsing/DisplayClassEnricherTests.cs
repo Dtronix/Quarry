@@ -716,12 +716,16 @@ namespace Quarry
         Task<List<T>> ExecuteFetchAllAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<T> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<T?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T?> ExecuteFetchSingleOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
     public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     {
         Task<List<TResult>> ExecuteFetchAllAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<TResult> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<TResult?> ExecuteFetchSingleOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 }
 ";
@@ -826,6 +830,112 @@ namespace App
             var pkg = await db.Packages()
                 .Where(p => p.Id == 1)
                 .ExecuteFetchFirstAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchAllAsync_ResolvesEntityList()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var all = await db.Packages()
+                .Where(p => p.Id > 0)
+                .ExecuteFetchAllAsync();
+            Func<bool> c = () => all != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["all"], Is.EqualTo("global::System.Collections.Generic.List<global::App.Data.Package>"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchFirstOrDefaultAsync_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .ExecuteFetchFirstOrDefaultAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        // Package is a class (reference type), so T? with unconstrained generic
+        // is a nullable annotation — ToDisplayString omits the "?" suffix.
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchSingleAsync_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .ExecuteFetchSingleAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchSingleOrDefaultAsync_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .ExecuteFetchSingleOrDefaultAsync();
             Func<bool> c = () => pkg != null;
         }
     }
