@@ -1,0 +1,631 @@
+ ▐▛███▜▌   Claude Code v2.1.86
+▝▜█████▛▘  Opus 4.6 (1M context) · Claude Max
+  ▘▘ ▝▝    Z:\Projects\Quarry\Quarry-1
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ TASK: Resolve a selected issue end-to-end.                                    
+                                                                                
+Notes: Do NOT make assumptions about types or APIs — verify by reading the      
+actual source.                                                                  
+                                                                                
+STEPS:                                                                          
+1. List open issues. Ask for confirmation with AskUserQestion tool for which to 
+ fix.                                                                           
+2. Load the issue body.                                                         
+3. Branch for it.                                                               
+4. Read the issue and explore the relevant codebase thoroughly before writing   
+any code                                                                        
+5. Plan implementation (no planning mode).                                      
+6. Clarify ambiguities via AskUserQuestion (include recommendation per item).   
+7. Implement the fix across all affected files. Do not use planning mode.       
+8. If any existing tests are impacted tests, verify whether they should be or   
+not by this change.                                                             
+9. Add new tests for the work.                                                  
+10. Review your own changes: check for namespace issues, visibility mismatches, 
+ missing call sites, and compatibility with all target frameworks               
+11. Create/update PR via the CLI referencing the issue(s). Do NOT present       
+results or create a PR until all tests are green. See below for the template.   
+                                                                                
+PR TEMPLATE:                                                                    
+## Summary                                                                      
+ - Closes #                                                                     
+## Reason for Change                                                            
+## Impact                                                                       
+## Plan items implemented as specified                                          
+## Deviations from plan implemented                                             
+## Gaps in original plan implemented                                            
+## Migration Steps                                                              
+## Performance Considerations                                                   
+## Security Considerations                                                      
+## Breaking Changes                                                             
+  - Consumer-facing                                                             
+  - Internal                                                                    
+---                                                                             
+                                                                                
+This project is either a github or gitea hosted project. Review the origin for  
+the location. If it is not on github.com, it is a gitea project and the gitea   
+(tea) CLI should be used for interation.                                        
+gitea API:                                                                      
+ - Access Issue List: `tea issue list --output csv`                             
+ - Access Issue Body: `tea issues --fields index,title,body $ISSUE_NUMBER`      
+ - Create PR: `tea pr create --head $BRANCH --base master --title $TITLE        
+--description $DESCRIPTION_BODY`                                                
+                                                                                
+
+● Bash(git remote -v)
+  ⎿  origin     https://github.com/Dtronix/Quarry.git (fetch)
+     origin     https://github.com/Dtronix/Quarry.git (push)
+
+● Bash(gh issue list --state open --limit 20)
+  ⎿  140        OPEN    Collection parameter expansion collides with scalar para
+      indices in mixed WHERE expressions                2026-04-02T00:33:04Z
+     136        OPEN    Support nested tuple projections in Select and fix neste
+     … +7 lines (ctrl+o to expand)
+
+
+
+● Here are the open issues:
+
+  ┌─────┬────────────────────────────────────────────────────────────────────┐
+  │  #  │                               Title                                │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 140 │ Collection parameter expansion collides with scalar parameter      │
+  │     │ indices in mixed WHERE expressions                                 │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 136 │ Support nested tuple projections in Select and fix nested tuple    │
+  │     │ type parsing                                                       │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 105 │ Performance Tracking: AMD Ryzen 9 3900X                            │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 79  │ Pretty-print generated SQL with raw string literals and            │
+  │     │ IndentedStringBuilder                                              │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 45  │ Feat: Implement batched data migration execution                   │
+  ├─────┼────────────────────────────────────────────────────────────────────┤
+  │ 42  │ Feat: Multi-context migration chains                               │
+  └─────┴────────────────────────────────────────────────────────────────────┘
+
+● User answered Claude's questions:
+  ⎿  · Which issue would you like me to resolve? → #140 (Recommended)
+
+● Let me load the full issue details.
+
+● Bash(gh issue view 140 --json title,body,labels,assignees)
+  ⎿  {
+       "assignees": [],
+       "body": "## Summary\n\nWhen a single `.Where()` lambda combines `arr
+     … +65 lines (ctrl+o to expand)
+
+● Good, clear issue. Let me create a branch and start exploring the codebase.
+
+● Bash(git checkout -b fix/140-collection-param-collision)
+  ⎿  Switched to a new branch 'fix/140-collection-param-collision'
+
+● Now let me explore all the key files mentioned in the issue in parallel.
+
+● Explore(Explore collection param expansion)
+  ⎿  Done (47 tool uses · 60.1k tokens · 1m 29s)
+  (ctrl+o to expand)
+
+● Good point about the conditional complexity. Let me think through the
+  approaches and present them.
+
+  The core challenge: when SQL variants differ per condition mask (nullable
+  short-circuits), each variant has different scalar parameter counts, so a
+  collection's "starting index" and the scalar shift both change per variant.
+
+● User declined to answer questions
+
+❯ Ask again                                                                     
+
+● User answered Claude's questions:
+  ⎿  · How should collection expansion parameters avoid colliding with scalar 
+     parameter indices? → Which is the most performant?
+     · For MySQL's positional ? parameters, how should collection element values
+      be interleaved with scalar values during binding? → Position metadata on 
+     DbParameters
+
+● Separate namespace is the most performant:
+
+  - No runtime string.Replace() for scalar parameters — their names are
+  compile-time constants
+  - No runtime computation of shifted indices — collection names (@__c0_0)
+  simply can't collide with @pN
+  - Scalar tokenization requires N string.Replace() calls per query execution +
+  runtime name computation for parameter binding
+  - Full tokenization is worst — ALL params pay the Replace() cost even when no
+  collections exist
+
+  The only wrinkle is PostgreSQL's $N (positional, can't use named prefixes).
+  For PG specifically, we use positional offset: collection elements get $N
+  starting from scalarCount + 1, computed at runtime from the variant's
+  ParameterCount. This is one computation per query, not per-parameter.
+
+  Plan: Separate namespace + PG offset + MySQL position metadata
+
+  Let me now read all the key files thoroughly before implementing.
+● Let me read all the key files in parallel.
+
+  Read 4 files (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Before implementing, show me what this would look like compared to the        
+others.                                                                         
+
+● Let me read the exact current code that generates the collision, then I'll
+  show you a concrete before/after for each approach.
+
+  Read 2 files (ctrl+o to expand)
+
+● Now let me check how PostgreSQL scalar parameters are named in the binding
+  code and the diagnostic path.
+
+  Searched for 10 patterns, read 2 files (ctrl+o to expand)
+
+● Good, now I have the full picture. Here's the concrete comparison for all
+  three approaches using the issue's example:
+
+  Setup: int[] userIds = [1,2,3] (collection, GlobalIndex=0), DateTime? 
+  startDate (scalar P1, P2), bool onlyWithEmail (scalar P3)
+
+  ---
+  Current (buggy) — all dialects
+
+  Compile-time SQL (SQLite):
+  WHERE "UserId" IN ({__COL_P0__}) AND (@p1 IS NULL OR "CreatedAt" >= @p2) AND
+  (NOT (@p3) OR "Email" IS NOT NULL)
+
+  Generated runtime code (lines 108-116):
+  __col0Parts = new string[__col0Len];
+  for (int __i = 0; __i < __col0Len; __i++)
+      __col0Parts[__i] = "@p" + __i;          // ← @p0, @p1, @p2
+  sql = sql.Replace("{__COL_P0__}", string.Join(", ", __col0Parts));
+
+  Result: IN (@p0, @p1, @p2) AND (@p1 IS NULL ... — @p1/@p2 collide
+
+  ---
+  Approach 1: Separate Namespace
+
+  SQLite / SQL Server (named params — fastest path)
+
+  Compile-time SQL: unchanged from current
+  Generated runtime code:
+  __col0Parts = new string[__col0Len];
+  for (int __i = 0; __i < __col0Len; __i++)
+      __col0Parts[__i] = "@__c0_" + __i;      // ← @__c0_0, @__c0_1, @__c0_2
+  sql = sql.Replace("{__COL_P0__}", string.Join(", ", __col0Parts));
+  Result: IN (@__c0_0, @__c0_1, @__c0_2) AND (@p1 IS NULL ... — no collision, 
+  zero scalar renumbering
+
+  Scalar binding: unchanged — stays __p1.ParameterName = "@p1" (compile-time
+  constant).
+
+  Runtime cost: 1 string.Replace. Zero work for scalars.
+
+  PostgreSQL (positional $N — can't use namespace)
+
+  Because $N is positional, $1 = Params[0], $2 = Params[1], etc., a prefix like
+  @__c0_0 is impossible. We're forced to renumber.
+
+  Compile-time SQL must also tokenize scalars:
+  IN ({__COL_P0__}) AND ({__P_1__} IS NULL OR "CreatedAt" >= {__P_2__}) AND (NOT
+   ({__P_3__}) OR ...)
+  Generated runtime code:
+  // Collection elements start at $1
+  __col0Parts[__i] = "$" + (__i + 1);         // $1, $2, $3
+  sql = sql.Replace("{__COL_P0__}", ...);
+  // Shift scalars by (collectionLen - 1)
+  var __shift0 = __col0Len - 1;               // = 2
+  sql = sql.Replace("{__P_1__}", "$" + (2 + __shift0));  // $4
+  sql = sql.Replace("{__P_2__}", "$" + (3 + __shift0));  // $5
+  sql = sql.Replace("{__P_3__}", "$" + (4 + __shift0));  // $6
+  Result: IN ($1, $2, $3) AND ($4 IS NULL ... — correct
+
+  Scalar binding: runtime-computed — __p1.ParameterName = "$" + (2 + __shift0)
+
+  Runtime cost: 1 Replace (collection) + 3 Replaces (scalar tokens) + 3 string 
+  concats for names.
+
+  MySQL (positional ?)
+
+  MySQL uses anonymous ? — no name collision in SQL. The only question is
+  binding ORDER. Current code already adds params in GlobalIndex order
+  (collection first, then scalars), which matches the ? order in SQL. MySQL 
+  works correctly today — no fix needed.
+
+  ---
+  Approach 2: Scalar Tokenization (all dialects uniform)
+
+  Compile-time SQL (all dialects tokenize scalars after collections):
+  -- SQLite:
+  IN ({__COL_P0__}) AND ({__P_1__} IS NULL OR "CreatedAt" >= {__P_2__}) AND (NOT
+   ({__P_3__}) OR ...)
+  -- PostgreSQL:
+  IN ({__COL_P0__}) AND ({__P_1__} IS NULL OR "CreatedAt" >= {__P_2__}) AND (NOT
+   ({__P_3__}) OR ...)
+
+  Generated runtime code (same for all dialects):
+  __col0Parts[__i] = "@p" + __i;              // @p0, @p1, @p2 (SQLite)
+  sql = sql.Replace("{__COL_P0__}", ...);
+  var __shift0 = __col0Len - 1;
+  sql = sql.Replace("{__P_1__}", "@p" + (1 + __shift0));  // @p3
+  sql = sql.Replace("{__P_2__}", "@p" + (2 + __shift0));  // @p4
+  sql = sql.Replace("{__P_3__}", "@p" + (3 + __shift0));  // @p5
+  Result: IN (@p0, @p1, @p2) AND (@p3 IS NULL ... — correct
+
+  Scalar binding: runtime-computed — __p1.ParameterName = "@p" + (1 + __shift0)
+
+  Runtime cost: 1 Replace + 3 Replaces + 3 string concats for names — even on 
+  SQLite/SS.
+
+  ---
+  Approach 3: Full Tokenization
+
+  Same as Approach 2 but also tokenizes params BEFORE collections. In this
+  example there are none before P0, but in general it would add unnecessary
+  Replace calls for parameters that can never collide.
+
+  ---
+  Performance summary
+
+  ┌─────────────────┬──────────────────┬──────────────────┬─────────────────┐
+  │                 │    SQLite/SS     │    PostgreSQL    │      MySQL      │
+  ├─────────────────┼──────────────────┼──────────────────┼─────────────────┤
+  │ Separate        │ 1 Replace, 0     │ 1+N Replaces, N  │ No change       │
+  │ Namespace       │ scalar work      │ concats          │ needed          │
+  ├─────────────────┼──────────────────┼──────────────────┼─────────────────┤
+  │ Scalar          │ 1+N Replaces, N  │ 1+N Replaces, N  │ 1+N Replaces, N │
+  │ Tokenization    │ concats          │ concats          │  concats        │
+  ├─────────────────┼──────────────────┼──────────────────┼─────────────────┤
+  │ Full            │ 1+ALL Replaces   │ 1+ALL Replaces   │ 1+ALL Replaces  │
+  │ Tokenization    │                  │                  │                 │
+  └─────────────────┴──────────────────┴──────────────────┴─────────────────┘
+
+  Separate namespace wins on SQLite/SS (the hot path) by avoiding all scalar
+  renumbering work. PostgreSQL needs tokenization regardless. MySQL needs no
+  fix.
+
+● User declined to answer questions
+
+❯ Okay. What if we appraoched this from a different perspective. What if we     
+wrote a specialed multi-string replacer. It scans for individual tokens `@p#`,  
+but also bath insers `__COL_P0__` and writes it as it reads the source. So it   
+is a forward reader parser writer which would do the work of multiple "replace" 
+ invoactions. Lets brainstorm this to see if it is feasable.                    
+
+● Great idea. Let me think through this with you.
+
+  The Single-Pass Scanner Concept
+
+  Instead of N string.Replace() calls, a single left-to-right scan that
+  recognizes tokens and writes the output, maintaining a running offset:
+
+  Input:  ...IN ({__COL_P0__}) AND (@p1 IS NULL OR "CreatedAt" >= @p2) AND (NOT
+  (@p3)...
+           ↑ offset=0          ↑ offset += (3-1) = 2
+  Output: ...IN (@p0, @p1, @p2) AND (@p3 IS NULL OR "CreatedAt" >= @p4) AND (NOT
+   (@p5)...
+
+  Core algorithm:
+
+  offset = 0
+  scan left to right:
+    "{__COL_P" → parse index N, look up size S
+                  emit S formatted params starting at (N + offset)
+                  offset += (S - 1)
+                  also fill __col{N}Parts[] with the emitted names
+
+    "@p" + digits → parse index N           (SQLite/SS)
+                    emit "@p" + (N + offset)
+
+    "$" + digits  → parse index N           (PostgreSQL)
+                    emit "$" + (N + offset)
+
+    anything else → copy verbatim
+
+  Why it works: collections always appear LEFT of the scalars they'd collide
+  with. The offset accumulates naturally as we scan forward. Each collection
+  adds (size - 1) to the offset, which shifts all subsequent scalar indices.
+
+  Edge cases
+
+  ┌──────────────────┬──────────────────────────────────────────────────────┐
+  │       Case       │                       Behavior                       │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ Empty collection │ Emit SELECT 1 WHERE 1=0, offset += (0-1) = -1.       │
+  │  (size=0)        │ Scalars shift LEFT by 1 — correct since the          │
+  │                  │ collection's original 1 slot is now gone             │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ Multiple         │ Each one adds its own delta. Scanner handles         │
+  │ collections      │ naturally left-to-right                              │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ Conditionals     │ Each variant has its own SQL string. Scanner runs    │
+  │ (per-variant     │ per-variant. Scalars present in that variant have    │
+  │ SQL)             │ correct compile-time indices; the scanner just       │
+  │                  │ shifts them                                          │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ MySQL ?          │ No digits to rewrite — just expand {__COL_P0__} to   │
+  │                  │ ?, ?, ?. No offset tracking needed                   │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ @p inside quoted │ Only match @p + DIGITS. "approvedBy" won't match     │
+  │  identifiers     │ since @p isn't followed by a digit                   │
+  ├──────────────────┼──────────────────────────────────────────────────────┤
+  │ Multi-digit      │ Parse ALL trailing digits after @p / $               │
+  │ indices (@p10)   │                                                      │
+  └──────────────────┴──────────────────────────────────────────────────────┘
+
+  Where does it live?
+
+  Two options:
+
+  A. Runtime helper in Quarry.Internal (like CollectionHelper.Materialize):
+  // Called from generated code
+  internal static class ParameterExpander
+  {
+      public static string Expand(
+          string sql, SqlDialect dialect,
+          Span<(int globalIndex, int size, string[] parts)> collections)
+      { ... }
+  }
+  Generated code becomes one call:
+  sql = ParameterExpander.Expand(sql, dialect,
+      stackalloc[] { (0, __col0Len, __col0Parts) });
+
+  B. Emitted inline by the source generator — the scanner loop is emitted as
+  generated C# in each carrier. More code per carrier but no runtime dependency.
+
+  Parameter binding side
+
+  The binding code also needs shifted names for scalars. Two options:
+
+  B1. Compute shift separately (simplest):
+  var __shift = __col0Len - 1;  // emitted per collection
+  // Binding:
+  __p1.ParameterName = "@p" + (1 + __shift);  // runtime concat
+  __p2.ParameterName = "@p" + (2 + __shift);
+
+  B2. Scanner outputs a name array — the helper returns both rewritten SQL and a
+   string[] of all parameter names in order. Binding indexes into it.
+
+  Performance comparison
+
+  ┌────────────────────────────┬──────────────────┬─────────────────────────┐
+  │          Approach          │ SQL rewrite cost │  Scalar binding name    │
+  │                            │                  │          cost           │
+  ├────────────────────────────┼──────────────────┼─────────────────────────┤
+  │ Single-pass scanner        │ O(n) one pass    │ shift arithmetic        │
+  │                            │                  │ (trivial)               │
+  ├────────────────────────────┼──────────────────┼─────────────────────────┤
+  │ Separate namespace         │ O(n) one Replace │ Zero (compile-time      │
+  │ (SQLite/SS)                │                  │ const)                  │
+  ├────────────────────────────┼──────────────────┼─────────────────────────┤
+  │ Scalar tokenization        │ O(n × k) k       │ k string concats        │
+  │                            │ Replaces         │                         │
+  └────────────────────────────┴──────────────────┴─────────────────────────┘
+
+  The scanner is O(n) regardless of parameter count. Separate namespace is also
+  O(n) for SQLite/SS but can't handle PG. Scalar tokenization is O(n×k).
+
+  Feasibility verdict
+
+  Definitely feasible. The scanner is straightforward — the SQL is generated
+  (predictable format), so we don't need a full SQL parser. The main trade-off:
+
+  - Pro: Best asymptotic perf, uniform across all dialects, clean sequential
+  @p0..@pN output, solves PG naturally
+  - Pro: Can fill __colNParts[] during the same scan (binding names for free)
+  - Con: Slightly more complex than "just change the prefix" for SQLite/SS
+  - Con: Runtime helper adds a method to Quarry.Internal (but CollectionHelper
+  already sets this precedent)
+
+  The biggest win: it eliminates the need for separate dialect code paths in the
+   expansion logic. One scanner handles @pN, $N, and ? with a dialect switch on
+  the token format.
+
+● User declined to answer questions
+
+❯ I'm really not sure which direction to take. I like the inline appraoch as    
+that is exact code to execute, but I hate string.replace                        
+
+● What if we take the scanner idea one step further — the generator already
+  knows where every @pN and {__COL_PN__} sits in the SQL at compile time. So
+  instead of storing a template string and scanning/replacing at runtime, the
+  generator pre-splits the SQL into segments and emits flat StringBuilder.Append
+   calls with shifted indices inline.
+
+  Compile-time split / runtime concat
+
+  The generator sees this template:
+  WHERE "UserId" IN ({__COL_P0__}) AND (@p1 IS NULL OR "CreatedAt" >= @p2) AND
+  (NOT (@p3) OR "Email" IS NOT NULL)
+
+  It splits at every parameter boundary and emits:
+  var __shift = __col0Len > 0 ? __col0Len - 1 : -1;
+  var __sb = new StringBuilder(128);
+  __sb.Append("WHERE \"UserId\" IN (");
+  if (__col0Len == 0)
+  {
+      __sb.Append("SELECT 1 WHERE 1=0");
+  }
+  else
+  {
+      for (int __i = 0; __i < __col0Len; __i++)
+      {
+          if (__i > 0) __sb.Append(", ");
+          __col0Parts[__i] = "@p" + __i;
+          __sb.Append(__col0Parts[__i]);
+      }
+  }
+  __sb.Append(") AND (@p");
+  __sb.Append(1 + __shift);              // 3
+  __sb.Append(" IS NULL OR \"CreatedAt\" >= @p");
+  __sb.Append(2 + __shift);              // 4
+  __sb.Append(") AND (NOT (@p");
+  __sb.Append(3 + __shift);              // 5
+  __sb.Append(") OR \"Email\" IS NOT NULL)");
+  var sql = __sb.ToString();
+
+  Zero string.Replace. Zero runtime parsing. Just Append calls. You look at the
+  generated code and see exactly what SQL gets built, character by character.
+
+  What changes vs. current flow
+
+  ┌────────────────────────────────────┬────────────────────────────────────┐
+  │              Current               │              Proposed              │
+  ├────────────────────────────────────┼────────────────────────────────────┤
+  │ SqlAssembler builds complete SQL   │ Same, but only for non-collection  │
+  │ string with @pN literals           │ queries                            │
+  ├────────────────────────────────────┼────────────────────────────────────┤
+  │ TokenizeCollectionParameters swaps │ Not needed — generator splits at   │
+  │  @pN → {__COL_PN__}                │ compile time                       │
+  ├────────────────────────────────────┼────────────────────────────────────┤
+  │ _sql static field stores template  │ For collection queries: no _sql    │
+  │ string                             │ field (or stores segments)         │
+  ├────────────────────────────────────┼────────────────────────────────────┤
+  │ EmitCollectionExpansion does       │ Generator emits inline             │
+  │ sql.Replace(...)                   │ StringBuilder code per variant     │
+  ├────────────────────────────────────┼────────────────────────────────────┤
+  │                                    │ For collection queries: emits      │
+  │ EmitCarrierSqlDispatch loads       │ inline builder per variant (or     │
+  │ _sql[mask]                         │ shared builder with conditional    │
+  │                                    │ segments)                          │
+  └────────────────────────────────────┴────────────────────────────────────┘
+
+  Trade-off
+
+  - Pro: Exact code — no Replace, no scanning, no indirection
+  - Pro: Single forward pass (just Appends)
+  - Pro: Shift arithmetic is trivial inline code
+  - Pro: Handles all dialects uniformly (just change the prefix in Append)
+  - Con: More generated code per carrier (one builder per SQL variant with
+  collections)
+  - Con: Queries with many conditional variants could generate a lot of code
+
+  For the common case (1-4 variants), the inline builder is compact. For extreme
+   cases, we could fall back to a segment array approach.
+
+  What do you think — does this direction feel right, or is the generated code
+  volume a concern?
+
+✻ Sautéed for 1m 3s
+
+❯ /config 
+  ⎿  Status dialog dismissed
+❯ Not sure right now. Lets add all these options as a single comment on the     
+original issue. Create a md file and then just set the new comment contents     
+tothe MD file's contents.                                                       
+
+● Let me write up all the approaches we discussed into a markdown file, then
+  post it as a comment.
+
+● Write(issue-140-comment.md)
+  ⎿  Wrote 187 lines to issue-140-comment.md
+       1 ## Implementation Options Analysis
+       2 
+       3 After investigating the root cause and exploring the parameter e
+         xpansion codepath (`TerminalEmitHelpers.EmitCollectionExpansion`
+         , `TokenizeCollectionParameters`, `SqlAssembler`, `CarrierEmitte
+         r` parameter binding), here are the viable fix approaches with t
+         rade-offs.
+       4 
+       5 ### Background: Why this is tricky
+       6 
+       7 The collision happens because collection expansion at runtime ge
+         nerates `@p0, @p1, @p2` (starting from 0) while scalar parameter
+         s already occupy `@p1, @p2, @p3` (assigned at compile time). The
+          fix must shift scalar indices to make room — but the shift amou
+         nt depends on the **runtime** collection size, and **conditional
+          SQL variants** (nullable short-circuits) change which scalars a
+         re present per variant.
+       8 
+       9 Additionally, different dialects have fundamentally different pa
+         rameter models:
+      10 - **SQLite / SQL Server:** Named parameters (`@pN`) — matched by
+          name, order doesn't matter
+     … +177 lines (ctrl+o to expand)
+
+● Now let me post it as a comment on issue #140.
+
+● Bash(gh issue comment 140 --body-file issue-140-comment.md)
+  ⎿  https://github.com/Dtronix/Quarry/issues/140#issuecomment-4174261113
+
+● Comment posted:
+  https://github.com/Dtronix/Quarry/issues/140#issuecomment-4174261113
+
+  Let me clean up the temp file.
+
+● Bash(rm issue-140-comment.md)
+  ⎿  Done
+
+● Done. The comment covers all four options (A: Separate Namespace, B: Scalar
+  Tokenization, C: Runtime Scanner, D: Inline Builder) with concrete code
+  examples, trade-off tables, and a summary matrix. Want to pick a direction and
+   implement, or let it marinate?
+
+✻ Worked for 1m 8s
+
+❯ Lets go with the inline builder.                                              
+
+● Good choice. Let me update the tasks and start implementing.
+
+● First, let me understand the full carrier emission flow — where _sql is
+  stored, how variants are dispatched, and the full parameter binding.
+
+● Explore(Explore carrier SQL storage flow)
+  ⎿  Done (43 tool uses · 48.9k tokens · 1m 24s)
+  (ctrl+o to expand)
+
+● Good. Let me update the task plan and start implementing.
+
+● Good question. Here's what that would look like concretely:
+
+  Instance method on the carrier — the carrier already holds all inputs (P0,
+  Mask), so the method has everything it needs. Output (collection parts, shift)
+   gets stored as carrier fields for the binding code to reference:
+
+  // Generated on the carrier class:
+  internal string[]? __col0Parts;
+  internal int __colShift;
+
+  internal string BuildCollectionSql()
+  {
+      var __col0 = P0;
+      var __col0Len = __col0.Count;
+      __colShift = 0;
+
+      // Parts + shift setup
+      if (__col0Len == 0) { __col0Parts = Array.Empty<string>(); __colShift--; }
+      else { __col0Parts = new string[__col0Len]; for (...) ...; __colShift +=
+  __col0Len - 1; }
+
+      // Per-variant inline builder
+      var __sb = new StringBuilder(128);
+      switch (Mask)
+      {
+          case 0:
+              __sb.Append(@"WHERE ""UserId"" IN (");
+              if (__col0Len == 0) __sb.Append("SELECT 1 WHERE 1=0");
+              else __sb.Append(string.Join(", ", __col0Parts));
+              __sb.Append(@") AND (@p");
+              __sb.Append(1 + __colShift);
+              // ...
+              return __sb.ToString();
+          // other variants...
+      }
+      return "";
+  }
+
+  Terminal usage is just one line:
+  var sql = __c.BuildCollectionSql();
+  // Binding uses __c.__col0Parts and __c.__colShift
+
+  Advantages:
+  - Multi-variant switch logic is contained inside the method
+  - Terminal method stays clean
+  - Collection parts + shift live on the carrier — naturally scoped
+  - Debuggable: you can inspect the carrier after the call
+
+  Only added to carriers that actually have collections — zero cost for the
+  common non-collection path.
