@@ -262,4 +262,75 @@ internal class CollectionParameterCollisionTests
     }
 
     #endregion
+
+    #region Issue #140 exact scenario — collection + nullable DateTime + boolean
+
+    [Test]
+    public async Task Where_CollectionPlusNullableDateTime_CrossDialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Exact pattern from issue #140: collection + nullable scalar comparison
+        var userIds = new List<int> { 1, 2, 3 };
+        DateTime? startDate = new DateTime(2024, 1, 1);
+
+        var ltDiag = Lite.Users()
+            .Where(u => userIds.Contains(u.UserId) && (startDate == null || u.CreatedAt >= startDate))
+            .Select(u => (u.UserId, u.UserName))
+            .ToDiagnostics();
+
+        var pgDiag = Pg.Users()
+            .Where(u => userIds.Contains(u.UserId) && (startDate == null || u.CreatedAt >= startDate))
+            .Select(u => (u.UserId, u.UserName))
+            .ToDiagnostics();
+
+        var myDiag = My.Users()
+            .Where(u => userIds.Contains(u.UserId) && (startDate == null || u.CreatedAt >= startDate))
+            .Select(u => (u.UserId, u.UserName))
+            .ToDiagnostics();
+
+        var ssDiag = Ss.Users()
+            .Where(u => userIds.Contains(u.UserId) && (startDate == null || u.CreatedAt >= startDate))
+            .Select(u => (u.UserId, u.UserName))
+            .ToDiagnostics();
+
+        // Collection expands to 3 elements. Nullable DateTime? generates 2 scalar params
+        // (one for IS NULL check, one for >= comparison). All scalars must be shifted past
+        // the collection expansion — no index overlap allowed.
+        Assert.Multiple(() =>
+        {
+            Assert.That(ltDiag.Sql, Does.Contain("IN (@p0, @p1, @p2)"), "SQLite: collection");
+            Assert.That(ltDiag.Sql, Does.Not.Contain("IN (@p0, @p1, @p2) AND (@p1"), "SQLite: no collision with @p1");
+
+            Assert.That(pgDiag.Sql, Does.Contain("IN ($1, $2, $3)"), "PG: collection");
+            Assert.That(pgDiag.Sql, Does.Not.Contain("IN ($1, $2, $3) AND ($2"), "PG: no collision with $2");
+
+            Assert.That(myDiag.Sql, Does.Contain("IN (?, ?, ?)"), "MySQL: collection");
+
+            Assert.That(ssDiag.Sql, Does.Contain("IN (@p0, @p1, @p2)"), "SS: collection");
+            Assert.That(ssDiag.Sql, Does.Not.Contain("IN (@p0, @p1, @p2) AND (@p1"), "SS: no collision with @p1");
+        });
+    }
+
+    [Test]
+    public async Task Where_CollectionPlusNullableDateTime_ExecutionCorrect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Exact #140 reproduction — must not crash on SQLite
+        var userIds = new List<int> { 1, 2, 3 };
+        DateTime? startDate = new DateTime(2024, 1, 1);
+
+        var results = await Lite.Users()
+            .Where(u => userIds.Contains(u.UserId) && (startDate == null || u.CreatedAt >= startDate))
+            .Select(u => (u.UserId, u.UserName))
+            .ExecuteFetchAllAsync();
+
+        // All 3 users have CreatedAt seeded (via DEFAULT), all >= 2024-01-01
+        Assert.That(results, Has.Count.GreaterThanOrEqualTo(1));
+    }
+
+    #endregion
 }

@@ -229,14 +229,14 @@ internal static class TerminalEmitHelpers
 
         if (hasLimitField)
         {
-            // Pagination uses total __colShift (all collections already processed)
-            var limitNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, "__colShift");
+            // __diagShift == __colShift here: all collections processed, same accumulation.
+            var limitNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, paginationBaseIdx, "__diagShift");
             sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"));");
         }
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-            var offsetNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, "__colShift");
+            var offsetNameExpr = EmitDiagParamNameExprWithVar(chain.Dialect, offsetIdx, "__diagShift");
             sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"));");
         }
 
