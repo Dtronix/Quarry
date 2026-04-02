@@ -2,8 +2,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Quarry.Generators.IR;
-using Quarry.Generators.Models;
 
 namespace Quarry.Generators.Parsing;
 
@@ -35,179 +33,6 @@ internal static class DisplayClassNameResolver
         }
 
         return -1;
-    }
-
-    /// <summary>
-    /// Attempts to resolve the type of a captured variable when the semantic model
-    /// reports TypeKind.Error (typically because the variable is assigned from a
-    /// generator-produced method whose return type isn't yet resolved).
-    /// Handles patterns like: var x = await something.Method&lt;T&gt;()
-    /// </summary>
-    private static string? TryResolveErrorType(ISymbol symbol, SemanticModel semanticModel)
-    {
-        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
-        if (declRef == null)
-            return null;
-
-        var declSyntax = declRef.GetSyntax();
-        if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
-            return null;
-
-        // Unwrap await expressions: var x = await expr → analyze expr
-        if (initValue is AwaitExpressionSyntax awaitExpr)
-            initValue = awaitExpr.Expression;
-
-        // Look for generic method invocations: something.Method<T>()
-        // Extract T from the type argument list.
-        if (initValue is InvocationExpressionSyntax invocation)
-        {
-            GenericNameSyntax? genericName = null;
-            if (invocation.Expression is MemberAccessExpressionSyntax memberAccess
-                && memberAccess.Name is GenericNameSyntax g1)
-            {
-                genericName = g1;
-            }
-            else if (invocation.Expression is GenericNameSyntax g2)
-            {
-                genericName = g2;
-            }
-
-            if (genericName != null && genericName.TypeArgumentList.Arguments.Count == 1)
-            {
-                var typeArg = genericName.TypeArgumentList.Arguments[0];
-                var typeInfo = semanticModel.GetTypeInfo(typeArg);
-                if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
-                    return typeInfo.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Attempts to qualify an error type by checking the source file's using directives
-    /// against known schema types in the compilation. Generated entity types are error
-    /// types at generator time, but the corresponding Schema classes (user-defined) are
-    /// resolvable. E.g., for error type "User", checks each imported namespace for
-    /// "UserSchema". The entity is generated into the owning QuarryContext's namespace
-    /// (not the schema namespace), so we search for the context class to resolve the
-    /// correct namespace.
-    /// </summary>
-    private static string? TryQualifyErrorTypeFromUsings(
-        ITypeSymbol errorType, ISymbol symbol, SemanticModel semanticModel)
-    {
-        var typeName = errorType.Name;
-        if (string.IsNullOrEmpty(typeName) || typeName == "?")
-            return null;
-
-        var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
-        if (declRef == null)
-            return null;
-
-        if (!(declRef.SyntaxTree.GetRoot() is CompilationUnitSyntax root))
-            return null;
-
-        var compilation = semanticModel.Compilation;
-        var schemaName = typeName + "Schema";
-
-        // Collect all imported namespaces for context disambiguation
-        var importedNamespaces = new HashSet<string>(System.StringComparer.Ordinal);
-        foreach (var usingDir in root.Usings)
-        {
-            if (usingDir.Alias == null && usingDir.Name != null)
-                importedNamespaces.Add(usingDir.Name.ToString());
-        }
-
-        foreach (var ns in importedNamespaces)
-        {
-            var candidate = ns + "." + schemaName;
-            var schemaType = compilation.GetTypeByMetadataName(candidate);
-            if (schemaType != null)
-            {
-                // The schema lives in ns, but the generated entity is placed in
-                // the owning context's namespace (which may differ from the schema's).
-                var contextNs = FindContextNamespaceForSchema(compilation, schemaType, importedNamespaces);
-                if (contextNs != null)
-                    return "global::" + contextNs + "." + typeName;
-                return "global::" + ns + "." + typeName;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Searches the compilation for a [QuarryContext]-decorated class that references
-    /// the given schema type via a QueryBuilder&lt;T&gt; member. Returns the context
-    /// class's namespace, since generated entity types are placed there rather than
-    /// in the schema namespace. When multiple contexts reference the same schema,
-    /// prefers the context whose namespace is imported by the source file.
-    /// Returns null if no owning context is found.
-    /// </summary>
-    private static string? FindContextNamespaceForSchema(
-        Compilation compilation, INamedTypeSymbol schemaType, HashSet<string>? importedNamespaces = null)
-    {
-        string? firstMatch = null;
-
-        foreach (var tree in compilation.SyntaxTrees)
-        {
-            foreach (var node in tree.GetRoot().DescendantNodes())
-            {
-                if (node is not ClassDeclarationSyntax classDecl)
-                    continue;
-
-                // Quick syntax filter: skip classes without a QuarryContext attribute
-                bool maybeContext = false;
-                foreach (var attrList in classDecl.AttributeLists)
-                {
-                    foreach (var attr in attrList.Attributes)
-                    {
-                        var name = attr.Name.ToString();
-                        if (name == "QuarryContext" || name == "QuarryContextAttribute"
-                            || name.EndsWith(".QuarryContext") || name.EndsWith(".QuarryContextAttribute"))
-                        {
-                            maybeContext = true;
-                            break;
-                        }
-                    }
-                    if (maybeContext) break;
-                }
-                if (!maybeContext) continue;
-
-                var sm = compilation.GetSemanticModel(tree);
-                if (sm.GetDeclaredSymbol(classDecl) is not INamedTypeSymbol classSymbol)
-                    continue;
-
-                // Check if any member returns a generic type parameterized with the schema
-                // (e.g., QueryBuilder<FileSchema>)
-                foreach (var member in classSymbol.GetMembers())
-                {
-                    ITypeSymbol? returnType = null;
-                    if (member is IMethodSymbol m)
-                        returnType = m.ReturnType;
-                    else if (member is IPropertySymbol p)
-                        returnType = p.Type;
-
-                    if (returnType is INamedTypeSymbol nt
-                        && nt.IsGenericType
-                        && nt.TypeArguments.Length == 1
-                        && (SymbolEqualityComparer.Default.Equals(nt.TypeArguments[0], schemaType)
-                            || nt.TypeArguments[0].Name + "Schema" == schemaType.Name))
-                    {
-                        var ns = classSymbol.ContainingNamespace?.ToDisplayString();
-                        if (!string.IsNullOrEmpty(ns))
-                        {
-                            // When the source file imports this context's namespace, it's the right one
-                            if (importedNamespaces != null && importedNamespaces.Contains(ns!))
-                                return ns;
-                            firstMatch ??= ns;
-                        }
-                    }
-                }
-            }
-        }
-
-        return firstMatch;
     }
 
     private static void AssignOrdinalsPreOrder(
@@ -318,12 +143,13 @@ internal static class DisplayClassNameResolver
     }
 
     /// <summary>
-    /// Overload that uses a pre-computed DataFlowAnalysis instead of calling AnalyzeDataFlow.
+    /// Collects names and fully-qualified types of captured variables using the semantic model.
+    /// The calling compilation is expected to include generated entity and context source
+    /// (supplemental compilation), so all types resolve natively without manual fallbacks.
     /// </summary>
     public static Dictionary<string, string>? CollectCapturedVariableTypes(
         DataFlowAnalysis dataFlow,
-        SemanticModel semanticModel,
-        EntityRegistry? entityRegistry = null)
+        SemanticModel semanticModel)
     {
         if (!dataFlow.Succeeded)
             return null;
@@ -354,10 +180,7 @@ internal static class DisplayClassNameResolver
             else continue;
 
             var varType = typeSymbol.TypeKind == TypeKind.Error
-                ? (TryResolveErrorType(symbol, semanticModel)
-                    ?? TryQualifyErrorTypeFromUsings(typeSymbol, symbol, semanticModel)
-                    ?? (entityRegistry != null ? ChainResultTypeResolver.TryResolveChainResultType(symbol, entityRegistry) : null)
-                    ?? "object")
+                ? "object"
                 : typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
             if (string.IsNullOrWhiteSpace(varType))
@@ -366,82 +189,7 @@ internal static class DisplayClassNameResolver
             result[varName] = varType;
         }
 
-        // Second pass: resolve derived locals (var x = resolvedVar.Property)
-        // whose types depend on variables resolved in the first pass.
-        if (entityRegistry != null)
-            ResolveDerivedLocals(captured, result, entityRegistry);
-
         return result.Count > 0 ? result : null;
-    }
-
-    /// <summary>
-    /// Second pass: resolves derived locals whose types depend on variables resolved in the first pass.
-    /// Handles patterns like <c>var name = resolvedVar.PropertyName</c> where resolvedVar was
-    /// resolved as a tuple or entity type.
-    /// </summary>
-    private static void ResolveDerivedLocals(
-        ISymbol[] captured, Dictionary<string, string> result, EntityRegistry entityRegistry)
-    {
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var symbol in captured)
-            {
-                if (symbol is not ILocalSymbol local)
-                    continue;
-
-                if (result.TryGetValue(local.Name, out var existing) && existing != "object" && existing != "?")
-                    continue; // Already resolved
-
-                var declRef = symbol.DeclaringSyntaxReferences.FirstOrDefault();
-                if (declRef == null) continue;
-
-                var declSyntax = declRef.GetSyntax();
-                if (declSyntax is not VariableDeclaratorSyntax { Initializer.Value: { } initValue })
-                    continue;
-
-                // Pattern: sourceVar.PropertyName or sourceVar?.PropertyName
-                MemberAccessExpressionSyntax? memberAccess = null;
-                if (initValue is MemberAccessExpressionSyntax ma)
-                    memberAccess = ma;
-                else if (initValue is ConditionalAccessExpressionSyntax conditional
-                    && conditional.WhenNotNull is MemberBindingExpressionSyntax memberBinding)
-                {
-                    // sourceVar?.PropertyName — check the source expression
-                    if (conditional.Expression is IdentifierNameSyntax sourceId)
-                    {
-                        var sourceName = sourceId.Identifier.Text;
-                        if (result.TryGetValue(sourceName, out var sourceType) && sourceType != "object" && sourceType != "?")
-                        {
-                            var propName = memberBinding.Name.Identifier.Text;
-                            var resolved = ChainResultTypeResolver.ResolveMemberOnType(sourceType, propName, entityRegistry);
-                            if (resolved != null)
-                            {
-                                result[local.Name] = resolved;
-                                changed = true;
-                            }
-                        }
-                    }
-                    continue;
-                }
-
-                if (memberAccess != null && memberAccess.Expression is IdentifierNameSyntax sourceIdent)
-                {
-                    var sourceName = sourceIdent.Identifier.Text;
-                    if (result.TryGetValue(sourceName, out var sourceType) && sourceType != "object" && sourceType != "?")
-                    {
-                        var propName = memberAccess.Name.Identifier.Text;
-                        var resolved = ChainResultTypeResolver.ResolveMemberOnType(sourceType, propName, entityRegistry);
-                        if (resolved != null)
-                        {
-                            result[local.Name] = resolved;
-                            changed = true;
-                        }
-                    }
-                }
-            }
-        } while (changed); // Iterate until no more progress (handles chains of derivations)
     }
 
     internal sealed class MethodClosureAnalysis

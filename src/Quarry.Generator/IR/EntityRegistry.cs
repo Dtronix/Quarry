@@ -17,16 +17,25 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     private readonly Dictionary<string, List<EntityRegistryEntry>> _byEntityType;
     private readonly Dictionary<string, EntityInfo> _byEntityName;
     private readonly Dictionary<string, EntityInfo> _byAccessorName;
+    private readonly ImmutableArray<ContextInfo> _allContexts;
 
     public EntityRegistry(
         Dictionary<string, List<EntityRegistryEntry>> byEntityType,
         Dictionary<string, EntityInfo> byEntityName,
-        Dictionary<string, EntityInfo> byAccessorName)
+        Dictionary<string, EntityInfo> byAccessorName,
+        ImmutableArray<ContextInfo> allContexts)
     {
         _byEntityType = byEntityType;
         _byEntityName = byEntityName;
         _byAccessorName = byAccessorName;
+        _allContexts = allContexts;
     }
+
+    /// <summary>
+    /// All discovered contexts. Used to build supplemental compilations
+    /// that include generated entity and context source.
+    /// </summary>
+    public ImmutableArray<ContextInfo> AllContexts => _allContexts;
 
     /// <summary>
     /// Entity name → EntityInfo lookup for subquery resolution in the semantic translation path.
@@ -86,7 +95,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             }
         }
 
-        return new EntityRegistry(byEntityType, byEntityName, byAccessorName);
+        return new EntityRegistry(byEntityType, byEntityName, byAccessorName, contexts);
     }
 
     private static void AddToIndex(

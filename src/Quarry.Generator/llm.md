@@ -185,13 +185,7 @@ The generator predicts compiler-generated closure class names to emit `[UnsafeAc
 - Closure ordinals assigned in pre-order source traversal order
 - Partial classes contribute members in compilation unit order
 
-**Error type resolution cascade** (when `TypeKind.Error` for captured variable):
-1. `TryResolveErrorType` — extract generic type arg from `await expr.Method<T>()`
-2. `TryQualifyErrorTypeFromUsings` — search `{typeName}Schema` in source file's using namespaces
-3. `ChainResultTypeResolver.TryResolveChainResultType` — walk chain invocations to reconstruct projection type (depth limit: 3)
-4. Fallback to `"object"`
-
-**Known limitation**: `ResolveDerivedLocals` uses fixpoint iteration (loop until no progress) bounded by captured variable count, not an explicit iteration limit. Safe in practice but could hang on pathological circular captures.
+**Supplemental compilation**: `DisplayClassEnricher.BuildSupplementalCompilation` adds generated entity classes and context partial classes to the compilation before creating semantic models. This lets Roslyn resolve all generated types natively — no manual error-type fallbacks needed. Variables flowing from generated methods (e.g., `db.Equipments().ExecuteFetchAllAsync()`) resolve to their correct types automatically. When `TypeKind.Error` persists (e.g., types from other generators), the fallback is `"object"`.
 
 ### Subquery & Aggregate Support
 
@@ -238,8 +232,7 @@ Subquery aliases are generated as `sq0`, `sq1`, etc. Correlation is always `inne
 | `ChainAnalyzer.cs` | Stage 4. Groups sites by ChainId → QueryPlan. Conditional classification, projection building, parameter enrichment. |
 | `AnalyzabilityChecker.cs` | Per-site analyzability gate. Checks receiver is a fluent chain (not parameter/variable), lambda is present, traces up to 2 hops in variable chains. Sets IsAnalyzable + NonAnalyzableReason on RawCallSite. |
 | `DisplayClassEnricher.cs` | Stage 2.5. Batch closure analysis per method. Predicts display class names, collects captured variable types. |
-| `DisplayClassNameResolver.cs` | Display class name prediction utilities. Method ordinals, closure ordinals, error type resolution. |
-| `ChainResultTypeResolver.cs` | Resolves captured variable types from chain terminal results via EntityRegistry. |
+| `DisplayClassNameResolver.cs` | Display class name prediction utilities. Method ordinals, closure ordinals, captured variable types. |
 | `VariableTracer.cs` | Variable declaration tracing. Builder type checks, fluent chain root walking. |
 | `NamingConventions.cs` | Property → column name conversion (snake_case, camelCase, etc). |
 
@@ -387,7 +380,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 1. **Incremental caching**: All pipeline models implement `IEquatable<T>`. Equality on TranslatedCallSite includes PipelineError to detect error state changes.
 2. **[ThreadStatic] for side-channels**: PipelineErrorBag and TraceCapture use thread-static storage (not ConcurrentBag) because the incremental pipeline is single-threaded per compilation.
 3. **Display class prediction**: Generator predicts compiler-generated closure class names to emit [UnsafeAccessor] methods for captured variable extraction without reflection.
-4. **Error type resolution cascade**: When SemanticModel reports TypeKind.Error for a captured variable: TryResolveErrorType (generic type args) → TryQualifyErrorTypeFromUsings (namespace search) → ChainResultTypeResolver (chain terminal analysis) → fallback "object".
+4. **Supplemental compilation**: DisplayClassEnricher builds a supplemental compilation containing generated entity/context source before creating semantic models. This eliminates TypeKind.Error for generated types; remaining error types fall back to "object".
 5. **IsUnresolvedTypeName strict/lenient split**: Strict treats "object" as unresolved (chain analysis). Lenient allows "object" (projection analysis where it is a valid placeholder via fallbackToObject).
 6. **Enum constant folding**: SqlExprAnnotator folds enum member accesses to LiteralExpr before parameter extraction. CapturedValueExpr reaching the translator are always genuine runtime captures.
 7. **Conditional mask limit**: Max 8 conditional bits (256 SQL variants) and max nesting depth 2. Beyond either limit → QRY032 compile error.
