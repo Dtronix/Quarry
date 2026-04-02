@@ -269,16 +269,21 @@ internal static class TerminalEmitHelpers
             else
             {
                 var meta = FormatParamMetadata(p, ci.IsConditional, ci.BitIndex);
-                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{p.GlobalIndex}\", __pVal{p.GlobalIndex}{meta}));");
+                var nameExpr = EmitDiagParamNameExpr(chain.Dialect, p.GlobalIndex);
+                sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({nameExpr}, __pVal{p.GlobalIndex}{meta}));");
             }
         }
 
         if (hasLimitField)
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\"));");
+        {
+            var limitNameExpr = EmitDiagParamNameExpr(chain.Dialect, paginationBaseIdx);
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({limitNameExpr}, __pValL, typeName: \"Int32\"));");
+        }
         if (hasOffsetField)
         {
             var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\"));");
+            var offsetNameExpr = EmitDiagParamNameExpr(chain.Dialect, offsetIdx);
+            sb.AppendLine($"        __paramList.Add(new DiagnosticParameter({offsetNameExpr}, __pValO, typeName: \"Int32\"));");
         }
 
         sb.AppendLine("        var __params = __paramList.ToArray();");
@@ -306,6 +311,7 @@ internal static class TerminalEmitHelpers
     internal static void EmitDiagnosticClauseArray(
         StringBuilder sb, AssembledPlan chain, CarrierPlan? carrier = null)
     {
+        var hasChainCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var diagnosticClauses = chain.GetClauseEntries()
             .Where(c => InterceptorCodeGenerator.IsDiagnosticClauseRole(c.Role))
             .ToList();
@@ -420,7 +426,8 @@ internal static class TerminalEmitHelpers
                     }
                     else
                     {
-                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter(\"@p{globalIdx}\", __pVal{globalIdx}{meta}));");
+                        var nameExpr = EmitDiagParamNameExpr(chain.Dialect, globalIdx);
+                        sb.AppendLine($"        __cpList{clauseIdx}.Add(new DiagnosticParameter({nameExpr}, __pVal{globalIdx}{meta}));");
                     }
                 }
                 sb.AppendLine($"        var __clauseParams{clauseIdx} = __cpList{clauseIdx}.ToArray();");
@@ -464,12 +471,24 @@ internal static class TerminalEmitHelpers
             }
             else if (carrier != null && clause.Role == ClauseRole.Limit && hasLimitField)
             {
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
+                if (hasChainCollections)
+                {
+                    var nameExpr = EmitDiagParamNameExpr(chain.Dialect, paginationBaseIdx);
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValL, typeName: \"Int32\") }}";
+                }
+                else
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{paginationBaseIdx}\", __pValL, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clause.Role == ClauseRole.Offset && hasOffsetField)
             {
                 var offsetIdx = paginationBaseIdx + (hasLimitField ? 1 : 0);
-                paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
+                if (hasChainCollections)
+                {
+                    var nameExpr = EmitDiagParamNameExpr(chain.Dialect, offsetIdx);
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new({nameExpr}, __pValO, typeName: \"Int32\") }}";
+                }
+                else
+                    paramsArg = $", parameters: new DiagnosticParameter[] {{ new(\"@p{offsetIdx}\", __pValO, typeName: \"Int32\") }}";
             }
             else if (carrier != null && clauseParamCount > 0)
             {
@@ -479,7 +498,13 @@ internal static class TerminalEmitHelpers
                 {
                     var globalIdx = offset + i;
                     var meta = GetParamMetadataByGlobalIndex(chain, globalIdx, condMap);
-                    paramEntries.Add($"new(\"@p{globalIdx}\", __pVal{globalIdx}{meta})");
+                    if (hasChainCollections)
+                    {
+                        var nameExpr = EmitDiagParamNameExpr(chain.Dialect, globalIdx);
+                        paramEntries.Add($"new({nameExpr}, __pVal{globalIdx}{meta})");
+                    }
+                    else
+                        paramEntries.Add($"new(\"@p{globalIdx}\", __pVal{globalIdx}{meta})");
                 }
                 paramsArg = $", parameters: new DiagnosticParameter[] {{ {string.Join(", ", paramEntries)} }}";
             }
@@ -741,6 +766,19 @@ internal static class TerminalEmitHelpers
 
         // Default: null-safe boxing
         return $"(object?)__c.P{index} ?? DBNull.Value";
+    }
+
+    /// <summary>
+    /// Returns a C# expression for a shifted parameter name at runtime, for use in diagnostic emission.
+    /// </summary>
+    private static string EmitDiagParamNameExpr(SqlDialect dialect, int originalIndex)
+    {
+        return dialect switch
+        {
+            SqlDialect.MySQL => "\"?\"",
+            SqlDialect.PostgreSQL => $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + __colShift)",
+            _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + __colShift)"
+        };
     }
 
     // ── SQL Segment Parser ─────────────────────────────────────────
