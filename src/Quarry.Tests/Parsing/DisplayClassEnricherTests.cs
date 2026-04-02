@@ -713,6 +713,9 @@ namespace Quarry
     {
         IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
         IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
+        Task<List<T>> ExecuteFetchAllAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
     public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     {
@@ -803,12 +806,11 @@ namespace App
     }
 
     [Test]
-    public void ChainResult_NoSelect_FallsBackToObject()
+    public void ChainResult_NoSelect_ResolvesEntityType()
     {
-        // Without a Select clause, the chain ends with IQueryBuilder<T> which does
-        // not have execution terminals — the semantic model can't resolve the type.
-        // Falls back to "object". The carrier analyzer knows the entity type from
-        // chain analysis independently.
+        // Without a Select clause, IQueryBuilder<T> execution terminals return
+        // the entity type T directly. The supplemental compilation adds the
+        // generated entity class so the semantic model resolves T natively.
         var registry = BuildTestRegistry();
         var source = ChainInterfaceStub + @"
 namespace App.Data { public partial class AppDb { } }
@@ -829,7 +831,7 @@ namespace App
     }
 }";
         var resolved = ResolveChainCaptures(source, registry);
-        Assert.That(resolved!["pkg"], Is.EqualTo("object"));
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
     }
 
     [Test]
