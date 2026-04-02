@@ -742,4 +742,108 @@ internal static class TerminalEmitHelpers
         // Default: null-safe boxing
         return $"(object?)__c.P{index} ?? DBNull.Value";
     }
+
+    // ── SQL Segment Parser ─────────────────────────────────────────
+
+    internal enum SqlSegmentKind { Literal, ScalarParam, CollectionExpand }
+
+    internal readonly struct SqlSegment
+    {
+        public readonly SqlSegmentKind Kind;
+        public readonly string? Text;       // Literal: verbatim SQL fragment
+        public readonly int ParamIndex;     // ScalarParam: original @pN index; CollectionExpand: GlobalIndex
+
+        public SqlSegment(SqlSegmentKind kind, string? text, int paramIndex)
+        {
+            Kind = kind;
+            Text = text;
+            ParamIndex = paramIndex;
+        }
+
+        public static SqlSegment Literal(string text) => new(SqlSegmentKind.Literal, text, -1);
+        public static SqlSegment Scalar(int globalIndex) => new(SqlSegmentKind.ScalarParam, null, globalIndex);
+        public static SqlSegment Collection(int globalIndex) => new(SqlSegmentKind.CollectionExpand, null, globalIndex);
+    }
+
+    /// <summary>
+    /// Parses tokenized SQL (containing {__COL_PN__} and @pN/$N placeholders)
+    /// into an ordered list of typed segments for inline StringBuilder emission.
+    /// MySQL: only splits at collection tokens (? markers have no index).
+    /// </summary>
+    internal static List<SqlSegment> ParseSqlSegments(string tokenizedSql, SqlDialect dialect)
+    {
+        var segments = new List<SqlSegment>();
+        var literal = new StringBuilder();
+        int i = 0;
+        int len = tokenizedSql.Length;
+
+        while (i < len)
+        {
+            // Try collection token: {__COL_P(\d+)__}
+            if (tokenizedSql[i] == '{' && i + 10 < len && tokenizedSql.Substring(i, 8) == "{__COL_P")
+            {
+                var endBrace = tokenizedSql.IndexOf("__}", i + 8);
+                if (endBrace > i + 8)
+                {
+                    var numStr = tokenizedSql.Substring(i + 8, endBrace - (i + 8));
+                    if (int.TryParse(numStr, out var colIdx))
+                    {
+                        if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                        segments.Add(SqlSegment.Collection(colIdx));
+                        i = endBrace + 3; // skip past "__}"
+                        continue;
+                    }
+                }
+            }
+
+            // Try scalar param: dialect-specific
+            if (dialect != SqlDialect.MySQL)
+            {
+                if (dialect == SqlDialect.PostgreSQL)
+                {
+                    // Match $(\d+) — 1-indexed
+                    if (tokenizedSql[i] == '$' && i + 1 < len && tokenizedSql[i + 1] >= '0' && tokenizedSql[i + 1] <= '9')
+                    {
+                        int numStart = i + 1;
+                        int numEnd = numStart;
+                        while (numEnd < len && tokenizedSql[numEnd] >= '0' && tokenizedSql[numEnd] <= '9') numEnd++;
+                        if (int.TryParse(tokenizedSql.Substring(numStart, numEnd - numStart), out var pgIdx))
+                        {
+                            if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                            segments.Add(SqlSegment.Scalar(pgIdx - 1)); // convert 1-based to GlobalIndex
+                            i = numEnd;
+                            continue;
+                        }
+                    }
+                }
+                else
+                {
+                    // SQLite / SQL Server: match @p(\d+)
+                    if (tokenizedSql[i] == '@' && i + 2 < len && tokenizedSql[i + 1] == 'p'
+                        && tokenizedSql[i + 2] >= '0' && tokenizedSql[i + 2] <= '9')
+                    {
+                        int numStart = i + 2;
+                        int numEnd = numStart;
+                        while (numEnd < len && tokenizedSql[numEnd] >= '0' && tokenizedSql[numEnd] <= '9') numEnd++;
+                        if (int.TryParse(tokenizedSql.Substring(numStart, numEnd - numStart), out var atIdx))
+                        {
+                            if (literal.Length > 0) { segments.Add(SqlSegment.Literal(literal.ToString())); literal.Clear(); }
+                            segments.Add(SqlSegment.Scalar(atIdx));
+                            i = numEnd;
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            // Default: accumulate literal
+            literal.Append(tokenizedSql[i]);
+            i++;
+        }
+
+        if (literal.Length > 0)
+            segments.Add(SqlSegment.Literal(literal.ToString()));
+
+        return segments;
+    }
 }
