@@ -590,6 +590,7 @@ internal static class CarrierEmitter
 
         var dialectLiteral = GetDialectLiteral(chain.Dialect);
         var paramCount = chain.ChainParameters.Count;
+        var hasCollections = chain.ChainParameters.Any(p => p.IsCollection);
         var hasLimitField = HasCarrierField(carrier, FieldRole.Limit);
         var hasOffsetField = HasCarrierField(carrier, FieldRole.Offset);
 
@@ -635,10 +636,7 @@ internal static class CarrierEmitter
             if (param.IsCollection)
             {
                 // Collection parameters are expanded into N individual DbParameters.
-                // EmitCollectionExpansion (called in preamble) already declared:
-                //   __col{i} = __c.P{i}        (IReadOnlyList<T>)
-                //   __col{i}Len = count
-                //   __col{i}Parts = string[]    (parameter name per element)
+                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts
                 sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
@@ -652,7 +650,10 @@ internal static class CarrierEmitter
                 var valueExpr = TerminalEmitHelpers.GetParameterValueExpression(param, i);
 
                 sb.AppendLine($"{indent}var __p{i} = __cmd.CreateParameter();");
-                sb.AppendLine($"{indent}__p{i}.ParameterName = \"@p{i}\";");
+                if (hasCollections)
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = {EmitParamNameExpr(chain.Dialect, i, withShift: true)};");
+                else
+                    sb.AppendLine($"{indent}__p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
                 sb.AppendLine($"{indent}__p{i}.Value = {valueExpr};");
 
                 if (param.TypeMappingClass != null)
@@ -674,7 +675,10 @@ internal static class CarrierEmitter
         if (hasLimitField)
         {
             sb.AppendLine($"        var __pL = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pL.ParameterName = \"@p{nextIdx}\";");
+            if (hasCollections)
+                sb.AppendLine($"        __pL.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, withShift: true)};");
+            else
+                sb.AppendLine($"        __pL.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pL.Value = (object)__c.Limit;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pL);");
             nextIdx++;
@@ -682,7 +686,10 @@ internal static class CarrierEmitter
         if (hasOffsetField)
         {
             sb.AppendLine($"        var __pO = __cmd.CreateParameter();");
-            sb.AppendLine($"        __pO.ParameterName = \"@p{nextIdx}\";");
+            if (hasCollections)
+                sb.AppendLine($"        __pO.ParameterName = {EmitParamNameExpr(chain.Dialect, nextIdx, withShift: true)};");
+            else
+                sb.AppendLine($"        __pO.ParameterName = \"{FormatParamName(chain.Dialect, nextIdx)}\";");
             sb.AppendLine($"        __pO.Value = (object)__c.Offset;");
             sb.AppendLine($"        __cmd.Parameters.Add(__pO);");
         }
@@ -1196,6 +1203,34 @@ internal static class CarrierEmitter
             SqlDialect.MySQL => "SqlDialect.MySQL",
             _ => $"(SqlDialect){(int)dialect}"
         };
+    }
+
+    /// <summary>
+    /// Formats a compile-time constant parameter name string (no shift).
+    /// </summary>
+    private static string FormatParamName(SqlDialect dialect, int index)
+    {
+        return dialect switch
+        {
+            SqlDialect.PostgreSQL => $"${index + 1}",
+            SqlDialect.MySQL => "?",
+            _ => $"@p{index}"
+        };
+    }
+
+    /// <summary>
+    /// Returns a C# expression that evaluates to the shifted parameter name at runtime.
+    /// Uses ParameterNames.AtP/Dollar for zero-allocation lookup.
+    /// </summary>
+    private static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, bool withShift)
+    {
+        if (dialect == SqlDialect.MySQL)
+            return "\"?\"";
+
+        var shiftExpr = withShift ? " + __colShift" : "";
+        return dialect == SqlDialect.PostgreSQL
+            ? $"Quarry.Internal.ParameterNames.Dollar({originalIndex}{shiftExpr})"
+            : $"Quarry.Internal.ParameterNames.AtP({originalIndex}{shiftExpr})";
     }
 
     /// <summary>
