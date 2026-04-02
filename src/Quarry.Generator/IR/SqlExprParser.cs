@@ -123,8 +123,13 @@ internal static class SqlExprParser
     {
         var memberName = memberAccess.Name.Identifier.ValueText;
 
+        // Unwrap null-forgiving operator (e.g., u.LastLogin!.Value → treat as u.LastLogin.Value)
+        var target = memberAccess.Expression;
+        if (target is PostfixUnaryExpressionSyntax postfix && postfix.OperatorToken.IsKind(SyntaxKind.ExclamationToken))
+            target = postfix.Operand;
+
         // Direct property access on lambda parameter: u.PropertyName
-        if (memberAccess.Expression is IdentifierNameSyntax identifier)
+        if (target is IdentifierNameSyntax identifier)
         {
             var targetName = identifier.Identifier.ValueText;
             if (lambdaParameters.Contains(targetName))
@@ -138,7 +143,7 @@ internal static class SqlExprParser
         }
 
         // Chained access: u.Ref.Id
-        if (memberAccess.Expression is MemberAccessExpressionSyntax innerMemberAccess)
+        if (target is MemberAccessExpressionSyntax innerMemberAccess)
         {
             var innerExpr = ParseMemberAccess(innerMemberAccess, lambdaParameters, context);
 
@@ -175,9 +180,9 @@ internal static class SqlExprParser
         }
 
         // Generic member access
-        var target = ParseExpression(memberAccess.Expression, lambdaParameters, context);
+        var parsedTarget = ParseExpression(target, lambdaParameters, context);
 
-        if (target is CapturedValueExpr captured)
+        if (parsedTarget is CapturedValueExpr captured)
         {
             return new CapturedValueExpr(captured.VariableName, memberAccess.ToString(), captured.ClrType, captured.ExpressionPath);
         }

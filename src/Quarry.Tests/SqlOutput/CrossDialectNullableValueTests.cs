@@ -53,10 +53,10 @@ internal class CrossDialectNullableValueTests
         var (Lite, Pg, My, Ss) = t;
 
         var cutoff = new DateTime(2024, 6, 1);
-        var lt = Lite.Users().Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg = Pg.Users().Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var my = My.Users().Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var ss = Ss.Users().Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var lt = Lite.Users().Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -134,10 +134,10 @@ internal class CrossDialectNullableValueTests
         var (Lite, Pg, My, Ss) = t;
 
         var cutoff = new DateTime(2024, 5, 20);
-        var lt = Lite.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg = Pg.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var my = My.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
-        var ss = Ss.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var lt = Lite.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.LastLogin.HasValue).Where(u => u.LastLogin!.Value >= cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -273,10 +273,10 @@ internal class CrossDialectNullableValueTests
         var (Lite, Pg, My, Ss) = t;
 
         DateTime[] dates = [new DateTime(2024, 6, 1), new DateTime(2024, 5, 15)];
-        var lt = Lite.Users().Where(u => dates.Contains(u.LastLogin.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var pg = Pg.Users().Where(u => dates.Contains(u.LastLogin.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var my = My.Users().Where(u => dates.Contains(u.LastLogin.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
-        var ss = Ss.Users().Where(u => dates.Contains(u.LastLogin.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var lt = Lite.Users().Where(u => dates.Contains(u.LastLogin!.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => dates.Contains(u.LastLogin!.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => dates.Contains(u.LastLogin!.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => dates.Contains(u.LastLogin!.Value)).Select(u => (u.UserId, u.UserName)).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
