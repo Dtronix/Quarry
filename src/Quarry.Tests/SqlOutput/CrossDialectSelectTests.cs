@@ -468,4 +468,145 @@ internal class CrossDialectSelectTests
     }
 
     #endregion
+
+    #region No-Select execution terminals (IQueryBuilder<T> terminals — result type is entity T)
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchAllAsync_ReturnsAllEntities()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[1].UserId, Is.EqualTo(2));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchFirstAsync_ReturnsFirstEntity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1");
+
+        var result = await lt.ExecuteFetchFirstAsync();
+        Assert.That(result.UserId, Is.EqualTo(1));
+        Assert.That(result.UserName, Is.EqualTo("Alice"));
+        Assert.That(result.Email, Is.EqualTo("alice@test.com"));
+        Assert.That(result.IsActive, Is.True);
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchFirstOrDefaultAsync_ReturnsEntity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.UserId == 1).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId == 1).Prepare();
+        var my = My.Users().Where(u => u.UserId == 1).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId == 1).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
+
+        var result = await lt.ExecuteFetchFirstOrDefaultAsync();
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.UserId, Is.EqualTo(1));
+        Assert.That(result.UserName, Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchFirstOrDefaultAsync_ReturnsNullForNoMatch()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
+        var result = await lt.ExecuteFetchFirstOrDefaultAsync();
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchSingleAsync_ReturnsSingleEntity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.UserId == 2).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId == 2).Prepare();
+        var my = My.Users().Where(u => u.UserId == 2).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId == 2).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 2",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 2",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 2",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 2");
+
+        var result = await lt.ExecuteFetchSingleAsync();
+        Assert.That(result.UserId, Is.EqualTo(2));
+        Assert.That(result.UserName, Is.EqualTo("Bob"));
+        Assert.That(result.Email, Is.Null);
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchAllAsync_ReturnsAllRowsWithDistinct()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Distinct().Prepare();
+        var pg = Pg.Users().Distinct().Prepare();
+        var my = My.Users().Distinct().Prepare();
+        var ss = Ss.Users().Distinct().Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT DISTINCT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
+            pg:     "SELECT DISTINCT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\"",
+            mysql:  "SELECT DISTINCT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users`",
+            ss:     "SELECT DISTINCT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    #endregion
 }

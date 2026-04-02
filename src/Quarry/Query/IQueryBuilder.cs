@@ -128,12 +128,6 @@ public interface IQueryBuilder<T> where T : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
-    /// Executes the query and returns exactly one result, or default if no results.
-    /// </summary>
-    Task<T?> ExecuteFetchSingleOrDefaultAsync(CancellationToken cancellationToken = default)
-        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleOrDefaultAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
-
-    /// <summary>
     /// Executes the query and returns the scalar result.
     /// </summary>
     Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)

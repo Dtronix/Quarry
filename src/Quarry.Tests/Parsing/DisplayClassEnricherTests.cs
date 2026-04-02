@@ -717,7 +717,6 @@ namespace Quarry
         Task<T> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<T?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<T> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
-        Task<T?> ExecuteFetchSingleOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
     public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     {
@@ -725,7 +724,6 @@ namespace Quarry
         Task<TResult> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
-        Task<TResult?> ExecuteFetchSingleOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 }
 ";
@@ -910,32 +908,6 @@ namespace App
             var pkg = await db.Packages()
                 .Where(p => p.Id == 1)
                 .ExecuteFetchSingleAsync();
-            Func<bool> c = () => pkg != null;
-        }
-    }
-}";
-        var resolved = ResolveChainCaptures(source, registry);
-        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
-    }
-
-    [Test]
-    public void ChainResult_NoSelect_ExecuteFetchSingleOrDefaultAsync_ResolvesEntityType()
-    {
-        var registry = BuildTestRegistry();
-        var source = ChainInterfaceStub + @"
-namespace App.Data { public partial class AppDb { } }
-namespace App
-{
-    using App.Data;
-    class S
-    {
-        AppDb CreateDb() => throw new NotImplementedException();
-        async Task DoWork()
-        {
-            var db = CreateDb();
-            var pkg = await db.Packages()
-                .Where(p => p.Id == 1)
-                .ExecuteFetchSingleOrDefaultAsync();
             Func<bool> c = () => pkg != null;
         }
     }
