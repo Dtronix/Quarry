@@ -45,7 +45,6 @@ internal static class ClauseBodyEmitter
 
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
-        var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(returnType);
 
         if (site.ResultTypeName != null)
         {
@@ -67,7 +66,7 @@ internal static class ClauseBodyEmitter
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Fallback: return the builder unchanged with closing brace
-            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"        return Unsafe.As<{returnType}<{entityType}>>(builder);");
             sb.AppendLine($"    }}");
             return;
         }
@@ -75,7 +74,7 @@ internal static class ClauseBodyEmitter
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
         {
-            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
@@ -156,7 +155,7 @@ internal static class ClauseBodyEmitter
         {
             if (keyType != null)
             {
-                var concreteBuilder = $"QueryBuilder<{entityType}>";
+                var concreteBuilder = carrier.ClassName;
                 var retInterface = site.ResultTypeName != null
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
@@ -213,7 +212,7 @@ internal static class ClauseBodyEmitter
                 {
                     var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     int? clauseBit = null;
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, $"QueryBuilder<{entityType}>", targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, carrier.ClassName, targetInterface, clauseBit, siteParams, globalParamOffset);
                 }
                 else
                 {
@@ -290,7 +289,7 @@ internal static class ClauseBodyEmitter
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Fallback: return the builder unchanged with closing brace
-            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"        return Unsafe.As<{returnType}<{entityType}>>(builder);");
             sb.AppendLine($"    }}");
             return;
         }
@@ -300,7 +299,7 @@ internal static class ClauseBodyEmitter
         {
             if (keyType != null)
             {
-                var concreteBuilder = $"QueryBuilder<{entityType}>";
+                var concreteBuilder = carrier.ClassName;
                 var retInterface = site.ResultTypeName != null
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
@@ -360,7 +359,7 @@ internal static class ClauseBodyEmitter
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Fallback: return the builder unchanged with closing brace
-            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"        return Unsafe.As<{returnType}<{entityType}>>(builder);");
             sb.AppendLine($"    }}");
             return;
         }
@@ -368,7 +367,7 @@ internal static class ClauseBodyEmitter
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
         {
-            var concreteBuilder = $"QueryBuilder<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var retInterface = site.ResultTypeName != null
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
@@ -407,7 +406,7 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        {resolvedValueType} value)");
             sb.AppendLine($"    {{");
 
-            var concreteBuilder = $"{concreteType}<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnType}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
@@ -457,7 +456,7 @@ internal static class ClauseBodyEmitter
         if (clauseInfo == null || !clauseInfo.IsSuccess)
         {
             // Fallback: return the builder unchanged with closing brace
-            sb.AppendLine($"        return Unsafe.As<{concreteType}<{entityType}>>(builder);");
+            sb.AppendLine($"        return Unsafe.As<{returnType}<{entityType}>>(builder);");
             sb.AppendLine($"    }}");
             return;
         }
@@ -465,7 +464,7 @@ internal static class ClauseBodyEmitter
         // Carrier-optimized path
         if (carrier != null && prebuiltChain != null)
         {
-            var concreteBuilder = $"{concreteType}<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var returnInterface = $"IExecutable{modKind}Builder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
@@ -502,7 +501,7 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        {resolvedValueType} value)");
             sb.AppendLine($"    {{");
 
-            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
@@ -542,7 +541,7 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        Action<{entityType}> {actionParamName})");
             sb.AppendLine($"    {{");
 
-            var concreteBuilder = $"{concreteBaseName}<{entityType}>";
+            var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
@@ -580,16 +579,8 @@ internal static class ClauseBodyEmitter
             sb.AppendLine($"        {entityType} entity)");
             sb.AppendLine($"    {{");
 
-            if (isFirstInChain)
-            {
-                var concreteBuilder = $"{concreteBaseName}<{entityType}>";
-                sb.AppendLine($"        var __b = Unsafe.As<{concreteBuilder}>(builder);");
-                sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = __b.State.ExecutionContext }};");
-            }
-            else
-            {
-                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            }
+            // In the carrier-only architecture, the builder is already the carrier
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
             sb.AppendLine($"        __c.Entity = entity;");
 
@@ -597,10 +588,7 @@ internal static class ClauseBodyEmitter
                 sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
 
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            if (isFirstInChain)
-                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(__c);");
-            else
-                sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
 
             sb.AppendLine($"    }}");
             return;

@@ -1800,6 +1800,20 @@ internal static class UsageSiteDiscovery
                 }
             }
 
+            // Check if the value expression contains column references (lambda parameter member accesses).
+            // If so, parse through SqlExprParser to decompose into column refs + captured vars.
+            if (ContainsLambdaParamRef(valueExpr, parameterName))
+            {
+                // Store the expression text and lambda param name as strings.
+                // The SqlExpr parsing/binding happens in CallSiteTranslator where the
+                // result is stored on TranslatedClause (not cached through the pipeline).
+                assignments.Add(new Models.SetActionAssignment(
+                    columnSql, valueTypeName: null, customTypeMappingClass: null,
+                    columnExpressionText: valueExpr.ToFullString().Trim(),
+                    columnExpressionLambdaParam: parameterName));
+                continue;
+            }
+
             var paramIndex = parameters.Count;
             var isCaptured = IsSetActionCapturedVariable(valueExpr, parameterName);
 
@@ -1832,7 +1846,10 @@ internal static class UsageSiteDiscovery
 
         // Collect all external identifiers from non-inlined value expressions
         // so BuildExtractionPlans can create extractors for computed expressions (a + b)
+        // and column expressions with captured variables (e.EndTime - e.StartTime + captured)
         Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? allCapturedIdentifiers = null;
+
+        // From simple captured parameters
         if (parameters.Count > 0)
         {
             foreach (var p in parameters)
@@ -1856,6 +1873,23 @@ internal static class UsageSiteDiscovery
                         if (!allCapturedIdentifiers.ContainsKey(kvp.Key))
                             allCapturedIdentifiers[kvp.Key] = kvp.Value;
                     }
+                }
+            }
+        }
+
+        // From column expression assignments (which may contain captured variables mixed with columns)
+        foreach (var asgn in assignmentExprs)
+        {
+            if (!ContainsLambdaParamRef(asgn.Right, parameterName))
+                continue;
+            var identifiers = CollectExternalIdentifiers(asgn.Right, semanticModel, parameterName);
+            if (identifiers != null)
+            {
+                allCapturedIdentifiers ??= new Dictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>(StringComparer.Ordinal);
+                foreach (var kvp in identifiers)
+                {
+                    if (!allCapturedIdentifiers.ContainsKey(kvp.Key))
+                        allCapturedIdentifiers[kvp.Key] = kvp.Value;
                 }
             }
         }
@@ -2008,6 +2042,26 @@ internal static class UsageSiteDiscovery
 
         var result = typeSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         return string.IsNullOrWhiteSpace(result) ? "object" : result;
+    }
+
+    /// <summary>
+    /// Recursively checks whether an expression contains any member access on the lambda parameter
+    /// (e.g., e.EndTime, e.StartTime). When true, the expression must be parsed through
+    /// the SqlExpr pipeline to decompose into SQL column references + captured variable parameters.
+    /// </summary>
+    private static bool ContainsLambdaParamRef(ExpressionSyntax expr, string lambdaParamName)
+    {
+        if (expr is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Expression is IdentifierNameSyntax memberId
+            && memberId.Identifier.Text == lambdaParamName)
+            return true;
+
+        foreach (var child in expr.ChildNodes())
+        {
+            if (child is ExpressionSyntax childExpr && ContainsLambdaParamRef(childExpr, lambdaParamName))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

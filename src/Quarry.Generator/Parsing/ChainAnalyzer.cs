@@ -295,7 +295,7 @@ internal static class ChainAnalyzer
                             joinedEntities: resolvedJoinEntities);
 
                         var retranslated = CallSiteTranslator.Translate(enrichedBound, registry, ct);
-                        if (retranslated.Clause != null)
+                        if (retranslated.Clause != null && retranslated.Clause.IsSuccess)
                         {
                             clauseSites[i] = new TranslatedCallSite(
                                 clauseSites[i].Bound, retranslated.Clause,
@@ -470,7 +470,14 @@ internal static class ChainAnalyzer
                                 var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
                                 var col = new ResolvedColumnExpr(quotedCol);
                                 SqlExpr valueExpr;
-                                if (assignment.IsInlined && assignment.InlinedSqlValue != null)
+                                if (assignment.HasColumnExpression && assignment.BoundValueExpression != null)
+                                {
+                                    // Column expression (e.g., e.EndTime - e.StartTime + @p0):
+                                    // use the bound+extracted SqlExpr tree directly.
+                                    valueExpr = assignment.BoundValueExpression;
+                                    nextSetParamIdx += CountParamSlots(valueExpr);
+                                }
+                                else if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                                 {
                                     // Detect boolean literals for dialect-specific formatting
                                     var inlinedVal = assignment.InlinedSqlValue;
@@ -516,27 +523,41 @@ internal static class ChainAnalyzer
             {
                 // SetAction (Action<T> lambda): parameters and assignments stored on RawCallSite
                 // because Action<T> can't be parsed to SqlExpr.
-                if (raw.SetActionParameters != null)
+                // When column expressions are present, bound assignments and parameters come from
+                // the TranslatedClause (bound+extracted in CallSiteTranslator); otherwise from RawCallSite.
+                var clauseAssignments = site.Clause?.SetAssignments ?? raw.SetActionAssignments;
+                var hasColumnExprs = clauseAssignments.Any(a => a.HasColumnExpression);
+                var clauseParamSource = hasColumnExprs && site.Clause?.Parameters != null
+                    ? site.Clause.Parameters
+                    : raw.SetActionParameters;
+
+                if (clauseParamSource != null && clauseParamSource.Count > 0)
                 {
-                    var clauseParams = RemapParameters(raw.SetActionParameters, ref paramGlobalIndex);
+                    var clauseParams = RemapParameters(clauseParamSource, ref paramGlobalIndex);
                     parameters.AddRange(clauseParams);
                 }
 
-                // Build set terms from assignments. Non-inlined assignments consume parameters
-                // in order — track which parameter index each non-inlined assignment gets.
-                // After RemapParameters, paramGlobalIndex was incremented by SetActionParameters.Count.
-                // So the first SetAction parameter's global index = paramGlobalIndex - SetActionParameters.Count.
-                var setParamCount = raw.SetActionParameters?.Count ?? 0;
+                // Build set terms from assignments. Non-inlined/non-column-expr assignments
+                // consume parameters in order.
+                var setParamCount = clauseParamSource?.Count ?? 0;
                 var nextParamIdx = paramGlobalIndex - setParamCount;
 
-                foreach (var assignment in raw.SetActionAssignments)
+                foreach (var assignment in clauseAssignments)
                 {
                     // Quote the column name using the dialect — SetActionAssignment.ColumnSql
                     // stores the unquoted property name from discovery
                     var quotedCol = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(site.Bound.Dialect, assignment.ColumnSql);
                     var col = new ResolvedColumnExpr(quotedCol);
                     SqlExpr valueExpr;
-                    if (assignment.IsInlined && assignment.InlinedSqlValue != null)
+                    if (assignment.HasColumnExpression && assignment.BoundValueExpression != null)
+                    {
+                        // Column expression (e.g., e.EndTime - e.StartTime + @p0):
+                        // use the bound+extracted SqlExpr tree directly.
+                        // Count params in the expression to advance the index.
+                        valueExpr = assignment.BoundValueExpression;
+                        nextParamIdx += CountParamSlots(valueExpr);
+                    }
+                    else if (assignment.IsInlined && assignment.InlinedSqlValue != null)
                     {
                         // Detect boolean literals for dialect-specific formatting
                         var inlinedVal = assignment.InlinedSqlValue;
@@ -739,6 +760,12 @@ internal static class ChainAnalyzer
             preparedTerminals: preparedTerminals.Count > 1 ? preparedTerminals : null,
             prepareSite: prepareSite);
     }
+
+    /// <summary>
+    /// Counts the number of ParamSlotExpr nodes in an SqlExpr tree.
+    /// </summary>
+    private static int CountParamSlots(SqlExpr expr)
+        => SqlExprRenderer.CollectParameters(expr).Count;
 
     /// <summary>
     /// Remaps clause-local parameters to global parameter indices.

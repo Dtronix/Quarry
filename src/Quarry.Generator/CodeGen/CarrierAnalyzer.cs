@@ -263,7 +263,7 @@ internal static class CarrierAnalyzer
 
             if (cs.Kind == InterceptorKind.UpdateSetAction)
             {
-                clauseParams = cs.Bound.Raw.SetActionParameters;
+                clauseParams = cs.Clause?.Parameters ?? cs.Bound.Raw.SetActionParameters;
                 var hasCaptured = clauseParams?.Any(p => p.IsCaptured) == true;
                 delegateParamName = hasCaptured ? "action" : "_";
             }
