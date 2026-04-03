@@ -490,6 +490,75 @@ public class Service
     }
 
     [Test]
+    public void RawSqlAsync_EntityT_WithCustomTypeMapping_GeneratesFromDbReader()
+    {
+        // When T is a generated entity with a Mapped<T, TMapping>() column,
+        // enrichment should produce a reader that calls new TMapping().FromDb(r.GetXxx(i)).
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public readonly struct Money
+{
+    public decimal Amount { get; }
+    public Money(decimal amount) => Amount = amount;
+}
+
+public class MoneyMapping : TypeMapping<Money, decimal>
+{
+    public override decimal ToDb(Money value) => value.Amount;
+    public override Money FromDb(decimal value) => new(value);
+}
+
+public class AccountSchema : Schema
+{
+    public static string Table => ""accounts"";
+    public Key<int> AccountId => Identity();
+    public Col<string> AccountName => Length(100);
+    public Col<Money> Balance => Mapped<Money, MoneyMapping>();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Account> Accounts();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var accounts = await db.RawSqlAsync<Account>(""SELECT * FROM accounts"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        // Standard columns should use direct reader methods
+        Assert.That(code, Does.Contain("case \"AccountId\""),
+            "Should generate switch case for AccountId");
+        Assert.That(code, Does.Contain("case \"AccountName\""),
+            "Should generate switch case for AccountName");
+
+        // Mapped column should use FromDb pattern
+        Assert.That(code, Does.Contain("case \"Balance\""),
+            "Should generate switch case for Balance");
+        Assert.That(code, Does.Contain("MoneyMapping"),
+            "Should reference the custom type mapping class");
+        Assert.That(code, Does.Contain("FromDb"),
+            "Should call FromDb on the custom type mapping");
+        Assert.That(code, Does.Not.Contain("static _ => new Account()"),
+            "Should NOT emit no-op reader delegate");
+    }
+
+    [Test]
     public void RawSqlAsync_EntityT_SimpleColumns_GeneratesPropertySwitch()
     {
         // When T is a generated entity type, the generator should enrich properties
