@@ -208,7 +208,8 @@ internal static class CallSiteTranslator
             joinedEntities: joinedEntities,
             tableAliases: tableAliases,
             inBooleanContext: inBooleanContext,
-            entityLookup: registry?.ByEntityName);
+            entityLookup: registry?.ByEntityName,
+            implicitJoins: out var implicitJoins);
 
         // Step 2: Extract parameters
         int paramIndex = 0;
@@ -279,7 +280,8 @@ internal static class CallSiteTranslator
             isDescending: raw.IsDescending,
             joinKind: joinKind,
             joinedTableName: joinedTableName,
-            joinedSchemaName: joinedSchemaName);
+            joinedSchemaName: joinedSchemaName,
+            implicitJoins: implicitJoins.Count > 0 ? implicitJoins : null);
 
         return new TranslatedCallSite(bound, clause, keyTypeName, valueTypeName);
     }
@@ -411,6 +413,8 @@ internal static class CallSiteTranslator
                 return ExtractLambdaParameterName(like.Operand);
             case SubqueryExpr sub:
                 return sub.OuterParameterName;
+            case NavigationAccessExpr nav:
+                return nav.SourceParameterName;
             case RawCallExpr rawCall:
                 foreach (var arg in rawCall.Arguments)
                 {
@@ -473,7 +477,9 @@ internal static class CallSiteTranslator
             columns: entity.Columns,
             navigations: entity.Navigations,
             indexes: Array.Empty<IndexInfo>(),
-            location: Microsoft.CodeAnalysis.Location.None);
+            location: Microsoft.CodeAnalysis.Location.None,
+            singleNavigations: entity.SingleNavigations,
+            throughNavigations: entity.ThroughNavigations);
     }
 
     /// <summary>
@@ -495,7 +501,9 @@ internal static class CallSiteTranslator
             columns: entity.Columns,
             navigations: entity.Navigations,
             indexes: Array.Empty<IndexInfo>(),
-            location: Microsoft.CodeAnalysis.Location.None);
+            location: Microsoft.CodeAnalysis.Location.None,
+            singleNavigations: entity.SingleNavigations,
+            throughNavigations: entity.ThroughNavigations);
     }
 
     private readonly struct JoinParameterMapping

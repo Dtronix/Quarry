@@ -164,5 +164,30 @@ public abstract class Schema
     protected static RelationshipBuilder<T> HasMany<T>(Expression<Func<T, object?>> foreignKeySelector) where T : Schema
         => default;
 
+    /// <summary>
+    /// Defines a singular (N:1) navigation to a target entity.
+    /// The foreign key is specified by name for disambiguation when multiple Ref columns
+    /// reference the same entity type.
+    /// </summary>
+    /// <typeparam name="T">The target schema type.</typeparam>
+    /// <param name="foreignKeyPropertyName">The name of the Ref property (use nameof()).</param>
+    protected static OneBuilder<T> HasOne<T>(string foreignKeyPropertyName) where T : Schema
+        => default;
+
+    /// <summary>
+    /// Defines a many-to-many skip-navigation through a junction table.
+    /// The result is a <see cref="Many{T}"/> navigation that transparently traverses the junction entity.
+    /// </summary>
+    /// <typeparam name="TTarget">The target schema type.</typeparam>
+    /// <typeparam name="TJunction">The junction schema type.</typeparam>
+    /// <param name="junctionNavigation">Expression selecting the Many&lt;TJunction&gt; navigation to the junction table.</param>
+    /// <param name="targetNavigation">Expression selecting the One&lt;TTarget&gt; navigation on the junction table.</param>
+    protected static RelationshipBuilder<TTarget> HasManyThrough<TTarget, TJunction>(
+        Expression<Func<Schema, object?>> junctionNavigation,
+        Expression<Func<TJunction, object?>> targetNavigation)
+        where TTarget : Schema
+        where TJunction : Schema
+        => default;
+
     #endregion
 }

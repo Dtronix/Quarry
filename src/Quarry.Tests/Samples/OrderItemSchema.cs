@@ -15,4 +15,10 @@ public class OrderItemSchema : Schema
     public Col<int> Quantity { get; }
     public Col<decimal> UnitPrice => Precision(18, 2);
     public Col<decimal> LineTotal { get; }
+
+    /// <summary>
+    /// Singular navigation to the related Order entity (N:1).
+    /// FK inferred automatically from single Ref&lt;OrderSchema, int&gt;.
+    /// </summary>
+    public One<OrderSchema> Order { get; }
 }

@@ -45,6 +45,16 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
     public IReadOnlyList<NavigationInfo> Navigations { get; }
 
     /// <summary>
+    /// The singular navigation properties (One&lt;T&gt;) defined in the schema.
+    /// </summary>
+    public IReadOnlyList<SingleNavigationInfo> SingleNavigations { get; }
+
+    /// <summary>
+    /// The skip-navigation properties (HasManyThrough) defined in the schema.
+    /// </summary>
+    public IReadOnlyList<ThroughNavigationInfo> ThroughNavigations { get; }
+
+    /// <summary>
     /// The indexes defined in the schema.
     /// </summary>
     public IReadOnlyList<IndexInfo> Indexes { get; }
@@ -85,7 +95,9 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
         Location location,
         string? customEntityReaderClass = null,
         string? invalidEntityReaderClass = null,
-        IReadOnlyList<string>? compositeKeyColumns = null)
+        IReadOnlyList<string>? compositeKeyColumns = null,
+        IReadOnlyList<SingleNavigationInfo>? singleNavigations = null,
+        IReadOnlyList<ThroughNavigationInfo>? throughNavigations = null)
     {
         EntityName = entityName;
         SchemaClassName = schemaClassName;
@@ -94,6 +106,8 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
         NamingStyle = namingStyle;
         Columns = columns;
         Navigations = navigations;
+        SingleNavigations = singleNavigations ?? Array.Empty<SingleNavigationInfo>();
+        ThroughNavigations = throughNavigations ?? Array.Empty<ThroughNavigationInfo>();
         Indexes = indexes;
         Location = location;
         CustomEntityReaderClass = customEntityReaderClass;
@@ -112,6 +126,8 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
             && NamingStyle == other.NamingStyle
             && EqualityHelpers.SequenceEqual(Columns, other.Columns)
             && EqualityHelpers.SequenceEqual(Navigations, other.Navigations)
+            && EqualityHelpers.SequenceEqual(SingleNavigations, other.SingleNavigations)
+            && EqualityHelpers.SequenceEqual(ThroughNavigations, other.ThroughNavigations)
             && EqualityHelpers.SequenceEqual(Indexes, other.Indexes)
             && EqualityHelpers.NullableSequenceEqual(CompositeKeyColumns, other.CompositeKeyColumns)
             && CustomEntityReaderClass == other.CustomEntityReaderClass

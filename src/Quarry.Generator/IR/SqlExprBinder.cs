@@ -32,9 +32,29 @@ internal static class SqlExprBinder
         bool inBooleanContext = false,
         IReadOnlyDictionary<string, EntityInfo>? entityLookup = null)
     {
+        return Bind(expr, primaryEntity, dialect, lambdaParameterName, joinedEntities, tableAliases, inBooleanContext, entityLookup, out _);
+    }
+
+    /// <summary>
+    /// Binds SQL expression tree, resolving column references and navigation accesses.
+    /// Returns implicit joins collected from One&lt;T&gt; navigation access.
+    /// </summary>
+    public static SqlExpr Bind(
+        SqlExpr expr,
+        EntityInfo primaryEntity,
+        SqlDialect dialect,
+        string lambdaParameterName,
+        IReadOnlyDictionary<string, EntityInfo>? joinedEntities,
+        IReadOnlyDictionary<string, string>? tableAliases,
+        bool inBooleanContext,
+        IReadOnlyDictionary<string, EntityInfo>? entityLookup,
+        out List<ImplicitJoinInfo> implicitJoins)
+    {
         var columnLookup = BuildColumnLookup(primaryEntity);
         var ctx = new BindContext(primaryEntity, dialect, lambdaParameterName, columnLookup, joinedEntities, tableAliases, entityLookup);
-        return BindExpr(expr, ctx, inBooleanContext);
+        var result = BindExpr(expr, ctx, inBooleanContext);
+        implicitJoins = ctx.ImplicitJoins;
+        return result;
     }
 
     private sealed class BindContext
@@ -47,8 +67,19 @@ internal static class SqlExprBinder
         public IReadOnlyDictionary<string, string>? TableAliases { get; }
         public IReadOnlyDictionary<string, EntityInfo>? EntityLookup { get; }
         public int SubqueryAliasCounter { get; set; }
+        public int ImplicitJoinAliasCounter { get; set; }
         public bool HasJoins => JoinedEntities != null && JoinedEntities.Count > 0;
         public bool HasAliases => TableAliases != null && TableAliases.Count > 0;
+
+        /// <summary>
+        /// Accumulated implicit joins from One&lt;T&gt; navigation access.
+        /// </summary>
+        public List<ImplicitJoinInfo> ImplicitJoins { get; } = new();
+
+        /// <summary>
+        /// Deduplication key for implicit joins: (sourceAlias, fkColumnName, targetEntity) → alias.
+        /// </summary>
+        public Dictionary<(string sourceAlias, string fkColumn, string targetEntity), string> ImplicitJoinAliases { get; } = new();
 
         // Cached column lookups for joined entities to avoid rebuilding per column ref
         private Dictionary<string, Dictionary<string, ColumnInfo>>? _joinedColumnLookups;
@@ -156,6 +187,9 @@ internal static class SqlExprBinder
 
             case SubqueryExpr sub:
                 return BindSubquery(sub, ctx);
+
+            case NavigationAccessExpr navAccess:
+                return BindNavigationAccess(navAccess, ctx, inBooleanContext);
 
             case RawCallExpr rawCall:
             {
@@ -324,9 +358,36 @@ internal static class SqlExprBinder
             }
         }
 
+        // Check for HasManyThrough skip-navigation
+        ThroughNavigationInfo? throughNav = null;
+        if (nav == null)
+        {
+            foreach (var tn in outerEntity.ThroughNavigations)
+            {
+                if (tn.PropertyName == sub.NavigationPropertyName)
+                {
+                    throughNav = tn;
+                    break;
+                }
+            }
+
+            if (throughNav != null)
+            {
+                // Find the junction entity's Many<T> navigation
+                foreach (var n in outerEntity.Navigations)
+                {
+                    if (n.PropertyName == throughNav.JunctionNavigationName)
+                    {
+                        nav = n;
+                        break;
+                    }
+                }
+            }
+        }
+
         if (nav == null) return sub;
 
-        // Look up target entity
+        // Look up target entity (the junction entity for through-navigations)
         if (!ctx.EntityLookup.TryGetValue(nav.RelatedEntityName, out var targetEntity))
             return sub;
 
@@ -360,23 +421,38 @@ internal static class SqlExprBinder
         var outerQualifier = GetOuterQualifier(sub.OuterParameterName, ctx);
         var correlationSql = $"{innerAliasQuoted}.{fkQuoted} = {outerQualifier}.{pkQuoted}";
 
+        // For HasManyThrough: the predicate binds against the *target* entity, not the junction.
+        // We add an implicit join from junction → target inside the subquery.
+        EntityInfo? throughTargetEntity = null;
+        if (throughNav != null && ctx.EntityLookup.TryGetValue(throughNav.TargetEntityName, out var tte))
+        {
+            throughTargetEntity = tte;
+        }
+
         // Bind predicate if present
         SqlExpr? boundPredicate = sub.Predicate;
+        BindContext? innerCtx = null;
         if (boundPredicate != null && sub.InnerParameterName != null)
         {
-            // Create a child context for the inner entity
-            var innerColumnLookup = BuildColumnLookup(targetEntity);
-            var innerCtx = new BindContext(
-                targetEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
-                ctx.JoinedEntities, ctx.TableAliases, ctx.EntityLookup);
-            innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
+            // For through-navigations, bind predicate in the target entity context
+            var predicateEntity = throughTargetEntity ?? targetEntity;
+            var innerColumnLookup = BuildColumnLookup(predicateEntity);
 
             // Override: inner parameter columns should be qualified with the subquery alias
             // We create a custom table aliases map for the inner context
-            var innerAliases = new Dictionary<string, string>(StringComparer.Ordinal)
+            var innerAliases = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            if (throughTargetEntity != null)
             {
-                [sub.InnerParameterName] = alias
-            };
+                // For HasManyThrough: predicate columns resolve on the implicit join alias
+                // We'll set the alias after creating the implicit join below
+                innerAliases[sub.InnerParameterName] = alias; // temporary; will be overridden
+            }
+            else
+            {
+                innerAliases[sub.InnerParameterName] = alias;
+            }
+
             // Also add outer aliases so outer refs resolve correctly
             if (ctx.TableAliases != null)
             {
@@ -403,15 +479,93 @@ internal static class SqlExprBinder
                 innerJoined[sub.OuterParameterName] = ctx.PrimaryEntity;
 
             innerCtx = new BindContext(
-                targetEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
+                predicateEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
                 innerJoined, innerAliases, ctx.EntityLookup);
             innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
+
+            // For HasManyThrough: add implicit join from junction to target
+            if (throughTargetEntity != null)
+            {
+                // Find the One<T> navigation on the junction entity (targetEntity is the junction)
+                SingleNavigationInfo? oneNav = null;
+                foreach (var sn in targetEntity.SingleNavigations)
+                {
+                    if (sn.PropertyName == throughNav!.TargetNavigationName)
+                    {
+                        oneNav = sn;
+                        break;
+                    }
+                }
+
+                if (oneNav != null)
+                {
+                    // Resolve FK on junction → PK on target
+                    string? junctionFkCol = null;
+                    foreach (var col in targetEntity.Columns)
+                    {
+                        if (col.PropertyName == oneNav.ForeignKeyPropertyName)
+                        {
+                            junctionFkCol = col.ColumnName;
+                            break;
+                        }
+                    }
+                    if (junctionFkCol == null) junctionFkCol = oneNav.ForeignKeyPropertyName;
+
+                    string? targetPkCol = null;
+                    foreach (var col in throughTargetEntity.Columns)
+                    {
+                        if (col.Kind == Quarry.Shared.Migration.ColumnKind.PrimaryKey)
+                        {
+                            targetPkCol = col.ColumnName;
+                            break;
+                        }
+                    }
+
+                    if (targetPkCol != null)
+                    {
+                        var joinAlias = $"j{innerCtx.ImplicitJoinAliasCounter++}";
+                        var joinKind = oneNav.IsNullableFk ? JoinClauseKind.Left : JoinClauseKind.Inner;
+                        innerCtx.ImplicitJoins.Add(new ImplicitJoinInfo(
+                            sourceAlias: alias,
+                            fkColumnName: junctionFkCol,
+                            fkColumnQuoted: QuoteIdentifier(junctionFkCol, ctx.Dialect),
+                            targetTableName: throughTargetEntity.TableName,
+                            targetTableQuoted: QuoteIdentifier(throughTargetEntity.TableName, ctx.Dialect),
+                            targetSchemaQuoted: null,
+                            targetAlias: joinAlias,
+                            targetPkColumnQuoted: QuoteIdentifier(targetPkCol, ctx.Dialect),
+                            joinKind: joinKind,
+                            targetPkColumnName: targetPkCol));
+
+                        // Override the predicate's table alias to the implicit join alias
+                        innerAliases[sub.InnerParameterName] = joinAlias;
+
+                        // Rebuild context with updated aliases
+                        innerCtx = new BindContext(
+                            predicateEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
+                            innerJoined, innerAliases, ctx.EntityLookup);
+                        innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
+                        // Re-add the implicit join to the new context
+                        innerCtx.ImplicitJoins.Add(new ImplicitJoinInfo(
+                            sourceAlias: alias,
+                            fkColumnName: junctionFkCol,
+                            fkColumnQuoted: QuoteIdentifier(junctionFkCol, ctx.Dialect),
+                            targetTableName: throughTargetEntity.TableName,
+                            targetTableQuoted: QuoteIdentifier(throughTargetEntity.TableName, ctx.Dialect),
+                            targetSchemaQuoted: null,
+                            targetAlias: joinAlias,
+                            targetPkColumnQuoted: QuoteIdentifier(targetPkCol, ctx.Dialect),
+                            joinKind: joinKind,
+                            targetPkColumnName: targetPkCol));
+                    }
+                }
+            }
 
             boundPredicate = BindExpr(boundPredicate, innerCtx, false);
             ctx.SubqueryAliasCounter = innerCtx.SubqueryAliasCounter;
         }
 
-        return new SubqueryExpr(
+        var resolved = new SubqueryExpr(
             sub.OuterParameterName,
             sub.NavigationPropertyName,
             sub.SubqueryKind,
@@ -420,6 +574,142 @@ internal static class SqlExprBinder
             innerTableQuoted,
             innerAliasQuoted,
             correlationSql);
+
+        // Propagate implicit joins from subquery predicate binding
+        if (innerCtx != null && innerCtx.ImplicitJoins.Count > 0)
+        {
+            resolved = resolved.WithImplicitJoins(innerCtx.ImplicitJoins);
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Resolves a NavigationAccessExpr by looking up One&lt;T&gt; navigation metadata,
+    /// registering implicit joins, and producing a ResolvedColumnExpr.
+    /// </summary>
+    private static SqlExpr BindNavigationAccess(NavigationAccessExpr navAccess, BindContext ctx, bool inBooleanContext)
+    {
+        if (ctx.EntityLookup == null)
+            return new SqlRawExpr($"/* unresolved navigation: no entity lookup */");
+
+        // Determine the starting entity and alias
+        EntityInfo? currentEntity = null;
+        string? currentAlias = null;
+
+        if (navAccess.SourceParameterName == ctx.LambdaParameterName)
+        {
+            currentEntity = ctx.PrimaryEntity;
+            if (ctx.TableAliases != null && ctx.TableAliases.TryGetValue(navAccess.SourceParameterName, out var a))
+                currentAlias = a;
+            else
+                // Always use "t0" for the primary table since the assembler will alias it as "t0"
+                // when implicit joins are present (and navigation access always creates implicit joins).
+                currentAlias = "t0";
+        }
+        else if (ctx.JoinedEntities != null && ctx.JoinedEntities.TryGetValue(navAccess.SourceParameterName, out var je))
+        {
+            currentEntity = je;
+            if (ctx.TableAliases != null && ctx.TableAliases.TryGetValue(navAccess.SourceParameterName, out var ja))
+                currentAlias = ja;
+            else
+                currentAlias = je.TableName;
+        }
+
+        if (currentEntity == null || currentAlias == null)
+            return new SqlRawExpr($"/* unresolved navigation: unknown parameter '{navAccess.SourceParameterName}' */");
+
+        // Process each navigation hop
+        foreach (var hopName in navAccess.NavigationHops)
+        {
+            // Look up SingleNavigationInfo on the current entity
+            SingleNavigationInfo? singleNav = null;
+            foreach (var sn in currentEntity.SingleNavigations)
+            {
+                if (sn.PropertyName == hopName)
+                {
+                    singleNav = sn;
+                    break;
+                }
+            }
+
+            if (singleNav == null)
+                return new SqlRawExpr($"/* unresolved navigation: '{hopName}' is not a One<T> navigation on '{currentEntity.EntityName}' */");
+
+            // Look up the target entity
+            if (!ctx.EntityLookup.TryGetValue(singleNav.TargetEntityName, out var targetEntity))
+                return new SqlRawExpr($"/* unresolved navigation: target entity '{singleNav.TargetEntityName}' not found */");
+
+            // Resolve FK column name
+            string? fkColumnName = null;
+            foreach (var col in currentEntity.Columns)
+            {
+                if (col.PropertyName == singleNav.ForeignKeyPropertyName)
+                {
+                    fkColumnName = col.ColumnName;
+                    break;
+                }
+            }
+            if (fkColumnName == null) fkColumnName = singleNav.ForeignKeyPropertyName;
+
+            // Resolve PK column name on target entity
+            string? pkColumnName = null;
+            foreach (var col in targetEntity.Columns)
+            {
+                if (col.Kind == Quarry.Shared.Migration.ColumnKind.PrimaryKey)
+                {
+                    pkColumnName = col.ColumnName;
+                    break;
+                }
+            }
+            if (pkColumnName == null)
+                return new SqlRawExpr($"/* unresolved navigation: no PK on '{targetEntity.EntityName}' */");
+
+            // Deduplication check
+            var dedupKey = (currentAlias, fkColumnName, singleNav.TargetEntityName);
+            if (!ctx.ImplicitJoinAliases.TryGetValue(dedupKey, out var joinAlias))
+            {
+                // Allocate a new implicit join
+                joinAlias = $"j{ctx.ImplicitJoinAliasCounter++}";
+                ctx.ImplicitJoinAliases[dedupKey] = joinAlias;
+
+                var joinKind = singleNav.IsNullableFk ? JoinClauseKind.Left : JoinClauseKind.Inner;
+                ctx.ImplicitJoins.Add(new ImplicitJoinInfo(
+                    sourceAlias: currentAlias,
+                    fkColumnName: fkColumnName,
+                    fkColumnQuoted: QuoteIdentifier(fkColumnName, ctx.Dialect),
+                    targetTableName: targetEntity.TableName,
+                    targetTableQuoted: QuoteIdentifier(targetEntity.TableName, ctx.Dialect),
+                    targetSchemaQuoted: null,
+                    targetAlias: joinAlias,
+                    targetPkColumnQuoted: QuoteIdentifier(pkColumnName, ctx.Dialect),
+                    joinKind: joinKind,
+                    targetPkColumnName: pkColumnName));
+            }
+
+            // Advance to the target entity for the next hop
+            currentEntity = targetEntity;
+            currentAlias = joinAlias;
+        }
+
+        // Resolve the final property on the target entity
+        var finalPropName = navAccess.FinalPropertyName;
+        var finalColumnLookup = BuildColumnLookup(currentEntity);
+        if (!finalColumnLookup.TryGetValue(finalPropName, out var finalColumn))
+            return new SqlRawExpr($"/* unresolved column: '{finalPropName}' on '{currentEntity.EntityName}' */");
+
+        var quotedColumn = QuoteIdentifier(finalColumn.ColumnName, ctx.Dialect);
+        var tableQualifier = QuoteIdentifier(currentAlias, ctx.Dialect);
+        var resolvedExpr = new ResolvedColumnExpr($"{tableQualifier}.{quotedColumn}");
+
+        // Boolean context wrapping
+        if (inBooleanContext && finalColumn.ClrType == "bool")
+        {
+            var boolValue = FormatBoolean(true, ctx.Dialect);
+            return new ResolvedColumnExpr($"{tableQualifier}.{quotedColumn} = {boolValue}");
+        }
+
+        return resolvedExpr;
     }
 
     private static string GetOuterQualifier(string outerParamName, BindContext ctx)

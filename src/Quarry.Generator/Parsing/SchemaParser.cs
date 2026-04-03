@@ -107,6 +107,8 @@ internal static class SchemaParser
         // Parse columns, navigations, indexes, and composite keys
         var columns = new List<ColumnInfo>();
         var navigations = new List<NavigationInfo>();
+        var singleNavigations = new List<SingleNavigationInfo>();
+        var throughNavigations = new List<ThroughNavigationInfo>();
         var indexes = new List<IndexInfo>();
         List<string>? compositeKeyColumns = null;
 
@@ -158,6 +160,29 @@ internal static class SchemaParser
             }
         }
 
+        // Second pass: parse One<T> and HasManyThrough navigations (requires columns to be populated)
+        foreach (var member in classSyntax.Members)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var property = member as PropertyDeclarationSyntax;
+            if (property == null)
+                continue;
+
+            var propertySymbol = semanticModel.GetDeclaredSymbol(property) as IPropertySymbol;
+            if (propertySymbol == null || propertySymbol.IsStatic)
+                continue;
+
+            if (TryParseSingleNavigation(property, propertySymbol, columns, out var singleNav) && singleNav != null)
+            {
+                singleNavigations.Add(singleNav);
+            }
+            else if (TryParseThroughNavigation(property, propertySymbol, out var throughNav) && throughNav != null)
+            {
+                throughNavigations.Add(throughNav);
+            }
+        }
+
         var namespaceName = schemaSymbol.ContainingNamespace.IsGlobalNamespace
             ? string.Empty
             : schemaSymbol.ContainingNamespace.ToDisplayString();
@@ -177,7 +202,9 @@ internal static class SchemaParser
             location: classSyntax.GetLocation(),
             customEntityReaderClass: entityReaderResolution is { IsValid: true } ? entityReaderResolution.ReaderClassFqn : null,
             invalidEntityReaderClass: entityReaderResolution is { IsValid: false } ? entityReaderResolution.ReaderClassFqn : null,
-            compositeKeyColumns: compositeKeyColumns);
+            compositeKeyColumns: compositeKeyColumns,
+            singleNavigations: singleNavigations,
+            throughNavigations: throughNavigations);
     }
 
     /// <summary>
@@ -889,6 +916,191 @@ internal static class SchemaParser
             foreignKeyPropertyName: fkPropertyName);
 
         return true;
+    }
+
+    /// <summary>
+    /// Tries to parse a singular navigation property (One&lt;T&gt;).
+    /// Requires columns to be populated for FK resolution.
+    /// </summary>
+    private static bool TryParseSingleNavigation(
+        PropertyDeclarationSyntax property,
+        IPropertySymbol propertySymbol,
+        List<ColumnInfo> columns,
+        out SingleNavigationInfo? singleNavigationInfo)
+    {
+        singleNavigationInfo = null;
+
+        var propertyType = propertySymbol.Type;
+        var namedType = propertyType as INamedTypeSymbol;
+        if (namedType == null)
+            return false;
+
+        if (namedType.Name != "One" || !namedType.IsGenericType || namedType.TypeArguments.Length != 1)
+            return false;
+
+        var targetEntityType = namedType.TypeArguments[0];
+        var targetEntityName = NormalizeEntityName(targetEntityType);
+
+        // Determine FK property name: explicit (HasOne) or auto-detect
+        string? fkPropertyName = null;
+
+        // Check for explicit HasOne<T>(nameof(FkColumn))
+        if (property.ExpressionBody != null)
+        {
+            var invocation = property.ExpressionBody.Expression as InvocationExpressionSyntax;
+            if (invocation != null)
+            {
+                var methodName = GetMethodName(invocation);
+                if (methodName == "HasOne" && invocation.ArgumentList.Arguments.Count > 0)
+                {
+                    var arg = invocation.ArgumentList.Arguments[0];
+                    // Handle string literal (nameof() is folded to string constant)
+                    if (arg.Expression is LiteralExpressionSyntax literal)
+                    {
+                        fkPropertyName = literal.Token.ValueText;
+                    }
+                    // Handle unfolded nameof() expression
+                    else if (arg.Expression is InvocationExpressionSyntax nameofExpr
+                             && nameofExpr.Expression is IdentifierNameSyntax { Identifier.Text: "nameof" }
+                             && nameofExpr.ArgumentList.Arguments.Count > 0)
+                    {
+                        var nameofArg = nameofExpr.ArgumentList.Arguments[0].Expression;
+                        if (nameofArg is IdentifierNameSyntax idName)
+                            fkPropertyName = idName.Identifier.Text;
+                    }
+                }
+            }
+        }
+
+        // Auto-detect: scan Ref<T,K> columns for matching target entity
+        if (fkPropertyName == null)
+        {
+            var matchingRefs = columns
+                .Where(c => c.Kind == ColumnKind.ForeignKey && c.ReferencedEntityName == targetEntityName)
+                .ToList();
+
+            if (matchingRefs.Count == 1)
+            {
+                fkPropertyName = matchingRefs[0].PropertyName;
+            }
+            else
+            {
+                // Ambiguous or missing — cannot resolve. Diagnostic will be reported separately.
+                return false;
+            }
+        }
+
+        // Determine FK nullability
+        var fkColumn = columns.FirstOrDefault(c => c.PropertyName == fkPropertyName);
+        var isNullableFk = fkColumn?.IsNullable ?? false;
+
+        singleNavigationInfo = new SingleNavigationInfo(
+            propertyName: propertySymbol.Name,
+            targetEntityName: targetEntityName,
+            foreignKeyPropertyName: fkPropertyName,
+            isNullableFk: isNullableFk);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Tries to parse a HasManyThrough skip-navigation.
+    /// The property type is Many&lt;T&gt; but with a HasManyThrough expression body.
+    /// </summary>
+    private static bool TryParseThroughNavigation(
+        PropertyDeclarationSyntax property,
+        IPropertySymbol propertySymbol,
+        out ThroughNavigationInfo? throughNavigationInfo)
+    {
+        throughNavigationInfo = null;
+
+        // Must be Many<T> type
+        var propertyType = propertySymbol.Type;
+        var namedType = propertyType as INamedTypeSymbol;
+        if (namedType == null || namedType.Name != "Many" || !namedType.IsGenericType || namedType.TypeArguments.Length != 1)
+            return false;
+
+        // Must have HasManyThrough expression body
+        if (property.ExpressionBody == null)
+            return false;
+
+        var invocation = property.ExpressionBody.Expression as InvocationExpressionSyntax;
+        if (invocation == null)
+            return false;
+
+        var methodName = GetMethodName(invocation);
+        if (methodName != "HasManyThrough")
+            return false;
+
+        // Extract type arguments: HasManyThrough<TTarget, TJunction>(...)
+        string? targetEntityName = null;
+        string? junctionEntityName = null;
+        if (invocation.Expression is GenericNameSyntax genericName && genericName.TypeArgumentList.Arguments.Count == 2)
+        {
+            targetEntityName = genericName.TypeArgumentList.Arguments[0] is IdentifierNameSyntax t0
+                ? NormalizeSchemaName(t0.Identifier.Text) : null;
+            junctionEntityName = genericName.TypeArgumentList.Arguments[1] is IdentifierNameSyntax t1
+                ? NormalizeSchemaName(t1.Identifier.Text) : null;
+        }
+        else if (invocation.Expression is MemberAccessExpressionSyntax ma
+                 && ma.Name is GenericNameSyntax gns && gns.TypeArgumentList.Arguments.Count == 2)
+        {
+            targetEntityName = gns.TypeArgumentList.Arguments[0] is IdentifierNameSyntax t0
+                ? NormalizeSchemaName(t0.Identifier.Text) : null;
+            junctionEntityName = gns.TypeArgumentList.Arguments[1] is IdentifierNameSyntax t1
+                ? NormalizeSchemaName(t1.Identifier.Text) : null;
+        }
+
+        if (targetEntityName == null || junctionEntityName == null)
+            return false;
+
+        // Extract the two lambda arguments
+        if (invocation.ArgumentList.Arguments.Count < 2)
+            return false;
+
+        // First arg: junction => junction.UserAddresses (member access on junction nav)
+        string? junctionNavigationName = ExtractLambdaMemberName(invocation.ArgumentList.Arguments[0]);
+
+        // Second arg: through => through.Address (member access on One<T> nav)
+        string? targetNavigationName = ExtractLambdaMemberName(invocation.ArgumentList.Arguments[1]);
+
+        if (junctionNavigationName == null || targetNavigationName == null)
+            return false;
+
+        throughNavigationInfo = new ThroughNavigationInfo(
+            propertyName: propertySymbol.Name,
+            targetEntityName: targetEntityName,
+            junctionEntityName: junctionEntityName,
+            junctionNavigationName: junctionNavigationName,
+            targetNavigationName: targetNavigationName);
+
+        return true;
+    }
+
+    /// <summary>
+    /// Extracts the member name from a lambda expression argument (e.g., x => x.Foo returns "Foo").
+    /// </summary>
+    private static string? ExtractLambdaMemberName(ArgumentSyntax argument)
+    {
+        var lambda = argument.Expression as SimpleLambdaExpressionSyntax;
+        if (lambda == null)
+            return null;
+
+        var memberAccess = lambda.Body as MemberAccessExpressionSyntax;
+        if (memberAccess != null)
+            return memberAccess.Name.Identifier.Text;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Normalizes a schema name by stripping the "Schema" suffix.
+    /// </summary>
+    private static string NormalizeSchemaName(string name)
+    {
+        if (name.EndsWith("Schema", StringComparison.Ordinal))
+            return name.Substring(0, name.Length - 6);
+        return name;
     }
 
     /// <summary>

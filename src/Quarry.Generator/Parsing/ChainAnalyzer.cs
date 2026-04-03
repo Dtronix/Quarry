@@ -376,6 +376,7 @@ internal static class ChainAnalyzer
         var havingExprs = new List<SqlExpr>();
         var setTerms = new List<SetTerm>();
         var joinPlans = new List<JoinPlan>();
+        var implicitJoinInfos = new List<ImplicitJoinInfo>();
         var insertColumns = new List<InsertColumn>();
         var parameters = new List<QueryParameter>();
         var paramGlobalIndex = 0;
@@ -517,6 +518,20 @@ internal static class ChainAnalyzer
                         var joinKind = clause.JoinKind ?? JoinClauseKind.Inner;
                         joinPlans.Add(new JoinPlan(joinKind, joinTable, expr, raw.IsNavigationJoin));
                         break;
+                }
+
+                // Collect implicit joins from One<T> navigation access
+                if (clause.ImplicitJoins != null)
+                {
+                    foreach (var ij in clause.ImplicitJoins)
+                    {
+                        // Dedup across clauses by target alias
+                        var isDuplicate = implicitJoinInfos.Any(existing => existing.TargetAlias == ij.TargetAlias);
+                        if (!isDuplicate)
+                        {
+                            implicitJoinInfos.Add(ij);
+                        }
+                    }
                 }
             }
             else if (kind == InterceptorKind.UpdateSetAction && raw.SetActionAssignments != null)
@@ -737,7 +752,8 @@ internal static class ChainAnalyzer
             possibleMasks: possibleMasks,
             parameters: parameters,
             tier: tier,
-            unmatchedMethodNames: unmatchedMethodNames);
+            unmatchedMethodNames: unmatchedMethodNames,
+            implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.
