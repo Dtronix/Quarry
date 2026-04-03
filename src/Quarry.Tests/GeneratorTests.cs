@@ -72,6 +72,20 @@ public class GeneratorTests
         return (driver.GetRunResult(), diagnostics);
     }
 
+    /// <summary>
+    /// Runs the generator and returns the output compilation (with generated source included).
+    /// </summary>
+    private static CSharpCompilation RunGeneratorAndGetOutputCompilation(CSharpCompilation compilation)
+    {
+        var generator = new QuarryGenerator();
+
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { generator.AsSourceGenerator() });
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        return (CSharpCompilation)outputCompilation;
+    }
+
     [Test]
     public void Generator_WithValidContext_GeneratesEntityClass()
     {
@@ -907,6 +921,86 @@ public static class Queries
             "Should delegate to custom reader's Read() method");
         Assert.That(interceptorsCode, Does.Not.Contain("new User"),
             "Should not generate inline object initializer");
+    }
+
+    #endregion
+
+    #region IQueryBuilder<T> interceptor limitation
+
+    [Test]
+    public void DirectTerminalOnIQueryBuilderT_CompilesWithoutSignatureMismatch()
+    {
+        // Validates that IQueryBuilder<T> execution terminals can be intercepted
+        // by the generator without CS9144 (interceptor signature mismatch).
+        var source = @"
+using System;
+using System.Threading.Tasks;
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+class Service
+{
+    async Task DoWork(TestDbContext db)
+    {
+        // Direct call on IQueryBuilder<T> — no .Prepare() or .Select()
+        var user = await db.Users().Where(u => u.UserId == 1).ExecuteFetchFirstAsync();
+    }
+}
+";
+        // Enable interceptors for the TestApp namespace so Roslyn validates signatures
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest)
+            .WithFeatures(new[] { new KeyValuePair<string, string>("InterceptorsNamespaces", "TestApp") });
+        var syntaxTrees = new[] { CSharpSyntaxTree.ParseText(source, parseOptions) };
+
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var references = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(QuarryCoreAssemblyPath),
+            MetadataReference.CreateFromFile(SystemRuntimeAssemblyPath),
+            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Collections.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.Expressions.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "netstandard.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.ComponentModel.Primitives.dll")),
+        };
+
+        var compilation = CSharpCompilation.Create("TestAssembly", syntaxTrees, references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        var generator = new QuarryGenerator();
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { generator.AsSourceGenerator() },
+            parseOptions: parseOptions);
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        // CS9144 = interceptor signature mismatch. If present, the generator emitted
+        // the wrong parameter type (e.g., IQueryBuilder<User, User> instead of IQueryBuilder<User>).
+        var cs9144 = errors.Where(d => d.Id == "CS9144").ToList();
+
+        Assert.That(cs9144, Is.Empty,
+            "Direct IQueryBuilder<T> terminal produced CS9144 signature mismatch: " +
+            string.Join("; ", cs9144.Select(d => d.GetMessage())));
     }
 
     #endregion

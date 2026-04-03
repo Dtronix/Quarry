@@ -62,6 +62,7 @@ internal static class UsageSiteDiscovery
         ["ExecuteFetchFirstAsync"] = InterceptorKind.ExecuteFetchFirst,
         ["ExecuteFetchFirstOrDefaultAsync"] = InterceptorKind.ExecuteFetchFirstOrDefault,
         ["ExecuteFetchSingleAsync"] = InterceptorKind.ExecuteFetchSingle,
+        ["ExecuteFetchSingleOrDefaultAsync"] = InterceptorKind.ExecuteFetchSingleOrDefault,
         ["ExecuteScalarAsync"] = InterceptorKind.ExecuteScalar,
         ["ExecuteNonQueryAsync"] = InterceptorKind.ExecuteNonQuery,
         ["ToAsyncEnumerable"] = InterceptorKind.ToAsyncEnumerable,
@@ -1320,7 +1321,8 @@ internal static class UsageSiteDiscovery
         return name is "Where" or "OrderBy" or "ThenBy" or "Select" or "GroupBy" or "Having"
             or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
-            or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
+            or "ExecuteFetchSingleAsync" or "ExecuteFetchSingleOrDefaultAsync"
+            or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
             or "ToAsyncEnumerable" or "ToDiagnostics" or "Prepare"
             or "Users" or "Orders" or "Accounts" or "Products" or "Projects";
     }
@@ -1415,7 +1417,8 @@ internal static class UsageSiteDiscovery
     {
         return name is "ToDiagnostics"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
-            or "ExecuteFetchSingleAsync" or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
+            or "ExecuteFetchSingleAsync" or "ExecuteFetchSingleOrDefaultAsync"
+            or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"
             or "ToAsyncEnumerable";
     }
 
@@ -2304,7 +2307,7 @@ internal static class UsageSiteDiscovery
         if (kind is not (InterceptorKind.ExecuteNonQuery or InterceptorKind.ExecuteScalar
             or InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
             or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
-            or InterceptorKind.ToAsyncEnumerable))
+            or InterceptorKind.ExecuteFetchSingleOrDefault or InterceptorKind.ToAsyncEnumerable))
             return null;
 
         // Walk the receiver chain to find the builder root (Update<T>() or Delete<T>())

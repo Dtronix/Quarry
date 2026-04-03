@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Parsing;
@@ -392,18 +393,12 @@ class TestClass
     {
         // Simulates the MepSuite scenario: schema in App.Schemas, context in App.Data,
         // captured variable of generated entity type (error type at generator time).
-        // The fix ensures the entity namespace resolves to the context namespace.
+        // The supplemental compilation adds the generated entity class in the context
+        // namespace, so the semantic model resolves the type correctly.
         var source = @"
 using System;
 using App.Schemas;
 using App.Data;
-
-namespace Quarry
-{
-    [AttributeUsage(AttributeTargets.Class)]
-    public class QuarryContextAttribute : Attribute { }
-    public class QueryBuilder<T> { }
-}
 
 namespace App.Schemas
 {
@@ -412,11 +407,7 @@ namespace App.Schemas
 
 namespace App.Data
 {
-    [Quarry.QuarryContext]
-    public partial class AppDb
-    {
-        public Quarry.QueryBuilder<App.Schemas.FileSchema> Files() => null!;
-    }
+    public partial class AppDb { }
 }
 
 namespace App.Services
@@ -440,7 +431,17 @@ namespace App.Services
         var site = CreateSite("test-entity-ns", lambda);
         var sites = ImmutableArray.Create(site);
 
-        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+        // Build an EntityRegistry with File entity in App.Data context
+        var mods = new ColumnModifiers();
+        var fileEntity = new EntityInfo("File", "FileSchema", "App.Schemas", "files",
+            NamingStyleKind.SnakeCase,
+            new[] { new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
+            Array.Empty<NavigationInfo>(), Array.Empty<IndexInfo>(), Location.None);
+        var contextInfo = new ContextInfo("AppDb", "App.Data", Generators.Sql.SqlDialect.PostgreSQL, null,
+            new[] { fileEntity }, new[] { new EntityMapping("Files", fileEntity) }, Location.None);
+        var entityRegistry = EntityRegistry.Build(ImmutableArray.Create(contextInfo), CancellationToken.None);
+
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, entityRegistry, CancellationToken.None);
 
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
@@ -449,10 +450,10 @@ namespace App.Services
     }
 
     [Test]
-    public void EnrichAll_CapturedEntityVariable_FallsBackToSchemaNamespaceWithoutContext()
+    public void EnrichAll_CapturedEntityVariable_FallsBackToObjectWithoutEntityRegistry()
     {
-        // When no [QuarryContext] class exists, the entity type should fall back
-        // to the schema namespace (the pre-fix behavior).
+        // Without entity registry info, the supplemental compilation cannot include
+        // the generated entity class. The unresolved type falls back to "object".
         var source = @"
 using System;
 using App.Schemas;
@@ -487,8 +488,8 @@ namespace App.Services
 
         Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
         Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("deletedFile"));
-        // Without a context class, falls back to schema namespace
-        Assert.That(result[0].CapturedVariableTypes!["deletedFile"], Is.EqualTo("global::App.Schemas.File"));
+        // Without entity registry, type cannot be resolved — falls back to "object"
+        Assert.That(result[0].CapturedVariableTypes!["deletedFile"], Is.EqualTo("object"));
     }
 
     [Test]
@@ -577,30 +578,12 @@ namespace App
     }
 
     [Test]
-    public void ChainResult_GeneratedAccessor_ResolvesViEntityRegistry()
+    public void ChainResult_GeneratedAccessor_ResolvesViaSupplementalCompilation()
     {
         // Chain root is a GENERATED method (db.Packages() doesn't exist at analysis time).
-        // The EntityRegistry provides column metadata so TryResolveChainResultType can
-        // reconstruct the tuple type from the .Select() projection.
-        var source = @"
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-
-namespace Quarry
-{
-    public interface IQueryBuilder<T> where T : class
-    {
-        IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
-        IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
-    }
-
-    public interface IQueryBuilder<TEntity, TResult> where TEntity : class
-    {
-        Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
-    }
-}
-
+        // The supplemental compilation adds entity classes and context accessor methods
+        // so the semantic model resolves all types natively through IEntityAccessor<T>.
+        var source = ChainInterfaceStub + @"
 namespace App.Data
 {
     public partial class AppDb { }
@@ -629,70 +612,18 @@ namespace App
     }
 }
 ";
-        var syntaxTree = CSharpSyntaxTree.ParseText(source);
-        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
-        var references = new MetadataReference[]
-        {
-            MetadataReference.CreateFromFile(typeof(object).Assembly.Location),
-            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")),
-            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Threading.Tasks.dll")),
-        };
-        var compilation = CSharpCompilation.Create("TestAssembly",
-            new[] { syntaxTree }, references,
-            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
-                .WithNullableContextOptions(NullableContextOptions.Enable));
-
-        var tree = compilation.SyntaxTrees.First();
-        var semanticModel = compilation.GetSemanticModel(tree);
-
-        // Build an EntityRegistry with the Package entity and its columns
-        var mods = new ColumnModifiers();
-        var packageEntity = new EntityInfo(
-            entityName: "Package",
-            schemaClassName: "PackageSchema",
-            schemaNamespace: "App.Schemas",
-            tableName: "packages",
-            namingStyle: NamingStyleKind.SnakeCase,
-            columns: new[]
-            {
-                new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true),
-                new ColumnInfo("Status", "status", "int", "int", false, ColumnKind.Standard, null, mods, isValueType: true),
-                new ColumnInfo("Name", "name", "string", "string", false, ColumnKind.Standard, null, mods),
-            },
-            navigations: Array.Empty<NavigationInfo>(),
-            indexes: Array.Empty<IndexInfo>(),
-            location: Location.None);
-        var contextInfo = new ContextInfo(
-            className: "AppDb",
-            @namespace: "App.Data",
-            dialect: Generators.Sql.SqlDialect.PostgreSQL,
-            schema: null,
-            entities: new[] { packageEntity },
-            entityMappings: new[] { new EntityMapping("Packages", packageEntity) },
-            location: Location.None);
-        var entityRegistry = EntityRegistry.Build(
-            ImmutableArray.Create(contextInfo), CancellationToken.None);
-
-        // Find the capturing lambda
-        var lambda = tree.GetRoot().DescendantNodes()
-            .OfType<LambdaExpressionSyntax>()
-            .Last();
-
-        var dataFlow = semanticModel.AnalyzeDataFlow(lambda)!;
-        Assert.That(dataFlow.Succeeded, Is.True);
-
-        var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(
-            dataFlow, semanticModel, entityRegistry);
+        var registry = BuildTestRegistry();
+        var resolved = ResolveChainCaptures(source, registry);
 
         Assert.That(resolved, Is.Not.Null);
 
-        // fetched: tuple from Select projection, nullable because ExecuteFetchFirstOrDefaultAsync
+        // fetched: tuple from Select projection resolved natively by semantic model.
+        // No "?" suffix: for unconstrained generic TResult?, nullable annotation
+        // doesn't affect value types in ToDisplayString(FullyQualifiedFormat).
         Assert.That(resolved!, Does.ContainKey("fetched"));
-        // Non-nullable: CapturedVariableTypes stores the value-expression type (for carrier fields
-        // and member access). The UnsafeAccessor field type handles nullability separately.
         Assert.That(resolved!["fetched"], Is.EqualTo("(long Id, int Status, string Name)"));
 
-        // derivedName: resolved via second pass from fetched tuple's "Name" element
+        // derivedName: resolved natively by the semantic model via member access on tuple
         Assert.That(resolved!, Does.ContainKey("derivedName"));
         Assert.That(resolved!["derivedName"], Is.EqualTo("string"));
     }
@@ -724,7 +655,8 @@ namespace App
     }
 
     /// <summary>
-    /// Helper: creates a compilation, finds the last lambda, runs CollectCapturedVariableTypes.
+    /// Helper: creates a compilation (with optional supplemental compilation from registry),
+    /// finds the last lambda, runs CollectCapturedVariableTypes.
     /// </summary>
     private static Dictionary<string, string>? ResolveChainCaptures(string source, EntityRegistry? registry = null)
     {
@@ -740,11 +672,29 @@ namespace App
             },
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
                 .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        // Build supplemental compilation from registry (mirrors DisplayClassEnricher behavior)
+        if (registry != null)
+        {
+            var parseOptions = compilation.SyntaxTrees.First().Options as CSharpParseOptions;
+            var generatedTrees = new List<SyntaxTree>();
+            foreach (var ctx in registry.AllContexts)
+            {
+                foreach (var entity in ctx.Entities)
+                    generatedTrees.Add(CSharpSyntaxTree.ParseText(
+                        EntityCodeGenerator.GenerateEntityClass(entity, ctx.Namespace), parseOptions));
+                generatedTrees.Add(CSharpSyntaxTree.ParseText(
+                    ContextCodeGenerator.GenerateContextClass(ctx), parseOptions));
+            }
+            if (generatedTrees.Count > 0)
+                compilation = (CSharpCompilation)compilation.AddSyntaxTrees(generatedTrees);
+        }
+
         var tree = compilation.SyntaxTrees.First();
         var sm = compilation.GetSemanticModel(tree);
         var lambda = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().Last();
         var dataFlow = sm.AnalyzeDataFlow(lambda)!;
-        return DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, sm, registry);
+        return DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, sm);
     }
 
     private const string ChainInterfaceStub = @"
@@ -754,16 +704,26 @@ using System.Threading;
 using System.Threading.Tasks;
 namespace Quarry
 {
+    public interface IEntityAccessor<T> where T : class
+    {
+        IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
+        IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
+    }
     public interface IQueryBuilder<T> where T : class
     {
         IQueryBuilder<T> Where(Func<T, bool> predicate) => throw new NotImplementedException();
         IQueryBuilder<T, TResult> Select<TResult>(Func<T, TResult> selector) => throw new NotImplementedException();
+        Task<List<T>> ExecuteFetchAllAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<T> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
     public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     {
         Task<List<TResult>> ExecuteFetchAllAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult> ExecuteFetchFirstAsync(CancellationToken ct = default) => throw new NotImplementedException();
         Task<TResult?> ExecuteFetchFirstOrDefaultAsync(CancellationToken ct = default) => throw new NotImplementedException();
+        Task<TResult> ExecuteFetchSingleAsync(CancellationToken ct = default) => throw new NotImplementedException();
     }
 }
 ";
@@ -850,6 +810,9 @@ namespace App
     [Test]
     public void ChainResult_NoSelect_ResolvesEntityType()
     {
+        // Without a Select clause, IQueryBuilder<T> execution terminals return
+        // the entity type T directly. The supplemental compilation adds the
+        // generated entity class so the semantic model resolves T natively.
         var registry = BuildTestRegistry();
         var source = ChainInterfaceStub + @"
 namespace App.Data { public partial class AppDb { } }
@@ -865,6 +828,86 @@ namespace App
             var pkg = await db.Packages()
                 .Where(p => p.Id == 1)
                 .ExecuteFetchFirstAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchAllAsync_ResolvesEntityList()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var all = await db.Packages()
+                .Where(p => p.Id > 0)
+                .ExecuteFetchAllAsync();
+            Func<bool> c = () => all != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved!["all"], Is.EqualTo("global::System.Collections.Generic.List<global::App.Data.Package>"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchFirstOrDefaultAsync_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .ExecuteFetchFirstOrDefaultAsync();
+            Func<bool> c = () => pkg != null;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        // Package is a class (reference type), so T? with unconstrained generic
+        // is a nullable annotation — ToDisplayString omits the "?" suffix.
+        Assert.That(resolved!["pkg"], Is.EqualTo("global::App.Data.Package"));
+    }
+
+    [Test]
+    public void ChainResult_NoSelect_ExecuteFetchSingleAsync_ResolvesEntityType()
+    {
+        var registry = BuildTestRegistry();
+        var source = ChainInterfaceStub + @"
+namespace App.Data { public partial class AppDb { } }
+namespace App
+{
+    using App.Data;
+    class S
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var pkg = await db.Packages()
+                .Where(p => p.Id == 1)
+                .ExecuteFetchSingleAsync();
             Func<bool> c = () => pkg != null;
         }
     }
@@ -903,37 +946,23 @@ namespace App
     [Test]
     public void ChainResult_MultiContext_DisambiguatesByImportedNamespace()
     {
-        // Two contexts reference UserSchema, but the source file imports Quarry.Tests.Samples
-        // (where TestDbContext lives), not Quarry.Tests.Samples.My (where MyDb lives).
+        // Two contexts in different namespaces both define a User entity.
+        // The source file imports Quarry.Tests.Samples (where TestDbContext lives),
+        // not Quarry.Tests.Samples.My (where MyDb lives).
+        // The supplemental compilation adds User entity to both namespaces;
+        // Roslyn resolves the unqualified "User" to the imported namespace.
         var source = @"
 using System;
 using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Samples
 {
-    public class UserSchema { }
-
-    [Quarry.QuarryContext]
-    public partial class TestDbContext
-    {
-        public Quarry.QueryBuilder<UserSchema> Users() => null!;
-    }
+    public partial class TestDbContext { }
 }
 
 namespace Quarry.Tests.Samples.My
 {
-    [Quarry.QuarryContext]
-    public partial class MyDb
-    {
-        public Quarry.QueryBuilder<Quarry.Tests.Samples.UserSchema> Users() => null!;
-    }
-}
-
-namespace Quarry
-{
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public class QuarryContextAttribute : System.Attribute { }
-    public class QueryBuilder<T> { }
+    public partial class MyDb { }
 }
 
 namespace App
@@ -950,10 +979,67 @@ namespace App
 ";
         var compilation = CreateCompilation(source);
         var tree = compilation.SyntaxTrees.First();
-        var sm = compilation.GetSemanticModel(tree);
-        var lambda = tree.GetRoot().DescendantNodes().OfType<LambdaExpressionSyntax>().Last();
-        var dataFlow = sm.AnalyzeDataFlow(lambda)!;
-        var resolved = DisplayClassNameResolver.CollectCapturedVariableTypes(dataFlow, sm);
-        Assert.That(resolved!["u"], Is.EqualTo("global::Quarry.Tests.Samples.User"));
+
+        var lambda = tree.GetRoot().DescendantNodes()
+            .OfType<LambdaExpressionSyntax>().Last();
+        var site = CreateSite("test-multi-ctx", lambda);
+        var sites = ImmutableArray.Create(site);
+
+        // Build entity registry with two contexts that both have a User entity
+        var mods = new ColumnModifiers();
+        var userEntity = new EntityInfo("User", "UserSchema", "Quarry.Tests.Schemas", "users",
+            NamingStyleKind.SnakeCase,
+            new[] { new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
+            Array.Empty<NavigationInfo>(), Array.Empty<IndexInfo>(), Location.None);
+
+        var ctx1 = new ContextInfo("TestDbContext", "Quarry.Tests.Samples", Generators.Sql.SqlDialect.SQLite, null,
+            new[] { userEntity }, new[] { new EntityMapping("Users", userEntity) }, Location.None);
+        var ctx2 = new ContextInfo("MyDb", "Quarry.Tests.Samples.My", Generators.Sql.SqlDialect.MySQL, null,
+            new[] { userEntity }, new[] { new EntityMapping("Users", userEntity) }, Location.None);
+        var entityRegistry = EntityRegistry.Build(
+            ImmutableArray.Create(ctx1, ctx2), CancellationToken.None);
+
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, entityRegistry, CancellationToken.None);
+
+        Assert.That(result[0].CapturedVariableTypes, Is.Not.Null);
+        Assert.That(result[0].CapturedVariableTypes!, Does.ContainKey("u"));
+        // Resolves to the imported namespace's entity
+        Assert.That(result[0].CapturedVariableTypes!["u"], Is.EqualTo("global::Quarry.Tests.Samples.User"));
+    }
+
+    [Test]
+    public void SupplementalCompilation_GeneratedEntityWithNavigation_ResolvesPropertyTypes()
+    {
+        // Validates that the supplemental compilation resolves column properties
+        // on generated entity classes — including non-trivial types.
+        var registry = BuildTestRegistry(
+            entityName: "Widget",
+            accessorName: "Widgets",
+            contextNamespace: "My.App",
+            ("WidgetId", "int", true),
+            ("Label", "string", false),
+            ("Price", "decimal", true));
+        var source = ChainInterfaceStub + @"
+namespace My.App { public partial class AppDb { } }
+namespace Test
+{
+    using My.App;
+    class Svc
+    {
+        AppDb CreateDb() => throw new NotImplementedException();
+        async Task DoWork()
+        {
+            var db = CreateDb();
+            var item = await db.Widgets()
+                .Select(w => (w.WidgetId, w.Label, w.Price))
+                .ExecuteFetchFirstAsync();
+            Func<bool> c = () => item.WidgetId > 0;
+        }
+    }
+}";
+        var resolved = ResolveChainCaptures(source, registry);
+        Assert.That(resolved, Is.Not.Null);
+        Assert.That(resolved!, Does.ContainKey("item"));
+        Assert.That(resolved!["item"], Is.EqualTo("(int WidgetId, string Label, decimal Price)"));
     }
 }

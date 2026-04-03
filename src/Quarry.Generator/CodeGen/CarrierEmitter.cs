@@ -89,7 +89,7 @@ internal static class CarrierEmitter
         {
             InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
                 or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
-                or InterceptorKind.ToAsyncEnumerable
+                or InterceptorKind.ExecuteFetchSingleOrDefault or InterceptorKind.ToAsyncEnumerable
                 => CanEmitReaderTerminal(chain),
             InterceptorKind.ExecuteScalar
                 => CanEmitScalarTerminal(chain),

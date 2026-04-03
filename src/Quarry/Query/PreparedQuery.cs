@@ -53,6 +53,13 @@ public sealed class PreparedQuery<TResult>
         => throw new NotSupportedException("PreparedQuery methods must be intercepted by the Quarry source generator.");
 
     /// <summary>
+    /// Executes the query and returns exactly one result, or default if no results.
+    /// Throws if more than one result.
+    /// </summary>
+    public Task<TResult?> ExecuteFetchSingleOrDefaultAsync(CancellationToken cancellationToken = default)
+        => throw new NotSupportedException("PreparedQuery methods must be intercepted by the Quarry source generator.");
+
+    /// <summary>
     /// Executes the query and returns the scalar result.
     /// </summary>
     public Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)

@@ -86,6 +86,7 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
     {
         return kind is InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
             or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
+            or InterceptorKind.ExecuteFetchSingleOrDefault
             or InterceptorKind.ExecuteScalar or InterceptorKind.ExecuteNonQuery;
     }
 }

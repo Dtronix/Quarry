@@ -16,17 +16,23 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
 {
     private readonly Dictionary<string, List<EntityRegistryEntry>> _byEntityType;
     private readonly Dictionary<string, EntityInfo> _byEntityName;
-    private readonly Dictionary<string, EntityInfo> _byAccessorName;
+    private readonly ImmutableArray<ContextInfo> _allContexts;
 
     public EntityRegistry(
         Dictionary<string, List<EntityRegistryEntry>> byEntityType,
         Dictionary<string, EntityInfo> byEntityName,
-        Dictionary<string, EntityInfo> byAccessorName)
+        ImmutableArray<ContextInfo> allContexts)
     {
         _byEntityType = byEntityType;
         _byEntityName = byEntityName;
-        _byAccessorName = byAccessorName;
+        _allContexts = allContexts;
     }
+
+    /// <summary>
+    /// All discovered contexts. Used to build supplemental compilations
+    /// that include generated entity and context source.
+    /// </summary>
+    public ImmutableArray<ContextInfo> AllContexts => _allContexts;
 
     /// <summary>
     /// Entity name → EntityInfo lookup for subquery resolution in the semantic translation path.
@@ -40,18 +46,10 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     {
         var byEntityType = new Dictionary<string, List<EntityRegistryEntry>>(StringComparer.Ordinal);
         var byEntityName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-        var byAccessorName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
 
         foreach (var context in contexts)
         {
             ct.ThrowIfCancellationRequested();
-
-            // Index accessor names from EntityMappings (e.g., "Packages" → Package entity)
-            foreach (var mapping in context.EntityMappings)
-            {
-                if (!byAccessorName.ContainsKey(mapping.PropertyName))
-                    byAccessorName[mapping.PropertyName] = mapping.Entity;
-            }
 
             foreach (var entity in context.Entities)
             {
@@ -86,7 +84,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             }
         }
 
-        return new EntityRegistry(byEntityType, byEntityName, byAccessorName);
+        return new EntityRegistry(byEntityType, byEntityName, contexts);
     }
 
     private static void AddToIndex(
@@ -187,37 +185,6 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     }
 
     /// <summary>
-    /// Gets entity info by entity name (for subquery resolution).
-    /// </summary>
-    public EntityInfo? GetByName(string entityName)
-    {
-        _byEntityName.TryGetValue(entityName, out var entity);
-        return entity;
-    }
-
-    /// <summary>
-    /// Gets entity info by context accessor method name (e.g., "Packages" → Package entity).
-    /// </summary>
-    public EntityInfo? GetByAccessorName(string accessorName)
-    {
-        _byAccessorName.TryGetValue(accessorName, out var entity);
-        return entity;
-    }
-
-    /// <summary>
-    /// Gets all entity entries as a flat dictionary (for backward compatibility with existing code).
-    /// </summary>
-    public Dictionary<string, EntityInfo> ToEntityLookup()
-    {
-        var result = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-        foreach (var kvp in _byEntityName)
-        {
-            result[kvp.Key] = kvp.Value;
-        }
-        return result;
-    }
-
-    /// <summary>
     /// Looks up entries with fallback resolution: direct → strip global:: → short name.
     /// </summary>
     private List<EntityRegistryEntry>? GetEntries(string typeName)
@@ -242,11 +209,17 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         if (_byEntityName.Count != other._byEntityName.Count) return false;
+        if (_allContexts.Length != other._allContexts.Length) return false;
         foreach (var kvp in _byEntityName)
         {
             if (!other._byEntityName.TryGetValue(kvp.Key, out var otherEntity))
                 return false;
             if (!kvp.Value.Equals(otherEntity))
+                return false;
+        }
+        for (int i = 0; i < _allContexts.Length; i++)
+        {
+            if (!_allContexts[i].Equals(other._allContexts[i]))
                 return false;
         }
         return true;
@@ -256,7 +229,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(_byEntityName.Count);
+        return HashCode.Combine(_byEntityName.Count, _allContexts.Length);
     }
 }
 
