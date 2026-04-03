@@ -13,6 +13,24 @@ namespace Quarry.Generators.IR;
 /// </summary>
 internal static class SqlExprParser
 {
+    /// <summary>
+    /// Known .NET member names that should NOT be treated as One&lt;T&gt; navigation hops.
+    /// When a chained member access like o.UserName.Length appears, "Length" is a .NET
+    /// string property, not a navigation hop. The parser has no semantic model access,
+    /// so this heuristic prevents false-positive NavigationAccessExpr emissions.
+    /// </summary>
+    private static readonly HashSet<string> KnownDotNetMembers = new(StringComparer.Ordinal)
+    {
+        // String members
+        "Length", "Chars",
+        // DateTime/DateOnly/TimeOnly members
+        "Year", "Month", "Day", "Hour", "Minute", "Second", "Millisecond",
+        "Date", "TimeOfDay", "DayOfWeek", "DayOfYear", "Ticks",
+        // Nullable members (already handled but for safety)
+        "Value", "HasValue",
+        // Common .NET members
+        "MaxValue", "MinValue", "Empty",
+    };
     private const int MaxPathDepth = 10;
 
     private sealed class ParseContext
@@ -167,6 +185,13 @@ internal static class SqlExprParser
                     return new IsNullCheckExpr(propAccess, isNegated: true);
                 }
 
+                // Check if this is a known .NET member (not a navigation)
+                if (KnownDotNetMembers.Contains(propAccess.PropertyName) ||
+                    KnownDotNetMembers.Contains(memberName))
+                {
+                    return new SqlRawExpr(memberAccess.ToString());
+                }
+
                 // Potential One<T> navigation access: o.User.UserName
                 // propAccess is ColumnRefExpr("o", "User"), memberName is "UserName"
                 // The binder will validate whether "User" is actually a One<T> navigation.
@@ -192,6 +217,12 @@ internal static class SqlExprParser
                     return navAccess;
                 if (memberName == "HasValue")
                     return new IsNullCheckExpr(navAccess, isNegated: true);
+
+                // If the new member is a known .NET member, treat the whole chain as raw SQL
+                if (KnownDotNetMembers.Contains(memberName))
+                {
+                    return new SqlRawExpr(memberAccess.ToString());
+                }
 
                 // Extend the chain: add the previous FinalPropertyName as a hop
                 var extendedHops = new List<string>(navAccess.NavigationHops.Count + 1);
