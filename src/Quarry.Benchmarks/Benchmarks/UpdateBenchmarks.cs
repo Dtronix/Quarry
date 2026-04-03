@@ -74,10 +74,26 @@ public class UpdateBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_UpdateSingleRow()
     {
+        // Uses field _targetId → parameterized WHERE. SET value "UpdatedUser" is a
+        // constant that the generator inlines. This is the apples-to-apples comparison
+        // for the WHERE clause (matches Raw's parameterized @id).
         return await QuarryDb.Users()
             .Update()
             .Set(u => u.UserName = "UpdatedUser")
             .Where(u => u.UserId == _targetId)
+            .ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task<int> Quarry_UpdateSingleRow_Inlined()
+    {
+        // Constant 1 is inlined into SQL by the source generator (no DbParameter for
+        // WHERE). Demonstrates Quarry's compile-time constant elimination — fewer
+        // allocations than Raw/Dapper which must always parameterize.
+        return await QuarryDb.Users()
+            .Update()
+            .Set(u => u.UserName = "UpdatedUser")
+            .Where(u => u.UserId == 1)
             .ExecuteNonQueryAsync();
     }
 
