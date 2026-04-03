@@ -348,6 +348,8 @@ public class RawSqlInterceptorTests
     [Test]
     public void RawSqlAsync_DtoWithZeroProperties_OmitsSwitch()
     {
+        // When T is a DTO with no public settable properties (e.g., readonly DTO),
+        // the emitter should emit a simple one-liner since there's nothing to read.
         var rawSqlTypeInfo = new RawSqlTypeInfo(
             "EmptyDto",
             RawSqlTypeKind.Dto,
@@ -362,6 +364,69 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("static _ => new EmptyDto()"));
         Assert.That(result, Does.Not.Contain("switch (r.GetName(i))"));
         Assert.That(result, Does.Not.Contain("case \""));
+    }
+
+    #endregion
+
+    #region Entity Enrichment Tests
+
+    [Test]
+    public void RawSqlAsync_EntityKind_WithProperties_GeneratesTypedReader()
+    {
+        // When entity enrichment populates properties from schema metadata,
+        // the emitter should generate a proper switch-based reader delegate.
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "User",
+            RawSqlTypeKind.Entity,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false),
+                new RawSqlPropertyInfo("Email", "string", "GetString", true),
+                new RawSqlPropertyInfo("IsActive", "bool", "GetBoolean", false),
+                new RawSqlPropertyInfo("CreatedAt", "DateTime", "GetDateTime", false),
+                new RawSqlPropertyInfo("LastLogin", "DateTime", "GetDateTime", true),
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "User", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        Assert.That(result, Does.Contain("var item = new User()"));
+        Assert.That(result, Does.Contain("switch (r.GetName(i))"));
+        Assert.That(result, Does.Contain("case \"UserId\": item.UserId = r.GetInt32(i); break;"));
+        Assert.That(result, Does.Contain("case \"UserName\": item.UserName = r.GetString(i); break;"));
+        Assert.That(result, Does.Contain("case \"Email\": item.Email = r.GetString(i); break;"));
+        Assert.That(result, Does.Contain("case \"IsActive\": item.IsActive = r.GetBoolean(i); break;"));
+        Assert.That(result, Does.Contain("case \"CreatedAt\": item.CreatedAt = r.GetDateTime(i); break;"));
+        Assert.That(result, Does.Contain("case \"LastLogin\": item.LastLogin = r.GetDateTime(i); break;"));
+        Assert.That(result, Does.Not.Contain("static _ => new User()"));
+    }
+
+    [Test]
+    public void RawSqlAsync_EntityKind_WithForeignKeyAndEnum_GeneratesSpecializedReaders()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "Order",
+            RawSqlTypeKind.Entity,
+            new[]
+            {
+                new RawSqlPropertyInfo("OrderId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false,
+                    isForeignKey: true, referencedEntityName: "User"),
+                new RawSqlPropertyInfo("Priority", "int", "GetInt32", false,
+                    isEnum: true, fullClrType: "OrderPriority"),
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "Order", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        Assert.That(result, Does.Contain("case \"OrderId\": item.OrderId = r.GetInt32(i); break;"));
+        Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(i))"));
+        Assert.That(result, Does.Contain("(OrderPriority)r.GetInt32(i)"));
     }
 
     #endregion
