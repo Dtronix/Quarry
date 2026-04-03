@@ -32,6 +32,11 @@
     <InternalsVisibleTo Include="Quarry.Tests" />
   </ItemGroup>
 
+  <!-- Ship build props so CompilerVisibleProperty items are registered for consumers -->
+  <ItemGroup>
+    <None Include="build\**" Pack="true" PackagePath="build\" />
+  </ItemGroup>
+
   <!-- Shared code (compiled into this assembly) -->
   <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
   <ItemGroup>

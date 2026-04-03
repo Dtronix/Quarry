@@ -505,6 +505,22 @@ internal static class DiagnosticDescriptors
         description: "A .Prepare() call that produces a PreparedQuery with no terminal invocations is dead code. " +
                      "Either invoke at least one terminal on the prepared variable, or remove the .Prepare() call.");
 
+    // ─── Manifest diagnostics ──────────────────────────────────────────
+
+    /// <summary>
+    /// QRY040: SQL manifest write failed.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor ManifestWriteFailed = new(
+        id: "QRY040",
+        title: "SQL manifest write failed",
+        messageFormat: "Failed to write SQL manifest to '{0}': {1}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "The Quarry SQL manifest file could not be written to the specified path. " +
+                     "Check that the QuarrySqlManifestPath directory exists and is writable.");
+
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 
     /// <summary>
