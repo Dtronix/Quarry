@@ -808,18 +808,27 @@ internal static class CallSiteTranslator
                             col.PropertyName == kvp.Key)
                         {
                             elementType = col.FullClrType ?? col.ClrType;
+                            // ColumnInfo stores nullable value types without the '?' suffix
+                            // (e.g., Col<long?> → ClrType="long", IsNullable=true).
+                            // Reconstruct the nullable type so the carrier field/cast uses
+                            // IReadOnlyList<long?> instead of IReadOnlyList<long>.
+                            if (col.IsNullable && col.IsValueType && !elementType.EndsWith("?"))
+                                elementType += "?";
                             break;
                         }
                     }
                 }
-                // Apply element type to collection parameters in the values list
+                // Apply element type to collection parameters that don't already have one.
+                // Skip parameters where ExtractElementType already resolved the type from
+                // the collection's own CLR type — that is more accurate than column inference.
                 if (elementType != null)
                 {
                     foreach (var val in inExpr.Values)
                     {
                         if (val is ParamSlotExpr param && param.IsCollection)
                         {
-                            if (param.LocalIndex < parameters.Count && parameters[param.LocalIndex].IsCollection)
+                            if (param.LocalIndex < parameters.Count && parameters[param.LocalIndex].IsCollection
+                                && parameters[param.LocalIndex].CollectionElementType == null)
                             {
                                 parameters[param.LocalIndex].CollectionElementType = elementType;
                             }
