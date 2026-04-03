@@ -264,5 +264,17 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 (1, 'Launch', '2024-06-15 10:30:00+00:00', NULL),
                 (2, 'Review', '2024-07-01 14:00:00+02:00', '2024-06-28 09:00:00+02:00')
             """);
+
+        await SqlAsync("""
+            INSERT INTO "warehouses" ("WarehouseId", "WarehouseName", "Region") VALUES
+                (1, 'West Coast Hub', 'US'),
+                (2, 'EU Central', 'EU')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "shipments" ("ShipmentId", "OrderId", "WarehouseId", "ShipDate") VALUES
+                (1, 1, 1, '2024-06-02 00:00:00'),
+                (2, 3, 2, '2024-07-02 00:00:00')
+            """);
     }
 }
