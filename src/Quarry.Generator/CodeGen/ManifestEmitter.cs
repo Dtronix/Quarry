@@ -138,9 +138,11 @@ internal static class ManifestEmitter
             sb.AppendLine();
             sb.AppendLine($"## {contextGroup.Key}");
 
-            // Sort plans by chain shape for stability
+            // Sort plans by chain shape for stability, deduplicate by (shape, SQL)
             var sortedPlans = contextGroup
                 .Select(p => (p.Plan, Shape: BuildChainShape(p.Plan)))
+                .GroupBy(p => (p.Shape, Sql: GetBaseSql(p.Plan)))
+                .Select(g => g.First())
                 .OrderBy(p => p.Shape, StringComparer.Ordinal)
                 .ThenBy(p => GetBaseSql(p.Plan), StringComparer.Ordinal)
                 .ToList();
@@ -219,7 +221,7 @@ internal static class ManifestEmitter
         }
         sb.AppendLine("```");
 
-        // Parameter table
+        // Parameter table — either from Plan.Parameters (clause-sourced) or InsertInfo.Columns (entity-sourced)
         var parameters = plan.ChainParameters;
         if (parameters.Count > 0)
         {
@@ -259,6 +261,24 @@ internal static class ManifestEmitter
                 {
                     sb.AppendLine($"| {paramName} | {typeDisplay} |");
                 }
+            }
+        }
+        else if (plan.InsertInfo != null && plan.InsertInfo.Columns.Count > 0)
+        {
+            // INSERT/BatchInsert parameters come from entity properties, not Plan.Parameters.
+            // Render from InsertInfo.Columns instead.
+            sb.AppendLine();
+            sb.AppendLine("| Parameter | Type |");
+            sb.AppendLine("|-----------|------|");
+
+            for (int idx = 0; idx < plan.InsertInfo.Columns.Count; idx++)
+            {
+                var col = plan.InsertInfo.Columns[idx];
+                var paramName = $"`@p{idx}`";
+                var typeDisplay = FormatClrType(col.FullClrType, isCollection: false, elementTypeName: null);
+                if (col.IsSensitive)
+                    typeDisplay += " `[sensitive]`";
+                sb.AppendLine($"| {paramName} | {typeDisplay} |");
             }
         }
     }

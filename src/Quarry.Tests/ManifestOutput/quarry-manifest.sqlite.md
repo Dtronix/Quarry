@@ -10,6 +10,14 @@
 INSERT INTO "accounts" ("UserId", "AccountName", "Balance", "credit_limit", "IsActive") VALUES (@p0, @p1, @p2, @p3, @p4)
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+| `@p3` | `Quarry.Tests.Samples.Money` |
+| `@p4` | `bool` |
+
 ---
 
 ### Accounts().Insert().Prepare().ToDiagnostics()
@@ -18,6 +26,12 @@ INSERT INTO "accounts" ("UserId", "AccountName", "Balance", "credit_limit", "IsA
 INSERT INTO "accounts" ("UserId", "AccountName", "Balance") VALUES (@p0, @p1, @p2) RETURNING "AccountId"
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+
 ---
 
 ### Accounts().Insert().Prepare().ToDiagnostics()
@@ -25,6 +39,14 @@ INSERT INTO "accounts" ("UserId", "AccountName", "Balance") VALUES (@p0, @p1, @p
 ```sql
 INSERT INTO "accounts" ("UserId", "AccountName", "Balance", "credit_limit", "IsActive") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "AccountId"
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+| `@p3` | `Quarry.Tests.Samples.Money` |
+| `@p4` | `bool` |
 
 ---
 
@@ -90,13 +112,11 @@ SELECT "AccountName", "Balance", "credit_limit" FROM "accounts" WHERE "AccountNa
 INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES (@p0, @p1, @p2)
 ```
 
----
-
-### Events().Insert().ExecuteNonQueryAsync()
-
-```sql
-INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES (@p0, @p1, @p2)
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTimeOffset` |
+| `@p2` | `DateTimeOffset` |
 
 ---
 
@@ -120,23 +140,19 @@ SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE 
 
 ---
 
-### Events().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
 INSERT INTO "order_items" ("OrderId", "ProductName", "Quantity", "UnitPrice", "LineTotal") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "OrderItemId"
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `int` |
+| `@p3` | `decimal` |
+| `@p4` | `decimal` |
 
 ---
 
@@ -203,22 +219,6 @@ SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 1
 ### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
-SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 1
-```
-
----
-
-### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 1
-```
-
----
-
-### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
 SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 2
 ```
 
@@ -246,21 +246,12 @@ DELETE FROM "orders" WHERE "OrderId" = 42
 INSERT INTO "orders" ("UserId", "Total", "Status", "OrderDate") VALUES (@p0, @p1, @p2, @p3) RETURNING "OrderId"
 ```
 
----
-
-### Orders().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "orders" ("UserId", "Total", "Status", "OrderDate") VALUES (@p0, @p1, @p2, @p3) RETURNING "OrderId"
-```
-
----
-
-### Orders().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "orders" ("UserId", "Total", "Status", "OrderDate") VALUES (@p0, @p1, @p2, @p3) RETURNING "OrderId"
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+| `@p2` | `string` |
+| `@p3` | `DateTime` |
 
 ---
 
@@ -269,6 +260,14 @@ INSERT INTO "orders" ("UserId", "Total", "Status", "OrderDate") VALUES (@p0, @p1
 ```sql
 INSERT INTO "orders" ("UserId", "Total", "Status", "Priority", "OrderDate") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "OrderId"
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+| `@p2` | `string` |
+| `@p3` | `Quarry.Tests.Samples.OrderPriority` |
+| `@p4` | `DateTime` |
 
 ---
 
@@ -313,18 +312,6 @@ SELECT "OrderId", "Total", "Status" FROM "orders"
 ---
 
 ### Orders().Select(...).Where(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "OrderId", "Total", "Priority" FROM "orders" WHERE "Priority" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `Quarry.Tests.Samples.OrderPriority` |
-
----
-
-### Orders().Select(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
 SELECT "OrderId", "Total", "Priority" FROM "orders" WHERE "Priority" = @p0
@@ -407,14 +394,6 @@ SELECT "Status", AVG("Total") AS "Item2" FROM "orders" GROUP BY "Status"
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "Status", AVG("Total") AS "Item2" FROM "orders" GROUP BY "Status"
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "Status", COUNT(*) AS "Item2" FROM "orders" GROUP BY "Status"
 ```
 
@@ -432,22 +411,6 @@ SELECT "Status", COUNT(*) AS "Item2", SUM("Total") AS "Item3" FROM "orders" GROU
 
 ```sql
 SELECT "Status", MAX("Total") AS "Item2" FROM "orders" GROUP BY "Status"
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "Status", MAX("Total") AS "Item2" FROM "orders" GROUP BY "Status"
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "Status", MIN("Total") AS "Item2" FROM "orders" GROUP BY "Status"
 ```
 
 ---
@@ -504,32 +467,12 @@ SELECT "OrderId", "Status" FROM "orders" WHERE "Status" IN ('pending', 'processi
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "OrderId", "Status" FROM "orders" WHERE "Status" IN ('pending', 'processing', 'shipped')
-```
-
----
-
-### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "OrderId", "Status" FROM "orders" WHERE "Status" IN ({__COL_P0__})
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string[]` |
-
----
-
-### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "OrderId", "Total" FROM "orders" WHERE "Priority" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `Quarry.Tests.Samples.OrderPriority` |
 
 ---
 
@@ -605,6 +548,12 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 INSERT INTO "products" ("ProductName", "Price", "Description") VALUES (@p0, @p1, @p2)
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+| `@p2` | `string?` |
+
 ---
 
 ### Products().Insert().ToDiagnostics()
@@ -612,6 +561,11 @@ INSERT INTO "products" ("ProductName", "Price", "Description") VALUES (@p0, @p1,
 ```sql
 INSERT INTO "products" ("ProductName", "Price") VALUES (@p0, @p1) RETURNING "ProductId"
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
 
 ---
 
@@ -627,14 +581,6 @@ SELECT "ProductId", "ProductName", "Price" FROM "products" WHERE "ProductId" <= 
 
 ```sql
 SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" <= 3
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 1
 ```
 
 ---
@@ -711,46 +657,6 @@ DELETE FROM "users" WHERE "UserId" IN ({__COL_P0__})
 
 ---
 
-### Users().Delete().Where(...).ExecuteNonQueryAsync()
-
-```sql
-DELETE FROM "users" WHERE "UserId" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-
----
-
-### Users().Delete().Where(...).ExecuteNonQueryAsync()
-
-```sql
-DELETE FROM "users" WHERE "UserId" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-
----
-
-### Users().Delete().Where(...).Prepare().ToDiagnostics()
-
-```sql
-DELETE FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Delete().Where(...).Prepare().ToDiagnostics()
-
-```sql
-DELETE FROM "users" WHERE "IsActive" = 1
-```
-
----
-
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -807,14 +713,6 @@ DELETE FROM "users" WHERE "IsActive" = 1
 
 ---
 
-### Users().Delete().Where(...).ToDiagnostics()
-
-```sql
-DELETE FROM "users" WHERE "IsActive" = 1
-```
-
----
-
 ### Users().Delete().Where(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -847,14 +745,6 @@ SELECT DISTINCT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLog
 
 ---
 
-### Users().Distinct(...).ToDiagnostics()
-
-```sql
-SELECT DISTINCT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-```
-
----
-
 ### Users().Distinct(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -869,21 +759,13 @@ SELECT DISTINCT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
 INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
 ```
 
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
-```
-
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string?` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
 
 ---
 
@@ -893,29 +775,11 @@ INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") 
 INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2) RETURNING "UserId"
 ```
 
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2) RETURNING "UserId"
-```
-
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2) RETURNING "UserId"
-```
-
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2) RETURNING "UserId"
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -925,21 +789,13 @@ INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2)
 INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
 ```
 
----
-
-### Users().Insert().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
-```
-
----
-
-### Users().Insert().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING "UserId"
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string?` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
 
 ---
 
@@ -949,21 +805,10 @@ INSERT INTO "users" ("UserName", "Email", "IsActive", "CreatedAt", "LastLogin") 
 INSERT INTO "users" ("UserName", "IsActive") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
-
----
-
-### Users().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
 
 ---
 
@@ -972,6 +817,10 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 ```sql
 INSERT INTO "users" ("UserName") VALUES 
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -981,13 +830,10 @@ INSERT INTO "users" ("UserName") VALUES
 INSERT INTO "users" ("UserName", "CreatedAt") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTime` |
 
 ---
 
@@ -997,13 +843,10 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 INSERT INTO "users" ("UserName", "IsActive") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
 
 ---
 
@@ -1013,29 +856,11 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
-```
-
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
-```
-
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -1045,13 +870,9 @@ INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES
 INSERT INTO "users" ("UserName") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -1061,29 +882,10 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 INSERT INTO "users" ("UserName", "IsActive") VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
-
----
-
-### Users().InsertBatch(...).Values(...).ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
-
----
-
-### Users().InsertBatch(...).Values(...).ToDiagnostics()
-
-```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
 
 ---
 
@@ -1093,13 +895,11 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
 ```
 
----
-
-### Users().Join(...).Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName", "t3"."AccountName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId" INNER JOIN "accounts" AS "t3" ON "t0"."UserId" = "t3"."UserId"
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -1107,22 +907,6 @@ SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName", "t3"."AccountName" FRO
 
 ```sql
 SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName", "t3"."AccountName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId" INNER JOIN "accounts" AS "t3" ON "t0"."UserId" = "t3"."UserId"
-```
-
----
-
-### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId"
-```
-
----
-
-### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId"
 ```
 
 ---
@@ -1167,22 +951,6 @@ SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priorit
 
 ---
 
-### Users().Join(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1202,79 +970,7 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().Join(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
 ---
@@ -1315,22 +1011,6 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 
 ```sql
 SELECT "t0"."UserId", "t0"."UserName", "t0"."Email", "t0"."IsActive", "t0"."CreatedAt", "t0"."LastLogin" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 100
-```
-
----
-
-### Users().Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 1
-```
-
----
-
-### Users().Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 1
 ```
 
 ---
@@ -1468,86 +1148,6 @@ SELECT "UserName" FROM "users"
 
 ---
 
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users"
-```
-
----
-
 ### Users().Select(...).ExecuteFetchFirstAsync()
 
 ```sql
@@ -1560,22 +1160,6 @@ SELECT "UserName" FROM "users"
 
 ```sql
 SELECT COUNT(*) FROM "users"
-```
-
----
-
-### Users().Select(...).ExecuteScalarAsync()
-
-```sql
-SELECT COUNT(*) FROM "users"
-```
-
----
-
-### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" LIMIT 10 OFFSET 5
 ```
 
 ---
@@ -1616,14 +1200,6 @@ SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET 1
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET @p1
-```
-
----
-
-### Users().Select(...).Limit(...).Offset(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" LIMIT 10 OFFSET 5
 ```
 
 ---
@@ -1679,30 +1255,6 @@ SELECT "UserId", "UserName" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName", "Email" FROM "users"
 ```
 
@@ -1727,31 +1279,7 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserName" FROM "users"
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserName", "UserId" FROM "users"
 ```
 
 ---
@@ -1784,14 +1312,6 @@ SELECT "UserId", "UserName" FROM "users"
 
 ```sql
 SELECT "UserId", "UserName", "Email" FROM "users"
-```
-
----
-
-### Users().Select(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users"
 ```
 
 ---
@@ -1879,66 +1399,6 @@ UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
 ### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
-
-```sql
 UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = @p1
 ```
 
@@ -2010,31 +1470,7 @@ UPDATE "users" SET "IsActive" = 0 WHERE "IsActive" = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
-UPDATE "users" SET "IsActive" = 0 WHERE "IsActive" = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
 UPDATE "users" SET "IsActive" = 0 WHERE "UserId" = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE "users" SET "IsActive" = 0 WHERE "UserId" = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = 'NewName' WHERE "UserId" = 1
 ```
 
 ---
@@ -2064,14 +1500,6 @@ UPDATE "users" SET "UserName" = 'x' WHERE "UserId" = @p0
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = 'x', "IsActive" = 0 WHERE "UserId" = 1
-```
 
 ---
 
@@ -2131,56 +1559,12 @@ UPDATE "users" SET "IsActive" = 0 WHERE "UserId" = 1
 ### Users().Update().Set(...).Where(...).ToDiagnostics()
 
 ```sql
-UPDATE "users" SET "IsActive" = 0 WHERE "UserId" = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
 UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `?` |
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
-UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
 
 ---
 
@@ -2227,14 +1611,6 @@ UPDATE "users" SET "UserName" = @p0, "IsActive" = @p1 WHERE "UserId" = 3
 
 ```sql
 SELECT COUNT(*) FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId" WHERE "t0"."IsActive" = 1
-```
-
----
-
-### Users().Where(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 1
 ```
 
 ---
@@ -2362,23 +1738,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 2
 ```
 
 ---
@@ -2446,66 +1806,6 @@ SELECT "UserName" FROM "users" WHERE "UserId" = @p0
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
 SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ```
 
@@ -2519,32 +1819,6 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 
 ```sql
 SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" <= @p1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
 ```
 
 | Parameter | Type |
@@ -2603,46 +1877,6 @@ SELECT "UserName" FROM "users" WHERE "UserId" = 1
 ### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
 
 ```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
 SELECT "UserName" FROM "users" WHERE "UserId" = 2
 ```
 
@@ -2660,22 +1894,6 @@ SELECT "UserName", "Email" FROM "users" WHERE "UserId" = 1
 
 ```sql
 SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 2
 ```
 
 ---
@@ -2773,38 +1991,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 AND EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
 ```
 
@@ -2831,18 +2017,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE "LastLogin" IN ({__COL_P0__})
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `DateTime[]` |
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "LastLogin" IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `DateTime?[]` |
 
 ---
 
@@ -3190,14 +2364,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AND EXISTS (SELECT 1 FROM "orders" AS "sq1" WHERE "sq1"."UserId" = "users"."UserId" AND ("sq1"."Total" > 100))
 ```
 
@@ -3354,59 +2520,7 @@ SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%' |
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%' || @p0 || '%'
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%50\%%' ESCAPE '\'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%lic%'
 ```
 
 ---
@@ -3458,23 +2572,7 @@ SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserName", "UserId" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
 ```
 
 ---
@@ -3562,40 +2660,6 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-
----
-
-### Users().Where(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @p1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int[]` |
-| `@p1` | `int` |
-
----
-
-### Users().Where(...).Select(...).ToDiagnostics()
-
-```sql
-SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Select(...).ToDiagnostics()
-
-```sql
 SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -3632,152 +2696,8 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" > 0
 ```
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
 
 ---
 
@@ -3808,18 +2728,6 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
 
 -- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).Prepare().ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +false
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -3872,14 +2780,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE ("UserName" LIKE '%er%') AND ("Us
 ### Users().Where(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE ("UserName" LIKE '%er%') AND ("UserName" LIKE 'Us%')
-```
-
----
-
-### Users().Where(...).Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName", "Email" FROM "users" WHERE ("IsActive" = 1) AND ("UserId" > 5)
 ```
 
@@ -3905,18 +2805,6 @@ SELECT "UserName" FROM "users" WHERE "IsActive" = 1
 
 ---
 
-### Users().Where(...).Where(...).Select(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserName" FROM "users"
-
--- +false
-SELECT "UserName" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
 ### Users().Where(...).Where(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -3932,114 +2820,6 @@ SELECT "UserName" FROM "users" WHERE ("IsActive" = 1) AND ("UserId" > 0)
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
 
 -- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +false
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type | Conditional |
-|-----------|------|-------------|
-| `@p0` | `string` | true |
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +false
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type | Conditional |
-|-----------|------|-------------|
-| `@p0` | `string` | false |
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserName" = @p0
-```
-
-| Parameter | Type | Conditional |
-|-----------|------|-------------|
-| `@p0` | `string` | true |
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +true
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
-```
-
----
-
-### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
-
-```sql
--- base
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users"
-
--- +false
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -4085,6 +2865,12 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 INSERT INTO "widgets" ("WidgetId", "WidgetName", "Secret") VALUES (@p0, @p1, @p2)
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `Guid` |
+| `@p1` | `string` |
+| `@p2` | `string` `[sensitive]` |
+
 ---
 
 ### Widgets().Insert().ToDiagnostics()
@@ -4093,17 +2879,10 @@ INSERT INTO "widgets" ("WidgetId", "WidgetName", "Secret") VALUES (@p0, @p1, @p2
 INSERT INTO "widgets" ("WidgetId", "WidgetName") VALUES (@p0, @p1)
 ```
 
----
-
-### Widgets().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT "WidgetName" FROM "widgets" WHERE "Secret" = @p0
-```
-
 | Parameter | Type |
 |-----------|------|
-| `@p0` | `string` `[sensitive]` |
+| `@p0` | `Guid` |
+| `@p1` | `string` |
 
 ---
 
