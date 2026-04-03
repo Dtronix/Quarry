@@ -133,6 +133,10 @@ internal static class ProjectionAnalyzer
             MemberAccessExpressionSyntax memberAccess when IsJoinedMemberAccess(memberAccess, perParamLookup) =>
                 AnalyzeJoinedSingleColumnWithPlaceholder(memberAccess, perParamLookup, resultType),
 
+            // Navigation member access: o.User.UserName (chained member access rooted on a parameter)
+            MemberAccessExpressionSyntax memberAccess when IsNavigationMemberAccess(memberAccess, perParamLookup) =>
+                AnalyzeJoinedSingleColumnWithPlaceholder(memberAccess, perParamLookup, resultType),
+
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
                 AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
 
@@ -328,6 +332,21 @@ internal static class ProjectionAnalyzer
             }
         }
 
+        // Navigation access: o.User.UserName
+        var navChain = TryParseNavigationChainJoined(memberAccess, perParamLookup);
+        if (navChain != null)
+        {
+            return new ProjectedColumn(
+                propertyName: propertyName,
+                columnName: navChain.Value.FinalProp,
+                clrType: "",
+                fullClrType: "",
+                isNullable: false,
+                ordinal: ordinal,
+                tableAlias: navChain.Value.SourceAlias,
+                navigationHops: navChain.Value.Hops);
+        }
+
         return null;
     }
 
@@ -441,6 +460,10 @@ internal static class ProjectionAnalyzer
 
             // Single column: (u, o) => u.Name
             MemberAccessExpressionSyntax memberAccess when IsJoinedMemberAccess(memberAccess, perParamLookup) =>
+                AnalyzeJoinedSingleColumn(memberAccess, semanticModel, perParamLookup, resultType, dialect),
+
+            // Navigation member access: o.User.UserName (chained member access rooted on a parameter)
+            MemberAccessExpressionSyntax memberAccess when IsNavigationMemberAccess(memberAccess, perParamLookup) =>
                 AnalyzeJoinedSingleColumn(memberAccess, semanticModel, perParamLookup, resultType, dialect),
 
             // Aggregate function: (u, o) => Sql.Count()
@@ -730,6 +753,21 @@ internal static class ProjectionAnalyzer
             }
         }
 
+        // Navigation access: o.User.UserName
+        var navChainJ = TryParseNavigationChainJoined(memberAccess, perParamLookup);
+        if (navChainJ != null)
+        {
+            return new ProjectedColumn(
+                propertyName: propertyName,
+                columnName: navChainJ.Value.FinalProp,
+                clrType: "",
+                fullClrType: "",
+                isNullable: false,
+                ordinal: ordinal,
+                tableAlias: navChainJ.Value.SourceAlias,
+                navigationHops: navChainJ.Value.Hops);
+        }
+
         return null;
     }
 
@@ -962,6 +1000,10 @@ internal static class ProjectionAnalyzer
 
             // Single column: u => u.Name
             MemberAccessExpressionSyntax memberAccess when IsMemberOfParameter(memberAccess, lambdaParameterName) =>
+                AnalyzeSingleColumn(memberAccess, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
+
+            // Navigation single column: o => o.User.UserName
+            MemberAccessExpressionSyntax memberAccess when IsNavigationMemberAccess(memberAccess, lambdaParameterName) =>
                 AnalyzeSingleColumn(memberAccess, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
 
             // Invocation (possibly aggregate): u => Sql.Count()
@@ -1463,6 +1505,39 @@ internal static class ProjectionAnalyzer
                         isValueType: refColumn.IsValueType,
                         readerMethodName: refColumn.ReaderMethodName);
                 }
+            }
+
+            // Navigation access: o.User.UserName or o.User.Department.Name
+            var navChain = TryParseNavigationChain(memberAccess, lambdaParameterName);
+            if (navChain != null)
+            {
+                // Try to resolve type from semantic model for the interceptor signature
+                var navClrType = "";
+                var navFullClrType = "";
+                var navIsNullable = false;
+                var navIsValueType = false;
+                var navReaderMethod = "GetValue";
+                var navTypeInfo = semanticModel.GetTypeInfo(expression);
+                if (navTypeInfo.Type != null)
+                {
+                    navClrType = GetSimpleTypeName(navTypeInfo.Type);
+                    navFullClrType = navTypeInfo.Type.ToDisplayString();
+                    navIsNullable = navTypeInfo.Nullability.FlowState == NullableFlowState.MaybeNull;
+                    var meta = ColumnInfo.GetTypeMetadata(navTypeInfo.Type);
+                    navIsValueType = meta.IsValueType;
+                    navReaderMethod = meta.ReaderMethodName;
+                }
+
+                return new ProjectedColumn(
+                    propertyName: propertyName,
+                    columnName: navChain.Value.FinalProp,
+                    clrType: navClrType,
+                    fullClrType: navFullClrType,
+                    isNullable: navIsNullable,
+                    ordinal: ordinal,
+                    isValueType: navIsValueType,
+                    readerMethodName: navReaderMethod,
+                    navigationHops: navChain.Value.Hops);
             }
         }
 
@@ -2020,5 +2095,128 @@ internal static class ProjectionAnalyzer
             SqlDialect.SqlServer => $"SUBSTRING({columnSql}, {startSql}, LEN({columnSql}))",
             _ => $"SUBSTRING({columnSql} FROM {startSql})"
         };
+    }
+
+    /// <summary>
+    /// Attempts to parse a member access chain as a navigation access (single-entity path).
+    /// Returns the navigation hops and final property name, or null if
+    /// the chain root is not the lambda parameter or has zero hops.
+    /// </summary>
+    private static (List<string> Hops, string FinalProp)? TryParseNavigationChain(
+        MemberAccessExpressionSyntax memberAccess,
+        string lambdaParameterName)
+    {
+        var hops = new List<string>();
+        var finalProp = memberAccess.Name.Identifier.Text;
+        var current = memberAccess.Expression;
+
+        // Walk through member access chain, unwrapping null-forgiving (!) operators
+        while (true)
+        {
+            // Unwrap null-forgiving operator: o.User!.UserName -> o.User
+            if (current is PostfixUnaryExpressionSyntax postfix &&
+                postfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+                current = postfix.Operand;
+
+            if (current is MemberAccessExpressionSyntax inner)
+            {
+                hops.Insert(0, inner.Name.Identifier.Text);
+                current = inner.Expression;
+            }
+            else
+                break;
+        }
+
+        // Unwrap final null-forgiving on root
+        if (current is PostfixUnaryExpressionSyntax rootPostfix &&
+            rootPostfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+            current = rootPostfix.Operand;
+
+        if (current is IdentifierNameSyntax id &&
+            id.Identifier.Text == lambdaParameterName &&
+            hops.Count > 0)
+            return (hops, finalProp);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Attempts to parse a member access chain as a navigation access (joined path).
+    /// Returns the navigation hops, final property name, and source alias.
+    /// </summary>
+    private static (List<string> Hops, string FinalProp, string SourceAlias)? TryParseNavigationChainJoined(
+        MemberAccessExpressionSyntax memberAccess,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+    {
+        var hops = new List<string>();
+        var finalProp = memberAccess.Name.Identifier.Text;
+        var current = memberAccess.Expression;
+
+        while (true)
+        {
+            if (current is PostfixUnaryExpressionSyntax postfix &&
+                postfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+                current = postfix.Operand;
+
+            if (current is MemberAccessExpressionSyntax inner)
+            {
+                hops.Insert(0, inner.Name.Identifier.Text);
+                current = inner.Expression;
+            }
+            else
+                break;
+        }
+
+        if (current is PostfixUnaryExpressionSyntax rootPostfix &&
+            rootPostfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+            current = rootPostfix.Operand;
+
+        if (current is IdentifierNameSyntax id &&
+            perParamLookup.TryGetValue(id.Identifier.Text, out var entry) &&
+            hops.Count > 0)
+            return (hops, finalProp, entry.Alias);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if a member access chain is rooted on a lambda parameter (single-entity).
+    /// Used to detect navigation chains like o.User.UserName where the root is the lambda param.
+    /// </summary>
+    private static bool IsNavigationMemberAccess(MemberAccessExpressionSyntax memberAccess, string lambdaParameterName)
+    {
+        var current = (ExpressionSyntax)memberAccess;
+        while (true)
+        {
+            if (current is PostfixUnaryExpressionSyntax postfix &&
+                postfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+                current = postfix.Operand;
+            else if (current is MemberAccessExpressionSyntax inner)
+                current = inner.Expression;
+            else
+                break;
+        }
+        return current is IdentifierNameSyntax id && id.Identifier.Text == lambdaParameterName;
+    }
+
+    /// <summary>
+    /// Checks if a member access chain is rooted on a joined lambda parameter.
+    /// </summary>
+    private static bool IsNavigationMemberAccess(
+        MemberAccessExpressionSyntax memberAccess,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+    {
+        var current = (ExpressionSyntax)memberAccess;
+        while (true)
+        {
+            if (current is PostfixUnaryExpressionSyntax postfix &&
+                postfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+                current = postfix.Operand;
+            else if (current is MemberAccessExpressionSyntax inner)
+                current = inner.Expression;
+            else
+                break;
+        }
+        return current is IdentifierNameSyntax id && perParamLookup.ContainsKey(id.Identifier.Text);
     }
 }
