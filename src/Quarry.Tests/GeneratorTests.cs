@@ -1005,4 +1005,97 @@ class Service
 
     #endregion
 
+    #region Nullable collection Contains — CS0030 regression
+
+    [Test]
+    public void NullableArrayContains_NullableColumn_NoCS0030()
+    {
+        // Regression: long?[] used in .Contains() on a Col<long?> column should generate
+        // IReadOnlyList<long?>, not IReadOnlyList<long>. CS0030 = "Cannot convert type".
+        var source = @"
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using Quarry;
+
+namespace TestApp;
+
+public class EquipmentOptionSchema : Schema
+{
+    public static string Table => ""equipment_options"";
+    public Key<long> Id => Identity();
+    public Col<string> Name => Length(200);
+}
+
+public class EquipmentPropertySchema : Schema
+{
+    public static string Table => ""equipment_properties"";
+    public Key<long> Id => Identity();
+    public Col<long?> EquipmentOptionId { get; }
+    public Col<string> Value => Length(500);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<EquipmentOption> EquipmentOptions();
+    public partial IEntityAccessor<EquipmentProperty> EquipmentProperties();
+}
+
+class Service
+{
+    async Task DeleteEquipmentProperty(TestDbContext db)
+    {
+        // Simulates the user pattern: Select non-nullable Id, cast to nullable, ToArray()
+        var optionRows = await db.EquipmentOptions().Select(o => o).ExecuteFetchAllAsync();
+        var optionIdValues = optionRows.Select(o => (long?)o.Id).ToArray(); // long?[]
+
+        // Contains on nullable column with nullable collection
+        await db.EquipmentProperties()
+            .Delete()
+            .Where(ep => optionIdValues.Contains(ep.EquipmentOptionId))
+            .ExecuteNonQueryAsync();
+    }
+}
+";
+        var parseOptions = new CSharpParseOptions(LanguageVersion.Latest)
+            .WithFeatures(new[] { new KeyValuePair<string, string>("InterceptorsNamespaces", "TestApp") });
+        var syntaxTrees = new[] { CSharpSyntaxTree.ParseText(source, parseOptions) };
+
+        var runtimeDir = System.Runtime.InteropServices.RuntimeEnvironment.GetRuntimeDirectory();
+        var references = new MetadataReference[]
+        {
+            MetadataReference.CreateFromFile(QuarryCoreAssemblyPath),
+            MetadataReference.CreateFromFile(SystemRuntimeAssemblyPath),
+            MetadataReference.CreateFromFile(typeof(System.Data.IDbConnection).Assembly.Location),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Runtime.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Collections.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.Linq.Expressions.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "netstandard.dll")),
+            MetadataReference.CreateFromFile(Path.Combine(runtimeDir, "System.ComponentModel.Primitives.dll")),
+        };
+
+        var compilation = CSharpCompilation.Create("TestAssembly", syntaxTrees, references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary)
+                .WithNullableContextOptions(NullableContextOptions.Enable));
+
+        var generator = new QuarryGenerator();
+        GeneratorDriver driver = CSharpGeneratorDriver.Create(
+            new[] { generator.AsSourceGenerator() },
+            parseOptions: parseOptions);
+        driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var outputCompilation, out _);
+
+        var errors = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        var cs0030 = errors.Where(d => d.Id == "CS0030").ToList();
+        Assert.That(cs0030, Is.Empty,
+            "Nullable collection Contains produced CS0030: " +
+            string.Join("; ", cs0030.Select(d => d.GetMessage())));
+    }
+
+    #endregion
+
 }

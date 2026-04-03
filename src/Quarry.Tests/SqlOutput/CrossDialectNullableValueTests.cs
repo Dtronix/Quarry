@@ -288,4 +288,60 @@ internal class CrossDialectNullableValueTests
     }
 
     #endregion
+
+    #region Nullable element type collection Contains (regression: IReadOnlyList<T> vs IReadOnlyList<T?>)
+
+    [Test]
+    public async Task Where_NullableArrayContains_NullableColumn()
+    {
+        // Regression: long?[] (or DateTime?[]) used in .Contains() on a nullable column
+        // should generate IReadOnlyList<DateTime?>, not IReadOnlyList<DateTime>.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        DateTime?[] dates = [new DateTime(2024, 6, 1), new DateTime(2024, 5, 15)];
+        var lt = Lite.Users().Where(u => dates.Contains(u.LastLogin)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => dates.Contains(u.LastLogin)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => dates.Contains(u.LastLogin)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => dates.Contains(u.LastLogin)).Select(u => (u.UserId, u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"LastLogin\" IN (@p0, @p1)",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"LastLogin\" IN ($1, $2)",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `LastLogin` IN (?, ?)",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [LastLogin] IN (@p0, @p1)");
+
+        // Execution: Alice (2024-06-01) and Charlie (2024-05-15) have matching LastLogin dates
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+    }
+
+    [Test]
+    public async Task Where_NullableListContains_NonNullableColumn()
+    {
+        // Nullable collection element type (int?) against a non-nullable column (Key<int>).
+        // Verifies the generator emits IReadOnlyList<int?> even when the column itself isn't nullable.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int?> { 1, 3 };
+        var lt = Lite.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).Prepare();
+        var pg = Pg.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).Prepare();
+        var my = My.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).Prepare();
+        var ss = Ss.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\" FROM \"users\" WHERE \"UserId\" IN (@p0, @p1)",
+            pg:     "SELECT \"UserName\" FROM \"users\" WHERE \"UserId\" IN ($1, $2)",
+            mysql:  "SELECT `UserName` FROM `users` WHERE `UserId` IN (?, ?)",
+            ss:     "SELECT [UserName] FROM [users] WHERE [UserId] IN (@p0, @p1)");
+    }
+
+    #endregion
 }
