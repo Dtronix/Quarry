@@ -2907,3 +2907,14 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 | Parameter | Type | Sensitive |
 |-----------|------|-----------|
 | `@p0` | `string` | Yes |
+
+---
+
+## Summary
+
+| Metric | Count |
+|--------|------:|
+| Total discovered | 450 |
+| Skipped (errors) | 0 |
+| Consolidated (deduped) | 148 |
+| Rendered | 302 |

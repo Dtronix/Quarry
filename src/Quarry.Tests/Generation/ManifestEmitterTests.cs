@@ -479,7 +479,11 @@ public class ManifestEmitterTests
         var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans);
 
         // Should have exactly one "---" separator between the two chains
-        var hrCount = System.Text.RegularExpressions.Regex.Matches(markdown, @"^---\r?$",
+        // Count HRs in the query body only (exclude the HR + Summary section at the end)
+        var summaryHrIdx = markdown.IndexOf("---\r\n\r\n## Summary");
+        if (summaryHrIdx < 0) summaryHrIdx = markdown.IndexOf("---\n\n## Summary");
+        var bodyMarkdown = summaryHrIdx >= 0 ? markdown.Substring(0, summaryHrIdx) : markdown;
+        var hrCount = System.Text.RegularExpressions.Regex.Matches(bodyMarkdown, @"^---\r?$",
             System.Text.RegularExpressions.RegexOptions.Multiline).Count;
         Assert.That(hrCount, Is.EqualTo(1), "Should have exactly one horizontal rule between two chains");
     }
@@ -489,32 +493,51 @@ public class ManifestEmitterTests
     #region Excluded Count Tests
 
     [Test]
-    public void RenderManifest_WithExcludedChains_RendersFooter()
+    public void RenderManifest_SummaryTable_ShowsAllCounts()
     {
-        var execution = TestCallSiteBuilder.CreateExecutionSite(
-            InterceptorKind.ExecuteFetchAll, "User", "User");
-        var chainRoot = new TestCallSiteBuilder()
+        var exec1 = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User", uniqueId: "exec_1");
+        var root1 = new TestCallSiteBuilder()
             .WithMethodName("Users")
             .WithKind(InterceptorKind.ChainRoot)
             .WithEntityType("User")
-            .WithUniqueId("root_0")
+            .WithUniqueId("root_1")
             .Build();
 
-        var plan = CreatePlanWithSql(execution, new[] { chainRoot },
-            "SELECT 1", dialect: GenSqlDialect.SQLite);
+        // Two plans with identical shape+SQL → one will be consolidated
+        var exec2 = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User", uniqueId: "exec_2");
+        var root2 = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_2")
+            .Build();
+
+        var plan1 = CreatePlanWithSql(exec1, new[] { root1 }, "SELECT 1",
+            dialect: GenSqlDialect.SQLite);
+        var plan2 = CreatePlanWithSql(exec2, new[] { root2 }, "SELECT 1",
+            dialect: GenSqlDialect.SQLite);
 
         var plans = new List<(AssembledPlan, string, string)>
         {
-            (plan, "TestDb", "TestApp")
+            (plan1, "TestDb", "TestApp"),
+            (plan2, "TestDb", "TestApp")
         };
 
-        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans, excludedCount: 3);
+        // totalCount=5 (2 valid + 3 skipped), excludedCount=3
+        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans,
+            totalCount: 5, excludedCount: 3);
 
-        Assert.That(markdown, Does.Contain("*3 chain(s) excluded due to analysis errors (see QRY032/QRY900 diagnostics).*"));
+        Assert.That(markdown, Does.Contain("## Summary"));
+        Assert.That(markdown, Does.Contain("| Total discovered | 5 |"));
+        Assert.That(markdown, Does.Contain("| Skipped (errors) | 3 |"));
+        Assert.That(markdown, Does.Contain("| Consolidated (deduped) | 1 |"));
+        Assert.That(markdown, Does.Contain("| Rendered | 1 |"));
     }
 
     [Test]
-    public void RenderManifest_ZeroExcluded_NoFooter()
+    public void RenderManifest_SummaryTable_ZeroSkipped()
     {
         var execution = TestCallSiteBuilder.CreateExecutionSite(
             InterceptorKind.ExecuteFetchAll, "User", "User");
@@ -533,9 +556,12 @@ public class ManifestEmitterTests
             (plan, "TestDb", "TestApp")
         };
 
-        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans);
+        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans,
+            totalCount: 1, excludedCount: 0);
 
-        Assert.That(markdown, Does.Not.Contain("excluded due to analysis errors"));
+        Assert.That(markdown, Does.Contain("| Total discovered | 1 |"));
+        Assert.That(markdown, Does.Contain("| Skipped (errors) | 0 |"));
+        Assert.That(markdown, Does.Contain("| Rendered | 1 |"));
     }
 
     #endregion

@@ -1802,3 +1802,14 @@ SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActi
 ```sql
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `myapp`.`users`
 ```
+
+---
+
+## Summary
+
+| Metric | Count |
+|--------|------:|
+| Total discovered | 238 |
+| Skipped (errors) | 0 |
+| Consolidated (deduped) | 44 |
+| Rendered | 194 |

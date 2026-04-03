@@ -1802,3 +1802,14 @@ SELECT [UserId], [UserName], [Email] FROM [users] WHERE ([IsActive] = 1) AND ([U
 ```sql
 SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActive] = 1)
 ```
+
+---
+
+## Summary
+
+| Metric | Count |
+|--------|------:|
+| Total discovered | 238 |
+| Skipped (errors) | 0 |
+| Consolidated (deduped) | 44 |
+| Rendered | 194 |
