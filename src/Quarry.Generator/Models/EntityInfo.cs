@@ -83,6 +83,12 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
     /// </summary>
     public string? InvalidEntityReaderClass { get; }
 
+    /// <summary>
+    /// Diagnostics collected during schema parsing (QRY040-045).
+    /// Side-channel data — not included in Equals/GetHashCode.
+    /// </summary>
+    public IReadOnlyList<Diagnostic> Diagnostics { get; }
+
     public EntityInfo(
         string entityName,
         string schemaClassName,
@@ -97,7 +103,8 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
         string? invalidEntityReaderClass = null,
         IReadOnlyList<string>? compositeKeyColumns = null,
         IReadOnlyList<SingleNavigationInfo>? singleNavigations = null,
-        IReadOnlyList<ThroughNavigationInfo>? throughNavigations = null)
+        IReadOnlyList<ThroughNavigationInfo>? throughNavigations = null,
+        IReadOnlyList<Diagnostic>? diagnostics = null)
     {
         EntityName = entityName;
         SchemaClassName = schemaClassName;
@@ -113,6 +120,7 @@ internal sealed class EntityInfo : IEquatable<EntityInfo>
         CustomEntityReaderClass = customEntityReaderClass;
         InvalidEntityReaderClass = invalidEntityReaderClass;
         CompositeKeyColumns = compositeKeyColumns;
+        Diagnostics = diagnostics ?? Array.Empty<Diagnostic>();
     }
 
     public bool Equals(EntityInfo? other)

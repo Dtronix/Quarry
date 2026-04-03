@@ -289,6 +289,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
                 }
 
+                // Report navigation diagnostics (QRY040-045) collected during schema parsing
+                foreach (var navDiag in entity.Diagnostics)
+                    context.ReportDiagnostic(navDiag);
+
                 // Report QRY026 (info) for valid custom entity reader
                 if (entity.CustomEntityReaderClass != null)
                 {
