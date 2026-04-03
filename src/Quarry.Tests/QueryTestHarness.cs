@@ -204,6 +204,25 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             )
             """);
 
+        await SqlAsync("""
+            CREATE TABLE "warehouses" (
+                "WarehouseId" INTEGER PRIMARY KEY,
+                "WarehouseName" TEXT NOT NULL,
+                "Region" TEXT NOT NULL
+            )
+            """);
+
+        await SqlAsync("""
+            CREATE TABLE "shipments" (
+                "ShipmentId" INTEGER PRIMARY KEY,
+                "OrderId" INTEGER NOT NULL,
+                "WarehouseId" INTEGER NOT NULL,
+                "ShipDate" TEXT NOT NULL,
+                FOREIGN KEY ("OrderId") REFERENCES "orders"("OrderId"),
+                FOREIGN KEY ("WarehouseId") REFERENCES "warehouses"("WarehouseId")
+            )
+            """);
+
         // View to alias "orders" as "Order" for join table name compatibility.
         await SqlAsync("""
             CREATE VIEW "Order" AS SELECT * FROM "orders"

@@ -140,6 +140,12 @@ internal class JoinedCarrierIntegrationTests
         Assert.That(results, Has.Count.EqualTo(5));
     }
 
+    // Note: 5-table and 6-table join tests are not yet supported by the generator's
+    // usage site discovery pipeline. The T4-generated IJoinedQueryBuilder5/6 interfaces
+    // compile, but UsageSiteDiscovery doesn't recognize 5+ table join chains at discovery
+    // time. The test schemas (WarehouseSchema, ShipmentSchema) and entity accessors are
+    // in place — once the discovery pipeline is extended, tests can be added here.
+
     [Test]
     public async Task JoinedCarrier_ThreeTable_ScalarAggregate_CrossDialect()
     {

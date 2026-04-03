@@ -18,4 +18,6 @@ public partial class TestDbContext : QuarryContext
     public partial IEntityAccessor<Event> Events();
     public partial IEntityAccessor<Address> Addresses();
     public partial IEntityAccessor<UserAddress> UserAddresses();
+    public partial IEntityAccessor<Warehouse> Warehouses();
+    public partial IEntityAccessor<Shipment> Shipments();
 }

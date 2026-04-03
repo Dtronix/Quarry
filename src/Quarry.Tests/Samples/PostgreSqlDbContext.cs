@@ -13,4 +13,6 @@ public partial class PgDb : QuarryContext
     public partial IEntityAccessor<Widget> Widgets();
     public partial IEntityAccessor<Address> Addresses();
     public partial IEntityAccessor<UserAddress> UserAddresses();
+    public partial IEntityAccessor<Warehouse> Warehouses();
+    public partial IEntityAccessor<Shipment> Shipments();
 }
