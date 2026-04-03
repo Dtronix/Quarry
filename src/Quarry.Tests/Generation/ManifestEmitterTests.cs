@@ -486,6 +486,60 @@ public class ManifestEmitterTests
 
     #endregion
 
+    #region Excluded Count Tests
+
+    [Test]
+    public void RenderManifest_WithExcludedChains_RendersFooter()
+    {
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User");
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var plan = CreatePlanWithSql(execution, new[] { chainRoot },
+            "SELECT 1", dialect: GenSqlDialect.SQLite);
+
+        var plans = new List<(AssembledPlan, string, string)>
+        {
+            (plan, "TestDb", "TestApp")
+        };
+
+        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans, excludedCount: 3);
+
+        Assert.That(markdown, Does.Contain("*3 chain(s) excluded due to analysis errors (see QRY032/QRY900 diagnostics).*"));
+    }
+
+    [Test]
+    public void RenderManifest_ZeroExcluded_NoFooter()
+    {
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User");
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var plan = CreatePlanWithSql(execution, new[] { chainRoot },
+            "SELECT 1", dialect: GenSqlDialect.SQLite);
+
+        var plans = new List<(AssembledPlan, string, string)>
+        {
+            (plan, "TestDb", "TestApp")
+        };
+
+        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans);
+
+        Assert.That(markdown, Does.Not.Contain("excluded due to analysis errors"));
+    }
+
+    #endregion
+
     #region Dialect File Name Tests
 
     [Test]
