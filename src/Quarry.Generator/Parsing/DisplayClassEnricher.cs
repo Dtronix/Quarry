@@ -7,12 +7,14 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
+using Quarry.Generators.Models;
+using Quarry.Shared.Migration;
 
 namespace Quarry.Generators.Parsing;
 
 /// <summary>
-/// Batch processor that enriches all collected RawCallSites with display class names
-/// and captured variable types. Groups sites by containing method to perform closure
+/// Batch processor that enriches all collected RawCallSites with display class names,
+/// captured variable types, and RawSql type info. Groups sites by containing method to perform closure
 /// analysis once per method instead of once per call site.
 /// </summary>
 internal static class DisplayClassEnricher
@@ -125,7 +127,129 @@ internal static class DisplayClassEnricher
             }
         }
 
+        // === RawSql type resolution pass ===
+        // Resolve RawSqlTypeInfo for RawSql call sites using the supplemental compilation.
+        // This must happen here (after BuildSupplementalCompilation) because generated entity
+        // types are not yet in the compilation during Stage 2 discovery.
+        EnrichRawSqlTypeInfo(sites, compilation, entityRegistry, semanticModelCache, cancellationToken);
+
         return sites;
+    }
+
+    /// <summary>
+    /// Resolves RawSqlTypeInfo for RawSql call sites that stored their invocation syntax
+    /// for deferred enrichment. Uses the supplemental compilation's semantic model so
+    /// generated entity type members are visible. For entity types found in the registry,
+    /// patches properties with schema-level metadata (custom type mappings, foreign keys).
+    /// </summary>
+    private static void EnrichRawSqlTypeInfo(
+        ImmutableArray<RawCallSite> sites,
+        Compilation compilation,
+        EntityRegistry? entityRegistry,
+        Dictionary<SyntaxTree, SemanticModel> semanticModelCache,
+        CancellationToken cancellationToken)
+    {
+        foreach (var site in sites)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (site.EnrichmentInvocation == null)
+                continue;
+
+            var invocation = site.EnrichmentInvocation;
+            var syntaxTree = invocation.SyntaxTree;
+
+            if (!semanticModelCache.TryGetValue(syntaxTree, out var semanticModel))
+            {
+                semanticModel = compilation.GetSemanticModel(syntaxTree);
+                semanticModelCache[syntaxTree] = semanticModel;
+            }
+
+            // Re-resolve the method symbol from the supplemental compilation
+            var symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
+            if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
+                continue;
+            if (!methodSymbol.IsGenericMethod || methodSymbol.TypeArguments.Length == 0)
+                continue;
+
+            var typeArgSymbol = methodSymbol.TypeArguments[0];
+            if (typeArgSymbol.TypeKind == TypeKind.TypeParameter || typeArgSymbol.TypeKind == TypeKind.Error)
+                continue;
+
+            var hasCancellationToken = methodSymbol.Parameters.Length >= 3
+                && methodSymbol.Parameters[1].Type.Name == "CancellationToken";
+
+            var rawSqlTypeInfo = UsageSiteDiscovery.ResolveRawSqlTypeInfo(typeArgSymbol, hasCancellationToken);
+
+            // For entity types in the registry, patch properties with schema-level metadata
+            // (custom type mappings, foreign keys) that the type symbol doesn't carry.
+            if (entityRegistry != null
+                && rawSqlTypeInfo.TypeKind != RawSqlTypeKind.Scalar
+                && rawSqlTypeInfo.Properties.Count > 0)
+            {
+                var entry = entityRegistry.Resolve(site.EntityTypeName, site.ContextClassName);
+                if (entry != null)
+                    rawSqlTypeInfo = PatchWithColumnMetadata(rawSqlTypeInfo, entry.Entity.Columns);
+            }
+
+            site.RawSqlTypeInfo = rawSqlTypeInfo;
+
+            // Clear transient reference — no longer needed after enrichment
+            site.EnrichmentInvocation = null;
+        }
+    }
+
+    /// <summary>
+    /// Patches RawSqlPropertyInfo entries with schema-level column metadata from Pipeline 1.
+    /// Copies CustomTypeMappingClass, DbReaderMethodName, IsForeignKey, and ReferencedEntityName
+    /// from the matching ColumnInfo. Returns a new RawSqlTypeInfo if any property was patched.
+    /// </summary>
+    private static RawSqlTypeInfo PatchWithColumnMetadata(
+        RawSqlTypeInfo typeInfo,
+        IReadOnlyList<ColumnInfo> columns)
+    {
+        // Build a name→ColumnInfo lookup for O(1) matching
+        var columnByName = new Dictionary<string, ColumnInfo>(columns.Count, System.StringComparer.Ordinal);
+        foreach (var col in columns)
+            columnByName[col.PropertyName] = col;
+
+        var patched = false;
+        var newProperties = new RawSqlPropertyInfo[typeInfo.Properties.Count];
+
+        for (int i = 0; i < typeInfo.Properties.Count; i++)
+        {
+            var prop = typeInfo.Properties[i];
+            if (columnByName.TryGetValue(prop.PropertyName, out var col)
+                && (col.CustomTypeMappingClass != null || col.Kind == ColumnKind.ForeignKey))
+            {
+                newProperties[i] = new RawSqlPropertyInfo(
+                    propertyName: prop.PropertyName,
+                    clrType: prop.ClrType,
+                    readerMethodName: col.ReaderMethodName,
+                    isNullable: prop.IsNullable,
+                    isEnum: prop.IsEnum,
+                    fullClrType: prop.FullClrType,
+                    customTypeMappingClass: col.CustomTypeMappingClass,
+                    dbReaderMethodName: col.DbReaderMethodName,
+                    isForeignKey: col.Kind == ColumnKind.ForeignKey,
+                    referencedEntityName: col.ReferencedEntityName);
+                patched = true;
+            }
+            else
+            {
+                newProperties[i] = prop;
+            }
+        }
+
+        if (!patched)
+            return typeInfo;
+
+        return new RawSqlTypeInfo(
+            typeInfo.ResultTypeName,
+            typeInfo.TypeKind,
+            newProperties,
+            typeInfo.HasCancellationToken,
+            typeInfo.ScalarReaderMethod);
     }
 
     /// <summary>

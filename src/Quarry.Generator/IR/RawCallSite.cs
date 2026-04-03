@@ -47,7 +47,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         string? chainId = null,
         string? builderTypeName = null,
         IReadOnlyList<string>? joinedEntityTypeNames = null,
-        RawSqlTypeInfo? rawSqlTypeInfo = null,
         IReadOnlyList<Models.SetActionAssignment>? setActionAssignments = null,
         IReadOnlyList<Translation.ParameterInfo>? setActionParameters = null,
         IReadOnlyDictionary<string, (string Type, bool IsStaticField, string? ContainingClass)>? setActionAllCapturedIdentifiers = null,
@@ -90,7 +89,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         ChainId = chainId;
         BuilderTypeName = builderTypeName;
         JoinedEntityTypeNames = joinedEntityTypeNames;
-        RawSqlTypeInfo = rawSqlTypeInfo;
         SetActionAssignments = setActionAssignments;
         SetActionParameters = setActionParameters;
         SetActionAllCapturedIdentifiers = setActionAllCapturedIdentifiers;
@@ -154,9 +152,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Joined entity type names for multi-entity joins (from semantic model during discovery)
     public IReadOnlyList<string>? JoinedEntityTypeNames { get; }
 
-    // RawSql type info (from discovery)
-    public RawSqlTypeInfo? RawSqlTypeInfo { get; }
-
     // SetAction data (from discovery -- Action<T> lambdas can't be parsed into SqlExpr)
     public IReadOnlyList<Models.SetActionAssignment>? SetActionAssignments { get; }
     public IReadOnlyList<Translation.ParameterInfo>? SetActionParameters { get; }
@@ -190,8 +185,15 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Capture classification set by DisplayClassEnricher. Not part of Equals/GetHashCode.
     public CaptureKind CaptureKind { get; set; }
 
+    // RawSql type info resolved by DisplayClassEnricher using supplemental compilation.
+    // Not part of Equals/GetHashCode — computed after Collect() to avoid cache instability.
+    public RawSqlTypeInfo? RawSqlTypeInfo { get; set; }
+
     // Transient: lambda syntax for deferred batch enrichment. Not part of Equals/GetHashCode.
     public LambdaExpressionSyntax? EnrichmentLambda { get; set; }
+
+    // Transient: invocation syntax for deferred RawSql type enrichment. Not part of Equals/GetHashCode.
+    public InvocationExpressionSyntax? EnrichmentInvocation { get; set; }
 
     /// <summary>
     /// Creates a copy with a different ResultTypeName.
@@ -233,7 +235,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             chainId: ChainId,
             builderTypeName: BuilderTypeName,
             joinedEntityTypeNames: JoinedEntityTypeNames,
-            rawSqlTypeInfo: RawSqlTypeInfo,
             setActionAssignments: SetActionAssignments,
             setActionParameters: SetActionParameters,
             setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
@@ -246,7 +247,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
+        copy.RawSqlTypeInfo = RawSqlTypeInfo;
         copy.EnrichmentLambda = EnrichmentLambda;
+        copy.EnrichmentInvocation = EnrichmentInvocation;
         return copy;
     }
 
@@ -284,7 +287,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && Equals(Expression, other.Expression)
             && Equals(ProjectionInfo, other.ProjectionInfo)
             && Equals(NestingContext, other.NestingContext)
-            && Equals(RawSqlTypeInfo, other.RawSqlTypeInfo)
             && ImmutableArrayEqual(InitializedPropertyNames, other.InitializedPropertyNames)
             && EqualityHelpers.NullableSequenceEqual(JoinedEntityTypeNames, other.JoinedEntityTypeNames)
             && EqualityHelpers.NullableSequenceEqual(SetActionAssignments, other.SetActionAssignments)
