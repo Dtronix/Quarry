@@ -736,6 +736,44 @@ internal static class ChainAnalyzer
                 isIdentity: true);
         }
 
+        // Table-qualify primary entity columns when implicit joins are present.
+        // Without qualification, column names like "Id" become ambiguous when the
+        // primary entity and a joined entity share the same column name.
+        if (projection != null && implicitJoinInfos.Count > 0 && projection.Columns.Count > 0)
+        {
+            var qualified = new List<ProjectedColumn>();
+            foreach (var col in projection.Columns)
+            {
+                if (col.TableAlias == null && !col.IsAggregateFunction)
+                {
+                    qualified.Add(new ProjectedColumn(
+                        propertyName: col.PropertyName,
+                        columnName: col.ColumnName,
+                        clrType: col.ClrType,
+                        fullClrType: col.FullClrType,
+                        isNullable: col.IsNullable,
+                        ordinal: col.Ordinal,
+                        alias: col.Alias,
+                        sqlExpression: col.SqlExpression,
+                        isAggregateFunction: col.IsAggregateFunction,
+                        customTypeMapping: col.CustomTypeMapping,
+                        isValueType: col.IsValueType,
+                        readerMethodName: col.ReaderMethodName,
+                        tableAlias: "t0",
+                        isForeignKey: col.IsForeignKey,
+                        foreignKeyEntityName: col.ForeignKeyEntityName,
+                        isEnum: col.IsEnum));
+                }
+                else
+                {
+                    qualified.Add(col);
+                }
+            }
+            projection = new SelectProjection(
+                projection.Kind, projection.ResultTypeName, qualified,
+                projection.CustomEntityReaderClass, projection.IsIdentity);
+        }
+
         var plan = new QueryPlan(
             kind: queryKind,
             primaryTable: primaryTable,
@@ -744,7 +782,7 @@ internal static class ChainAnalyzer
             orderTerms: orderTerms,
             groupByExprs: groupByExprs,
             havingExprs: havingExprs,
-            projection: projection,
+            projection: projection!,
             pagination: pagination,
             isDistinct: isDistinct,
             setTerms: setTerms,

@@ -23,10 +23,10 @@ internal class CrossDialectNavigationJoinTests
 
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1",
-            pg:     "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE",
-            mysql:  "SELECT `Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1",
-            ss:     "SELECT [Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1");
+            sqlite: "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1",
+            ss:     "SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1");
     }
 
     [Test]
@@ -43,10 +43,10 @@ internal class CrossDialectNavigationJoinTests
 
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"UserName\" = @p0",
-            pg:     "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"UserName\" = $1",
-            mysql:  "SELECT `Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`UserName` = ?",
-            ss:     "SELECT [Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[UserName] = @p0");
+            sqlite: "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"UserName\" = @p0",
+            pg:     "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"UserName\" = $1",
+            mysql:  "SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`UserName` = ?",
+            ss:     "SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[UserName] = @p0");
     }
 
     #endregion
@@ -66,10 +66,10 @@ internal class CrossDialectNavigationJoinTests
 
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" ORDER BY \"j0\".\"UserName\" ASC",
-            pg:     "SELECT \"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" ORDER BY \"j0\".\"UserName\" ASC",
-            mysql:  "SELECT `Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` ORDER BY `j0`.`UserName` ASC",
-            ss:     "SELECT [Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] ORDER BY [j0].[UserName] ASC");
+            sqlite: "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" ORDER BY \"j0\".\"UserName\" ASC",
+            pg:     "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" ORDER BY \"j0\".\"UserName\" ASC",
+            mysql:  "SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` ORDER BY `j0`.`UserName` ASC",
+            ss:     "SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] ORDER BY [j0].[UserName] ASC");
     }
 
     #endregion
@@ -90,10 +90,10 @@ internal class CrossDialectNavigationJoinTests
 
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"ProductName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\" WHERE \"j1\".\"IsActive\" = 1",
-            pg:     "SELECT \"ProductName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\" WHERE \"j1\".\"IsActive\" = TRUE",
-            mysql:  "SELECT `ProductName` FROM `order_items` AS `t0` INNER JOIN `orders` AS `j0` ON `t0`.`OrderId` = `j0`.`OrderId` INNER JOIN `users` AS `j1` ON `j0`.`UserId` = `j1`.`UserId` WHERE `j1`.`IsActive` = 1",
-            ss:     "SELECT [ProductName] FROM [order_items] AS [t0] INNER JOIN [orders] AS [j0] ON [t0].[OrderId] = [j0].[OrderId] INNER JOIN [users] AS [j1] ON [j0].[UserId] = [j1].[UserId] WHERE [j1].[IsActive] = 1");
+            sqlite: "SELECT \"t0\".\"ProductName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\" WHERE \"j1\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"ProductName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\" WHERE \"j1\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`ProductName` FROM `order_items` AS `t0` INNER JOIN `orders` AS `j0` ON `t0`.`OrderId` = `j0`.`OrderId` INNER JOIN `users` AS `j1` ON `j0`.`UserId` = `j1`.`UserId` WHERE `j1`.`IsActive` = 1",
+            ss:     "SELECT [t0].[ProductName] FROM [order_items] AS [t0] INNER JOIN [orders] AS [j0] ON [t0].[OrderId] = [j0].[OrderId] INNER JOIN [users] AS [j1] ON [j0].[UserId] = [j1].[UserId] WHERE [j1].[IsActive] = 1");
     }
 
     #endregion
@@ -115,13 +115,12 @@ internal class CrossDialectNavigationJoinTests
         var ss = Ss.Orders().Where(o => o.User!.IsActive)
             .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
 
-        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1",
-            pg:     "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE",
-            mysql:  "SELECT `OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1",
-            ss:     "SELECT [OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1");
+            sqlite: "SELECT \"t0\".\"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1",
+            pg:     "SELECT \"t0\".\"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `t0`.`OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1",
+            ss:     "SELECT [t0].[OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1");
     }
 
     [Test]
@@ -140,13 +139,12 @@ internal class CrossDialectNavigationJoinTests
         var ss = Ss.Orders()
             .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
 
-        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
-            pg:     "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
-            mysql:  "SELECT `OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId`",
-            ss:     "SELECT [OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId]");
+            sqlite: "SELECT \"t0\".\"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            mysql:  "SELECT `t0`.`OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId`",
+            ss:     "SELECT [t0].[OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId]");
     }
 
     [Test]
@@ -183,13 +181,12 @@ internal class CrossDialectNavigationJoinTests
         var ss = Ss.OrderItems()
             .Select(i => (i.ProductName, i.Order!.User!.UserName)).ToDiagnostics();
 
-        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
         QueryTestHarness.AssertDialects(
             lt, pg, my, ss,
-            sqlite: "SELECT \"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
-            pg:     "SELECT \"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
-            mysql:  "SELECT `ProductName`, `j1`.`UserName` FROM `order_items` AS `t0` INNER JOIN `orders` AS `j0` ON `t0`.`OrderId` = `j0`.`OrderId` INNER JOIN `users` AS `j1` ON `j0`.`UserId` = `j1`.`UserId`",
-            ss:     "SELECT [ProductName], [j1].[UserName] FROM [order_items] AS [t0] INNER JOIN [orders] AS [j0] ON [t0].[OrderId] = [j0].[OrderId] INNER JOIN [users] AS [j1] ON [j0].[UserId] = [j1].[UserId]");
+            sqlite: "SELECT \"t0\".\"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`ProductName`, `j1`.`UserName` FROM `order_items` AS `t0` INNER JOIN `orders` AS `j0` ON `t0`.`OrderId` = `j0`.`OrderId` INNER JOIN `users` AS `j1` ON `j0`.`UserId` = `j1`.`UserId`",
+            ss:     "SELECT [t0].[ProductName], [j1].[UserName] FROM [order_items] AS [t0] INNER JOIN [orders] AS [j0] ON [t0].[OrderId] = [j0].[OrderId] INNER JOIN [users] AS [j1] ON [j0].[UserId] = [j1].[UserId]");
     }
 
     #endregion
