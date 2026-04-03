@@ -161,6 +161,7 @@ internal static class SchemaParser
         }
 
         // Second pass: parse One<T> and HasManyThrough navigations (requires columns to be populated)
+        var parseDiagnostics = new List<Diagnostic>();
         foreach (var member in classSyntax.Members)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -173,7 +174,7 @@ internal static class SchemaParser
             if (propertySymbol == null || propertySymbol.IsStatic)
                 continue;
 
-            if (TryParseSingleNavigation(property, propertySymbol, columns, out var singleNav) && singleNav != null)
+            if (TryParseSingleNavigation(property, propertySymbol, columns, out var singleNav, parseDiagnostics, schemaSymbol.Name) && singleNav != null)
             {
                 singleNavigations.Add(singleNav);
             }
@@ -204,7 +205,8 @@ internal static class SchemaParser
             invalidEntityReaderClass: entityReaderResolution is { IsValid: false } ? entityReaderResolution.ReaderClassFqn : null,
             compositeKeyColumns: compositeKeyColumns,
             singleNavigations: singleNavigations,
-            throughNavigations: throughNavigations);
+            throughNavigations: throughNavigations,
+            diagnostics: parseDiagnostics.Count > 0 ? parseDiagnostics : null);
     }
 
     /// <summary>
@@ -926,7 +928,9 @@ internal static class SchemaParser
         PropertyDeclarationSyntax property,
         IPropertySymbol propertySymbol,
         List<ColumnInfo> columns,
-        out SingleNavigationInfo? singleNavigationInfo)
+        out SingleNavigationInfo? singleNavigationInfo,
+        List<Diagnostic>? diagnostics = null,
+        string? schemaName = null)
     {
         singleNavigationInfo = null;
 
@@ -940,9 +944,11 @@ internal static class SchemaParser
 
         var targetEntityType = namedType.TypeArguments[0];
         var targetEntityName = NormalizeEntityName(targetEntityType);
+        var propertyLocation = property.Identifier.GetLocation();
 
         // Determine FK property name: explicit (HasOne) or auto-detect
         string? fkPropertyName = null;
+        bool isExplicitHasOne = false;
 
         // Check for explicit HasOne<T>(nameof(FkColumn))
         if (property.ExpressionBody != null)
@@ -953,6 +959,7 @@ internal static class SchemaParser
                 var methodName = GetMethodName(invocation);
                 if (methodName == "HasOne" && invocation.ArgumentList.Arguments.Count > 0)
                 {
+                    isExplicitHasOne = true;
                     var arg = invocation.ArgumentList.Arguments[0];
                     // Handle string literal (nameof() is folded to string constant)
                     if (arg.Expression is LiteralExpressionSyntax literal)
@@ -972,6 +979,20 @@ internal static class SchemaParser
             }
         }
 
+        // Validate explicit HasOne references a valid FK column
+        if (isExplicitHasOne && fkPropertyName != null)
+        {
+            var referencedCol = columns.FirstOrDefault(c => c.PropertyName == fkPropertyName);
+            if (referencedCol == null || referencedCol.Kind != ColumnKind.ForeignKey || referencedCol.ReferencedEntityName != targetEntityName)
+            {
+                diagnostics?.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.HasOneInvalidColumn,
+                    propertyLocation,
+                    targetEntityName, fkPropertyName));
+                return false;
+            }
+        }
+
         // Auto-detect: scan Ref<T,K> columns for matching target entity
         if (fkPropertyName == null)
         {
@@ -983,9 +1004,21 @@ internal static class SchemaParser
             {
                 fkPropertyName = matchingRefs[0].PropertyName;
             }
+            else if (matchingRefs.Count == 0)
+            {
+                diagnostics?.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.NoFkForOneNavigation,
+                    propertyLocation,
+                    targetEntityName, propertySymbol.Name, schemaName ?? ""));
+                return false;
+            }
             else
             {
-                // Ambiguous or missing — cannot resolve. Diagnostic will be reported separately.
+                diagnostics?.Add(Diagnostic.Create(
+                    DiagnosticDescriptors.AmbiguousFkForOneNavigation,
+                    propertyLocation,
+                    targetEntityName, propertySymbol.Name,
+                    string.Join(", ", matchingRefs.Select(r => r.PropertyName))));
                 return false;
             }
         }
