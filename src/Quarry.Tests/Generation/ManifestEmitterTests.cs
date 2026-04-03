@@ -140,38 +140,24 @@ public class ManifestEmitterTests
 
     #endregion
 
-    #region FormatClrType Tests
-
-    [Test]
-    [TestCase("System.String", false, null, "`string`")]
-    [TestCase("System.Int32", false, null, "`int`")]
-    [TestCase("System.Boolean", false, null, "`bool`")]
-    [TestCase("System.DateTime", false, null, "`DateTime`")]
-    [TestCase("System.Nullable<System.Int32>", false, null, "`int?`")]
-    [TestCase("System.Int32", true, "System.Int32", "`int[]`")]
-    [TestCase("System.String", true, "System.String", "`string[]`")]
-    [TestCase("MyApp.CustomType", false, null, "`MyApp.CustomType`")]
-    [TestCase("System.Decimal", false, null, "`decimal`")]
-    public void FormatClrType_ProducesExpectedDisplay(
-        string clrType, bool isCollection, string? elementTypeName, string expected)
-    {
-        var result = ManifestEmitter.FormatClrType(clrType, isCollection, elementTypeName);
-        Assert.That(result, Is.EqualTo(expected));
-    }
-
-    #endregion
-
     #region SimplifyTypeName Tests
 
     [Test]
     [TestCase("System.String", "string")]
+    [TestCase("System.Int32", "int")]
+    [TestCase("System.Boolean", "bool")]
+    [TestCase("System.DateTime", "DateTime")]
     [TestCase("System.Int64", "long")]
     [TestCase("System.Double", "double")]
+    [TestCase("System.Decimal", "decimal")]
     [TestCase("System.Byte", "byte")]
     [TestCase("Nullable<System.Int32>", "int?")]
     [TestCase("System.Nullable<System.Boolean>", "bool?")]
     [TestCase("System.Guid", "Guid")]
     [TestCase("System.DateTimeOffset", "DateTimeOffset")]
+    [TestCase("MyApp.CustomType", "MyApp.CustomType")]
+    [TestCase("?", "object")]
+    [TestCase("", "object")]
     public void SimplifyTypeName_ProducesExpectedResult(string input, string expected)
     {
         Assert.That(ManifestEmitter.SimplifyTypeName(input), Is.EqualTo(expected));

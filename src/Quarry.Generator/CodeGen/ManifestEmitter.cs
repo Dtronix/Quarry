@@ -505,19 +505,6 @@ internal static class ManifestEmitter
         return parts.Count > 0 ? string.Join(", ", parts) : $"mask={mask}";
     }
 
-    /// <summary>
-    /// Formats a CLR type name for display in the parameter table using C# keyword aliases.
-    /// </summary>
-    internal static string FormatClrType(string clrType, bool isCollection, string? elementTypeName)
-    {
-        if (isCollection)
-        {
-            var elementDisplay = elementTypeName != null ? SimplifyTypeName(elementTypeName) : SimplifyTypeName(clrType);
-            return $"`{elementDisplay}[]`";
-        }
-
-        return $"`{SimplifyTypeName(clrType)}`";
-    }
 
     /// <summary>
     /// Simplifies a fully-qualified CLR type name to its C# keyword or short form.
