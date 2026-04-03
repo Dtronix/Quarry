@@ -622,6 +622,25 @@ internal class CrossDialectSelectTests
     }
 
     [Test]
+    public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ThrowsOnMultipleRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // IsActive matches 2 rows (Alice + Bob) — SingleOrDefault must throw
+        var lt = Lite.Users().Where(u => u.IsActive).Prepare();
+        try
+        {
+            await lt.ExecuteFetchSingleOrDefaultAsync();
+            Assert.Fail("Expected InvalidOperationException for multiple rows");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert.That(ex.Message, Does.Contain("more than one element"));
+        }
+    }
+
+    [Test]
     public async Task NoSelect_ExecuteFetchAllAsync_ReturnsAllRowsWithDistinct()
     {
         await using var t = await QueryTestHarness.CreateAsync();

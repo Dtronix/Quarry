@@ -40,7 +40,7 @@ var results = await db.Users()
     .Prepare()
     .ExecuteFetchAllAsync();
 ```
-Terminals: `ExecuteFetchAllAsync`, `ExecuteFetchFirstAsync`, `ExecuteFetchFirstOrDefaultAsync`, `ExecuteFetchSingleAsync`, `ExecuteScalarAsync<T>`, `ExecuteNonQueryAsync`, `ToAsyncEnumerable`, `ToDiagnostics`.
+Terminals: `ExecuteFetchAllAsync`, `ExecuteFetchFirstAsync`, `ExecuteFetchFirstOrDefaultAsync`, `ExecuteFetchSingleAsync`, `ExecuteFetchSingleOrDefaultAsync`, `ExecuteScalarAsync<T>`, `ExecuteNonQueryAsync`, `ToAsyncEnumerable`, `ToDiagnostics`.
 
 Subqueries via navigation: `.Where(u => u.Orders.Any(o => o.Total > 100))` generates `EXISTS(SELECT 1 ...)`.
 
@@ -343,7 +343,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | Category | Kinds |
 |----------|-------|
 | Clause | Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, DeleteWhere, UpdateWhere, UpdateSet, UpdateSetAction, UpdateSetPoco |
-| Terminal | ExecuteFetchAll, ExecuteFetchFirst, ExecuteFetchFirstOrDefault, ExecuteFetchSingle, ExecuteScalar, ExecuteNonQuery, ToAsyncEnumerable, ToDiagnostics, Prepare |
+| Terminal | ExecuteFetchAll, ExecuteFetchFirst, ExecuteFetchFirstOrDefault, ExecuteFetchSingle, ExecuteFetchSingleOrDefault, ExecuteScalar, ExecuteNonQuery, ToAsyncEnumerable, ToDiagnostics, Prepare |
 | Insert Terminal | InsertExecuteNonQuery, InsertExecuteScalar, InsertToDiagnostics |
 | Batch Insert | BatchInsertExecuteNonQuery, BatchInsertExecuteScalar, BatchInsertToDiagnostics, BatchInsertColumnSelector, BatchInsertValues |
 | Join | Join, LeftJoin, RightJoin |
