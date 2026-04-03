@@ -7,6 +7,7 @@ using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.CodeGen;
 using Quarry.Generators.Generation;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
@@ -139,6 +140,32 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         context.RegisterImplementationSourceOutput(
             perFileGroups.Combine(context.CompilationProvider),
             static (spc, pair) => EmitFileInterceptors(spc, pair.Left, pair.Right));
+
+        // === SQL Manifest Emission (opt-in via QuarrySqlManifestPath MSBuild property) ===
+        var manifestConfig = context.AnalyzerConfigOptionsProvider
+            .Select(static (provider, _) =>
+            {
+                provider.GlobalOptions.TryGetValue(
+                    "build_property.QuarrySqlManifestPath", out var manifestRel);
+                if (string.IsNullOrWhiteSpace(manifestRel))
+                    return default((string?, string?));
+
+                provider.GlobalOptions.TryGetValue(
+                    "build_property.ProjectDir", out var projectDir);
+                return (manifestRel, projectDir);
+            });
+
+        context.RegisterImplementationSourceOutput(
+            perFileGroups.Collect().Combine(manifestConfig),
+            static (spc, pair) =>
+            {
+                var (groups, config) = pair;
+                var (manifestRel, projectDir) = config;
+                if (string.IsNullOrWhiteSpace(manifestRel))
+                    return;
+
+                ManifestEmitter.Emit(groups, manifestRel!, projectDir, spc);
+            });
 
         // Pipeline 3: Migration class discovery for MigrateAsync generation
         var migrationClasses = context.SyntaxProvider
