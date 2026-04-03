@@ -40,11 +40,6 @@ public static class DatabaseSetup
                 LineTotal REAL NOT NULL,
                 FOREIGN KEY (OrderId) REFERENCES orders(OrderId)
             );
-
-            -- Views mapping entity class names to actual table names.
-            -- The Quarry join interceptor uses entity type names as table identifiers.
-            CREATE VIEW IF NOT EXISTS "Order" AS SELECT * FROM orders;
-            CREATE VIEW IF NOT EXISTS "OrderItem" AS SELECT * FROM order_items;
             """;
         cmd.ExecuteNonQuery();
 

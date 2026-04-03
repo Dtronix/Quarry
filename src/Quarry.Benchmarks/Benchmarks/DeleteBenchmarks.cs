@@ -75,9 +75,22 @@ public class DeleteBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<int> Quarry_DeleteSingleRow()
     {
+        // Uses field _targetId → parameterized WHERE (@p0).
+        // This is the apples-to-apples comparison against Raw's parameterized @id.
         return await QuarryDb.Users()
             .Delete()
             .Where(u => u.UserId == _targetId)
+            .ExecuteNonQueryAsync();
+    }
+
+    [Benchmark]
+    public async Task<int> Quarry_DeleteSingleRow_Inlined()
+    {
+        // Constant 999 is inlined into SQL by the source generator (no DbParameter).
+        // Demonstrates Quarry's compile-time constant elimination.
+        return await QuarryDb.Users()
+            .Delete()
+            .Where(u => u.UserId == 999)
             .ExecuteNonQueryAsync();
     }
 
