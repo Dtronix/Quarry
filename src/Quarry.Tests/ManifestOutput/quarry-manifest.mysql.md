@@ -10,6 +10,12 @@
 INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+
 ---
 
 ### Accounts().Insert().Prepare().ToDiagnostics()
@@ -17,6 +23,14 @@ INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?); SE
 ```sql
 INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`, `credit_limit`, `IsActive`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+| `@p3` | `Quarry.Tests.Samples.Money` |
+| `@p4` | `bool` |
 
 ---
 
@@ -82,6 +96,14 @@ SELECT `AccountName`, `Balance`, `credit_limit` FROM `accounts` WHERE `AccountNa
 INSERT INTO `order_items` (`OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `int` |
+| `@p3` | `decimal` |
+| `@p4` | `decimal` |
+
 ---
 
 ### OrderItems().Update().Set(...).Where(...).Prepare().ToDiagnostics()
@@ -138,21 +160,12 @@ DELETE FROM `orders` WHERE `OrderId` = 42
 INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()
 ```
 
----
-
-### Orders().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()
-```
-
----
-
-### Orders().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?, ?); SELECT LAST_INSERT_ID()
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+| `@p2` | `string` |
+| `@p3` | `DateTime` |
 
 ---
 
@@ -161,6 +174,14 @@ INSERT INTO `orders` (`UserId`, `Total`, `Status`, `OrderDate`) VALUES (?, ?, ?,
 ```sql
 INSERT INTO `orders` (`UserId`, `Total`, `Status`, `Priority`, `OrderDate`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+| `@p2` | `string` |
+| `@p3` | `Quarry.Tests.Samples.OrderPriority` |
+| `@p4` | `DateTime` |
 
 ---
 
@@ -185,18 +206,6 @@ SELECT `OrderId`, `Total` FROM `orders`
 ```sql
 SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders`
 ```
-
----
-
-### Orders().Select(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `OrderId`, `Total`, `Priority` FROM `orders` WHERE `Priority` = ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `Quarry.Tests.Samples.OrderPriority` |
 
 ---
 
@@ -271,14 +280,6 @@ SELECT `Status`, AVG("Total") AS `Item2` FROM `orders` GROUP BY `Status`
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `Status`, AVG("Total") AS `Item2` FROM `orders` GROUP BY `Status`
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `Status`, COUNT(*) AS `Item2` FROM `orders` GROUP BY `Status`
 ```
 
@@ -296,22 +297,6 @@ SELECT `Status`, COUNT(*) AS `Item2`, SUM("Total") AS `Item3` FROM `orders` GROU
 
 ```sql
 SELECT `Status`, MAX("Total") AS `Item2` FROM `orders` GROUP BY `Status`
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `Status`, MAX("Total") AS `Item2` FROM `orders` GROUP BY `Status`
-```
-
----
-
-### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `Status`, MIN("Total") AS `Item2` FROM `orders` GROUP BY `Status`
 ```
 
 ---
@@ -349,18 +334,6 @@ SELECT `OrderId` FROM `orders` WHERE `Priority` = ?
 ```sql
 SELECT `OrderId`, `Status` FROM `orders` WHERE `Status` IN ('pending', 'processing', 'shipped')
 ```
-
----
-
-### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `OrderId`, `Total` FROM `orders` WHERE `Priority` = ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `Quarry.Tests.Samples.OrderPriority` |
 
 ---
 
@@ -503,29 +476,11 @@ SELECT DISTINCT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1
 INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
 ```
 
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
-```
-
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
-```
-
----
-
-### Users().Insert().Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -535,6 +490,10 @@ INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELE
 INSERT INTO `users` (`UserName`) VALUES 
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
 ---
 
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
@@ -543,13 +502,10 @@ INSERT INTO `users` (`UserName`) VALUES
 INSERT INTO `users` (`UserName`, `CreatedAt`) VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`) VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTime` |
 
 ---
 
@@ -559,13 +515,10 @@ INSERT INTO `users` (`UserName`, `IsActive`) VALUES
 INSERT INTO `users` (`UserName`, `IsActive`) VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
 
 ---
 
@@ -575,13 +528,11 @@ INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES
 INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES 
 ```
 
----
-
-### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
-
-```sql
-INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES 
-```
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+| `@p2` | `DateTime` |
 
 ---
 
@@ -589,30 +540,6 @@ INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES
 
 ```sql
 SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t3`.`AccountName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` INNER JOIN `accounts` AS `t3` ON `t0`.`UserId` = `t3`.`UserId`
-```
-
----
-
-### Users().Join(...).Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t3`.`AccountName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` INNER JOIN `accounts` AS `t3` ON `t0`.`UserId` = `t3`.`UserId`
-```
-
----
-
-### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId`
-```
-
----
-
-### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId`
 ```
 
 ---
@@ -668,30 +595,6 @@ SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
-```
-
----
-
-### Users().Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `t1`.`OrderId`, `t1`.`UserId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate`, `t1`.`Notes` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
 ```
 
@@ -725,14 +628,6 @@ SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER J
 
 ```sql
 SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t0`.`LastLogin` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 100
-```
-
----
-
-### Users().Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`IsActive` = 1
 ```
 
 ---
@@ -913,30 +808,6 @@ SELECT `UserId`, `UserName` FROM `users`
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `UserId`, `UserName` FROM `users`
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users`
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users`
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `UserId`, `UserName`, `Email` FROM `users`
 ```
 
@@ -946,22 +817,6 @@ SELECT `UserId`, `UserName`, `Email` FROM `users`
 
 ```sql
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users`
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users`
-```
-
----
-
-### Users().Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users`
 ```
 
 ---
@@ -1017,22 +872,6 @@ UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
-UPDATE `users` SET `IsActive` = 0 WHERE `IsActive` = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE `users` SET `UserName` = 'NewName' WHERE `UserId` = 1
-```
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
 UPDATE `users` SET `UserName` = 'NewName' WHERE `UserId` = 1
 ```
 
@@ -1055,14 +894,6 @@ UPDATE `users` SET `UserName` = 'x' WHERE `UserId` = ?
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int` |
-
----
-
-### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
-
-```sql
-UPDATE `users` SET `UserName` = 'x', `IsActive` = 0 WHERE `UserId` = 1
-```
 
 ---
 
@@ -1126,30 +957,6 @@ UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1
 ### Users().Update().Set(...).Where(...).ToDiagnostics()
 
 ```sql
-UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
-UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Update().Set(...).Where(...).ToDiagnostics()
-
-```sql
 UPDATE `users` SET `UserName` = ? WHERE `UserId` = ?
 ```
 
@@ -1177,14 +984,6 @@ UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 3
 
 ```sql
 SELECT COUNT(*) FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t0`.`IsActive` = 1
-```
-
----
-
-### Users().Where(...).Join(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t0`.`IsActive` = 1
 ```
 
 ---
@@ -1448,14 +1247,6 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 ### Users().Where(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1
-```
-
----
-
-### Users().Where(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)
 ```
 
@@ -1465,14 +1256,6 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 ```sql
 SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1
-```
-
----
-
-### Users().Where(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 2
 ```
 
 ---
@@ -1649,38 +1432,6 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `UserId`, `UserName` FROM `users` WHERE `LastLogin` >= ?
 ```
 
@@ -1699,18 +1450,6 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `LastLogin` IN ({__COL_P0__})
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `DateTime[]` |
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE `LastLogin` IN ({__COL_P0__})
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `DateTime?[]` |
 
 ---
 
@@ -1901,46 +1640,6 @@ SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%lic%'
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE '%z'
 ```
 
@@ -2070,14 +1769,6 @@ SELECT `UserId`, `UserName` FROM `users` WHERE (`LastLogin` IS NOT NULL) AND (`L
 
 ```sql
 SELECT `UserId`, `UserName` FROM `users` WHERE (`UserName` LIKE '%admin%') AND (`IsActive` = 1)
-```
-
----
-
-### Users().Where(...).Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `UserId`, `UserName` FROM `users` WHERE (`UserName` LIKE '%er%') AND (`UserName` LIKE 'Us%')
 ```
 
 ---
