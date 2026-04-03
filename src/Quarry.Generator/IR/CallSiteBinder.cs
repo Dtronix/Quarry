@@ -149,8 +149,16 @@ internal static class CallSiteBinder
             joinedEntities = resolved;
         }
 
-        // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
+        // Enrich RawSql type info from entity registry when property discovery failed
+        // (generated entity types have no properties visible during Pipeline 2 discovery)
         RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;
+        if (rawSqlTypeInfo != null
+            && rawSqlTypeInfo.TypeKind != RawSqlTypeKind.Scalar
+            && rawSqlTypeInfo.Properties.Count == 0
+            && entry != null)
+        {
+            rawSqlTypeInfo = EnrichRawSqlTypeInfoFromEntity(rawSqlTypeInfo, entry.Entity);
+        }
 
         var bound = new BoundCallSite(
             raw: raw,
@@ -204,5 +212,39 @@ internal static class CallSiteBinder
             return columnRef.PropertyName;
 
         return null;
+    }
+
+    /// <summary>
+    /// Enriches a RawSqlTypeInfo that has zero discovered properties by deriving
+    /// property metadata from an entity's column definitions in the EntityRegistry.
+    /// This handles the case where T is a generated entity type whose properties
+    /// aren't visible to the semantic model during Pipeline 2 discovery.
+    /// </summary>
+    private static RawSqlTypeInfo EnrichRawSqlTypeInfoFromEntity(
+        RawSqlTypeInfo original,
+        EntityInfo entity)
+    {
+        var properties = new List<RawSqlPropertyInfo>(entity.Columns.Count);
+        foreach (var col in entity.Columns)
+        {
+            properties.Add(new RawSqlPropertyInfo(
+                propertyName: col.PropertyName,
+                clrType: col.ClrType,
+                readerMethodName: col.ReaderMethodName,
+                isNullable: col.IsNullable,
+                isEnum: col.IsEnum,
+                fullClrType: col.FullClrType,
+                customTypeMappingClass: col.CustomTypeMappingClass,
+                dbReaderMethodName: col.DbReaderMethodName,
+                isForeignKey: col.Kind == Quarry.Shared.Migration.ColumnKind.ForeignKey,
+                referencedEntityName: col.ReferencedEntityName));
+        }
+
+        return new RawSqlTypeInfo(
+            original.ResultTypeName,
+            RawSqlTypeKind.Entity,
+            properties,
+            original.HasCancellationToken,
+            original.ScalarReaderMethod);
     }
 }
