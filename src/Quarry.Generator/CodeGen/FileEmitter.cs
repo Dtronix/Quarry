@@ -416,7 +416,7 @@ internal sealed class FileEmitter
         // Execution interceptor validation
         if (site.Kind is InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
             or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
-            or InterceptorKind.ToAsyncEnumerable)
+            or InterceptorKind.ExecuteFetchSingleOrDefault or InterceptorKind.ToAsyncEnumerable)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var chain))
             {
@@ -581,6 +581,7 @@ internal sealed class FileEmitter
             case InterceptorKind.ExecuteFetchFirst:
             case InterceptorKind.ExecuteFetchFirstOrDefault:
             case InterceptorKind.ExecuteFetchSingle:
+            case InterceptorKind.ExecuteFetchSingleOrDefault:
             case InterceptorKind.ExecuteScalar:
             case InterceptorKind.ToAsyncEnumerable:
                 if (chainLookup.TryGetValue(site.UniqueId, out var selectChain))

@@ -1619,6 +1619,7 @@ internal static class ChainAnalyzer
             or InterceptorKind.ExecuteFetchFirst
             or InterceptorKind.ExecuteFetchFirstOrDefault
             or InterceptorKind.ExecuteFetchSingle
+            or InterceptorKind.ExecuteFetchSingleOrDefault
             or InterceptorKind.ExecuteScalar
             or InterceptorKind.ExecuteNonQuery
             or InterceptorKind.ToAsyncEnumerable

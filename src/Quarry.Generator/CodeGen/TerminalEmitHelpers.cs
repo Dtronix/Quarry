@@ -674,6 +674,7 @@ internal static class TerminalEmitHelpers
             InterceptorKind.ExecuteFetchFirst => $"Task<{resultType}>",
             InterceptorKind.ExecuteFetchFirstOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
             InterceptorKind.ExecuteFetchSingle => $"Task<{resultType}>",
+            InterceptorKind.ExecuteFetchSingleOrDefault => $"Task<{resultType}{firstOrDefaultSuffix}>",
             InterceptorKind.ExecuteScalar => $"Task<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"IAsyncEnumerable<{resultType}>",
             _ => ""
@@ -692,6 +693,7 @@ internal static class TerminalEmitHelpers
             InterceptorKind.ExecuteFetchFirst => $"ExecuteCarrierFirstWithCommandAsync<{resultType}>",
             InterceptorKind.ExecuteFetchFirstOrDefault => $"ExecuteCarrierFirstOrDefaultWithCommandAsync<{resultType}>",
             InterceptorKind.ExecuteFetchSingle => $"ExecuteCarrierSingleWithCommandAsync<{resultType}>",
+            InterceptorKind.ExecuteFetchSingleOrDefault => $"ExecuteCarrierSingleOrDefaultWithCommandAsync<{resultType}>",
             InterceptorKind.ExecuteScalar => $"ExecuteCarrierScalarWithCommandAsync<{scalarTypeArg}>",
             InterceptorKind.ToAsyncEnumerable => $"ToCarrierAsyncEnumerableWithCommandAsync<{resultType}>",
             _ => ""

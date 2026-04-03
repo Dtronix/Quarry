@@ -101,6 +101,53 @@ public interface IQueryBuilder<T> where T : class
     IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    // ── Execution terminals (no Select — result type is the entity type T) ──
+
+    /// <summary>
+    /// Executes the query and returns all results as a list.
+    /// </summary>
+    Task<List<T>> ExecuteFetchAllAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchAllAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns the first result.
+    /// </summary>
+    Task<T> ExecuteFetchFirstAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchFirstAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns the first result, or default if no results.
+    /// </summary>
+    Task<T?> ExecuteFetchFirstOrDefaultAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchFirstOrDefaultAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns exactly one result.
+    /// </summary>
+    Task<T> ExecuteFetchSingleAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns exactly one result, or default if no results.
+    /// Throws if more than one result.
+    /// </summary>
+    Task<T?> ExecuteFetchSingleOrDefaultAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleOrDefaultAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns the scalar result.
+    /// </summary>
+    Task<TScalar> ExecuteScalarAsync<TScalar>(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteScalarAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns results as an async enumerable for streaming.
+    /// </summary>
+    IAsyncEnumerable<T> ToAsyncEnumerable(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ToAsyncEnumerable is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // ── Diagnostics and preparation ──
+
     /// <summary>
     /// Returns a <see cref="QueryDiagnostics"/> containing the generated SQL,
     /// bound parameters, and optimization metadata for this query chain.
@@ -202,6 +249,13 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// </summary>
     Task<TResult> ExecuteFetchSingleAsync(CancellationToken cancellationToken = default)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Executes the query and returns exactly one result, or default if no results.
+    /// Throws if more than one result.
+    /// </summary>
+    Task<TResult?> ExecuteFetchSingleOrDefaultAsync(CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExecuteFetchSingleOrDefaultAsync is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
     /// Executes the query and returns the scalar result.

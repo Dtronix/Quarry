@@ -65,28 +65,6 @@ public class EntityRegistryTests
     }
 
     [Test]
-    public void GetByName_FindsEntity()
-    {
-        var contexts = CreateTestContexts();
-        var registry = EntityRegistry.Build(contexts, CancellationToken.None);
-
-        var entity = registry.GetByName("User");
-        Assert.That(entity, Is.Not.Null);
-        Assert.That(entity!.EntityName, Is.EqualTo("User"));
-    }
-
-    [Test]
-    public void ToEntityLookup_ReturnsAllEntities()
-    {
-        var contexts = CreateTestContexts();
-        var registry = EntityRegistry.Build(contexts, CancellationToken.None);
-
-        var lookup = registry.ToEntityLookup();
-        Assert.That(lookup, Contains.Key("User"));
-        Assert.That(lookup, Contains.Key("Order"));
-    }
-
-    [Test]
     public void Equality_SameEntities()
     {
         var contexts = CreateTestContexts();

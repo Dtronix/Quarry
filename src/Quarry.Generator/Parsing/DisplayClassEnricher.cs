@@ -3,7 +3,9 @@ using System.Collections.Immutable;
 using System.Linq;
 using System.Threading;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
 
 namespace Quarry.Generators.Parsing;
@@ -23,6 +25,14 @@ internal static class DisplayClassEnricher
     {
         if (sites.Length == 0)
             return sites;
+
+        // Build a supplemental compilation that includes generated entity and context
+        // source. The original compilation does not contain entity classes or context
+        // accessor methods produced by Pipeline A (RegisterSourceOutput), so variables
+        // flowing from those methods have TypeKind.Error in the semantic model.
+        // Adding the generated source lets Roslyn resolve all types natively.
+        if (entityRegistry != null)
+            compilation = BuildSupplementalCompilation(compilation, entityRegistry);
 
         // Cache semantic models per syntax tree
         var semanticModelCache = new Dictionary<SyntaxTree, SemanticModel>();
@@ -107,7 +117,7 @@ internal static class DisplayClassEnricher
             {
                 site.CaptureKind = CaptureKind.ClosureCapture;
                 site.CapturedVariableTypes = DisplayClassNameResolver.CollectCapturedVariableTypes(
-                    dataFlow, analysisResult.SemanticModel, entityRegistry);
+                    dataFlow, analysisResult.SemanticModel);
             }
             else
             {
@@ -116,6 +126,40 @@ internal static class DisplayClassEnricher
         }
 
         return sites;
+    }
+
+    /// <summary>
+    /// Builds a compilation that includes the generated entity classes and context
+    /// partial classes so the semantic model can resolve all generated types natively.
+    /// <c>Compilation.AddSyntaxTrees()</c> is cheap — Roslyn compilations are immutable
+    /// and share state, so the new compilation reuses almost everything from the original.
+    /// </summary>
+    private static Compilation BuildSupplementalCompilation(
+        Compilation compilation, EntityRegistry entityRegistry)
+    {
+        var generatedTrees = new List<SyntaxTree>();
+
+        // Parse options must match the existing compilation to avoid
+        // "Inconsistent syntax tree features" when adding trees.
+        var parseOptions = compilation.SyntaxTrees.FirstOrDefault()?.Options as CSharpParseOptions;
+
+        foreach (var contextInfo in entityRegistry.AllContexts)
+        {
+            // Entity classes
+            foreach (var entity in contextInfo.Entities)
+            {
+                var src = EntityCodeGenerator.GenerateEntityClass(entity, contextInfo.Namespace);
+                generatedTrees.Add(CSharpSyntaxTree.ParseText(src, parseOptions));
+            }
+
+            // Context partial class with accessor methods
+            var ctxSrc = ContextCodeGenerator.GenerateContextClass(contextInfo);
+            generatedTrees.Add(CSharpSyntaxTree.ParseText(ctxSrc, parseOptions));
+        }
+
+        return generatedTrees.Count > 0
+            ? compilation.AddSyntaxTrees(generatedTrees)
+            : compilation;
     }
 
     private sealed class MethodAnalysisResult

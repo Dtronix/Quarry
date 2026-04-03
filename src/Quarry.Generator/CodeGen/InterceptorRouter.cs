@@ -40,6 +40,7 @@ internal static class InterceptorRouter
             case InterceptorKind.ExecuteFetchFirst:
             case InterceptorKind.ExecuteFetchFirstOrDefault:
             case InterceptorKind.ExecuteFetchSingle:
+            case InterceptorKind.ExecuteFetchSingleOrDefault:
             case InterceptorKind.ExecuteScalar:
             case InterceptorKind.ExecuteNonQuery:
             case InterceptorKind.ToAsyncEnumerable:
