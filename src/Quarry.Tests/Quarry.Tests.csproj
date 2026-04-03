@@ -55,6 +55,13 @@
     <ProjectReference Include="..\Quarry.Generator\Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
   </ItemGroup>
 
+  <!-- SQL manifest emission: generator writes per-dialect .md files here during build -->
+  <PropertyGroup>
+    <QuarrySqlManifestPath>ManifestOutput</QuarrySqlManifestPath>
+  </PropertyGroup>
+  <Import Project="..\Quarry.Generator\build\Quarry.Generator.props" />
+
+
   <!-- Shared project (selective: BackupGenerator + Scaffold only, Sql comes from Quarry.dll) -->
   <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
   <ItemGroup>
