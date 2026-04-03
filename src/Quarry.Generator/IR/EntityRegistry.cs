@@ -16,18 +16,15 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
 {
     private readonly Dictionary<string, List<EntityRegistryEntry>> _byEntityType;
     private readonly Dictionary<string, EntityInfo> _byEntityName;
-    private readonly Dictionary<string, EntityInfo> _byAccessorName;
     private readonly ImmutableArray<ContextInfo> _allContexts;
 
     public EntityRegistry(
         Dictionary<string, List<EntityRegistryEntry>> byEntityType,
         Dictionary<string, EntityInfo> byEntityName,
-        Dictionary<string, EntityInfo> byAccessorName,
         ImmutableArray<ContextInfo> allContexts)
     {
         _byEntityType = byEntityType;
         _byEntityName = byEntityName;
-        _byAccessorName = byAccessorName;
         _allContexts = allContexts;
     }
 
@@ -49,18 +46,10 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     {
         var byEntityType = new Dictionary<string, List<EntityRegistryEntry>>(StringComparer.Ordinal);
         var byEntityName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-        var byAccessorName = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
 
         foreach (var context in contexts)
         {
             ct.ThrowIfCancellationRequested();
-
-            // Index accessor names from EntityMappings (e.g., "Packages" → Package entity)
-            foreach (var mapping in context.EntityMappings)
-            {
-                if (!byAccessorName.ContainsKey(mapping.PropertyName))
-                    byAccessorName[mapping.PropertyName] = mapping.Entity;
-            }
 
             foreach (var entity in context.Entities)
             {
@@ -95,7 +84,7 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
             }
         }
 
-        return new EntityRegistry(byEntityType, byEntityName, byAccessorName, contexts);
+        return new EntityRegistry(byEntityType, byEntityName, contexts);
     }
 
     private static void AddToIndex(
@@ -193,37 +182,6 @@ internal sealed class EntityRegistry : IEquatable<EntityRegistry>
     {
         var entries = GetEntries(typeName);
         return entries != null && entries.Count > 0 ? entries[0] : null;
-    }
-
-    /// <summary>
-    /// Gets entity info by entity name (for subquery resolution).
-    /// </summary>
-    public EntityInfo? GetByName(string entityName)
-    {
-        _byEntityName.TryGetValue(entityName, out var entity);
-        return entity;
-    }
-
-    /// <summary>
-    /// Gets entity info by context accessor method name (e.g., "Packages" → Package entity).
-    /// </summary>
-    public EntityInfo? GetByAccessorName(string accessorName)
-    {
-        _byAccessorName.TryGetValue(accessorName, out var entity);
-        return entity;
-    }
-
-    /// <summary>
-    /// Gets all entity entries as a flat dictionary (for backward compatibility with existing code).
-    /// </summary>
-    public Dictionary<string, EntityInfo> ToEntityLookup()
-    {
-        var result = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
-        foreach (var kvp in _byEntityName)
-        {
-            result[kvp.Key] = kvp.Value;
-        }
-        return result;
     }
 
     /// <summary>

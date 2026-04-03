@@ -8,19 +8,6 @@ using Quarry.Logging;
 namespace Quarry.Internal;
 
 /// <summary>
-/// Execution mode for carrier-optimized command-based execution.
-/// </summary>
-internal enum ExecutionMode
-{
-    FetchAll,
-    First,
-    FirstOrDefault,
-    Single,
-    Scalar,
-    NonQuery
-}
-
-/// <summary>
 /// Executes carrier-optimized queries with pre-built commands.
 /// This type is used by generated interceptor code and is not intended for direct use.
 /// </summary>
