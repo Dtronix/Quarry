@@ -637,7 +637,7 @@ internal static class ChainAnalyzer
                         registry, isTraced);
                 }
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry,
-                    site.Bound.Dialect, implicitJoinInfos);
+                    site.Bound.Dialect, implicitJoinInfos, diagnostics);
             }
         }
 
@@ -1143,7 +1143,8 @@ internal static class ChainAnalyzer
         TranslatedCallSite executionSite,
         EntityRegistry registry,
         SqlDialect dialect,
-        List<ImplicitJoinInfo> implicitJoins)
+        List<ImplicitJoinInfo> implicitJoins,
+        List<DiagnosticInfo>? diagnostics = null)
     {
         // Build column lookups for enrichment
         // For joined queries, build per-tableAlias lookups from all joined entities
@@ -1213,7 +1214,8 @@ internal static class ChainAnalyzer
                 if (col.NavigationHops != null && col.NavigationHops.Count > 0 && entityRef != null)
                 {
                     var resolved = ResolveNavigationColumn(
-                        col, entityRef, registry, dialect, implicitJoins);
+                        col, entityRef, registry, dialect, implicitJoins,
+                        diagnostics, executionSite.Location);
                     if (resolved != null)
                     {
                         columns.Add(resolved);
@@ -1386,7 +1388,9 @@ internal static class ChainAnalyzer
         EntityRef sourceEntity,
         EntityRegistry registry,
         SqlDialect dialect,
-        List<ImplicitJoinInfo> implicitJoins)
+        List<ImplicitJoinInfo> implicitJoins,
+        List<DiagnosticInfo>? diagnostics = null,
+        DiagnosticLocation location = default)
     {
         if (col.NavigationHops == null) return null;
 
@@ -1406,7 +1410,14 @@ internal static class ChainAnalyzer
 
             // Resolve target entity from registry
             var targetEntry = registry.Resolve(nav.TargetEntityName);
-            if (targetEntry == null) return null;
+            if (targetEntry == null)
+            {
+                diagnostics?.Add(new DiagnosticInfo(
+                    "QRY043",
+                    location,
+                    hop, currentEntity.EntityName, nav.TargetEntityName));
+                return null;
+            }
             var targetRef = EntityRef.FromEntityInfo(targetEntry.Entity);
 
             // Create or reuse implicit join
