@@ -282,8 +282,8 @@ public class ManifestEmitterTests
         var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans);
 
         Assert.That(markdown, Does.Contain("| `@p0` | `bool` |"));
-        Assert.That(markdown, Does.Contain("| `@p1` | `string` `[sensitive]` |"));
-        Assert.That(markdown, Does.Contain("| Parameter | Type |"));
+        Assert.That(markdown, Does.Contain("| `@p1` | `string` | Yes |"));
+        Assert.That(markdown, Does.Contain("| Parameter | Type | Sensitive |"));
     }
 
     [Test]
