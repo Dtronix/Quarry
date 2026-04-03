@@ -129,6 +129,7 @@ internal static class VariableTracer
     {
         return name is "IQueryBuilder" or "QueryBuilder"
             or "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4"
+            or "IJoinedQueryBuilder5" or "IJoinedQueryBuilder6"
             or "IEntityAccessor" or "EntityAccessor"
             or "IDeleteBuilder" or "IExecutableDeleteBuilder" or "DeleteBuilder"
             or "IUpdateBuilder" or "IExecutableUpdateBuilder" or "UpdateBuilder"
