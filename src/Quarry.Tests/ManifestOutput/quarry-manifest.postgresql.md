@@ -500,7 +500,7 @@ INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES ($1, $2, $3) RE
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO "users" ("UserName") VALUES 
+INSERT INTO "users" ("UserName") VALUES (@p0), ...
 ```
 
 | Parameter | Type |
@@ -512,7 +512,7 @@ INSERT INTO "users" ("UserName") VALUES
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO "users" ("UserName", "CreatedAt") VALUES 
+INSERT INTO "users" ("UserName", "CreatedAt") VALUES (@p0, @p1), ...
 ```
 
 | Parameter | Type |
@@ -525,7 +525,7 @@ INSERT INTO "users" ("UserName", "CreatedAt") VALUES
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO "users" ("UserName", "IsActive") VALUES 
+INSERT INTO "users" ("UserName", "IsActive") VALUES (@p0, @p1), ...
 ```
 
 | Parameter | Type |
@@ -538,7 +538,7 @@ INSERT INTO "users" ("UserName", "IsActive") VALUES
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES 
+INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2), ...
 ```
 
 | Parameter | Type |
@@ -976,7 +976,7 @@ UPDATE "users" SET "UserName" = $1 WHERE "UserId" = 1
 
 | Parameter | Type |
 |-----------|------|
-| `@p0` | `?` |
+| `@p0` | `object` |
 
 ---
 

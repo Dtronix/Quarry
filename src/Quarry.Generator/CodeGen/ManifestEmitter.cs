@@ -206,7 +206,7 @@ internal static class ManifestEmitter
                 {
                     var label = BuildVariantLabel(mask, bitToCondition);
                     sb.AppendLine($"-- {label}");
-                    sb.AppendLine(variant.Sql);
+                    sb.AppendLine(AppendBatchInsertRow(variant.Sql, plan));
 
                     if (i < sortedMasks.Count - 1)
                         sb.AppendLine();
@@ -217,70 +217,107 @@ internal static class ManifestEmitter
         {
             // Single variant (mask 0 or the only mask present)
             var variant = variants.Values.First();
-            sb.AppendLine(variant.Sql);
+            sb.AppendLine(AppendBatchInsertRow(variant.Sql, plan));
         }
         sb.AppendLine("```");
 
         // Parameter table — either from Plan.Parameters (clause-sourced) or InsertInfo.Columns (entity-sourced)
+        RenderParameterTable(sb, plan, isConditional);
+    }
+
+    /// <summary>
+    /// Renders the parameter table for a plan, sourcing from Plan.Parameters or InsertInfo.Columns.
+    /// Adds Conditional and Sensitive columns only when needed.
+    /// </summary>
+    private static void RenderParameterTable(StringBuilder sb, AssembledPlan plan, bool isConditional)
+    {
+        // Collect parameter rows from either Plan.Parameters or InsertInfo.Columns
+        var rows = new List<(string Name, string Type, bool IsSensitive, string? Condition)>();
+
         var parameters = plan.ChainParameters;
         if (parameters.Count > 0)
         {
-            sb.AppendLine();
-
-            // Build parameter → condition text mapping
             Dictionary<int, string>? paramConditions = null;
             if (isConditional)
                 paramConditions = BuildParamConditionality(plan);
 
-            var hasConditionalColumn = paramConditions != null && paramConditions.Count > 0;
-
-            if (hasConditionalColumn)
-            {
-                sb.AppendLine("| Parameter | Type | Conditional |");
-                sb.AppendLine("|-----------|------|-------------|");
-            }
-            else
-            {
-                sb.AppendLine("| Parameter | Type |");
-                sb.AppendLine("|-----------|------|");
-            }
-
             foreach (var param in parameters.OrderBy(p => p.GlobalIndex))
             {
-                var paramName = $"`@p{param.GlobalIndex}`";
-                var typeDisplay = FormatClrType(param.ClrType, param.IsCollection, param.ElementTypeName);
-                if (param.IsSensitive)
-                    typeDisplay += " `[sensitive]`";
+                var typeDisplay = SimplifyTypeName(param.IsCollection && param.ElementTypeName != null
+                    ? param.ElementTypeName : param.ClrType);
+                if (param.IsCollection)
+                    typeDisplay += "[]";
 
-                if (hasConditionalColumn)
-                {
-                    var condition = paramConditions!.TryGetValue(param.GlobalIndex, out var cond) ? cond : "";
-                    sb.AppendLine($"| {paramName} | {typeDisplay} | {condition} |");
-                }
-                else
-                {
-                    sb.AppendLine($"| {paramName} | {typeDisplay} |");
-                }
+                string? condition = null;
+                if (paramConditions != null && paramConditions.TryGetValue(param.GlobalIndex, out var cond))
+                    condition = cond;
+
+                rows.Add(($"@p{param.GlobalIndex}", typeDisplay, param.IsSensitive, condition));
             }
         }
         else if (plan.InsertInfo != null && plan.InsertInfo.Columns.Count > 0)
         {
-            // INSERT/BatchInsert parameters come from entity properties, not Plan.Parameters.
-            // Render from InsertInfo.Columns instead.
-            sb.AppendLine();
-            sb.AppendLine("| Parameter | Type |");
-            sb.AppendLine("|-----------|------|");
-
             for (int idx = 0; idx < plan.InsertInfo.Columns.Count; idx++)
             {
                 var col = plan.InsertInfo.Columns[idx];
-                var paramName = $"`@p{idx}`";
-                var typeDisplay = FormatClrType(col.FullClrType, isCollection: false, elementTypeName: null);
-                if (col.IsSensitive)
-                    typeDisplay += " `[sensitive]`";
-                sb.AppendLine($"| {paramName} | {typeDisplay} |");
+                var typeDisplay = SimplifyTypeName(col.FullClrType);
+                rows.Add(($"@p{idx}", typeDisplay, col.IsSensitive, null));
             }
         }
+
+        if (rows.Count == 0)
+            return;
+
+        sb.AppendLine();
+
+        var hasSensitive = rows.Any(r => r.IsSensitive);
+        var hasConditional = rows.Any(r => r.Condition != null);
+
+        // Build header dynamically based on which extra columns are needed
+        var header = "| Parameter | Type |";
+        var separator = "|-----------|------|";
+        if (hasSensitive) { header += " Sensitive |"; separator += "-----------|"; }
+        if (hasConditional) { header += " Conditional |"; separator += "-------------|"; }
+
+        sb.AppendLine(header);
+        sb.AppendLine(separator);
+
+        foreach (var (name, type, isSensitive, condition) in rows)
+        {
+            var line = $"| `{name}` | `{type}` |";
+            if (hasSensitive) line += isSensitive ? " Yes |" : " |";
+            if (hasConditional) line += condition != null ? $" {condition} |" : " |";
+            sb.AppendLine(line);
+        }
+    }
+
+    /// <summary>
+    /// For BatchInsert plans where the SQL template ends at "VALUES ", appends a representative
+    /// row placeholder so the manifest shows the complete SQL pattern.
+    /// </summary>
+    private static string AppendBatchInsertRow(string sql, AssembledPlan plan)
+    {
+        if (plan.QueryKind != QueryKind.BatchInsert)
+            return sql;
+
+        var insertInfo = plan.InsertInfo;
+        if (insertInfo == null || insertInfo.Columns.Count == 0)
+            return sql;
+
+        // Only append if the SQL ends with the VALUES keyword (possibly with trailing whitespace)
+        var trimmed = sql.TrimEnd();
+        if (!trimmed.EndsWith("VALUES", StringComparison.OrdinalIgnoreCase))
+            return sql;
+
+        var placeholders = new StringBuilder("(");
+        for (int i = 0; i < insertInfo.Columns.Count; i++)
+        {
+            if (i > 0) placeholders.Append(", ");
+            placeholders.Append($"@p{i}");
+        }
+        placeholders.Append("), ...");
+
+        return trimmed + " " + placeholders.ToString();
     }
 
     /// <summary>
@@ -467,6 +504,10 @@ internal static class ManifestEmitter
     /// </summary>
     internal static string SimplifyTypeName(string clrType)
     {
+        // Handle unresolved types from the pipeline
+        if (string.IsNullOrEmpty(clrType) || clrType == "?")
+            return "object";
+
         // Handle nullable wrapper
         if (clrType.StartsWith("System.Nullable<", StringComparison.Ordinal) && clrType.EndsWith(">", StringComparison.Ordinal))
         {
