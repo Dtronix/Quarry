@@ -97,4 +97,100 @@ internal class CrossDialectNavigationJoinTests
     }
 
     #endregion
+
+    #region One<T> navigation in Select
+
+    [Test]
+    public async Task NavigationJoin_Select_TupleWithNavigation()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var pg = Pg.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var my = My.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var ss = Ss.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+
+        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1",
+            pg:     "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE",
+            mysql:  "SELECT `OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1",
+            ss:     "SELECT [OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1");
+    }
+
+    [Test]
+    public async Task NavigationJoin_Select_NavigationOnlyInSelect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Navigation appears only in Select — the implicit join must still be created
+        var lt = Lite.Orders()
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var pg = Pg.Orders()
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var my = My.Orders()
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+        var ss = Ss.Orders()
+            .Select(o => (o.OrderId, o.User!.UserName)).ToDiagnostics();
+
+        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            pg:     "SELECT \"OrderId\", \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            mysql:  "SELECT `OrderId`, `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId`",
+            ss:     "SELECT [OrderId], [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId]");
+    }
+
+    [Test]
+    public async Task NavigationJoin_Select_SingleColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Select(o => o.User!.UserName).ToDiagnostics();
+        var pg = Pg.Orders().Select(o => o.User!.UserName).ToDiagnostics();
+        var my = My.Orders().Select(o => o.User!.UserName).ToDiagnostics();
+        var ss = Ss.Orders().Select(o => o.User!.UserName).ToDiagnostics();
+
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            pg:     "SELECT \"j0\".\"UserName\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\"",
+            mysql:  "SELECT `j0`.`UserName` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId`",
+            ss:     "SELECT [j0].[UserName] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId]");
+    }
+
+    [Test]
+    public async Task NavigationJoin_Select_DeepChain()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).ToDiagnostics();
+        var pg = Pg.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).ToDiagnostics();
+        var my = My.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).ToDiagnostics();
+        var ss = Ss.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).ToDiagnostics();
+
+        // Note: primary entity columns not yet table-qualified (Phase 2 will add "t0." prefix)
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
+            pg:     "SELECT \"ProductName\", \"j1\".\"UserName\" FROM \"order_items\" AS \"t0\" INNER JOIN \"orders\" AS \"j0\" ON \"t0\".\"OrderId\" = \"j0\".\"OrderId\" INNER JOIN \"users\" AS \"j1\" ON \"j0\".\"UserId\" = \"j1\".\"UserId\"",
+            mysql:  "SELECT `ProductName`, `j1`.`UserName` FROM `order_items` AS `t0` INNER JOIN `orders` AS `j0` ON `t0`.`OrderId` = `j0`.`OrderId` INNER JOIN `users` AS `j1` ON `j0`.`UserId` = `j1`.`UserId`",
+            ss:     "SELECT [ProductName], [j1].[UserName] FROM [order_items] AS [t0] INNER JOIN [orders] AS [j0] ON [t0].[OrderId] = [j0].[OrderId] INNER JOIN [users] AS [j1] ON [j0].[UserId] = [j1].[UserId]");
+    }
+
+    #endregion
 }

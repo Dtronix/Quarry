@@ -636,7 +636,8 @@ internal static class ChainAnalyzer
                         raw.ProjectionInfo.NonOptimalReason ?? "Projection analysis failed",
                         registry, isTraced);
                 }
-                projection = BuildProjection(raw.ProjectionInfo, executionSite, registry);
+                projection = BuildProjection(raw.ProjectionInfo, executionSite, registry,
+                    site.Bound.Dialect, implicitJoinInfos);
             }
         }
 
@@ -1099,7 +1100,12 @@ internal static class ChainAnalyzer
     /// with EntityRef.Columns which has the authoritative column metadata from schema analysis.
     /// For multi-entity (joined) projections, resolves all joined entities from the registry.
     /// </summary>
-    private static SelectProjection BuildProjection(ProjectionInfo projInfo, TranslatedCallSite executionSite, EntityRegistry registry)
+    private static SelectProjection BuildProjection(
+        ProjectionInfo projInfo,
+        TranslatedCallSite executionSite,
+        EntityRegistry registry,
+        SqlDialect dialect,
+        List<ImplicitJoinInfo> implicitJoins)
     {
         // Build column lookups for enrichment
         // For joined queries, build per-tableAlias lookups from all joined entities
@@ -1161,6 +1167,18 @@ internal static class ChainAnalyzer
                             isValueType: true,
                             readerMethodName: TypeClassification.GetReaderMethod(resolvedType),
                             tableAlias: col.TableAlias));
+                        continue;
+                    }
+                }
+
+                // Navigation column enrichment: resolve through One<T> chain
+                if (col.NavigationHops != null && col.NavigationHops.Count > 0 && entityRef != null)
+                {
+                    var resolved = ResolveNavigationColumn(
+                        col, entityRef, registry, dialect, implicitJoins);
+                    if (resolved != null)
+                    {
+                        columns.Add(resolved);
                         continue;
                     }
                 }
@@ -1319,6 +1337,72 @@ internal static class ChainAnalyzer
         return TypeClassification.IsUnresolvedTypeName(col.ClrType)
             || TypeClassification.IsUnresolvedTypeName(col.FullClrType)
             || string.IsNullOrWhiteSpace(col.ColumnName);
+    }
+
+    /// <summary>
+    /// Resolves a navigation column by walking the One&lt;T&gt; chain, creating or reusing
+    /// implicit joins for each hop, and looking up the final column on the terminal entity.
+    /// </summary>
+    private static ProjectedColumn? ResolveNavigationColumn(
+        ProjectedColumn col,
+        EntityRef sourceEntity,
+        EntityRegistry registry,
+        SqlDialect dialect,
+        List<ImplicitJoinInfo> implicitJoins)
+    {
+        if (col.NavigationHops == null) return null;
+
+        var currentEntity = sourceEntity;
+        string currentAlias = "t0"; // primary entity alias when implicit joins exist
+        int aliasCounter = implicitJoins.Count; // continue from existing aliases
+
+        foreach (var hop in col.NavigationHops)
+        {
+            // Find the SingleNavigationInfo for this hop
+            SingleNavigationInfo? nav = null;
+            foreach (var sn in currentEntity.SingleNavigations)
+            {
+                if (sn.PropertyName == hop) { nav = sn; break; }
+            }
+            if (nav == null) return null;
+
+            // Resolve target entity from registry
+            var targetEntry = registry.Resolve(nav.TargetEntityName);
+            if (targetEntry == null) return null;
+            var targetRef = EntityRef.FromEntityInfo(targetEntry.Entity);
+
+            // Create or reuse implicit join
+            var joinInfo = ImplicitJoinHelper.CreateOrReuse(
+                nav, currentEntity, currentAlias, targetRef,
+                dialect, implicitJoins, ref aliasCounter);
+            if (joinInfo == null) return null;
+
+            currentEntity = targetRef;
+            currentAlias = joinInfo.TargetAlias;
+        }
+
+        // Resolve the final property on the terminal entity
+        ColumnInfo? targetCol = null;
+        foreach (var c in currentEntity.Columns)
+        {
+            if (c.PropertyName == col.ColumnName) { targetCol = c; break; }
+        }
+        if (targetCol == null) return null;
+
+        return new ProjectedColumn(
+            propertyName: col.PropertyName,
+            columnName: targetCol.ColumnName,
+            clrType: targetCol.ClrType,
+            fullClrType: targetCol.FullClrType,
+            isNullable: targetCol.IsNullable,
+            ordinal: col.Ordinal,
+            customTypeMapping: targetCol.CustomTypeMappingClass,
+            isValueType: targetCol.IsValueType,
+            readerMethodName: targetCol.DbReaderMethodName ?? targetCol.ReaderMethodName,
+            tableAlias: currentAlias,
+            isForeignKey: targetCol.Kind == ColumnKind.ForeignKey,
+            foreignKeyEntityName: targetCol.ReferencedEntityName,
+            isEnum: targetCol.IsEnum);
     }
 
     /// <summary>
@@ -1551,7 +1635,9 @@ internal static class ChainAnalyzer
             {
                 if (site.Bound.Raw.Kind == InterceptorKind.Select && site.Bound.Raw.ProjectionInfo != null)
                 {
-                    projection = BuildProjection(site.Bound.Raw.ProjectionInfo, executionSite, registry);
+                    var runtimeImplicitJoins = new List<ImplicitJoinInfo>();
+                    projection = BuildProjection(site.Bound.Raw.ProjectionInfo, executionSite, registry,
+                        site.Bound.Dialect, runtimeImplicitJoins);
                     break;
                 }
             }
