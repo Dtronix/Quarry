@@ -178,7 +178,7 @@ internal static class SchemaParser
             {
                 singleNavigations.Add(singleNav);
             }
-            else if (TryParseThroughNavigation(property, propertySymbol, out var throughNav) && throughNav != null)
+            else if (TryParseThroughNavigation(property, propertySymbol, out var throughNav, parseDiagnostics) && throughNav != null)
             {
                 throughNavigations.Add(throughNav);
             }
@@ -1043,7 +1043,8 @@ internal static class SchemaParser
     private static bool TryParseThroughNavigation(
         PropertyDeclarationSyntax property,
         IPropertySymbol propertySymbol,
-        out ThroughNavigationInfo? throughNavigationInfo)
+        out ThroughNavigationInfo? throughNavigationInfo,
+        List<Diagnostic>? diagnostics = null)
     {
         throughNavigationInfo = null;
 
@@ -1097,8 +1098,25 @@ internal static class SchemaParser
         // Second arg: through => through.Address (member access on One<T> nav)
         string? targetNavigationName = ExtractLambdaMemberName(invocation.ArgumentList.Arguments[1]);
 
-        if (junctionNavigationName == null || targetNavigationName == null)
+        var propertyLocation = property.Identifier.GetLocation();
+
+        if (junctionNavigationName == null)
+        {
+            diagnostics?.Add(Diagnostic.Create(
+                DiagnosticDescriptors.HasManyThroughInvalidJunction,
+                propertyLocation,
+                propertySymbol.Name));
             return false;
+        }
+
+        if (targetNavigationName == null)
+        {
+            diagnostics?.Add(Diagnostic.Create(
+                DiagnosticDescriptors.HasManyThroughInvalidTarget,
+                propertyLocation,
+                propertySymbol.Name, junctionEntityName));
+            return false;
+        }
 
         throughNavigationInfo = new ThroughNavigationInfo(
             propertyName: propertySymbol.Name,
