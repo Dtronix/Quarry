@@ -149,7 +149,7 @@ internal static class CallSiteBinder
             joinedEntities = resolved;
         }
 
-        // Pass through RawSql type info from discovery (enrichment happens in the adapter path)
+        // RawSqlTypeInfo was resolved by DisplayClassEnricher using the supplemental compilation
         RawSqlTypeInfo? rawSqlTypeInfo = raw.RawSqlTypeInfo;
 
         var bound = new BoundCallSite(

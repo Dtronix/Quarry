@@ -11,8 +11,8 @@ using Quarry.Generators.IR;
 namespace Quarry.Generators.Parsing;
 
 /// <summary>
-/// Batch processor that enriches all collected RawCallSites with display class names
-/// and captured variable types. Groups sites by containing method to perform closure
+/// Batch processor that enriches all collected RawCallSites with display class names,
+/// captured variable types, and RawSql type info. Groups sites by containing method to perform closure
 /// analysis once per method instead of once per call site.
 /// </summary>
 internal static class DisplayClassEnricher
@@ -125,7 +125,61 @@ internal static class DisplayClassEnricher
             }
         }
 
+        // === RawSql type resolution pass ===
+        // Resolve RawSqlTypeInfo for RawSql call sites using the supplemental compilation.
+        // This must happen here (after BuildSupplementalCompilation) because generated entity
+        // types are not yet in the compilation during Stage 2 discovery.
+        EnrichRawSqlTypeInfo(sites, compilation, semanticModelCache, cancellationToken);
+
         return sites;
+    }
+
+    /// <summary>
+    /// Resolves RawSqlTypeInfo for RawSql call sites that stored their invocation syntax
+    /// for deferred enrichment. Uses the supplemental compilation's semantic model so
+    /// generated entity type members are visible.
+    /// </summary>
+    private static void EnrichRawSqlTypeInfo(
+        ImmutableArray<RawCallSite> sites,
+        Compilation compilation,
+        Dictionary<SyntaxTree, SemanticModel> semanticModelCache,
+        CancellationToken cancellationToken)
+    {
+        foreach (var site in sites)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (site.EnrichmentInvocation == null)
+                continue;
+
+            var invocation = site.EnrichmentInvocation;
+            var syntaxTree = invocation.SyntaxTree;
+
+            if (!semanticModelCache.TryGetValue(syntaxTree, out var semanticModel))
+            {
+                semanticModel = compilation.GetSemanticModel(syntaxTree);
+                semanticModelCache[syntaxTree] = semanticModel;
+            }
+
+            // Re-resolve the method symbol from the supplemental compilation
+            var symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
+            if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
+                continue;
+            if (!methodSymbol.IsGenericMethod || methodSymbol.TypeArguments.Length == 0)
+                continue;
+
+            var typeArgSymbol = methodSymbol.TypeArguments[0];
+            if (typeArgSymbol.TypeKind == TypeKind.TypeParameter || typeArgSymbol.TypeKind == TypeKind.Error)
+                continue;
+
+            var hasCancellationToken = methodSymbol.Parameters.Length >= 3
+                && methodSymbol.Parameters[1].Type.Name == "CancellationToken";
+
+            site.RawSqlTypeInfo = UsageSiteDiscovery.ResolveRawSqlTypeInfo(typeArgSymbol, hasCancellationToken);
+
+            // Clear transient reference — no longer needed after enrichment
+            site.EnrichmentInvocation = null;
+        }
     }
 
     /// <summary>

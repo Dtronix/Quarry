@@ -103,9 +103,11 @@ internal class TestCallSiteBuilder
             joinedEntityTypeName: _joinedEntityTypeName,
             builderTypeName: builderTypeName,
             joinedEntityTypeNames: _joinedEntityTypeNames,
-            rawSqlTypeInfo: _rawSqlTypeInfo,
             contextClassName: _contextClassName,
             contextNamespace: _contextNamespace);
+
+        // RawSqlTypeInfo is a mutable enrichment property (set by DisplayClassEnricher in the real pipeline)
+        raw.RawSqlTypeInfo = _rawSqlTypeInfo;
 
         var columns = _columns ?? new List<ColumnInfo>();
         var entityRef = new EntityRef(
