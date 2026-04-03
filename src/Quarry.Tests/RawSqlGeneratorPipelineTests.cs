@@ -431,6 +431,12 @@ public class Service
             "Should generate switch case for Total column");
         Assert.That(code, Does.Contain("case \"Priority\""),
             "Should generate switch case for Priority column");
+        Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(i)"),
+            "Should generate enum cast for Priority column");
+        Assert.That(code, Does.Contain("case \"UserId\""),
+            "Should generate switch case for FK UserId column");
+        Assert.That(code, Does.Contain("EntityRef<User, int>"),
+            "Should wrap FK column with EntityRef from ColumnInfo metadata");
         Assert.That(code, Does.Not.Contain("static _ => new Order()"),
             "Should NOT emit no-op reader delegate for enriched entity");
     }
@@ -489,13 +495,12 @@ public class Service
     }
 
     [Test]
-    public void RawSqlAsync_EntityT_WithCustomTypeMapping_GeneratesReaderWithAllColumns()
+    public void RawSqlAsync_EntityT_WithCustomTypeMapping_GeneratesFromDbReader()
     {
-        // Custom type mappings are a schema-level concern (ColumnInfo), not a type-level
-        // concern. ResolveRawSqlTypeInfo discovers properties from ITypeSymbol.GetMembers()
-        // which sees Money but not the MoneyMapping. The reader falls back to GetValue for
-        // unmapped custom types. The key assertion is that enrichment still produces a full
-        // reader (not the no-op delegate) with all columns present.
+        // Custom type mappings are a schema-level concern stored in ColumnInfo, not in the
+        // type symbol. After ResolveRawSqlTypeInfo discovers properties from ITypeSymbol,
+        // PatchWithColumnMetadata enriches them with ColumnInfo metadata (CustomTypeMappingClass,
+        // DbReaderMethodName) from the EntityRegistry. This produces FromDb calls in the reader.
         var source = @"
 using Quarry;
 using System.Threading.Tasks;
@@ -551,6 +556,10 @@ public class Service
             "Should generate switch case for AccountName");
         Assert.That(code, Does.Contain("case \"Balance\""),
             "Should generate switch case for Balance");
+        Assert.That(code, Does.Contain("MoneyMapping"),
+            "Should reference MoneyMapping in the reader delegate");
+        Assert.That(code, Does.Contain("FromDb"),
+            "Should call FromDb for custom type mapping conversion");
         Assert.That(code, Does.Not.Contain("static _ => new Account()"),
             "Should NOT emit no-op reader delegate");
     }
