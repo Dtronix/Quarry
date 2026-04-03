@@ -61,7 +61,6 @@
   </PropertyGroup>
   <Import Project="..\Quarry.Generator\build\Quarry.Generator.props" />
 
-
   <!-- Shared project (selective: BackupGenerator + Scaffold only, Sql comes from Quarry.dll) -->
   <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
   <ItemGroup>
