@@ -421,6 +421,147 @@ public class Service
             "Interceptor return type should use the entity type Order");
         Assert.That(code, Does.Contain("new Order()"),
             "Interceptor reader should construct the entity");
+
+        // Entity enrichment should produce a full property-reading switch, not a no-op
+        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+            "Should generate switch-based reader for enriched entity type");
+        Assert.That(code, Does.Contain("case \"OrderId\""),
+            "Should generate switch case for OrderId column");
+        Assert.That(code, Does.Contain("case \"Total\""),
+            "Should generate switch case for Total column");
+        Assert.That(code, Does.Contain("case \"Priority\""),
+            "Should generate switch case for Priority column");
+        Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(i)"),
+            "Should generate enum cast for Priority column");
+        Assert.That(code, Does.Contain("case \"UserId\""),
+            "Should generate switch case for FK UserId column");
+        Assert.That(code, Does.Contain("EntityRef<User, int>"),
+            "Should wrap FK column with EntityRef from ColumnInfo metadata");
+        Assert.That(code, Does.Not.Contain("static _ => new Order()"),
+            "Should NOT emit no-op reader delegate for enriched entity");
+    }
+
+    [Test]
+    public void RawSqlAsync_EntityT_SimpleColumns_GeneratesPropertySwitch()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Col<string?> Email { get; }
+    public Col<bool> IsActive => Default(true);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var users = await db.RawSqlAsync<User>(""SELECT * FROM users"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+            "Should generate switch-based reader for entity type");
+        Assert.That(code, Does.Contain("case \"UserId\""),
+            "Should generate switch case for UserId");
+        Assert.That(code, Does.Contain("case \"UserName\""),
+            "Should generate switch case for UserName");
+        Assert.That(code, Does.Contain("case \"Email\""),
+            "Should generate switch case for Email");
+        Assert.That(code, Does.Contain("case \"IsActive\""),
+            "Should generate switch case for IsActive");
+        Assert.That(code, Does.Not.Contain("static _ => new User()"),
+            "Should NOT emit no-op reader delegate");
+    }
+
+    [Test]
+    public void RawSqlAsync_EntityT_WithCustomTypeMapping_GeneratesFromDbReader()
+    {
+        // Custom type mappings are a schema-level concern stored in ColumnInfo, not in the
+        // type symbol. After ResolveRawSqlTypeInfo discovers properties from ITypeSymbol,
+        // PatchWithColumnMetadata enriches them with ColumnInfo metadata (CustomTypeMappingClass,
+        // DbReaderMethodName) from the EntityRegistry. This produces FromDb calls in the reader.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public readonly struct Money
+{
+    public decimal Amount { get; }
+    public Money(decimal amount) => Amount = amount;
+}
+
+public class MoneyMapping : TypeMapping<Money, decimal>
+{
+    public override decimal ToDb(Money value) => value.Amount;
+    public override Money FromDb(decimal value) => new(value);
+}
+
+public class AccountSchema : Schema
+{
+    public static string Table => ""accounts"";
+    public Key<int> AccountId => Identity();
+    public Col<string> AccountName => Length(100);
+    public Col<Money> Balance => Mapped<Money, MoneyMapping>();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Account> Accounts();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var accounts = await db.RawSqlAsync<Account>(""SELECT * FROM accounts"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+            "Should generate switch-based reader for enriched entity type");
+        Assert.That(code, Does.Contain("case \"AccountId\""),
+            "Should generate switch case for AccountId");
+        Assert.That(code, Does.Contain("case \"AccountName\""),
+            "Should generate switch case for AccountName");
+        Assert.That(code, Does.Contain("case \"Balance\""),
+            "Should generate switch case for Balance");
+        Assert.That(code, Does.Contain("MoneyMapping"),
+            "Should reference MoneyMapping in the reader delegate");
+        Assert.That(code, Does.Contain("FromDb"),
+            "Should call FromDb for custom type mapping conversion");
+        Assert.That(code, Does.Not.Contain("static _ => new Account()"),
+            "Should NOT emit no-op reader delegate");
     }
 
     [Test]
