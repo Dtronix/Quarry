@@ -182,11 +182,12 @@ public abstract class Schema
     /// <typeparam name="TJunction">The junction schema type.</typeparam>
     /// <param name="junctionNavigation">Expression selecting the Many&lt;TJunction&gt; navigation to the junction table.</param>
     /// <param name="targetNavigation">Expression selecting the One&lt;TTarget&gt; navigation on the junction table.</param>
-    protected static RelationshipBuilder<TTarget> HasManyThrough<TTarget, TJunction>(
-        Expression<Func<Schema, object?>> junctionNavigation,
+    protected static RelationshipBuilder<TTarget> HasManyThrough<TTarget, TJunction, TSelf>(
+        Expression<Func<TSelf, object?>> junctionNavigation,
         Expression<Func<TJunction, object?>> targetNavigation)
         where TTarget : Schema
         where TJunction : Schema
+        where TSelf : Schema
         => default;
 
     #endregion

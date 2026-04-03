@@ -349,38 +349,39 @@ internal static class SqlExprBinder
 
         if (outerEntity == null) return sub;
 
-        foreach (var n in outerEntity.Navigations)
+        // Check for HasManyThrough skip-navigation first — a property can have both
+        // a NavigationInfo (for entity property generation) and a ThroughNavigationInfo
+        // (for junction-based subquery expansion). The ThroughNavigationInfo takes priority.
+        ThroughNavigationInfo? throughNav = null;
+        foreach (var tn in outerEntity.ThroughNavigations)
         {
-            if (n.PropertyName == sub.NavigationPropertyName)
+            if (tn.PropertyName == sub.NavigationPropertyName)
             {
-                nav = n;
+                throughNav = tn;
                 break;
             }
         }
 
-        // Check for HasManyThrough skip-navigation
-        ThroughNavigationInfo? throughNav = null;
-        if (nav == null)
+        if (throughNav != null)
         {
-            foreach (var tn in outerEntity.ThroughNavigations)
+            // Find the junction entity's Many<T> navigation
+            foreach (var n in outerEntity.Navigations)
             {
-                if (tn.PropertyName == sub.NavigationPropertyName)
+                if (n.PropertyName == throughNav.JunctionNavigationName)
                 {
-                    throughNav = tn;
+                    nav = n;
                     break;
                 }
             }
-
-            if (throughNav != null)
+        }
+        else
+        {
+            foreach (var n in outerEntity.Navigations)
             {
-                // Find the junction entity's Many<T> navigation
-                foreach (var n in outerEntity.Navigations)
+                if (n.PropertyName == sub.NavigationPropertyName)
                 {
-                    if (n.PropertyName == throughNav.JunctionNavigationName)
-                    {
-                        nav = n;
-                        break;
-                    }
+                    nav = n;
+                    break;
                 }
             }
         }

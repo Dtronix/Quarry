@@ -1065,10 +1065,10 @@ internal static class SchemaParser
         if (methodName != "HasManyThrough")
             return false;
 
-        // Extract type arguments: HasManyThrough<TTarget, TJunction>(...)
+        // Extract type arguments: HasManyThrough<TTarget, TJunction[, TSelf]>(...)
         string? targetEntityName = null;
         string? junctionEntityName = null;
-        if (invocation.Expression is GenericNameSyntax genericName && genericName.TypeArgumentList.Arguments.Count == 2)
+        if (invocation.Expression is GenericNameSyntax genericName && genericName.TypeArgumentList.Arguments.Count >= 2)
         {
             targetEntityName = genericName.TypeArgumentList.Arguments[0] is IdentifierNameSyntax t0
                 ? NormalizeSchemaName(t0.Identifier.Text) : null;
@@ -1076,7 +1076,7 @@ internal static class SchemaParser
                 ? NormalizeSchemaName(t1.Identifier.Text) : null;
         }
         else if (invocation.Expression is MemberAccessExpressionSyntax ma
-                 && ma.Name is GenericNameSyntax gns && gns.TypeArgumentList.Arguments.Count == 2)
+                 && ma.Name is GenericNameSyntax gns && gns.TypeArgumentList.Arguments.Count >= 2)
         {
             targetEntityName = gns.TypeArgumentList.Arguments[0] is IdentifierNameSyntax t0
                 ? NormalizeSchemaName(t0.Identifier.Text) : null;
