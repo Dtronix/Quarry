@@ -53,17 +53,20 @@ internal static class ManifestEmitter
 
         // Flatten all AssembledPlans from all groups, deduplicate by (Context, ExecutionSite.UniqueId)
         var allPlans = new Dictionary<(string Context, string UniqueId), (AssembledPlan Plan, string ContextNamespace)>();
+        var excludedByDialect = new Dictionary<SqlDialect, int>();
         foreach (var group in groups)
         {
             foreach (var plan in group.AssembledPlans)
             {
-                // Skip error/runtime-build chains
-                if (plan.Tier == OptimizationTier.RuntimeBuild)
+                // Skip error/runtime-build chains, count them per dialect
+                if (plan.Tier == OptimizationTier.RuntimeBuild
+                    || plan.ExecutionSite.PipelineError != null
+                    || plan.SqlVariants.Count == 0)
+                {
+                    excludedByDialect.TryGetValue(plan.Dialect, out var c);
+                    excludedByDialect[plan.Dialect] = c + 1;
                     continue;
-                if (plan.ExecutionSite.PipelineError != null)
-                    continue;
-                if (plan.SqlVariants.Count == 0)
-                    continue;
+                }
 
                 var key = (group.ContextClassName, plan.ExecutionSite.UniqueId);
                 if (!allPlans.ContainsKey(key))
@@ -93,7 +96,8 @@ internal static class ManifestEmitter
         {
             var dialect = kvp.Key;
             var plans = kvp.Value;
-            var markdown = RenderManifest(dialect, plans);
+            excludedByDialect.TryGetValue(dialect, out var excludedCount);
+            var markdown = RenderManifest(dialect, plans, excludedCount);
             var fileName = GetDialectFileName(dialect);
             var filePath = Path.Combine(manifestDir, fileName);
 
@@ -103,7 +107,10 @@ internal static class ManifestEmitter
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[Quarry] ManifestEmitter write failed: {ex.Message}");
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.ManifestWriteFailed,
+                    Location.None,
+                    filePath, ex.Message));
             }
         }
     }
@@ -113,7 +120,8 @@ internal static class ManifestEmitter
     /// </summary>
     internal static string RenderManifest(
         SqlDialect dialect,
-        List<(AssembledPlan Plan, string ContextClassName, string ContextNamespace)> plans)
+        List<(AssembledPlan Plan, string ContextClassName, string ContextNamespace)> plans,
+        int excludedCount = 0)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"# Quarry SQL Manifest \u2014 {GetDialectDisplayName(dialect)}");
@@ -124,8 +132,6 @@ internal static class ManifestEmitter
         var byContext = plans
             .GroupBy(p => p.ContextClassName, StringComparer.Ordinal)
             .OrderBy(g => g.Key, StringComparer.Ordinal);
-
-        int excludedCount = 0;
 
         foreach (var contextGroup in byContext)
         {
