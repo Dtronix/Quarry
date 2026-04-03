@@ -3140,9 +3140,6 @@ internal static class UsageSiteDiscovery
         var hasCancellationToken = methodSymbol.Parameters.Length >= 3
             && methodSymbol.Parameters[1].Type.Name == "CancellationToken";
 
-        // Resolve the type T into RawSqlTypeInfo
-        var rawSqlTypeInfo = ResolveRawSqlTypeInfo(typeArgSymbol, hasCancellationToken);
-
         // Resolve the context class name from the receiver expression
         var contextClassName = ResolveContextFromCallSite(invocation, semanticModel, cancellationToken);
         // For RawSql calls, the receiver IS the context — use the concrete type
@@ -3185,18 +3182,24 @@ internal static class UsageSiteDiscovery
             location: new DiagnosticLocation(filePath, line, column, invocation.Span),
             contextClassName: contextClassName,
             builderTypeName: containingType.Name,
-            rawSqlTypeInfo: rawSqlTypeInfo,
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
             nestingContext: nestingContext,
-            chainId: chainId);
+            chainId: chainId)
+        {
+            // Store invocation for deferred RawSqlTypeInfo resolution in DisplayClassEnricher.
+            // The supplemental compilation is needed to resolve generated entity type members.
+            EnrichmentInvocation = invocation
+        };
     }
 
     /// <summary>
     /// Resolves a type symbol into RawSqlTypeInfo for reader code generation.
+    /// Called by DisplayClassEnricher after the supplemental compilation is built,
+    /// so generated entity types have their members available.
     /// </summary>
-    private static RawSqlTypeInfo ResolveRawSqlTypeInfo(ITypeSymbol typeSymbol, bool hasCancellationToken)
+    internal static RawSqlTypeInfo ResolveRawSqlTypeInfo(ITypeSymbol typeSymbol, bool hasCancellationToken)
     {
         var typeName = typeSymbol.ToFullyQualifiedDisplayString();
         var shortName = typeSymbol.ToMinimallyQualifiedDisplayString();
@@ -3267,7 +3270,7 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Checks if a type is a scalar type (primitives, string, DateTime, Guid, etc.).
     /// </summary>
-    private static bool IsScalarType(ITypeSymbol type)
+    internal static bool IsScalarType(ITypeSymbol type)
     {
         // Unwrap Nullable<T>
         if (type is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable
@@ -3308,7 +3311,7 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Gets the underlying integral type for an enum, or the type itself if not an enum.
     /// </summary>
-    private static string GetEnumUnderlyingType(ITypeSymbol type)
+    internal static string GetEnumUnderlyingType(ITypeSymbol type)
     {
         // Unwrap Nullable<T>
         if (type is INamedTypeSymbol { IsGenericType: true, Name: "Nullable" } nullable

@@ -1042,4 +1042,280 @@ namespace Test
         Assert.That(resolved!, Does.ContainKey("item"));
         Assert.That(resolved!["item"], Is.EqualTo("(int WidgetId, string Label, decimal Price)"));
     }
+
+    #region RawSql Type Enrichment Tests
+
+    [Test]
+    public void EnrichAll_RawSqlSiteWithInvocation_ResolvesTypeProperties()
+    {
+        var source = @"
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+class UserDto
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; }
+    public string? Email { get; set; }
+}
+
+class Db
+{
+    public Task<List<T>> RawSqlAsync<T>(string sql, params object?[] parameters) => null!;
+
+    void Test()
+    {
+        _ = RawSqlAsync<UserDto>(""SELECT * FROM users"");
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var invocation = tree.GetRoot().DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .First(i => i.ToString().Contains("RawSqlAsync<UserDto>"));
+
+        var site = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: tree.FilePath,
+            line: 1,
+            column: 1,
+            uniqueId: "rawsql-test-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "UserDto",
+            resultTypeName: "UserDto",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation(tree.FilePath, 1, 1, invocation.Span));
+        site.EnrichmentInvocation = invocation;
+
+        var sites = ImmutableArray.Create(site);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+
+        Assert.That(result[0].RawSqlTypeInfo, Is.Not.Null);
+        Assert.That(result[0].RawSqlTypeInfo!.ResultTypeName, Is.EqualTo("UserDto"));
+        Assert.That(result[0].RawSqlTypeInfo!.TypeKind, Is.EqualTo(RawSqlTypeKind.Dto));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties, Has.Count.EqualTo(3));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties[0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties[0].ReaderMethodName, Is.EqualTo("GetInt32"));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties[1].PropertyName, Is.EqualTo("UserName"));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties[1].ReaderMethodName, Is.EqualTo("GetString"));
+        Assert.That(result[0].RawSqlTypeInfo!.Properties[2].PropertyName, Is.EqualTo("Email"));
+    }
+
+    [Test]
+    public void EnrichAll_RawSqlSiteWithScalarType_ResolvesAsScalar()
+    {
+        var source = @"
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+class Db
+{
+    public Task<List<T>> RawSqlAsync<T>(string sql, params object?[] parameters) => null!;
+
+    void Test()
+    {
+        _ = RawSqlAsync<int>(""SELECT COUNT(*) FROM users"");
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var invocation = tree.GetRoot().DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .First(i => i.ToString().Contains("RawSqlAsync<int>"));
+
+        var site = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: tree.FilePath,
+            line: 1,
+            column: 1,
+            uniqueId: "rawsql-scalar-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "int",
+            resultTypeName: "int",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation(tree.FilePath, 1, 1, invocation.Span));
+        site.EnrichmentInvocation = invocation;
+
+        var sites = ImmutableArray.Create(site);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+
+        Assert.That(result[0].RawSqlTypeInfo, Is.Not.Null);
+        Assert.That(result[0].RawSqlTypeInfo!.TypeKind, Is.EqualTo(RawSqlTypeKind.Scalar));
+        Assert.That(result[0].RawSqlTypeInfo!.ScalarReaderMethod, Is.EqualTo("GetInt32"));
+    }
+
+    [Test]
+    public void EnrichAll_RawSqlSiteWithoutInvocation_LeavesRawSqlTypeInfoNull()
+    {
+        var compilation = CreateCompilation("class C {}");
+
+        var site = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: "Test.cs",
+            line: 1,
+            column: 1,
+            uniqueId: "rawsql-noop-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 1, 1, default));
+        // EnrichmentInvocation NOT set
+
+        var sites = ImmutableArray.Create(site);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+
+        Assert.That(result[0].RawSqlTypeInfo, Is.Null);
+    }
+
+    [Test]
+    public void EnrichAll_RawSqlSiteWithCancellationToken_DetectsHasCancellationToken()
+    {
+        var source = @"
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+class UserDto
+{
+    public int UserId { get; set; }
+}
+
+class Db
+{
+    public Task<List<T>> RawSqlAsync<T>(string sql, CancellationToken ct, params object?[] parameters) => null!;
+
+    void Test()
+    {
+        _ = RawSqlAsync<UserDto>(""SELECT * FROM users"", CancellationToken.None);
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var invocation = tree.GetRoot().DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .First(i => i.ToString().Contains("RawSqlAsync<UserDto>"));
+
+        var site = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: tree.FilePath,
+            line: 1,
+            column: 1,
+            uniqueId: "rawsql-ct-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "UserDto",
+            resultTypeName: "UserDto",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation(tree.FilePath, 1, 1, invocation.Span));
+        site.EnrichmentInvocation = invocation;
+
+        var sites = ImmutableArray.Create(site);
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+
+        Assert.That(result[0].RawSqlTypeInfo, Is.Not.Null);
+        Assert.That(result[0].RawSqlTypeInfo!.HasCancellationToken, Is.True);
+    }
+
+    [Test]
+    public void EnrichAll_RawSqlSiteWithSupplementalEntity_ResolvesEntityProperties()
+    {
+        // Simulate the real scenario: User is NOT in the original compilation (error type),
+        // but the supplemental compilation adds it via EntityRegistry.
+        var source = @"
+using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+class Db
+{
+    public Task<List<T>> RawSqlAsync<T>(string sql, params object?[] parameters) => null!;
+
+    void Test()
+    {
+        _ = RawSqlAsync<User>(""SELECT * FROM users"");
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var tree = compilation.SyntaxTrees.First();
+
+        var invocation = tree.GetRoot().DescendantNodes()
+            .OfType<InvocationExpressionSyntax>()
+            .First(i => i.ToString().Contains("RawSqlAsync<User>"));
+
+        // User is an error type in the original compilation — RawSqlTypeInfo should stay null
+        var site = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: tree.FilePath,
+            line: 1,
+            column: 1,
+            uniqueId: "rawsql-entity-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation(tree.FilePath, 1, 1, invocation.Span));
+        site.EnrichmentInvocation = invocation;
+
+        var sites = ImmutableArray.Create(site);
+
+        // Without supplemental compilation, User is an error type → RawSqlTypeInfo stays null
+        var result = DisplayClassEnricher.EnrichAll(sites, compilation, null!, CancellationToken.None);
+        Assert.That(result[0].RawSqlTypeInfo, Is.Null, "Error type should not produce RawSqlTypeInfo");
+
+        // Now add User class via supplemental compilation (simulating EntityRegistry)
+        var userSource = @"
+public class User
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; }
+    public string? Email { get; set; }
+    public bool IsActive { get; set; }
+}
+";
+        var supplemented = compilation.AddSyntaxTrees(
+            CSharpSyntaxTree.ParseText(userSource, (CSharpParseOptions?)tree.Options));
+
+        // Re-enrich with the supplemental compilation containing User
+        site.EnrichmentInvocation = invocation; // restore after first pass cleared it
+        var result2 = DisplayClassEnricher.EnrichAll(sites, supplemented, null!, CancellationToken.None);
+
+        Assert.That(result2[0].RawSqlTypeInfo, Is.Not.Null);
+        Assert.That(result2[0].RawSqlTypeInfo!.ResultTypeName, Is.EqualTo("User"));
+        Assert.That(result2[0].RawSqlTypeInfo!.Properties, Has.Count.EqualTo(4));
+        Assert.That(result2[0].RawSqlTypeInfo!.Properties[0].PropertyName, Is.EqualTo("UserId"));
+        Assert.That(result2[0].RawSqlTypeInfo!.Properties[1].PropertyName, Is.EqualTo("UserName"));
+        Assert.That(result2[0].RawSqlTypeInfo!.Properties[2].PropertyName, Is.EqualTo("Email"));
+        Assert.That(result2[0].RawSqlTypeInfo!.Properties[3].PropertyName, Is.EqualTo("IsActive"));
+    }
+
+    #endregion
 }

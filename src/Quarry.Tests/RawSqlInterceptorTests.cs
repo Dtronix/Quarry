@@ -485,6 +485,57 @@ public class RawSqlInterceptorTests
 
     #endregion
 
+    #region RawCallSite Equality Tests
+
+    [Test]
+    public void RawCallSite_Equals_IgnoresRawSqlTypeInfo()
+    {
+        // RawSqlTypeInfo is a mutable enrichment property set by DisplayClassEnricher,
+        // not a discovery-time identity field. It must NOT be part of Equals to prevent
+        // perpetual cache misses in the incremental pipeline.
+        var site1 = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: "Test.cs",
+            line: 10,
+            column: 5,
+            uniqueId: "test-eq-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 10, 5, default));
+
+        var site2 = new RawCallSite(
+            methodName: "RawSqlAsync",
+            filePath: "Test.cs",
+            line: 10,
+            column: 5,
+            uniqueId: "test-eq-1",
+            kind: InterceptorKind.RawSqlAsync,
+            builderKind: BuilderKind.Query,
+            entityTypeName: "User",
+            resultTypeName: "User",
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: null,
+            interceptableLocationVersion: 1,
+            location: new DiagnosticLocation("Test.cs", 10, 5, default));
+
+        // Set RawSqlTypeInfo on one but not the other
+        site1.RawSqlTypeInfo = new RawSqlTypeInfo(
+            "User", RawSqlTypeKind.Dto,
+            new[] { new RawSqlPropertyInfo("UserId", "int", "GetInt32", false) });
+
+        Assert.That(site1.Equals(site2), Is.True,
+            "RawCallSite.Equals should ignore RawSqlTypeInfo differences");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static TranslatedCallSite CreateRawSqlCallSite(
