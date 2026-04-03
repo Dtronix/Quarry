@@ -53,11 +53,15 @@ internal static class ManifestEmitter
 
         // Flatten all AssembledPlans from all groups, deduplicate by (Context, ExecutionSite.UniqueId)
         var allPlans = new Dictionary<(string Context, string UniqueId), (AssembledPlan Plan, string ContextNamespace)>();
+        var totalByDialect = new Dictionary<SqlDialect, int>();
         var excludedByDialect = new Dictionary<SqlDialect, int>();
         foreach (var group in groups)
         {
             foreach (var plan in group.AssembledPlans)
             {
+                totalByDialect.TryGetValue(plan.Dialect, out var t);
+                totalByDialect[plan.Dialect] = t + 1;
+
                 // Skip error/runtime-build chains, count them per dialect
                 if (plan.Tier == OptimizationTier.RuntimeBuild
                     || plan.ExecutionSite.PipelineError != null
@@ -96,8 +100,9 @@ internal static class ManifestEmitter
         {
             var dialect = kvp.Key;
             var plans = kvp.Value;
+            totalByDialect.TryGetValue(dialect, out var totalCount);
             excludedByDialect.TryGetValue(dialect, out var excludedCount);
-            var markdown = RenderManifest(dialect, plans, excludedCount);
+            var markdown = RenderManifest(dialect, plans, totalCount, excludedCount);
             var fileName = GetDialectFileName(dialect);
             var filePath = Path.Combine(manifestDir, fileName);
 
@@ -121,6 +126,7 @@ internal static class ManifestEmitter
     internal static string RenderManifest(
         SqlDialect dialect,
         List<(AssembledPlan Plan, string ContextClassName, string ContextNamespace)> plans,
+        int totalCount = 0,
         int excludedCount = 0)
     {
         var sb = new StringBuilder();
@@ -133,19 +139,27 @@ internal static class ManifestEmitter
             .GroupBy(p => p.ContextClassName, StringComparer.Ordinal)
             .OrderBy(g => g.Key, StringComparer.Ordinal);
 
+        int preDedup = plans.Count;
+        int renderedCount = 0;
+
         foreach (var contextGroup in byContext)
         {
             sb.AppendLine();
             sb.AppendLine($"## {contextGroup.Key}");
 
             // Sort plans by chain shape for stability, deduplicate by (shape, SQL)
-            var sortedPlans = contextGroup
+            var withShapes = contextGroup
                 .Select(p => (p.Plan, Shape: BuildChainShape(p.Plan)))
+                .ToList();
+
+            var sortedPlans = withShapes
                 .GroupBy(p => (p.Shape, Sql: GetBaseSql(p.Plan)))
                 .Select(g => g.First())
                 .OrderBy(p => p.Shape, StringComparer.Ordinal)
                 .ThenBy(p => GetBaseSql(p.Plan), StringComparer.Ordinal)
                 .ToList();
+
+            renderedCount += sortedPlans.Count;
 
             for (int i = 0; i < sortedPlans.Count; i++)
             {
@@ -161,13 +175,19 @@ internal static class ManifestEmitter
             }
         }
 
-        if (excludedCount > 0)
-        {
-            sb.AppendLine();
-            sb.AppendLine("---");
-            sb.AppendLine();
-            sb.AppendLine($"*{excludedCount} chain(s) excluded due to analysis errors (see QRY032/QRY900 diagnostics).*");
-        }
+        // Summary stats table
+        int consolidatedCount = preDedup - renderedCount;
+        sb.AppendLine();
+        sb.AppendLine("---");
+        sb.AppendLine();
+        sb.AppendLine("## Summary");
+        sb.AppendLine();
+        sb.AppendLine("| Metric | Count |");
+        sb.AppendLine("|--------|------:|");
+        sb.AppendLine($"| Total discovered | {totalCount} |");
+        sb.AppendLine($"| Skipped (errors) | {excludedCount} |");
+        sb.AppendLine($"| Consolidated (deduped) | {consolidatedCount} |");
+        sb.AppendLine($"| Rendered | {renderedCount} |");
 
         return sb.ToString();
     }
