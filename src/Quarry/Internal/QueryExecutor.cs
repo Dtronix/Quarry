@@ -195,6 +195,61 @@ public static class QueryExecutor
     }
 
     /// <summary>
+    /// Executes a carrier-optimized single-row query with a pre-built command.
+    /// Returns default if no results; throws if more than one result.
+    /// </summary>
+    public static async Task<TResult?> ExecuteCarrierSingleOrDefaultWithCommandAsync<TResult>(
+        long opId, QuarryContext ctx,
+        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+    {
+        await using var _cmd = command;
+        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+
+        try
+        {
+            if (!await dbReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                var elapsedMs0 = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+                    QueryLog.FetchCompleted(opId, 0, elapsedMs0);
+
+                CheckSlowQuery(opId, ctx, elapsedMs0, command.CommandText);
+
+                return default;
+            }
+
+            var result = reader(dbReader);
+
+            if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+                throw new InvalidOperationException("Sequence contains more than one element.");
+
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+                QueryLog.FetchCompleted(opId, 1, elapsedMs);
+
+            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+
+            return result;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
+                QueryLog.QueryFailed(opId, ex);
+
+            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+        }
+    }
+
+    /// <summary>
     /// Executes a carrier-optimized scalar query with a pre-built command.
     /// </summary>
     public static async Task<TScalar> ExecuteCarrierScalarWithCommandAsync<TScalar>(

@@ -76,6 +76,11 @@ internal enum InterceptorKind
     ExecuteFetchSingle,
 
     /// <summary>
+    /// ExecuteFetchSingleOrDefaultAsync() - assembles complete SQL and wires reader.
+    /// </summary>
+    ExecuteFetchSingleOrDefault,
+
+    /// <summary>
     /// ExecuteScalarAsync() - assembles complete SQL for scalar result.
     /// </summary>
     ExecuteScalar,

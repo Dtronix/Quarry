@@ -586,6 +586,42 @@ internal class CrossDialectSelectTests
     }
 
     [Test]
+    public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ReturnsEntity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.UserId == 2).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId == 2).Prepare();
+        var my = My.Users().Where(u => u.UserId == 2).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId == 2).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 2",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 2",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 2",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 2");
+
+        var result = await lt.ExecuteFetchSingleOrDefaultAsync();
+        Assert.That(result, Is.Not.Null);
+        Assert.That(result!.UserId, Is.EqualTo(2));
+        Assert.That(result.UserName, Is.EqualTo("Bob"));
+    }
+
+    [Test]
+    public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ReturnsNullForNoMatch()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
+        var result = await lt.ExecuteFetchSingleOrDefaultAsync();
+        Assert.That(result, Is.Null);
+    }
+
+    [Test]
     public async Task NoSelect_ExecuteFetchAllAsync_ReturnsAllRowsWithDistinct()
     {
         await using var t = await QueryTestHarness.CreateAsync();
