@@ -167,8 +167,40 @@ internal static class SqlExprParser
                     return new IsNullCheckExpr(propAccess, isNegated: true);
                 }
 
-                // e.g., u.Name.Length — member access on a column
-                return new SqlRawExpr(memberAccess.ToString());
+                // Potential One<T> navigation access: o.User.UserName
+                // propAccess is ColumnRefExpr("o", "User"), memberName is "UserName"
+                // The binder will validate whether "User" is actually a One<T> navigation.
+                return new NavigationAccessExpr(
+                    sourceParameterName: propAccess.ParameterName,
+                    navigationHops: new[] { propAccess.PropertyName },
+                    finalPropertyName: memberName);
+            }
+
+            // Extending a navigation chain: o.User.Department.Name
+            if (innerExpr is NavigationAccessExpr navAccess)
+            {
+                // Special handling for .Id, .Value, .HasValue at the end of a navigation chain
+                if (memberName == "Id")
+                {
+                    return new NavigationAccessExpr(
+                        navAccess.SourceParameterName,
+                        navAccess.NavigationHops,
+                        navAccess.FinalPropertyName,
+                        finalNestedProperty: "Id");
+                }
+                if (memberName == "Value")
+                    return navAccess;
+                if (memberName == "HasValue")
+                    return new IsNullCheckExpr(navAccess, isNegated: true);
+
+                // Extend the chain: add the previous FinalPropertyName as a hop
+                var extendedHops = new List<string>(navAccess.NavigationHops.Count + 1);
+                extendedHops.AddRange(navAccess.NavigationHops);
+                extendedHops.Add(navAccess.FinalPropertyName);
+                return new NavigationAccessExpr(
+                    sourceParameterName: navAccess.SourceParameterName,
+                    navigationHops: extendedHops,
+                    finalPropertyName: memberName);
             }
 
             if (innerExpr is CapturedValueExpr capturedVar)

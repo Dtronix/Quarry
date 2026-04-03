@@ -58,6 +58,12 @@ internal static class EntityCodeGenerator
             GenerateNavigationProperty(sb, navigation);
         }
 
+        // Generate singular navigation properties (One<T>)
+        foreach (var singleNav in entity.SingleNavigations)
+        {
+            GenerateSingleNavigationProperty(sb, singleNav);
+        }
+
         sb.AppendLine("}");
 
         return sb.ToString();
@@ -137,6 +143,21 @@ internal static class EntityCodeGenerator
         sb.AppendLine($"    /// Check IsLoaded property to verify the collection has been populated via a join.");
         sb.AppendLine($"    /// </remarks>");
         sb.AppendLine($"    public NavigationList<{navigation.RelatedEntityName}> {navigation.PropertyName} {{ get; internal set; }} = NavigationList<{navigation.RelatedEntityName}>.Unloaded();");
+    }
+
+    /// <summary>
+    /// Generates a singular navigation property for One&lt;T&gt;.
+    /// </summary>
+    private static void GenerateSingleNavigationProperty(StringBuilder sb, SingleNavigationInfo navigation)
+    {
+        sb.AppendLine();
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Gets the related {navigation.TargetEntityName} entity.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    /// <remarks>");
+        sb.AppendLine($"    /// This property is null unless the query includes a join to the {navigation.TargetEntityName} entity.");
+        sb.AppendLine($"    /// </remarks>");
+        sb.AppendLine($"    public {navigation.TargetEntityName}? {navigation.PropertyName} {{ get; internal set; }}");
     }
 
     /// <summary>

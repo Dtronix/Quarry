@@ -165,16 +165,16 @@ internal static class SqlAssembler
         sb.Append(" FROM ");
         AppendTableRef(sb, dialect, plan.PrimaryTable);
 
-        // Determine if we need table aliases for joins
+        // Determine if we need table aliases for joins (explicit or implicit)
         string? fromAlias = null;
-        if (plan.Joins.Count > 0)
+        if (plan.Joins.Count > 0 || plan.ImplicitJoins.Count > 0)
         {
             fromAlias = "t0";
             sb.Append(" AS ");
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, fromAlias));
         }
 
-        // JOINs
+        // Explicit JOINs
         for (int i = 0; i < plan.Joins.Count; i++)
         {
             var join = plan.Joins[i];
@@ -191,6 +191,26 @@ internal static class SqlAssembler
             var paramsBefore = CountParameters(join.OnCondition);
             sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
             paramIndex += paramsBefore;
+        }
+
+        // Implicit JOINs from One<T> navigation access
+        for (int i = 0; i < plan.ImplicitJoins.Count; i++)
+        {
+            var ij = plan.ImplicitJoins[i];
+            sb.Append(' ');
+            sb.Append(ij.JoinKind == JoinClauseKind.Left ? "LEFT JOIN" : "INNER JOIN");
+            sb.Append(' ');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetTableName));
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            sb.Append(" ON ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.SourceAlias));
+            sb.Append('.');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.FkColumnName));
+            sb.Append(" = ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            sb.Append('.');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetPkColumnName));
         }
 
         // WHERE — compute each term's global parameter offset from ALL terms (not just active),

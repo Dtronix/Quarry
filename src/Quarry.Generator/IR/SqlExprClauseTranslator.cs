@@ -194,6 +194,9 @@ internal static class SqlExprClauseTranslator
             case SubqueryExpr sub:
                 return ExtractSubqueryParameters(sub, parameters, ref paramIndex);
 
+            case NavigationAccessExpr nav:
+                return nav; // No parameters to extract; binder handles resolution
+
             case RawCallExpr rawCall:
             {
                 var changed = false;

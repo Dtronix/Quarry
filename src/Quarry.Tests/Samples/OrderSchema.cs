@@ -29,4 +29,10 @@ public class OrderSchema : Schema
     public Col<string?> Notes { get; }
 
     public Many<OrderItemSchema> Items => HasMany<OrderItemSchema>(i => i.OrderId);
+
+    /// <summary>
+    /// Singular navigation to the related User entity (N:1).
+    /// FK inferred automatically from single Ref&lt;UserSchema, int&gt;.
+    /// </summary>
+    public One<UserSchema> User { get; }
 }

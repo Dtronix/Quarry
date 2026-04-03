@@ -59,7 +59,8 @@ internal enum SqlExprKind
     SqlRaw,
     RawCall,
     ExprList,
-    Subquery
+    Subquery,
+    NavigationAccess
 }
 
 /// <summary>
