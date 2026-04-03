@@ -10,6 +10,17 @@ namespace Quarry.Benchmarks.Benchmarks;
 
 public class FilterBenchmarks : BenchmarkBase
 {
+    // Static field forces the source generator to parameterize the value.
+    // Compare Quarry_WhereById (constant → inlined into SQL) vs
+    // Quarry_WhereById_Parameterized (field → @p0 parameter).
+    private static int _whereByIdTarget;
+
+    public override void GlobalSetup()
+    {
+        base.GlobalSetup();
+        _whereByIdTarget = 42;
+    }
+
     // --- Where Active ---
 
     [Benchmark(Baseline = true)]
@@ -216,8 +227,20 @@ public class FilterBenchmarks : BenchmarkBase
     [Benchmark]
     public async Task<User?> Quarry_WhereById()
     {
+        // Constant 42 is inlined into SQL by the source generator (no DbParameter).
         return await QuarryDb.Users()
             .Where(u => u.UserId == 42)
+            .Select(u => u)
+            .ExecuteFetchFirstOrDefaultAsync();
+    }
+
+    [Benchmark]
+    public async Task<User?> Quarry_WhereById_Parameterized()
+    {
+        // Field variable forces the source generator to emit a @p0 parameter,
+        // matching what Raw/Dapper do. This is the apples-to-apples comparison.
+        return await QuarryDb.Users()
+            .Where(u => u.UserId == _whereByIdTarget)
             .Select(u => u)
             .ExecuteFetchFirstOrDefaultAsync();
     }
