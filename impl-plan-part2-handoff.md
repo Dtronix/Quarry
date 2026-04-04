@@ -12,7 +12,7 @@
 | Test schemas | `AddressSchema.cs`, `UserAddressSchema.cs`, `WarehouseSchema.cs`, `ShipmentSchema.cs` |
 | Test contexts | `TestDbContext.cs`, `PgDb.cs`, `MyDb.cs`, `SsDb.cs` (added Address, UserAddress, Warehouse, Shipment accessors) |
 | Test harness | `QueryTestHarness.cs` (addresses, user_addresses, warehouses, shipments tables + seed data) |
-| Tests | `CrossDialectNavigationJoinTests.cs` (4 nav-in-Select tests), `CrossDialectHasManyThroughTests.cs`, `JoinedCarrierIntegrationTests.cs` (5-6 table join tests) |
+| Tests | `CrossDialectNavigationJoinTests.cs` (4 nav-in-Select tests), `CrossDialectHasManyThroughTests.cs`, `JoinedCarrierIntegrationTests.cs` (5-6 table join tests), `GeneratorTests.cs` (QRY044/045 diagnostic tests) |
 
 ## Completions (This Session)
 
@@ -21,6 +21,7 @@
 - **Report QRY043 during chain analysis** — Added `List<DiagnosticInfo>? diagnostics` parameter to `BuildProjection` and `ResolveNavigationColumn`. When `registry.Resolve()` returns null for a navigation target entity, reports QRY043 with navigation property name, source entity name, and target entity name. Diagnostics threaded from `AnalyzeChainGroup` → `BuildProjection` → `ResolveNavigationColumn`.
 - **Cross-entity validation for QRY044/045** — Added `ValidateHasManyThroughNavigations()` in `QuarryGenerator.cs`, registered alongside `CheckDuplicateTypeMappings` on `contextDeclarations.Collect()`. After all entities are parsed, validates that `junctionNavigationName` references a `Many<T>` on the source entity (QRY044) and `targetNavigationName` references a `One<T>` on the junction entity (QRY045).
 - **Expand KnownDotNetMembers** — Added DateTimeOffset members (DateTime, Offset, UtcDateTime, LocalDateTime), TimeSpan members (TotalDays, Days, Hours, etc.), microsecond/nanosecond precision, and collection members (Count, Rank).
+- **QRY044/045 cross-entity validation tests** — 3 new tests in `GeneratorTests.cs` using `CSharpGeneratorDriver`: invalid junction navigation reports QRY044, invalid target navigation reports QRY045, valid navigations produce no diagnostics.
 
 ## Previous Session Completions
 
@@ -37,7 +38,7 @@
 
 ## Progress
 
-All 6 phases from `impl-plan-part2.md` complete. All follow-up items complete. 2465 tests pass (2454 original + 11 new). All planned navigation join features are fully functional with full diagnostic coverage (QRY040-045 all wired with both parse-time and cross-entity validation).
+All 6 phases from `impl-plan-part2.md` complete. All follow-up items complete. 2468 tests pass (2454 original + 14 new). All planned navigation join features are fully functional with full diagnostic coverage (QRY040-045 all wired with both parse-time and cross-entity validation, plus generator-level diagnostic tests).
 
 ## Current State
 
