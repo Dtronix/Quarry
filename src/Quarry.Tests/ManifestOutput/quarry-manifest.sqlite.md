@@ -1956,6 +1956,18 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 
 ---
 
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int?[]` |
+
+---
+
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2914,7 +2926,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 450 |
+| Total discovered | 451 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 148 |
-| Rendered | 302 |
+| Rendered | 303 |
