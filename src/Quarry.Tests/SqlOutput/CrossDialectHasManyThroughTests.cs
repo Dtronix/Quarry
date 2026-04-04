@@ -53,6 +53,21 @@ internal class CrossDialectHasManyThroughTests
         Assert.That(results[1], Is.EqualTo("Bob"));
     }
 
+    [Test]
+    public async Task HasManyThrough_Any_NoPredicate_ExecutesCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Alice → Portland, Seattle; Bob → Portland; Charlie → none
+        var results = await Lite.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).Prepare().ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo("Alice"));
+        Assert.That(results[1], Is.EqualTo("Bob"));
+    }
+
     #endregion
 
     #region HasManyThrough Count
