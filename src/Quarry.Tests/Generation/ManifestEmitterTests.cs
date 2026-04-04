@@ -515,6 +515,55 @@ public class ManifestEmitterTests
         Assert.That(hrCount, Is.EqualTo(1), "Should have exactly one horizontal rule between two chains");
     }
 
+    [Test]
+    public void RenderManifest_MultiplePreparedTerminals_SingleEntryWithPrepareShape()
+    {
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .Build();
+
+        var prepareSite = new TestCallSiteBuilder()
+            .WithMethodName("Prepare")
+            .WithKind(InterceptorKind.Prepare)
+            .WithEntityType("User")
+            .WithUniqueId("prepare_0")
+            .Build();
+
+        // Two different terminals on the prepared query
+        var terminal1 = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User", uniqueId: "term_1");
+        var terminal2 = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchFirst, "User", "User", uniqueId: "term_2");
+
+        // The plan uses terminal1 as its execution site, with Prepare and multiple terminals
+        var plan = CreatePlanWithSites(terminal1, new[] { chainRoot, where },
+            "SELECT * FROM users WHERE 1",
+            prepareSite: prepareSite);
+
+        var plans = new List<(AssembledPlan, string, string)>
+        {
+            (plan, "TestDb", "TestApp")
+        };
+
+        var markdown = ManifestEmitter.RenderManifest(GenSqlDialect.SQLite, plans);
+
+        // Should have exactly one chain heading with .Prepare() in the shape
+        Assert.That(markdown, Does.Contain(".Prepare()."));
+        var headingCount = CountOccurrences(markdown, "### Users()");
+        Assert.That(headingCount, Is.EqualTo(1),
+            "Multiple prepared terminals should render as a single entry, not duplicated per terminal");
+    }
+
     #endregion
 
     #region Excluded Count Tests
