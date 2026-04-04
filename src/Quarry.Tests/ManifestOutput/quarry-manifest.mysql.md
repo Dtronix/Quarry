@@ -1784,7 +1784,7 @@ SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCA
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?
+SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?
 ```
 
 | Parameter | Type |
@@ -1842,7 +1842,27 @@ SELECT `UserId`, `UserName`, `IsActive` FROM `users` WHERE `UserName` LIKE CONCA
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
+SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`j0`.`City` = 'Portland')) > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
 SELECT `UserName` FROM `users` WHERE EXISTS (SELECT 1 FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`j0`.`City` = 'Portland'))
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserName` FROM `users` WHERE EXISTS (SELECT 1 FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`)
 ```
 
 ---
@@ -1945,7 +1965,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 254 |
+| Total discovered | 256 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 44 |
-| Rendered | 210 |
+| Rendered | 212 |
