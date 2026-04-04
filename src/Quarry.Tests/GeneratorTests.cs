@@ -1244,7 +1244,7 @@ public partial class TestDbContext : QuarryContext
         var compilation = CreateCompilation(source);
         var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
 
-        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY044");
+        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY064");
         Assert.That(qry044, Is.Not.Null, "Should report QRY044 when junction navigation is not a Many<T>");
     }
 
@@ -1298,7 +1298,7 @@ public partial class TestDbContext : QuarryContext
         var compilation = CreateCompilation(source);
         var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
 
-        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY045");
+        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY065");
         Assert.That(qry045, Is.Not.Null, "Should report QRY045 when target navigation is not a One<T> on junction entity");
         Assert.That(qry045!.GetMessage(), Does.Contain("Address"));
         Assert.That(qry045.GetMessage(), Does.Contain("UserAddress"));
@@ -1353,8 +1353,8 @@ public partial class TestDbContext : QuarryContext
         var compilation = CreateCompilation(source);
         var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
 
-        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY044");
-        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY045");
+        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY064");
+        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY065");
         Assert.That(qry044, Is.Null, "Should not report QRY044 for valid HasManyThrough");
         Assert.That(qry045, Is.Null, "Should not report QRY045 for valid HasManyThrough");
     }

@@ -1413,7 +1413,7 @@ internal static class ChainAnalyzer
             if (targetEntry == null)
             {
                 diagnostics?.Add(new DiagnosticInfo(
-                    "QRY043",
+                    "QRY063",
                     location,
                     hop, currentEntity.EntityName, nav.TargetEntityName));
                 return null;
