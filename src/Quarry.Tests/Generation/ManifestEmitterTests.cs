@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using Quarry.Generators.CodeGen;
@@ -586,6 +587,209 @@ public class ManifestEmitterTests
 
     #endregion
 
+    #region BuildBitIndexToConditionText Tests
+
+    [Test]
+    public void BuildBitIndexToConditionText_NoConds_ReturnsEmpty()
+    {
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User");
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot },
+            "SELECT 1", Array.Empty<ConditionalTerm>(), new int[] { 0 });
+
+        var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
+
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public void BuildBitIndexToConditionText_SingleConditional_MapsCorrectly()
+    {
+        // Execution site at baseline depth 1
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Where clause at depth 2 (relative depth 1 → conditional)
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .WithNestingContext("id > 0", 2)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
+            "SELECT 1", new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            new int[] { 0, 1 });
+
+        var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
+
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result[0], Is.EqualTo("id > 0"));
+    }
+
+    [Test]
+    public void BuildBitIndexToConditionText_MultipleConditionals_MapsInOrder()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .WithNestingContext("id > 0", 2)
+            .Build();
+
+        var orderBy = new TestCallSiteBuilder()
+            .WithMethodName("OrderBy")
+            .WithKind(InterceptorKind.OrderBy)
+            .WithEntityType("User")
+            .WithUniqueId("order_0")
+            .WithNestingContext("name != null", 2)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where, orderBy },
+            "SELECT 1",
+            new[]
+            {
+                new ConditionalTerm(0, ClauseRole.Where),
+                new ConditionalTerm(1, ClauseRole.OrderBy)
+            },
+            new int[] { 0, 1, 2, 3 });
+
+        var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
+
+        Assert.That(result.Count, Is.EqualTo(2));
+        Assert.That(result[0], Is.EqualTo("id > 0"));
+        Assert.That(result[1], Is.EqualTo("name != null"));
+    }
+
+    [Test]
+    public void BuildBitIndexToConditionText_MixedConditionalAndUnconditional_OnlyMapsConditional()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Unconditional Where (no NestingContext)
+        var whereUnconditional = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .Build();
+
+        // Conditional OrderBy (depth 2 > baseline 1)
+        var orderBy = new TestCallSiteBuilder()
+            .WithMethodName("OrderBy")
+            .WithKind(InterceptorKind.OrderBy)
+            .WithEntityType("User")
+            .WithUniqueId("order_0")
+            .WithNestingContext("sortAsc", 2)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution,
+            new[] { chainRoot, whereUnconditional, orderBy },
+            "SELECT 1",
+            new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            new int[] { 0, 1 });
+
+        var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
+
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result[0], Is.EqualTo("sortAsc"));
+    }
+
+    [Test]
+    public void BuildBitIndexToConditionText_LongConditionText_Truncated()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Condition text longer than 60 characters
+        var longCondition = "someReallyLongVariableName.Property.SubProperty != null && anotherCondition";
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .WithNestingContext(longCondition, 2)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
+            "SELECT 1",
+            new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            new int[] { 0, 1 });
+
+        var result = ManifestEmitter.BuildBitIndexToConditionText(plan);
+
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result[0], Does.EndWith("..."));
+        Assert.That(result[0].Length, Is.EqualTo(60));
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static AssembledPlan CreatePlanWithSites(
@@ -713,6 +917,51 @@ public class ManifestEmitterTests
             sqlVariants: sqlVariants,
             readerDelegateCode: null,
             maxParameterCount: 0,
+            executionSite: executionSite,
+            clauseSites: clauseSites,
+            entityTypeName: executionSite.EntityTypeName,
+            resultTypeName: executionSite.ResultTypeName,
+            dialect: dialect);
+    }
+
+    private static AssembledPlan CreatePlanWithConditionals(
+        TranslatedCallSite executionSite,
+        TranslatedCallSite[] clauseSites,
+        string sql,
+        ConditionalTerm[] conditionalTerms,
+        int[] possibleMasks,
+        QueryParameter[]? parameters = null,
+        GenSqlDialect dialect = GenSqlDialect.SQLite)
+    {
+        var queryPlan = new IRQueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("users", null, "t0"),
+            joins: Array.Empty<JoinPlan>(),
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: new SelectProjection(
+                ProjectionKind.Entity, "User",
+                Array.Empty<ProjectedColumn>(), isIdentity: true),
+            pagination: null,
+            isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: conditionalTerms,
+            possibleMasks: possibleMasks,
+            parameters: parameters ?? Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.PrebuiltDispatch);
+
+        var sqlVariants = new Dictionary<int, AssembledSqlVariant>();
+        foreach (var mask in possibleMasks)
+            sqlVariants[mask] = new AssembledSqlVariant(sql, parameters?.Length ?? 0);
+
+        return new AssembledPlan(
+            plan: queryPlan,
+            sqlVariants: sqlVariants,
+            readerDelegateCode: null,
+            maxParameterCount: parameters?.Length ?? 0,
             executionSite: executionSite,
             clauseSites: clauseSites,
             entityTypeName: executionSite.EntityTypeName,
