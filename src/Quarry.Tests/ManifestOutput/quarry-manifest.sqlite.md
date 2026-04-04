@@ -156,6 +156,22 @@ INSERT INTO "order_items" ("OrderId", "ProductName", "Quantity", "UnitPrice", "L
 
 ---
 
+### OrderItems().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."ProductName", "j1"."UserName" FROM "order_items" AS "t0" INNER JOIN "orders" AS "j0" ON "t0"."OrderId" = "j0"."OrderId" INNER JOIN "users" AS "j1" ON "j0"."UserId" = "j1"."UserId"
+```
+
+---
+
+### OrderItems().Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."ProductName", "j1"."UserName" FROM "order_items" AS "t0" INNER JOIN "orders" AS "j0" ON "t0"."OrderId" = "j0"."OrderId" INNER JOIN "users" AS "j1" ON "j0"."UserId" = "j1"."UserId"
+```
+
+---
+
 ### OrderItems().Update().Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
@@ -232,10 +248,34 @@ SELECT "LineTotal", "Quantity" FROM "order_items" WHERE "OrderItemId" = 3
 
 ---
 
+### OrderItems().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."ProductName" FROM "order_items" AS "t0" INNER JOIN "orders" AS "j0" ON "t0"."OrderId" = "j0"."OrderId" INNER JOIN "users" AS "j1" ON "j0"."UserId" = "j1"."UserId" WHERE "j1"."IsActive" = 1
+```
+
+---
+
 ### Orders().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
 DELETE FROM "orders" WHERE "OrderId" = 42
+```
+
+---
+
+### Orders().GroupBy(...).Having(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "j0"."UserName", COUNT(*) AS "Item2" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" GROUP BY "j0"."UserName" HAVING COUNT(*) > 1
+```
+
+---
+
+### Orders().GroupBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "j0"."UserName", COUNT(*) AS "Item2" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" GROUP BY "j0"."UserName"
 ```
 
 ---
@@ -279,6 +319,14 @@ SELECT "OrderId", "Total" FROM "orders" ORDER BY "Total" ASC
 
 ---
 
+### Orders().Select(...).OrderBy(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" ORDER BY "j0"."UserName" ASC
+```
+
+---
+
 ### Orders().Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -307,6 +355,22 @@ SELECT "OrderId", "Total" FROM "orders"
 
 ```sql
 SELECT "OrderId", "Total", "Status" FROM "orders"
+```
+
+---
+
+### Orders().Select(...).ToDiagnostics()
+
+```sql
+SELECT "j0"."UserName" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId"
+```
+
+---
+
+### Orders().Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."OrderId", "j0"."UserName" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId"
 ```
 
 ---
@@ -423,6 +487,14 @@ SELECT "Status", MIN("Total") AS "Item2" FROM "orders" GROUP BY "Status"
 
 ---
 
+### Orders().Where(...).OrderBy(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."IsActive" = 1 ORDER BY "j0"."UserName" ASC
+```
+
+---
+
 ### Orders().Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -441,6 +513,14 @@ SELECT "OrderId" FROM "orders" WHERE "OrderId" IN ({__COL_P0__}) AND "Status" IN
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `string[]` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."OrderId", "j0"."UserName" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."IsActive" = 1
+```
 
 ---
 
@@ -519,6 +599,34 @@ SELECT "Total" FROM "orders" WHERE "OrderId" IN ({__COL_P0__}) AND "Status" IN (
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `string[]` |
+
+---
+
+### Orders().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."OrderId", "j0"."UserName" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."IsActive" = 1
+```
+
+---
+
+### Orders().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."IsActive" = 1
+```
+
+---
+
+### Orders().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."UserName" = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -633,6 +741,14 @@ SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FRO
 
 ```sql
 SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 3
+```
+
+---
+
+### Shipments().Select(...).ToDiagnostics()
+
+```sql
+SELECT "t0"."ShipmentId", "j0"."WarehouseName" FROM "shipments" AS "t0" LEFT JOIN "warehouses" AS "j0" ON "t0"."ReturnWarehouseId" = "j0"."WarehouseId"
 ```
 
 ---
@@ -900,6 +1016,22 @@ INSERT INTO "users" ("UserName", "IsActive", "CreatedAt") VALUES (@p0, @p1, @p2)
 | `@p0` | `string` |
 | `@p1` | `bool` |
 | `@p2` | `DateTime` |
+
+---
+
+### Users().Join(...).Join(...).Join(...).Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName", "t4"."WarehouseName", "t5"."AccountName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId" INNER JOIN "shipments" AS "t3" ON "t1"."OrderId" = "t3"."OrderId" INNER JOIN "warehouses" AS "t4" ON "t3"."WarehouseId" = "t4"."WarehouseId" INNER JOIN "accounts" AS "t5" ON "t0"."UserId" = "t5"."UserId"
+```
+
+---
+
+### Users().Join(...).Join(...).Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName", "t4"."WarehouseName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" INNER JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId" INNER JOIN "shipments" AS "t3" ON "t1"."OrderId" = "t3"."OrderId" INNER JOIN "warehouses" AS "t4" ON "t3"."WarehouseId" = "t4"."WarehouseId"
+```
 
 ---
 
@@ -1968,6 +2100,14 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 
 ---
 
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId" AND ("j0"."City" = 'Portland'))
+```
+
+---
+
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2576,6 +2716,18 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "user_addresses" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -2666,6 +2818,14 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId" AND ("j0"."City" = 'Portland'))
+```
 
 ---
 
@@ -2926,7 +3086,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 451 |
+| Total discovered | 470 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 148 |
-| Rendered | 303 |
+| Rendered | 322 |
