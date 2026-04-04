@@ -343,5 +343,26 @@ internal class CrossDialectNullableValueTests
             ss:     "SELECT [UserName] FROM [users] WHERE [UserId] IN (@p0, @p1)");
     }
 
+    [Test]
+    public async Task Where_NullableListContains_NonNullableColumn_WithExecution()
+    {
+        // Execution-level verification for nullable collection against non-nullable column.
+        // The column (UserId) is the first column — tests that the carrier emits
+        // IReadOnlyList<int?> and the cast/binding work at runtime.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var ids = new List<int?> { 1, 3 };
+        var results = await Lite.Users()
+            .Where(u => ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .Prepare()
+            .ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo("Alice"));
+        Assert.That(results[1], Is.EqualTo("Charlie"));
+    }
+
     #endregion
 }
