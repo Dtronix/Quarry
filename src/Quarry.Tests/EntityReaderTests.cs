@@ -5,6 +5,7 @@ using Quarry.Shared.Sql;
 using Quarry.Generators.Projection;
 using Quarry.Shared.Migration;
 using Quarry.Tests.Testing;
+using Quarry.Generators.Utilities;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 
 namespace Quarry.Tests;
@@ -315,20 +316,84 @@ public class EntityReaderTests
 
     #endregion
 
+    #region Nullable Reference Types
+
+    [Test]
+    public void GenerateReaderDelegate_WithNullableByteArray_EmitsNullNotDefault()
+    {
+        // Arrange - nullable byte[] column (e.g., Col<byte[]?> Password)
+        var projection = new ProjectionInfo(
+            ProjectionKind.Entity,
+            "Package",
+            new[]
+            {
+                CreateProjectedColumn("Id", "id", "int", 0),
+                CreateProjectedColumn("Password", "password", "byte[]", 1, isNullable: true),
+            });
+
+        // Act
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "Package");
+
+        // Assert - should emit null for nullable reference types, not default()
+        Assert.That(readerCode, Does.Contain("? null : r.GetFieldValue<byte[]>(1)"),
+            "Nullable byte[] should emit 'null' for the null branch");
+        Assert.That(readerCode, Does.Not.Contain("default()"),
+            "Should not emit bare default() without type");
+    }
+
+    [Test]
+    public void GenerateReaderDelegate_WithNullableString_EmitsNullNotDefault()
+    {
+        // Arrange - nullable string column
+        var projection = new ProjectionInfo(
+            ProjectionKind.Entity,
+            "User",
+            new[]
+            {
+                CreateProjectedColumn("UserId", "user_id", "int", 0),
+                CreateProjectedColumn("Email", "email", "string", 1, isNullable: true),
+            });
+
+        // Act
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "User");
+
+        // Assert - nullable reference types should emit 'null'
+        Assert.That(readerCode, Does.Contain("? null : r.GetString(1)"),
+            "Nullable string should emit 'null' for the null branch");
+    }
+
+    [Test]
+    public void GenerateReaderDelegate_WithNullableDateTime_EmitsDefaultWithQuestionMark()
+    {
+        // Arrange - nullable DateTime column (value type)
+        var projection = new ProjectionInfo(
+            ProjectionKind.Entity,
+            "Event",
+            new[]
+            {
+                CreateProjectedColumn("EventId", "event_id", "int", 0),
+                CreateProjectedColumn("OccurredAt", "occurred_at", "DateTime", 1, isNullable: true),
+            });
+
+        // Act
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "Event");
+
+        // Assert - value types should still use default(T?)
+        Assert.That(readerCode, Does.Contain("? default(DateTime?) : r.GetDateTime(1)"),
+            "Nullable DateTime (value type) should emit 'default(DateTime?)'");
+    }
+
+    #endregion
+
     #region Helper Methods
 
     private static ProjectedColumn CreateProjectedColumn(
         string propertyName, string columnName, string clrType, int ordinal,
         bool isNullable = false)
     {
-        var readerMethod = clrType switch
-        {
-            "int" => "GetInt32",
-            "string" => "GetString",
-            "bool" => "GetBoolean",
-            "decimal" => "GetDecimal",
-            _ => "GetValue"
-        };
+        // Use the same TypeClassification that the generator uses to ensure consistency
+        var readerMethod = TypeClassification.GetReaderMethod(clrType);
+        var isValueType = TypeClassification.IsValueType(clrType);
 
         return new ProjectedColumn(
             propertyName: propertyName,
@@ -337,7 +402,7 @@ public class EntityReaderTests
             fullClrType: clrType,
             isNullable: isNullable,
             ordinal: ordinal,
-            isValueType: clrType != "string",
+            isValueType: isValueType,
             readerMethodName: readerMethod);
     }
 

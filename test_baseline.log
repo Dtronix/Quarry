@@ -1,0 +1,29 @@
+  Determining projects to restore...
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry\Quarry.csproj (in 339 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Generator\Quarry.Generator.csproj (in 398 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers\Quarry.Analyzers.csproj (in 398 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers.CodeFixes\Quarry.Analyzers.CodeFixes.csproj (in 555 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers.Tests\Quarry.Analyzers.Tests.csproj (in 592 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Benchmarks\Quarry.Benchmarks.csproj (in 641 ms).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Tool\Quarry.Tool.csproj (in 1.66 sec).
+  Restored Z:\Projects\Quarry\Quarry-5\src\Quarry.Tests\Quarry.Tests.csproj (in 1.66 sec).
+  Quarry.Analyzers -> Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers\bin\Debug\netstandard2.0\Quarry.Analyzers.dll
+  Quarry.Generator -> Z:\Projects\Quarry\Quarry-5\src\Quarry.Generator\bin\Debug\netstandard2.0\Quarry.Generator.dll
+  Quarry.Analyzers.CodeFixes -> Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers.CodeFixes\bin\Debug\netstandard2.0\Quarry.Analyzers.CodeFixes.dll
+  Quarry -> Z:\Projects\Quarry\Quarry-5\src\Quarry\bin\Debug\net10.0\Quarry.dll
+  Quarry.Analyzers.Tests -> Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers.Tests\bin\Debug\net10.0\Quarry.Analyzers.Tests.dll
+Test run for Z:\Projects\Quarry\Quarry-5\src\Quarry.Analyzers.Tests\bin\Debug\net10.0\Quarry.Analyzers.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:    61, Skipped:     0, Total:    61, Duration: 2 s - Quarry.Analyzers.Tests.dll (net10.0)
+  Quarry.Tests -> Z:\Projects\Quarry\Quarry-5\src\Quarry.Tests\bin\Debug\net10.0\Quarry.Tests.dll
+Test run for Z:\Projects\Quarry\Quarry-5\src\Quarry.Tests\bin\Debug\net10.0\Quarry.Tests.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+
+Passed!  - Failed:     0, Passed:  2545, Skipped:     0, Total:  2545, Duration: 16 s - Quarry.Tests.dll (net10.0)
