@@ -72,15 +72,66 @@ internal class CrossDialectHasManyThroughTests
         QueryTestHarness.AssertDialects(
             lite.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > @p0",
-            pg:     "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > $1",
-            mysql:  "SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?",
-            ss:     "SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > @p0");
+            sqlite: "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > @p0",
+            pg:     "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > $1",
+            mysql:  "SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?",
+            ss:     "SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId]) > @p0");
 
         // Only Alice has > 1 address (Portland + Seattle)
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task HasManyThrough_Count_WithPredicate_CrossDialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var threshold = 0;
+        var lt = Lite.Users().Where(u => u.Addresses.Count(a => a.City == "Portland") > threshold)
+            .Select(u => u.UserName).ToDiagnostics();
+        var pg = Pg.Users().Where(u => u.Addresses.Count(a => a.City == "Portland") > threshold)
+            .Select(u => u.UserName).ToDiagnostics();
+        var my = My.Users().Where(u => u.Addresses.Count(a => a.City == "Portland") > threshold)
+            .Select(u => u.UserName).ToDiagnostics();
+        var ss = Ss.Users().Where(u => u.Addresses.Count(a => a.City == "Portland") > threshold)
+            .Select(u => u.UserName).ToDiagnostics();
+
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"j0\".\"City\" = 'Portland')) > @p0",
+            pg:     "SELECT \"UserName\" FROM \"users\" WHERE (SELECT COUNT(*) FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\" AND (\"j0\".\"City\" = 'Portland')) > $1",
+            mysql:  "SELECT `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`j0`.`City` = 'Portland')) > ?",
+            ss:     "SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId] AND ([j0].[City] = 'Portland')) > @p0");
+    }
+
+    #endregion
+
+    #region HasManyThrough Any without predicate
+
+    [Test]
+    public async Task HasManyThrough_Any_NoPredicate_CrossDialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).ToDiagnostics();
+        var pg = Pg.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).ToDiagnostics();
+        var my = My.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).ToDiagnostics();
+        var ss = Ss.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).ToDiagnostics();
+
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName` FROM `users` WHERE EXISTS (SELECT 1 FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId])");
     }
 
     #endregion
