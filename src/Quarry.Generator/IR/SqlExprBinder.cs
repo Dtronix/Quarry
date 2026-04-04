@@ -447,7 +447,7 @@ internal static class SqlExprBinder
             {
                 // For HasManyThrough: predicate columns resolve on the implicit join alias
                 // We'll set the alias after creating the implicit join below
-                innerAliases[sub.InnerParameterName] = alias; // temporary; will be overridden
+                innerAliases[sub.InnerParameterName] = alias; // placeholder until joinAlias is computed below; dictionary is shared by reference with BindContext
             }
             else
             {
@@ -538,26 +538,10 @@ internal static class SqlExprBinder
                             joinKind: joinKind,
                             targetPkColumnName: targetPkCol));
 
-                        // Override the predicate's table alias to the implicit join alias
+                        // Override the predicate's table alias to the implicit join alias.
+                        // innerAliases is shared by reference with innerCtx.TableAliases,
+                        // so this mutation is visible without rebuilding the context.
                         innerAliases[sub.InnerParameterName] = joinAlias;
-
-                        // Rebuild context with updated aliases
-                        innerCtx = new BindContext(
-                            predicateEntity, ctx.Dialect, sub.InnerParameterName, innerColumnLookup,
-                            innerJoined, innerAliases, ctx.EntityLookup);
-                        innerCtx.SubqueryAliasCounter = ctx.SubqueryAliasCounter;
-                        // Re-add the implicit join to the new context
-                        innerCtx.ImplicitJoins.Add(new ImplicitJoinInfo(
-                            sourceAlias: alias,
-                            fkColumnName: junctionFkCol,
-                            fkColumnQuoted: QuoteIdentifier(junctionFkCol, ctx.Dialect),
-                            targetTableName: throughTargetEntity.TableName,
-                            targetTableQuoted: QuoteIdentifier(throughTargetEntity.TableName, ctx.Dialect),
-                            targetSchemaQuoted: null,
-                            targetAlias: joinAlias,
-                            targetPkColumnQuoted: QuoteIdentifier(targetPkCol, ctx.Dialect),
-                            joinKind: joinKind,
-                            targetPkColumnName: targetPkCol));
                     }
                 }
             }
