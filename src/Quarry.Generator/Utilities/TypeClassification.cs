@@ -149,6 +149,7 @@ internal static class TypeClassification
             "TimeSpan" or "System.TimeSpan" => "GetFieldValue<TimeSpan>",
             "DateOnly" or "System.DateOnly" => "GetFieldValue<DateOnly>",
             "TimeOnly" or "System.TimeOnly" => "GetFieldValue<TimeOnly>",
+            "byte[]" or "Byte[]" or "System.Byte[]" => "GetFieldValue<byte[]>",
             _ => "GetValue"
         };
     }
