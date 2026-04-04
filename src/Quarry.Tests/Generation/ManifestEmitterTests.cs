@@ -545,10 +545,11 @@ public class ManifestEmitterTests
         var terminal2 = TestCallSiteBuilder.CreateExecutionSite(
             InterceptorKind.ExecuteFetchFirst, "User", "User", uniqueId: "term_2");
 
-        // The plan uses terminal1 as its execution site, with Prepare and multiple terminals
+        // The plan uses terminal1 as its execution site, with Prepare and both terminals
         var plan = CreatePlanWithSites(terminal1, new[] { chainRoot, where },
             "SELECT * FROM users WHERE 1",
-            prepareSite: prepareSite);
+            prepareSite: prepareSite,
+            preparedTerminals: new[] { terminal1, terminal2 });
 
         var plans = new List<(AssembledPlan, string, string)>
         {
@@ -1218,6 +1219,53 @@ public class ManifestEmitterTests
     }
 
     [Test]
+    public void RenderAllDialects_PipelineErrorPlan_ExcludedFromRendering()
+    {
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User", uniqueId: "exec_good");
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var goodPlan = CreatePlanWithSql(execution, new[] { chainRoot }, "SELECT 1");
+
+        // Plan with PipelineError on execution site — should be excluded
+        var execError = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_error")
+            .Build();
+        // Wrap the built site with a PipelineError
+        var execErrorWithPipeline = new TranslatedCallSite(
+            execError.Bound, pipelineError: "Translation failed");
+        var rootError = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_error")
+            .Build();
+        var errorPlan = CreatePlanWithSql(execErrorWithPipeline, new[] { rootError },
+            "SELECT broken");
+
+        var group = CreateFileInterceptorGroup("TestDb", "TestApp",
+            new[] { goodPlan, errorPlan });
+
+        var result = ManifestEmitter.RenderAllDialects(
+            ImmutableArray.Create(group));
+
+        Assert.That(result.Count, Is.EqualTo(1));
+        var markdown = result["quarry-manifest.sqlite.md"];
+        Assert.That(markdown, Does.Contain("| Total discovered | 2 |"));
+        Assert.That(markdown, Does.Contain("| Skipped (errors) | 1 |"));
+        Assert.That(markdown, Does.Not.Contain("SELECT broken"));
+    }
+
+    [Test]
     public void RenderAllDialects_EmptyGroups_ReturnsEmptyDict()
     {
         var result = ManifestEmitter.RenderAllDialects(
@@ -1243,7 +1291,8 @@ public class ManifestEmitterTests
         TranslatedCallSite executionSite,
         TranslatedCallSite[] clauseSites,
         string sql,
-        TranslatedCallSite? prepareSite = null)
+        TranslatedCallSite? prepareSite = null,
+        IReadOnlyList<TranslatedCallSite>? preparedTerminals = null)
     {
         var queryPlan = TestPlanHelper.CreateQueryPlanWithProjection(null);
         var sqlVariants = new Dictionary<int, AssembledSqlVariant>
@@ -1261,7 +1310,8 @@ public class ManifestEmitterTests
             entityTypeName: executionSite.EntityTypeName,
             resultTypeName: executionSite.ResultTypeName,
             dialect: GenSqlDialect.SQLite,
-            prepareSite: prepareSite);
+            prepareSite: prepareSite,
+            preparedTerminals: preparedTerminals);
     }
 
     private static AssembledPlan CreatePlanWithSql(
