@@ -40,9 +40,16 @@ When the Quarry generator emits a typed entity reader (from `.Select(p => p).Exe
 - Apply uniformly to all nullable reference types, not just `byte[]`
 - This aligns with the existing pattern at line 231 which already emits sign-cast types with `?`
 
+phase: REVIEW
+status: active
+phases-total: 1
+phases-complete: 1
+
 ## Suspend State
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | DESIGN | Created branch, ran baseline tests, confirmed all green |
+| 1 | DESIGN | PLAN | Clarified root cause, chose null emission approach, wrote plan |
+| 1 | PLAN | IMPLEMENT | Phase 1: Fixed GetReaderCall() for nullable ref types, added 3 tests, all 2548 tests pass |
