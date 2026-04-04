@@ -51,6 +51,37 @@ internal static class ManifestEmitter
             return;
         }
 
+        var rendered = RenderAllDialects(groups);
+
+        foreach (var kvp in rendered)
+        {
+            var filePath = Path.Combine(manifestDir, kvp.Key);
+            try
+            {
+                WriteIfChanged(filePath, kvp.Value);
+            }
+            catch (Exception ex)
+            {
+                spc.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.ManifestWriteFailed,
+                    Location.None,
+                    filePath, ex.Message));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Flattens, deduplicates, and renders all assembled plans grouped by dialect.
+    /// Returns a dictionary of dialect file name → rendered markdown content.
+    /// </summary>
+    internal static Dictionary<string, string> RenderAllDialects(
+        ImmutableArray<FileInterceptorGroup> groups)
+    {
+        var result = new Dictionary<string, string>();
+
+        if (groups.IsDefaultOrEmpty)
+            return result;
+
         // Flatten all AssembledPlans from all groups, deduplicate by (Context, ExecutionSite.UniqueId)
         var allPlans = new Dictionary<(string Context, string UniqueId), (AssembledPlan Plan, string ContextNamespace)>();
         var totalByDialect = new Dictionary<SqlDialect, int>();
@@ -79,7 +110,7 @@ internal static class ManifestEmitter
         }
 
         if (allPlans.Count == 0)
-            return;
+            return result;
 
         // Group by dialect
         var byDialect = new Dictionary<SqlDialect, List<(AssembledPlan Plan, string ContextClassName, string ContextNamespace)>>();
@@ -95,7 +126,7 @@ internal static class ManifestEmitter
             list.Add((plan, kvp.Key.Context, contextNamespace));
         }
 
-        // Render and write one file per dialect
+        // Render one entry per dialect
         foreach (var kvp in byDialect)
         {
             var dialect = kvp.Key;
@@ -104,20 +135,10 @@ internal static class ManifestEmitter
             excludedByDialect.TryGetValue(dialect, out var excludedCount);
             var markdown = RenderManifest(dialect, plans, totalCount, excludedCount);
             var fileName = GetDialectFileName(dialect);
-            var filePath = Path.Combine(manifestDir, fileName);
-
-            try
-            {
-                WriteIfChanged(filePath, markdown);
-            }
-            catch (Exception ex)
-            {
-                spc.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.ManifestWriteFailed,
-                    Location.None,
-                    filePath, ex.Message));
-            }
+            result[fileName] = markdown;
         }
+
+        return result;
     }
 
     /// <summary>
