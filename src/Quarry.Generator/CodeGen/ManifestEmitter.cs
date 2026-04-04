@@ -355,30 +355,34 @@ internal static class ManifestEmitter
                 continue;
             }
 
+            // Omit leading dot when no ChainRoot preceded this site
+            var prefix = sb.Length > 0 ? "." : "";
+
             // Transitions (Delete, Update, Insert, All) appear without arguments
             if (IsTransitionKind(site.Kind))
             {
-                sb.Append('.').Append(site.MethodName).Append("()");
+                sb.Append(prefix).Append(site.MethodName).Append("()");
                 continue;
             }
 
             // Modifiers without expressions (Limit, Offset, Distinct, WithTimeout)
             if (IsModifierKind(site.Kind))
             {
-                sb.Append('.').Append(site.MethodName).Append("(...)");
+                sb.Append(prefix).Append(site.MethodName).Append("(...)");
                 continue;
             }
 
             // Regular clause methods have arguments
-            sb.Append('.').Append(site.MethodName).Append("(...)");
+            sb.Append(prefix).Append(site.MethodName).Append("(...)");
         }
 
         // Append Prepare if present
         if (plan.PrepareSite != null)
             sb.Append(".Prepare()");
 
-        // Append the terminal
-        sb.Append('.').Append(plan.ExecutionSite.MethodName).Append("()");
+        // Append the terminal — omit leading dot when no clause sites preceded it
+        var termPrefix = sb.Length > 0 ? "." : "";
+        sb.Append(termPrefix).Append(plan.ExecutionSite.MethodName).Append("()");
 
         return sb.ToString();
     }

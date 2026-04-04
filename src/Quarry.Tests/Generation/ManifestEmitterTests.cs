@@ -140,6 +140,44 @@ public class ManifestEmitterTests
         Assert.That(shape, Is.EqualTo("Users().Select(...).Limit(...).Offset(...).ExecuteFetchAllAsync()"));
     }
 
+    [Test]
+    public void BuildChainShape_NoChainRoot_OmitsLeadingDot()
+    {
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .Build();
+
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User");
+
+        var plan = CreatePlanWithSites(execution, new[] { where },
+            "SELECT 1");
+
+        var shape = ManifestEmitter.BuildChainShape(plan);
+        Assert.That(shape, Is.EqualTo("Where(...).ExecuteFetchAllAsync()"));
+    }
+
+    [Test]
+    public void BuildChainShape_EmptyClauseSites_TerminalWithoutLeadingDot()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("RawSqlAsync")
+            .WithKind(InterceptorKind.RawSqlAsync)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("raw_0")
+            .Build();
+
+        var plan = CreatePlanWithSites(execution, Array.Empty<TranslatedCallSite>(),
+            "SELECT 1");
+
+        var shape = ManifestEmitter.BuildChainShape(plan);
+        Assert.That(shape, Is.EqualTo("RawSqlAsync()"));
+    }
+
     #endregion
 
     #region SimplifyTypeName Tests
