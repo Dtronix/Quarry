@@ -1809,7 +1809,7 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "user_addresses" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > $1
+SELECT "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId") > $1
 ```
 
 | Parameter | Type |
@@ -1881,7 +1881,27 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > $
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
+SELECT "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId" AND ("j0"."City" = 'Portland')) > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
 SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId" AND ("j0"."City" = 'Portland'))
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId")
 ```
 
 ---
@@ -1958,7 +1978,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 255 |
+| Total discovered | 257 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 44 |
-| Rendered | 211 |
+| Rendered | 213 |

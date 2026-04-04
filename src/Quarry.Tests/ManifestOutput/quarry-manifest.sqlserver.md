@@ -1792,7 +1792,7 @@ SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE 'A%'
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > @p0
+SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId]) > @p0
 ```
 
 | Parameter | Type |
@@ -1850,7 +1850,27 @@ SELECT [UserId], [UserName], [IsActive] FROM [users] WHERE [UserName] LIKE '%' +
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
+SELECT [UserName] FROM [users] WHERE (SELECT COUNT(*) FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId] AND ([j0].[City] = 'Portland')) > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
 SELECT [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId] AND ([j0].[City] = 'Portland'))
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT [UserName] FROM [users] WHERE EXISTS (SELECT 1 FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [users].[UserId])
 ```
 
 ---
@@ -1945,7 +1965,7 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 254 |
+| Total discovered | 256 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 44 |
-| Rendered | 210 |
+| Rendered | 212 |
