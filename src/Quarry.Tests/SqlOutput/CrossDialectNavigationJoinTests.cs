@@ -190,4 +190,73 @@ internal class CrossDialectNavigationJoinTests
     }
 
     #endregion
+
+    #region Execution verification
+
+    [Test]
+    public async Task NavigationJoin_Where_ExecutesCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var results = await Lite.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).Prepare().ExecuteFetchAllAsync();
+
+        // Alice (active) has orders 1, 2; Bob (active) has order 3; Charlie (inactive) excluded
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Alice")));
+        Assert.That(results[2], Is.EqualTo((3, "Bob")));
+    }
+
+    #endregion
+
+    #region LEFT JOIN for nullable FK
+
+    [Test]
+    public async Task NavigationJoin_NullableFk_RendersLeftJoin()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // ReturnWarehouseId is Ref<WarehouseSchema, int?> — nullable FK should produce LEFT JOIN
+        var lt = Lite.Shipments().Select(s => (s.ShipmentId, s.ReturnWarehouse!.WarehouseName)).ToDiagnostics();
+        var pg = Pg.Shipments().Select(s => (s.ShipmentId, s.ReturnWarehouse!.WarehouseName)).ToDiagnostics();
+        var my = My.Shipments().Select(s => (s.ShipmentId, s.ReturnWarehouse!.WarehouseName)).ToDiagnostics();
+        var ss = Ss.Shipments().Select(s => (s.ShipmentId, s.ReturnWarehouse!.WarehouseName)).ToDiagnostics();
+
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"t0\".\"ShipmentId\", \"j0\".\"WarehouseName\" FROM \"shipments\" AS \"t0\" LEFT JOIN \"warehouses\" AS \"j0\" ON \"t0\".\"ReturnWarehouseId\" = \"j0\".\"WarehouseId\"",
+            pg:     "SELECT \"t0\".\"ShipmentId\", \"j0\".\"WarehouseName\" FROM \"shipments\" AS \"t0\" LEFT JOIN \"warehouses\" AS \"j0\" ON \"t0\".\"ReturnWarehouseId\" = \"j0\".\"WarehouseId\"",
+            mysql:  "SELECT `t0`.`ShipmentId`, `j0`.`WarehouseName` FROM `shipments` AS `t0` LEFT JOIN `warehouses` AS `j0` ON `t0`.`ReturnWarehouseId` = `j0`.`WarehouseId`",
+            ss:     "SELECT [t0].[ShipmentId], [j0].[WarehouseName] FROM [shipments] AS [t0] LEFT JOIN [warehouses] AS [j0] ON [t0].[ReturnWarehouseId] = [j0].[WarehouseId]");
+    }
+
+    #endregion
+
+    #region Navigation dedup
+
+    [Test]
+    public async Task NavigationJoin_SameNavInWhereAndOrderBy_SingleJoin()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Same o.User navigation in both Where and OrderBy — should produce only one JOIN
+        var lt = Lite.Orders().Where(o => o.User!.IsActive).OrderBy(o => o.User!.UserName).Select(o => o.Total).ToDiagnostics();
+        var pg = Pg.Orders().Where(o => o.User!.IsActive).OrderBy(o => o.User!.UserName).Select(o => o.Total).ToDiagnostics();
+        var my = My.Orders().Where(o => o.User!.IsActive).OrderBy(o => o.User!.UserName).Select(o => o.Total).ToDiagnostics();
+        var ss = Ss.Orders().Where(o => o.User!.IsActive).OrderBy(o => o.User!.UserName).Select(o => o.Total).ToDiagnostics();
+
+        // Only one INNER JOIN — dedup should merge the two navigation accesses
+        QueryTestHarness.AssertDialects(
+            lt, pg, my, ss,
+            sqlite: "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = 1 ORDER BY \"j0\".\"UserName\" ASC",
+            pg:     "SELECT \"t0\".\"Total\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" WHERE \"j0\".\"IsActive\" = TRUE ORDER BY \"j0\".\"UserName\" ASC",
+            mysql:  "SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` WHERE `j0`.`IsActive` = 1 ORDER BY `j0`.`UserName` ASC",
+            ss:     "SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] WHERE [j0].[IsActive] = 1 ORDER BY [j0].[UserName] ASC");
+    }
+
+    #endregion
 }
