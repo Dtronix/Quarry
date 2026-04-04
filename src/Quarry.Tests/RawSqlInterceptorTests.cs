@@ -281,6 +281,31 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(i))"));
     }
 
+    [Test]
+    public void RawSqlAsync_EntityType_WithByteArrayProperty_GeneratesGetFieldValue()
+    {
+        // Arrange
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "Package",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("Id", "long", "GetInt64", false),
+                new RawSqlPropertyInfo("Password", "byte[]", "GetFieldValue<byte[]>", true,
+                    fullClrType: "byte[]")
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "Package", rawSqlTypeInfo);
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Assert — should use typed GetFieldValue, not bare GetValue
+        Assert.That(result, Does.Contain("r.GetFieldValue<byte[]>(i)"));
+        Assert.That(result, Does.Not.Contain("r.GetValue(i)"));
+    }
+
     #endregion
 
     #region Nullable Property Tests
@@ -339,6 +364,29 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("Standalone Interceptors"));
         Assert.That(result, Does.Contain("RawSqlAsyncWithReader"));
         Assert.That(result, Does.Contain("RawSqlScalarAsyncWithConverter"));
+    }
+
+    [Test]
+    public void RawSqlAsync_DtoType_WithGetValueFallback_GeneratesCast()
+    {
+        // Arrange — simulate an unknown type that falls through to GetValue
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "CustomDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("Data", "SomeCustomType", "GetValue", false,
+                    fullClrType: "MyNamespace.SomeCustomType")
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "CustomDto", rawSqlTypeInfo);
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Assert — GetValue result must be cast to the target type
+        Assert.That(result, Does.Contain("(MyNamespace.SomeCustomType)r.GetValue(i)"));
     }
 
     #endregion

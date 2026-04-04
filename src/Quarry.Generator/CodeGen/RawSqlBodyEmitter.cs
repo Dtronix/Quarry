@@ -157,6 +157,11 @@ internal static class RawSqlBodyEmitter
             return $"({prop.ClrType})r.{prop.ReaderMethodName}(i)";
         }
 
+        if (prop.ReaderMethodName == "GetValue")
+        {
+            return $"({prop.FullClrType})r.GetValue(i)";
+        }
+
         return $"r.{prop.ReaderMethodName}(i)";
     }
 
