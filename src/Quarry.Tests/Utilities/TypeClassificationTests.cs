@@ -124,9 +124,13 @@ public class TypeClassificationTests
     // Nullable stripping
     [TestCase("int?", ExpectedResult = "GetInt32")]
     [TestCase("DateTimeOffset?", ExpectedResult = "GetFieldValue<DateTimeOffset>")]
+    // byte[] (array type with dedicated reader)
+    [TestCase("byte[]", ExpectedResult = "GetFieldValue<byte[]>")]
+    [TestCase("byte[]?", ExpectedResult = "GetFieldValue<byte[]>")]
+    [TestCase("Byte[]", ExpectedResult = "GetFieldValue<byte[]>")]
+    [TestCase("System.Byte[]", ExpectedResult = "GetFieldValue<byte[]>")]
     // Fallback
     [TestCase("MyCustomType", ExpectedResult = "GetValue")]
-    [TestCase("byte[]", ExpectedResult = "GetValue")]
     public string GetReaderMethod_Tests(string clrType) => TypeClassification.GetReaderMethod(clrType);
 
     #endregion
