@@ -217,9 +217,11 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 "ShipmentId" INTEGER PRIMARY KEY,
                 "OrderId" INTEGER NOT NULL,
                 "WarehouseId" INTEGER NOT NULL,
+                "ReturnWarehouseId" INTEGER NULL,
                 "ShipDate" TEXT NOT NULL,
                 FOREIGN KEY ("OrderId") REFERENCES "orders"("OrderId"),
-                FOREIGN KEY ("WarehouseId") REFERENCES "warehouses"("WarehouseId")
+                FOREIGN KEY ("WarehouseId") REFERENCES "warehouses"("WarehouseId"),
+                FOREIGN KEY ("ReturnWarehouseId") REFERENCES "warehouses"("WarehouseId")
             )
             """);
 
@@ -272,9 +274,9 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             """);
 
         await SqlAsync("""
-            INSERT INTO "shipments" ("ShipmentId", "OrderId", "WarehouseId", "ShipDate") VALUES
-                (1, 1, 1, '2024-06-02 00:00:00'),
-                (2, 3, 2, '2024-07-02 00:00:00')
+            INSERT INTO "shipments" ("ShipmentId", "OrderId", "WarehouseId", "ReturnWarehouseId", "ShipDate") VALUES
+                (1, 1, 1, 2, '2024-06-02 00:00:00'),
+                (2, 3, 2, NULL, '2024-07-02 00:00:00')
             """);
     }
 }
