@@ -1518,11 +1518,11 @@ public static class Queries
 
         var code = interceptorsTree!.GetText().ToString();
 
-        // byte[] columns should use (byte[])r.GetValue(n), not bare r.GetValue(n)
-        Assert.That(code, Does.Contain("(byte[])r.GetValue("),
-            "byte[] columns should cast GetValue() result to byte[]");
-        Assert.That(code, Does.Not.Match(@"Content = r\.GetValue\(\d+\)[^)]"),
-            "byte[] columns should not assign GetValue() result without cast");
+        // byte[] columns should use r.GetFieldValue<byte[]>(n), not bare r.GetValue(n)
+        Assert.That(code, Does.Contain("r.GetFieldValue<byte[]>("),
+            "byte[] columns should use typed GetFieldValue<byte[]>");
+        Assert.That(code, Does.Not.Match(@"Content = r\.GetValue\(\d+\)"),
+            "byte[] columns should not use untyped GetValue()");
     }
 
     [Test]
