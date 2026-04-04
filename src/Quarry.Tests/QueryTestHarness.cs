@@ -268,6 +268,19 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             """);
 
         await SqlAsync("""
+            INSERT INTO "addresses" ("AddressId", "City", "Street", "ZipCode") VALUES
+                (1, 'Portland', '123 Main St', '97201'),
+                (2, 'Seattle', '456 Oak Ave', '98101')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "user_addresses" ("UserAddressId", "UserId", "AddressId") VALUES
+                (1, 1, 1),
+                (2, 1, 2),
+                (3, 2, 1)
+            """);
+
+        await SqlAsync("""
             INSERT INTO "warehouses" ("WarehouseId", "WarehouseName", "Region") VALUES
                 (1, 'West Coast Hub', 'US'),
                 (2, 'EU Central', 'EU')
