@@ -262,9 +262,16 @@ internal static class ReaderCodeGenerator
         if (column.IsNullable)
         {
             // For value types: default(DateTime?) returns null, not DateTime.MinValue
-            // For reference types: default(string) returns null
-            var nullableType = column.IsValueType ? $"{column.ClrType}?" : column.ClrType;
-            return $"r.IsDBNull({ordinal}) ? default({nullableType}) : r.{readerMethod}({ordinal})";
+            // For reference types: use null (idiomatic and type-inference friendly in initializers)
+            if (column.IsValueType)
+            {
+                var nullableType = $"{column.ClrType}?";
+                return $"r.IsDBNull({ordinal}) ? default({nullableType}) : r.{readerMethod}({ordinal})";
+            }
+            else
+            {
+                return $"r.IsDBNull({ordinal}) ? null : r.{readerMethod}({ordinal})";
+            }
         }
 
         return rawRead;
