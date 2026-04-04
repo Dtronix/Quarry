@@ -1193,4 +1193,172 @@ class Service
 
     #endregion
 
+    #region HasManyThrough Diagnostics (QRY044/QRY045)
+
+    [Test]
+    public void Generator_HasManyThrough_InvalidJunctionNavigation_ReportsQRY044()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class AddressSchema : Schema
+{
+    public static string Table => ""addresses"";
+    public Key<int> AddressId => Identity();
+    public Col<string> City => Length(100);
+}
+
+public class UserAddressSchema : Schema
+{
+    public static string Table => ""user_addresses"";
+    public Key<int> UserAddressId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Ref<AddressSchema, int> AddressId => ForeignKey<AddressSchema, int>();
+    public One<AddressSchema> Address { get; }
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+
+    // Junction navigation references 'NonExistentNav' which is not a Many<T> on this entity
+    public Many<AddressSchema> Addresses
+        => HasManyThrough<AddressSchema, UserAddressSchema, UserSchema>(
+            self => self.NonExistentNav,
+            through => through.Address);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Address> Addresses();
+    public partial IEntityAccessor<UserAddress> UserAddresses();
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY044");
+        Assert.That(qry044, Is.Not.Null, "Should report QRY044 when junction navigation is not a Many<T>");
+    }
+
+    [Test]
+    public void Generator_HasManyThrough_InvalidTargetNavigation_ReportsQRY045()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class AddressSchema : Schema
+{
+    public static string Table => ""addresses"";
+    public Key<int> AddressId => Identity();
+    public Col<string> City => Length(100);
+}
+
+public class UserAddressSchema : Schema
+{
+    public static string Table => ""user_addresses"";
+    public Key<int> UserAddressId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Ref<AddressSchema, int> AddressId => ForeignKey<AddressSchema, int>();
+    // No One<AddressSchema> navigation — target nav will be invalid
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Many<UserAddressSchema> UserAddresses => HasMany<UserAddressSchema>(ua => ua.UserId);
+
+    // Target navigation references 'Address' but UserAddressSchema has no One<AddressSchema>
+    public Many<AddressSchema> Addresses
+        => HasManyThrough<AddressSchema, UserAddressSchema, UserSchema>(
+            self => self.UserAddresses,
+            through => through.Address);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Address> Addresses();
+    public partial IEntityAccessor<UserAddress> UserAddresses();
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY045");
+        Assert.That(qry045, Is.Not.Null, "Should report QRY045 when target navigation is not a One<T> on junction entity");
+        Assert.That(qry045!.GetMessage(), Does.Contain("Address"));
+        Assert.That(qry045.GetMessage(), Does.Contain("UserAddress"));
+    }
+
+    [Test]
+    public void Generator_HasManyThrough_ValidNavigations_NoDiagnostics()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class AddressSchema : Schema
+{
+    public static string Table => ""addresses"";
+    public Key<int> AddressId => Identity();
+    public Col<string> City => Length(100);
+}
+
+public class UserAddressSchema : Schema
+{
+    public static string Table => ""user_addresses"";
+    public Key<int> UserAddressId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Ref<AddressSchema, int> AddressId => ForeignKey<AddressSchema, int>();
+    public One<AddressSchema> Address { get; }
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+    public Many<UserAddressSchema> UserAddresses => HasMany<UserAddressSchema>(ua => ua.UserId);
+
+    public Many<AddressSchema> Addresses
+        => HasManyThrough<AddressSchema, UserAddressSchema, UserSchema>(
+            self => self.UserAddresses,
+            through => through.Address);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Address> Addresses();
+    public partial IEntityAccessor<UserAddress> UserAddresses();
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry044 = diagnostics.FirstOrDefault(d => d.Id == "QRY044");
+        var qry045 = diagnostics.FirstOrDefault(d => d.Id == "QRY045");
+        Assert.That(qry044, Is.Null, "Should not report QRY044 for valid HasManyThrough");
+        Assert.That(qry045, Is.Null, "Should not report QRY045 for valid HasManyThrough");
+    }
+
+    #endregion
+
 }
