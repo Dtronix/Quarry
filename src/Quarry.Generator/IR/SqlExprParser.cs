@@ -23,13 +23,20 @@ internal static class SqlExprParser
     {
         // String members
         "Length", "Chars",
-        // DateTime/DateOnly/TimeOnly members
+        // DateTime/DateOnly/TimeOnly/DateTimeOffset members
         "Year", "Month", "Day", "Hour", "Minute", "Second", "Millisecond",
+        "Microsecond", "Nanosecond",
         "Date", "TimeOfDay", "DayOfWeek", "DayOfYear", "Ticks",
+        "DateTime", "Offset", "UtcDateTime", "LocalDateTime",
+        // TimeSpan members
+        "TotalDays", "TotalHours", "TotalMinutes", "TotalSeconds", "TotalMilliseconds",
+        "Days", "Hours", "Minutes", "Seconds", "Milliseconds",
         // Nullable members (already handled but for safety)
         "Value", "HasValue",
-        // Common .NET members
+        // Common .NET value type members
         "MaxValue", "MinValue", "Empty",
+        // Array/Collection members
+        "Count", "Rank",
     };
     private const int MaxPathDepth = 10;
 
