@@ -144,7 +144,8 @@ internal sealed class TranslatedClause : IEquatable<TranslatedClause>
         string? joinedSchemaName = null,
         string? tableAlias = null,
         IReadOnlyList<SetActionAssignment>? setAssignments = null,
-        string? customTypeMappingClass = null)
+        string? customTypeMappingClass = null,
+        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null)
     {
         Kind = kind;
         ResolvedExpression = resolvedExpression;
@@ -158,6 +159,7 @@ internal sealed class TranslatedClause : IEquatable<TranslatedClause>
         TableAlias = tableAlias;
         SetAssignments = setAssignments;
         CustomTypeMappingClass = customTypeMappingClass;
+        ImplicitJoins = implicitJoins;
     }
 
     public ClauseKind Kind { get; }
@@ -172,6 +174,11 @@ internal sealed class TranslatedClause : IEquatable<TranslatedClause>
     public string? TableAlias { get; }
     public IReadOnlyList<SetActionAssignment>? SetAssignments { get; }
     public string? CustomTypeMappingClass { get; }
+
+    /// <summary>
+    /// Implicit joins from One&lt;T&gt; navigation access in this clause.
+    /// </summary>
+    public IReadOnlyList<ImplicitJoinInfo>? ImplicitJoins { get; }
 
     /// <summary>
     /// Renders the resolved expression to a SQL fragment string using generic @p{n} parameter format.
@@ -200,7 +207,8 @@ internal sealed class TranslatedClause : IEquatable<TranslatedClause>
             && CustomTypeMappingClass == other.CustomTypeMappingClass
             && ResolvedExpression.Equals(other.ResolvedExpression)
             && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
-            && EqualityHelpers.NullableSequenceEqual(SetAssignments, other.SetAssignments);
+            && EqualityHelpers.NullableSequenceEqual(SetAssignments, other.SetAssignments)
+            && EqualityHelpers.NullableSequenceEqual(ImplicitJoins, other.ImplicitJoins);
     }
 
     public override bool Equals(object? obj) => Equals(obj as TranslatedClause);

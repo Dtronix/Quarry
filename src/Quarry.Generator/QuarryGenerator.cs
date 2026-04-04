@@ -75,7 +75,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         // Pipeline 1 diagnostics: Cross-context duplicate TypeMapping check (needs Collect)
         // Build-time only — rare edge case, not needed for IntelliSense.
         context.RegisterImplementationSourceOutput(contextDeclarations.Collect(),
-            static (spc, contexts) => CheckDuplicateTypeMappings(contexts, spc));
+            static (spc, contexts) =>
+            {
+                CheckDuplicateTypeMappings(contexts, spc);
+                ValidateHasManyThroughNavigations(contexts, spc);
+            });
 
         // === NEW: Build EntityRegistry from collected contexts ===
         var entityRegistry = contextDeclarations.Collect()
@@ -289,6 +293,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
                 }
 
+                // Report navigation diagnostics (QRY040-045) collected during schema parsing
+                foreach (var navDiag in entity.Diagnostics)
+                    context.ReportDiagnostic(navDiag);
+
                 // Report QRY026 (info) for valid custom entity reader
                 if (entity.CustomEntityReaderClass != null)
                 {
@@ -392,6 +400,77 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Cross-entity validation for HasManyThrough navigations.
+    /// Validates that junction navigation names reference actual Many&lt;T&gt; / One&lt;T&gt; properties.
+    /// </summary>
+    private static void ValidateHasManyThroughNavigations(
+        ImmutableArray<ContextInfo> contexts,
+        SourceProductionContext spc)
+    {
+        if (contexts.IsDefaultOrEmpty)
+            return;
+
+        // Build entity lookup from all contexts
+        var allEntities = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+        foreach (var contextInfo in contexts)
+        {
+            foreach (var entity in contextInfo.Entities)
+            {
+                if (!allEntities.ContainsKey(entity.EntityName))
+                    allEntities[entity.EntityName] = entity;
+            }
+        }
+
+        // Validate through-navigations against junction entity structure.
+        // Iterate allEntities (deduplicated) rather than all contexts to avoid
+        // reporting the same diagnostic multiple times for entities shared across contexts.
+        foreach (var entity in allEntities.Values)
+        {
+                foreach (var throughNav in entity.ThroughNavigations)
+                {
+                    if (!allEntities.TryGetValue(throughNav.JunctionEntityName, out var junctionEntity))
+                        continue; // Junction entity not found — separate concern
+
+                    // QRY044: junction navigation must be a Many<T> on the source entity
+                    bool foundJunctionNav = false;
+                    foreach (var nav in entity.Navigations)
+                    {
+                        if (nav.PropertyName == throughNav.JunctionNavigationName)
+                        {
+                            foundJunctionNav = true;
+                            break;
+                        }
+                    }
+                    if (!foundJunctionNav)
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.HasManyThroughInvalidJunction,
+                            entity.Location,
+                            throughNav.JunctionNavigationName));
+                    }
+
+                    // QRY045: target navigation must be a One<T> on the junction entity
+                    bool foundTargetNav = false;
+                    foreach (var singleNav in junctionEntity.SingleNavigations)
+                    {
+                        if (singleNav.PropertyName == throughNav.TargetNavigationName)
+                        {
+                            foundTargetNav = true;
+                            break;
+                        }
+                    }
+                    if (!foundTargetNav)
+                    {
+                        spc.ReportDiagnostic(Diagnostic.Create(
+                            DiagnosticDescriptors.HasManyThroughInvalidTarget,
+                            entity.Location,
+                            throughNav.TargetNavigationName, throughNav.JunctionEntityName));
+                    }
+                }
         }
     }
 

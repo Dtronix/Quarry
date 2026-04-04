@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Text;
+using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 
 namespace Quarry.Generators.IR;
@@ -159,6 +160,11 @@ internal static class SqlExprRenderer
 
             case SqlRawExpr raw:
                 sb.Append(raw.SqlText);
+                break;
+
+            case NavigationAccessExpr nav:
+                // Should be resolved to ResolvedColumnExpr during binding; if unresolved, render diagnostic
+                sb.Append($"/* unresolved navigation: {nav.SourceParameterName}.{string.Join(".", nav.NavigationHops)}.{nav.FinalPropertyName} */");
                 break;
 
             case RawCallExpr rawCall:
@@ -405,6 +411,7 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
+                AppendImplicitJoins(sub, dialect, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
                 AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
@@ -416,6 +423,7 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
+                AppendImplicitJoins(sub, dialect, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
                 AppendSubqueryPredicate(sub.Predicate, " AND NOT ", dialect, paramBase, sb, genericParams);
@@ -427,11 +435,36 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
+                AppendImplicitJoins(sub, dialect, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
                 AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
+        }
+    }
+
+    private static void AppendImplicitJoins(SubqueryExpr sub, SqlDialect dialect, StringBuilder sb)
+    {
+        if (sub.ImplicitJoins == null || sub.ImplicitJoins.Count == 0)
+            return;
+
+        foreach (var join in sub.ImplicitJoins)
+        {
+            sb.Append(' ');
+            sb.Append(join.JoinKind == JoinClauseKind.Left ? "LEFT JOIN" : "INNER JOIN");
+            sb.Append(' ');
+            sb.Append(join.TargetTableQuoted);
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.TargetAlias));
+            sb.Append(" ON ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.SourceAlias));
+            sb.Append('.');
+            sb.Append(join.FkColumnQuoted);
+            sb.Append(" = ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.TargetAlias));
+            sb.Append('.');
+            sb.Append(join.TargetPkColumnQuoted);
         }
     }
 

@@ -195,39 +195,25 @@ internal static class CarrierEmitter
         {
             $"IEntityAccessor<{joinedTypes[0]}>",
             $"IQueryBuilder<{joinedTypes[0]}>",
-            $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}>"
         };
 
-        if (joinCount >= 2)
-            interfaces.Add($"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}>");
-        if (joinCount >= 3)
-            interfaces.Add($"IJoinedQueryBuilder4<{joinedStr}>");
+        // Add progressive join interfaces from arity 2 up to the current join depth
+        for (int level = 2; level <= joinCount + 1; level++)
+        {
+            var levelTypes = string.Join(", ", joinedTypes.Take(level));
+            interfaces.Add($"{JoinArityHelpers.GetInterfaceName(level)}<{levelTypes}>");
+        }
 
         if (resultType != null)
         {
-            var lastJoinInterface = joinCount switch
-            {
-                1 => $"IJoinedQueryBuilder<{joinedStr}, {resultType}>",
-                2 => $"IJoinedQueryBuilder3<{joinedStr}, {resultType}>",
-                3 => $"IJoinedQueryBuilder4<{joinedStr}, {resultType}>",
-                _ => $"IJoinedQueryBuilder<{joinedStr}, {resultType}>"
-            };
-            interfaces.Add(lastJoinInterface);
+            interfaces.Add(JoinArityHelpers.GetGenericInterfaceWithResult(joinedTypes, resultType));
         }
 
         return interfaces.ToArray();
     }
 
     internal static string GetJoinedConcreteBuilderTypeName(int entityCount, string[] entityTypes)
-    {
-        return entityCount switch
-        {
-            2 => $"JoinedQueryBuilder<{entityTypes[0]}, {entityTypes[1]}>",
-            3 => $"JoinedQueryBuilder3<{entityTypes[0]}, {entityTypes[1]}, {entityTypes[2]}>",
-            4 => $"JoinedQueryBuilder4<{entityTypes[0]}, {entityTypes[1]}, {entityTypes[2]}, {entityTypes[3]}>",
-            _ => $"JoinedQueryBuilder<{string.Join(", ", entityTypes)}>"
-        };
-    }
+        => JoinArityHelpers.GetGenericInterface(entityTypes).Replace("IJoinedQueryBuilder", "JoinedQueryBuilder");
 
     /// <summary>
     /// Resolves the receiver interface type for a carrier interceptor method.
@@ -254,22 +240,8 @@ internal static class CarrierEmitter
         {
             var joinedTypes = site.JoinedEntityTypeNames.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
             if (resultType != null)
-            {
-                return site.JoinedEntityTypeNames.Count switch
-                {
-                    2 => $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}, {resultType}>",
-                    3 => $"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {resultType}>",
-                    4 => $"IJoinedQueryBuilder4<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {joinedTypes[3]}, {resultType}>",
-                    _ => $"IJoinedQueryBuilder<{string.Join(", ", joinedTypes)}, {resultType}>"
-                };
-            }
-            return site.JoinedEntityTypeNames.Count switch
-            {
-                2 => $"IJoinedQueryBuilder<{joinedTypes[0]}, {joinedTypes[1]}>",
-                3 => $"IJoinedQueryBuilder3<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}>",
-                4 => $"IJoinedQueryBuilder4<{joinedTypes[0]}, {joinedTypes[1]}, {joinedTypes[2]}, {joinedTypes[3]}>",
-                _ => $"IJoinedQueryBuilder<{string.Join(", ", joinedTypes)}>"
-            };
+                return JoinArityHelpers.GetGenericInterfaceWithResult(joinedTypes, resultType);
+            return JoinArityHelpers.GetGenericInterface(joinedTypes);
         }
 
         if (resultType != null)

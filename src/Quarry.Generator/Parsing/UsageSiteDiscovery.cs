@@ -33,6 +33,8 @@ internal static class UsageSiteDiscovery
         "IJoinedQueryBuilder",
         "IJoinedQueryBuilder3",
         "IJoinedQueryBuilder4",
+        "IJoinedQueryBuilder5",
+        "IJoinedQueryBuilder6",
         "IUpdateBuilder",
         "IExecutableUpdateBuilder",
         "IDeleteBuilder",
@@ -2922,6 +2924,18 @@ internal static class UsageSiteDiscovery
             resultTypeSymbol = builderType.TypeArguments[4];
             resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
         }
+        else if (name == "IJoinedQueryBuilder5" && builderType.TypeArguments.Length > 5)
+        {
+            // IJoinedQueryBuilder5<T1,T2,T3,T4,T5,TResult> — TResult is index 5
+            resultTypeSymbol = builderType.TypeArguments[5];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
+        }
+        else if (name == "IJoinedQueryBuilder6" && builderType.TypeArguments.Length > 6)
+        {
+            // IJoinedQueryBuilder6<T1,T2,T3,T4,T5,T6,TResult> — TResult is index 6
+            resultTypeSymbol = builderType.TypeArguments[6];
+            resultTypeName = resultTypeSymbol.ToFullyQualifiedDisplayString();
+        }
         else if (!IsJoinedBuilderName(name) && builderType.TypeArguments.Length > 1)
         {
             // QueryBuilder<T, TResult> — TResult is index 1
@@ -2934,7 +2948,8 @@ internal static class UsageSiteDiscovery
     }
 
     private static bool IsJoinedBuilderName(string name)
-        => name is "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4";
+        => name is "IJoinedQueryBuilder" or "IJoinedQueryBuilder3" or "IJoinedQueryBuilder4"
+            or "IJoinedQueryBuilder5" or "IJoinedQueryBuilder6";
 
     private static BuilderKind ClassifyBuilderKind(string typeName)
     {
@@ -2983,6 +2998,18 @@ internal static class UsageSiteDiscovery
             // IJoinedQueryBuilder4<T1,T2,T3,T4> has 4 entities
             // IJoinedQueryBuilder4<T1,T2,T3,T4,TResult> has 4 entities + 1 result
             entityCount = 4;
+        }
+        else if (name == "IJoinedQueryBuilder5")
+        {
+            // IJoinedQueryBuilder5<T1,T2,T3,T4,T5> has 5 entities
+            // IJoinedQueryBuilder5<T1,T2,T3,T4,T5,TResult> has 5 entities + 1 result
+            entityCount = 5;
+        }
+        else if (name == "IJoinedQueryBuilder6")
+        {
+            // IJoinedQueryBuilder6<T1,T2,T3,T4,T5,T6> has 6 entities
+            // IJoinedQueryBuilder6<T1,T2,T3,T4,T5,T6,TResult> has 6 entities + 1 result
+            entityCount = 6;
         }
         else
         {

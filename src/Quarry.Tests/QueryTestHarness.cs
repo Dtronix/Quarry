@@ -185,6 +185,46 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             )
             """);
 
+        await SqlAsync("""
+            CREATE TABLE "addresses" (
+                "AddressId" INTEGER PRIMARY KEY,
+                "City" TEXT NOT NULL,
+                "Street" TEXT NOT NULL,
+                "ZipCode" TEXT
+            )
+            """);
+
+        await SqlAsync("""
+            CREATE TABLE "user_addresses" (
+                "UserAddressId" INTEGER PRIMARY KEY,
+                "UserId" INTEGER NOT NULL,
+                "AddressId" INTEGER NOT NULL,
+                FOREIGN KEY ("UserId") REFERENCES "users"("UserId"),
+                FOREIGN KEY ("AddressId") REFERENCES "addresses"("AddressId")
+            )
+            """);
+
+        await SqlAsync("""
+            CREATE TABLE "warehouses" (
+                "WarehouseId" INTEGER PRIMARY KEY,
+                "WarehouseName" TEXT NOT NULL,
+                "Region" TEXT NOT NULL
+            )
+            """);
+
+        await SqlAsync("""
+            CREATE TABLE "shipments" (
+                "ShipmentId" INTEGER PRIMARY KEY,
+                "OrderId" INTEGER NOT NULL,
+                "WarehouseId" INTEGER NOT NULL,
+                "ReturnWarehouseId" INTEGER NULL,
+                "ShipDate" TEXT NOT NULL,
+                FOREIGN KEY ("OrderId") REFERENCES "orders"("OrderId"),
+                FOREIGN KEY ("WarehouseId") REFERENCES "warehouses"("WarehouseId"),
+                FOREIGN KEY ("ReturnWarehouseId") REFERENCES "warehouses"("WarehouseId")
+            )
+            """);
+
         // View to alias "orders" as "Order" for join table name compatibility.
         await SqlAsync("""
             CREATE VIEW "Order" AS SELECT * FROM "orders"
@@ -225,6 +265,31 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             INSERT INTO "events" ("EventId", "EventName", "ScheduledAt", "CancelledAt") VALUES
                 (1, 'Launch', '2024-06-15 10:30:00+00:00', NULL),
                 (2, 'Review', '2024-07-01 14:00:00+02:00', '2024-06-28 09:00:00+02:00')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "addresses" ("AddressId", "City", "Street", "ZipCode") VALUES
+                (1, 'Portland', '123 Main St', '97201'),
+                (2, 'Seattle', '456 Oak Ave', '98101')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "user_addresses" ("UserAddressId", "UserId", "AddressId") VALUES
+                (1, 1, 1),
+                (2, 1, 2),
+                (3, 2, 1)
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "warehouses" ("WarehouseId", "WarehouseName", "Region") VALUES
+                (1, 'West Coast Hub', 'US'),
+                (2, 'EU Central', 'EU')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "shipments" ("ShipmentId", "OrderId", "WarehouseId", "ReturnWarehouseId", "ShipDate") VALUES
+                (1, 1, 1, 2, '2024-06-02 00:00:00'),
+                (2, 3, 2, NULL, '2024-07-02 00:00:00')
             """);
     }
 }

@@ -17,7 +17,9 @@ internal sealed class EntityRef : IEquatable<EntityRef>
         string schemaNamespace,
         IReadOnlyList<ColumnInfo> columns,
         IReadOnlyList<NavigationInfo> navigations,
-        string? customEntityReaderClass = null)
+        string? customEntityReaderClass = null,
+        IReadOnlyList<SingleNavigationInfo>? singleNavigations = null,
+        IReadOnlyList<ThroughNavigationInfo>? throughNavigations = null)
     {
         EntityName = entityName;
         TableName = tableName;
@@ -26,6 +28,8 @@ internal sealed class EntityRef : IEquatable<EntityRef>
         Columns = columns;
         Navigations = navigations;
         CustomEntityReaderClass = customEntityReaderClass;
+        SingleNavigations = singleNavigations ?? Array.Empty<SingleNavigationInfo>();
+        ThroughNavigations = throughNavigations ?? Array.Empty<ThroughNavigationInfo>();
     }
 
     public string EntityName { get; }
@@ -34,6 +38,8 @@ internal sealed class EntityRef : IEquatable<EntityRef>
     public string SchemaNamespace { get; }
     public IReadOnlyList<ColumnInfo> Columns { get; }
     public IReadOnlyList<NavigationInfo> Navigations { get; }
+    public IReadOnlyList<SingleNavigationInfo> SingleNavigations { get; }
+    public IReadOnlyList<ThroughNavigationInfo> ThroughNavigations { get; }
     public string? CustomEntityReaderClass { get; }
 
     /// <summary>
@@ -62,7 +68,9 @@ internal sealed class EntityRef : IEquatable<EntityRef>
             entity.SchemaNamespace,
             entity.Columns,
             entity.Navigations,
-            entity.CustomEntityReaderClass);
+            entity.CustomEntityReaderClass,
+            entity.SingleNavigations,
+            entity.ThroughNavigations);
     }
 
     public bool Equals(EntityRef? other)
@@ -75,7 +83,9 @@ internal sealed class EntityRef : IEquatable<EntityRef>
             && SchemaNamespace == other.SchemaNamespace
             && CustomEntityReaderClass == other.CustomEntityReaderClass
             && EqualityHelpers.SequenceEqual(Columns, other.Columns)
-            && EqualityHelpers.SequenceEqual(Navigations, other.Navigations);
+            && EqualityHelpers.SequenceEqual(Navigations, other.Navigations)
+            && EqualityHelpers.SequenceEqual(SingleNavigations, other.SingleNavigations)
+            && EqualityHelpers.SequenceEqual(ThroughNavigations, other.ThroughNavigations);
     }
 
     public override bool Equals(object? obj) => Equals(obj as EntityRef);

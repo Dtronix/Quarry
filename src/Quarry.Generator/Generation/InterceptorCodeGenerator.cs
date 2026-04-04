@@ -305,15 +305,7 @@ internal static partial class InterceptorCodeGenerator
     /// Gets the builder type name for a given entity count in joins.
     /// </summary>
     internal static string GetJoinedBuilderTypeName(int entityCount)
-    {
-        return entityCount switch
-        {
-            2 => "IJoinedQueryBuilder",
-            3 => "IJoinedQueryBuilder3",
-            4 => "IJoinedQueryBuilder4",
-            _ => throw new ArgumentOutOfRangeException(nameof(entityCount), $"Unsupported entity count: {entityCount}")
-        };
-    }
+        => JoinArityHelpers.GetInterfaceName(entityCount);
 
     #endregion
 
