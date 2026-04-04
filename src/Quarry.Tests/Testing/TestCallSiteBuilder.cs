@@ -39,6 +39,7 @@ internal class TestCallSiteBuilder
     private RawSqlTypeInfo? _rawSqlTypeInfo;
     private string? _customEntityReaderClass;
     private IReadOnlyList<ColumnInfo>? _columns;
+    private NestingContext? _nestingContext;
 
     public TestCallSiteBuilder WithMethodName(string name) { _methodName = name; return this; }
     public TestCallSiteBuilder WithFilePath(string path) { _filePath = path; return this; }
@@ -75,6 +76,11 @@ internal class TestCallSiteBuilder
     public TestCallSiteBuilder WithRawSqlTypeInfo(RawSqlTypeInfo? info) { _rawSqlTypeInfo = info; return this; }
     public TestCallSiteBuilder WithCustomEntityReader(string? readerClass) { _customEntityReaderClass = readerClass; return this; }
     public TestCallSiteBuilder WithColumns(IReadOnlyList<ColumnInfo>? cols) { _columns = cols; return this; }
+    public TestCallSiteBuilder WithNestingContext(string conditionText, int nestingDepth, BranchKind branchKind = BranchKind.Independent)
+    {
+        _nestingContext = new NestingContext(conditionText, nestingDepth, branchKind);
+        return this;
+    }
     public TestCallSiteBuilder WithInsertInfo(InsertInfo? info) { _insertInfo = info; return this; }
     public TestCallSiteBuilder WithUpdateInfo(InsertInfo? info) { _updateInfo = info; return this; }
     private InsertInfo? _insertInfo;
@@ -103,6 +109,7 @@ internal class TestCallSiteBuilder
             joinedEntityTypeName: _joinedEntityTypeName,
             builderTypeName: builderTypeName,
             joinedEntityTypeNames: _joinedEntityTypeNames,
+            nestingContext: _nestingContext,
             contextClassName: _contextClassName,
             contextNamespace: _contextNamespace);
 
