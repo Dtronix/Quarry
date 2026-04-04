@@ -7,6 +7,7 @@ using Quarry.Generators.Models;
 using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
 using IRQueryPlan = Quarry.Generators.IR.QueryPlan;
+using TranslationParameterInfo = Quarry.Generators.Translation.ParameterInfo;
 
 namespace Quarry.Tests.Generation;
 
@@ -786,6 +787,205 @@ public class ManifestEmitterTests
         Assert.That(result.Count, Is.EqualTo(1));
         Assert.That(result[0], Does.EndWith("..."));
         Assert.That(result[0].Length, Is.EqualTo(60));
+    }
+
+    #endregion
+
+    #region BuildParamConditionality Tests
+
+    [Test]
+    public void BuildParamConditionality_NoConditionalTerms_ReturnsEmpty()
+    {
+        var execution = TestCallSiteBuilder.CreateExecutionSite(
+            InterceptorKind.ExecuteFetchAll, "User", "User");
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot },
+            "SELECT 1", Array.Empty<ConditionalTerm>(), new int[] { 0 },
+            parameters: new[]
+            {
+                new QueryParameter(0, "System.Int32", "id")
+            });
+
+        var result = ManifestEmitter.BuildParamConditionality(plan);
+
+        Assert.That(result, Is.Empty);
+    }
+
+    [Test]
+    public void BuildParamConditionality_ConditionalClauseParams_MappedToConditionText()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Conditional Where with a parameter
+        var clauseParams = new List<TranslationParameterInfo>
+        {
+            new TranslationParameterInfo(0, "p0", "System.Int32", "minAge")
+        };
+        var clause = new TranslatedClause(
+            ClauseKind.Where,
+            new ResolvedColumnExpr("\"Age\" >= @p0"),
+            clauseParams);
+
+        var where = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .WithNestingContext("filterByAge", 2)
+            .WithClause(clause)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution, new[] { chainRoot, where },
+            "SELECT 1",
+            new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            new int[] { 0, 1 },
+            parameters: new[]
+            {
+                new QueryParameter(0, "System.Int32", "minAge")
+            });
+
+        var result = ManifestEmitter.BuildParamConditionality(plan);
+
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result[0], Is.EqualTo("filterByAge"));
+    }
+
+    [Test]
+    public void BuildParamConditionality_UnconditionalClauseParams_NotIncluded()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Unconditional Where with a parameter (no NestingContext)
+        var unconditionalClauseParams = new List<TranslationParameterInfo>
+        {
+            new TranslationParameterInfo(0, "p0", "System.Int32", "statusId")
+        };
+        var unconditionalClause = new TranslatedClause(
+            ClauseKind.Where,
+            new ResolvedColumnExpr("\"Status\" = @p0"),
+            unconditionalClauseParams);
+
+        var whereUnconditional = new TestCallSiteBuilder()
+            .WithMethodName("Where")
+            .WithKind(InterceptorKind.Where)
+            .WithEntityType("User")
+            .WithUniqueId("where_0")
+            .WithClause(unconditionalClause)
+            .Build();
+
+        // Conditional OrderBy with a parameter
+        var conditionalClauseParams = new List<TranslationParameterInfo>
+        {
+            new TranslationParameterInfo(0, "p1", "System.String", "sortCol")
+        };
+        var conditionalClause = new TranslatedClause(
+            ClauseKind.OrderBy,
+            new ResolvedColumnExpr("@p1"),
+            conditionalClauseParams);
+
+        var orderBy = new TestCallSiteBuilder()
+            .WithMethodName("OrderBy")
+            .WithKind(InterceptorKind.OrderBy)
+            .WithEntityType("User")
+            .WithUniqueId("order_0")
+            .WithNestingContext("hasSortCol", 2)
+            .WithClause(conditionalClause)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution,
+            new[] { chainRoot, whereUnconditional, orderBy },
+            "SELECT 1",
+            new[] { new ConditionalTerm(0, ClauseRole.OrderBy) },
+            new int[] { 0, 1 },
+            parameters: new[]
+            {
+                new QueryParameter(0, "System.Int32", "statusId"),
+                new QueryParameter(1, "System.String", "sortCol")
+            });
+
+        var result = ManifestEmitter.BuildParamConditionality(plan);
+
+        // Only the conditional parameter (sortCol) should be present
+        Assert.That(result.Count, Is.EqualTo(1));
+        Assert.That(result.ContainsKey(0), Is.False, "Unconditional param should not be included");
+        Assert.That(result[1], Is.EqualTo("hasSortCol"));
+    }
+
+    [Test]
+    public void BuildParamConditionality_ConditionalClauseNoParams_Skipped()
+    {
+        var execution = new TestCallSiteBuilder()
+            .WithMethodName("ExecuteFetchAllAsync")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("User")
+            .WithUniqueId("exec_0")
+            .WithNestingContext("baseline", 1)
+            .Build();
+
+        var chainRoot = new TestCallSiteBuilder()
+            .WithMethodName("Users")
+            .WithKind(InterceptorKind.ChainRoot)
+            .WithEntityType("User")
+            .WithUniqueId("root_0")
+            .Build();
+
+        // Conditional Distinct (no parameters, no clause)
+        var distinct = new TestCallSiteBuilder()
+            .WithMethodName("Distinct")
+            .WithKind(InterceptorKind.Distinct)
+            .WithEntityType("User")
+            .WithUniqueId("distinct_0")
+            .WithNestingContext("useDistinct", 2)
+            .Build();
+
+        var plan = CreatePlanWithConditionals(execution,
+            new[] { chainRoot, distinct },
+            "SELECT 1",
+            new[] { new ConditionalTerm(0, ClauseRole.Distinct) },
+            new int[] { 0, 1 },
+            parameters: new[]
+            {
+                new QueryParameter(0, "System.Int32", "someOtherParam")
+            });
+
+        var result = ManifestEmitter.BuildParamConditionality(plan);
+
+        Assert.That(result, Is.Empty);
     }
 
     #endregion
