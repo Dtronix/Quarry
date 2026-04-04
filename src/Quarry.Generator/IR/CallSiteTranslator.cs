@@ -770,9 +770,6 @@ internal static class CallSiteTranslator
     }
 
     /// <summary>
-    /// Checks whether the SqlExpr tree contains unsupported SqlRawExpr nodes.
-    /// </summary>
-    /// <summary>
     /// Resolves unresolved collection element types using CapturedVariableTypes from the
     /// supplemental compilation (Stage 2.5). During Stage 2 discovery, entity types from
     /// Pipeline A are not in the semantic model, so captured collection variables may have
@@ -781,7 +778,7 @@ internal static class CallSiteTranslator
     /// </summary>
     private static void EnrichCollectionFromCapturedVarTypes(
         List<ParameterInfo> parameters,
-        System.Collections.Generic.IReadOnlyDictionary<string, string>? capturedVarTypes)
+        IReadOnlyDictionary<string, string>? capturedVarTypes)
     {
         if (capturedVarTypes == null) return;
 
