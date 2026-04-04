@@ -17,6 +17,11 @@ public class UserSchema : Schema
     public Col<DateTime?> LastLogin { get; }
 
     public Many<OrderSchema> Orders => HasMany<OrderSchema>(o => o.UserId);
+    public Many<UserAddressSchema> UserAddresses => HasMany<UserAddressSchema>(ua => ua.UserId);
+    public Many<AddressSchema> Addresses
+        => HasManyThrough<AddressSchema, UserAddressSchema, UserSchema>(
+            self => self.UserAddresses,
+            through => through.Address);
 
     // Index definitions
     public Index IX_Email => Index(Email);

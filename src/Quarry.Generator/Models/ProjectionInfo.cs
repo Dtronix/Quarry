@@ -135,7 +135,8 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
         string? tableAlias = null,
         bool isForeignKey = false,
         string? foreignKeyEntityName = null,
-        bool isEnum = false)
+        bool isEnum = false,
+        IReadOnlyList<string>? navigationHops = null)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -153,6 +154,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
         IsForeignKey = isForeignKey;
         ForeignKeyEntityName = foreignKeyEntityName;
         IsEnum = isEnum;
+        NavigationHops = navigationHops;
     }
 
     /// <summary>
@@ -243,6 +245,13 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
     /// </summary>
     public bool IsEnum { get; }
 
+    /// <summary>
+    /// Navigation chain hops for One&lt;T&gt; navigation access in projections.
+    /// E.g., ["User"] for o.User.UserName, or ["User", "Department"] for o.User.Department.Name.
+    /// Null for non-navigation columns.
+    /// </summary>
+    public IReadOnlyList<string>? NavigationHops { get; }
+
     public bool Equals(ProjectedColumn? other)
     {
         if (other is null) return false;
@@ -262,7 +271,8 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
             && TableAlias == other.TableAlias
             && IsForeignKey == other.IsForeignKey
             && ForeignKeyEntityName == other.ForeignKeyEntityName
-            && IsEnum == other.IsEnum;
+            && IsEnum == other.IsEnum
+            && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops);
     }
 
     public override bool Equals(object? obj) => Equals(obj as ProjectedColumn);

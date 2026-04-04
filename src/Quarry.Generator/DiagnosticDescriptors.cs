@@ -521,6 +521,80 @@ internal static class DiagnosticDescriptors
         description: "The Quarry SQL manifest file could not be written to the specified path. " +
                      "Check that the QuarrySqlManifestPath directory exists and is writable.");
 
+    // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
+
+    /// <summary>
+    /// QRY060: No matching FK column for One&lt;T&gt; navigation.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor NoFkForOneNavigation = new(
+        id: "QRY060",
+        title: "No FK column for One<T> navigation",
+        messageFormat: "No Ref<{0}, K> column found for One<{0}> navigation '{1}' on schema '{2}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// QRY061: Ambiguous FK for One&lt;T&gt; navigation.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor AmbiguousFkForOneNavigation = new(
+        id: "QRY061",
+        title: "Ambiguous FK for One<T> navigation",
+        messageFormat: "Ambiguous FK for One<{0}> navigation '{1}': multiple Ref<{0}, K> columns found ({2}). Use HasOne<{0}>(nameof(column)) to disambiguate.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// QRY062: HasOne references invalid column.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor HasOneInvalidColumn = new(
+        id: "QRY062",
+        title: "HasOne references invalid column",
+        messageFormat: "HasOne<{0}>(nameof({1})) references '{1}' which is not a Ref<{0}, K> column",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// QRY063: Navigation target entity not found.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor NavigationTargetNotFound = new(
+        id: "QRY063",
+        title: "Navigation target entity not found",
+        messageFormat: "Navigation '{0}' on '{1}' could not be resolved — target entity '{2}' not found in any registered context",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// QRY064: HasManyThrough junction navigation is not a Many&lt;T&gt;.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor HasManyThroughInvalidJunction = new(
+        id: "QRY064",
+        title: "HasManyThrough invalid junction navigation",
+        messageFormat: "HasManyThrough junction navigation '{0}' does not reference a Many<T> property",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    /// <summary>
+    /// QRY065: HasManyThrough target navigation is not a One&lt;T&gt;.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor HasManyThroughInvalidTarget = new(
+        id: "QRY065",
+        title: "HasManyThrough invalid target navigation",
+        messageFormat: "HasManyThrough target navigation '{0}' does not reference a One<T> property on junction entity '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
     // ─── Migration diagnostics (QRY050–QRY055) ────────────────────────
 
     /// <summary>

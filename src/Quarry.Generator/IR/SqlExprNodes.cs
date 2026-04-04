@@ -665,6 +665,50 @@ internal sealed class SubqueryExpr : SqlExpr
         return hc.ToHashCode();
     }
 
+    /// <summary>
+    /// Implicit joins from One&lt;T&gt; navigation access inside the subquery predicate.
+    /// Set by the binder; null if no implicit joins exist.
+    /// </summary>
+    public IReadOnlyList<ImplicitJoinInfo>? ImplicitJoins { get; }
+
+    /// <summary>
+    /// Creates a resolved subquery with implicit joins.
+    /// </summary>
+    public SubqueryExpr WithImplicitJoins(IReadOnlyList<ImplicitJoinInfo>? implicitJoins)
+    {
+        if (implicitJoins == null || implicitJoins.Count == 0)
+            return this;
+        return new SubqueryExpr(
+            OuterParameterName, NavigationPropertyName, SubqueryKind,
+            Predicate, InnerParameterName,
+            InnerTableQuoted!, InnerAliasQuoted!, CorrelationSql!,
+            implicitJoins);
+    }
+
+    private SubqueryExpr(
+        string outerParameterName,
+        string navigationPropertyName,
+        SubqueryKind subqueryKind,
+        SqlExpr? predicate,
+        string? innerParameterName,
+        string innerTableQuoted,
+        string innerAliasQuoted,
+        string correlationSql,
+        IReadOnlyList<ImplicitJoinInfo>? implicitJoins)
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+    {
+        OuterParameterName = outerParameterName;
+        NavigationPropertyName = navigationPropertyName;
+        SubqueryKind = subqueryKind;
+        Predicate = predicate;
+        InnerParameterName = innerParameterName;
+        InnerTableQuoted = innerTableQuoted;
+        InnerAliasQuoted = innerAliasQuoted;
+        CorrelationSql = correlationSql;
+        IsResolved = true;
+        ImplicitJoins = implicitJoins;
+    }
+
     protected override bool DeepEquals(SqlExpr other)
     {
         var o = (SubqueryExpr)other;
@@ -673,5 +717,66 @@ internal sealed class SubqueryExpr : SqlExpr
             && SubqueryKind == o.SubqueryKind
             && InnerParameterName == o.InnerParameterName
             && Equals(Predicate, o.Predicate);
+    }
+}
+
+/// <summary>
+/// Navigation access expression representing property access through One&lt;T&gt; navigation chains.
+/// Created by the parser when a member access chain traverses a potential navigation property.
+/// Resolved by the binder into a ResolvedColumnExpr with an implicit JOIN.
+/// Uses a flat representation: NavigationHops lists all intermediate One&lt;T&gt; navigations,
+/// and FinalPropertyName is the leaf column on the final entity.
+/// </summary>
+internal sealed class NavigationAccessExpr : SqlExpr
+{
+    public override SqlExprKind Kind => SqlExprKind.NavigationAccess;
+
+    /// <summary>The lambda parameter that starts the chain (e.g., "o").</summary>
+    public string SourceParameterName { get; }
+
+    /// <summary>Sequence of navigation property names traversed (e.g., ["User", "Department"]).</summary>
+    public IReadOnlyList<string> NavigationHops { get; }
+
+    /// <summary>The leaf property on the final entity (e.g., "UserName").</summary>
+    public string FinalPropertyName { get; }
+
+    /// <summary>For Ref.Id access on the leaf (e.g., "Id"), otherwise null.</summary>
+    public string? FinalNestedProperty { get; }
+
+    public NavigationAccessExpr(
+        string sourceParameterName,
+        IReadOnlyList<string> navigationHops,
+        string finalPropertyName,
+        string? finalNestedProperty = null)
+        : base(ComputeHash(sourceParameterName, navigationHops, finalPropertyName, finalNestedProperty))
+    {
+        SourceParameterName = sourceParameterName;
+        NavigationHops = navigationHops;
+        FinalPropertyName = finalPropertyName;
+        FinalNestedProperty = finalNestedProperty;
+    }
+
+    private static int ComputeHash(string source, IReadOnlyList<string> hops, string finalProp, string? nestedProp)
+    {
+        var hc = new HashCode();
+        hc.Add(SqlExprKind.NavigationAccess);
+        hc.Add(source);
+        foreach (var hop in hops) hc.Add(hop);
+        hc.Add(finalProp);
+        if (nestedProp != null) hc.Add(nestedProp);
+        return hc.ToHashCode();
+    }
+
+    protected override bool DeepEquals(SqlExpr other)
+    {
+        var o = (NavigationAccessExpr)other;
+        if (SourceParameterName != o.SourceParameterName
+            || FinalPropertyName != o.FinalPropertyName
+            || FinalNestedProperty != o.FinalNestedProperty
+            || NavigationHops.Count != o.NavigationHops.Count)
+            return false;
+        for (int i = 0; i < NavigationHops.Count; i++)
+            if (NavigationHops[i] != o.NavigationHops[i]) return false;
+        return true;
     }
 }

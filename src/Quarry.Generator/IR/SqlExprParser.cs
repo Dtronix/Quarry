@@ -13,6 +13,31 @@ namespace Quarry.Generators.IR;
 /// </summary>
 internal static class SqlExprParser
 {
+    /// <summary>
+    /// Known .NET member names that should NOT be treated as One&lt;T&gt; navigation hops.
+    /// When a chained member access like o.UserName.Length appears, "Length" is a .NET
+    /// string property, not a navigation hop. The parser has no semantic model access,
+    /// so this heuristic prevents false-positive NavigationAccessExpr emissions.
+    /// </summary>
+    private static readonly HashSet<string> KnownDotNetMembers = new(StringComparer.Ordinal)
+    {
+        // String members
+        "Length", "Chars",
+        // DateTime/DateOnly/TimeOnly/DateTimeOffset members
+        "Year", "Month", "Day", "Hour", "Minute", "Second", "Millisecond",
+        "Microsecond", "Nanosecond",
+        "Date", "TimeOfDay", "DayOfWeek", "DayOfYear", "Ticks",
+        "DateTime", "Offset", "UtcDateTime", "LocalDateTime",
+        // TimeSpan members
+        "TotalDays", "TotalHours", "TotalMinutes", "TotalSeconds", "TotalMilliseconds",
+        "Days", "Hours", "Minutes", "Seconds", "Milliseconds",
+        // Nullable members (already handled but for safety)
+        "Value", "HasValue",
+        // Common .NET value type members
+        "MaxValue", "MinValue", "Empty",
+        // Array/Collection members
+        "Count", "Rank",
+    };
     private const int MaxPathDepth = 10;
 
     private sealed class ParseContext
@@ -167,8 +192,53 @@ internal static class SqlExprParser
                     return new IsNullCheckExpr(propAccess, isNegated: true);
                 }
 
-                // e.g., u.Name.Length — member access on a column
-                return new SqlRawExpr(memberAccess.ToString());
+                // Check if this is a known .NET member (not a navigation)
+                if (KnownDotNetMembers.Contains(propAccess.PropertyName) ||
+                    KnownDotNetMembers.Contains(memberName))
+                {
+                    return new SqlRawExpr(memberAccess.ToString());
+                }
+
+                // Potential One<T> navigation access: o.User.UserName
+                // propAccess is ColumnRefExpr("o", "User"), memberName is "UserName"
+                // The binder will validate whether "User" is actually a One<T> navigation.
+                return new NavigationAccessExpr(
+                    sourceParameterName: propAccess.ParameterName,
+                    navigationHops: new[] { propAccess.PropertyName },
+                    finalPropertyName: memberName);
+            }
+
+            // Extending a navigation chain: o.User.Department.Name
+            if (innerExpr is NavigationAccessExpr navAccess)
+            {
+                // Special handling for .Id, .Value, .HasValue at the end of a navigation chain
+                if (memberName == "Id")
+                {
+                    return new NavigationAccessExpr(
+                        navAccess.SourceParameterName,
+                        navAccess.NavigationHops,
+                        navAccess.FinalPropertyName,
+                        finalNestedProperty: "Id");
+                }
+                if (memberName == "Value")
+                    return navAccess;
+                if (memberName == "HasValue")
+                    return new IsNullCheckExpr(navAccess, isNegated: true);
+
+                // If the new member is a known .NET member, treat the whole chain as raw SQL
+                if (KnownDotNetMembers.Contains(memberName))
+                {
+                    return new SqlRawExpr(memberAccess.ToString());
+                }
+
+                // Extend the chain: add the previous FinalPropertyName as a hop
+                var extendedHops = new List<string>(navAccess.NavigationHops.Count + 1);
+                extendedHops.AddRange(navAccess.NavigationHops);
+                extendedHops.Add(navAccess.FinalPropertyName);
+                return new NavigationAccessExpr(
+                    sourceParameterName: navAccess.SourceParameterName,
+                    navigationHops: extendedHops,
+                    finalPropertyName: memberName);
             }
 
             if (innerExpr is CapturedValueExpr capturedVar)

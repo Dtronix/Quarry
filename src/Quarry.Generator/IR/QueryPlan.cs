@@ -34,11 +34,13 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         OptimizationTier tier,
         string? notAnalyzableReason = null,
         IReadOnlyList<string>? unmatchedMethodNames = null,
-        string? forkedVariableName = null)
+        string? forkedVariableName = null,
+        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
         Joins = joins;
+        ImplicitJoins = implicitJoins ?? Array.Empty<ImplicitJoinInfo>();
         WhereTerms = whereTerms;
         OrderTerms = orderTerms;
         GroupByExprs = groupByExprs;
@@ -60,6 +62,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public QueryKind Kind { get; }
     public TableRef PrimaryTable { get; }
     public IReadOnlyList<JoinPlan> Joins { get; }
+    public IReadOnlyList<ImplicitJoinInfo> ImplicitJoins { get; }
     public IReadOnlyList<WhereTerm> WhereTerms { get; }
     public IReadOnlyList<OrderTerm> OrderTerms { get; }
     public IReadOnlyList<SqlExpr> GroupByExprs { get; }
@@ -89,6 +92,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && Equals(Pagination, other.Pagination)
             && NotAnalyzableReason == other.NotAnalyzableReason
             && EqualityHelpers.SequenceEqual(Joins, other.Joins)
+            && EqualityHelpers.SequenceEqual(ImplicitJoins, other.ImplicitJoins)
             && EqualityHelpers.SequenceEqual(WhereTerms, other.WhereTerms)
             && EqualityHelpers.SequenceEqual(OrderTerms, other.OrderTerms)
             && EqualityHelpers.SequenceEqual(SetTerms, other.SetTerms)
