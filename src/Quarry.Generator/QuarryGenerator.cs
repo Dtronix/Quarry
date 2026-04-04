@@ -425,11 +425,11 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             }
         }
 
-        // Validate through-navigations against junction entity structure
-        foreach (var contextInfo in contexts)
+        // Validate through-navigations against junction entity structure.
+        // Iterate allEntities (deduplicated) rather than all contexts to avoid
+        // reporting the same diagnostic multiple times for entities shared across contexts.
+        foreach (var entity in allEntities.Values)
         {
-            foreach (var entity in contextInfo.Entities)
-            {
                 foreach (var throughNav in entity.ThroughNavigations)
                 {
                     if (!allEntities.TryGetValue(throughNav.JunctionEntityName, out var junctionEntity))
@@ -471,7 +471,6 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                             throughNav.TargetNavigationName, throughNav.JunctionEntityName));
                     }
                 }
-            }
         }
     }
 
