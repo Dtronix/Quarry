@@ -259,4 +259,85 @@ internal class CrossDialectNavigationJoinTests
     }
 
     #endregion
+
+    #region One<T> navigation in GroupBy
+
+    [Test]
+    public async Task NavigationJoin_GroupBy_Navigation()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Group orders by user name via navigation
+        var lite = Lite.Orders().GroupBy(o => o.User!.UserName).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var pg   = Pg.Orders().GroupBy(o => o.User!.UserName).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var my   = My.Orders().GroupBy(o => o.User!.UserName).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var ss   = Ss.Orders().GroupBy(o => o.User!.UserName).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"j0\".\"UserName\", COUNT(*) AS \"Item2\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" GROUP BY \"j0\".\"UserName\"",
+            pg:     "SELECT \"j0\".\"UserName\", COUNT(*) AS \"Item2\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" GROUP BY \"j0\".\"UserName\"",
+            mysql:  "SELECT `j0`.`UserName`, COUNT(*) AS `Item2` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` GROUP BY `j0`.`UserName`",
+            ss:     "SELECT [j0].[UserName], COUNT(*) AS [Item2] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] GROUP BY [j0].[UserName]");
+
+        // Alice: 2 orders, Bob: 1 order
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 1)));
+    }
+
+    #endregion
+
+    #region One<T> navigation in GroupBy + Having
+
+    [Test]
+    public async Task NavigationJoin_GroupByNavigation_WithHaving()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Group by navigated user name, having count > 1
+        var lite = Lite.Orders().GroupBy(o => o.User!.UserName).Having(o => Sql.Count() > 1).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var pg   = Pg.Orders().GroupBy(o => o.User!.UserName).Having(o => Sql.Count() > 1).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var my   = My.Orders().GroupBy(o => o.User!.UserName).Having(o => Sql.Count() > 1).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+        var ss   = Ss.Orders().GroupBy(o => o.User!.UserName).Having(o => Sql.Count() > 1).Select(o => (o.User!.UserName, Sql.Count())).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lite.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"j0\".\"UserName\", COUNT(*) AS \"Item2\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" GROUP BY \"j0\".\"UserName\" HAVING COUNT(*) > 1",
+            pg:     "SELECT \"j0\".\"UserName\", COUNT(*) AS \"Item2\" FROM \"orders\" AS \"t0\" INNER JOIN \"users\" AS \"j0\" ON \"t0\".\"UserId\" = \"j0\".\"UserId\" GROUP BY \"j0\".\"UserName\" HAVING COUNT(*) > 1",
+            mysql:  "SELECT `j0`.`UserName`, COUNT(*) AS `Item2` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`UserId` = `j0`.`UserId` GROUP BY `j0`.`UserName` HAVING COUNT(*) > 1",
+            ss:     "SELECT [j0].[UserName], COUNT(*) AS [Item2] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[UserId] = [j0].[UserId] GROUP BY [j0].[UserName] HAVING COUNT(*) > 1");
+
+        // Only Alice has > 1 order
+        var results = await lite.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo(("Alice", 2)));
+    }
+
+    #endregion
+
+    #region Deep chain execution verification
+
+    [Test]
+    public async Task NavigationJoin_DeepChain_ExecutesCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // OrderItem → Order → User (two hops) in Select, executed against SQLite
+        var results = await Lite.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).Prepare().ExecuteFetchAllAsync();
+
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Widget", "Alice")));
+        Assert.That(results[1], Is.EqualTo(("Gadget", "Alice")));
+        Assert.That(results[2], Is.EqualTo(("Widget", "Bob")));
+    }
+
+    #endregion
 }
