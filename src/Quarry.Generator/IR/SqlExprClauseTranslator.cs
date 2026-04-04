@@ -240,7 +240,7 @@ internal static class SqlExprClauseTranslator
     /// <summary>
     /// Extracts the element type from a collection CLR type string.
     /// </summary>
-    private static string? ExtractElementType(string clrType)
+    internal static string? ExtractElementType(string clrType)
     {
         // Array types: "string[]", "int[]"
         if (clrType.EndsWith("[]"))

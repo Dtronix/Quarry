@@ -215,6 +215,13 @@ internal static class CallSiteTranslator
         var parameters = new List<ParameterInfo>();
         boundExpr = SqlExprClauseTranslator.ExtractParametersPublic(boundExpr, parameters, ref paramIndex);
 
+        // Step 2a: Resolve unresolved collection element types from supplemental compilation.
+        // During Stage 2 discovery, entity types from Pipeline A (RegisterSourceOutput) are not
+        // in the semantic model, so captured collection variables may stay typed as "object".
+        // CapturedVariableTypes (resolved via supplemental compilation in Stage 2.5) has the
+        // correct types — use them to fix the element type before the column-metadata fallback.
+        EnrichCollectionFromCapturedVarTypes(parameters, raw.CapturedVariableTypes);
+
         // Step 2b: Enrich collection parameters with element type from column metadata.
         // The InExpr operand is a ResolvedColumnExpr whose column type matches the element type.
         EnrichCollectionElementTypes(boundExpr, parameters, columnLookup);
@@ -766,6 +773,68 @@ internal static class CallSiteTranslator
     /// Checks whether the SqlExpr tree contains unsupported SqlRawExpr nodes.
     /// </summary>
     /// <summary>
+    /// Resolves unresolved collection element types using CapturedVariableTypes from the
+    /// supplemental compilation (Stage 2.5). During Stage 2 discovery, entity types from
+    /// Pipeline A are not in the semantic model, so captured collection variables may have
+    /// ClrType = "object" and ExtractElementType returns null. CapturedVariableTypes has
+    /// the correct resolved types from the supplemental compilation.
+    /// </summary>
+    private static void EnrichCollectionFromCapturedVarTypes(
+        List<ParameterInfo> parameters,
+        System.Collections.Generic.IReadOnlyDictionary<string, string>? capturedVarTypes)
+    {
+        if (capturedVarTypes == null) return;
+
+        for (int i = 0; i < parameters.Count; i++)
+        {
+            var p = parameters[i];
+            if (!p.IsCollection || p.CapturedFieldName == null)
+                continue;
+
+            // Only enrich when the primary path failed (null) or produced an unresolved
+            // type parameter (e.g., "TSource" from Roslyn error recovery when entity types
+            // aren't available at Stage 2). Skip when the primary path already resolved a
+            // concrete type to avoid format differences (CapturedVariableTypes uses
+            // FullyQualifiedFormat with "global::" prefixes).
+            if (p.CollectionElementType != null && !IsUnresolvedTypeParameter(p.CollectionElementType))
+                continue;
+
+            if (capturedVarTypes.TryGetValue(p.CapturedFieldName, out var resolvedType))
+            {
+                var elementType = SqlExprClauseTranslator.ExtractElementType(resolvedType);
+                if (elementType != null)
+                    p.CollectionElementType = elementType;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Detects unresolved generic type parameters from Roslyn error recovery
+    /// (e.g., "TSource", "TResult", "T"). These appear when the semantic model
+    /// can't infer generic type arguments due to missing entity types at Stage 2.
+    /// </summary>
+    private static bool IsUnresolvedTypeParameter(string typeName)
+    {
+        // Resolved types contain '.', '?', '<', '[' or are known C# keywords
+        if (typeName.IndexOfAny(new[] { '.', '?', '<', '[' }) >= 0)
+            return false;
+
+        // Known C# primitive/keyword type aliases are resolved
+        switch (typeName)
+        {
+            case "bool": case "byte": case "sbyte": case "char":
+            case "short": case "ushort": case "int": case "uint":
+            case "long": case "ulong": case "float": case "double":
+            case "decimal": case "string": case "object": case "nint": case "nuint":
+                return false;
+        }
+
+        // Single-word identifiers starting with uppercase that aren't known types
+        // are likely type parameters (T, TSource, TResult, TKey, etc.)
+        return typeName.Length > 0 && char.IsUpper(typeName[0]);
+    }
+
+    /// <summary>
     /// Enriches collection parameters' element types by looking up the InExpr operand column type.
     /// When collection.Contains(column) produces InExpr(ResolvedColumn, [ParamSlot(isCollection)]),
     /// the element type equals the column's CLR type.
@@ -801,11 +870,11 @@ internal static class CallSiteTranslator
                 if (inExpr.Operand is ResolvedColumnExpr resolvedCol)
                 {
                     // Look up the column's CLR type by matching the quoted name
+                    var strippedName = resolvedCol.QuotedColumnName.Trim('"', '`', '[', ']');
                     foreach (var kvp in columnLookup)
                     {
                         var col = kvp.Value;
-                        if (col.ColumnName == resolvedCol.QuotedColumnName.Trim('"', '`', '[', ']') ||
-                            col.PropertyName == kvp.Key)
+                        if (col.ColumnName == strippedName || kvp.Key == strippedName)
                         {
                             elementType = col.FullClrType ?? col.ClrType;
                             // ColumnInfo stores nullable value types without the '?' suffix
