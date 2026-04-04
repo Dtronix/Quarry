@@ -306,6 +306,30 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Not.Contain("r.GetValue(i)"));
     }
 
+    [Test]
+    public void RawSqlAsync_EntityType_WithNullableByteArrayProperty_GeneratesGetFieldValue()
+    {
+        // Arrange — nullable byte[]? column (e.g., Col<byte[]?> Password)
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "Package",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("Id", "long", "GetInt64", false),
+                new RawSqlPropertyInfo("Password", "byte[]", "GetFieldValue<byte[]>", true,
+                    fullClrType: "byte[]")
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "Package", rawSqlTypeInfo);
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Assert — nullable byte[]? should still use GetFieldValue, with IsDBNull guard from the loop
+        Assert.That(result, Does.Contain("case \"Password\": item.Password = r.GetFieldValue<byte[]>(i); break;"));
+    }
+
     #endregion
 
     #region Nullable Property Tests
