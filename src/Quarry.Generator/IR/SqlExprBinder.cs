@@ -550,6 +550,66 @@ internal static class SqlExprBinder
             ctx.SubqueryAliasCounter = innerCtx.SubqueryAliasCounter;
         }
 
+        // For HasManyThrough without predicate: still create junction→target implicit join
+        // so that Count()/Any()/All() operate against the target table, not the junction.
+        List<ImplicitJoinInfo>? noPredicateThroughJoins = null;
+        if (throughTargetEntity != null && innerCtx == null)
+        {
+            SingleNavigationInfo? oneNav = null;
+            foreach (var sn in targetEntity.SingleNavigations)
+            {
+                if (sn.PropertyName == throughNav!.TargetNavigationName)
+                {
+                    oneNav = sn;
+                    break;
+                }
+            }
+
+            if (oneNav != null)
+            {
+                string? junctionFkCol = null;
+                foreach (var col in targetEntity.Columns)
+                {
+                    if (col.PropertyName == oneNav.ForeignKeyPropertyName)
+                    {
+                        junctionFkCol = col.ColumnName;
+                        break;
+                    }
+                }
+                if (junctionFkCol == null) junctionFkCol = oneNav.ForeignKeyPropertyName;
+
+                string? targetPkCol = null;
+                foreach (var col in throughTargetEntity.Columns)
+                {
+                    if (col.Kind == Quarry.Shared.Migration.ColumnKind.PrimaryKey)
+                    {
+                        targetPkCol = col.ColumnName;
+                        break;
+                    }
+                }
+
+                if (targetPkCol != null)
+                {
+                    var joinAlias = "j0";
+                    var joinKind = oneNav.IsNullableFk ? JoinClauseKind.Left : JoinClauseKind.Inner;
+                    noPredicateThroughJoins = new List<ImplicitJoinInfo>
+                    {
+                        new ImplicitJoinInfo(
+                            sourceAlias: alias,
+                            fkColumnName: junctionFkCol,
+                            fkColumnQuoted: QuoteIdentifier(junctionFkCol, ctx.Dialect),
+                            targetTableName: throughTargetEntity.TableName,
+                            targetTableQuoted: QuoteIdentifier(throughTargetEntity.TableName, ctx.Dialect),
+                            targetSchemaQuoted: null,
+                            targetAlias: joinAlias,
+                            targetPkColumnQuoted: QuoteIdentifier(targetPkCol, ctx.Dialect),
+                            joinKind: joinKind,
+                            targetPkColumnName: targetPkCol)
+                    };
+                }
+            }
+        }
+
         var resolved = new SubqueryExpr(
             sub.OuterParameterName,
             sub.NavigationPropertyName,
@@ -560,10 +620,14 @@ internal static class SqlExprBinder
             innerAliasQuoted,
             correlationSql);
 
-        // Propagate implicit joins from subquery predicate binding
+        // Propagate implicit joins from subquery predicate binding or no-predicate through-join
         if (innerCtx != null && innerCtx.ImplicitJoins.Count > 0)
         {
             resolved = resolved.WithImplicitJoins(innerCtx.ImplicitJoins);
+        }
+        else if (noPredicateThroughJoins != null)
+        {
+            resolved = resolved.WithImplicitJoins(noPredicateThroughJoins);
         }
 
         return resolved;
