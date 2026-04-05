@@ -39,7 +39,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         IReadOnlyList<SetOperationPlan>? setOperations = null,
         IReadOnlyList<WhereTerm>? postUnionWhereTerms = null,
         IReadOnlyList<SqlExpr>? postUnionGroupByExprs = null,
-        IReadOnlyList<SqlExpr>? postUnionHavingExprs = null)
+        IReadOnlyList<SqlExpr>? postUnionHavingExprs = null,
+        IReadOnlyList<CteDef>? cteDefinitions = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
@@ -65,6 +66,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         NotAnalyzableReason = notAnalyzableReason;
         UnmatchedMethodNames = unmatchedMethodNames;
         ForkedVariableName = forkedVariableName;
+        CteDefinitions = cteDefinitions ?? Array.Empty<CteDef>();
     }
 
     public QueryKind Kind { get; }
@@ -91,6 +93,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public string? NotAnalyzableReason { get; }
     public IReadOnlyList<string>? UnmatchedMethodNames { get; }
     public string? ForkedVariableName { get; }
+    public IReadOnlyList<CteDef> CteDefinitions { get; }
 
     public bool Equals(QueryPlan? other)
     {
@@ -119,14 +122,15 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SqlExprSequenceEqual(PostUnionHavingExprs, other.PostUnionHavingExprs)
             && EqualityHelpers.SequenceEqual(PossibleMasks, other.PossibleMasks)
             && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames)
-            && ForkedVariableName == other.ForkedVariableName;
+            && ForkedVariableName == other.ForkedVariableName
+            && EqualityHelpers.SequenceEqual(CteDefinitions, other.CteDefinitions);
     }
 
     public override bool Equals(object? obj) => Equals(obj as QueryPlan);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, Tier, PrimaryTable, WhereTerms.Count, Parameters.Count);
+        return HashCode.Combine(Kind, Tier, PrimaryTable, WhereTerms.Count, Parameters.Count, CteDefinitions.Count);
     }
 }
 

@@ -287,6 +287,20 @@ internal enum InterceptorKind
     ExceptAll,
 
     /// <summary>
+    /// With&lt;TDto&gt;(innerQuery) — CTE definition on QuarryContext.
+    /// Defines a CTE from an inner query chain. On the carrier path,
+    /// the first CteDefinition creates the carrier and extracts inner parameters;
+    /// subsequent ones add CTE definitions and extract additional parameters.
+    /// </summary>
+    CteDefinition,
+
+    /// <summary>
+    /// FromCte&lt;TDto&gt;() — sets the primary FROM source to a previously defined CTE.
+    /// On the carrier path: noop type transition (carrier already exists from CteDefinition).
+    /// </summary>
+    FromCte,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown
