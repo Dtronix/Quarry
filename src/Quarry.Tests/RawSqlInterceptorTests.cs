@@ -33,7 +33,7 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("IAsyncEnumerable<UserDto>>"));
+        Assert.That(result, Does.Contain("IAsyncEnumerable<UserDto>"));
         Assert.That(result, Does.Contain("this QuarryContext self"));
         Assert.That(result, Does.Contain("RawSqlAsyncWithReader"));
         Assert.That(result, Does.Contain("var item = new UserDto()"));
@@ -110,7 +110,7 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("IAsyncEnumerable<int>>"));
+        Assert.That(result, Does.Contain("IAsyncEnumerable<int>"));
         Assert.That(result, Does.Contain("r.GetInt32(0)"));
         Assert.That(result, Does.Not.Contain("new int()"));
     }
@@ -132,7 +132,7 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("IAsyncEnumerable<string>>"));
+        Assert.That(result, Does.Contain("IAsyncEnumerable<string>"));
         Assert.That(result, Does.Contain("r.GetString(0)"));
     }
 
