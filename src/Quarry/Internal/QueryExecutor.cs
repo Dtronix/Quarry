@@ -25,7 +25,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
 
         var results = new List<TResult>();
         try
@@ -64,7 +64,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
 
         try
         {
@@ -102,7 +102,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
 
         try
         {
@@ -147,7 +147,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
 
         try
         {
@@ -193,7 +193,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
 
         try
         {
@@ -333,7 +333,7 @@ public static class QueryExecutor
         await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
 
         int rowCount = 0;
         while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
