@@ -339,6 +339,41 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
+    /// Executes a raw SQL query using a struct-based row reader that caches column ordinals.
+    /// Called by source-generated interceptors for RawSqlAsync&lt;T&gt; (DTO path).
+    /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public IAsyncEnumerable<T> RawSqlAsyncWithReader<T, TReader>(
+        string sql,
+        CancellationToken cancellationToken,
+        params object?[] parameters)
+        where TReader : struct, IRowReader<T>
+    {
+        ArgumentNullException.ThrowIfNull(sql);
+
+        var opId = OpId.Next();
+
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
+            RawSqlLog.SqlGenerated(opId, sql);
+
+        LogRawParameters(opId, parameters);
+
+        var command = _connection.CreateCommand();
+        command.CommandText = sql;
+        command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
+
+        for (int i = 0; i < parameters.Length; i++)
+        {
+            var param = command.CreateParameter();
+            param.ParameterName = $"@p{i}";
+            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
+            command.Parameters.Add(param);
+        }
+
+        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync<T, TReader>(opId, this, command, cancellationToken);
+    }
+
+    /// <summary>
     /// Executes a raw SQL scalar query with typed conversion instead of Convert.ChangeType.
     /// Called by source-generated interceptors for RawSqlScalarAsync&lt;T&gt;.
     /// </summary>
