@@ -570,10 +570,10 @@ public class Service
     }
 
     [Test]
-    public void RawSqlAsync_ConcreteDto_WithProperties_GeneratesPropertySwitch()
+    public void RawSqlAsync_ConcreteDto_WithLiteralSql_GeneratesStaticOrdinalReader()
     {
-        // When T is a concrete DTO that exists in the source, the generator discovers
-        // its properties via the semantic model and generates a switch-based reader.
+        // When T is a concrete DTO with a literal SQL string, the generator parses the SQL
+        // at compile time and emits a static lambda with hardcoded ordinals.
         var source = @"
 using Quarry;
 using System.Threading.Tasks;
@@ -615,13 +615,126 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        // Verify property switch cases are generated for each DTO property
-        Assert.That(code, Does.Contain("case \"userid\""),
-            "Should generate switch case for UserId property");
-        Assert.That(code, Does.Contain("case \"username\""),
-            "Should generate switch case for UserName property");
-        Assert.That(code, Does.Contain("case \"email\""),
-            "Should generate switch case for Email property");
+        // Compile-time column resolution: static reader with hardcoded ordinals
+        Assert.That(code, Does.Contain("r.GetInt32(0)"),
+            "Should generate hardcoded ordinal 0 for UserId");
+        Assert.That(code, Does.Contain("r.GetString(1)"),
+            "Should generate hardcoded ordinal 1 for UserName");
+        Assert.That(code, Does.Contain("r.GetString(2)"),
+            "Should generate hardcoded ordinal 2 for Email");
+        // Nullable Email should have IsDBNull check
+        Assert.That(code, Does.Contain("!r.IsDBNull(2)"),
+            "Should guard nullable Email with IsDBNull check");
+        // Should NOT contain struct-based reader (no runtime ordinal discovery)
+        Assert.That(code, Does.Not.Contain("IRowReader<UserDto>"),
+            "Should not emit struct-based row reader for literal SQL");
+        Assert.That(code, Does.Not.Contain("switch (r.GetName"),
+            "Should not contain runtime column name discovery");
+    }
+
+    [Test]
+    public void RawSqlAsync_UnresolvableExpression_EmitsQRY041AndFallsBack()
+    {
+        // SQL with arithmetic expression without alias → QRY041 warning + struct fallback
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class OrderDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+}
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var results = await db.RawSqlAsync<OrderDto>(""SELECT OrderId, price * qty FROM orders"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        // Should fall back to struct-based reader
+        Assert.That(code, Does.Contain("IRowReader<OrderDto>"),
+            "Should fall back to struct-based reader for unresolvable expression");
+        Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
+            "Should use runtime column discovery");
+
+        // QRY041 diagnostic should be emitted
+        Assert.That(diagnostics, Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(
+            d => d.Id == "QRY041" && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Warning),
+            "Should emit QRY041 warning for unresolvable column expression");
+    }
+
+    [Test]
+    public void RawSqlAsync_VariableSql_FallsBackToStructReader()
+    {
+        // SQL passed as a variable, not a literal → struct fallback
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserDto
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = null!;
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var sql = ""SELECT UserId, UserName FROM users"";
+        var results = await db.RawSqlAsync<UserDto>(sql);
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        // Variable SQL → struct-based reader (no compile-time resolution)
+        Assert.That(code, Does.Contain("IRowReader<UserDto>"),
+            "Should use struct-based reader for variable SQL");
     }
 
     #endregion

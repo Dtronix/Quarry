@@ -670,6 +670,169 @@ public class RawSqlInterceptorTests
 
     #endregion
 
+    #region Compile-Time Column Resolution Tests
+
+    [Test]
+    public void RawSqlAsync_WithSqlLiteral_GeneratesStaticOrdinalReader()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false),
+                new RawSqlPropertyInfo("Email", "string", "GetString", true)
+            },
+            sqlLiteral: "SELECT UserId, UserName, Email FROM users");
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Static ordinal reader — hardcoded ordinals, no struct
+        Assert.That(result, Does.Contain("r.GetInt32(0)"),
+            "UserId at ordinal 0");
+        Assert.That(result, Does.Contain("r.GetString(1)"),
+            "UserName at ordinal 1");
+        Assert.That(result, Does.Contain("!r.IsDBNull(2)"),
+            "Nullable Email gets IsDBNull guard");
+        Assert.That(result, Does.Contain("r.GetString(2)"),
+            "Email at ordinal 2");
+        Assert.That(result, Does.Not.Contain("IRowReader<UserDto>"),
+            "No struct reader emitted");
+        Assert.That(result, Does.Not.Contain("switch (r.GetName"),
+            "No runtime column discovery");
+    }
+
+    [Test]
+    public void RawSqlAsync_WithSqlLiteral_Aliases_ResolvesCorrectly()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("Id", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("FullName", "string", "GetString", false)
+            },
+            sqlLiteral: "SELECT user_id AS Id, first_name AS FullName FROM users");
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Aliases match property names → static ordinal reader
+        Assert.That(result, Does.Contain("r.GetInt32(0)"), "Id at ordinal 0 via alias");
+        Assert.That(result, Does.Contain("r.GetString(1)"), "FullName at ordinal 1 via alias");
+        Assert.That(result, Does.Not.Contain("IRowReader"), "No struct reader");
+    }
+
+    [Test]
+    public void RawSqlAsync_WithSqlLiteral_PartialColumns_SkipsMissingProperties()
+    {
+        // SQL selects fewer columns than DTO has properties
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false),
+                new RawSqlPropertyInfo("Email", "string", "GetString", true)
+            },
+            sqlLiteral: "SELECT UserId, UserName FROM users");
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Only matched columns are read — Email is not in SQL
+        Assert.That(result, Does.Contain("r.GetInt32(0)"), "UserId at ordinal 0");
+        Assert.That(result, Does.Contain("r.GetString(1)"), "UserName at ordinal 1");
+        Assert.That(result, Does.Not.Contain("Email"),
+            "Email property not in SQL — should be skipped entirely");
+        Assert.That(result, Does.Not.Contain("IRowReader"), "No struct reader");
+    }
+
+    [Test]
+    public void RawSqlAsync_WithSqlLiteral_SelectStar_FallsBackToStruct()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false)
+            },
+            sqlLiteral: "SELECT * FROM users");
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // SELECT * → fallback to struct reader
+        Assert.That(result, Does.Contain("IRowReader<UserDto>"),
+            "Should fall back to struct-based reader for SELECT *");
+        Assert.That(result, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
+            "Should use runtime column discovery");
+    }
+
+    [Test]
+    public void RawSqlAsync_WithoutSqlLiteral_UsesStructReader()
+    {
+        // No SQL literal (variable-based SQL) → struct reader
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false)
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // No SQL literal → struct reader
+        Assert.That(result, Does.Contain("IRowReader<UserDto>"),
+            "Should use struct-based reader when no SQL literal");
+    }
+
+    [Test]
+    public void RawSqlAsync_WithSqlLiteral_CaseInsensitiveColumnMatching()
+    {
+        // SQL columns are lowercase but DTO properties are PascalCase
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false)
+            },
+            sqlLiteral: "SELECT userid, username FROM users");
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Case-insensitive matching should resolve columns
+        Assert.That(result, Does.Contain("r.GetInt32(0)"), "UserId matched case-insensitively");
+        Assert.That(result, Does.Contain("r.GetString(1)"), "UserName matched case-insensitively");
+        Assert.That(result, Does.Not.Contain("IRowReader"), "No struct reader");
+    }
+
+    #endregion
+
     #region RawCallSite Equality Tests
 
     [Test]

@@ -13,13 +13,15 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
         RawSqlTypeKind typeKind,
         IReadOnlyList<RawSqlPropertyInfo> properties,
         bool hasCancellationToken = false,
-        string? scalarReaderMethod = null)
+        string? scalarReaderMethod = null,
+        string? sqlLiteral = null)
     {
         ResultTypeName = resultTypeName;
         TypeKind = typeKind;
         Properties = properties;
         HasCancellationToken = hasCancellationToken;
         ScalarReaderMethod = scalarReaderMethod;
+        SqlLiteral = sqlLiteral;
     }
 
     /// <summary>
@@ -47,6 +49,13 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
     /// </summary>
     public string? ScalarReaderMethod { get; }
 
+    /// <summary>
+    /// The raw SQL string literal from the call site, if the first argument was a compile-time constant.
+    /// Used for compile-time column resolution (Phase 2 of #183).
+    /// Null when the SQL is a variable, interpolated string, or otherwise non-literal.
+    /// </summary>
+    public string? SqlLiteral { get; }
+
     public bool Equals(RawSqlTypeInfo? other)
     {
         if (other is null) return false;
@@ -55,6 +64,7 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
             && TypeKind == other.TypeKind
             && HasCancellationToken == other.HasCancellationToken
             && ScalarReaderMethod == other.ScalarReaderMethod
+            && SqlLiteral == other.SqlLiteral
             && EqualityHelpers.SequenceEqual(Properties, other.Properties);
     }
 
@@ -62,7 +72,7 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(ResultTypeName, TypeKind, HasCancellationToken, Properties.Count);
+        return HashCode.Combine(ResultTypeName, TypeKind, HasCancellationToken, Properties.Count, SqlLiteral);
     }
 }
 

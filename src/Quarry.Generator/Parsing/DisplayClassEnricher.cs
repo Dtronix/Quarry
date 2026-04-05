@@ -192,6 +192,30 @@ internal static class DisplayClassEnricher
                     rawSqlTypeInfo = PatchWithColumnMetadata(rawSqlTypeInfo, entry.Entity.Columns);
             }
 
+            // Extract SQL string literal from the first argument for compile-time column resolution.
+            // Only captures compile-time constant strings; variables and interpolated strings are skipped.
+            string? sqlLiteral = null;
+            if (invocation.ArgumentList?.Arguments.Count > 0)
+            {
+                var firstArg = invocation.ArgumentList.Arguments[0].Expression;
+                if (firstArg is LiteralExpressionSyntax literal
+                    && literal.IsKind(SyntaxKind.StringLiteralExpression))
+                {
+                    sqlLiteral = literal.Token.ValueText;
+                }
+            }
+
+            if (sqlLiteral != null)
+            {
+                rawSqlTypeInfo = new RawSqlTypeInfo(
+                    rawSqlTypeInfo.ResultTypeName,
+                    rawSqlTypeInfo.TypeKind,
+                    rawSqlTypeInfo.Properties,
+                    rawSqlTypeInfo.HasCancellationToken,
+                    rawSqlTypeInfo.ScalarReaderMethod,
+                    sqlLiteral);
+            }
+
             site.RawSqlTypeInfo = rawSqlTypeInfo;
 
             // Clear transient reference — no longer needed after enrichment

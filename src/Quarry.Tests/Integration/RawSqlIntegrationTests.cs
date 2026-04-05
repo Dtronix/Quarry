@@ -286,4 +286,43 @@ internal class RawSqlIntegrationTests
     }
 
     #endregion
+
+    #region Compile-Time Column Resolution Tests
+
+    [Test]
+    public async Task RawSqlAsync_LiteralSql_WithAliases_ResolvesCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Uses AS aliases to match DTO property names — compile-time resolution via aliases
+        var results = await Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\" AS \"UserId\", \"UserName\" AS \"UserName\", \"Email\" AS \"Email\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
+
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].Email, Is.EqualTo("alice@test.com"));
+    }
+
+    [Test]
+    public async Task RawSqlAsync_LiteralSql_PartialColumns_MissingPropertiesStayDefault()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // SQL selects only UserId and UserName — Email is not in the SQL
+        // The compile-time resolver should skip Email, leaving it at default (null)
+        var results = await Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
+
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].UserId, Is.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].Email, Is.Null, "Email not in SQL — should be default (null)");
+        Assert.That(results[1].UserId, Is.EqualTo(2));
+        Assert.That(results[1].Email, Is.Null);
+    }
+
+    #endregion
 }
