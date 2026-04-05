@@ -438,6 +438,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY023 | Subquery FK-to-PK correlation ambiguous |
 | QRY028 | Redundant unique constraint (column + index) |
 | QRY034 | .Trace() requires QUARRY_TRACE define |
+| QRY041 | RawSqlAsync column expression without alias |
 | QRY050 | Schema changed since last migration snapshot |
 | QRY051 | Migration references unknown table/column |
 | QRY054 | Destructive migration without backup |

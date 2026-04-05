@@ -372,6 +372,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY033 | Error | Forked query chain |
 | QRY034 | Warning | .Trace() requires QUARRY_TRACE define |
 | QRY035 | Error | PreparedQuery escapes scope |
+| QRY041 | Warning | RawSqlAsync column expression without alias (falls back to runtime ordinal discovery) |
 | QRY050-055 | Mixed | Migration diagnostics |
 | QRY900 | Error | Internal generator error (pipeline exception) |
 
