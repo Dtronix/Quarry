@@ -377,7 +377,7 @@ All model types implement `IEquatable<T>` for Roslyn incremental caching. `Equat
 
 ### Navigation Subquery Pipeline
 
-`Many<T>` exposes compile-time markers: `Any()`, `Any(pred)`, `All(pred)`, `Count()`, `Count(pred)`. `SqlExprParser` detects `<param>.<nav>.<Method>()` → `SubqueryExpr`. FK-to-PK correlation via `NavigationInfo.ForeignKeyPropertyName`. Scope stack in `SqlExprBinder` enables nesting. SQL: `EXISTS (SELECT 1 ...)`, `NOT EXISTS (... AND NOT ...)`, `(SELECT COUNT(*) ...)`.
+`Many<T>` exposes compile-time markers: `Any()`, `Any(pred)`, `All(pred)`, `Count()`, `Count(pred)`, `Sum(selector)`, `Min(selector)`, `Max(selector)`, `Avg(selector)`/`Average(selector)`. `SqlExprParser` detects `<param>.<nav>.<Method>()` → `SubqueryExpr`. FK-to-PK correlation via `NavigationInfo.ForeignKeyPropertyName`. Scope stack in `SqlExprBinder` enables nesting. SQL: `EXISTS (SELECT 1 ...)`, `NOT EXISTS (... AND NOT ...)`, `(SELECT COUNT(*) ...)`, `(SELECT SUM/MIN/MAX/AVG(column) ...)`.
 
 ### Insert Pipeline
 
