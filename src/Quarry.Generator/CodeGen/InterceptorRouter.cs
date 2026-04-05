@@ -54,6 +54,8 @@ internal static class InterceptorRouter
             case InterceptorKind.Join:
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
+            case InterceptorKind.CrossJoin:
+            case InterceptorKind.FullOuterJoin:
                 return EmitterCategory.Join;
 
             // Prepare terminal

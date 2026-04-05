@@ -41,14 +41,31 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
                 "SQLite does not support RIGHT JOIN; consider restructuring as LEFT JOIN");
         }
 
-        // MySQL: FULL OUTER JOIN not supported -- check for potential patterns
-        // Note: Quarry doesn't have a direct FullOuterJoin, so this is mostly informational
+        // MySQL: RIGHT JOIN has limited optimization
         if (dialect == SqlDialect.MySQL && site.Kind == InterceptorKind.RightJoin)
         {
             yield return Diagnostic.Create(
                 Descriptor,
                 context.InvocationSyntax.GetLocation(),
                 "MySQL has limited RIGHT JOIN optimization; consider restructuring as LEFT JOIN");
+        }
+
+        // SQLite: FULL OUTER JOIN not supported
+        if (dialect == SqlDialect.SQLite && site.Kind == InterceptorKind.FullOuterJoin)
+        {
+            yield return Diagnostic.Create(
+                Descriptor,
+                context.InvocationSyntax.GetLocation(),
+                "SQLite does not support FULL OUTER JOIN; consider using UNION of two LEFT JOINs with swapped table order");
+        }
+
+        // MySQL: FULL OUTER JOIN not supported
+        if (dialect == SqlDialect.MySQL && site.Kind == InterceptorKind.FullOuterJoin)
+        {
+            yield return Diagnostic.Create(
+                Descriptor,
+                context.InvocationSyntax.GetLocation(),
+                "MySQL does not support FULL OUTER JOIN; consider using UNION of LEFT JOIN and RIGHT JOIN");
         }
 
         // SQL Server: OFFSET/FETCH requires ORDER BY -- produces invalid SQL without it

@@ -57,6 +57,8 @@ public class InterceptorRouterTests
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Join), Is.EqualTo(EmitterCategory.Join));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.LeftJoin), Is.EqualTo(EmitterCategory.Join));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.RightJoin), Is.EqualTo(EmitterCategory.Join));
+        Assert.That(InterceptorRouter.Categorize(InterceptorKind.CrossJoin), Is.EqualTo(EmitterCategory.Join));
+        Assert.That(InterceptorRouter.Categorize(InterceptorKind.FullOuterJoin), Is.EqualTo(EmitterCategory.Join));
     }
 
     [Test]

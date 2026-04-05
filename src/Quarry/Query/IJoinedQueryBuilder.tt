@@ -63,6 +63,10 @@ public interface <#= interfaceName #><<#= typeParams #>>
         => throw new InvalidOperationException("<#= errorMsg #>.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
     <#= nextInterfaceName #><<#= nextTypeParams #>> RightJoin<T<#= nextArity #>>(<#= nextFuncBool #> condition) where T<#= nextArity #> : class
         => throw new InvalidOperationException("<#= errorMsg #>.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    <#= nextInterfaceName #><<#= nextTypeParams #>> CrossJoin<T<#= nextArity #>>() where T<#= nextArity #> : class
+        => throw new InvalidOperationException("<#= errorMsg #>.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    <#= nextInterfaceName #><<#= nextTypeParams #>> FullOuterJoin<T<#= nextArity #>>(<#= nextFuncBool #> condition) where T<#= nextArity #> : class
+        => throw new InvalidOperationException("<#= errorMsg #>.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 <#      } #>
 
     QueryDiagnostics ToDiagnostics()

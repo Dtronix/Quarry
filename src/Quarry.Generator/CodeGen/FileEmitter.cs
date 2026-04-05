@@ -594,6 +594,8 @@ internal sealed class FileEmitter
             case InterceptorKind.Join:
             case InterceptorKind.LeftJoin:
             case InterceptorKind.RightJoin:
+            case InterceptorKind.CrossJoin:
+            case InterceptorKind.FullOuterJoin:
                 JoinBodyEmitter.EmitJoin(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
                 break;
 

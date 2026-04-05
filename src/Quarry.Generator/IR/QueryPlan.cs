@@ -148,7 +148,7 @@ internal sealed class TableRef : IEquatable<TableRef>
 /// </summary>
 internal sealed class JoinPlan : IEquatable<JoinPlan>
 {
-    public JoinPlan(JoinClauseKind kind, TableRef table, SqlExpr onCondition, bool isNavigationJoin = false)
+    public JoinPlan(JoinClauseKind kind, TableRef table, SqlExpr? onCondition, bool isNavigationJoin = false)
     {
         Kind = kind;
         Table = table;
@@ -158,7 +158,7 @@ internal sealed class JoinPlan : IEquatable<JoinPlan>
 
     public JoinClauseKind Kind { get; }
     public TableRef Table { get; }
-    public SqlExpr OnCondition { get; }
+    public SqlExpr? OnCondition { get; }
     public bool IsNavigationJoin { get; }
 
     public bool Equals(JoinPlan? other)
@@ -167,7 +167,7 @@ internal sealed class JoinPlan : IEquatable<JoinPlan>
         if (ReferenceEquals(this, other)) return true;
         return Kind == other.Kind
             && Table.Equals(other.Table)
-            && OnCondition.Equals(other.OnCondition)
+            && Equals(OnCondition, other.OnCondition)
             && IsNavigationJoin == other.IsNavigationJoin;
     }
 

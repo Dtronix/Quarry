@@ -43,5 +43,7 @@ internal enum JoinClauseKind
 {
     Inner,
     Left,
-    Right
+    Right,
+    Cross,
+    FullOuter
 }

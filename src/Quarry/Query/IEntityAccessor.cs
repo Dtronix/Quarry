@@ -48,6 +48,18 @@ public interface IEntityAccessor<T> where T : class
         => throw new InvalidOperationException("Carrier method IEntityAccessor.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     /// <summary>
+    /// Adds a CROSS JOIN with another table (cartesian product, no condition).
+    /// </summary>
+    IJoinedQueryBuilder<T, TJoined> CrossJoin<TJoined>() where TJoined : class
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Adds a FULL OUTER JOIN with another table using an explicit condition.
+    /// </summary>
+    IJoinedQueryBuilder<T, TJoined> FullOuterJoin<TJoined>(Func<T, TJoined, bool> condition) where TJoined : class
+        => throw new InvalidOperationException("Carrier method IEntityAccessor.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
     /// Adds an INNER JOIN via a navigation property relationship.
     /// </summary>
     IJoinedQueryBuilder<T, TJoined> Join<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class

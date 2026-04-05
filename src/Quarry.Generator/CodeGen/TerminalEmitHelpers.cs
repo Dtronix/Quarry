@@ -587,7 +587,7 @@ internal static class TerminalEmitHelpers
             {
                 var schemaArg = join.Table.SchemaName != null ? $"\"{esc(join.Table.SchemaName)}\"" : "null";
                 var alias = join.Table.Alias ?? join.Table.TableName;
-                var onSql = Quarry.Generators.IR.SqlExprRenderer.Render(join.OnCondition, chain.Dialect);
+                var onSql = join.OnCondition != null ? Quarry.Generators.IR.SqlExprRenderer.Render(join.OnCondition, chain.Dialect) : "";
                 sb.AppendLine($"            new(\"{esc(join.Table.TableName)}\", {schemaArg}, \"{join.Kind}\", \"{esc(alias)}\", @\"{esc(onSql)}\"),");
             }
             sb.AppendLine("        };");
