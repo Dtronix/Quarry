@@ -34,6 +34,7 @@
   <ItemGroup>
     <Compile Remove="..\Quarry.Shared\Migration\**\*.cs" />
     <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
+    <Compile Remove="..\Quarry.Shared\Sql\Parser\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(BuildingDocs)' != 'true'">
