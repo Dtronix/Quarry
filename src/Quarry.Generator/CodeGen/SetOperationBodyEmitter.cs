@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
@@ -7,20 +8,21 @@ namespace Quarry.Generators.CodeGen;
 
 /// <summary>
 /// Generates interceptor method bodies for set operation calls (Union, UnionAll, Intersect, etc.).
-/// The set operation interceptor is a pass-through: the SQL is prebuilt with the UNION/INTERSECT/EXCEPT
-/// clause included. The interceptor accepts the operand builder argument and returns the carrier.
+/// The set operation interceptor accepts the operand builder, copies its parameter values
+/// into the main carrier's fields, and returns the main carrier.
 /// </summary>
 internal static class SetOperationBodyEmitter
 {
     /// <summary>
     /// Emits a carrier set operation interceptor method.
     /// The method signature matches the IQueryBuilder set operation method (e.g., Union(IQueryBuilder&lt;T&gt; other)).
-    /// At runtime, this is a no-op — the prebuilt SQL already includes the set operation clause.
-    /// The operand builder reference is accepted but not used (its SQL is compiled in).
+    /// At runtime, the operand carrier's parameter fields are copied into the main carrier's fields
+    /// at the appropriate offsets.
     /// </summary>
     public static void EmitSetOperation(
         StringBuilder sb, TranslatedCallSite site, string methodName,
-        CarrierPlan carrier, AssembledPlan chain)
+        CarrierPlan carrier, AssembledPlan chain,
+        Dictionary<QueryPlan, string>? operandCarrierNames = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
@@ -40,18 +42,23 @@ internal static class SetOperationBodyEmitter
         // Copy operand carrier parameters into main carrier parameter fields
         if (chain.Plan.SetOperations.Count > 0)
         {
-            sb.AppendLine($"        // Set operation: operand SQL is prebuilt into this carrier's SQL.");
-            sb.AppendLine($"        // Copy operand carrier parameters to main carrier fields.");
+            sb.AppendLine($"        // Set operation: copy operand carrier parameters to main carrier fields.");
             sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            sb.AppendLine($"        var __op = Unsafe.As<{carrier.ClassName}>(other);");
 
-            // Find the set operation plan that matches this site by looking at parameter offsets
             foreach (var setOp in chain.Plan.SetOperations)
             {
-                for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
+                // Resolve the operand carrier class name
+                string? opCarrierName = null;
+                operandCarrierNames?.TryGetValue(setOp.Operand, out opCarrierName);
+
+                if (opCarrierName != null && setOp.Operand.Parameters.Count > 0)
                 {
-                    var targetIdx = setOp.ParameterOffset + i;
-                    sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
+                    sb.AppendLine($"        var __op = Unsafe.As<{opCarrierName}>(other);");
+                    for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
+                    {
+                        var targetIdx = setOp.ParameterOffset + i;
+                        sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
+                    }
                 }
             }
         }

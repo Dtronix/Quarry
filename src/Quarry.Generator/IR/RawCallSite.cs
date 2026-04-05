@@ -55,7 +55,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isPreparedTerminal = false,
         string? preparedQueryEscapeReason = null,
         bool isValueTypeResult = false,
-        string? operandChainId = null)
+        string? operandChainId = null,
+        int? operandArgEndLine = null,
+        int? operandArgEndColumn = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -99,6 +101,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         PreparedQueryEscapeReason = preparedQueryEscapeReason;
         IsValueTypeResult = isValueTypeResult;
         OperandChainId = operandChainId;
+        OperandArgEndLine = operandArgEndLine;
+        OperandArgEndColumn = operandArgEndColumn;
     }
 
     // Identity and location
@@ -181,6 +185,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // ChainId of the operand (right-hand) query for set operations (Union, Intersect, Except, etc.)
     public string? OperandChainId { get; }
 
+    // End line/column of the set operation argument expression (for inline operand boundary detection)
+    public int? OperandArgEndLine { get; }
+    public int? OperandArgEndColumn { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -248,7 +256,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             isPreparedTerminal: IsPreparedTerminal,
             preparedQueryEscapeReason: PreparedQueryEscapeReason,
             isValueTypeResult: IsValueTypeResult,
-            operandChainId: OperandChainId);
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;

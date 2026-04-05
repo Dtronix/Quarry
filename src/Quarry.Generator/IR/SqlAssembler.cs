@@ -123,7 +123,8 @@ internal static class SqlAssembler
             batchInsertColumnsPerRow: batchColumnsPerRow,
             preparedTerminals: chain.PreparedTerminals,
             prepareSite: chain.PrepareSite,
-            insertInfo: insertInfo);
+            insertInfo: insertInfo,
+            isOperandChain: chain.IsOperandChain);
     }
 
     /// <summary>

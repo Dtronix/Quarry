@@ -135,6 +135,10 @@ internal sealed class FileEmitter
         var carrierLookup = new Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>();
         var carrierClauseLookup = new Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>();
         var carrierFirstClauseIds = new HashSet<string>();
+        // Mapping from operand QueryPlan → carrier class name for set operation interceptor emission.
+        // Uses reference equality since the same QueryPlan instance is shared between
+        // the operand AnalyzedChain and the main chain's SetOperationPlan.Operand.
+        var operandCarrierNames = new Dictionary<QueryPlan, string>(QueryPlanReferenceComparer.Instance);
         if (_chains != null && _carrierPlans != null)
         {
             var carrierIndex = 0;
@@ -150,7 +154,8 @@ internal sealed class FileEmitter
                 if (!hasChainRoot && clauses.Count > 0 && clauses[0].IsConditional)
                     continue;
 
-                if (!CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
+                // Operand chains have no execution terminal — skip the terminal check
+                if (!chain.IsOperandChain && !CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
                 // Assign carrier class name and interfaces (deferred from CarrierAnalyzer)
@@ -160,14 +165,24 @@ internal sealed class FileEmitter
                 carrierPlan.ImplementedInterfaces = resolvedInterfaces;
                 carrierIndex++;
 
-                carrierLookup[chain.ExecutionSite.UniqueId] = (carrierPlan, chain);
-                if (chain.PreparedTerminals != null)
+                if (chain.IsOperandChain)
                 {
-                    foreach (var pt in chain.PreparedTerminals)
-                        carrierLookup[pt.UniqueId] = (carrierPlan, chain);
+                    // Operand chains: register carrier name for set operation linking,
+                    // but don't register execution site in carrierLookup (no terminal to emit)
+                    operandCarrierNames[chain.Plan] = carrierPlan.ClassName;
                 }
-                if (chain.PrepareSite != null)
-                    carrierLookup[chain.PrepareSite.UniqueId] = (carrierPlan, chain);
+                else
+                {
+                    carrierLookup[chain.ExecutionSite.UniqueId] = (carrierPlan, chain);
+                    if (chain.PreparedTerminals != null)
+                    {
+                        foreach (var pt in chain.PreparedTerminals)
+                            carrierLookup[pt.UniqueId] = (carrierPlan, chain);
+                    }
+                    if (chain.PrepareSite != null)
+                        carrierLookup[chain.PrepareSite.UniqueId] = (carrierPlan, chain);
+                }
+
                 foreach (var clause in clauses)
                 {
                     carrierClauseLookup[clause.Site.UniqueId] = (carrierPlan, chain);
@@ -249,8 +264,13 @@ internal sealed class FileEmitter
         {
             foreach (var chain in _chains)
             {
-                chainLookup[chain.ExecutionSite.UniqueId] = chain;
-                chainMemberIds.Add(chain.ExecutionSite.UniqueId);
+                // Operand chains have no execution terminal — don't register in chainLookup.
+                // Their ChainRoot is already in clauseSites and handled via carrierClauseLookup.
+                if (!chain.IsOperandChain)
+                {
+                    chainLookup[chain.ExecutionSite.UniqueId] = chain;
+                    chainMemberIds.Add(chain.ExecutionSite.UniqueId);
+                }
 
                 // Register prepared terminals and .Prepare() site in chain lookup
                 if (chain.PreparedTerminals != null)
@@ -355,15 +375,23 @@ internal sealed class FileEmitter
                     chainSites.Add(useSite);
                     processedSiteIds.Add(useSite.UniqueId);
                 }
-                var chainExecSite = siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var resolvedExec)
-                    ? resolvedExec : chain.ExecutionSite;
-                chainSites.Add(chainExecSite);
-                processedSiteIds.Add(chainExecSite.UniqueId);
+
+                // Operand chains: executionSite is the ChainRoot (already in clauseSites).
+                // Don't add it again to avoid duplicate interceptor generation.
+                if (!chain.IsOperandChain)
+                {
+                    var chainExecSite = siteByUniqueId.TryGetValue(chain.ExecutionSite.UniqueId, out var resolvedExec)
+                        ? resolvedExec : chain.ExecutionSite;
+                    chainSites.Add(chainExecSite);
+                    processedSiteIds.Add(chainExecSite.UniqueId);
+                }
 
                 if (chainSites.Count > 0)
                 {
                     var execMethod = chain.ExecutionSite.MethodName;
-                    var label = $"Chain: {execMethod} at line {chain.ExecutionSite.Line}";
+                    var label = chain.IsOperandChain
+                        ? $"Operand: {execMethod} at line {chain.ExecutionSite.Line}"
+                        : $"Chain: {execMethod} at line {chain.ExecutionSite.Line}";
                     chainGroups.Add((label, chainSites, chain.TraceLines));
                 }
             }
@@ -406,7 +434,7 @@ internal sealed class FileEmitter
             }
             foreach (var site in sites)
             {
-                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames, rawSqlResolvedColumns);
+                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames, rawSqlResolvedColumns, operandCarrierNames);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
@@ -436,7 +464,8 @@ internal sealed class FileEmitter
         Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierClauseLookup = null,
         HashSet<string>? carrierFirstClauseIds = null,
         Dictionary<string, string>? rawSqlStructNames = null,
-        Dictionary<string, IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>>? rawSqlResolvedColumns = null)
+        Dictionary<string, IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>>? rawSqlResolvedColumns = null,
+        Dictionary<QueryPlan, string>? operandCarrierNames = null)
     {
         // Trace sites are compile-time-only signals — no interceptor generated
         if (site.Kind == InterceptorKind.Trace)
@@ -814,7 +843,7 @@ internal sealed class FileEmitter
             case InterceptorKind.Except:
             case InterceptorKind.ExceptAll:
                 if (carrierInfo != null && carrierChain != null)
-                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain);
+                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames);
                 break;
 
             default:
@@ -823,5 +852,15 @@ internal sealed class FileEmitter
         }
 
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Reference-equality comparer for QueryPlan keys (netstandard2.0 compatible).
+    /// </summary>
+    private sealed class QueryPlanReferenceComparer : IEqualityComparer<QueryPlan>
+    {
+        public static readonly QueryPlanReferenceComparer Instance = new();
+        public bool Equals(QueryPlan x, QueryPlan y) => ReferenceEquals(x, y);
+        public int GetHashCode(QueryPlan obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
     }
 }

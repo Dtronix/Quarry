@@ -112,13 +112,19 @@ internal static class ChainAnalyzer
         {
             ct.ThrowIfCancellationRequested();
             var chainSites = kvp.Value;
-            bool isOperandChain = operandChainIds.Contains(kvp.Key);
+            // A chain is an operand only if it's referenced as one AND has no execution terminal.
+            // When both main and operand share the same ChainId, the main chain contains
+            // both the set operation and the operand — inline splitting handles the separation.
+            bool isOperandChain = operandChainIds.Contains(kvp.Key)
+                && !chainSites.Any(s => IsExecutionKind(s.Bound.Raw.Kind) || s.Bound.Raw.Kind == InterceptorKind.Prepare);
 
             try
             {
-                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain);
+                var inlineOperandChains = new List<AnalyzedChain>();
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain, inlineOperandChains);
                 if (analyzed != null)
                     results.Add(analyzed);
+                results.AddRange(inlineOperandChains);
             }
             catch
             {
@@ -139,7 +145,8 @@ internal static class ChainAnalyzer
         CancellationToken ct,
         List<DiagnosticInfo>? diagnostics = null,
         Dictionary<string, QueryPlan>? operandPlans = null,
-        bool isOperandChain = false)
+        bool isOperandChain = false,
+        List<AnalyzedChain>? inlineOperandChains = null)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -301,8 +308,11 @@ internal static class ChainAnalyzer
                     mainSites.Add(site); // Keep the set op site in the main chain
                     i++;
 
-                    // Collect operand sites: starts with ChainRoot, followed by clauses
+                    // Collect operand sites: starts with ChainRoot, followed by clauses.
+                    // Use the operand argument's end position to bound collection.
                     var operandSites = new List<TranslatedCallSite>();
+                    var opArgEndLine = site.Bound.Raw.OperandArgEndLine;
+                    var opArgEndCol = site.Bound.Raw.OperandArgEndColumn;
                     while (i < clauseSites.Count)
                     {
                         var next = clauseSites[i];
@@ -310,6 +320,16 @@ internal static class ChainAnalyzer
                             || IsExecutionKind(next.Bound.Raw.Kind)
                             || next.Bound.Raw.Kind == InterceptorKind.Prepare)
                             break;
+                        // Boundary check: if the next site is past the operand argument's end,
+                        // it's a post-union clause on the main chain (e.g., OrderBy after Union).
+                        if (opArgEndLine != null && operandSites.Count > 0)
+                        {
+                            var nextLine = next.Bound.Raw.Line;
+                            var nextCol = next.Bound.Raw.Column;
+                            if (nextLine > opArgEndLine.Value
+                                || (nextLine == opArgEndLine.Value && nextCol >= opArgEndCol))
+                                break;
+                        }
                         // A new ChainRoot inside the argument signals the operand chain start
                         if (next.Bound.Raw.Kind == InterceptorKind.ChainRoot && operandSites.Count == 0)
                         {
@@ -337,7 +357,24 @@ internal static class ChainAnalyzer
                     {
                         var opPlan = AnalyzeOperandChain(operandSites, registry, ct);
                         if (opPlan != null)
+                        {
                             inlineOperandPlans.Add((setOpKind, opPlan));
+
+                            // Create an AnalyzedChain for the operand so it gets its own carrier
+                            if (inlineOperandChains != null)
+                            {
+                                TranslatedCallSite? opExecSite = null;
+                                var opClauseSites = new List<TranslatedCallSite>();
+                                foreach (var os in operandSites)
+                                {
+                                    if (os.Bound.Raw.Kind == InterceptorKind.ChainRoot && opExecSite == null)
+                                        opExecSite = os;
+                                    opClauseSites.Add(os);
+                                }
+                                if (opExecSite != null)
+                                    inlineOperandChains.Add(new AnalyzedChain(opPlan, opExecSite, opClauseSites, isOperandChain: true));
+                            }
+                        }
                     }
                 }
                 else

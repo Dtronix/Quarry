@@ -712,11 +712,21 @@ internal static class UsageSiteDiscovery
 
         // ── Step 15b: Set operation operand chain linking ────────────────────
         string? operandChainId = null;
+        int? operandArgEndLine = null;
+        int? operandArgEndColumn = null;
         if (kind is InterceptorKind.Union or InterceptorKind.UnionAll
             or InterceptorKind.Intersect or InterceptorKind.IntersectAll
             or InterceptorKind.Except or InterceptorKind.ExceptAll)
         {
             operandChainId = ExtractSetOperationOperandChainId(invocation, semanticModel, cancellationToken);
+            // Record the end position of the operand argument expression
+            // so ChainAnalyzer can bound inline operand splitting.
+            if (invocation.ArgumentList.Arguments.Count >= 1)
+            {
+                var argSpan = invocation.ArgumentList.Arguments[0].Expression.GetLocation().GetLineSpan();
+                operandArgEndLine = argSpan.EndLinePosition.Line + 1; // 0-based → 1-based
+                operandArgEndColumn = argSpan.EndLinePosition.Character + 1;
+            }
         }
 
         // ── Step 15c: PreparedQuery escape detection ────────────────────────
@@ -768,7 +778,9 @@ internal static class UsageSiteDiscovery
             isPreparedTerminal: isPreparedTerminal,
             preparedQueryEscapeReason: preparedQueryEscapeReason,
             isValueTypeResult: isValueTypeResult,
-            operandChainId: operandChainId);
+            operandChainId: operandChainId,
+            operandArgEndLine: operandArgEndLine,
+            operandArgEndColumn: operandArgEndColumn);
     }
 
     /// <summary>
