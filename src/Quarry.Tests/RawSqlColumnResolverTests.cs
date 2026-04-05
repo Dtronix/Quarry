@@ -188,16 +188,16 @@ public class RawSqlColumnResolverTests
     }
 
     [Test]
-    public void Resolve_NoMatchingColumns_ReturnsEmptyResolution()
+    public void Resolve_NoMatchingColumns_FallsBack()
     {
         var result = RawSqlColumnResolver.Resolve(
             "SELECT foo, bar FROM users",
             GenDialect.SQLite,
             SampleProperties);
 
-        // Resolves successfully but with no matched columns
-        Assert.That(result.IsResolved, Is.True);
-        Assert.That(result.Columns, Has.Count.EqualTo(0));
+        // Zero matched columns → fallback to struct reader
+        Assert.That(result.IsResolved, Is.False);
+        Assert.That(result.FallbackReason, Does.Contain("No SQL columns match"));
     }
 
     #endregion

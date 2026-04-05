@@ -680,6 +680,11 @@ public class Service
             "Should fall back to struct-based reader for unresolvable expression");
         Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
             "Should use runtime column discovery");
+
+        // QRY041 diagnostic should be emitted
+        Assert.That(diagnostics, Has.Some.Matches<Microsoft.CodeAnalysis.Diagnostic>(
+            d => d.Id == "QRY041" && d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Warning),
+            "Should emit QRY041 warning for unresolvable column expression");
     }
 
     [Test]

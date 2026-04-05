@@ -144,6 +144,12 @@ internal static class RawSqlColumnResolver
             }
         }
 
+        // If no properties matched any SQL columns, fall back — a static reader
+        // with zero assignments would construct default objects less efficiently
+        // than the struct reader (which gracefully handles zero matches).
+        if (resolved.Count == 0)
+            return ColumnResolutionResult.Fallback("No SQL columns match any DTO properties");
+
         return ColumnResolutionResult.Success(resolved);
     }
 }
