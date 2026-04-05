@@ -415,6 +415,34 @@ internal class CrossDialectSubqueryTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
     }
 
+    [Test]
+    public async Task Where_Max_DateTime_GreaterThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var cutoff = new DateTime(2024, 6, 30);
+        var lt = Lite.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+        var my = My.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"OrderDate\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"OrderDate\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > $1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT MAX(`sq0`.`OrderDate`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT MAX([sq0].[OrderDate]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > @p0");
+
+        // Alice max: 2024-06-15 (< cutoff), Bob max: 2024-07-01 (> cutoff)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+    }
+
     #endregion
 
     #region Avg

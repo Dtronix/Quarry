@@ -62,6 +62,18 @@ public readonly struct Many<T> where T : Schema
     /// <inheritdoc cref="Avg(Func{T, int})"/>
     public double Avg(Func<T, double> selector) => throw MarkerException();
 
+    /// <inheritdoc cref="Avg(Func{T, int})"/>
+    public double Average(Func<T, int> selector) => throw MarkerException();
+
+    /// <inheritdoc cref="Avg(Func{T, int})"/>
+    public double Average(Func<T, long> selector) => throw MarkerException();
+
+    /// <inheritdoc cref="Avg(Func{T, int})"/>
+    public decimal Average(Func<T, decimal> selector) => throw MarkerException();
+
+    /// <inheritdoc cref="Avg(Func{T, int})"/>
+    public double Average(Func<T, double> selector) => throw MarkerException();
+
     /// <summary>
     /// Compile-time marker for MIN aggregate subquery.
     /// Translated to: (SELECT MIN(column) FROM ... WHERE correlation).
