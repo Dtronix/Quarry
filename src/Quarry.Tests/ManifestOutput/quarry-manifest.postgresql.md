@@ -1188,6 +1188,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT AVG("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 160
+```
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" = 'paid')) >= 1
 ```
 
@@ -1225,6 +1233,50 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 5
+```
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT MAX("sq0"."OrderDate") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `DateTime` |
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT MAX("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
+```
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT MIN("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") < 100
+```
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") = 0 OR NOT (EXISTS (SELECT 1 FROM "orders" AS "sq1" WHERE "sq1"."UserId" = "users"."UserId"))
+```
+
+---
+
+### Users().Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
 ```
 
 ---
@@ -1978,7 +2030,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 257 |
+| Total discovered | 263 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 44 |
-| Rendered | 213 |
+| Rendered | 219 |

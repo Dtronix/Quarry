@@ -751,7 +751,9 @@ internal static class SqlExprParser
 
     private static bool IsSubqueryMethod(string methodName)
     {
-        return methodName == "Any" || methodName == "All" || methodName == "Count";
+        return methodName == "Any" || methodName == "All" || methodName == "Count"
+            || methodName == "Sum" || methodName == "Min" || methodName == "Max"
+            || methodName == "Avg" || methodName == "Average";
     }
 
     private static SqlExpr ParseSubqueryCall(
@@ -766,10 +768,17 @@ internal static class SqlExprParser
             "Any" => SubqueryKind.Exists,
             "All" => SubqueryKind.All,
             "Count" => SubqueryKind.Count,
+            "Sum" => SubqueryKind.Sum,
+            "Min" => SubqueryKind.Min,
+            "Max" => SubqueryKind.Max,
+            "Avg" or "Average" => SubqueryKind.Avg,
             _ => SubqueryKind.Exists
         };
 
+        var isAggregate = kind is SubqueryKind.Sum or SubqueryKind.Min or SubqueryKind.Max or SubqueryKind.Avg;
+
         SqlExpr? predicate = null;
+        SqlExpr? selector = null;
         string? innerParamName = null;
 
         if (argumentList.Arguments.Count == 1)
@@ -782,18 +791,24 @@ internal static class SqlExprParser
                 var body = simpleLambda.Body as ExpressionSyntax;
                 if (body != null)
                 {
+                    SqlExpr parsed;
                     if (context != null)
                     {
                         context.Push("Arguments[1]");
                         context.Push("LambdaBody");
-                        predicate = ParseExpression(body, innerParams, context);
+                        parsed = ParseExpression(body, innerParams, context);
                         context.Pop();
                         context.Pop();
                     }
                     else
                     {
-                        predicate = ParseExpression(body, innerParams, null);
+                        parsed = ParseExpression(body, innerParams, null);
                     }
+
+                    if (isAggregate)
+                        selector = parsed;
+                    else
+                        predicate = parsed;
                 }
             }
             else if (argExpr is ParenthesizedLambdaExpressionSyntax parenLambda
@@ -804,18 +819,24 @@ internal static class SqlExprParser
                 var body = parenLambda.Body as ExpressionSyntax;
                 if (body != null)
                 {
+                    SqlExpr parsed;
                     if (context != null)
                     {
                         context.Push("Arguments[1]");
                         context.Push("LambdaBody");
-                        predicate = ParseExpression(body, innerParams, context);
+                        parsed = ParseExpression(body, innerParams, context);
                         context.Pop();
                         context.Pop();
                     }
                     else
                     {
-                        predicate = ParseExpression(body, innerParams, null);
+                        parsed = ParseExpression(body, innerParams, null);
                     }
+
+                    if (isAggregate)
+                        selector = parsed;
+                    else
+                        predicate = parsed;
                 }
             }
         }
@@ -825,6 +846,7 @@ internal static class SqlExprParser
             navRef.PropertyName,
             kind,
             predicate,
-            innerParamName);
+            innerParamName,
+            selector: selector);
     }
 }

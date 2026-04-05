@@ -608,6 +608,7 @@ internal sealed class SubqueryExpr : SqlExpr
     public string NavigationPropertyName { get; }
     public SubqueryKind SubqueryKind { get; }
     public SqlExpr? Predicate { get; }
+    public SqlExpr? Selector { get; }
     public string? InnerParameterName { get; }
 
     // --- Binder-assigned fields (resolved) ---
@@ -621,13 +622,15 @@ internal sealed class SubqueryExpr : SqlExpr
         string navigationPropertyName,
         SubqueryKind subqueryKind,
         SqlExpr? predicate,
-        string? innerParameterName)
-        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+        string? innerParameterName,
+        SqlExpr? selector = null)
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate, selector))
     {
         OuterParameterName = outerParameterName;
         NavigationPropertyName = navigationPropertyName;
         SubqueryKind = subqueryKind;
         Predicate = predicate;
+        Selector = selector;
         InnerParameterName = innerParameterName;
         IsResolved = false;
     }
@@ -640,13 +643,15 @@ internal sealed class SubqueryExpr : SqlExpr
         string? innerParameterName,
         string innerTableQuoted,
         string innerAliasQuoted,
-        string correlationSql)
-        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+        string correlationSql,
+        SqlExpr? selector = null)
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate, selector))
     {
         OuterParameterName = outerParameterName;
         NavigationPropertyName = navigationPropertyName;
         SubqueryKind = subqueryKind;
         Predicate = predicate;
+        Selector = selector;
         InnerParameterName = innerParameterName;
         InnerTableQuoted = innerTableQuoted;
         InnerAliasQuoted = innerAliasQuoted;
@@ -654,7 +659,7 @@ internal sealed class SubqueryExpr : SqlExpr
         IsResolved = true;
     }
 
-    private static int ComputeHash(string outerParam, string navProp, SubqueryKind kind, SqlExpr? predicate)
+    private static int ComputeHash(string outerParam, string navProp, SubqueryKind kind, SqlExpr? predicate, SqlExpr? selector = null)
     {
         var hc = new HashCode();
         hc.Add(SqlExprKind.Subquery);
@@ -662,6 +667,7 @@ internal sealed class SubqueryExpr : SqlExpr
         hc.Add(navProp);
         hc.Add((int)kind);
         if (predicate != null) hc.Add(predicate.GetHashCode());
+        if (selector != null) hc.Add(selector.GetHashCode());
         return hc.ToHashCode();
     }
 
@@ -682,7 +688,7 @@ internal sealed class SubqueryExpr : SqlExpr
             OuterParameterName, NavigationPropertyName, SubqueryKind,
             Predicate, InnerParameterName,
             InnerTableQuoted!, InnerAliasQuoted!, CorrelationSql!,
-            implicitJoins);
+            Selector, implicitJoins);
     }
 
     private SubqueryExpr(
@@ -694,13 +700,15 @@ internal sealed class SubqueryExpr : SqlExpr
         string innerTableQuoted,
         string innerAliasQuoted,
         string correlationSql,
+        SqlExpr? selector,
         IReadOnlyList<ImplicitJoinInfo>? implicitJoins)
-        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate))
+        : base(ComputeHash(outerParameterName, navigationPropertyName, subqueryKind, predicate, selector))
     {
         OuterParameterName = outerParameterName;
         NavigationPropertyName = navigationPropertyName;
         SubqueryKind = subqueryKind;
         Predicate = predicate;
+        Selector = selector;
         InnerParameterName = innerParameterName;
         InnerTableQuoted = innerTableQuoted;
         InnerAliasQuoted = innerAliasQuoted;
@@ -716,7 +724,8 @@ internal sealed class SubqueryExpr : SqlExpr
             && NavigationPropertyName == o.NavigationPropertyName
             && SubqueryKind == o.SubqueryKind
             && InnerParameterName == o.InnerParameterName
-            && Equals(Predicate, o.Predicate);
+            && Equals(Predicate, o.Predicate)
+            && Equals(Selector, o.Selector);
     }
 }
 

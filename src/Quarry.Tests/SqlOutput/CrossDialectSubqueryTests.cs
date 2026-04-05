@@ -297,6 +297,185 @@ internal class CrossDialectSubqueryTests
 
     #endregion
 
+    #region Sum
+
+    [Test]
+    public async Task Where_Sum_GreaterThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Sum(o => o.Total) > 200).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Sum(o => o.Total) > 200).Prepare();
+        var my = My.Users().Where(u => u.Orders.Sum(o => o.Total) > 200).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Sum(o => o.Total) > 200).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 200",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 200",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > 200",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > 200");
+
+        // Alice: 250.00 + 75.50 = 325.50 > 200 ✓, Bob: 150.00 ✗
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Where_Sum_EqualsZero()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Sum(o => o.Total) == 0 || !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Sum(o => o.Total) == 0 || !u.Orders.Any()).Prepare();
+        var my = My.Users().Where(u => u.Orders.Sum(o => o.Total) == 0 || !u.Orders.Any()).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Sum(o => o.Total) == 0 || !u.Orders.Any()).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") = 0 OR NOT (EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\"))",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") = 0 OR NOT (EXISTS (SELECT 1 FROM \"orders\" AS \"sq1\" WHERE \"sq1\".\"UserId\" = \"users\".\"UserId\"))",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) = 0 OR NOT (EXISTS (SELECT 1 FROM `orders` AS `sq1` WHERE `sq1`.`UserId` = `users`.`UserId`))",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) = 0 OR NOT (EXISTS (SELECT 1 FROM [orders] AS [sq1] WHERE [sq1].[UserId] = [users].[UserId]))");
+
+        // Charlie has no orders (SUM is NULL, but NOT EXISTS is true)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+    }
+
+    #endregion
+
+    #region Min
+
+    [Test]
+    public async Task Where_Min_LessThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Min(o => o.Total) < 100).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Min(o => o.Total) < 100).Prepare();
+        var my = My.Users().Where(u => u.Orders.Min(o => o.Total) < 100).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Min(o => o.Total) < 100).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT MIN(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") < 100",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT MIN(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") < 100",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT MIN(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) < 100",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT MIN([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) < 100");
+
+        // Alice's min order is 75.50 < 100, Bob's min is 150.00
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    #endregion
+
+    #region Max
+
+    [Test]
+    public async Task Where_Max_GreaterThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Max(o => o.Total) > 200).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Max(o => o.Total) > 200).Prepare();
+        var my = My.Users().Where(u => u.Orders.Max(o => o.Total) > 200).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Max(o => o.Total) > 200).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 200",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 200",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT MAX(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > 200",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT MAX([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > 200");
+
+        // Alice max: 250.00 > 200, Bob max: 150.00 ✗
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Where_Max_DateTime_GreaterThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var cutoff = new DateTime(2024, 6, 30);
+        var lt = Lite.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+        var my = My.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"OrderDate\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > @p0",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT MAX(\"sq0\".\"OrderDate\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > $1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT MAX(`sq0`.`OrderDate`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > ?",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT MAX([sq0].[OrderDate]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > @p0");
+
+        // Alice max: 2024-06-15 (< cutoff), Bob max: 2024-07-01 (> cutoff)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((2, "Bob")));
+    }
+
+    #endregion
+
+    #region Avg
+
+    [Test]
+    public async Task Where_Avg_GreaterThan()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Average(o => o.Total) > 160).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Average(o => o.Total) > 160).Prepare();
+        var my = My.Users().Where(u => u.Orders.Average(o => o.Total) > 160).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Average(o => o.Total) > 160).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 160",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") > 160",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE (SELECT AVG(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) > 160",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE (SELECT AVG([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) > 160");
+
+        // Alice avg: (250 + 75.50) / 2 = 162.75 > 160 ✓, Bob avg: 150.00 ✗
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    #endregion
+
     #region Nested Subqueries
 
     [Test]
