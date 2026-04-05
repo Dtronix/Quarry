@@ -419,7 +419,7 @@ public class Service
         // Interceptor should be generated for the entity type
         Assert.That(code, Does.Contain("RawSqlAsyncWithReader"),
             "Should generate RawSqlAsync interceptor for entity T");
-        Assert.That(code, Does.Contain("Task<List<Order>>"),
+        Assert.That(code, Does.Contain("IAsyncEnumerable<Order>"),
             "Interceptor return type should use the entity type Order");
         Assert.That(code, Does.Contain("new Order()"),
             "Interceptor reader should construct the entity");
