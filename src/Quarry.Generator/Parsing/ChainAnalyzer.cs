@@ -1328,6 +1328,7 @@ internal static class ChainAnalyzer
                         isForeignKey: col.IsForeignKey,
                         foreignKeyEntityName: col.ForeignKeyEntityName,
                         isEnum: col.IsEnum,
+                        navigationHops: col.NavigationHops,
                         isJoinNullable: true));
                 }
                 else

@@ -297,7 +297,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable);
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable);
     }
 }
 

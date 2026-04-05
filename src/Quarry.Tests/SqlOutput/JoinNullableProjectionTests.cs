@@ -1,7 +1,4 @@
 using Quarry.Tests.Samples;
-using Pg = Quarry.Tests.Samples.Pg;
-using My = Quarry.Tests.Samples.My;
-using Ss = Quarry.Tests.Samples.Ss;
 
 namespace Quarry.Tests.SqlOutput;
 
