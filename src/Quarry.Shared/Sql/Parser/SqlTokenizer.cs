@@ -69,7 +69,7 @@ internal static class SqlTokenizer
 
         // ── String literal ───────────────────────────────
         if (ch == '\'')
-            return ReadStringLiteral(sql, ref pos);
+            return ReadStringLiteral(sql, ref pos, dialect);
 
         // ── Quoted identifier ────────────────────────────
         if (ch == '"' || (ch == '`' && dialect == SqlDialect.MySQL) ||
@@ -100,7 +100,7 @@ internal static class SqlTokenizer
 
     // ─── Literal readers ─────────────────────────────────
 
-    private static SqlToken ReadStringLiteral(ReadOnlySpan<char> sql, ref int pos)
+    private static SqlToken ReadStringLiteral(ReadOnlySpan<char> sql, ref int pos, SqlDialect dialect)
     {
         var start = pos;
         pos++; // skip opening quote
@@ -117,8 +117,8 @@ internal static class SqlTokenizer
                 }
                 break;
             }
-            // MySQL backslash escape
-            if (sql[pos] == '\\' && pos + 1 < sql.Length)
+            // MySQL-only backslash escape (e.g., \' , \\ , \n)
+            if (dialect == SqlDialect.MySQL && sql[pos] == '\\' && pos + 1 < sql.Length)
             {
                 pos += 2;
                 continue;
@@ -239,6 +239,7 @@ internal static class SqlTokenizer
                 if (SpanEqualsIgnoreCase(text, "CROSS")) return SqlTokenKind.Cross;
                 if (SpanEqualsIgnoreCase(text, "FALSE")) return SqlTokenKind.False;
                 if (SpanEqualsIgnoreCase(text, "FETCH")) return SqlTokenKind.Fetch;
+                if (SpanEqualsIgnoreCase(text, "FIRST")) return SqlTokenKind.First;
                 if (SpanEqualsIgnoreCase(text, "GROUP")) return SqlTokenKind.Group;
                 if (SpanEqualsIgnoreCase(text, "INNER")) return SqlTokenKind.Inner;
                 if (SpanEqualsIgnoreCase(text, "LIMIT")) return SqlTokenKind.Limit;

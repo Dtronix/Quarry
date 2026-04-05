@@ -325,7 +325,7 @@ public class SqlParserEdgeCaseTests
         Assert.That(col.Expression, Is.TypeOf<SqlFunctionCall>());
     }
 
-    // ─── SqlServer OFFSET FETCH without ORDER BY ─────────
+    // ─── SqlServer OFFSET FETCH ─────────────────────────
 
     [Test]
     public void Parse_OffsetFetch_WithRowSingular()
@@ -334,5 +334,104 @@ public class SqlParserEdgeCaseTests
         Assert.That(result.Success, Is.True);
         Assert.That(result.Statement!.Offset, Is.Not.Null);
         Assert.That(result.Statement!.Limit, Is.Not.Null);
+    }
+
+    [Test]
+    public void Parse_OffsetFetch_WithFirst()
+    {
+        var result = Parse("SELECT a FROM t ORDER BY a OFFSET 0 ROWS FETCH FIRST 10 ROWS ONLY", SqlDialect.SqlServer);
+        Assert.That(result.Success, Is.True);
+        Assert.That(((SqlLiteral)result.Statement!.Offset!).Value, Is.EqualTo("0"));
+        Assert.That(((SqlLiteral)result.Statement!.Limit!).Value, Is.EqualTo("10"));
+    }
+
+    // ─── Comma-separated FROM (implicit cross join) ──────
+
+    [Test]
+    public void Parse_CommaSeparatedFrom()
+    {
+        var result = Parse("SELECT a FROM t1, t2, t3");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Statement!.From!.TableName, Is.EqualTo("t1"));
+        Assert.That(result.Statement!.Joins, Has.Count.EqualTo(2));
+        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Cross));
+        Assert.That(result.Statement!.Joins[0].Table.TableName, Is.EqualTo("t2"));
+        Assert.That(result.Statement!.Joins[1].JoinKind, Is.EqualTo(SqlJoinKind.Cross));
+        Assert.That(result.Statement!.Joins[1].Table.TableName, Is.EqualTo("t3"));
+    }
+
+    [Test]
+    public void Parse_CommaSeparatedFrom_WithWhere()
+    {
+        var result = Parse("SELECT a FROM t1, t2 WHERE t1.id = t2.id");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Statement!.Joins, Has.Count.EqualTo(1));
+        Assert.That(result.Statement!.Where, Is.Not.Null);
+    }
+
+    // ─── Unterminated string literal ─────────────────────
+
+    [Test]
+    public void Tokenize_UnterminatedString_ConsumesToEnd()
+    {
+        var tokens = SqlTokenizer.Tokenize("SELECT 'unterminated", D(SqlDialect.SQLite));
+        Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.Select));
+        Assert.That(tokens[1].Kind, Is.EqualTo(SqlTokenKind.String));
+        Assert.That(tokens[1].GetTextString("SELECT 'unterminated"), Is.EqualTo("'unterminated"));
+    }
+
+    // ─── Backslash in string on non-MySQL dialects ───────
+
+    [Test]
+    public void Tokenize_BackslashInString_NonMySQL_PreservedVerbatim()
+    {
+        var sql = @"'C:\path\to\file'";
+        var tokens = SqlTokenizer.Tokenize(sql, D(SqlDialect.SQLite));
+        Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.String));
+        Assert.That(tokens[0].GetTextString(sql), Is.EqualTo(sql));
+    }
+
+    [Test]
+    public void Tokenize_BackslashInString_MySQL_EscapesWork()
+    {
+        var sql = @"'it\'s'";
+        var tokens = SqlTokenizer.Tokenize(sql, D(SqlDialect.MySQL));
+        Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.String));
+        // MySQL: \' is an escape, so the full token is 'it\'s'
+        Assert.That(tokens[0].GetTextString(sql), Is.EqualTo(sql));
+    }
+
+    // ─── Malformed JOIN ──────────────────────────────────
+
+    [Test]
+    public void Parse_MalformedJoin_ProducesDiagnostics()
+    {
+        // INNER without JOIN keyword
+        var result = Parse("SELECT a FROM t1 INNER t2 ON t1.id = t2.id");
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
+    // ─── Nested block comments ───────────────────────────
+
+    [Test]
+    public void Tokenize_NestedBlockComment_StopsAtFirstClose()
+    {
+        // SQL standard: no nested block comments
+        var tokens = SqlTokenizer.Tokenize("SELECT /* outer /* inner */ still_here */ a", D(SqlDialect.SQLite));
+        // After first */, "still_here" and "*/" and "a" should be separate tokens
+        Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.Select));
+        // "still_here" should be an identifier (after first */ closes the comment)
+        Assert.That(tokens[1].Kind, Is.EqualTo(SqlTokenKind.Identifier));
+        Assert.That(tokens[1].GetTextString("SELECT /* outer /* inner */ still_here */ a"),
+            Is.EqualTo("still_here"));
+    }
+
+    // ─── FIRST keyword recognized ────────────────────────
+
+    [Test]
+    public void Tokenize_FirstKeyword()
+    {
+        var tokens = SqlTokenizer.Tokenize("FIRST", D(SqlDialect.SQLite));
+        Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.First));
     }
 }

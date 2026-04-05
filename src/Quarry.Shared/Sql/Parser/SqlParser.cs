@@ -67,7 +67,8 @@ internal sealed class SqlParser
     {
         if (Current.Kind == kind) return Advance();
         AddDiagnostic($"Expected {kind}, got {Current.Kind}");
-        return Current;
+        // Advance past the unexpected token to prevent infinite loops
+        return Advance();
     }
 
     private string TokenText(SqlToken token) => token.GetTextString(_sql);
@@ -110,8 +111,40 @@ internal sealed class SqlParser
 
     private static bool IsKeywordUsableAsIdentifier(SqlTokenKind kind)
     {
-        // SQL keywords that are commonly used as column/table names
-        return false;
+        // SQL keywords commonly used as column or table names.
+        // Excludes structural keywords that would break the parser
+        // (SELECT, FROM, WHERE, JOIN, ON, etc.).
+        switch (kind)
+        {
+            case SqlTokenKind.Asc:
+            case SqlTokenKind.Desc:
+            case SqlTokenKind.All:
+            case SqlTokenKind.Null:
+            case SqlTokenKind.True:
+            case SqlTokenKind.False:
+            case SqlTokenKind.Only:
+            case SqlTokenKind.Row:
+            case SqlTokenKind.Rows:
+            case SqlTokenKind.Next:
+            case SqlTokenKind.Fetch:
+            case SqlTokenKind.First:
+            case SqlTokenKind.Over:
+            case SqlTokenKind.Exists:
+            case SqlTokenKind.Between:
+            case SqlTokenKind.Like:
+            case SqlTokenKind.Cast:
+            case SqlTokenKind.Case:
+            case SqlTokenKind.When:
+            case SqlTokenKind.Then:
+            case SqlTokenKind.Else:
+            case SqlTokenKind.End:
+            case SqlTokenKind.Limit:
+            case SqlTokenKind.Offset:
+            case SqlTokenKind.Distinct:
+                return true;
+            default:
+                return false;
+        }
     }
 
     // ─── Root ────────────────────────────────────────────
@@ -179,7 +212,15 @@ internal sealed class SqlParser
         if (Match(SqlTokenKind.From))
         {
             from = ParseTableSource();
-            joins = ParseJoins();
+
+            // Comma-separated tables: FROM t1, t2, t3 → implicit CROSS JOINs
+            while (Match(SqlTokenKind.Comma))
+            {
+                var nextTable = ParseTableSource();
+                joins.Add(new SqlJoin(SqlJoinKind.Cross, nextTable, null));
+            }
+
+            joins.AddRange(ParseJoins());
         }
 
         // WHERE
@@ -413,22 +454,21 @@ internal sealed class SqlParser
                 offset = ParsePrimaryExpr();
         }
 
-        // SQL Server: OFFSET n ROWS FETCH NEXT n ROWS ONLY
+        // SQL Server: OFFSET n ROWS FETCH NEXT|FIRST n ROWS ONLY
         if (Match(SqlTokenKind.Offset))
         {
             offset = ParsePrimaryExpr();
-            Match(SqlTokenKind.Rows); // optional ROWS or ROW
-            if (!Check(SqlTokenKind.Rows))
+            if (!Match(SqlTokenKind.Rows))
                 Match(SqlTokenKind.Row);
 
             if (Match(SqlTokenKind.Fetch))
             {
-                Match(SqlTokenKind.Next); // NEXT (optional, could be FIRST)
+                if (!Match(SqlTokenKind.Next))
+                    Match(SqlTokenKind.First);
                 limit = ParsePrimaryExpr();
-                Match(SqlTokenKind.Rows); // ROWS
-                if (!Check(SqlTokenKind.Rows))
+                if (!Match(SqlTokenKind.Rows))
                     Match(SqlTokenKind.Row);
-                Match(SqlTokenKind.Only); // ONLY
+                Match(SqlTokenKind.Only);
             }
         }
     }
@@ -781,14 +821,22 @@ internal sealed class SqlParser
                 if (Check(SqlTokenKind.Over))
                 {
                     _hasUnsupported = true;
-                    var overStart = Current.Start;
+                    // Capture from function name start through the end of OVER(...)
+                    var funcStart = _tokens[_pos].Start - name.Length;
+                    // Walk back to find the function name token start
+                    for (var i = _pos - 1; i >= 0; i--)
+                    {
+                        if (TokenText(_tokens[i]) == name)
+                        {
+                            funcStart = _tokens[i].Start;
+                            break;
+                        }
+                    }
                     Advance(); // OVER
                     if (Match(SqlTokenKind.OpenParen))
                         SkipBalancedParens();
                     var overEnd = _pos > 0 ? _tokens[_pos - 1].Start + _tokens[_pos - 1].Length : _sql.Length;
-                    return new SqlUnsupported(_sql.Substring(
-                        funcExpr.FunctionName.Length > 0 ? overStart - name.Length - 1 : overStart,
-                        overEnd - (funcExpr.FunctionName.Length > 0 ? overStart - name.Length - 1 : overStart)));
+                    return new SqlUnsupported(_sql.Substring(funcStart, overEnd - funcStart));
                 }
 
                 return funcExpr;

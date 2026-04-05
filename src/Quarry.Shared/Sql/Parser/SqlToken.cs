@@ -115,6 +115,7 @@ internal enum SqlTokenKind
     Except,
     All,
     Over,
+    First,
 }
 
 /// <summary>
