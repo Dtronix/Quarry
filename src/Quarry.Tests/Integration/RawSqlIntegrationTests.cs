@@ -20,7 +20,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].UserId, Is.EqualTo(1));
@@ -41,7 +41,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
-            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].IsActive, Is.True);
@@ -59,7 +59,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<int>(
-            "SELECT \"UserId\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo(1));
@@ -74,7 +74,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<string>(
-            "SELECT \"UserName\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserName\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo("Alice"));
@@ -133,7 +133,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 2);
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 2).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(2));
@@ -176,7 +176,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
-            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE 1 = 0");
+            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE 1 = 0").ToListAsync();
 
         Assert.That(results, Is.Not.Null);
         Assert.That(results, Is.Empty);
@@ -193,7 +193,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 1);
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 1).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(1));
@@ -208,7 +208,7 @@ internal class RawSqlIntegrationTests
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
             "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = @p0 AND \"UserId\" > @p1",
-            1, 1);
+            1, 1).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(2));

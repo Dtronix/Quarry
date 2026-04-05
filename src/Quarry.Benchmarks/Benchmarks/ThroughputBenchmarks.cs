@@ -72,7 +72,7 @@ public class ThroughputBenchmarks : BenchmarkBase
         {
             var id = i % 100 + 1;
             _ = await QuarryDb.RawSqlAsync<User>(
-                "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = @p0", id);
+                "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = @p0", id).ToListAsync();
         }
     }
 
