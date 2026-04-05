@@ -441,6 +441,35 @@ internal static class SqlExprRenderer
                 AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
+
+            case SubqueryKind.Sum:
+            case SubqueryKind.Min:
+            case SubqueryKind.Max:
+            case SubqueryKind.Avg:
+                var aggFunc = sub.SubqueryKind switch
+                {
+                    SubqueryKind.Sum => "SUM",
+                    SubqueryKind.Min => "MIN",
+                    SubqueryKind.Max => "MAX",
+                    SubqueryKind.Avg => "AVG",
+                    _ => "SUM"
+                };
+                sb.Append("(SELECT ");
+                sb.Append(aggFunc);
+                sb.Append('(');
+                if (sub.Selector != null)
+                    RenderExpr(sub.Selector, dialect, paramBase, sb, genericParams);
+                else
+                    sb.Append('*');
+                sb.Append(") FROM ");
+                sb.Append(sub.InnerTableQuoted);
+                sb.Append(" AS ");
+                sb.Append(sub.InnerAliasQuoted);
+                AppendImplicitJoins(sub, dialect, sb);
+                sb.Append(" WHERE ");
+                sb.Append(sub.CorrelationSql);
+                sb.Append(')');
+                break;
         }
     }
 
