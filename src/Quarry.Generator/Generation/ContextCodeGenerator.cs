@@ -61,6 +61,9 @@ internal static class ContextCodeGenerator
             GenerateQueryBuilderProperty(sb, mapping, context.Schema, access);
         }
 
+        // CTE methods
+        GenerateCteMethods(sb, context, access);
+
         // Insert/Update/Delete methods are now accessed via EntityAccessor:
         // db.Users().Insert(entity), db.Users().Update(), db.Users().Delete()
 
@@ -135,6 +138,40 @@ internal static class ContextCodeGenerator
     }
 
     /// <summary>
+    /// Generates CTE methods (With and FromCte) on the context class.
+    /// With&lt;TDto&gt;() returns the context type itself so entity accessor methods
+    /// and additional With() calls remain available for chaining.
+    /// </summary>
+    private static void GenerateCteMethods(StringBuilder sb, ContextInfo context, string access)
+    {
+        // With<TDto>(IQueryBuilder<TDto> innerQuery) — identity projection inner query
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} {context.ClassName} With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
+
+        // With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) — projected inner query
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query with a projection.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} {context.ClassName} With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) where TEntity : class where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
+
+        // FromCte<TDto>() — use a previously defined CTE as the primary FROM source
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Starts a query from a previously defined CTE as the primary table.");
+        sb.AppendLine($"    /// Must be preceded by a With&lt;TDto&gt;() call that defines the CTE.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} IEntityAccessor<TDto> FromCte<TDto>() where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
+    }
+
     /// <summary>
     /// Generates an Update method for an entity.
     /// </summary>
