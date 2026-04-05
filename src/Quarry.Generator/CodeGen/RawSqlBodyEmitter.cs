@@ -12,9 +12,74 @@ namespace Quarry.Generators.CodeGen;
 internal static class RawSqlBodyEmitter
 {
     /// <summary>
-    /// Emits a RawSqlAsync&lt;T&gt; interceptor with a typed reader delegate.
+    /// Emits a file struct implementing IRowReader&lt;T&gt; at namespace scope.
+    /// The struct resolves column ordinals once and caches them for per-row reads.
     /// </summary>
-    public static void EmitRawSqlAsync(StringBuilder sb, TranslatedCallSite site, string methodName)
+    public static void EmitRowReaderStruct(StringBuilder sb, RawSqlTypeInfo rawSqlInfo, string structName)
+    {
+        var resultType = rawSqlInfo.ResultTypeName;
+        var props = rawSqlInfo.Properties;
+
+        sb.AppendLine($"file struct {structName} : IRowReader<{resultType}>");
+        sb.AppendLine("{");
+
+        // Ordinal fields
+        for (int i = 0; i < props.Count; i++)
+        {
+            sb.AppendLine($"    int _ord{i};");
+        }
+
+        sb.AppendLine();
+
+        // Resolve method — discover ordinals once
+        sb.AppendLine($"    public void Resolve(DbDataReader r)");
+        sb.AppendLine($"    {{");
+        for (int i = 0; i < props.Count; i++)
+        {
+            sb.AppendLine($"        _ord{i} = -1;");
+        }
+        sb.AppendLine($"        for (var i = 0; i < r.FieldCount; i++)");
+        sb.AppendLine($"        {{");
+        sb.AppendLine($"            switch (r.GetName(i))");
+        sb.AppendLine($"            {{");
+        for (int i = 0; i < props.Count; i++)
+        {
+            sb.AppendLine($"                case \"{props[i].PropertyName}\": _ord{i} = i; break;");
+        }
+        sb.AppendLine($"            }}");
+        sb.AppendLine($"        }}");
+        sb.AppendLine($"    }}");
+
+        sb.AppendLine();
+
+        // Read method — per-row materialization using cached ordinals
+        sb.AppendLine($"    public {resultType} Read(DbDataReader r)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var item = new {resultType}();");
+        for (int i = 0; i < props.Count; i++)
+        {
+            var prop = props[i];
+            var assignment = GeneratePropertyAssignment(prop, $"_ord{i}");
+            if (prop.IsNullable)
+            {
+                sb.AppendLine($"        if (_ord{i} >= 0 && !r.IsDBNull(_ord{i})) item.{prop.PropertyName} = {assignment};");
+            }
+            else
+            {
+                sb.AppendLine($"        if (_ord{i} >= 0) item.{prop.PropertyName} = {assignment};");
+            }
+        }
+        sb.AppendLine($"        return item;");
+        sb.AppendLine($"    }}");
+
+        sb.AppendLine("}");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Emits a RawSqlAsync&lt;T&gt; interceptor with a typed reader delegate or struct reader.
+    /// </summary>
+    public static void EmitRawSqlAsync(StringBuilder sb, TranslatedCallSite site, string methodName, string? structName = null)
     {
         var rawSqlInfo = site.RawSqlTypeInfo;
         if (rawSqlInfo == null)
@@ -54,38 +119,46 @@ internal static class RawSqlBodyEmitter
             sb.AppendLine($"            {ctArg},");
             sb.AppendLine($"            parameters);");
         }
+        else if (structName != null && rawSqlInfo.Properties.Count > 0)
+        {
+            // Struct-based reader path
+            sb.AppendLine($"        return self.RawSqlAsyncWithReader<{resultType}, {structName}>(");
+            sb.AppendLine($"            sql,");
+            sb.AppendLine($"            {ctArg},");
+            sb.AppendLine($"            parameters);");
+        }
+        else if (rawSqlInfo.Properties.Count > 0)
+        {
+            // Fallback: lambda-based reader (no struct name provided)
+            sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
+            sb.AppendLine($"            sql,");
+            sb.AppendLine($"            static r =>");
+            sb.AppendLine($"            {{");
+            sb.AppendLine($"                var item = new {resultType}();");
+            sb.AppendLine($"                for (var i = 0; i < r.FieldCount; i++)");
+            sb.AppendLine($"                {{");
+            sb.AppendLine($"                    if (r.IsDBNull(i)) continue;");
+            sb.AppendLine($"                    switch (r.GetName(i))");
+            sb.AppendLine($"                    {{");
+
+            foreach (var prop in rawSqlInfo.Properties)
+            {
+                var assignment = GeneratePropertyAssignment(prop, "i");
+                sb.AppendLine($"                        case \"{prop.PropertyName}\": item.{prop.PropertyName} = {assignment}; break;");
+            }
+
+            sb.AppendLine($"                    }}");
+            sb.AppendLine($"                }}");
+            sb.AppendLine($"                return item;");
+            sb.AppendLine($"            }},");
+            sb.AppendLine($"            {ctArg},");
+            sb.AppendLine($"            parameters);");
+        }
         else
         {
             sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
             sb.AppendLine($"            sql,");
-
-            if (rawSqlInfo.Properties.Count > 0)
-            {
-                sb.AppendLine($"            static r =>");
-                sb.AppendLine($"            {{");
-                sb.AppendLine($"                var item = new {resultType}();");
-                sb.AppendLine($"                for (var i = 0; i < r.FieldCount; i++)");
-                sb.AppendLine($"                {{");
-                sb.AppendLine($"                    if (r.IsDBNull(i)) continue;");
-                sb.AppendLine($"                    switch (r.GetName(i))");
-                sb.AppendLine($"                    {{");
-
-                foreach (var prop in rawSqlInfo.Properties)
-                {
-                    var assignment = GeneratePropertyAssignment(prop);
-                    sb.AppendLine($"                        case \"{prop.PropertyName}\": item.{prop.PropertyName} = {assignment}; break;");
-                }
-
-                sb.AppendLine($"                    }}");
-                sb.AppendLine($"                }}");
-                sb.AppendLine($"                return item;");
-                sb.AppendLine($"            }},");
-            }
-            else
-            {
-                sb.AppendLine($"            static _ => new {resultType}(),");
-            }
-
+            sb.AppendLine($"            static _ => new {resultType}(),");
             sb.AppendLine($"            {ctArg},");
             sb.AppendLine($"            parameters);");
         }
@@ -134,35 +207,35 @@ internal static class RawSqlBodyEmitter
         sb.AppendLine($"    }}");
     }
 
-    private static string GeneratePropertyAssignment(RawSqlPropertyInfo prop)
+    private static string GeneratePropertyAssignment(RawSqlPropertyInfo prop, string ordinalExpr)
     {
         if (prop.CustomTypeMappingClass != null)
         {
             var dbReaderMethod = prop.DbReaderMethodName ?? "GetValue";
-            return $"new {prop.CustomTypeMappingClass}().FromDb(r.{dbReaderMethod}(i))";
+            return $"new {prop.CustomTypeMappingClass}().FromDb(r.{dbReaderMethod}({ordinalExpr}))";
         }
 
         if (prop.IsForeignKey && prop.ReferencedEntityName != null)
         {
-            return $"new EntityRef<{prop.ReferencedEntityName}, {prop.ClrType}>(r.{prop.ReaderMethodName}(i))";
+            return $"new EntityRef<{prop.ReferencedEntityName}, {prop.ClrType}>(r.{prop.ReaderMethodName}({ordinalExpr}))";
         }
 
         if (prop.IsEnum)
         {
-            return $"({prop.FullClrType})r.{prop.ReaderMethodName}(i)";
+            return $"({prop.FullClrType})r.{prop.ReaderMethodName}({ordinalExpr})";
         }
 
         if (TypeClassification.NeedsSignCast(prop.ClrType))
         {
-            return $"({prop.ClrType})r.{prop.ReaderMethodName}(i)";
+            return $"({prop.ClrType})r.{prop.ReaderMethodName}({ordinalExpr})";
         }
 
         if (prop.ReaderMethodName == "GetValue")
         {
-            return $"({prop.FullClrType})r.GetValue(i)";
+            return $"({prop.FullClrType})r.GetValue({ordinalExpr})";
         }
 
-        return $"r.{prop.ReaderMethodName}(i)";
+        return $"r.{prop.ReaderMethodName}({ordinalExpr})";
     }
 
     private static string GenerateScalarConverter(string resultType)

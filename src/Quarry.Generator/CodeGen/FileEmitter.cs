@@ -182,6 +182,25 @@ internal sealed class FileEmitter
             }
         }
 
+        // Emit file struct row readers for RawSql DTO sites at namespace scope
+        var rawSqlStructNames = new Dictionary<string, string>();
+        {
+            int rawSqlStructIndex = 0;
+            foreach (var site in _sites)
+            {
+                if (site.Kind == InterceptorKind.RawSqlAsync
+                    && site.RawSqlTypeInfo != null
+                    && site.RawSqlTypeInfo.TypeKind != RawSqlTypeKind.Scalar
+                    && site.RawSqlTypeInfo.Properties.Count > 0)
+                {
+                    var structName = $"RawSqlReader_{site.RawSqlTypeInfo.ResultTypeName}_{rawSqlStructIndex}";
+                    rawSqlStructNames[site.UniqueId] = structName;
+                    RawSqlBodyEmitter.EmitRowReaderStruct(sb, site.RawSqlTypeInfo, structName);
+                    rawSqlStructIndex++;
+                }
+            }
+        }
+
         // File-scoped interceptor class
         sb.AppendLine($"/// <summary>");
         sb.AppendLine($"/// Generated interceptors for {_contextClassName} query methods.");
@@ -354,7 +373,7 @@ internal sealed class FileEmitter
             }
             foreach (var site in sites)
             {
-                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds);
+                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
@@ -382,7 +401,8 @@ internal sealed class FileEmitter
         HashSet<string> firstClauseIds,
         Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierLookup = null,
         Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierClauseLookup = null,
-        HashSet<string>? carrierFirstClauseIds = null)
+        HashSet<string>? carrierFirstClauseIds = null,
+        Dictionary<string, string>? rawSqlStructNames = null)
     {
         // Trace sites are compile-time-only signals — no interceptor generated
         if (site.Kind == InterceptorKind.Trace)
@@ -663,7 +683,11 @@ internal sealed class FileEmitter
                 break;
 
             case InterceptorKind.RawSqlAsync:
-                RawSqlBodyEmitter.EmitRawSqlAsync(sb, site, methodName);
+                {
+                    string? structName = null;
+                    rawSqlStructNames?.TryGetValue(site.UniqueId, out structName);
+                    RawSqlBodyEmitter.EmitRawSqlAsync(sb, site, methodName, structName);
+                }
                 break;
 
             case InterceptorKind.RawSqlScalarAsync:
