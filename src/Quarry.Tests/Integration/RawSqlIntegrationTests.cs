@@ -1,3 +1,4 @@
+using Quarry;
 using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
@@ -225,6 +226,63 @@ internal class RawSqlIntegrationTests
             "SELECT COUNT(*) FROM \"orders\" WHERE \"UserId\" = @p0", 1);
 
         Assert.That(count, Is.EqualTo(2));
+    }
+
+    #endregion
+
+    #region NotSupportedException Fallback Test
+
+    [Test]
+    public async Task RawSqlAsync_WithoutInterception_ThrowsNotSupportedException()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Call the base QuarryContext.RawSqlAsync<T> via reflection to bypass the generated interceptor.
+        // This verifies the fallback body throws NotSupportedException.
+        var method = typeof(QuarryContext).GetMethod("RawSqlAsync", new[] { typeof(string), typeof(CancellationToken), typeof(object?[]) })!;
+        var generic = method.MakeGenericMethod(typeof(UserWithEmailDto));
+
+        var ex = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+            generic.Invoke(Lite, new object[] { "SELECT 1", CancellationToken.None, Array.Empty<object?>() }));
+        Assert.That(ex!.InnerException, Is.TypeOf<NotSupportedException>());
+    }
+
+    #endregion
+
+    #region IAsyncEnumerable Streaming Tests
+
+    [Test]
+    public async Task RawSqlAsync_StreamingEnumeration_YieldsRowByRow()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var userIds = new List<int>();
+        await foreach (var user in Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\""))
+        {
+            userIds.Add(user.UserId);
+        }
+
+        Assert.That(userIds, Is.EqualTo(new[] { 1, 2, 3 }));
+    }
+
+    [Test]
+    public async Task RawSqlAsync_PartialEnumeration_DoesNotThrow()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        int firstUserId = 0;
+        await foreach (var user in Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\""))
+        {
+            firstUserId = user.UserId;
+            break; // Only consume first row
+        }
+
+        Assert.That(firstUserId, Is.EqualTo(1));
     }
 
     #endregion
