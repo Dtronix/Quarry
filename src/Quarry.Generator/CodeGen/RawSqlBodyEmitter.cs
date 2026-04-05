@@ -63,21 +63,33 @@ internal static class RawSqlBodyEmitter
             {
                 sb.AppendLine($"            static r =>");
                 sb.AppendLine($"            {{");
-                sb.AppendLine($"                var item = new {resultType}();");
-                sb.AppendLine($"                for (var i = 0; i < r.FieldCount; i++)");
-                sb.AppendLine($"                {{");
-                sb.AppendLine($"                    if (r.IsDBNull(i)) continue;");
-                sb.AppendLine($"                    switch (r.GetName(i))");
-                sb.AppendLine($"                    {{");
 
-                foreach (var prop in rawSqlInfo.Properties)
+                // Emit GetOrdinal declarations for each property
+                for (int idx = 0; idx < rawSqlInfo.Properties.Count; idx++)
                 {
-                    var assignment = GeneratePropertyAssignment(prop);
-                    sb.AppendLine($"                        case \"{prop.PropertyName}\": item.{prop.PropertyName} = {assignment}; break;");
+                    var prop = rawSqlInfo.Properties[idx];
+                    sb.AppendLine($"                var __ord{idx} = r.GetOrdinal(\"{prop.PropertyName}\");");
                 }
 
-                sb.AppendLine($"                    }}");
-                sb.AppendLine($"                }}");
+                sb.AppendLine($"                var item = new {resultType}();");
+
+                // Emit direct ordinal-based assignments
+                for (int idx = 0; idx < rawSqlInfo.Properties.Count; idx++)
+                {
+                    var prop = rawSqlInfo.Properties[idx];
+                    var ordinal = $"__ord{idx}";
+                    var assignment = GeneratePropertyAssignment(prop, ordinal);
+
+                    if (prop.IsNullable)
+                    {
+                        sb.AppendLine($"                item.{prop.PropertyName} = r.IsDBNull({ordinal}) ? null : {assignment};");
+                    }
+                    else
+                    {
+                        sb.AppendLine($"                item.{prop.PropertyName} = {assignment};");
+                    }
+                }
+
                 sb.AppendLine($"                return item;");
                 sb.AppendLine($"            }},");
             }
@@ -134,35 +146,35 @@ internal static class RawSqlBodyEmitter
         sb.AppendLine($"    }}");
     }
 
-    private static string GeneratePropertyAssignment(RawSqlPropertyInfo prop)
+    private static string GeneratePropertyAssignment(RawSqlPropertyInfo prop, string ordinal)
     {
         if (prop.CustomTypeMappingClass != null)
         {
             var dbReaderMethod = prop.DbReaderMethodName ?? "GetValue";
-            return $"new {prop.CustomTypeMappingClass}().FromDb(r.{dbReaderMethod}(i))";
+            return $"new {prop.CustomTypeMappingClass}().FromDb(r.{dbReaderMethod}({ordinal}))";
         }
 
         if (prop.IsForeignKey && prop.ReferencedEntityName != null)
         {
-            return $"new EntityRef<{prop.ReferencedEntityName}, {prop.ClrType}>(r.{prop.ReaderMethodName}(i))";
+            return $"new EntityRef<{prop.ReferencedEntityName}, {prop.ClrType}>(r.{prop.ReaderMethodName}({ordinal}))";
         }
 
         if (prop.IsEnum)
         {
-            return $"({prop.FullClrType})r.{prop.ReaderMethodName}(i)";
+            return $"({prop.FullClrType})r.{prop.ReaderMethodName}({ordinal})";
         }
 
         if (TypeClassification.NeedsSignCast(prop.ClrType))
         {
-            return $"({prop.ClrType})r.{prop.ReaderMethodName}(i)";
+            return $"({prop.ClrType})r.{prop.ReaderMethodName}({ordinal})";
         }
 
         if (prop.ReaderMethodName == "GetValue")
         {
-            return $"({prop.FullClrType})r.GetValue(i)";
+            return $"({prop.FullClrType})r.GetValue({ordinal})";
         }
 
-        return $"r.{prop.ReaderMethodName}(i)";
+        return $"r.{prop.ReaderMethodName}({ordinal})";
     }
 
     private static string GenerateScalarConverter(string resultType)

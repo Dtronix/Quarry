@@ -354,8 +354,8 @@ public class Service
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
         Assert.That(code, Does.Contain("static _ => new ReadOnlyDto()"),
             "Should emit a one-liner lambda discarding the reader when there are no settable properties");
-        Assert.That(code, Does.Not.Contain("switch (r.GetName(i))"),
-            "Should not emit a switch block when there are no settable properties");
+        Assert.That(code, Does.Not.Contain("r.GetOrdinal"),
+            "Should not emit ordinal resolution when there are no settable properties");
     }
 
     #endregion
@@ -424,19 +424,17 @@ public class Service
         Assert.That(code, Does.Contain("new Order()"),
             "Interceptor reader should construct the entity");
 
-        // Entity enrichment should produce a full property-reading switch, not a no-op
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
-            "Should generate switch-based reader for enriched entity type");
-        Assert.That(code, Does.Contain("case \"OrderId\""),
-            "Should generate switch case for OrderId column");
-        Assert.That(code, Does.Contain("case \"Total\""),
-            "Should generate switch case for Total column");
-        Assert.That(code, Does.Contain("case \"Priority\""),
-            "Should generate switch case for Priority column");
-        Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(i)"),
+        // Entity enrichment should produce ordinal-based reader, not a no-op
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"OrderId\")"),
+            "Should resolve ordinal for OrderId column");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"Total\")"),
+            "Should resolve ordinal for Total column");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"Priority\")"),
+            "Should resolve ordinal for Priority column");
+        Assert.That(code, Does.Contain("OrderPriority)r.GetInt32("),
             "Should generate enum cast for Priority column");
-        Assert.That(code, Does.Contain("case \"UserId\""),
-            "Should generate switch case for FK UserId column");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"UserId\")"),
+            "Should resolve ordinal for FK UserId column");
         Assert.That(code, Does.Contain("EntityRef<User, int>"),
             "Should wrap FK column with EntityRef from ColumnInfo metadata");
         Assert.That(code, Does.Not.Contain("static _ => new Order()"),
@@ -482,16 +480,14 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
-            "Should generate switch-based reader for entity type");
-        Assert.That(code, Does.Contain("case \"UserId\""),
-            "Should generate switch case for UserId");
-        Assert.That(code, Does.Contain("case \"UserName\""),
-            "Should generate switch case for UserName");
-        Assert.That(code, Does.Contain("case \"Email\""),
-            "Should generate switch case for Email");
-        Assert.That(code, Does.Contain("case \"IsActive\""),
-            "Should generate switch case for IsActive");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"UserId\")"),
+            "Should resolve ordinal for UserId");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"UserName\")"),
+            "Should resolve ordinal for UserName");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"Email\")"),
+            "Should resolve ordinal for Email");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"IsActive\")"),
+            "Should resolve ordinal for IsActive");
         Assert.That(code, Does.Not.Contain("static _ => new User()"),
             "Should NOT emit no-op reader delegate");
     }
@@ -550,14 +546,12 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
-            "Should generate switch-based reader for enriched entity type");
-        Assert.That(code, Does.Contain("case \"AccountId\""),
-            "Should generate switch case for AccountId");
-        Assert.That(code, Does.Contain("case \"AccountName\""),
-            "Should generate switch case for AccountName");
-        Assert.That(code, Does.Contain("case \"Balance\""),
-            "Should generate switch case for Balance");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"AccountId\")"),
+            "Should resolve ordinal for AccountId");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"AccountName\")"),
+            "Should resolve ordinal for AccountName");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"Balance\")"),
+            "Should resolve ordinal for Balance");
         Assert.That(code, Does.Contain("MoneyMapping"),
             "Should reference MoneyMapping in the reader delegate");
         Assert.That(code, Does.Contain("FromDb"),
@@ -612,13 +606,13 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        // Verify property switch cases are generated for each DTO property
-        Assert.That(code, Does.Contain("case \"UserId\""),
-            "Should generate switch case for UserId property");
-        Assert.That(code, Does.Contain("case \"UserName\""),
-            "Should generate switch case for UserName property");
-        Assert.That(code, Does.Contain("case \"Email\""),
-            "Should generate switch case for Email property");
+        // Verify ordinal resolution for each DTO property
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"UserId\")"),
+            "Should resolve ordinal for UserId property");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"UserName\")"),
+            "Should resolve ordinal for UserName property");
+        Assert.That(code, Does.Contain("r.GetOrdinal(\"Email\")"),
+            "Should resolve ordinal for Email property");
     }
 
     #endregion

@@ -37,8 +37,10 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("this QuarryContext self"));
         Assert.That(result, Does.Contain("RawSqlAsyncWithReader"));
         Assert.That(result, Does.Contain("var item = new UserDto()"));
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"Email\": item.Email = r.GetString(i); break;"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Name\")"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Email\")"));
+        Assert.That(result, Does.Contain("item.Name = r.GetString(__ord0)"));
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord1) ? null : r.GetString(__ord1)"));
     }
 
     [Test]
@@ -230,7 +232,8 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("(UserStatus)r.GetInt32(i)"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Status\")"));
+        Assert.That(result, Does.Contain("(UserStatus)r.GetInt32(__ord1)"));
     }
 
     [Test]
@@ -254,7 +257,8 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(i))"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"UserId\")"));
+        Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(__ord1))"));
     }
 
     [Test]
@@ -278,7 +282,8 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert
-        Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(i))"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Price\")"));
+        Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(__ord1))"));
     }
 
     [Test]
@@ -302,8 +307,9 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert — should use typed GetFieldValue, not bare GetValue
-        Assert.That(result, Does.Contain("r.GetFieldValue<byte[]>(i)"));
-        Assert.That(result, Does.Not.Contain("r.GetValue(i)"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Password\")"));
+        Assert.That(result, Does.Contain("r.GetFieldValue<byte[]>(__ord1)"));
+        Assert.That(result, Does.Not.Contain("r.GetValue(__ord"));
     }
 
     [Test]
@@ -326,8 +332,9 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert — nullable byte[]? should still use GetFieldValue, with IsDBNull guard from the loop
-        Assert.That(result, Does.Contain("case \"Password\": item.Password = r.GetFieldValue<byte[]>(i); break;"));
+        // Assert — nullable byte[]? should use GetFieldValue with IsDBNull guard
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Password\")"));
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord1) ? null : r.GetFieldValue<byte[]>(__ord1)"));
     }
 
     #endregion
@@ -354,10 +361,10 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert - all properties handled (nullable check is via IsDBNull in the for loop)
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"MiddleName\": item.MiddleName = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"Age\": item.Age = r.GetInt32(i); break;"));
+        // Assert - non-nullable has direct assignment, nullable has IsDBNull guard
+        Assert.That(result, Does.Contain("item.Name = r.GetString(__ord0)"));
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord1) ? null : r.GetString(__ord1)"));
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord2) ? null : r.GetInt32(__ord2)"));
     }
 
     #endregion
@@ -410,7 +417,8 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Assert — GetValue result must be cast to the target type
-        Assert.That(result, Does.Contain("(MyNamespace.SomeCustomType)r.GetValue(i)"));
+        Assert.That(result, Does.Contain("r.GetOrdinal(\"Data\")"));
+        Assert.That(result, Does.Contain("(MyNamespace.SomeCustomType)r.GetValue(__ord0)"));
     }
 
     #endregion
@@ -547,12 +555,12 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        Assert.That(result, Does.Contain("case \"Id\": item.Id = r.GetInt32(i); break;"));
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"CreatedAt\": item.CreatedAt = r.GetDateTime(i); break;"));
-        Assert.That(result, Does.Contain("case \"IsActive\": item.IsActive = r.GetBoolean(i); break;"));
-        Assert.That(result, Does.Contain("case \"Balance\": item.Balance = r.GetDecimal(i); break;"));
-        Assert.That(result, Does.Contain("case \"Notes\": item.Notes = r.GetString(i); break;"));
+        Assert.That(result, Does.Contain("item.Id = r.GetInt32(__ord0)"));
+        Assert.That(result, Does.Contain("item.Name = r.GetString(__ord1)"));
+        Assert.That(result, Does.Contain("item.CreatedAt = r.GetDateTime(__ord2)"));
+        Assert.That(result, Does.Contain("item.IsActive = r.GetBoolean(__ord3)"));
+        Assert.That(result, Does.Contain("item.Balance = r.GetDecimal(__ord4)"));
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord5) ? null : r.GetString(__ord5)"));
     }
 
     #endregion
