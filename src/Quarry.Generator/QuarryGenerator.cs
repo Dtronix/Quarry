@@ -830,7 +830,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                     tableAlias: col.TableAlias,
                     isForeignKey: col.IsForeignKey,
                     foreignKeyEntityName: col.ForeignKeyEntityName,
-                    isEnum: col.IsEnum));
+                    isEnum: col.IsEnum,
+                    isJoinNullable: col.IsJoinNullable));
             }
             else
             {

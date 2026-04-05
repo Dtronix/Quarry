@@ -641,7 +641,7 @@ internal static class ChainAnalyzer
                         registry, isTraced);
                 }
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry,
-                    site.Bound.Dialect, implicitJoinInfos, diagnostics);
+                    site.Bound.Dialect, implicitJoinInfos, joinPlans, diagnostics);
             }
         }
 
@@ -766,7 +766,8 @@ internal static class ChainAnalyzer
                         tableAlias: "t0",
                         isForeignKey: col.IsForeignKey,
                         foreignKeyEntityName: col.ForeignKeyEntityName,
-                        isEnum: col.IsEnum));
+                        isEnum: col.IsEnum,
+                        isJoinNullable: col.IsJoinNullable));
                 }
                 else
                 {
@@ -1148,6 +1149,7 @@ internal static class ChainAnalyzer
         EntityRegistry registry,
         SqlDialect dialect,
         List<ImplicitJoinInfo> implicitJoins,
+        IReadOnlyList<JoinPlan>? joinPlans = null,
         List<DiagnosticInfo>? diagnostics = null)
     {
         // Build column lookups for enrichment
@@ -1182,6 +1184,30 @@ internal static class ChainAnalyzer
             entityColumnLookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
             foreach (var ec in entityRef.Columns)
                 entityColumnLookup[ec.PropertyName] = ec;
+        }
+
+        // Determine whether a table alias is on the nullable side of an outer join.
+        // Cascading: a RIGHT/FULL OUTER join at position i makes all tables 0..i nullable.
+        bool IsJoinNullable(string? tableAlias)
+        {
+            if (tableAlias == null || joinPlans == null || joinPlans.Count == 0)
+                return false;
+            int k = int.Parse(tableAlias.Substring(1)); // "t0" -> 0, "t1" -> 1, etc.
+            // Right side of its own join: join[k-1] is Left or FullOuter
+            if (k >= 1 && k - 1 < joinPlans.Count)
+            {
+                var kind = joinPlans[k - 1].Kind;
+                if (kind == JoinClauseKind.Left || kind == JoinClauseKind.FullOuter)
+                    return true;
+            }
+            // Left side of a later Right or FullOuter join
+            for (int i = Math.Max(k, 0); i < joinPlans.Count; i++)
+            {
+                var kind = joinPlans[i].Kind;
+                if (kind == JoinClauseKind.Right || kind == JoinClauseKind.FullOuter)
+                    return true;
+            }
+            return false;
         }
 
         var columns = new List<ProjectedColumn>();
@@ -1277,11 +1303,38 @@ internal static class ChainAnalyzer
                             tableAlias: col.TableAlias,
                             isForeignKey: entityCol.Kind == ColumnKind.ForeignKey,
                             foreignKeyEntityName: entityCol.ReferencedEntityName,
-                            isEnum: entityCol.IsEnum));
+                            isEnum: entityCol.IsEnum,
+                            isJoinNullable: IsJoinNullable(col.TableAlias)));
                         continue;
                     }
                 }
-                columns.Add(col);
+                // Apply join-nullable override for unenriched columns
+                if (!col.IsJoinNullable && IsJoinNullable(col.TableAlias))
+                {
+                    columns.Add(new ProjectedColumn(
+                        propertyName: col.PropertyName,
+                        columnName: col.ColumnName,
+                        clrType: col.ClrType,
+                        fullClrType: col.FullClrType,
+                        isNullable: col.IsNullable,
+                        ordinal: col.Ordinal,
+                        alias: col.Alias,
+                        sqlExpression: col.SqlExpression,
+                        isAggregateFunction: col.IsAggregateFunction,
+                        customTypeMapping: col.CustomTypeMapping,
+                        isValueType: col.IsValueType,
+                        readerMethodName: col.ReaderMethodName,
+                        tableAlias: col.TableAlias,
+                        isForeignKey: col.IsForeignKey,
+                        foreignKeyEntityName: col.ForeignKeyEntityName,
+                        isEnum: col.IsEnum,
+                        navigationHops: col.NavigationHops,
+                        isJoinNullable: true));
+                }
+                else
+                {
+                    columns.Add(col);
+                }
             }
         }
 
@@ -1297,6 +1350,7 @@ internal static class ChainAnalyzer
                 if (entry != null)
                 {
                     var ordinal = 0;
+                    var entityJoinNullable = IsJoinNullable(projInfo.JoinedEntityAlias);
                     foreach (var col in EntityRef.FromEntityInfo(entry.Entity).Columns)
                     {
                         columns.Add(new ProjectedColumn(
@@ -1312,7 +1366,8 @@ internal static class ChainAnalyzer
                             customTypeMapping: col.CustomTypeMappingClass,
                             isForeignKey: col.Kind == ColumnKind.ForeignKey,
                             foreignKeyEntityName: col.ReferencedEntityName,
-                            isEnum: col.IsEnum));
+                            isEnum: col.IsEnum,
+                            isJoinNullable: entityJoinNullable));
                     }
                 }
             }

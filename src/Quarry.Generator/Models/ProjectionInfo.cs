@@ -136,7 +136,8 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
         bool isForeignKey = false,
         string? foreignKeyEntityName = null,
         bool isEnum = false,
-        IReadOnlyList<string>? navigationHops = null)
+        IReadOnlyList<string>? navigationHops = null,
+        bool isJoinNullable = false)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -155,6 +156,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
         ForeignKeyEntityName = foreignKeyEntityName;
         IsEnum = isEnum;
         NavigationHops = navigationHops;
+        IsJoinNullable = isJoinNullable;
     }
 
     /// <summary>
@@ -178,9 +180,24 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
     public string FullClrType { get; }
 
     /// <summary>
-    /// Gets whether this column is nullable.
+    /// Gets whether this column is nullable (based on schema metadata).
     /// </summary>
     public bool IsNullable { get; }
+
+    /// <summary>
+    /// Gets whether this column is effectively nullable due to being on the nullable side
+    /// of an outer join (LEFT, RIGHT, or FULL OUTER). When true, reader code must emit
+    /// IsDBNull checks even though the schema declares the column as NOT NULL.
+    /// This is separate from <see cref="IsNullable"/> to preserve the user's declared
+    /// result type for interceptor signature matching.
+    /// </summary>
+    public bool IsJoinNullable { get; }
+
+    /// <summary>
+    /// Gets whether this column requires a null check in reader code generation.
+    /// True when the column is schema-nullable or join-nullable.
+    /// </summary>
+    public bool EffectivelyNullable => IsNullable || IsJoinNullable;
 
     /// <summary>
     /// Gets the ordinal position in the result set (0-based).
@@ -261,6 +278,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
             && ClrType == other.ClrType
             && FullClrType == other.FullClrType
             && IsNullable == other.IsNullable
+            && IsJoinNullable == other.IsJoinNullable
             && Ordinal == other.Ordinal
             && Alias == other.Alias
             && SqlExpression == other.SqlExpression
@@ -279,7 +297,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable);
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable);
     }
 }
 

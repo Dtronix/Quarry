@@ -571,7 +571,8 @@ internal static class TerminalEmitHelpers
                 var typeMappingArg = col.CustomTypeMapping != null ? $", typeMappingClass: \"{esc(col.CustomTypeMapping)}\"" : "";
                 var fkArgs = col.IsForeignKey ? $", isForeignKey: true, foreignKeyEntityName: \"{esc(col.ForeignKeyEntityName!)}\"" : "";
                 var enumArg = col.IsEnum ? ", isEnum: true" : "";
-                sb.AppendLine($"            new(\"{esc(col.PropertyName)}\", \"{esc(col.ColumnName)}\", \"{esc(col.ClrType)}\", {col.Ordinal}, isNullable: {(col.IsNullable ? "true" : "false")}{typeMappingArg}{fkArgs}{enumArg}),");
+                var joinNullArg = col.IsJoinNullable ? ", isJoinNullable: true" : "";
+                sb.AppendLine($"            new(\"{esc(col.PropertyName)}\", \"{esc(col.ColumnName)}\", \"{esc(col.ClrType)}\", {col.Ordinal}, isNullable: {(col.IsNullable ? "true" : "false")}{typeMappingArg}{fkArgs}{enumArg}{joinNullArg}),");
             }
             sb.AppendLine("        };");
         }

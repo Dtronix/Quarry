@@ -260,7 +260,8 @@ public sealed class ProjectionColumnDiagnostic
 {
     public ProjectionColumnDiagnostic(string propertyName, string columnName, string clrType, int ordinal,
         bool isNullable = false, string? typeMappingClass = null,
-        bool isForeignKey = false, string? foreignKeyEntityName = null, bool isEnum = false)
+        bool isForeignKey = false, string? foreignKeyEntityName = null, bool isEnum = false,
+        bool isJoinNullable = false)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -271,6 +272,7 @@ public sealed class ProjectionColumnDiagnostic
         IsForeignKey = isForeignKey;
         ForeignKeyEntityName = foreignKeyEntityName;
         IsEnum = isEnum;
+        IsJoinNullable = isJoinNullable;
     }
 
     public string PropertyName { get; }
@@ -282,6 +284,12 @@ public sealed class ProjectionColumnDiagnostic
     public bool IsForeignKey { get; }
     public string? ForeignKeyEntityName { get; }
     public bool IsEnum { get; }
+
+    /// <summary>
+    /// Whether this column is on the nullable side of an outer join (LEFT, RIGHT, FULL OUTER).
+    /// When true, the column can be NULL at runtime even if the schema declares it NOT NULL.
+    /// </summary>
+    public bool IsJoinNullable { get; }
 }
 
 /// <summary>Describes a JOIN operation in the query chain.</summary>

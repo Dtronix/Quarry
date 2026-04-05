@@ -2041,7 +2041,7 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 265 |
+| Total discovered | 267 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 44 |
+| Consolidated (deduped) | 46 |
 | Rendered | 221 |
