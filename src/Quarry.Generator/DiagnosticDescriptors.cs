@@ -432,6 +432,21 @@ internal static class DiagnosticDescriptors
                      "A pre-built SQL dispatch table will be emitted with zero runtime string work.");
 
     /// <summary>
+    /// QRY031: RawSqlAsync/RawSqlScalarAsync type parameter is not a concrete type.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor UnresolvableRawSqlTypeParameter = new(
+        id: "QRY031",
+        title: "Unresolvable RawSql type parameter",
+        messageFormat: "RawSqlAsync<{0}> cannot be source-generated because '{0}' is not a concrete type. Use a named DTO class or a primitive type as the type argument.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "RawSqlAsync<T> and RawSqlScalarAsync<T> require a concrete type argument so the source generator " +
+                     "can emit a typed reader delegate. When T is an open generic type parameter, the generator cannot " +
+                     "determine the property layout at compile time.");
+
+    /// <summary>
     /// QRY032: Query chain not analyzable for pre-built SQL.
     /// Severity: Info
     /// </summary>

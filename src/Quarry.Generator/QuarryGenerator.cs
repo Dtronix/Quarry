@@ -750,6 +750,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.UnboundParameterPlaceholder,
         DiagnosticDescriptors.ClauseNotTranslatable,
         DiagnosticDescriptors.ChainOptimized,
+        DiagnosticDescriptors.UnresolvableRawSqlTypeParameter,
         DiagnosticDescriptors.ChainNotAnalyzable,
         DiagnosticDescriptors.ForkedQueryChain,
         DiagnosticDescriptors.SqlRawPlaceholderMismatch,

@@ -98,6 +98,18 @@ internal static class PipelineOrchestrator
         {
             var raw = site.Bound.Raw;
 
+            // QRY031: unresolvable RawSqlAsync type parameter (Error — must fix before compiling)
+            if (!raw.IsAnalyzable
+                && raw.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync
+                && raw.NonAnalyzableReason != null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.UnresolvableRawSqlTypeParameter.Id,
+                    raw.Location,
+                    raw.NonAnalyzableReason));
+                continue;
+            }
+
             // QRY001: query not analyzable (parameter receiver, variable receiver, etc.)
             if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
             {

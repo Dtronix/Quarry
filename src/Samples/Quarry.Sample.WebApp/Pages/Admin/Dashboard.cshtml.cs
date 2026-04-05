@@ -41,6 +41,6 @@ public class DashboardModel(AppDb db) : PageModel
         var loginAction = (int)AuditAction.Login;
         RecentLogins = await db.RawSqlAsync<DailyLoginCount>(
             "SELECT date(\"CreatedAt\") as Day, COUNT(*) as Count FROM \"audit_logs\" WHERE \"Action\" = @p0 AND \"CreatedAt\" > @p1 GROUP BY date(\"CreatedAt\") ORDER BY Day DESC",
-            loginAction, sevenDaysAgo);
+            loginAction, sevenDaysAgo).ToListAsync();
     }
 }

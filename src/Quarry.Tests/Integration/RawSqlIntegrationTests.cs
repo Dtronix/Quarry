@@ -1,3 +1,4 @@
+using Quarry;
 using Quarry.Tests.Samples;
 
 namespace Quarry.Tests.Integration;
@@ -20,7 +21,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].UserId, Is.EqualTo(1));
@@ -41,7 +42,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
-            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].IsActive, Is.True);
@@ -59,7 +60,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<int>(
-            "SELECT \"UserId\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserId\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo(1));
@@ -74,7 +75,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<string>(
-            "SELECT \"UserName\" FROM \"users\" ORDER BY \"UserId\"");
+            "SELECT \"UserName\" FROM \"users\" ORDER BY \"UserId\"").ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo("Alice"));
@@ -133,7 +134,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 2);
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 2).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(2));
@@ -176,7 +177,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
-            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE 1 = 0");
+            "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE 1 = 0").ToListAsync();
 
         Assert.That(results, Is.Not.Null);
         Assert.That(results, Is.Empty);
@@ -193,7 +194,7 @@ internal class RawSqlIntegrationTests
         var (Lite, Pg, My, Ss) = t;
 
         var results = await Lite.RawSqlAsync<UserWithEmailDto>(
-            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 1);
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" WHERE \"UserId\" = @p0", 1).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(1));
@@ -208,7 +209,7 @@ internal class RawSqlIntegrationTests
 
         var results = await Lite.RawSqlAsync<UserSummaryDto>(
             "SELECT \"UserId\", \"UserName\", \"IsActive\" FROM \"users\" WHERE \"IsActive\" = @p0 AND \"UserId\" > @p1",
-            1, 1);
+            1, 1).ToListAsync();
 
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(2));
@@ -225,6 +226,63 @@ internal class RawSqlIntegrationTests
             "SELECT COUNT(*) FROM \"orders\" WHERE \"UserId\" = @p0", 1);
 
         Assert.That(count, Is.EqualTo(2));
+    }
+
+    #endregion
+
+    #region NotSupportedException Fallback Test
+
+    [Test]
+    public async Task RawSqlAsync_WithoutInterception_ThrowsNotSupportedException()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Call the base QuarryContext.RawSqlAsync<T> via reflection to bypass the generated interceptor.
+        // This verifies the fallback body throws NotSupportedException.
+        var method = typeof(QuarryContext).GetMethod("RawSqlAsync", new[] { typeof(string), typeof(CancellationToken), typeof(object?[]) })!;
+        var generic = method.MakeGenericMethod(typeof(UserWithEmailDto));
+
+        var ex = Assert.Throws<System.Reflection.TargetInvocationException>(() =>
+            generic.Invoke(Lite, new object[] { "SELECT 1", CancellationToken.None, Array.Empty<object?>() }));
+        Assert.That(ex!.InnerException, Is.TypeOf<NotSupportedException>());
+    }
+
+    #endregion
+
+    #region IAsyncEnumerable Streaming Tests
+
+    [Test]
+    public async Task RawSqlAsync_StreamingEnumeration_YieldsRowByRow()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var userIds = new List<int>();
+        await foreach (var user in Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\""))
+        {
+            userIds.Add(user.UserId);
+        }
+
+        Assert.That(userIds, Is.EqualTo(new[] { 1, 2, 3 }));
+    }
+
+    [Test]
+    public async Task RawSqlAsync_PartialEnumeration_DoesNotThrow()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        int firstUserId = 0;
+        await foreach (var user in Lite.RawSqlAsync<UserWithEmailDto>(
+            "SELECT \"UserId\", \"UserName\", \"Email\" FROM \"users\" ORDER BY \"UserId\""))
+        {
+            firstUserId = user.UserId;
+            break; // Only consume first row
+        }
+
+        Assert.That(firstUserId, Is.EqualTo(1));
     }
 
     #endregion
