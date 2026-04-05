@@ -56,7 +56,7 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
             yield return Diagnostic.Create(
                 Descriptor,
                 context.InvocationSyntax.GetLocation(),
-                "SQLite does not support FULL OUTER JOIN; consider using UNION of LEFT JOIN and RIGHT JOIN");
+                "SQLite does not support FULL OUTER JOIN; consider using UNION of two LEFT JOINs with swapped table order");
         }
 
         // MySQL: FULL OUTER JOIN not supported

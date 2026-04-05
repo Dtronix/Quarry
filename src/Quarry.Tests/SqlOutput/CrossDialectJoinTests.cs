@@ -465,15 +465,17 @@ internal class CrossDialectJoinTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
+        var lt = Lite.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
         var pg = Pg.Users().FullOuterJoin<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().FullOuterJoin<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
         var ss = Ss.Users().FullOuterJoin<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
 
         QueryTestHarness.AssertDialects(
-            pg.ToDiagnostics(), pg.ToDiagnostics(),
-            pg.ToDiagnostics(), ss.ToDiagnostics(),
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            mysql:  "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` FULL OUTER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
             ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
     }
 
@@ -503,6 +505,30 @@ internal class CrossDialectJoinTests
         // Cross join: 3 users × 3 orders = 9 rows
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(9));
+    }
+
+    [Test]
+    public async Task CrossJoin_WithWhere()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().CrossJoin<Order>().Where((u, o) => o.Total > 100).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().CrossJoin<Pg.Order>().Where((u, o) => o.Total > 100).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().CrossJoin<My.Order>().Where((u, o) => o.Total > 100).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().CrossJoin<Ss.Order>().Where((u, o) => o.Total > 100).Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" CROSS JOIN \"orders\" AS \"t1\" WHERE \"t1\".\"Total\" > 100",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" CROSS JOIN \"orders\" AS \"t1\" WHERE \"t1\".\"Total\" > 100",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` CROSS JOIN `orders` AS `t1` WHERE `t1`.`Total` > 100",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] CROSS JOIN [orders] AS [t1] WHERE [t1].[Total] > 100");
+
+        // 3 users × 2 orders with Total > 100 = 6 rows
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(6));
     }
 
     #endregion

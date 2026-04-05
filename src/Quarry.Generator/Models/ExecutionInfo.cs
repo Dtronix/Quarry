@@ -248,7 +248,9 @@ internal enum JoinKind
 {
     Inner,
     Left,
-    Right
+    Right,
+    Cross,
+    FullOuter
 }
 
 /// <summary>
