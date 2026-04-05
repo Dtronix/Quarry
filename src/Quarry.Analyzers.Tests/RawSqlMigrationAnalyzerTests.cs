@@ -89,11 +89,21 @@ public class UserSchema : Schema
     public Col<bool> IsActive => Default(true);
 }
 
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Col<decimal> Total => Precision(18, 2);
+    public Col<string> Status { get; }
+}
+
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
     public TestDbContext(IDbConnection connection) : base(connection) { }
     public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
 }
 
 public class User
@@ -102,6 +112,14 @@ public class User
     public string UserName { get; set; }
     public string? Email { get; set; }
     public bool IsActive { get; set; }
+}
+
+public class Order
+{
+    public int OrderId { get; set; }
+    public int UserId { get; set; }
+    public decimal Total { get; set; }
+    public string Status { get; set; }
 }
 ";
 
@@ -447,5 +465,137 @@ public class TestService
         Assert.That(diagnostics, Has.Length.EqualTo(1));
         var chainCode = diagnostics[0].Properties["ChainCode"];
         Assert.That(chainCode, Does.Contain("Sql.Count()"));
+    }
+
+    // ── JOIN tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_InnerJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName, o.Total FROM users u INNER JOIN orders o ON u.UserId = o.UserId"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Join<Order>("));
+        Assert.That(chainCode, Does.Contain("u.UserId == o.UserId"));
+        Assert.That(chainCode, Does.Contain(".Select((u, o) => (u.UserName, o.Total))"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_LeftJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName FROM users u LEFT JOIN orders o ON u.UserId = o.UserId"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".LeftJoin<Order>("));
+    }
+
+    // ── GROUP BY / HAVING tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_GroupByWithHaving()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT UserName, COUNT(*) FROM users GROUP BY UserName HAVING COUNT(*) > 1"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".GroupBy(u => u.UserName)"));
+        Assert.That(chainCode, Does.Contain(".Having(u => Sql.Count() > 1)"));
+    }
+
+    // ── LIKE rejection test ──
+
+    [Test]
+    public async Task QRY042_LikeExpression_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT * FROM users WHERE UserName LIKE '%test%'"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    // ── IN / IS NULL / BETWEEN expression tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_InExpression()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE UserId IN (@p0, @p1)"", 1, 2);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("new[] { 1, 2 }.Contains(u.UserId)"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_IsNullExpression()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE Email IS NULL"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("u.Email == null"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_BetweenExpression()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE UserId BETWEEN @p0 AND @p1"", 1, 10);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("u.UserId >= 1 && u.UserId <= 10"));
     }
 }

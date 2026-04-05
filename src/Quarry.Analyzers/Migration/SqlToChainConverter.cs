@@ -525,24 +525,25 @@ internal sealed class SqlToChainConverter
         Dictionary<string, EntityInfo> aliasMap,
         Dictionary<string, string> aliasToParam)
     {
-        string paramName;
+        string paramName = aliasToParam.Values.FirstOrDefault() ?? "x";
         EntityInfo? entity = null;
 
         if (colRef.TableAlias != null)
         {
-            aliasToParam.TryGetValue(colRef.TableAlias, out paramName!);
+            if (aliasToParam.TryGetValue(colRef.TableAlias, out var resolved))
+                paramName = resolved;
             aliasMap.TryGetValue(colRef.TableAlias, out entity);
         }
         else
         {
             // Find the first entity that has this column
-            paramName = aliasToParam.Values.FirstOrDefault() ?? "x";
             foreach (var kvp in aliasMap)
             {
                 if (ResolveColumnToProperty(kvp.Value, colRef.ColumnName) != null)
                 {
                     entity = kvp.Value;
-                    aliasToParam.TryGetValue(kvp.Key, out paramName!);
+                    if (aliasToParam.TryGetValue(kvp.Key, out var resolvedParam))
+                        paramName = resolvedParam;
                     break;
                 }
             }
@@ -575,7 +576,10 @@ internal sealed class SqlToChainConverter
         switch (literal.LiteralKind)
         {
             case SqlLiteralKind.String:
-                return $"\"{literal.Value}\"";
+                var escaped = literal.Value
+                    .Replace("\\", "\\\\")
+                    .Replace("\"", "\\\"");
+                return $"\"{escaped}\"";
             case SqlLiteralKind.Number:
                 return literal.Value;
             case SqlLiteralKind.Boolean:
@@ -716,6 +720,8 @@ internal sealed class SqlToChainConverter
         switch (expr)
         {
             case SqlBinaryExpr binary:
+                if (binary.Operator == SqlBinaryOp.Like)
+                    return "LIKE expressions are not supported";
                 return CheckExpr(binary.Left, aliasMap) ?? CheckExpr(binary.Right, aliasMap);
 
             case SqlUnaryExpr unary:

@@ -16,7 +16,7 @@ namespace Quarry.Analyzers;
 
 /// <summary>
 /// Detects RawSqlAsync&lt;T&gt; calls with string literal SQL that can be expressed as chain queries.
-/// Emits QRY040 with the generated chain code stored in diagnostic properties for the code fix.
+/// Emits QRY042 with the generated chain code stored in diagnostic properties for the code fix.
 /// </summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
