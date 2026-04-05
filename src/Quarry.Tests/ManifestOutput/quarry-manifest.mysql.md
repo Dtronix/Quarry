@@ -482,6 +482,22 @@ SELECT `t0`.`ShipmentId`, `j0`.`WarehouseName` FROM `shipments` AS `t0` LEFT JOI
 
 ---
 
+### Users().CrossJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` CROSS JOIN `orders` AS `t1`
+```
+
+---
+
+### Users().CrossJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` CROSS JOIN `orders` AS `t1` WHERE `t1`.`Total` > 100
+```
+
+---
+
 ### Users().Delete().All().Prepare().ToDiagnostics()
 
 ```sql
@@ -566,6 +582,14 @@ SELECT DISTINCT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLog
 
 ```sql
 SELECT DISTINCT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1
+```
+
+---
+
+### Users().FullOuterJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` FULL OUTER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
 ```
 
 ---
@@ -2017,7 +2041,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 262 |
+| Total discovered | 265 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 44 |
-| Rendered | 218 |
+| Rendered | 221 |
