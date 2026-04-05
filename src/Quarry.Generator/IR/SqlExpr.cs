@@ -105,5 +105,13 @@ internal enum SubqueryKind
     /// <summary>.All(predicate) -> NOT EXISTS (SELECT 1 FROM ... AND NOT predicate)</summary>
     All,
     /// <summary>.Count() or .Count(predicate) -> (SELECT COUNT(*) FROM ...)</summary>
-    Count
+    Count,
+    /// <summary>.Sum(selector) -> (SELECT SUM(column) FROM ...)</summary>
+    Sum,
+    /// <summary>.Min(selector) -> (SELECT MIN(column) FROM ...)</summary>
+    Min,
+    /// <summary>.Max(selector) -> (SELECT MAX(column) FROM ...)</summary>
+    Max,
+    /// <summary>.Avg(selector) -> (SELECT AVG(column) FROM ...)</summary>
+    Avg
 }
