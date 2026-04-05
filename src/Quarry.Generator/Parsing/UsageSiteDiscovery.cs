@@ -60,6 +60,8 @@ internal static class UsageSiteDiscovery
         ["Join"] = InterceptorKind.Join,
         ["LeftJoin"] = InterceptorKind.LeftJoin,
         ["RightJoin"] = InterceptorKind.RightJoin,
+        ["CrossJoin"] = InterceptorKind.CrossJoin,
+        ["FullOuterJoin"] = InterceptorKind.FullOuterJoin,
         ["ExecuteFetchAllAsync"] = InterceptorKind.ExecuteFetchAll,
         ["ExecuteFetchFirstAsync"] = InterceptorKind.ExecuteFetchFirst,
         ["ExecuteFetchFirstOrDefaultAsync"] = InterceptorKind.ExecuteFetchFirstOrDefault,
@@ -605,6 +607,7 @@ internal static class UsageSiteDiscovery
         string? joinedEntityTypeName = null;
         bool isNavigationJoin = false;
         if (kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+            or InterceptorKind.CrossJoin or InterceptorKind.FullOuterJoin
             && methodSymbol.TypeArguments.Length > 0)
         {
             var joinedType = methodSymbol.TypeArguments[0];
@@ -670,7 +673,8 @@ internal static class UsageSiteDiscovery
 
         // For join sites, extract ordered lambda parameter names for multi-entity resolution
         ImmutableArray<string>? lambdaParamNames = null;
-        if (expression != null && kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+        if (expression != null && kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+            or InterceptorKind.FullOuterJoin)
         {
             if (invocation.ArgumentList.Arguments.Count > 0
                 && invocation.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax joinLambda)
@@ -1020,6 +1024,8 @@ internal static class UsageSiteDiscovery
             InterceptorKind.Join => ClauseKind.Join,
             InterceptorKind.LeftJoin => ClauseKind.Join,
             InterceptorKind.RightJoin => ClauseKind.Join,
+            InterceptorKind.CrossJoin => ClauseKind.Join,
+            InterceptorKind.FullOuterJoin => ClauseKind.Join,
             _ => ClauseKind.Where
         };
 
@@ -1321,7 +1327,7 @@ internal static class UsageSiteDiscovery
     private static bool IsKnownBuilderMethod(string name)
     {
         return name is "Where" or "OrderBy" or "ThenBy" or "Select" or "GroupBy" or "Having"
-            or "Set" or "Join" or "LeftJoin" or "RightJoin" or "Limit" or "Offset" or "Distinct"
+            or "Set" or "Join" or "LeftJoin" or "RightJoin" or "CrossJoin" or "FullOuterJoin" or "Limit" or "Offset" or "Distinct"
             or "ExecuteFetchAllAsync" or "ExecuteFetchFirstAsync" or "ExecuteFetchFirstOrDefaultAsync"
             or "ExecuteFetchSingleAsync" or "ExecuteFetchSingleOrDefaultAsync"
             or "ExecuteScalarAsync" or "ExecuteNonQueryAsync"

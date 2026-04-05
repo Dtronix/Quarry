@@ -22,7 +22,9 @@ internal sealed class UnusedJoinRule : IQueryAnalysisRule
         // Only check join call sites
         if (site.Kind != InterceptorKind.Join &&
             site.Kind != InterceptorKind.LeftJoin &&
-            site.Kind != InterceptorKind.RightJoin)
+            site.Kind != InterceptorKind.RightJoin &&
+            site.Kind != InterceptorKind.CrossJoin &&
+            site.Kind != InterceptorKind.FullOuterJoin)
             yield break;
 
         var joinedEntityName = site.JoinedEntityTypeName;

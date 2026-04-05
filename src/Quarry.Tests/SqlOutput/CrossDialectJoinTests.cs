@@ -456,4 +456,26 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Full Outer Join
+
+    [Test]
+    public async Task FullOuterJoin_OnClause()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var pg = Pg.Users().FullOuterJoin<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().FullOuterJoin<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            pg.ToDiagnostics(), pg.ToDiagnostics(),
+            pg.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    #endregion
 }

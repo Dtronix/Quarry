@@ -569,6 +569,8 @@ internal static class SqlAssembler
             JoinClauseKind.Inner => "INNER JOIN",
             JoinClauseKind.Left => "LEFT JOIN",
             JoinClauseKind.Right => "RIGHT JOIN",
+            JoinClauseKind.Cross => "CROSS JOIN",
+            JoinClauseKind.FullOuter => "FULL OUTER JOIN",
             _ => "JOIN"
         };
     }

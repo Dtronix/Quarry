@@ -113,6 +113,7 @@ internal static class CallSiteBinder
         string? resolvedJoinedEntityTypeName = raw.JoinedEntityTypeName;
 
         if (raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+            or InterceptorKind.CrossJoin or InterceptorKind.FullOuterJoin
             && raw.JoinedEntityTypeName != null)
         {
             // For navigation joins with unresolved types, resolve from navigation metadata

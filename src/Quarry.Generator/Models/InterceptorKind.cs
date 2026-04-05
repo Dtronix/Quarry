@@ -56,6 +56,16 @@ internal enum InterceptorKind
     RightJoin,
 
     /// <summary>
+    /// CrossJoin() method - generates CROSS JOIN clause SQL fragment (no ON condition).
+    /// </summary>
+    CrossJoin,
+
+    /// <summary>
+    /// FullOuterJoin() method - generates FULL OUTER JOIN clause SQL fragment.
+    /// </summary>
+    FullOuterJoin,
+
+    /// <summary>
     /// ExecuteFetchAllAsync() - assembles complete SQL and wires reader.
     /// </summary>
     ExecuteFetchAll,

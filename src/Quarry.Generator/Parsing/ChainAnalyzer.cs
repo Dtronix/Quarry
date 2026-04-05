@@ -238,6 +238,7 @@ internal static class ChainAnalyzer
         foreach (var site in clauseSites)
         {
             if (site.Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+                or InterceptorKind.CrossJoin or InterceptorKind.FullOuterJoin
                 && site.Bound.JoinedEntity != null)
             {
                 // First check if the Join already has JoinedEntityTypeNames from discovery
@@ -264,7 +265,8 @@ internal static class ChainAnalyzer
             bool seenJoin = false;
             for (int i = 0; i < clauseSites.Count; i++)
             {
-                if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+                if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+                    or InterceptorKind.CrossJoin or InterceptorKind.FullOuterJoin)
                 {
                     seenJoin = true;
                     continue;
@@ -284,7 +286,8 @@ internal static class ChainAnalyzer
                 seenJoin = false;
                 for (int i = 0; i < clauseSites.Count; i++)
                 {
-                    if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin)
+                    if (clauseSites[i].Bound.Raw.Kind is InterceptorKind.Join or InterceptorKind.LeftJoin or InterceptorKind.RightJoin
+                    or InterceptorKind.CrossJoin or InterceptorKind.FullOuterJoin)
                     {
                         seenJoin = true;
                         continue;
@@ -1740,6 +1743,8 @@ internal static class ChainAnalyzer
             InterceptorKind.Join => ClauseRole.Join,
             InterceptorKind.LeftJoin => ClauseRole.Join,
             InterceptorKind.RightJoin => ClauseRole.Join,
+            InterceptorKind.CrossJoin => ClauseRole.Join,
+            InterceptorKind.FullOuterJoin => ClauseRole.Join,
             InterceptorKind.Set => ClauseRole.Set,
             InterceptorKind.DeleteWhere => ClauseRole.DeleteWhere,
             InterceptorKind.UpdateSet => ClauseRole.UpdateSet,

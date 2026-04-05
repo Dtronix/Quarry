@@ -35,6 +35,10 @@ public interface IJoinedQueryBuilder<T1, T2>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder3<T1, T2, T3> RightJoin<T3>(Func<T1, T2, T3, bool> condition) where T3 : class
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder3<T1, T2, T3> CrossJoin<T3>() where T3 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder3<T1, T2, T3> FullOuterJoin<T3>(Func<T1, T2, T3, bool> condition) where T3 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -116,6 +120,10 @@ public interface IJoinedQueryBuilder3<T1, T2, T3>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder4<T1, T2, T3, T4> RightJoin<T4>(Func<T1, T2, T3, T4, bool> condition) where T4 : class
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder4<T1, T2, T3, T4> CrossJoin<T4>() where T4 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder4<T1, T2, T3, T4> FullOuterJoin<T4>(Func<T1, T2, T3, T4, bool> condition) where T4 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder3.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -199,6 +207,10 @@ public interface IJoinedQueryBuilder4<T1, T2, T3, T4>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder5<T1, T2, T3, T4, T5> RightJoin<T5>(Func<T1, T2, T3, T4, T5, bool> condition) where T5 : class
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder5<T1, T2, T3, T4, T5> CrossJoin<T5>() where T5 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder5<T1, T2, T3, T4, T5> FullOuterJoin<T5>(Func<T1, T2, T3, T4, T5, bool> condition) where T5 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder4.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");
@@ -284,6 +296,10 @@ public interface IJoinedQueryBuilder5<T1, T2, T3, T4, T5>
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder5.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
     IJoinedQueryBuilder6<T1, T2, T3, T4, T5, T6> RightJoin<T6>(Func<T1, T2, T3, T4, T5, T6, bool> condition) where T6 : class
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder5.RightJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder6<T1, T2, T3, T4, T5, T6> CrossJoin<T6>() where T6 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder5.CrossJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
+    IJoinedQueryBuilder6<T1, T2, T3, T4, T5, T6> FullOuterJoin<T6>(Func<T1, T2, T3, T4, T5, T6, bool> condition) where T6 : class
+        => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder5.FullOuterJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     QueryDiagnostics ToDiagnostics()
         => throw new InvalidOperationException("Carrier method IJoinedQueryBuilder5.ToDiagnostics is not intercepted in this optimized chain. This indicates a code generation bug.");

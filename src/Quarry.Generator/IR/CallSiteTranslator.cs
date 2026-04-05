@@ -261,6 +261,8 @@ internal static class CallSiteTranslator
             InterceptorKind.Join => (JoinClauseKind?)JoinClauseKind.Inner,
             InterceptorKind.LeftJoin => JoinClauseKind.Left,
             InterceptorKind.RightJoin => JoinClauseKind.Right,
+            InterceptorKind.CrossJoin => JoinClauseKind.Cross,
+            InterceptorKind.FullOuterJoin => JoinClauseKind.FullOuter,
             _ => null
         };
 
@@ -773,6 +775,8 @@ internal static class CallSiteTranslator
             InterceptorKind.Join => true,
             InterceptorKind.LeftJoin => true,
             InterceptorKind.RightJoin => true,
+            InterceptorKind.CrossJoin => true,
+            InterceptorKind.FullOuterJoin => true,
             _ => false
         };
     }
@@ -1037,6 +1041,7 @@ internal static class CallSiteTranslator
         {
             InterceptorKind.LeftJoin => JoinClauseKind.Left,
             InterceptorKind.RightJoin => JoinClauseKind.Right,
+            InterceptorKind.FullOuterJoin => JoinClauseKind.FullOuter,
             _ => JoinClauseKind.Inner
         };
 
