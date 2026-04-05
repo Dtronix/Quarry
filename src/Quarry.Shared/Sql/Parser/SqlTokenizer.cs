@@ -52,6 +52,7 @@ internal static class SqlTokenizer
                 while (pos + 1 < span.Length && !(span[pos] == '*' && span[pos + 1] == '/'))
                     pos++;
                 if (pos + 1 < span.Length) pos += 2; // skip */
+                else pos = span.Length; // unterminated block comment: consume remaining input
                 continue;
             }
 
@@ -141,8 +142,8 @@ internal static class SqlTokenizer
             if (sql[pos] == closeChar)
             {
                 pos++;
-                // doubled close char is an escape (e.g., "" in ANSI, ]] in SqlServer)
-                if (pos < sql.Length && sql[pos] == closeChar && closeChar != ']')
+                // doubled close char is an escape (e.g., "" in ANSI, ]] in SqlServer, `` in MySQL)
+                if (pos < sql.Length && sql[pos] == closeChar)
                 {
                     pos++;
                     continue;

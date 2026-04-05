@@ -66,9 +66,33 @@ internal sealed class SqlParser
     private SqlToken Expect(SqlTokenKind kind)
     {
         if (Current.Kind == kind) return Advance();
-        AddDiagnostic($"Expected {kind}, got {Current.Kind}");
+        AddDiagnostic($"Expected '{FormatTokenKind(kind)}', got '{FormatToken(Current)}'");
         // Advance past the unexpected token to prevent infinite loops
         return Advance();
+    }
+
+    private static string FormatTokenKind(SqlTokenKind kind)
+    {
+        switch (kind)
+        {
+            case SqlTokenKind.OpenParen: return "(";
+            case SqlTokenKind.CloseParen: return ")";
+            case SqlTokenKind.Comma: return ",";
+            case SqlTokenKind.Dot: return ".";
+            case SqlTokenKind.Semicolon: return ";";
+            case SqlTokenKind.Equal: return "=";
+            case SqlTokenKind.Eof: return "end of input";
+            default: return kind.ToString().ToUpperInvariant();
+        }
+    }
+
+    private string FormatToken(SqlToken token)
+    {
+        if (token.Kind == SqlTokenKind.Eof) return "end of input";
+        if (token.Kind == SqlTokenKind.Unknown) return TokenText(token);
+        if (token.Kind == SqlTokenKind.Identifier || token.Kind == SqlTokenKind.QuotedIdentifier)
+            return TokenText(token);
+        return FormatTokenKind(token.Kind);
     }
 
     private string TokenText(SqlToken token) => token.GetTextString(_sql);
@@ -105,7 +129,7 @@ internal sealed class SqlParser
             return TokenText(Advance());
         }
 
-        AddDiagnostic($"Expected identifier, got {Current.Kind}");
+        AddDiagnostic($"Expected identifier, got '{FormatToken(Current)}'");
         return TokenText(Advance());
     }
 
@@ -164,13 +188,13 @@ internal sealed class SqlParser
         if (Check(SqlTokenKind.With))
         {
             _hasUnsupported = true;
-            var rawText = _sql;
+            AddDiagnostic("CTEs (WITH ... AS) are not yet supported");
             return new SqlParseResult(null, _diagnostics, true);
         }
 
         if (!Check(SqlTokenKind.Select))
         {
-            AddDiagnostic($"Expected SELECT, got {Current.Kind}");
+            AddDiagnostic($"Expected SELECT statement, got '{FormatToken(Current)}'");
             return new SqlParseResult(null, _diagnostics, _hasUnsupported);
         }
 
@@ -183,12 +207,12 @@ internal sealed class SqlParser
         if (Check(SqlTokenKind.Union) || Check(SqlTokenKind.Intersect) || Check(SqlTokenKind.Except))
         {
             _hasUnsupported = true;
-            AddDiagnostic($"Set operations ({Current.Kind}) are not yet supported");
+            AddDiagnostic($"Set operations ({FormatTokenKind(Current.Kind)}) are not yet supported");
         }
 
         if (!Check(SqlTokenKind.Eof) && _diagnostics.Count == 0)
         {
-            AddDiagnostic($"Unexpected token after statement: {Current.Kind}");
+            AddDiagnostic($"Unexpected token after statement: '{FormatToken(Current)}'");
         }
 
         return new SqlParseResult(stmt, _diagnostics, _hasUnsupported);
@@ -346,7 +370,7 @@ internal sealed class SqlParser
             else if (Check(SqlTokenKind.Identifier) || Check(SqlTokenKind.QuotedIdentifier))
                 subAlias = ReadIdentifierName();
 
-            return new SqlTableSource("(" + rawText + ")", null, subAlias);
+            return new SqlTableSource(rawText, null, subAlias);
         }
 
         var name = ReadIdentifierName();
@@ -455,7 +479,7 @@ internal sealed class SqlParser
         }
 
         // SQL Server: OFFSET n ROWS FETCH NEXT|FIRST n ROWS ONLY
-        if (Match(SqlTokenKind.Offset))
+        else if (Match(SqlTokenKind.Offset))
         {
             offset = ParsePrimaryExpr();
             if (!Match(SqlTokenKind.Rows))
@@ -562,9 +586,20 @@ internal sealed class SqlParser
                 Advance(); // NOT
                 Advance(); // IN
                 Expect(SqlTokenKind.OpenParen);
-                var values = ParseExpressionList();
-                Expect(SqlTokenKind.CloseParen);
-                left = new SqlInExpr(left, values, true);
+                if (Check(SqlTokenKind.Select))
+                {
+                    _hasUnsupported = true;
+                    var subStart = Current.Start;
+                    SkipBalancedParens();
+                    var subEnd = _pos > 0 ? _tokens[_pos - 1].Start + _tokens[_pos - 1].Length : _sql.Length;
+                    left = new SqlUnsupported(_sql.Substring(subStart, subEnd - subStart));
+                }
+                else
+                {
+                    var values = ParseExpressionList();
+                    Expect(SqlTokenKind.CloseParen);
+                    left = new SqlInExpr(left, values, true);
+                }
                 continue;
             }
 
@@ -572,9 +607,21 @@ internal sealed class SqlParser
             {
                 Advance(); // IN
                 Expect(SqlTokenKind.OpenParen);
-                var values = ParseExpressionList();
-                Expect(SqlTokenKind.CloseParen);
-                left = new SqlInExpr(left, values, false);
+                // Check for subquery: IN (SELECT ...)
+                if (Check(SqlTokenKind.Select))
+                {
+                    _hasUnsupported = true;
+                    var subStart = Current.Start;
+                    SkipBalancedParens();
+                    var subEnd = _pos > 0 ? _tokens[_pos - 1].Start + _tokens[_pos - 1].Length : _sql.Length;
+                    left = new SqlUnsupported(_sql.Substring(subStart, subEnd - subStart));
+                }
+                else
+                {
+                    var values = ParseExpressionList();
+                    Expect(SqlTokenKind.CloseParen);
+                    left = new SqlInExpr(left, values, false);
+                }
                 continue;
             }
 
@@ -895,7 +942,7 @@ internal sealed class SqlParser
         }
 
         // Unexpected token
-        AddDiagnostic($"Unexpected token in expression: {Current.Kind}");
+        AddDiagnostic($"Unexpected token in expression: '{FormatToken(Current)}'");
         Advance(); // skip to avoid infinite loop
         return new SqlLiteral("", SqlLiteralKind.Null);
     }
@@ -938,10 +985,19 @@ internal sealed class SqlParser
         var expr = ParseExpression();
         Expect(SqlTokenKind.As);
 
-        // Read type name — may be multi-token (e.g., "CHARACTER VARYING", "DOUBLE PRECISION")
+        // Read type name — may be multi-token with parens (e.g., "VARCHAR(255)", "DOUBLE PRECISION")
         var typeStart = Current.Start;
-        while (!Check(SqlTokenKind.CloseParen) && !Check(SqlTokenKind.Eof))
+        var parenDepth = 0;
+        while (!Check(SqlTokenKind.Eof))
+        {
+            if (Check(SqlTokenKind.OpenParen)) parenDepth++;
+            if (Check(SqlTokenKind.CloseParen))
+            {
+                if (parenDepth == 0) break; // outer CAST close paren
+                parenDepth--;
+            }
             Advance();
+        }
         var typeEnd = Current.Start;
         var typeName = _sql.Substring(typeStart, typeEnd - typeStart).Trim();
 

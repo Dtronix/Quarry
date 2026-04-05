@@ -34,6 +34,7 @@ internal enum SqlNodeKind
     CastExpr,
     ExistsExpr,
     OrderTerm,
+    WhenClause,
 }
 
 /// <summary>Binary operator kinds.</summary>
@@ -85,10 +86,20 @@ internal enum SqlLiteralKind
 //  Base class
 // ─────────────────────────────────────────────────────────
 
-/// <summary>Abstract base for all SQL AST nodes.</summary>
+/// <summary>
+/// Abstract base for all SQL AST nodes.
+/// Uses reference equality — recursive tree structures make structural
+/// equality complex and no current consumer requires it.
+/// </summary>
 internal abstract class SqlNode
 {
     public abstract SqlNodeKind NodeKind { get; }
+
+    /// <summary>Start offset in the original SQL string. -1 if unknown.</summary>
+    public int SourceStart { get; internal set; } = -1;
+
+    /// <summary>Length in the original SQL string. -1 if unknown.</summary>
+    public int SourceLength { get; internal set; } = -1;
 }
 
 /// <summary>Abstract base for expression nodes.</summary>
@@ -99,7 +110,7 @@ internal abstract class SqlExpr : SqlNode { }
 // ─────────────────────────────────────────────────────────
 
 /// <summary>A parsed SELECT statement.</summary>
-internal sealed class SqlSelectStatement : SqlNode, IEquatable<SqlSelectStatement>
+internal sealed class SqlSelectStatement : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.SelectStatement;
 
@@ -137,39 +148,18 @@ internal sealed class SqlSelectStatement : SqlNode, IEquatable<SqlSelectStatemen
         Limit = limit;
         Offset = offset;
     }
-
-    public bool Equals(SqlSelectStatement? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return IsDistinct == other.IsDistinct;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlSelectStatement);
-    public override int GetHashCode() => IsDistinct.GetHashCode();
 }
 
 /// <summary>Captures unsupported SQL text (CTEs, UNION, window functions, etc.).</summary>
-internal sealed class SqlUnsupported : SqlExpr, IEquatable<SqlUnsupported>
+internal sealed class SqlUnsupported : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.Unsupported;
-
     public string RawText { get; }
 
     public SqlUnsupported(string rawText)
     {
         RawText = rawText;
     }
-
-    public bool Equals(SqlUnsupported? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return RawText == other.RawText;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlUnsupported);
-    public override int GetHashCode() => RawText.GetHashCode();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -177,7 +167,7 @@ internal sealed class SqlUnsupported : SqlExpr, IEquatable<SqlUnsupported>
 // ─────────────────────────────────────────────────────────
 
 /// <summary>A named column in a SELECT list: expression [AS alias].</summary>
-internal sealed class SqlSelectColumn : SqlNode, IEquatable<SqlSelectColumn>
+internal sealed class SqlSelectColumn : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.SelectColumn;
 
@@ -189,20 +179,10 @@ internal sealed class SqlSelectColumn : SqlNode, IEquatable<SqlSelectColumn>
         Expression = expression;
         Alias = alias;
     }
-
-    public bool Equals(SqlSelectColumn? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return Alias == other.Alias;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlSelectColumn);
-    public override int GetHashCode() => Alias?.GetHashCode() ?? 0;
 }
 
 /// <summary>A star column: <c>*</c> or <c>table.*</c>.</summary>
-internal sealed class SqlStarColumn : SqlNode, IEquatable<SqlStarColumn>
+internal sealed class SqlStarColumn : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.StarColumn;
 
@@ -213,16 +193,6 @@ internal sealed class SqlStarColumn : SqlNode, IEquatable<SqlStarColumn>
     {
         TableAlias = tableAlias;
     }
-
-    public bool Equals(SqlStarColumn? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return TableAlias == other.TableAlias;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlStarColumn);
-    public override int GetHashCode() => TableAlias?.GetHashCode() ?? 0;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -230,7 +200,7 @@ internal sealed class SqlStarColumn : SqlNode, IEquatable<SqlStarColumn>
 // ─────────────────────────────────────────────────────────
 
 /// <summary>A table reference: [schema.]table [alias].</summary>
-internal sealed class SqlTableSource : SqlNode, IEquatable<SqlTableSource>
+internal sealed class SqlTableSource : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.TableSource;
 
@@ -244,29 +214,10 @@ internal sealed class SqlTableSource : SqlNode, IEquatable<SqlTableSource>
         Schema = schema;
         Alias = alias;
     }
-
-    public bool Equals(SqlTableSource? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return TableName == other.TableName && Schema == other.Schema && Alias == other.Alias;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlTableSource);
-    public override int GetHashCode()
-    {
-        unchecked
-        {
-            var hash = TableName.GetHashCode();
-            hash = hash * 31 + (Schema?.GetHashCode() ?? 0);
-            hash = hash * 31 + (Alias?.GetHashCode() ?? 0);
-            return hash;
-        }
-    }
 }
 
 /// <summary>A JOIN clause: [INNER|LEFT|RIGHT|CROSS|FULL OUTER] JOIN table ON condition.</summary>
-internal sealed class SqlJoin : SqlNode, IEquatable<SqlJoin>
+internal sealed class SqlJoin : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.Join;
 
@@ -280,19 +231,6 @@ internal sealed class SqlJoin : SqlNode, IEquatable<SqlJoin>
         Table = table;
         Condition = condition;
     }
-
-    public bool Equals(SqlJoin? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return JoinKind == other.JoinKind && Table.Equals(other.Table);
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlJoin);
-    public override int GetHashCode()
-    {
-        unchecked { return (int)JoinKind * 31 + Table.GetHashCode(); }
-    }
 }
 
 // ─────────────────────────────────────────────────────────
@@ -300,7 +238,7 @@ internal sealed class SqlJoin : SqlNode, IEquatable<SqlJoin>
 // ─────────────────────────────────────────────────────────
 
 /// <summary>Binary expression: left op right.</summary>
-internal sealed class SqlBinaryExpr : SqlExpr, IEquatable<SqlBinaryExpr>
+internal sealed class SqlBinaryExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.BinaryExpr;
 
@@ -314,20 +252,10 @@ internal sealed class SqlBinaryExpr : SqlExpr, IEquatable<SqlBinaryExpr>
         Operator = op;
         Right = right;
     }
-
-    public bool Equals(SqlBinaryExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return Operator == other.Operator;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlBinaryExpr);
-    public override int GetHashCode() => (int)Operator;
 }
 
 /// <summary>Unary expression: NOT expr or -expr.</summary>
-internal sealed class SqlUnaryExpr : SqlExpr, IEquatable<SqlUnaryExpr>
+internal sealed class SqlUnaryExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.UnaryExpr;
 
@@ -339,20 +267,10 @@ internal sealed class SqlUnaryExpr : SqlExpr, IEquatable<SqlUnaryExpr>
         Operator = op;
         Operand = operand;
     }
-
-    public bool Equals(SqlUnaryExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return Operator == other.Operator;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlUnaryExpr);
-    public override int GetHashCode() => (int)Operator;
 }
 
 /// <summary>Column reference: [table.]column.</summary>
-internal sealed class SqlColumnRef : SqlExpr, IEquatable<SqlColumnRef>
+internal sealed class SqlColumnRef : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.ColumnRef;
 
@@ -364,23 +282,10 @@ internal sealed class SqlColumnRef : SqlExpr, IEquatable<SqlColumnRef>
         TableAlias = tableAlias;
         ColumnName = columnName;
     }
-
-    public bool Equals(SqlColumnRef? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return TableAlias == other.TableAlias && ColumnName == other.ColumnName;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlColumnRef);
-    public override int GetHashCode()
-    {
-        unchecked { return ColumnName.GetHashCode() * 31 + (TableAlias?.GetHashCode() ?? 0); }
-    }
 }
 
 /// <summary>A literal value: string, number, boolean, or NULL.</summary>
-internal sealed class SqlLiteral : SqlExpr, IEquatable<SqlLiteral>
+internal sealed class SqlLiteral : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.Literal;
 
@@ -392,46 +297,22 @@ internal sealed class SqlLiteral : SqlExpr, IEquatable<SqlLiteral>
         Value = value;
         LiteralKind = literalKind;
     }
-
-    public bool Equals(SqlLiteral? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return Value == other.Value && LiteralKind == other.LiteralKind;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlLiteral);
-    public override int GetHashCode()
-    {
-        unchecked { return Value.GetHashCode() * 31 + (int)LiteralKind; }
-    }
 }
 
 /// <summary>A parameter placeholder: @userId, $1, ?</summary>
-internal sealed class SqlParameter : SqlExpr, IEquatable<SqlParameter>
+internal sealed class SqlParameter : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.Parameter;
-
     public string RawText { get; }
 
     public SqlParameter(string rawText)
     {
         RawText = rawText;
     }
-
-    public bool Equals(SqlParameter? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return RawText == other.RawText;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlParameter);
-    public override int GetHashCode() => RawText.GetHashCode();
 }
 
 /// <summary>Function call: name([DISTINCT] args...).</summary>
-internal sealed class SqlFunctionCall : SqlExpr, IEquatable<SqlFunctionCall>
+internal sealed class SqlFunctionCall : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.FunctionCall;
 
@@ -445,23 +326,10 @@ internal sealed class SqlFunctionCall : SqlExpr, IEquatable<SqlFunctionCall>
         Arguments = arguments;
         IsDistinct = isDistinct;
     }
-
-    public bool Equals(SqlFunctionCall? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return FunctionName == other.FunctionName && IsDistinct == other.IsDistinct;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlFunctionCall);
-    public override int GetHashCode()
-    {
-        unchecked { return FunctionName.GetHashCode() * 31 + IsDistinct.GetHashCode(); }
-    }
 }
 
 /// <summary>IN expression: expr [NOT] IN (values...).</summary>
-internal sealed class SqlInExpr : SqlExpr, IEquatable<SqlInExpr>
+internal sealed class SqlInExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.InExpr;
 
@@ -475,20 +343,10 @@ internal sealed class SqlInExpr : SqlExpr, IEquatable<SqlInExpr>
         Values = values;
         IsNegated = isNegated;
     }
-
-    public bool Equals(SqlInExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return IsNegated == other.IsNegated;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlInExpr);
-    public override int GetHashCode() => IsNegated.GetHashCode();
 }
 
 /// <summary>BETWEEN expression: expr [NOT] BETWEEN low AND high.</summary>
-internal sealed class SqlBetweenExpr : SqlExpr, IEquatable<SqlBetweenExpr>
+internal sealed class SqlBetweenExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.BetweenExpr;
 
@@ -504,20 +362,10 @@ internal sealed class SqlBetweenExpr : SqlExpr, IEquatable<SqlBetweenExpr>
         High = high;
         IsNegated = isNegated;
     }
-
-    public bool Equals(SqlBetweenExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return IsNegated == other.IsNegated;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlBetweenExpr);
-    public override int GetHashCode() => IsNegated.GetHashCode();
 }
 
 /// <summary>IS NULL / IS NOT NULL expression.</summary>
-internal sealed class SqlIsNullExpr : SqlExpr, IEquatable<SqlIsNullExpr>
+internal sealed class SqlIsNullExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.IsNullExpr;
 
@@ -529,42 +377,22 @@ internal sealed class SqlIsNullExpr : SqlExpr, IEquatable<SqlIsNullExpr>
         Expression = expression;
         IsNegated = isNegated;
     }
-
-    public bool Equals(SqlIsNullExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return IsNegated == other.IsNegated;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlIsNullExpr);
-    public override int GetHashCode() => IsNegated.GetHashCode();
 }
 
 /// <summary>Parenthesized expression.</summary>
-internal sealed class SqlParenExpr : SqlExpr, IEquatable<SqlParenExpr>
+internal sealed class SqlParenExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.ParenExpr;
-
     public SqlExpr Inner { get; }
 
     public SqlParenExpr(SqlExpr inner)
     {
         Inner = inner;
     }
-
-    public bool Equals(SqlParenExpr? other)
-    {
-        if (other is null) return false;
-        return ReferenceEquals(this, other);
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlParenExpr);
-    public override int GetHashCode() => Inner.GetHashCode();
 }
 
 /// <summary>CASE [operand] WHEN ... THEN ... [ELSE ...] END.</summary>
-internal sealed class SqlCaseExpr : SqlExpr, IEquatable<SqlCaseExpr>
+internal sealed class SqlCaseExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.CaseExpr;
 
@@ -579,20 +407,13 @@ internal sealed class SqlCaseExpr : SqlExpr, IEquatable<SqlCaseExpr>
         WhenClauses = whenClauses;
         ElseResult = elseResult;
     }
-
-    public bool Equals(SqlCaseExpr? other)
-    {
-        if (other is null) return false;
-        return ReferenceEquals(this, other);
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlCaseExpr);
-    public override int GetHashCode() => WhenClauses.Count;
 }
 
 /// <summary>A single WHEN condition THEN result pair.</summary>
-internal sealed class SqlWhenClause : IEquatable<SqlWhenClause>
+internal sealed class SqlWhenClause : SqlNode
 {
+    public override SqlNodeKind NodeKind => SqlNodeKind.WhenClause;
+
     public SqlExpr Condition { get; }
     public SqlExpr Result { get; }
 
@@ -601,19 +422,10 @@ internal sealed class SqlWhenClause : IEquatable<SqlWhenClause>
         Condition = condition;
         Result = result;
     }
-
-    public bool Equals(SqlWhenClause? other)
-    {
-        if (other is null) return false;
-        return ReferenceEquals(this, other);
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlWhenClause);
-    public override int GetHashCode() => Condition.GetHashCode();
 }
 
 /// <summary>CAST(expression AS type).</summary>
-internal sealed class SqlCastExpr : SqlExpr, IEquatable<SqlCastExpr>
+internal sealed class SqlCastExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.CastExpr;
 
@@ -625,38 +437,18 @@ internal sealed class SqlCastExpr : SqlExpr, IEquatable<SqlCastExpr>
         Expression = expression;
         TypeName = typeName;
     }
-
-    public bool Equals(SqlCastExpr? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return TypeName == other.TypeName;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlCastExpr);
-    public override int GetHashCode() => TypeName.GetHashCode();
 }
 
 /// <summary>EXISTS (subquery).</summary>
-internal sealed class SqlExistsExpr : SqlExpr, IEquatable<SqlExistsExpr>
+internal sealed class SqlExistsExpr : SqlExpr
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.ExistsExpr;
-
     public SqlSelectStatement Subquery { get; }
 
     public SqlExistsExpr(SqlSelectStatement subquery)
     {
         Subquery = subquery;
     }
-
-    public bool Equals(SqlExistsExpr? other)
-    {
-        if (other is null) return false;
-        return ReferenceEquals(this, other);
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlExistsExpr);
-    public override int GetHashCode() => Subquery.GetHashCode();
 }
 
 // ─────────────────────────────────────────────────────────
@@ -664,7 +456,7 @@ internal sealed class SqlExistsExpr : SqlExpr, IEquatable<SqlExistsExpr>
 // ─────────────────────────────────────────────────────────
 
 /// <summary>A single ORDER BY term: expression [ASC|DESC].</summary>
-internal sealed class SqlOrderTerm : SqlNode, IEquatable<SqlOrderTerm>
+internal sealed class SqlOrderTerm : SqlNode
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.OrderTerm;
 
@@ -676,21 +468,18 @@ internal sealed class SqlOrderTerm : SqlNode, IEquatable<SqlOrderTerm>
         Expression = expression;
         IsDescending = isDescending;
     }
-
-    public bool Equals(SqlOrderTerm? other)
-    {
-        if (other is null) return false;
-        if (ReferenceEquals(this, other)) return true;
-        return IsDescending == other.IsDescending;
-    }
-
-    public override bool Equals(object? obj) => Equals(obj as SqlOrderTerm);
-    public override int GetHashCode() => IsDescending.GetHashCode();
 }
 
 // ─────────────────────────────────────────────────────────
 //  Parse result
 // ─────────────────────────────────────────────────────────
+
+/// <summary>Parse diagnostic severity.</summary>
+internal enum SqlDiagnosticSeverity
+{
+    Error,
+    Warning,
+}
 
 /// <summary>A parse diagnostic (error or warning).</summary>
 internal sealed class SqlParseDiagnostic
@@ -698,15 +487,17 @@ internal sealed class SqlParseDiagnostic
     public int Position { get; }
     public int Length { get; }
     public string Message { get; }
+    public SqlDiagnosticSeverity Severity { get; }
 
-    public SqlParseDiagnostic(int position, int length, string message)
+    public SqlParseDiagnostic(int position, int length, string message, SqlDiagnosticSeverity severity = SqlDiagnosticSeverity.Error)
     {
         Position = position;
         Length = length;
         Message = message;
+        Severity = severity;
     }
 
-    public override string ToString() => $"[{Position}..{Position + Length}] {Message}";
+    public override string ToString() => $"[{Severity}] [{Position}..{Position + Length}] {Message}";
 }
 
 /// <summary>Result of parsing a SQL string.</summary>
