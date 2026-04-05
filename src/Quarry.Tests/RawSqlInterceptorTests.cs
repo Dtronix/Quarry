@@ -397,6 +397,60 @@ public class RawSqlInterceptorTests
     }
 
     [Test]
+    public void GenerateInterceptorsFile_MultipleDtoSites_GeneratesUniqueStructNames()
+    {
+        // Arrange — two DTO sites for different types in the same file
+        var userSite = CreateRawSqlCallSite(
+            InterceptorKind.RawSqlAsync, "UserDto",
+            new RawSqlTypeInfo("UserDto", RawSqlTypeKind.Dto,
+                new[] { new RawSqlPropertyInfo("Name", "string", "GetString", false) }),
+            uniqueId: "site_user");
+
+        var orderSite = CreateRawSqlCallSite(
+            InterceptorKind.RawSqlAsync, "OrderDto",
+            new RawSqlTypeInfo("OrderDto", RawSqlTypeKind.Dto,
+                new[] { new RawSqlPropertyInfo("Total", "decimal", "GetDecimal", false) }),
+            uniqueId: "site_order");
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { userSite, orderSite });
+
+        // Assert — each DTO site gets a uniquely named struct
+        Assert.That(result, Does.Contain("file struct RawSqlReader_UserDto_0 : IRowReader<UserDto>"));
+        Assert.That(result, Does.Contain("file struct RawSqlReader_OrderDto_1 : IRowReader<OrderDto>"));
+        Assert.That(result, Does.Contain("RawSqlAsyncWithReader<UserDto, RawSqlReader_UserDto_0>"));
+        Assert.That(result, Does.Contain("RawSqlAsyncWithReader<OrderDto, RawSqlReader_OrderDto_1>"));
+    }
+
+    [Test]
+    public void RawSqlAsync_AllNonNullableDto_NoIsDBNullGuards()
+    {
+        // Arrange — all properties are non-nullable
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "StrictDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("Id", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("Name", "string", "GetString", false),
+                new RawSqlPropertyInfo("Value", "decimal", "GetDecimal", false)
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "StrictDto", rawSqlTypeInfo);
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Assert — no IsDBNull guards since all properties are non-nullable
+        Assert.That(result, Does.Not.Contain("IsDBNull"));
+        Assert.That(result, Does.Contain("if (_ord0 >= 0) item.Id = r.GetInt32(_ord0);"));
+        Assert.That(result, Does.Contain("if (_ord1 >= 0) item.Name = r.GetString(_ord1);"));
+        Assert.That(result, Does.Contain("if (_ord2 >= 0) item.Value = r.GetDecimal(_ord2);"));
+    }
+
+    [Test]
     public void RawSqlAsync_DtoType_WithGetValueFallback_GeneratesCast()
     {
         // Arrange — simulate an unknown type that falls through to GetValue
