@@ -752,7 +752,8 @@ internal static class SqlExprParser
     private static bool IsSubqueryMethod(string methodName)
     {
         return methodName == "Any" || methodName == "All" || methodName == "Count"
-            || methodName == "Sum" || methodName == "Min" || methodName == "Max" || methodName == "Avg";
+            || methodName == "Sum" || methodName == "Min" || methodName == "Max"
+            || methodName == "Avg" || methodName == "Average";
     }
 
     private static SqlExpr ParseSubqueryCall(
@@ -770,7 +771,7 @@ internal static class SqlExprParser
             "Sum" => SubqueryKind.Sum,
             "Min" => SubqueryKind.Min,
             "Max" => SubqueryKind.Max,
-            "Avg" => SubqueryKind.Avg,
+            "Avg" or "Average" => SubqueryKind.Avg,
             _ => SubqueryKind.Exists
         };
 
