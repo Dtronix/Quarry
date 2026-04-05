@@ -857,6 +857,43 @@ internal sealed class SqlParser
             return new SqlColumnRef(null, name);
         }
 
+        // Soft keyword used as identifier (column ref or function call)
+        if (IsKeywordUsableAsIdentifier(Current.Kind))
+        {
+            var name = TokenText(Advance());
+
+            // Function call: name(...)
+            if (Check(SqlTokenKind.OpenParen))
+            {
+                Advance(); // (
+                var isDistinct = Match(SqlTokenKind.Distinct);
+                var args = new List<SqlExpr>();
+                if (!Check(SqlTokenKind.CloseParen))
+                {
+                    do
+                    {
+                        args.Add(ParseExpression());
+                    } while (Match(SqlTokenKind.Comma));
+                }
+                Expect(SqlTokenKind.CloseParen);
+                return new SqlFunctionCall(name, args, isDistinct);
+            }
+
+            // table.column
+            if (Match(SqlTokenKind.Dot))
+            {
+                if (Check(SqlTokenKind.Star))
+                {
+                    Advance();
+                    return new SqlColumnRef(name, "*");
+                }
+                var colName = ReadIdentifierName();
+                return new SqlColumnRef(name, colName);
+            }
+
+            return new SqlColumnRef(null, name);
+        }
+
         // Unexpected token
         AddDiagnostic($"Unexpected token in expression: {Current.Kind}");
         Advance(); // skip to avoid infinite loop

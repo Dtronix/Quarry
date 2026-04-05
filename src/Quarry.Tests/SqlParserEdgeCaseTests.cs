@@ -434,4 +434,67 @@ public class SqlParserEdgeCaseTests
         var tokens = SqlTokenizer.Tokenize("FIRST", D(SqlDialect.SQLite));
         Assert.That(tokens[0].Kind, Is.EqualTo(SqlTokenKind.First));
     }
+
+    // ─── Soft keywords as column references in expressions ──
+
+    [Test]
+    public void Parse_SoftKeyword_AsColumnInWhere()
+    {
+        // "limit" is a keyword but should work as a column name in expression context
+        var result = Parse("SELECT a FROM t WHERE \"limit\" = 10");
+        Assert.That(result.Success, Is.True);
+        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        Assert.That(((SqlColumnRef)bin.Left).ColumnName, Is.EqualTo("limit"));
+    }
+
+    [Test]
+    public void Parse_SoftKeyword_AsUnquotedColumnInWhere()
+    {
+        // "offset" is a soft keyword — should be recognized as column ref in expression context
+        var result = Parse("SELECT a FROM t WHERE offset = 5");
+        Assert.That(result.Success, Is.True);
+        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        Assert.That(((SqlColumnRef)bin.Left).ColumnName, Is.EqualTo("offset"));
+    }
+
+    [Test]
+    public void Parse_SoftKeyword_AsSelectColumn()
+    {
+        var result = Parse("SELECT \"limit\", \"offset\" FROM t");
+        Assert.That(result.Success, Is.True);
+        Assert.That(result.Statement!.Columns, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public void Parse_SoftKeyword_MultipleSoftKeywordsInWhere()
+    {
+        // "desc" and "asc" as column names
+        var result = Parse("SELECT a FROM t WHERE \"desc\" = 'test' AND \"asc\" = 'other'");
+        Assert.That(result.Success, Is.True);
+        var and = (SqlBinaryExpr)result.Statement!.Where!;
+        Assert.That(and.Operator, Is.EqualTo(SqlBinaryOp.And));
+    }
+
+    [Test]
+    public void Parse_SoftKeyword_AsFunctionCallInExpr()
+    {
+        // A soft keyword followed by ( should be parsed as a function call
+        var result = Parse("SELECT a FROM t WHERE first(b) = 1");
+        Assert.That(result.Success, Is.True);
+        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        var func = (SqlFunctionCall)bin.Left;
+        Assert.That(func.FunctionName, Is.EqualTo("first"));
+    }
+
+    [Test]
+    public void Parse_SoftKeyword_QualifiedColumn()
+    {
+        // soft keyword as table alias prefix: t.limit
+        var result = Parse("SELECT t.\"limit\" FROM t");
+        Assert.That(result.Success, Is.True);
+        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var colRef = (SqlColumnRef)col.Expression;
+        Assert.That(colRef.TableAlias, Is.EqualTo("t"));
+        Assert.That(colRef.ColumnName, Is.EqualTo("limit"));
+    }
 }
