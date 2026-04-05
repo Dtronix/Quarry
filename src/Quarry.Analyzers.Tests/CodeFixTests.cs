@@ -91,4 +91,51 @@ public class CodeFixTests
         Assert.That(actions, Has.Count.EqualTo(1));
         Assert.That(actions[0].Title, Does.Contain("Any"));
     }
+
+    // ── RawSqlToChainCodeFix ──
+
+    [Test]
+    public void RawSqlToChainCodeFix_FixesCorrectDiagnosticId()
+    {
+        var fix = new RawSqlToChainCodeFix();
+        Assert.That(fix.FixableDiagnosticIds, Does.Contain("QRY042"));
+    }
+
+    [Test]
+    public void RawSqlToChainCodeFix_HasFixAllProvider()
+    {
+        var fix = new RawSqlToChainCodeFix();
+        Assert.That(fix.GetFixAllProvider(), Is.Not.Null);
+    }
+
+    [Test]
+    public async Task RawSqlToChainCodeFix_RegistersCodeFix()
+    {
+        var fix = new RawSqlToChainCodeFix();
+        var source = @"class C { void M() { db.RawSqlAsync<User>(""SELECT * FROM users""); } }";
+        var tree = CSharpSyntaxTree.ParseText(source);
+
+        var workspace = new AdhocWorkspace();
+        var project = workspace.AddProject("TestProject", LanguageNames.CSharp);
+        project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        var document = project.AddDocument("Test.cs", SourceText.From(source));
+
+        var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain;
+        var root = await tree.GetRootAsync();
+        var invocation = root.DescendantNodes()
+            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.InvocationExpressionSyntax>().First();
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add("ChainCode", "db.Users()\n    .Select(u => u)\n    .ToAsyncEnumerable()");
+
+        var diagnostic = Diagnostic.Create(descriptor, invocation.GetLocation(), properties);
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(document, diagnostic,
+            (action, _) => actions.Add(action), default);
+
+        await fix.RegisterCodeFixesAsync(context);
+        Assert.That(actions, Has.Count.EqualTo(1));
+        Assert.That(actions[0].Title, Is.EqualTo("Replace with chain query"));
+    }
 }
