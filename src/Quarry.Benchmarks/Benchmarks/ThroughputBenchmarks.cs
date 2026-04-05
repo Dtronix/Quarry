@@ -1,3 +1,4 @@
+using System.Data;
 using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -26,7 +27,7 @@ public class ThroughputBenchmarks : BenchmarkBase
             await using var cmd = Connection.CreateCommand();
             cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE UserId = @id";
             cmd.Parameters.AddWithValue("@id", id);
-            await using var reader = await cmd.ExecuteReaderAsync();
+            await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess | CommandBehavior.SingleRow);
             if (await reader.ReadAsync())
             {
                 _ = new RawUser

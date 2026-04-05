@@ -1,3 +1,4 @@
+using System.Data;
 using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -23,7 +24,7 @@ public class ComplexQueryBenchmarks : BenchmarkBase
             WHERE u.IsActive = 1
             LIMIT 10 OFFSET 5
             """;
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserOrderDto>();
         while (await reader.ReadAsync())
         {
