@@ -200,7 +200,7 @@ public class Service
     #region Unresolvable Generic T
 
     [Test]
-    public void RawSqlAsync_UnresolvableGenericT_DoesNot_GenerateInterceptor()
+    public void RawSqlAsync_UnresolvableGenericT_EmitsQRY031_AndDoesNot_GenerateInterceptor()
     {
         var source = @"
 using Quarry;
@@ -233,9 +233,11 @@ public class Service
         var compilation = CreateCompilation(source);
         var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
 
-        // Should not error
-        Assert.That(result.Diagnostics.Any(d => d.Severity == DiagnosticSeverity.Error), Is.False,
-            "Generator should not error on unresolvable generic T");
+        // QRY031 should be emitted as an error for the unresolvable type parameter
+        var qry031 = diagnostics.FirstOrDefault(d => d.Id == "QRY031");
+        Assert.That(qry031, Is.Not.Null, "QRY031 diagnostic should be emitted for unresolvable generic T");
+        Assert.That(qry031!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry031.GetMessage(), Does.Contain("T"));
 
         var code = GetInterceptorsCode(result);
         // Either no interceptors file, or no RawSqlAsync interceptor for the generic call
@@ -417,7 +419,7 @@ public class Service
         // Interceptor should be generated for the entity type
         Assert.That(code, Does.Contain("RawSqlAsyncWithReader"),
             "Should generate RawSqlAsync interceptor for entity T");
-        Assert.That(code, Does.Contain("Task<List<Order>>"),
+        Assert.That(code, Does.Contain("IAsyncEnumerable<Order>"),
             "Interceptor return type should use the entity type Order");
         Assert.That(code, Does.Contain("new Order()"),
             "Interceptor reader should construct the entity");
