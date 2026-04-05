@@ -807,6 +807,16 @@ internal sealed class FileEmitter
                 }
                 break;
 
+            case InterceptorKind.Union:
+            case InterceptorKind.UnionAll:
+            case InterceptorKind.Intersect:
+            case InterceptorKind.IntersectAll:
+            case InterceptorKind.Except:
+            case InterceptorKind.ExceptAll:
+                if (carrierInfo != null && carrierChain != null)
+                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain);
+                break;
+
             default:
                 InterceptorCodeGenerator.GeneratePlaceholderInterceptor(sb, site, methodName);
                 break;

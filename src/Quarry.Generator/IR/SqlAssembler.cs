@@ -268,7 +268,22 @@ internal static class SqlAssembler
             }
         }
 
-        // ORDER BY
+        // SET OPERATIONS (UNION, INTERSECT, EXCEPT)
+        if (plan.SetOperations.Count > 0)
+        {
+            foreach (var setOp in plan.SetOperations)
+            {
+                sb.Append(' ');
+                sb.Append(GetSetOperatorKeyword(setOp.Kind));
+                sb.Append(' ');
+                // Render the operand's SELECT SQL inline (with its own WHERE/GROUP BY/HAVING)
+                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect);
+                sb.Append(operandSql.Sql);
+                paramIndex += operandSql.ParameterCount;
+            }
+        }
+
+        // ORDER BY (applies to combined result when set operations present)
         var activeOrders = GetActiveTerms(plan.OrderTerms, mask);
         if (activeOrders.Count > 0)
         {
@@ -284,7 +299,7 @@ internal static class SqlAssembler
             }
         }
 
-        // PAGINATION
+        // PAGINATION (applies to combined result when set operations present)
         AppendPagination(sb, plan, dialect, activeOrders.Count > 0, ref paramIndex);
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
@@ -563,6 +578,20 @@ internal static class SqlAssembler
                 sb.Append(pagination);
             }
         }
+    }
+
+    private static string GetSetOperatorKeyword(SetOperatorKind kind)
+    {
+        return kind switch
+        {
+            SetOperatorKind.Union => "UNION",
+            SetOperatorKind.UnionAll => "UNION ALL",
+            SetOperatorKind.Intersect => "INTERSECT",
+            SetOperatorKind.IntersectAll => "INTERSECT ALL",
+            SetOperatorKind.Except => "EXCEPT",
+            SetOperatorKind.ExceptAll => "EXCEPT ALL",
+            _ => "UNION"
+        };
     }
 
     private static string GetJoinKeyword(JoinClauseKind kind)
