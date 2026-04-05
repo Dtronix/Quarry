@@ -7,8 +7,10 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
+using Quarry.Analyzers.Migration;
 using Quarry.Generators.Models;
 using Quarry.Generators.Parsing;
+using Quarry.Generators.Sql.Parser;
 
 namespace Quarry.Analyzers;
 
@@ -100,16 +102,25 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
         if (receiverType != null)
             contextCache.TryGetValue(receiverType.Name, out contextInfo);
 
-        // For Phase 1: emit diagnostic for any string-literal RawSqlAsync on a QuarryContext.
-        // Phase 2 will add convertibility checking before emitting.
-        var properties = ImmutableDictionary<string, string?>.Empty;
+        // Need context info with entities to check convertibility
+        if (contextInfo == null || contextInfo.EntityMappings.Count == 0)
+            return;
 
-        // Store the SQL text for later phases
-        properties = properties.Add("Sql", literal.Token.ValueText);
+        // Parse the SQL string
+        var sql = literal.Token.ValueText;
+        var parseResult = SqlParser.Parse(sql, contextInfo.Dialect);
+        if (!parseResult.Success || parseResult.Statement == null)
+            return;
 
-        // Store the context class name if resolved
-        if (contextInfo != null)
-            properties = properties.Add("ContextClass", contextInfo.ClassName);
+        // Check if the parsed SQL is convertible to a chain query
+        var converter = new SqlToChainConverter(contextInfo);
+        var convertError = converter.CheckConvertibility(parseResult.Statement);
+        if (convertError != null)
+            return;
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add("Sql", sql)
+            .Add("ContextClass", contextInfo.ClassName);
 
         var diagnostic = Diagnostic.Create(
             AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain,

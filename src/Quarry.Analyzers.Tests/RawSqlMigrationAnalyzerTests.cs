@@ -197,4 +197,131 @@ public class TestService
         Assert.That(diagnostics[0].Properties.ContainsKey("Sql"), Is.True);
         Assert.That(diagnostics[0].Properties["Sql"], Is.EqualTo("SELECT * FROM users"));
     }
+
+    // ── Convertibility tests: should report ──
+
+    [Test]
+    public async Task QRY042_SelectWithWhereAndOrderBy_ReportsDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT UserId, UserName FROM users WHERE IsActive = @p0 ORDER BY UserName"", true);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+    }
+
+    [Test]
+    public async Task QRY042_SelectDistinct_ReportsDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT DISTINCT UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+    }
+
+    [Test]
+    public async Task QRY042_SelectWithLimitOffset_ReportsDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users LIMIT 10 OFFSET 5"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+    }
+
+    // ── Convertibility tests: should NOT report ──
+
+    [Test]
+    public async Task QRY042_UnknownTable_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM unknown_table"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_UnknownColumn_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT NonExistent FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_CaseExpression_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT CASE WHEN IsActive = 1 THEN 'Yes' ELSE 'No' END FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_InvalidSql_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""not valid sql at all"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task QRY042_UnsupportedFunction_NoDiagnostic()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT COALESCE(Email, 'none') FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Is.Empty);
+    }
 }
