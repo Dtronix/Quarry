@@ -39,8 +39,8 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("file struct RawSqlReader_UserDto_0 : IRowReader<UserDto>"));
         Assert.That(result, Does.Contain("var item = new UserDto()"));
         // Resolve: ordinal discovery
-        Assert.That(result, Does.Contain("case \"Name\": _ord0 = i; break;"));
-        Assert.That(result, Does.Contain("case \"Email\": _ord1 = i; break;"));
+        Assert.That(result, Does.Contain("case \"name\": _ord0 = i; break;"));
+        Assert.That(result, Does.Contain("case \"email\": _ord1 = i; break;"));
         // Read: non-nullable Name has no IsDBNull guard
         Assert.That(result, Does.Contain("if (_ord0 >= 0) item.Name = r.GetString(_ord0);"));
         // Read: nullable Email has IsDBNull guard
@@ -492,7 +492,7 @@ public class RawSqlInterceptorTests
 
         // Should emit a simple one-liner lambda discarding the reader parameter
         Assert.That(result, Does.Contain("static _ => new EmptyDto()"));
-        Assert.That(result, Does.Not.Contain("switch (r.GetName(i))"));
+        Assert.That(result, Does.Not.Contain("switch (r.GetName(i).ToLowerInvariant())"));
         Assert.That(result, Does.Not.Contain("case \""));
     }
 
@@ -608,12 +608,12 @@ public class RawSqlInterceptorTests
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
         // Struct Resolve: ordinal discovery for all properties
-        Assert.That(result, Does.Contain("case \"Id\": _ord0 = i; break;"));
-        Assert.That(result, Does.Contain("case \"Name\": _ord1 = i; break;"));
-        Assert.That(result, Does.Contain("case \"CreatedAt\": _ord2 = i; break;"));
-        Assert.That(result, Does.Contain("case \"IsActive\": _ord3 = i; break;"));
-        Assert.That(result, Does.Contain("case \"Balance\": _ord4 = i; break;"));
-        Assert.That(result, Does.Contain("case \"Notes\": _ord5 = i; break;"));
+        Assert.That(result, Does.Contain("case \"id\": _ord0 = i; break;"));
+        Assert.That(result, Does.Contain("case \"name\": _ord1 = i; break;"));
+        Assert.That(result, Does.Contain("case \"createdat\": _ord2 = i; break;"));
+        Assert.That(result, Does.Contain("case \"isactive\": _ord3 = i; break;"));
+        Assert.That(result, Does.Contain("case \"balance\": _ord4 = i; break;"));
+        Assert.That(result, Does.Contain("case \"notes\": _ord5 = i; break;"));
         // Struct Read: typed reads with cached ordinals (Notes is nullable, gets IsDBNull)
         Assert.That(result, Does.Contain("item.Id = r.GetInt32(_ord0)"));
         Assert.That(result, Does.Contain("item.Name = r.GetString(_ord1)"));
