@@ -82,7 +82,13 @@ internal static class UsageSiteDiscovery
         ["InsertBatch"] = InterceptorKind.BatchInsertColumnSelector,
         ["Values"] = InterceptorKind.BatchInsertValues,
         ["Trace"] = InterceptorKind.Trace,
-        ["Prepare"] = InterceptorKind.Prepare
+        ["Prepare"] = InterceptorKind.Prepare,
+        ["Union"] = InterceptorKind.Union,
+        ["UnionAll"] = InterceptorKind.UnionAll,
+        ["Intersect"] = InterceptorKind.Intersect,
+        ["IntersectAll"] = InterceptorKind.IntersectAll,
+        ["Except"] = InterceptorKind.Except,
+        ["ExceptAll"] = InterceptorKind.ExceptAll
     };
 
     // Methods on InsertBuilder that need special handling
@@ -704,7 +710,16 @@ internal static class UsageSiteDiscovery
             batchInsertColumnNames = ExtractBatchInsertColumnNamesFromChain(invocation, semanticModel, cancellationToken);
         }
 
-        // ── Step 15b: PreparedQuery escape detection ────────────────────────
+        // ── Step 15b: Set operation operand chain linking ────────────────────
+        string? operandChainId = null;
+        if (kind is InterceptorKind.Union or InterceptorKind.UnionAll
+            or InterceptorKind.Intersect or InterceptorKind.IntersectAll
+            or InterceptorKind.Except or InterceptorKind.ExceptAll)
+        {
+            operandChainId = ExtractSetOperationOperandChainId(invocation, semanticModel, cancellationToken);
+        }
+
+        // ── Step 15c: PreparedQuery escape detection ────────────────────────
         string? preparedQueryEscapeReason = null;
         if (kind == InterceptorKind.Prepare)
         {
@@ -752,7 +767,8 @@ internal static class UsageSiteDiscovery
             batchInsertColumnNames: batchInsertColumnNames,
             isPreparedTerminal: isPreparedTerminal,
             preparedQueryEscapeReason: preparedQueryEscapeReason,
-            isValueTypeResult: isValueTypeResult);
+            isValueTypeResult: isValueTypeResult,
+            operandChainId: operandChainId);
     }
 
     /// <summary>
@@ -1340,6 +1356,60 @@ internal static class UsageSiteDiscovery
     /// Returns a reason string if escaped, null if contained.
     /// Checks: returned from method, passed as argument, captured in lambda, assigned to field/property.
     /// </summary>
+    /// <summary>
+    /// Extracts the ChainId of the operand (right-hand) query builder argument
+    /// for set operation calls (Union, Intersect, Except, etc.).
+    /// The operand is passed as the first argument and may be an invocation chain
+    /// or a variable referencing a builder.
+    /// </summary>
+    private static string? ExtractSetOperationOperandChainId(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        System.Threading.CancellationToken cancellationToken)
+    {
+        if (invocation.ArgumentList.Arguments.Count < 1)
+            return null;
+
+        var operandExpr = invocation.ArgumentList.Arguments[0].Expression;
+
+        // The operand is typically an invocation chain (e.g., db.Users().Where(...))
+        // or a variable referencing a builder (e.g., otherQuery).
+        // Find the outermost invocation in the operand expression to compute its ChainId.
+        if (operandExpr is InvocationExpressionSyntax operandInvocation)
+        {
+            return ComputeChainId(operandInvocation, semanticModel, cancellationToken);
+        }
+
+        // If it's a variable, trace through to find the chain root.
+        // ComputeChainId handles this via VariableTracer when called with
+        // any invocation in the chain, but here we have just an identifier.
+        // Build a synthetic chain lookup from the identifier.
+        if (operandExpr is IdentifierNameSyntax identifier)
+        {
+            var traceResult = VariableTracer.TraceToChainRoot(identifier, semanticModel, cancellationToken, maxHops: 2);
+            var rootExpr = traceResult.Root;
+
+            // Find the containing method to build the ChainId
+            foreach (var ancestor in invocation.Ancestors())
+            {
+                if (ancestor is MethodDeclarationSyntax method)
+                {
+                    var filePath = invocation.SyntaxTree.FilePath;
+                    var varName = traceResult.FirstVariableName ?? identifier.Identifier.ValueText;
+                    return $"{filePath}:{method.Span.Start}:{varName}";
+                }
+                if (ancestor is LocalFunctionStatementSyntax localFunc)
+                {
+                    var filePath = invocation.SyntaxTree.FilePath;
+                    var varName = traceResult.FirstVariableName ?? identifier.Identifier.ValueText;
+                    return $"{filePath}:{localFunc.Span.Start}:{varName}";
+                }
+            }
+        }
+
+        return null;
+    }
+
     internal static string? DetectPreparedQueryEscape(InvocationExpressionSyntax prepareInvocation)
     {
         // Find the variable the .Prepare() result is assigned to
