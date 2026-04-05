@@ -1091,6 +1091,14 @@ SELECT "t0"."UserName", "t1"."Status", "t2"."ProductName", "t2"."Quantity" FROM 
 
 ---
 
+### Users().Join(...).LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" LEFT JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId"
+```
+
+---
+
 ### Users().Join(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1248,6 +1256,54 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 
 ---
 
+### Users().LeftJoin(...).RightJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", "t2"."ProductName" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" RIGHT JOIN "order_items" AS "t2" ON "t1"."OrderId" = "t2"."OrderId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."OrderId" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Priority" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1259,7 +1315,31 @@ SELECT "t0"."UserName" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE NOT ("t0"."IsActive")
 ```
 
 ---
@@ -3190,7 +3270,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 482 |
+| Total discovered | 498 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 148 |
-| Rendered | 334 |
+| Consolidated (deduped) | 154 |
+| Rendered | 344 |
