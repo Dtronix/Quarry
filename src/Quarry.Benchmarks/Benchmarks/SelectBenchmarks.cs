@@ -1,3 +1,4 @@
+using System.Data;
 using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -17,7 +18,7 @@ public class SelectBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {
@@ -88,7 +89,7 @@ public class SelectBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserSummaryDto>();
         while (await reader.ReadAsync())
         {
