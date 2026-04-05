@@ -416,25 +416,28 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        // Interceptor should be generated for the entity type
-        Assert.That(code, Does.Contain("RawSqlAsyncWithReader"),
-            "Should generate RawSqlAsync interceptor for entity T");
+        // Interceptor should be generated with struct-based row reader
+        Assert.That(code, Does.Contain("RawSqlAsyncWithReader<Order,"),
+            "Should generate struct-based RawSqlAsync interceptor for entity T");
         Assert.That(code, Does.Contain("IAsyncEnumerable<Order>"),
             "Interceptor return type should use the entity type Order");
+        Assert.That(code, Does.Contain("IRowReader<Order>"),
+            "Should emit struct implementing IRowReader<Order>");
         Assert.That(code, Does.Contain("new Order()"),
-            "Interceptor reader should construct the entity");
+            "Struct Read method should construct the entity");
 
-        // Entity enrichment should produce a full property-reading switch, not a no-op
+        // Struct Resolve: ordinal discovery via switch
         Assert.That(code, Does.Contain("switch (r.GetName(i))"),
-            "Should generate switch-based reader for enriched entity type");
+            "Should generate switch-based ordinal discovery in Resolve");
         Assert.That(code, Does.Contain("case \"OrderId\""),
             "Should generate switch case for OrderId column");
         Assert.That(code, Does.Contain("case \"Total\""),
             "Should generate switch case for Total column");
         Assert.That(code, Does.Contain("case \"Priority\""),
             "Should generate switch case for Priority column");
-        Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(i)"),
-            "Should generate enum cast for Priority column");
+        // Struct Read: typed reads with cached ordinals
+        Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(_ord"),
+            "Should generate enum cast for Priority column with cached ordinal");
         Assert.That(code, Does.Contain("case \"UserId\""),
             "Should generate switch case for FK UserId column");
         Assert.That(code, Does.Contain("EntityRef<User, int>"),

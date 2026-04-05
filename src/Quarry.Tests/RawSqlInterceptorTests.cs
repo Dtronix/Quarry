@@ -32,13 +32,19 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert
+        // Assert — struct-based row reader
         Assert.That(result, Does.Contain("IAsyncEnumerable<UserDto>"));
         Assert.That(result, Does.Contain("this QuarryContext self"));
-        Assert.That(result, Does.Contain("RawSqlAsyncWithReader"));
+        Assert.That(result, Does.Contain("RawSqlAsyncWithReader<UserDto, RawSqlReader_UserDto_0>"));
+        Assert.That(result, Does.Contain("file struct RawSqlReader_UserDto_0 : IRowReader<UserDto>"));
         Assert.That(result, Does.Contain("var item = new UserDto()"));
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"Email\": item.Email = r.GetString(i); break;"));
+        // Resolve: ordinal discovery
+        Assert.That(result, Does.Contain("case \"Name\": _ord0 = i; break;"));
+        Assert.That(result, Does.Contain("case \"Email\": _ord1 = i; break;"));
+        // Read: non-nullable Name has no IsDBNull guard
+        Assert.That(result, Does.Contain("if (_ord0 >= 0) item.Name = r.GetString(_ord0);"));
+        // Read: nullable Email has IsDBNull guard
+        Assert.That(result, Does.Contain("if (_ord1 >= 0 && !r.IsDBNull(_ord1)) item.Email = r.GetString(_ord1);"));
     }
 
     [Test]
@@ -229,8 +235,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert
-        Assert.That(result, Does.Contain("(UserStatus)r.GetInt32(i)"));
+        // Assert — enum cast uses cached ordinal in struct Read method
+        Assert.That(result, Does.Contain("(UserStatus)r.GetInt32(_ord1)"));
     }
 
     [Test]
@@ -253,8 +259,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert
-        Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(i))"));
+        // Assert — FK wrapper uses cached ordinal in struct Read method
+        Assert.That(result, Does.Contain("new EntityRef<User, int>(r.GetInt32(_ord1))"));
     }
 
     [Test]
@@ -277,8 +283,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert
-        Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(i))"));
+        // Assert — custom type mapping uses cached ordinal in struct Read method
+        Assert.That(result, Does.Contain("new MoneyMapping().FromDb(r.GetDecimal(_ord1))"));
     }
 
     [Test]
@@ -301,9 +307,9 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert — should use typed GetFieldValue, not bare GetValue
-        Assert.That(result, Does.Contain("r.GetFieldValue<byte[]>(i)"));
-        Assert.That(result, Does.Not.Contain("r.GetValue(i)"));
+        // Assert — should use typed GetFieldValue with cached ordinal, not bare GetValue
+        Assert.That(result, Does.Contain("r.GetFieldValue<byte[]>(_ord1)"));
+        Assert.That(result, Does.Not.Contain("r.GetValue(_ord"));
     }
 
     [Test]
@@ -326,8 +332,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert — nullable byte[]? should still use GetFieldValue, with IsDBNull guard from the loop
-        Assert.That(result, Does.Contain("case \"Password\": item.Password = r.GetFieldValue<byte[]>(i); break;"));
+        // Assert — nullable byte[]? should use GetFieldValue with IsDBNull guard in struct Read method
+        Assert.That(result, Does.Contain("if (_ord1 >= 0 && !r.IsDBNull(_ord1)) item.Password = r.GetFieldValue<byte[]>(_ord1);"));
     }
 
     #endregion
@@ -354,10 +360,10 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert - all properties handled (nullable check is via IsDBNull in the for loop)
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"MiddleName\": item.MiddleName = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"Age\": item.Age = r.GetInt32(i); break;"));
+        // Assert — struct Read method: non-nullable has no IsDBNull, nullable has IsDBNull guard
+        Assert.That(result, Does.Contain("if (_ord0 >= 0) item.Name = r.GetString(_ord0);"));
+        Assert.That(result, Does.Contain("if (_ord1 >= 0 && !r.IsDBNull(_ord1)) item.MiddleName = r.GetString(_ord1);"));
+        Assert.That(result, Does.Contain("if (_ord2 >= 0 && !r.IsDBNull(_ord2)) item.Age = r.GetInt32(_ord2);"));
     }
 
     #endregion
@@ -409,8 +415,8 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        // Assert — GetValue result must be cast to the target type
-        Assert.That(result, Does.Contain("(MyNamespace.SomeCustomType)r.GetValue(i)"));
+        // Assert — GetValue result must be cast to the target type, using cached ordinal
+        Assert.That(result, Does.Contain("(MyNamespace.SomeCustomType)r.GetValue(_ord0)"));
     }
 
     #endregion
@@ -547,12 +553,20 @@ public class RawSqlInterceptorTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        Assert.That(result, Does.Contain("case \"Id\": item.Id = r.GetInt32(i); break;"));
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"));
-        Assert.That(result, Does.Contain("case \"CreatedAt\": item.CreatedAt = r.GetDateTime(i); break;"));
-        Assert.That(result, Does.Contain("case \"IsActive\": item.IsActive = r.GetBoolean(i); break;"));
-        Assert.That(result, Does.Contain("case \"Balance\": item.Balance = r.GetDecimal(i); break;"));
-        Assert.That(result, Does.Contain("case \"Notes\": item.Notes = r.GetString(i); break;"));
+        // Struct Resolve: ordinal discovery for all properties
+        Assert.That(result, Does.Contain("case \"Id\": _ord0 = i; break;"));
+        Assert.That(result, Does.Contain("case \"Name\": _ord1 = i; break;"));
+        Assert.That(result, Does.Contain("case \"CreatedAt\": _ord2 = i; break;"));
+        Assert.That(result, Does.Contain("case \"IsActive\": _ord3 = i; break;"));
+        Assert.That(result, Does.Contain("case \"Balance\": _ord4 = i; break;"));
+        Assert.That(result, Does.Contain("case \"Notes\": _ord5 = i; break;"));
+        // Struct Read: typed reads with cached ordinals (Notes is nullable, gets IsDBNull)
+        Assert.That(result, Does.Contain("item.Id = r.GetInt32(_ord0)"));
+        Assert.That(result, Does.Contain("item.Name = r.GetString(_ord1)"));
+        Assert.That(result, Does.Contain("item.CreatedAt = r.GetDateTime(_ord2)"));
+        Assert.That(result, Does.Contain("item.IsActive = r.GetBoolean(_ord3)"));
+        Assert.That(result, Does.Contain("item.Balance = r.GetDecimal(_ord4)"));
+        Assert.That(result, Does.Contain("!r.IsDBNull(_ord5)) item.Notes = r.GetString(_ord5)"));
     }
 
     #endregion

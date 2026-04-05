@@ -248,10 +248,10 @@ public class SignCastReaderTests
         var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
             "AppDbContext", "TestApp", "test0000", new[] { site });
 
-        Assert.That(result, Does.Contain("case \"Ipv4\": item.Ipv4 = (uint)r.GetInt32(i); break;"),
-            "uint DTO property should have cast from GetInt32");
-        Assert.That(result, Does.Contain("case \"Name\": item.Name = r.GetString(i); break;"),
-            "string property should not have cast");
+        Assert.That(result, Does.Contain("item.Ipv4 = (uint)r.GetInt32(_ord0)"),
+            "uint DTO property should have cast from GetInt32 using cached ordinal");
+        Assert.That(result, Does.Contain("item.Name = r.GetString(_ord1)"),
+            "string property should not have cast, using cached ordinal");
     }
 
     #endregion
