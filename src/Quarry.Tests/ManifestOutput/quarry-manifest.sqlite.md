@@ -2307,6 +2307,14 @@ SELECT "UserId", "UserName" FROM "users" WHERE "UserName" LIKE 'User0%'
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT AVG("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 160
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Priority" = 3)) > 2
 ```
 
@@ -2352,6 +2360,50 @@ SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 5
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MAX("sq0"."OrderDate") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `DateTime` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MAX("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MIN("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") < 100
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") = 0 OR NOT (EXISTS (SELECT 1 FROM "orders" AS "sq1" WHERE "sq1"."UserId" = "users"."UserId"))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
 ```
 
 ---
@@ -3114,7 +3166,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 473 |
+| Total discovered | 479 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 148 |
-| Rendered | 325 |
+| Rendered | 331 |
