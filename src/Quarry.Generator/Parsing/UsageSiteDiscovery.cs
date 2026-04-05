@@ -3129,14 +3129,48 @@ internal static class UsageSiteDiscovery
 
         var typeArgSymbol = methodSymbol.TypeArguments[0];
 
-        // If T is an unresolved type parameter, we can't generate a typed interceptor
-        if (typeArgSymbol.TypeKind == TypeKind.TypeParameter)
-            return null;
-
         // Get location information
         var location = GetMethodLocation(invocation);
         if (location == null)
             return null;
+
+        // If T is an unresolved type parameter, emit QRY031 diagnostic via a non-analyzable site.
+        // InterceptableLocationData is intentionally null so the FileEmitter skips code generation.
+        if (typeArgSymbol.TypeKind == TypeKind.TypeParameter)
+        {
+            var (fp, ln, col) = location.Value;
+
+            // Resolve context so the site flows through pipeline grouping
+            var diagContextClassName = ResolveContextFromCallSite(invocation, semanticModel, cancellationToken);
+            if (diagContextClassName == null && invocation.Expression is MemberAccessExpressionSyntax diagMemberAccess)
+            {
+                var receiverTypeInfo = semanticModel.GetTypeInfo(diagMemberAccess.Expression, cancellationToken);
+                if (receiverTypeInfo.Type is INamedTypeSymbol receiverType && IsQuarryContextType(receiverType))
+                {
+                    var candidate = receiverType;
+                    while (candidate != null && candidate.BaseType?.Name != "QuarryContext")
+                        candidate = candidate.BaseType;
+                    diagContextClassName = candidate?.Name ?? receiverType.Name;
+                }
+            }
+
+            return new RawCallSite(
+                methodName: methodSymbol.Name,
+                filePath: fp,
+                line: ln,
+                column: col,
+                uniqueId: GenerateUniqueId(fp, ln, col, methodSymbol.Name),
+                kind: kind,
+                builderKind: BuilderKind.Query,
+                entityTypeName: typeArgSymbol.Name,
+                resultTypeName: typeArgSymbol.Name,
+                isAnalyzable: false,
+                nonAnalyzableReason: typeArgSymbol.Name,
+                interceptableLocationData: null,
+                interceptableLocationVersion: 1,
+                location: new DiagnosticLocation(fp, ln, col, invocation.Span),
+                contextClassName: diagContextClassName);
+        }
 
         var (filePath, line, column) = location.Value;
         var methodName = methodSymbol.Name;
