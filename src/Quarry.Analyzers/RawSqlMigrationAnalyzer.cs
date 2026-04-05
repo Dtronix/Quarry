@@ -118,9 +118,24 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
         if (convertError != null)
             return;
 
+        // Extract the context variable name from the receiver expression
+        var contextVarName = memberAccess.Expression.ToString();
+
+        // Extract parameter arguments (skip the SQL string, skip CancellationToken if present)
+        var parameterArgs = ExtractParameterArgs(invocation, methodSymbol);
+
+        // Check if .ToListAsync() is chained after the RawSqlAsync call
+        var useExecuteFetchAll = IsFollowedByToListAsync(invocation);
+
+        // Generate the chain code
+        var chainCode = converter.Convert(
+            parseResult.Statement, contextVarName, parameterArgs, useExecuteFetchAll);
+
         var properties = ImmutableDictionary<string, string?>.Empty
             .Add("Sql", sql)
-            .Add("ContextClass", contextInfo.ClassName);
+            .Add("ContextClass", contextInfo.ClassName)
+            .Add("ChainCode", chainCode)
+            .Add("UseExecuteFetchAll", useExecuteFetchAll.ToString());
 
         var diagnostic = Diagnostic.Create(
             AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain,
@@ -128,6 +143,41 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
             properties);
 
         nodeContext.ReportDiagnostic(diagnostic);
+    }
+
+    private static List<string> ExtractParameterArgs(
+        InvocationExpressionSyntax invocation, IMethodSymbol methodSymbol)
+    {
+        var args = new List<string>();
+        var arguments = invocation.ArgumentList.Arguments;
+
+        // Skip first argument (SQL string). Remaining are parameters.
+        // If the method has a CancellationToken parameter, skip that too.
+        var hasCancellationToken = methodSymbol.Parameters.Any(p =>
+            p.Type.Name == "CancellationToken");
+
+        var startIndex = hasCancellationToken ? 2 : 1; // skip sql + optional ct
+
+        for (var i = startIndex; i < arguments.Count; i++)
+        {
+            args.Add(arguments[i].Expression.ToString());
+        }
+
+        return args;
+    }
+
+    private static bool IsFollowedByToListAsync(InvocationExpressionSyntax invocation)
+    {
+        // Check if the parent is a member access calling ToListAsync()
+        // Pattern: db.RawSqlAsync<T>("...").ToListAsync()
+        if (invocation.Parent is MemberAccessExpressionSyntax parentMemberAccess
+            && parentMemberAccess.Name.Identifier.Text == "ToListAsync"
+            && parentMemberAccess.Parent is InvocationExpressionSyntax)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private static bool InheritsFromQuarryContext(INamedTypeSymbol? type)

@@ -324,4 +324,128 @@ public class TestService
         var diagnostics = await GetMigrationDiagnosticsAsync(source);
         Assert.That(diagnostics, Is.Empty);
     }
+
+    // ── Chain code generation tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_SimpleSelectStar()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Users()"));
+        Assert.That(chainCode, Does.Contain(".Select(u => u)"));
+        Assert.That(chainCode, Does.Contain(".ToAsyncEnumerable()"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_WhereWithParameter()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db, int userId)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE UserId = @p0"", userId);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Where(u => u.UserId == userId)"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_OrderByDescending()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users ORDER BY UserName DESC"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".OrderBy(u => u.UserName, Direction.Descending)"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_SelectSpecificColumns()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT UserId, UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Select(u => (u.UserId, u.UserName))"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_LimitAndOffset()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users LIMIT 10 OFFSET 5"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Limit(10)"));
+        Assert.That(chainCode, Does.Contain(".Offset(5)"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_Distinct()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT DISTINCT UserName FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Distinct()"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_CountAggregate()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT COUNT(*) FROM users"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("Sql.Count()"));
+    }
 }
