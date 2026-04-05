@@ -632,6 +632,106 @@ public class Service
             "Should not contain runtime column name discovery");
     }
 
+    [Test]
+    public void RawSqlAsync_UnresolvableExpression_EmitsQRY041AndFallsBack()
+    {
+        // SQL with arithmetic expression without alias → QRY041 warning + struct fallback
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class OrderDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+}
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var results = await db.RawSqlAsync<OrderDto>(""SELECT OrderId, price * qty FROM orders"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        // Should fall back to struct-based reader
+        Assert.That(code, Does.Contain("IRowReader<OrderDto>"),
+            "Should fall back to struct-based reader for unresolvable expression");
+        Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
+            "Should use runtime column discovery");
+    }
+
+    [Test]
+    public void RawSqlAsync_VariableSql_FallsBackToStructReader()
+    {
+        // SQL passed as a variable, not a literal → struct fallback
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserDto
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = null!;
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var sql = ""SELECT UserId, UserName FROM users"";
+        var results = await db.RawSqlAsync<UserDto>(sql);
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should generate interceptors file");
+
+        // Variable SQL → struct-based reader (no compile-time resolution)
+        Assert.That(code, Does.Contain("IRowReader<UserDto>"),
+            "Should use struct-based reader for variable SQL");
+    }
+
     #endregion
 
     #region Helpers

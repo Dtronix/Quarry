@@ -536,6 +536,25 @@ internal static class DiagnosticDescriptors
         description: "The Quarry SQL manifest file could not be written to the specified path. " +
                      "Check that the QuarrySqlManifestPath directory exists and is writable.");
 
+    // ─── RawSql compile-time resolution diagnostics (QRY041) ──────────
+
+    /// <summary>
+    /// QRY041: RawSqlAsync column expression without alias.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor RawSqlUnresolvableColumn = new(
+        id: "QRY041",
+        title: "RawSqlAsync column expression without alias",
+        messageFormat: "RawSqlAsync column at position {0} is an expression without an alias. " +
+                       "Add 'AS alias' for compile-time column resolution. " +
+                       "Falling back to runtime ordinal discovery.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "A column in the RawSqlAsync SQL literal is a complex expression (function call, " +
+                     "arithmetic, etc.) without an AS alias. The generator cannot determine the result " +
+                     "column name at compile time and falls back to runtime ordinal discovery.");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>
