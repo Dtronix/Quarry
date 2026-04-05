@@ -430,10 +430,11 @@ internal static class SqlExprBinder
             throughTargetEntity = tte;
         }
 
-        // Bind predicate if present
+        // Bind predicate and/or selector if present
         SqlExpr? boundPredicate = sub.Predicate;
+        SqlExpr? boundSelector = sub.Selector;
         BindContext? innerCtx = null;
-        if (boundPredicate != null && sub.InnerParameterName != null)
+        if ((boundPredicate != null || boundSelector != null) && sub.InnerParameterName != null)
         {
             // For through-navigations, bind predicate in the target entity context
             var predicateEntity = throughTargetEntity ?? targetEntity;
@@ -546,11 +547,14 @@ internal static class SqlExprBinder
                 }
             }
 
-            boundPredicate = BindExpr(boundPredicate, innerCtx, false);
+            if (boundPredicate != null)
+                boundPredicate = BindExpr(boundPredicate, innerCtx, false);
+            if (boundSelector != null)
+                boundSelector = BindExpr(boundSelector, innerCtx, false);
             ctx.SubqueryAliasCounter = innerCtx.SubqueryAliasCounter;
         }
 
-        // For HasManyThrough without predicate: still create junction→target implicit join
+        // For HasManyThrough without predicate or selector: still create junction→target implicit join
         // so that Count()/Any()/All() operate against the target table, not the junction.
         List<ImplicitJoinInfo>? noPredicateThroughJoins = null;
         if (throughTargetEntity != null && innerCtx == null)
@@ -618,7 +622,8 @@ internal static class SqlExprBinder
             sub.InnerParameterName,
             innerTableQuoted,
             innerAliasQuoted,
-            correlationSql);
+            correlationSql,
+            selector: boundSelector);
 
         // Propagate implicit joins from subquery predicate binding or no-predicate through-join
         if (innerCtx != null && innerCtx.ImplicitJoins.Count > 0)
