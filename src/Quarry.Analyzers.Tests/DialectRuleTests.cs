@@ -125,6 +125,48 @@ public class DialectRuleTests
     }
 
     [Test]
+    public void QRA502_SqliteFullOuterJoin_Reports()
+    {
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
+        var context = CreateContext(site, GenSqlDialect.SQLite);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("FULL OUTER JOIN"));
+    }
+
+    [Test]
+    public void QRA502_MysqlFullOuterJoin_Reports()
+    {
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
+        var context = CreateContext(site, GenSqlDialect.MySQL);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("FULL OUTER JOIN"));
+    }
+
+    [Test]
+    public void QRA502_PostgresFullOuterJoin_NoReport()
+    {
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
+        var context = CreateContext(site, GenSqlDialect.PostgreSQL);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA502_SqlServerFullOuterJoin_NoReport()
+    {
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
+        var context = CreateContext(site, GenSqlDialect.SqlServer);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
     public void QRA502_SqlServerOffsetWithoutOrderBy_Reports()
     {
         var rule = new SuboptimalForDialectRule();
