@@ -354,7 +354,7 @@ public class Service
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
         Assert.That(code, Does.Contain("static _ => new ReadOnlyDto()"),
             "Should emit a one-liner lambda discarding the reader when there are no settable properties");
-        Assert.That(code, Does.Not.Contain("switch (r.GetName(i))"),
+        Assert.That(code, Does.Not.Contain("switch (r.GetName(i).ToLowerInvariant())"),
             "Should not emit a switch block when there are no settable properties");
     }
 
@@ -427,18 +427,18 @@ public class Service
             "Struct Read method should construct the entity");
 
         // Struct Resolve: ordinal discovery via switch
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+        Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
             "Should generate switch-based ordinal discovery in Resolve");
-        Assert.That(code, Does.Contain("case \"OrderId\""),
+        Assert.That(code, Does.Contain("case \"orderid\""),
             "Should generate switch case for OrderId column");
-        Assert.That(code, Does.Contain("case \"Total\""),
+        Assert.That(code, Does.Contain("case \"total\""),
             "Should generate switch case for Total column");
-        Assert.That(code, Does.Contain("case \"Priority\""),
+        Assert.That(code, Does.Contain("case \"priority\""),
             "Should generate switch case for Priority column");
         // Struct Read: typed reads with cached ordinals
         Assert.That(code, Does.Contain("(global::TestApp.OrderPriority)r.GetInt32(_ord"),
             "Should generate enum cast for Priority column with cached ordinal");
-        Assert.That(code, Does.Contain("case \"UserId\""),
+        Assert.That(code, Does.Contain("case \"userid\""),
             "Should generate switch case for FK UserId column");
         Assert.That(code, Does.Contain("EntityRef<User, int>"),
             "Should wrap FK column with EntityRef from ColumnInfo metadata");
@@ -485,15 +485,15 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+        Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
             "Should generate switch-based reader for entity type");
-        Assert.That(code, Does.Contain("case \"UserId\""),
+        Assert.That(code, Does.Contain("case \"userid\""),
             "Should generate switch case for UserId");
-        Assert.That(code, Does.Contain("case \"UserName\""),
+        Assert.That(code, Does.Contain("case \"username\""),
             "Should generate switch case for UserName");
-        Assert.That(code, Does.Contain("case \"Email\""),
+        Assert.That(code, Does.Contain("case \"email\""),
             "Should generate switch case for Email");
-        Assert.That(code, Does.Contain("case \"IsActive\""),
+        Assert.That(code, Does.Contain("case \"isactive\""),
             "Should generate switch case for IsActive");
         Assert.That(code, Does.Not.Contain("static _ => new User()"),
             "Should NOT emit no-op reader delegate");
@@ -553,13 +553,13 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        Assert.That(code, Does.Contain("switch (r.GetName(i))"),
+        Assert.That(code, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
             "Should generate switch-based reader for enriched entity type");
-        Assert.That(code, Does.Contain("case \"AccountId\""),
+        Assert.That(code, Does.Contain("case \"accountid\""),
             "Should generate switch case for AccountId");
-        Assert.That(code, Does.Contain("case \"AccountName\""),
+        Assert.That(code, Does.Contain("case \"accountname\""),
             "Should generate switch case for AccountName");
-        Assert.That(code, Does.Contain("case \"Balance\""),
+        Assert.That(code, Does.Contain("case \"balance\""),
             "Should generate switch case for Balance");
         Assert.That(code, Does.Contain("MoneyMapping"),
             "Should reference MoneyMapping in the reader delegate");
@@ -616,11 +616,11 @@ public class Service
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
         // Verify property switch cases are generated for each DTO property
-        Assert.That(code, Does.Contain("case \"UserId\""),
+        Assert.That(code, Does.Contain("case \"userid\""),
             "Should generate switch case for UserId property");
-        Assert.That(code, Does.Contain("case \"UserName\""),
+        Assert.That(code, Does.Contain("case \"username\""),
             "Should generate switch case for UserName property");
-        Assert.That(code, Does.Contain("case \"Email\""),
+        Assert.That(code, Does.Contain("case \"email\""),
             "Should generate switch case for Email property");
     }
 

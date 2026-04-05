@@ -40,11 +40,11 @@ internal static class RawSqlBodyEmitter
         }
         sb.AppendLine($"        for (var i = 0; i < r.FieldCount; i++)");
         sb.AppendLine($"        {{");
-        sb.AppendLine($"            switch (r.GetName(i))");
+        sb.AppendLine($"            switch (r.GetName(i).ToLowerInvariant())");
         sb.AppendLine($"            {{");
         for (int i = 0; i < props.Count; i++)
         {
-            sb.AppendLine($"                case \"{props[i].PropertyName}\": _ord{i} = i; break;");
+            sb.AppendLine($"                case \"{props[i].PropertyName.ToLowerInvariant()}\": _ord{i} = i; break;");
         }
         sb.AppendLine($"            }}");
         sb.AppendLine($"        }}");
@@ -138,13 +138,13 @@ internal static class RawSqlBodyEmitter
             sb.AppendLine($"                for (var i = 0; i < r.FieldCount; i++)");
             sb.AppendLine($"                {{");
             sb.AppendLine($"                    if (r.IsDBNull(i)) continue;");
-            sb.AppendLine($"                    switch (r.GetName(i))");
+            sb.AppendLine($"                    switch (r.GetName(i).ToLowerInvariant())");
             sb.AppendLine($"                    {{");
 
             foreach (var prop in rawSqlInfo.Properties)
             {
                 var assignment = GeneratePropertyAssignment(prop, "i");
-                sb.AppendLine($"                        case \"{prop.PropertyName}\": item.{prop.PropertyName} = {assignment}; break;");
+                sb.AppendLine($"                        case \"{prop.PropertyName.ToLowerInvariant()}\": item.{prop.PropertyName} = {assignment}; break;");
             }
 
             sb.AppendLine($"                    }}");
