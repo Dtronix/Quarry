@@ -97,6 +97,51 @@ public class RawSqlInterceptorTests
 
     #endregion
 
+    #region Case-Insensitive Column Matching Tests
+
+    [Test]
+    public void RawSqlAsync_StructResolve_UsesToLowerInvariantColumnMatching()
+    {
+        // Arrange — properties with mixed casing (PascalCase, as typical C# properties)
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "UserDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserName", "string", "GetString", false),
+                new RawSqlPropertyInfo("EmailAddress", "string", "GetString", true)
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "UserDto", rawSqlTypeInfo);
+
+        // Act
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Assert — Resolve uses ToLowerInvariant for case-insensitive matching
+        Assert.That(result, Does.Contain("switch (r.GetName(i).ToLowerInvariant())"),
+            "Resolve should call ToLowerInvariant() on column names for case-insensitive matching");
+
+        // Assert — case labels are lowercased versions of the property names
+        Assert.That(result, Does.Contain("case \"userid\": _ord0 = i; break;"),
+            "PascalCase 'UserId' should produce lowercase case label 'userid'");
+        Assert.That(result, Does.Contain("case \"username\": _ord1 = i; break;"),
+            "PascalCase 'UserName' should produce lowercase case label 'username'");
+        Assert.That(result, Does.Contain("case \"emailaddress\": _ord2 = i; break;"),
+            "PascalCase 'EmailAddress' should produce lowercase case label 'emailaddress'");
+
+        // Assert — Read method still uses original property names for assignments
+        Assert.That(result, Does.Contain("item.UserId = r.GetInt32(_ord0)"),
+            "Read should use original PascalCase property name for assignment");
+        Assert.That(result, Does.Contain("item.UserName = r.GetString(_ord1)"),
+            "Read should use original PascalCase property name for assignment");
+        Assert.That(result, Does.Contain("item.EmailAddress = r.GetString(_ord2)"),
+            "Read should use original PascalCase property name for assignment");
+    }
+
+    #endregion
+
     #region RawSqlAsync Scalar Interceptor Tests
 
     [Test]
