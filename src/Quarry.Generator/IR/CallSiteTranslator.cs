@@ -65,6 +65,20 @@ internal static class CallSiteTranslator
             return new TranslatedCallSite(bound, clause);
         }
 
+        // CrossJoin has no ON condition — produce a join clause with null expression
+        if (raw.Kind == InterceptorKind.CrossJoin)
+        {
+            var crossClause = new TranslatedClause(
+                kind: ClauseKind.Join,
+                resolvedExpression: new LiteralExpr("1", "int"), // placeholder — not rendered for CROSS JOIN
+                parameters: Array.Empty<Translation.ParameterInfo>(),
+                isSuccess: true,
+                joinKind: JoinClauseKind.Cross,
+                joinedTableName: bound.JoinedEntity?.TableName,
+                joinedSchemaName: bound.JoinedEntity?.SchemaName);
+            return new TranslatedCallSite(bound, crossClause);
+        }
+
         // Non-clause sites: Limit, Offset, Distinct, WithTimeout, ChainRoot,
         // execution terminals, insert/delete transitions, Trace
         if (raw.Expression == null || !IsClauseBearingKind(raw.Kind))

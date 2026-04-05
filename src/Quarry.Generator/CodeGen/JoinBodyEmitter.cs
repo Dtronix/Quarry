@@ -39,6 +39,8 @@ internal static class JoinBodyEmitter
         // Determine if this is a chained join (from JoinedQueryBuilder/3)
         var isChainedJoin = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
 
+        var isCrossJoin = site.Kind == InterceptorKind.CrossJoin;
+
         if (isChainedJoin && site.JoinedEntityTypeName != null)
         {
             var joinedType = InterceptorCodeGenerator.GetShortTypeName(site.JoinedEntityTypeName);
@@ -56,8 +58,9 @@ internal static class JoinBodyEmitter
             {
                 // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
                 sb.AppendLine($"    public static {returnBuilderName}<{returnTypeArgs}> {methodName}(");
-                sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder,");
-                sb.AppendLine($"        Func<{funcTypeArgs}> _)");
+                sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder{(isCrossJoin ? ")" : ",")}");
+                if (!isCrossJoin)
+                    sb.AppendLine($"        Func<{funcTypeArgs}> _)");
                 sb.AppendLine($"    {{");
 
                 // Compute carrier site params
@@ -83,7 +86,12 @@ internal static class JoinBodyEmitter
             // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
             var joinedEntityName = InterceptorCodeGenerator.GetShortTypeName(site.JoinedEntityTypeName ?? site.EntityTypeName);
 
-            if (site.IsNavigationJoin)
+            if (isCrossJoin)
+            {
+                sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
+                sb.AppendLine($"        this {thisType}<{entityType}> builder)");
+            }
+            else if (site.IsNavigationJoin)
             {
                 sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");

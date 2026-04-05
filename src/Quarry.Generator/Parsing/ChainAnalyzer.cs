@@ -519,7 +519,8 @@ internal static class ChainAnalyzer
                             clause.JoinedSchemaName,
                             clause.TableAlias);
                         var joinKind = clause.JoinKind ?? JoinClauseKind.Inner;
-                        joinPlans.Add(new JoinPlan(joinKind, joinTable, expr, raw.IsNavigationJoin));
+                        var onCondition = joinKind == JoinClauseKind.Cross ? null : (SqlExpr?)expr;
+                        joinPlans.Add(new JoinPlan(joinKind, joinTable, onCondition, raw.IsNavigationJoin));
                         break;
                 }
 
@@ -1899,7 +1900,7 @@ internal static class ChainAnalyzer
         if (plan.Joins.Count > 0)
         {
             foreach (var j in plan.Joins)
-                log(chainUid, $"  join: {j.Kind} {j.Table.TableName} ON {FormatExpr(j.OnCondition)}{(j.IsNavigationJoin ? " (navigation)" : "")}");
+                log(chainUid, $"  join: {j.Kind} {j.Table.TableName}{(j.OnCondition != null ? $" ON {FormatExpr(j.OnCondition)}" : "")}{(j.IsNavigationJoin ? " (navigation)" : "")}");
         }
 
         // WHERE terms

@@ -186,11 +186,14 @@ internal static class SqlAssembler
             var alias = join.Table.Alias ?? $"t{i + 1}";
             sb.Append(" AS ");
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
-            sb.Append(" ON ");
 
-            var paramsBefore = CountParameters(join.OnCondition);
-            sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
-            paramIndex += paramsBefore;
+            if (join.OnCondition != null)
+            {
+                sb.Append(" ON ");
+                var paramsBefore = CountParameters(join.OnCondition);
+                sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
+                paramIndex += paramsBefore;
+            }
         }
 
         // Implicit JOINs from One<T> navigation access

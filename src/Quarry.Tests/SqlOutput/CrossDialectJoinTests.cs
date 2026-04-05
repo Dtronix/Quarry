@@ -478,4 +478,32 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Cross Join
+
+    [Test]
+    public async Task CrossJoin_NoOnClause()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().CrossJoin<Order>().Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var pg = Pg.Users().CrossJoin<Pg.Order>().Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var my = My.Users().CrossJoin<My.Order>().Select((u, o) => (u.UserName, o.Total)).Prepare();
+        var ss = Ss.Users().CrossJoin<Ss.Order>().Select((u, o) => (u.UserName, o.Total)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" CROSS JOIN \"orders\" AS \"t1\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" CROSS JOIN \"orders\" AS \"t1\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` CROSS JOIN `orders` AS `t1`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] CROSS JOIN [orders] AS [t1]");
+
+        // Cross join: 3 users × 3 orders = 9 rows
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(9));
+    }
+
+    #endregion
 }
