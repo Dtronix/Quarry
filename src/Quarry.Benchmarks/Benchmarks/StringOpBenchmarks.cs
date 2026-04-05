@@ -1,3 +1,4 @@
+using System.Data;
 using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -17,7 +18,7 @@ public class StringOpBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users WHERE UserName LIKE '%User05%'";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserSummaryDto>();
         while (await reader.ReadAsync())
         {
@@ -101,7 +102,7 @@ public class StringOpBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users WHERE UserName LIKE 'User0%'";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserSummaryDto>();
         while (await reader.ReadAsync())
         {

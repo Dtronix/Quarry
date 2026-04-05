@@ -1,3 +1,4 @@
+using System.Data;
 using BenchmarkDotNet.Attributes;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -17,7 +18,7 @@ public class JoinBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT u.UserName, o.Total FROM users u INNER JOIN orders o ON u.UserId = o.UserId";
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserOrderDto>();
         while (await reader.ReadAsync())
         {
@@ -98,7 +99,7 @@ public class JoinBenchmarks : BenchmarkBase
             INNER JOIN orders o ON u.UserId = o.UserId
             INNER JOIN order_items oi ON o.OrderId = oi.OrderId
             """;
-        await using var reader = await cmd.ExecuteReaderAsync();
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
         var results = new List<UserOrderItemDto>();
         while (await reader.ReadAsync())
         {
