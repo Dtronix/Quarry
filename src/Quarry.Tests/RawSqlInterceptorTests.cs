@@ -287,7 +287,7 @@ public class RawSqlInterceptorTests
     }
 
     [Test]
-    public void RawSqlAsync_EntityType_WithByteArrayProperty_GeneratesGetFieldValue()
+    public void RawSqlAsync_EntityType_WithNullableByteArray_GeneratesGetFieldValueWithIsDBNull()
     {
         // Arrange
         var rawSqlTypeInfo = new RawSqlTypeInfo(
@@ -561,6 +561,58 @@ public class RawSqlInterceptorTests
         Assert.That(result, Does.Contain("item.IsActive = r.GetBoolean(__ord3)"));
         Assert.That(result, Does.Contain("item.Balance = r.GetDecimal(__ord4)"));
         Assert.That(result, Does.Contain("r.IsDBNull(__ord5) ? null : r.GetString(__ord5)"));
+    }
+
+    #endregion
+
+    #region Nullable Enum and FK Tests
+
+    [Test]
+    public void RawSqlAsync_DtoWithNullableEnumProperty_GeneratesIsDBNullGuardWithEnumCast()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "TaskDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("TaskId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("Priority", "int", "GetInt32", true,
+                    isEnum: true, fullClrType: "TaskPriority")
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "TaskDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Non-nullable TaskId: direct assignment
+        Assert.That(result, Does.Contain("item.TaskId = r.GetInt32(__ord0)"));
+        // Nullable enum Priority: IsDBNull guard with enum cast
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord1) ? null : (TaskPriority)r.GetInt32(__ord1)"));
+    }
+
+    [Test]
+    public void RawSqlAsync_DtoWithNullableForeignKey_GeneratesIsDBNullGuardWithEntityRef()
+    {
+        var rawSqlTypeInfo = new RawSqlTypeInfo(
+            "OrderDto",
+            RawSqlTypeKind.Dto,
+            new[]
+            {
+                new RawSqlPropertyInfo("OrderId", "int", "GetInt32", false),
+                new RawSqlPropertyInfo("UserId", "int", "GetInt32", true,
+                    isForeignKey: true, referencedEntityName: "User")
+            });
+
+        var site = CreateRawSqlCallSite(InterceptorKind.RawSqlAsync, "OrderDto", rawSqlTypeInfo);
+
+        var result = InterceptorCodeGenerator.GenerateInterceptorsFile(
+            "AppDbContext", "TestApp", "test0000", new[] { site });
+
+        // Non-nullable OrderId: direct assignment
+        Assert.That(result, Does.Contain("item.OrderId = r.GetInt32(__ord0)"));
+        // Nullable FK UserId: IsDBNull guard with EntityRef wrapper
+        Assert.That(result, Does.Contain("r.IsDBNull(__ord1) ? null : new EntityRef<User, int>(r.GetInt32(__ord1))"));
     }
 
     #endregion
