@@ -341,6 +341,53 @@ public static class QueryExecutor
     }
 
     /// <summary>
+    /// Executes a carrier-optimized query using a struct-based row reader that caches column ordinals.
+    /// The reader's Resolve method is called once after ExecuteReaderAsync, then Read is called per row.
+    /// </summary>
+    public static async IAsyncEnumerable<TResult> ToCarrierAsyncEnumerableWithCommandAsync<TResult, TReader>(
+        long opId, QuarryContext ctx,
+        DbCommand command,
+        [EnumeratorCancellation] CancellationToken ct)
+        where TReader : struct, IRowReader<TResult>
+    {
+        await using var _cmd = command;
+        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+
+        var reader = new TReader();
+        reader.Resolve(dbReader);
+
+        int rowCount = 0;
+        while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+        {
+            TResult result;
+            try
+            {
+                result = reader.Read(dbReader);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
+                    QueryLog.QueryFailed(opId, ex);
+
+                throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            }
+
+            rowCount++;
+            yield return result;
+        }
+
+        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+
+        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+            QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
+
+        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+    }
+
+    /// <summary>
     /// Checks if a query exceeded the slow query threshold and emits a warning.
     /// </summary>
     private static void CheckSlowQuery(long opId, QuarryContext context, double elapsedMs, string sql)
