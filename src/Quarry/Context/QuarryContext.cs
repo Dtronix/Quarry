@@ -189,7 +189,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         }
 
         var results = new List<T>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken);
 
         // Create a runtime reader using reflection (fallback path)
         var type = typeof(T);
@@ -401,7 +401,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         }
 
         var results = new List<T>();
-        await using var dataReader = await command.ExecuteReaderAsync(cancellationToken);
+        await using var dataReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, cancellationToken);
 
         while (await dataReader.ReadAsync(cancellationToken))
         {
