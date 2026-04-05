@@ -570,10 +570,10 @@ public class Service
     }
 
     [Test]
-    public void RawSqlAsync_ConcreteDto_WithProperties_GeneratesPropertySwitch()
+    public void RawSqlAsync_ConcreteDto_WithLiteralSql_GeneratesStaticOrdinalReader()
     {
-        // When T is a concrete DTO that exists in the source, the generator discovers
-        // its properties via the semantic model and generates a switch-based reader.
+        // When T is a concrete DTO with a literal SQL string, the generator parses the SQL
+        // at compile time and emits a static lambda with hardcoded ordinals.
         var source = @"
 using Quarry;
 using System.Threading.Tasks;
@@ -615,13 +615,21 @@ public class Service
         var code = GetInterceptorsCode(result);
         Assert.That(code, Is.Not.Null, "Should generate interceptors file");
 
-        // Verify property switch cases are generated for each DTO property
-        Assert.That(code, Does.Contain("case \"userid\""),
-            "Should generate switch case for UserId property");
-        Assert.That(code, Does.Contain("case \"username\""),
-            "Should generate switch case for UserName property");
-        Assert.That(code, Does.Contain("case \"email\""),
-            "Should generate switch case for Email property");
+        // Compile-time column resolution: static reader with hardcoded ordinals
+        Assert.That(code, Does.Contain("r.GetInt32(0)"),
+            "Should generate hardcoded ordinal 0 for UserId");
+        Assert.That(code, Does.Contain("r.GetString(1)"),
+            "Should generate hardcoded ordinal 1 for UserName");
+        Assert.That(code, Does.Contain("r.GetString(2)"),
+            "Should generate hardcoded ordinal 2 for Email");
+        // Nullable Email should have IsDBNull check
+        Assert.That(code, Does.Contain("!r.IsDBNull(2)"),
+            "Should guard nullable Email with IsDBNull check");
+        // Should NOT contain struct-based reader (no runtime ordinal discovery)
+        Assert.That(code, Does.Not.Contain("IRowReader<UserDto>"),
+            "Should not emit struct-based row reader for literal SQL");
+        Assert.That(code, Does.Not.Contain("switch (r.GetName"),
+            "Should not contain runtime column name discovery");
     }
 
     #endregion

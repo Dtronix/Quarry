@@ -728,6 +728,15 @@ public sealed class QuarryGenerator : IIncrementalGenerator
             var interceptorsSource = emitter.Emit();
             var fileName = $"{group.ContextClassName}.Interceptors.{group.FileTag}.g.cs";
             spc.AddSource(fileName, interceptorsSource);
+
+            // Report diagnostics collected during emission (e.g., QRY041 for unresolvable columns)
+            foreach (var diag in emitter.EmitDiagnostics)
+            {
+                var descriptor = GetDescriptorById(diag.DiagnosticId);
+                if (descriptor == null) continue;
+                var location = CreateLineLocation(diag.Location.FilePath, diag.Location.Line, diag.Location.Column);
+                spc.ReportDiagnostic(Diagnostic.Create(descriptor, location, diag.MessageArgs));
+            }
         }
         catch (Exception ex)
         {

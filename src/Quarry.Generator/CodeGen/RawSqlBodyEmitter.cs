@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
@@ -78,8 +79,16 @@ internal static class RawSqlBodyEmitter
 
     /// <summary>
     /// Emits a RawSqlAsync&lt;T&gt; interceptor with a typed reader delegate or struct reader.
+    /// When <paramref name="resolvedColumns"/> is provided, emits a static lambda with
+    /// compile-time ordinals (zero runtime overhead). Otherwise uses the struct-based reader
+    /// or lambda fallback.
     /// </summary>
-    public static void EmitRawSqlAsync(StringBuilder sb, TranslatedCallSite site, string methodName, string? structName = null)
+    public static void EmitRawSqlAsync(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        string? structName = null,
+        IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>? resolvedColumns = null)
     {
         var rawSqlInfo = site.RawSqlTypeInfo;
         if (rawSqlInfo == null)
@@ -118,6 +127,11 @@ internal static class RawSqlBodyEmitter
             sb.AppendLine($"            static r => {scalarRead},");
             sb.AppendLine($"            {ctArg},");
             sb.AppendLine($"            parameters);");
+        }
+        else if (resolvedColumns != null && resolvedColumns.Count > 0)
+        {
+            // Compile-time column resolution path — static lambda with hardcoded ordinals
+            EmitStaticOrdinalReader(sb, resultType, resolvedColumns, ctArg);
         }
         else if (structName != null && rawSqlInfo.Properties.Count > 0)
         {
@@ -164,6 +178,42 @@ internal static class RawSqlBodyEmitter
         }
 
         sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a static lambda reader with compile-time resolved ordinals.
+    /// Each property is read at its known ordinal position — no runtime discovery needed.
+    /// </summary>
+    private static void EmitStaticOrdinalReader(
+        StringBuilder sb,
+        string resultType,
+        IReadOnlyList<RawSqlColumnResolver.ResolvedColumn> resolvedColumns,
+        string ctArg)
+    {
+        sb.AppendLine($"        return self.RawSqlAsyncWithReader(");
+        sb.AppendLine($"            sql,");
+        sb.AppendLine($"            static r =>");
+        sb.AppendLine($"            {{");
+        sb.AppendLine($"                var item = new {resultType}();");
+
+        foreach (var col in resolvedColumns)
+        {
+            var prop = col.Property;
+            var assignment = GeneratePropertyAssignment(prop, col.Ordinal.ToString());
+            if (prop.IsNullable)
+            {
+                sb.AppendLine($"                if (!r.IsDBNull({col.Ordinal})) item.{prop.PropertyName} = {assignment};");
+            }
+            else
+            {
+                sb.AppendLine($"                item.{prop.PropertyName} = {assignment};");
+            }
+        }
+
+        sb.AppendLine($"                return item;");
+        sb.AppendLine($"            }},");
+        sb.AppendLine($"            {ctArg},");
+        sb.AppendLine($"            parameters);");
     }
 
     /// <summary>

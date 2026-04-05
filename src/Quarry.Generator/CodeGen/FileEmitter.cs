@@ -35,6 +35,12 @@ internal sealed class FileEmitter
     private readonly IReadOnlyList<TranslatedCallSite> _sites;
     private readonly IReadOnlyList<AssembledPlan>? _chains;
     private readonly IReadOnlyList<CarrierPlan>? _carrierPlans;
+    private readonly List<Models.DiagnosticInfo> _emitDiagnostics = new();
+
+    /// <summary>
+    /// Diagnostics collected during <see cref="Emit"/>. Populated after Emit() returns.
+    /// </summary>
+    public IReadOnlyList<Models.DiagnosticInfo> EmitDiagnostics => _emitDiagnostics;
 
     public FileEmitter(
         string contextClassName,
@@ -182,7 +188,9 @@ internal sealed class FileEmitter
             }
         }
 
-        // Emit file struct row readers for RawSql DTO sites at namespace scope
+        // Resolve compile-time column ordinals for RawSql sites with SQL literals.
+        // Sites that resolve successfully get static readers; others fall back to struct readers.
+        var rawSqlResolvedColumns = new Dictionary<string, IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>>();
         var rawSqlStructNames = new Dictionary<string, string>();
         {
             int rawSqlStructIndex = 0;
@@ -193,6 +201,31 @@ internal sealed class FileEmitter
                     && site.RawSqlTypeInfo.TypeKind != RawSqlTypeKind.Scalar
                     && site.RawSqlTypeInfo.Properties.Count > 0)
                 {
+                    // Try compile-time column resolution first
+                    if (site.RawSqlTypeInfo.SqlLiteral != null)
+                    {
+                        var resolution = RawSqlColumnResolver.Resolve(
+                            site.RawSqlTypeInfo.SqlLiteral,
+                            site.Dialect,
+                            site.RawSqlTypeInfo.Properties);
+
+                        if (resolution.IsResolved)
+                        {
+                            rawSqlResolvedColumns[site.UniqueId] = resolution.Columns!;
+                            continue; // Skip struct creation — static reader will be used
+                        }
+
+                        // Resolution failed — collect diagnostic if applicable
+                        if (resolution.UnresolvableColumnPosition >= 0)
+                        {
+                            _emitDiagnostics.Add(new Models.DiagnosticInfo(
+                                "QRY041",
+                                site.Location,
+                                resolution.UnresolvableColumnPosition.ToString()));
+                        }
+                    }
+
+                    // Fall back to struct-based reader
                     var structName = $"RawSqlReader_{site.RawSqlTypeInfo.ResultTypeName}_{rawSqlStructIndex}";
                     rawSqlStructNames[site.UniqueId] = structName;
                     RawSqlBodyEmitter.EmitRowReaderStruct(sb, site.RawSqlTypeInfo, structName);
@@ -373,7 +406,7 @@ internal sealed class FileEmitter
             }
             foreach (var site in sites)
             {
-                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames);
+                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames, rawSqlResolvedColumns);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
@@ -402,7 +435,8 @@ internal sealed class FileEmitter
         Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierLookup = null,
         Dictionary<string, (CarrierPlan Carrier, AssembledPlan Chain)>? carrierClauseLookup = null,
         HashSet<string>? carrierFirstClauseIds = null,
-        Dictionary<string, string>? rawSqlStructNames = null)
+        Dictionary<string, string>? rawSqlStructNames = null,
+        Dictionary<string, IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>>? rawSqlResolvedColumns = null)
     {
         // Trace sites are compile-time-only signals — no interceptor generated
         if (site.Kind == InterceptorKind.Trace)
@@ -686,9 +720,11 @@ internal sealed class FileEmitter
 
             case InterceptorKind.RawSqlAsync:
                 {
+                    IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>? resolvedCols = null;
+                    rawSqlResolvedColumns?.TryGetValue(site.UniqueId, out resolvedCols);
                     string? structName = null;
                     rawSqlStructNames?.TryGetValue(site.UniqueId, out structName);
-                    RawSqlBodyEmitter.EmitRawSqlAsync(sb, site, methodName, structName);
+                    RawSqlBodyEmitter.EmitRawSqlAsync(sb, site, methodName, structName, resolvedCols);
                 }
                 break;
 
