@@ -196,6 +196,11 @@ internal static class ReaderCodeGenerator
         var ordinal = column.Ordinal;
         var readerMethod = column.ReaderMethodName;
         var rawRead = $"r.{readerMethod}({ordinal})";
+        // Use EffectivelyNullable to include join-forced nullability for reader null checks
+        var needsNullCheck = column.EffectivelyNullable;
+        // Join-only nullable: null check needed but return type must stay non-nullable
+        // (the user declared a non-nullable type, but the join can produce NULL at runtime)
+        var joinOnlyNullable = column.IsJoinNullable && !column.IsNullable;
 
         // Handle FK columns — wrap raw key value in new Ref<TEntity, TKey>(...)
         if (column.IsForeignKey && column.ForeignKeyEntityName != null)
@@ -203,9 +208,10 @@ internal static class ReaderCodeGenerator
             var refType = $"EntityRef<{column.ForeignKeyEntityName}, {column.ClrType}>";
 
             // Handle nullable types - need null check
-            if (column.IsNullable)
+            if (needsNullCheck)
             {
-                return $"r.IsDBNull({ordinal}) ? default({refType}?) : new {refType}({rawRead})";
+                var defaultExpr = joinOnlyNullable ? $"default({refType})" : $"default({refType}?)";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : new {refType}({rawRead})";
             }
 
             return $"new {refType}({rawRead})";
@@ -214,9 +220,10 @@ internal static class ReaderCodeGenerator
         // Handle enum columns — cast integral value to enum type
         if (column.IsEnum)
         {
-            if (column.IsNullable)
+            if (needsNullCheck)
             {
-                return $"r.IsDBNull({ordinal}) ? default({column.FullClrType}?) : ({column.FullClrType}){rawRead}";
+                var defaultExpr = joinOnlyNullable ? $"default({column.FullClrType})" : $"default({column.FullClrType}?)";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : ({column.FullClrType}){rawRead}";
             }
 
             return $"({column.FullClrType}){rawRead}";
@@ -226,9 +233,10 @@ internal static class ReaderCodeGenerator
         // (e.g., (uint)r.GetInt32(0) for unsigned, (sbyte)r.GetByte(0) for signed byte)
         if (TypeClassification.NeedsSignCast(column.ClrType))
         {
-            if (column.IsNullable)
+            if (needsNullCheck)
             {
-                return $"r.IsDBNull({ordinal}) ? default({column.ClrType}?) : ({column.ClrType}){rawRead}";
+                var defaultExpr = joinOnlyNullable ? $"default({column.ClrType})" : $"default({column.ClrType}?)";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : ({column.ClrType}){rawRead}";
             }
 
             return $"({column.ClrType}){rawRead}";
@@ -238,10 +246,13 @@ internal static class ReaderCodeGenerator
         if (column.CustomTypeMapping != null)
         {
             var fieldName = InterceptorCodeGenerator.GetMappingFieldName(column.CustomTypeMapping);
-            if (column.IsNullable)
+            if (needsNullCheck)
             {
                 var nullableType = column.IsValueType ? $"{column.ClrType}?" : column.ClrType;
-                return $"r.IsDBNull({ordinal}) ? default({nullableType}) : {fieldName}.FromDb(r.{readerMethod}({ordinal}))";
+                var defaultExpr = joinOnlyNullable
+                    ? (column.IsValueType ? $"default({column.ClrType})" : "default!")
+                    : $"default({nullableType})";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : {fieldName}.FromDb(r.{readerMethod}({ordinal}))";
             }
             return $"{fieldName}.FromDb(r.{readerMethod}({ordinal}))";
         }
@@ -250,27 +261,33 @@ internal static class ReaderCodeGenerator
         if (readerMethod == "GetValue")
         {
             var castType = column.FullClrType ?? column.ClrType;
-            if (column.IsNullable)
+            if (needsNullCheck)
             {
                 var nullableType = column.IsValueType ? $"{castType}?" : castType;
-                return $"r.IsDBNull({ordinal}) ? default({nullableType}) : ({castType})r.GetValue({ordinal})";
+                var defaultExpr = joinOnlyNullable
+                    ? (column.IsValueType ? $"default({castType})" : "default!")
+                    : $"default({nullableType})";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : ({castType})r.GetValue({ordinal})";
             }
             return $"({castType})r.GetValue({ordinal})";
         }
 
         // Handle nullable types - need null check
-        if (column.IsNullable)
+        if (needsNullCheck)
         {
-            // For value types: default(DateTime?) returns null, not DateTime.MinValue
-            // For reference types: use null (idiomatic and type-inference friendly in initializers)
             if (column.IsValueType)
             {
-                var nullableType = $"{column.ClrType}?";
-                return $"r.IsDBNull({ordinal}) ? default({nullableType}) : r.{readerMethod}({ordinal})";
+                // Join-only: return non-nullable default (e.g., 0 for int) to match declared type
+                // Schema-nullable: return nullable default (e.g., default(int?) = null)
+                var defaultExpr = joinOnlyNullable ? "default" : $"default({column.ClrType}?)";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : r.{readerMethod}({ordinal})";
             }
             else
             {
-                return $"r.IsDBNull({ordinal}) ? null : r.{readerMethod}({ordinal})";
+                // Join-only: use default! to suppress nullability warning (type stays non-nullable)
+                // Schema-nullable: use null (type is already nullable)
+                var defaultExpr = joinOnlyNullable ? "default!" : "null";
+                return $"r.IsDBNull({ordinal}) ? {defaultExpr} : r.{readerMethod}({ordinal})";
             }
         }
 
