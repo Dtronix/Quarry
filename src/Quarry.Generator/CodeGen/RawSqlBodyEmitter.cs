@@ -24,7 +24,7 @@ internal static class RawSqlBodyEmitter
 
         if (rawSqlInfo.HasCancellationToken)
         {
-            sb.AppendLine($"    public static Task<List<{resultType}>> {methodName}(");
+            sb.AppendLine($"    public static IAsyncEnumerable<{resultType}> {methodName}(");
             sb.AppendLine($"        this QuarryContext self,");
             sb.AppendLine($"        string sql,");
             sb.AppendLine($"        CancellationToken cancellationToken,");
@@ -32,7 +32,7 @@ internal static class RawSqlBodyEmitter
         }
         else
         {
-            sb.AppendLine($"    public static Task<List<{resultType}>> {methodName}(");
+            sb.AppendLine($"    public static IAsyncEnumerable<{resultType}> {methodName}(");
             sb.AppendLine($"        this QuarryContext self,");
             sb.AppendLine($"        string sql,");
             sb.AppendLine($"        params object?[] parameters)");
