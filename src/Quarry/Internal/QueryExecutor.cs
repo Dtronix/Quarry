@@ -16,40 +16,17 @@ public static class QueryExecutor
 {
     /// <summary>
     /// Executes a carrier-optimized query with a pre-built command and returns all results as a list.
+    /// Delegates to <see cref="ToCarrierAsyncEnumerableWithCommandAsync{TResult}"/> for the actual execution.
     /// </summary>
     public static async Task<List<TResult>> ExecuteCarrierWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
     {
-        await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
-
-        var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
-
         var results = new List<TResult>();
-        try
+        await foreach (var item in ToCarrierAsyncEnumerableWithCommandAsync(opId, ctx, command, reader, ct).ConfigureAwait(false))
         {
-            while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
-            {
-                results.Add(reader(dbReader));
-            }
+            results.Add(item);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                QueryLog.QueryFailed(opId, ex);
-
-            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
-        }
-
-        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-            QueryLog.FetchCompleted(opId, results.Count, elapsedMs);
-
-        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
         return results;
     }
 
