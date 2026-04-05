@@ -128,109 +128,47 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     #region Raw SQL
 
     /// <summary>
-    /// Executes a raw SQL query and returns the results.
+    /// Executes a raw SQL query and streams results as an async enumerable.
     /// </summary>
     /// <typeparam name="T">The result type.</typeparam>
     /// <param name="sql">The SQL query to execute. Use @p0, @p1, etc. for parameter placeholders.</param>
     /// <param name="parameters">Optional parameter values.</param>
-    /// <param name="cancellationToken">Optional cancellation token.</param>
-    /// <returns>A list of results.</returns>
+    /// <returns>An async enumerable of results.</returns>
     /// <remarks>
+    /// <para>This method requires source generation — the Quarry generator emits a typed
+    /// reader delegate at compile time. Calling with an open generic type parameter will
+    /// produce compile error QRY031.</para>
     /// <para>Example:</para>
     /// <code>
+    /// // Stream rows
+    /// await foreach (var user in db.RawSqlAsync&lt;UserDto&gt;("SELECT ..."))
+    ///     Process(user);
+    ///
+    /// // Buffer into list
     /// var results = await db.RawSqlAsync&lt;UserDto&gt;(
     ///     "SELECT user_id, user_name FROM users WHERE created_at > @p0",
-    ///     DateTime.UtcNow.AddDays(-7));
+    ///     DateTime.UtcNow.AddDays(-7)).ToListAsync();
     /// </code>
     /// </remarks>
-    public async Task<List<T>> RawSqlAsync<T>(
+    public IAsyncEnumerable<T> RawSqlAsync<T>(
         string sql,
         params object?[] parameters)
-    {
-        return await RawSqlAsync<T>(sql, CancellationToken.None, parameters);
-    }
+        => RawSqlAsync<T>(sql, CancellationToken.None, parameters);
 
     /// <summary>
-    /// Executes a raw SQL query and returns the results.
+    /// Executes a raw SQL query and streams results as an async enumerable.
     /// </summary>
     /// <typeparam name="T">The result type.</typeparam>
     /// <param name="sql">The SQL query to execute.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <param name="parameters">Optional parameter values.</param>
-    /// <returns>A list of results.</returns>
-    public async Task<List<T>> RawSqlAsync<T>(
+    /// <returns>An async enumerable of results.</returns>
+    public IAsyncEnumerable<T> RawSqlAsync<T>(
         string sql,
         CancellationToken cancellationToken,
         params object?[] parameters)
-    {
-        ArgumentNullException.ThrowIfNull(sql);
-
-        var opId = OpId.Next();
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
-            RawSqlLog.SqlGenerated(opId, sql);
-
-        LogRawParameters(opId, parameters);
-
-        await EnsureConnectionOpenAsync(cancellationToken);
-
-        var startTimestamp = Stopwatch.GetTimestamp();
-        await using var command = _connection.CreateCommand();
-        command.CommandText = sql;
-        command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
-
-        // Add parameters
-        for (int i = 0; i < parameters.Length; i++)
-        {
-            var param = command.CreateParameter();
-            param.ParameterName = $"@p{i}";
-            param.Value = (parameters[i] is SensitiveParameter sp ? sp.Value : parameters[i]) ?? DBNull.Value;
-            command.Parameters.Add(param);
-        }
-
-        var results = new List<T>();
-        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult, cancellationToken);
-
-        // Create a runtime reader using reflection (fallback path)
-        var type = typeof(T);
-        var properties = type.GetProperties();
-
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            var item = Activator.CreateInstance<T>();
-
-            for (int i = 0; i < reader.FieldCount; i++)
-            {
-                var columnName = reader.GetName(i);
-
-                // Find matching property
-                foreach (var prop in properties)
-                {
-                    if (string.Equals(prop.Name, columnName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!reader.IsDBNull(i))
-                        {
-                            var value = reader.GetValue(i);
-                            var targetType = Nullable.GetUnderlyingType(prop.PropertyType) ?? prop.PropertyType;
-                            prop.SetValue(item, Convert.ChangeType(value, targetType));
-                        }
-                        break;
-                    }
-                }
-            }
-
-            results.Add(item);
-        }
-
-        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
-            RawSqlLog.FetchCompleted(opId, results.Count, elapsedMs);
-
-        CheckSlowQuery(opId, elapsedMs, sql);
-
-        return results;
-    }
+        => throw new NotSupportedException(
+            "RawSqlAsync<T> requires source generation. Ensure Quarry.Generator is referenced as an analyzer.");
 
     /// <summary>
     /// Executes a raw SQL command and returns the number of affected rows.
@@ -366,11 +304,11 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     #region Helpers for generated interceptors
 
     /// <summary>
-    /// Executes a raw SQL query using a generated reader delegate instead of reflection.
-    /// Called by source-generated interceptors for RawSqlAsync&lt;T&gt;.
+    /// Executes a raw SQL query using a generated reader delegate and streams results
+    /// as an async enumerable. Called by source-generated interceptors for RawSqlAsync&lt;T&gt;.
     /// </summary>
     [EditorBrowsable(EditorBrowsableState.Never)]
-    public async Task<List<T>> RawSqlAsyncWithReader<T>(
+    public IAsyncEnumerable<T> RawSqlAsyncWithReader<T>(
         string sql,
         Func<DbDataReader, T> reader,
         CancellationToken cancellationToken,
@@ -385,10 +323,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 
         LogRawParameters(opId, parameters);
 
-        await EnsureConnectionOpenAsync(cancellationToken);
-
-        var startTimestamp = Stopwatch.GetTimestamp();
-        await using var command = _connection.CreateCommand();
+        var command = _connection.CreateCommand();
         command.CommandText = sql;
         command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
 
@@ -400,22 +335,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        var results = new List<T>();
-        await using var dataReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, cancellationToken);
-
-        while (await dataReader.ReadAsync(cancellationToken))
-        {
-            results.Add(reader(dataReader));
-        }
-
-        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, RawSqlLog.CategoryName) == true)
-            RawSqlLog.FetchCompleted(opId, results.Count, elapsedMs);
-
-        CheckSlowQuery(opId, elapsedMs, sql);
-
-        return results;
+        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync(opId, this, command, reader, cancellationToken);
     }
 
     /// <summary>
