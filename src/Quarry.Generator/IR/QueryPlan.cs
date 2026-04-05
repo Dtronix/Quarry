@@ -35,12 +35,14 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         string? notAnalyzableReason = null,
         IReadOnlyList<string>? unmatchedMethodNames = null,
         string? forkedVariableName = null,
-        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null)
+        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null,
+        IReadOnlyList<SetOperationPlan>? setOperations = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
         Joins = joins;
         ImplicitJoins = implicitJoins ?? Array.Empty<ImplicitJoinInfo>();
+        SetOperations = setOperations ?? Array.Empty<SetOperationPlan>();
         WhereTerms = whereTerms;
         OrderTerms = orderTerms;
         GroupByExprs = groupByExprs;
@@ -63,6 +65,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public TableRef PrimaryTable { get; }
     public IReadOnlyList<JoinPlan> Joins { get; }
     public IReadOnlyList<ImplicitJoinInfo> ImplicitJoins { get; }
+    public IReadOnlyList<SetOperationPlan> SetOperations { get; }
     public IReadOnlyList<WhereTerm> WhereTerms { get; }
     public IReadOnlyList<OrderTerm> OrderTerms { get; }
     public IReadOnlyList<SqlExpr> GroupByExprs { get; }
@@ -93,6 +96,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && NotAnalyzableReason == other.NotAnalyzableReason
             && EqualityHelpers.SequenceEqual(Joins, other.Joins)
             && EqualityHelpers.SequenceEqual(ImplicitJoins, other.ImplicitJoins)
+            && EqualityHelpers.SequenceEqual(SetOperations, other.SetOperations)
             && EqualityHelpers.SequenceEqual(WhereTerms, other.WhereTerms)
             && EqualityHelpers.SequenceEqual(OrderTerms, other.OrderTerms)
             && EqualityHelpers.SequenceEqual(SetTerms, other.SetTerms)
@@ -517,4 +521,46 @@ internal sealed class InsertColumn : IEquatable<InsertColumn>
 
     public override bool Equals(object? obj) => Equals(obj as InsertColumn);
     public override int GetHashCode() => HashCode.Combine(QuotedColumnName, ParameterIndex, IsIdentity);
+}
+
+/// <summary>
+/// The kind of SQL set operation.
+/// </summary>
+internal enum SetOperatorKind
+{
+    Union,
+    UnionAll,
+    Intersect,
+    IntersectAll,
+    Except,
+    ExceptAll
+}
+
+/// <summary>
+/// A set operation combining the main query with another query (the operand).
+/// </summary>
+internal sealed class SetOperationPlan : IEquatable<SetOperationPlan>
+{
+    public SetOperationPlan(SetOperatorKind kind, QueryPlan operand, int parameterOffset)
+    {
+        Kind = kind;
+        Operand = operand;
+        ParameterOffset = parameterOffset;
+    }
+
+    public SetOperatorKind Kind { get; }
+    public QueryPlan Operand { get; }
+    public int ParameterOffset { get; }
+
+    public bool Equals(SetOperationPlan? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && ParameterOffset == other.ParameterOffset
+            && Operand.Equals(other.Operand);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetOperationPlan);
+    public override int GetHashCode() => HashCode.Combine(Kind, ParameterOffset, Operand.GetHashCode());
 }

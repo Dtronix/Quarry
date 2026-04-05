@@ -257,6 +257,36 @@ internal enum InterceptorKind
     Trace,
 
     /// <summary>
+    /// .Union() method - combines results of two queries, removing duplicates.
+    /// </summary>
+    Union,
+
+    /// <summary>
+    /// .UnionAll() method - combines results of two queries, keeping duplicates.
+    /// </summary>
+    UnionAll,
+
+    /// <summary>
+    /// .Intersect() method - returns only rows present in both queries.
+    /// </summary>
+    Intersect,
+
+    /// <summary>
+    /// .IntersectAll() method - returns only rows present in both queries, keeping duplicates.
+    /// </summary>
+    IntersectAll,
+
+    /// <summary>
+    /// .Except() method - returns rows from the first query that are not in the second.
+    /// </summary>
+    Except,
+
+    /// <summary>
+    /// .ExceptAll() method - returns rows from the first query that are not in the second, keeping duplicates.
+    /// </summary>
+    ExceptAll,
+
+    /// <summary>
     /// Unknown or unsupported method.
     /// </summary>
     Unknown

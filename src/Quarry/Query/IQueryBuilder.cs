@@ -113,6 +113,44 @@ public interface IQueryBuilder<T> where T : class
     IJoinedQueryBuilder<T, TJoined> LeftJoin<TJoined>(Func<T, NavigationList<TJoined>> navigation) where TJoined : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.LeftJoin is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    // ── Set operations ──
+
+    /// <summary>
+    /// Combines this query with another, removing duplicate rows.
+    /// </summary>
+    IQueryBuilder<T> Union(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another, keeping all rows including duplicates.
+    /// </summary>
+    IQueryBuilder<T> UnionAll(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another.
+    /// </summary>
+    IQueryBuilder<T> Intersect(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<T> IntersectAll(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another.
+    /// </summary>
+    IQueryBuilder<T> Except(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<T> ExceptAll(IQueryBuilder<T> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // ── Execution terminals (no Select — result type is the entity type T) ──
 
     /// <summary>
@@ -237,6 +275,88 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// </summary>
     IQueryBuilder<TEntity, TResult> Having(Func<TEntity, bool> predicate)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Having is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // ── Set operations ──
+
+    /// <summary>
+    /// Combines this query with another, removing duplicate rows.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Union(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another from a different entity type, removing duplicate rows.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Union<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another, keeping all rows including duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> UnionAll(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another from a different entity type, keeping all rows including duplicates.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> UnionAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Intersect(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another from a different entity type.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Intersect<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> IntersectAll(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another from a different entity type, keeping duplicates.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> IntersectAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Except(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another from a different entity type.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Except<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> ExceptAll(IQueryBuilder<TEntity, TResult> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another from a different entity type, keeping duplicates.
+    /// Both queries must project to the same result type.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> ExceptAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // ── Execution terminals ──
 
     /// <summary>
     /// Executes the query and returns all results as a list.
