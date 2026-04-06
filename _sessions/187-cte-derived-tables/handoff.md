@@ -4,7 +4,8 @@
 - **CteDef / CteColumn** (`src/Quarry.Generator/IR/CteDef.cs`): CTE definition in the query plan — name, inner SQL, parameters, columns
 - **QueryPlan.CteDefinitions** (`src/Quarry.Generator/IR/QueryPlan.cs`): List of CTEs attached to a query plan
 - **CteDtoResolver** (`src/Quarry.Generator/IR/CteDtoResolver.cs`): Resolves INamedTypeSymbol → EntityInfo/CteColumn from public properties
-- **Context CTE methods** (`src/Quarry.Generator/Generation/ContextCodeGenerator.cs`): With<TDto>(), With<TEntity, TDto>(), FromCte<TDto>()
+- **QuarryContext CTE methods** (`src/Quarry/Context/QuarryContext.cs`): With<TDto>(), With<TEntity, TDto>(), FromCte<TDto>() on base class
+- **Context CTE methods** (`src/Quarry.Generator/Generation/ContextCodeGenerator.cs`): `new` overrides on generated context returning concrete type
 - **InterceptorKind.CteDefinition / FromCte** (`src/Quarry.Generator/Models/InterceptorKind.cs`)
 - **ClauseRole.CteDefinition / FromCte** (`src/Quarry.Generator/Models/OptimizationTier.cs`)
 - **RawCallSite CTE fields** (`src/Quarry.Generator/IR/RawCallSite.cs`): CteEntityTypeName, IsCteInnerChain, CteInnerArgSpanStart, CteColumns
@@ -12,58 +13,64 @@
 - **Two-pass chain analysis** (`src/Quarry.Generator/Parsing/ChainAnalyzer.cs`): Inner chains analyzed first, outer chains compose CteDefinitions
 - **WITH clause rendering** (`src/Quarry.Generator/IR/SqlAssembler.cs`): WITH "name" AS (inner_sql) prefix
 - **CTE interceptor dispatch** (`src/Quarry.Generator/CodeGen/FileEmitter.cs`): Routes CteDefinition/FromCte to TransitionBodyEmitter
-- **CTE interceptor bodies** (`src/Quarry.Generator/CodeGen/TransitionBodyEmitter.cs`): EmitCteDefinition, EmitFromCte
-- **Inner chain suppression** (`src/Quarry.Generator/IR/PipelineOrchestrator.cs`): Filters IsCteInnerChain from file groups
+- **CTE interceptor bodies** (`src/Quarry.Generator/CodeGen/TransitionBodyEmitter.cs`): EmitCteDefinition (Unsafe.As carrier→context), EmitFromCte
+- **Inner chain carrier generation** (`src/Quarry.Generator/Parsing/ChainAnalyzer.cs`): Inner chains added to results for carrier/interceptor generation
 
 ## Completions (This Session)
+- Added With/FromCte to QuarryContext base class (discovery visibility fix)
+- Fixed EmitCteDefinition return type with Unsafe.As
+- Fixed DiscoverCteSite to use concrete receiver context type
+- Added inner CTE chains to ChainAnalyzer results
+- Removed inner chain suppression from PipelineOrchestrator
+- Created CrossDialectCteTests.cs with passing SQLite FromCte test
+
+## Previous Session Completions
+- Phase 1: IR foundation types (CteDef, CteColumn, QueryPlan extension, enum values)
+- Phase 2: Runtime API (With/FromCte methods on generated context)
+- Phase 3: CTE DTO resolver (CteDtoResolver.cs)
 - Phase 4: CTE chain discovery — With/FromCte recognized, inner chains detected and tagged, ChainId differentiated
 - Phase 5: CTE binding — CteColumns resolved during discovery, carried through pipeline
 - Phase 6: Two-pass chain analysis — inner chains analyzed/assembled first, CteDefinitions built for outer QueryPlan
 - Phase 7: WITH clause SQL rendering — prepended before SELECT with parameter offset
 - Phase 8: Code generation — CteDefinition/FromCte interceptor dispatch, inner chain suppression
 
-## Previous Session Completions
-- Phase 1: IR foundation types (CteDef, CteColumn, QueryPlan extension, enum values)
-- Phase 2: Runtime API (With/FromCte methods on generated context)
-- Phase 3: CTE DTO resolver (CteDtoResolver.cs)
-
 ## Progress
-- 8 of 9 phases complete
-- 8 commits on branch: 51c94ba, 509d225, 116fb81, 220ea18, 9f91fc6, 9f6032a, 6f65f42, 7627c99, e3b0970
-- All 2779 tests passing
-- Working tree is clean
+- 8 of 9 phases complete + Phase 9 partially complete
+- 10 commits on branch (8 phases + session artifacts + WIP)
+- All 2780 tests passing (1 new CTE test + 2779 existing)
+- Working tree has uncommitted session artifact changes only
 
 ## Current State
-Full pipeline infrastructure is in place: discovery → binding → chain analysis → SQL assembly → code generation. The remaining work is Phase 9 (end-to-end tests) which will likely surface issues in the carrier creation and parameter handling for CTE chains.
+Full pipeline infrastructure is in place and the simplest CTE test (FromCte with SQLite) passes end-to-end: discovery → binding → chain analysis → SQL assembly → code generation → runtime execution. The CTE WITH clause is correctly generated and executes against SQLite.
 
 ## Known Issues / Bugs
-1. **Carrier creation conflict**: When a chain has both CteDefinition (`With<A>()`) and ChainRoot (`.Users()`), both try to create the carrier. Fix: CteDefinition should create carrier; ChainRoot following CteDefinition should be a noop transition.
-2. **CTE inner parameter extraction**: Inner chain captured variables (e.g., `db.Orders().Where(o => o.Date > cutoffVar)`) don't flow into the outer carrier. The EmitCteDefinition body currently ignores the inner query argument.
-3. **CTE join column resolution**: `Join<CteDto>()` can't resolve CTE DTO columns during binding/translation because CTE DTOs aren't in the EntityRegistry. Need retranslation in ChainAnalyzer using CteColumns from the CteDefinition site.
+1. **Multi-dialect inner chain detection** (BLOCKING): `DetectCteInnerChain` returns false for Pg/My/Ss inner chain sites. For TestDbContext (SQLite), detection works correctly — inner chain gets `:cte-inner:` suffix on ChainId. For PgDb/MyDb/SsDb, the inner chain sites are NOT tagged, causing them to merge with the outer chain group. This breaks CTE composition for non-SQLite dialects.
+   - **Symptoms**: Chain group for pg/my/ss has 6-7 sites including Where+ChainRoot mixed with CteDefinition+FromCte+Select+Prepare
+   - **Likely cause**: The semantic model resolves `Pg.With<Pg.Order>(...)` differently for PgDb than for TestDbContext. Possibly the `GetSymbolInfo` for the parent invocation returns different results, or `IsQuarryContextType` fails for the derived context types through the base class resolution.
+   - **Investigation approach**: Add targeted logging in DetectCteInnerChain to compare `parentSymbol.ContainingType` and `IsQuarryContextType` results for each dialect's inner chain invocations.
+
+2. **Carrier creation conflict** (not yet triggered): When a CTE chain has both CteDefinition and ChainRoot (e.g., `db.With<A>(inner).Users()`), both create carriers. The CteDefinition interceptor now creates the carrier via Unsafe.As. ChainRoot also creates a carrier. Fix needed: ChainRoot should be noop when following CteDefinition.
+
+3. **CTE inner parameter extraction** (not yet triggered): Inner chain captured variables don't flow into outer carrier. The EmitCteDefinition body ignores the inner query argument at runtime.
+
+4. **CTE join column resolution** (not yet triggered): `Join<CteDto>()` can't resolve CTE DTO columns during binding/translation.
 
 ## Dependencies / Blockers
-- None. The remaining work is incremental bug fixes driven by test failures.
+- Issue #1 (multi-dialect detection) blocks cross-dialect test expansion
+- Issues #2-4 block more complex CTE test cases (joins, captured vars)
 
 ## Architecture Decisions
-1. **Two-pass chain analysis**: Inner CTE chains (tagged with IsCteInnerChain, differentiated ChainId with ":cte-inner:XXX" suffix) are analyzed and assembled to SQL before outer chains. Inner chain SQL is embedded in CteDef objects in the outer chain's QueryPlan.
-2. **Inner chains use chain root as virtual execution site**: CTE inner chains have no execution terminal (no ExecuteFetchAllAsync). The chain root (e.g., `.Orders()`) serves as the virtual execution site to provide entity/table/dialect info.
-3. **CteDefinition stays in clauseSites**: CteDefinition and FromCte are not removed from clauseSites — they remain for carrier/interceptor emission while also being processed for CteDefinitions during analysis.
-4. **CTE name = DTO class short name**: Extracted via GetShortTypeName() from the fully qualified CteEntityTypeName.
-5. **CTE columns resolved during discovery**: CteDtoResolver.ResolveColumns is called during DiscoverCteSite so column metadata flows through the incremental pipeline without type symbols.
-6. **Parameter re-indexing**: CTE inner parameters are prepended to the outer chain's parameter list with re-indexed GlobalIndex values. The SQL assembler offsets paramIndex by the CTE parameter count.
+1. **CTE methods on base class**: With/FromCte moved from generated-only to QuarryContext base class. This is required because the incremental generator's discovery phase runs before generated code exists — the semantic model needs the base class methods to resolve call sites. Generated context classes shadow with `new` for concrete return types.
+2. **Inner chains get carriers**: Inner CTE chains are added to ChainAnalyzer results and flow through the full carrier pipeline. At runtime, the inner chain methods create a carrier that's passed to With() and ignored. This avoids the original design's assumption that inner chain interceptors could be suppressed (they can't — the inner chain expression is evaluated as a C# argument before With() is called).
+3. **Unsafe.As for CTE carrier returns**: EmitCteDefinition uses `Unsafe.As<ContextClass>(new Carrier { Ctx = @this })` to return the carrier typed as the context class, since carriers don't inherit from context classes.
 
 ## Open Questions
-- Should CteDefinition create the carrier (chain root for CTE chains) or should it always be a noop, with a separate mechanism for carrier creation?
-- How to handle the `With<TEntity, TDto>` overload in the interceptor signature (two type arguments)?
-- How to handle CTE joins where the ON clause references CTE columns (need EntityInfo for CTE DTO in binding/translation)?
+- Why does DetectCteInnerChain fail for PgDb/MyDb/SsDb but work for TestDbContext?
+- Should CteDefinition create the carrier (current approach) or should ChainRoot?
 
 ## Next Work (Priority Order)
-
-### Phase 9: Cross-Dialect CTE Tests
-1. Define OrderCountDto and similar DTO classes in test project
-2. Start with simplest test: CTE with FromCte (no join, no captured vars)
-3. Fix carrier creation conflict (CteDefinition vs ChainRoot)
-4. Add CTE join test (requires CTE DTO entity resolution during retranslation)
-5. Add captured variable test (requires inner parameter extraction)
-6. Add multiple CTE test
-7. Verify all 4 dialects
+1. **Fix multi-dialect inner chain detection** — Debug DetectCteInnerChain for PgDb/MyDb/SsDb
+2. **Expand tests to 4 dialects** — Restore AssertDialects pattern in CrossDialectCteTests
+3. **Add CTE+Join test** — Requires fixing carrier conflict (#2) and CTE DTO entity resolution (#4)
+4. **Add captured variable test** — Requires inner parameter extraction (#3)
+5. **Add multiple CTE test**
