@@ -13,7 +13,7 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
         ImmutableArray.Create(
             MigrationDiagnosticDescriptors.DapperQueryDetected,
-            MigrationDiagnosticDescriptors.DapperQueryWithRawFallback,
+            MigrationDiagnosticDescriptors.DapperQueryWithWarnings,
             MigrationDiagnosticDescriptors.DapperQueryNotConvertible);
 
     public override void Initialize(AnalysisContext context)
@@ -85,7 +85,7 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
                 .ToList();
             var firstMessage = warnings[0].Message;
             context.ReportDiagnostic(Diagnostic.Create(
-                MigrationDiagnosticDescriptors.DapperQueryWithRawFallback,
+                MigrationDiagnosticDescriptors.DapperQueryWithWarnings,
                 site.Location,
                 warnings.Count,
                 firstMessage));

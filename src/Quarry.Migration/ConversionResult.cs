@@ -13,7 +13,8 @@ internal sealed class ConversionResult
     public string? ChainCode { get; }
 
     /// <summary>
-    /// Diagnostics produced during conversion (warnings for Sql.Raw fallbacks, etc.).
+    /// Diagnostics produced during conversion (warnings for Sql.Raw fallbacks,
+    /// no-WHERE DML, INSERT manual-conversion suggestions, etc.).
     /// </summary>
     public IReadOnlyList<ConversionDiagnostic> Diagnostics { get; }
 

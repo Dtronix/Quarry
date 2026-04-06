@@ -52,7 +52,8 @@ public sealed class DapperConverter
                     originalSql: site.Sql,
                     chainCode: result.ChainCode,
                     diagnostics: result.Diagnostics.Select(d => new DapperConversionDiagnostic(
-                        d.Severity.ToString(), d.Message)).ToList()));
+                        d.Severity.ToString(), d.Message)).ToList(),
+                    isSuggestionOnly: result.IsSuggestionOnly));
             }
         }
 
@@ -98,10 +99,19 @@ public sealed class DapperConversionEntry
     public string? ChainCode { get; }
     public IReadOnlyList<DapperConversionDiagnostic> Diagnostics { get; }
 
+    /// <summary>
+    /// True when <see cref="ChainCode"/> is a manual-conversion suggestion (comment text)
+    /// rather than a substitutable C# expression — e.g. for INSERT statements which
+    /// require constructing an entity object the translator cannot synthesize.
+    /// Tools should treat such entries as a separate bucket from auto-convertible calls.
+    /// </summary>
+    public bool IsSuggestionOnly { get; }
+
     public DapperConversionEntry(
         string filePath, int line, string dapperMethod, string? resultType,
         string originalSql, string? chainCode,
-        IReadOnlyList<DapperConversionDiagnostic> diagnostics)
+        IReadOnlyList<DapperConversionDiagnostic> diagnostics,
+        bool isSuggestionOnly = false)
     {
         FilePath = filePath;
         Line = line;
@@ -110,9 +120,16 @@ public sealed class DapperConversionEntry
         OriginalSql = originalSql;
         ChainCode = chainCode;
         Diagnostics = diagnostics;
+        IsSuggestionOnly = isSuggestionOnly;
     }
 
-    public bool IsConvertible => ChainCode != null;
+    /// <summary>
+    /// True when the Dapper call was translated to a substitutable Quarry chain expression.
+    /// Returns false for both unconvertible calls (no chain code) AND suggestion-only
+    /// outputs (e.g. INSERT comment templates) which cannot be auto-applied.
+    /// </summary>
+    public bool IsConvertible => ChainCode != null && !IsSuggestionOnly;
+
     public bool HasWarnings => Diagnostics.Any(d => d.Severity == "Warning");
 }
 
