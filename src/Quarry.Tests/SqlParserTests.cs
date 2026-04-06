@@ -532,9 +532,17 @@ public class SqlParserTests
     }
 
     [Test]
-    public void Parse_NonSelectStatement_HasDiagnostics()
+    public void Parse_NonSelectStatement_NowSupported()
     {
         var result = Parse("INSERT INTO t VALUES (1)");
+        Assert.That(result.Statement, Is.Not.Null);
+        Assert.That(result.Statement, Is.TypeOf<SqlInsertStatement>());
+    }
+
+    [Test]
+    public void Parse_UnknownStatement_HasDiagnostics()
+    {
+        var result = Parse("TRUNCATE TABLE t");
         Assert.That(result.Statement, Is.Null);
         Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
     }
