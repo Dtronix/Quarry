@@ -57,10 +57,10 @@
 ## Classifications
 | Finding | Section | Class | Action Taken |
 |---------|---------|-------|--------------|
-| Missing test for UPDATE with computed expression values (`count = count + 1`) | Test Quality | Gap | Noted for follow-up |
-| Missing test for DELETE with table alias | Test Quality | Gap | Noted for follow-up |
-| No DML analyzer integration (ExecuteAsync not routed through ChainEmitter) | Integration | Gap | Noted as future work -- emitter is ready, analyzer needs extension |
-| Duplicated table-lookup logic between `TranslateInsert` and `RegisterPrimaryTable` | Correctness | Nit | Minor duplication, acceptable given INSERT's unique comment-only output |
+| Missing test for UPDATE with computed expression values (`count = count + 1`) | Test Quality | (B) Gap | Add test in REMEDIATE |
+| Missing test for DELETE with table alias | Test Quality | (B) Gap | Add test in REMEDIATE |
+| Missing end-to-end DML analyzer test (DapperMigrationAnalyzer + ExecuteAsync + DML SQL) — VERIFIED 2026-04-06: agent's "no integration" claim was wrong, DapperMigrationAnalyzer routes ExecuteAsync through ChainEmitter for all SQL types; only the test is missing | Integration | (B) Gap | Add test in REMEDIATE |
+| Duplicated table-lookup logic between `TranslateInsert` and `RegisterPrimaryTable` | Correctness | (B) Gap | Refactor in REMEDIATE — user requested fix-all |
 
 ## Issues Created
-None -- all findings are low severity or intentional gaps for future work. The implementation is solid, well-tested, and faithfully follows the plan.
+None — all findings addressed in REMEDIATE.
