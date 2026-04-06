@@ -146,6 +146,12 @@ internal static class UsageSiteDiscovery
             && methodName.Length > 0 && char.IsUpper(methodName[0]))
             return true;
 
+        // CTE definition method — has arguments, so needs explicit check
+        if (methodName == "With"
+            && invocation.ArgumentList.Arguments.Count > 0
+            && invocation.Expression is MemberAccessExpressionSyntax)
+            return true;
+
         return false;
     }
 
@@ -257,6 +263,12 @@ internal static class UsageSiteDiscovery
             return DiscoverRawSqlUsageSite(invocation, methodSymbol, containingType, rawSqlKind, semanticModel, cancellationToken);
         }
 
+        // ── Step 3b: CTE method detection ─────────────────────────────────
+        if (IsQuarryContextType(containingType) && methodName is "With" or "FromCte")
+        {
+            return DiscoverCteSite(invocation, methodSymbol, containingType, methodName, semanticModel, cancellationToken);
+        }
+
         // ── Step 4: Chain root detection ───────────────────────────────────
         if (IsQuarryContextType(containingType)
             && methodSymbol.Parameters.Length == 0
@@ -299,6 +311,9 @@ internal static class UsageSiteDiscovery
 
             var crChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
             var crIsInsideLoop = DetectLoopAncestor(invocation);
+            var (crIsCteInner, crCteArgStart) = DetectCteInnerChain(invocation, semanticModel, cancellationToken);
+            if (crIsCteInner && crChainId != null)
+                crChainId += $":cte-inner:{crCteArgStart}";
 
             return new RawCallSite(
                 methodName: methodName,
@@ -319,7 +334,8 @@ internal static class UsageSiteDiscovery
                 contextNamespace: contextNamespace,
                 builderTypeName: "IQueryBuilder",
                 chainId: crChainId,
-                isInsideLoop: crIsInsideLoop);
+                isInsideLoop: crIsInsideLoop,
+                isCteInnerChain: crIsCteInner);
         }
 
         // ── Step 5: Builder type / extension method check ──────────────────
@@ -664,6 +680,9 @@ internal static class UsageSiteDiscovery
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
         var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+        var (isCteInnerChain, cteArgSpanStart) = DetectCteInnerChain(invocation, semanticModel, cancellationToken);
+        if (isCteInnerChain && chainId != null)
+            chainId += $":cte-inner:{cteArgSpanStart}";
 
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
             DetectVariableDisqualifiers(invocation, semanticModel);
@@ -780,7 +799,8 @@ internal static class UsageSiteDiscovery
             isValueTypeResult: isValueTypeResult,
             operandChainId: operandChainId,
             operandArgEndLine: operandArgEndLine,
-            operandArgEndColumn: operandArgEndColumn);
+            operandArgEndColumn: operandArgEndColumn,
+            isCteInnerChain: isCteInnerChain);
     }
 
     /// <summary>
@@ -3198,6 +3218,126 @@ internal static class UsageSiteDiscovery
             current = current.BaseType;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Discovers a CTE usage site (With or FromCte on QuarryContext).
+    /// </summary>
+    private static RawCallSite? DiscoverCteSite(
+        InvocationExpressionSyntax invocation,
+        IMethodSymbol methodSymbol,
+        INamedTypeSymbol containingType,
+        string methodName,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var location = GetMethodLocation(invocation);
+        if (location == null)
+            return null;
+
+        var (filePath, line, column) = location.Value;
+
+        string? interceptableLocationData = null;
+        int interceptableLocationVersion = 1;
+#if QUARRY_GENERATOR
+        try
+        {
+#pragma warning disable RSEXPERIMENTAL002
+            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+            if (interceptableLocation != null)
+            {
+                interceptableLocationData = interceptableLocation.Data;
+                interceptableLocationVersion = interceptableLocation.Version;
+            }
+        }
+        catch { }
+#endif
+        if (interceptableLocationData == null)
+            return null;
+
+        var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+        var kind = methodName == "With" ? InterceptorKind.CteDefinition : InterceptorKind.FromCte;
+
+        // Extract TDto type from type arguments.
+        // With<TDto>(inner) has 1 type arg; With<TEntity, TDto>(inner) has 2 — TDto is always last.
+        string? cteEntityTypeName = null;
+        if (methodSymbol.TypeArguments.Length >= 1)
+        {
+            var dtoType = methodSymbol.TypeArguments[methodSymbol.TypeArguments.Length - 1];
+            cteEntityTypeName = dtoType.ToFullyQualifiedDisplayString();
+        }
+
+        // For CteDefinition, store the argument's SpanStart for matching to inner chain groups
+        int? cteInnerArgSpanStart = null;
+        if (kind == InterceptorKind.CteDefinition
+            && invocation.ArgumentList.Arguments.Count > 0)
+        {
+            cteInnerArgSpanStart = invocation.ArgumentList.Arguments[0].SpanStart;
+        }
+
+        var contextClassName = containingType.Name;
+        var contextNamespace = containingType.ContainingNamespace?.IsGlobalNamespace == false
+            ? containingType.ContainingNamespace.ToDisplayString()
+            : null;
+
+        var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
+        var isInsideLoop = DetectLoopAncestor(invocation);
+
+        // Use the CTE DTO type as the entity type placeholder
+        var entityTypeName = cteEntityTypeName ?? "object";
+
+        return new RawCallSite(
+            methodName: methodName,
+            filePath: filePath,
+            line: line,
+            column: column,
+            uniqueId: uniqueId,
+            kind: kind,
+            builderKind: BuilderKind.Query,
+            entityTypeName: entityTypeName,
+            resultTypeName: null,
+            isAnalyzable: true,
+            nonAnalyzableReason: null,
+            interceptableLocationData: interceptableLocationData,
+            interceptableLocationVersion: interceptableLocationVersion,
+            location: new DiagnosticLocation(filePath, line, column, invocation.Span),
+            contextClassName: contextClassName,
+            contextNamespace: contextNamespace,
+            chainId: chainId,
+            isInsideLoop: isInsideLoop,
+            cteEntityTypeName: cteEntityTypeName,
+            cteInnerArgSpanStart: cteInnerArgSpanStart);
+    }
+
+    /// <summary>
+    /// Detects whether an invocation is inside a CTE inner chain (argument to a With() call).
+    /// Returns the flag and the argument's SpanStart for ChainId differentiation.
+    /// </summary>
+    private static (bool IsCteInner, int ArgSpanStart) DetectCteInnerChain(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken ct)
+    {
+        foreach (var ancestor in invocation.Ancestors())
+        {
+            // Stop at method/function boundaries
+            if (ancestor is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax)
+                break;
+
+            if (ancestor is ArgumentSyntax arg
+                && arg.Parent is ArgumentListSyntax argList
+                && argList.Parent is InvocationExpressionSyntax parentInvocation
+                && parentInvocation.Expression is MemberAccessExpressionSyntax parentMa
+                && parentMa.Name.Identifier.ValueText == "With")
+            {
+                // Syntactic match — verify semantically that it's a Quarry CTE method
+                var parentSymbol = semanticModel.GetSymbolInfo(parentInvocation, ct).Symbol as IMethodSymbol;
+                if (parentSymbol != null && IsQuarryContextType(parentSymbol.ContainingType))
+                    return (true, arg.SpanStart);
+            }
+        }
+        return (false, -1);
     }
 
     /// <summary>
