@@ -356,5 +356,81 @@ internal class CrossDialectSetOperationTests
         Assert.That(results, Has.Count.EqualTo(3));
     }
 
+    [Test]
+    public async Task Union_WithCapturedVariable_PostUnionWhere_ThreeLayerParams()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minId = 1;
+        var maxId = 3;
+        var postFilter = 2;
+        var lt = Lite.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId == postFilter).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId == postFilter).Prepare();
+        var my = My.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(My.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId == postFilter).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId == postFilter).Prepare();
+
+        // Verify 3-layer parameter indices: @p0 (left), @p1 (operand), @p2 (post-union)
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT * FROM (SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= @p1) AS \"__set\" WHERE \"UserId\" = @p2",
+            pg:     "SELECT * FROM (SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= $1 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= $2) AS \"__set\" WHERE \"UserId\" = $3",
+            mysql:  "SELECT * FROM (SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ?) AS `__set` WHERE `UserId` = ?",
+            ss:     "SELECT * FROM (SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1) AS [__set] WHERE [UserId] = @p2");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Left: UserId >= 1 = all 3 users. Operand: UserId <= 3 = all 3 users.
+        // UNION: all 3 users. Post-union WHERE UserId == 2: (2,Bob) → 1 result
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Bob"));
+    }
+
+    [Test]
+    public async Task Union_WithCapturedVariable_PostUnionOrderBy()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minId = 1;
+        var maxId = 3;
+        var lt = Lite.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .OrderBy(u => u.UserName, Direction.Descending).Limit(2).Prepare();
+        var pg = Pg.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .OrderBy(u => u.UserName, Direction.Descending).Limit(2).Prepare();
+        var my = My.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(My.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .OrderBy(u => u.UserName, Direction.Descending).Limit(2).Prepare();
+        var ss = Ss.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .OrderBy(u => u.UserName, Direction.Descending).Limit(2).Prepare();
+
+        // Verify parameter indices: @p0 (left WHERE), @p1 (operand WHERE), ORDER BY + LIMIT applied directly
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= @p1 ORDER BY \"UserName\" DESC LIMIT 2",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= $1 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= $2 ORDER BY \"UserName\" DESC LIMIT 2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ? ORDER BY `UserName` DESC LIMIT 2",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1 ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All 3 users in both sides → UNION = 3 unique. ORDER BY UserName DESC: Charlie, Bob, Alice.
+        // LIMIT 2: Charlie, Bob
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserName, Is.EqualTo("Charlie"));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+    }
+
     #endregion
 }

@@ -3093,6 +3093,19 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "User
 
 ---
 
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p1 ORDER BY "UserName" DESC LIMIT 2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
 ### Users().Where(...).Select(...).Union(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3119,6 +3132,20 @@ SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "Use
 |-----------|------|
 | `@p0` | `int` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p1) AS "__set" WHERE "UserId" = @p2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -3423,7 +3450,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 523 |
+| Total discovered | 527 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 161 |
-| Rendered | 362 |
+| Consolidated (deduped) | 163 |
+| Rendered | 364 |

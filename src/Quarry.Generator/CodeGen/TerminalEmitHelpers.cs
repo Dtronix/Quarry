@@ -26,6 +26,7 @@ internal static class TerminalEmitHelpers
         string siteUniqueId)
     {
         var globalParamOffset = 0;
+        var setOpIndex = 0;
         foreach (var clause in chain.GetClauseEntries())
         {
             if (clause.Site.UniqueId == siteUniqueId)
@@ -38,6 +39,14 @@ internal static class TerminalEmitHelpers
             }
             if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
                 globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
+            else if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
+            {
+                // Set operation operand parameters occupy carrier fields between
+                // the left chain's params and any post-union clause params.
+                if (setOpIndex < chain.Plan.SetOperations.Count)
+                    globalParamOffset += chain.Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
+                setOpIndex++;
+            }
             else if (clause.Site.Clause != null)
                 globalParamOffset += clause.Site.Clause.Parameters.Count;
             else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
