@@ -61,7 +61,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         string? cteEntityTypeName = null,
         bool isCteInnerChain = false,
         int? cteInnerArgSpanStart = null,
-        IReadOnlyList<CteColumn>? cteColumns = null)
+        IReadOnlyList<CteColumn>? cteColumns = null,
+        string? operandEntityTypeName = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -111,6 +112,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsCteInnerChain = isCteInnerChain;
         CteInnerArgSpanStart = cteInnerArgSpanStart;
         CteColumns = cteColumns;
+        OperandEntityTypeName = operandEntityTypeName;
     }
 
     // Identity and location
@@ -209,6 +211,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // CTE DTO column metadata resolved during discovery (for CteDefinition sites)
     public IReadOnlyList<CteColumn>? CteColumns { get; }
 
+    // Fully-qualified entity type name of the operand in cross-entity set operations (e.g., Union<TOther>).
+    // Null for same-entity set operations.
+    public string? OperandEntityTypeName { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -282,7 +288,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             cteEntityTypeName: CteEntityTypeName,
             isCteInnerChain: IsCteInnerChain,
             cteInnerArgSpanStart: CteInnerArgSpanStart,
-            cteColumns: CteColumns);
+            cteColumns: CteColumns,
+            operandEntityTypeName: OperandEntityTypeName);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -343,7 +350,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && CteEntityTypeName == other.CteEntityTypeName
             && IsCteInnerChain == other.IsCteInnerChain
             && CteInnerArgSpanStart == other.CteInnerArgSpanStart
-            && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns);
+            && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns)
+            && OperandEntityTypeName == other.OperandEntityTypeName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

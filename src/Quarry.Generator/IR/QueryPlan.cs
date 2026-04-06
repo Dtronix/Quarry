@@ -557,16 +557,23 @@ internal enum SetOperatorKind
 /// </summary>
 internal sealed class SetOperationPlan : IEquatable<SetOperationPlan>
 {
-    public SetOperationPlan(SetOperatorKind kind, QueryPlan operand, int parameterOffset)
+    public SetOperationPlan(SetOperatorKind kind, QueryPlan operand, int parameterOffset, string? operandEntityTypeName = null)
     {
         Kind = kind;
         Operand = operand;
         ParameterOffset = parameterOffset;
+        OperandEntityTypeName = operandEntityTypeName;
     }
 
     public SetOperatorKind Kind { get; }
     public QueryPlan Operand { get; }
     public int ParameterOffset { get; }
+
+    /// <summary>
+    /// Fully-qualified entity type name of the operand for cross-entity set operations.
+    /// Null for same-entity set operations.
+    /// </summary>
+    public string? OperandEntityTypeName { get; }
 
     public bool Equals(SetOperationPlan? other)
     {
@@ -574,9 +581,10 @@ internal sealed class SetOperationPlan : IEquatable<SetOperationPlan>
         if (ReferenceEquals(this, other)) return true;
         return Kind == other.Kind
             && ParameterOffset == other.ParameterOffset
+            && OperandEntityTypeName == other.OperandEntityTypeName
             && Operand.Equals(other.Operand);
     }
 
     public override bool Equals(object? obj) => Equals(obj as SetOperationPlan);
-    public override int GetHashCode() => HashCode.Combine(Kind, ParameterOffset, Operand.GetHashCode());
+    public override int GetHashCode() => HashCode.Combine(Kind, ParameterOffset, OperandEntityTypeName, Operand.GetHashCode());
 }
