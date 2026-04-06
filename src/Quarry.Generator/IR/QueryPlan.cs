@@ -115,6 +115,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
             && EqualityHelpers.SqlExprSequenceEqual(GroupByExprs, other.GroupByExprs)
             && EqualityHelpers.SqlExprSequenceEqual(HavingExprs, other.HavingExprs)
+            && EqualityHelpers.SqlExprSequenceEqual(PostUnionGroupByExprs, other.PostUnionGroupByExprs)
+            && EqualityHelpers.SqlExprSequenceEqual(PostUnionHavingExprs, other.PostUnionHavingExprs)
             && EqualityHelpers.SequenceEqual(PossibleMasks, other.PossibleMasks)
             && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames)
             && ForkedVariableName == other.ForkedVariableName;

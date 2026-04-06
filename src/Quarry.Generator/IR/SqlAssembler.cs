@@ -143,10 +143,10 @@ internal static class SqlAssembler
         };
     }
 
-    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset = 0)
     {
         var sb = new StringBuilder();
-        var paramIndex = 0;
+        var paramIndex = paramBaseOffset;
 
         // SELECT
         sb.Append("SELECT ");
@@ -277,10 +277,11 @@ internal static class SqlAssembler
                 sb.Append(' ');
                 sb.Append(GetSetOperatorKeyword(setOp.Kind));
                 sb.Append(' ');
-                // Render the operand's SELECT SQL inline (with its own WHERE/GROUP BY/HAVING)
-                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect);
+                // Render the operand's SELECT SQL inline with global parameter offset
+                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect, paramIndex);
                 sb.Append(operandSql.Sql);
-                paramIndex += operandSql.ParameterCount;
+                // ParameterCount includes the base offset, so compute the delta
+                paramIndex = operandSql.ParameterCount;
             }
 
             // Post-union clauses (WHERE/GROUP BY/HAVING): wrap the set operation in a derived table

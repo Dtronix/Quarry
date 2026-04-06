@@ -709,12 +709,14 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "A column changed from nullable to non-null without an accompanying data migration step.");
 
+    // ─── Set operation diagnostics (QRY070–QRY071) ─────────────────────
+
     /// <summary>
-    /// QRY041: INTERSECT ALL is not supported by this SQL dialect.
+    /// QRY070: INTERSECT ALL is not supported by this SQL dialect.
     /// Severity: Error
     /// </summary>
     public static readonly DiagnosticDescriptor IntersectAllNotSupported = new(
-        id: "QRY041",
+        id: "QRY070",
         title: "INTERSECT ALL not supported",
         messageFormat: "INTERSECT ALL is not supported by the {0} dialect",
         category: Category,
@@ -723,11 +725,11 @@ internal static class DiagnosticDescriptors
         description: "INTERSECT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
 
     /// <summary>
-    /// QRY042: EXCEPT ALL is not supported by this SQL dialect.
+    /// QRY071: EXCEPT ALL is not supported by this SQL dialect.
     /// Severity: Error
     /// </summary>
     public static readonly DiagnosticDescriptor ExceptAllNotSupported = new(
-        id: "QRY042",
+        id: "QRY071",
         title: "EXCEPT ALL not supported",
         messageFormat: "EXCEPT ALL is not supported by the {0} dialect",
         category: Category,

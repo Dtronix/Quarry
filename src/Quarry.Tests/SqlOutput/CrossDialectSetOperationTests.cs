@@ -297,6 +297,13 @@ internal class CrossDialectSetOperationTests
             .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
             .Prepare();
 
+        // Verify SQL has correct parameter indices (@p0 for left, @p1 for right — no collisions)
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("@p0"));
+        Assert.That(diag.Sql, Does.Contain("@p1"));
+        Assert.That(diag.Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= @p1"));
+
         var results = await lt.ExecuteFetchAllAsync();
         // UserId >= 2: (2,Bob), (3,Charlie). UserId <= 3: (1,Alice), (2,Bob), (3,Charlie).
         // UNION: (1,Alice), (2,Bob), (3,Charlie) → 3 results
