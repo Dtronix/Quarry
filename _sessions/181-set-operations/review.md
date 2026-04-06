@@ -1,58 +1,61 @@
-# Review: #201
+# Review: #201 (Pass 4)
 
 ## Plan Compliance
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| QRY043 (SetOperationProjectionMismatch) and QRY044 (PostUnionColumnNotInProjection) from plan Phase 6 are not implemented. Plan specified 4 diagnostics; only 2 (QRY070/QRY071) were built. | Medium | Missing compile-time safety net -- users get no diagnostic when operand projections differ in column count or when post-union WHERE references columns not in the projection. These are helpful guardrails, but omission is acceptable for an initial release if documented. |
-| Cross-entity `Union<TOther>()` overloads defined in `IQueryBuilder<TEntity, TResult>` (IQueryBuilder.cs lines 282-363) are not wired in discovery or code generation. Phase 5 of the plan called for full cross-entity support. workflow.md notes this is deferred. | Low | API surface advertises capability that will throw `InvalidOperationException` at runtime. Acceptable tradeoff if documented as not-yet-supported. The default-throw pattern matches other deferred features in the codebase. |
+| No new concerns. | - | All plan phases are implemented or explicitly deferred with diagnostics (QRY073 for cross-entity, QRY044 not needed). Previous review findings on plan gaps have all been addressed. |
+
+Positive notes: The six-phase plan is well-followed. Subquery wrapping for post-union WHERE/HAVING/GroupBy, direct ORDER BY/LIMIT application, parameter remapping, and dialect-specific diagnostics are all implemented as specified. Design decisions in workflow.md (dual-carrier approach, auto subquery wrapping, full re-chain API) are faithfully reflected in the code.
 
 ## Correctness
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `GetSetOperatorKeyword` (SqlAssembler.cs) returns `"UNION"` for the default case instead of throwing. | Low | Silent fallback to UNION for an unexpected enum value would mask bugs rather than failing fast. All 6 enum cases are covered so the default is unreachable in practice. |
-| Post-union GROUP BY rendering (SqlAssembler.cs) does not advance `paramIndex` after each GROUP BY expression. | Low | GROUP BY typically references column names, not parameters, so impact is unlikely in practice. But it breaks the invariant established by every other clause rendering loop in the assembler. |
-| `RawCallSite.Equals()` includes `OperandChainId` but omits `OperandArgEndLine` and `OperandArgEndColumn`. | Low | Two RawCallSites identical except for operand argument end position would compare as equal. Harmless in practice. |
-| Stale comment in PipelineOrchestrator.cs says "QRY041/QRY042" but the actual descriptors are QRY070/QRY071. | Low | Misleading for future maintainers. Code behavior is correct. |
+| `AssembledPlan.Equals()` and `GetHashCode()` do not include `IsOperandChain`. | Low | In the Roslyn incremental source generator pipeline, `AssembledPlan.Equals` is used for caching. Two plans differing only in `IsOperandChain` would compare as equal, potentially skipping re-generation. In practice this is very unlikely because operand chains have different `SqlVariants` (they have no execution SQL variants) and different `Plan` contents than non-operand chains. Still, the Equals contract is technically incomplete. File: `src/Quarry.Generator/IR/AssembledPlan.cs`, lines 153-164. |
+| `QueryPlan.GetHashCode()` does not include `SetOperations.Count` or any post-union fields. | Low | Pre-existing pattern: the existing `GetHashCode` only uses `Kind`, `Tier`, `PrimaryTable`, `WhereTerms.Count`, `Parameters.Count`. The new fields (`SetOperations`, `PostUnionWhereTerms`, `PostUnionGroupByExprs`, `PostUnionHavingExprs`) are covered in `Equals` but not in `GetHashCode`. This follows the existing convention (many fields omitted from GetHashCode for simplicity). Hash collisions are resolved by `Equals`, so correctness is preserved, but dictionary performance could degrade for large collections of plans that differ only by set operation content. |
+
+All correctness issues from the previous 3 reviews have been confirmed fixed: `GetSetOperatorKeyword` now throws on unknown kind, `RawCallSite.Equals` includes all three new fields, GROUP BY `paramIndex` is correctly advanced, stale comments are updated.
 
 ## Security
 
-No concerns.
+No concerns. Set operations compose existing parameterized SQL rendering with the same parameter binding infrastructure. No raw string interpolation of user input, no new external dependencies, no auth changes.
 
 ## Test Quality
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| QRY070/QRY071 diagnostic tests all `[Ignore]`d with reason "Requires full generator pipeline." | Medium | Zero automated test coverage for diagnostic code paths. |
-| No post-union HAVING test. | Low | The HAVING rendering code path is not directly tested. |
-| No negative tests for cross-entity set operations. | Low | Low priority since cross-entity is documented as deferred. |
+| No test for set operation with parameterized post-union WHERE (parameter remapping across all three layers: left params + operand params + post-union params). | Low | The current post-union WHERE test uses a constant literal (`Where(u => u.UserId <= 2)`), not a captured variable. A test with a captured variable in the post-union WHERE would exercise the full three-layer parameter index chain. The parameterized cross-operand test already validates two-layer remapping, and the subquery wrapping test validates the SQL structure, so this is a gap in explicit coverage but not a likely bug vector. |
+| No test for post-union ORDER BY with parameterized expressions. | Low | ORDER BY expressions typically reference columns, not parameters, so this is a narrow gap. The existing ORDER BY tests with set operations verify the SQL structure correctly. |
+
+Positive notes: Test coverage is strong overall. 2873 tests pass, 0 skipped. The suite includes: all 6 set operators with cross-dialect SQL verification, SQLite execution with result count and value assertions, chained set operations (Union then Except), post-union WHERE with subquery wrapping across 4 dialects, post-union GroupBy, post-union GroupBy+Having, parameterized set operations with correct parameter indices across all 4 dialects. Diagnostic descriptor tests verify unique IDs and severity. The QRY070/QRY071 diagnostic descriptor validation tests replaced the previous [Ignore]d tests.
 
 ## Codebase Consistency
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `AnalyzeOperandChain` (~215 lines) duplicates significant logic from `AnalyzeChainGroup`. | Medium | Changes to projections or parameter remapping need mirroring. |
-| Duplicate XML doc comment in UsageSiteDiscovery.cs. | Low | `DetectPreparedQueryEscape` lost its documentation. |
+| No new concerns. | - | After the session 3 refactoring that extracted `EnrichIdentityProjectionWithEntityColumns`, the remaining duplication between `AnalyzeOperandChain` and `AnalyzeChainGroup` is acknowledged and acceptable (documented in workflow.md as known). |
+
+Positive notes: The new code follows established patterns consistently: `Unsafe.As` for carrier casting, `PipelineErrorBag.Report` for error surfacing (replacing silent catch blocks), `SqlFormatting.QuoteIdentifier` for identifier quoting, standard `IEquatable<T>` implementations with `Equals`/`GetHashCode`. `SetOperationBodyEmitter` follows the same structure as `ClauseBodyEmitter` and `TransitionBodyEmitter`. The `QueryPlanReferenceComparer` in `FileEmitter` is a clean, focused utility.
 
 ## Integration / Breaking Changes
 
-No concerns. All changes are additive with safe defaults.
+| Finding | Severity | Why It Matters |
+|---------|----------|----------------|
+| `IQueryBuilder<T>` and `IQueryBuilder<TEntity, TResult>` add 6 and 12 new default interface methods respectively. | Low | These are additive-only changes with default `throw` implementations. Existing implementations do not break. The cross-entity `Union<TOther>()` overloads on `IQueryBuilder<TEntity, TResult>` are defined but not wired in discovery/codegen (guarded by QRY073 diagnostic). Users who call these will get either a compile-time diagnostic (if the generator detects it) or a runtime `InvalidOperationException` (the default throw). This matches the pattern used for other not-yet-intercepted methods in the codebase. |
+| `AssembledPlan` constructor gains a new `isOperandChain` parameter (default: `false`). | Low | Backward compatible due to default value. All existing call sites continue to work unchanged. |
+| `RawCallSite` constructor gains 3 new parameters (all nullable with defaults). | Low | Backward compatible due to defaults. The `Clone()` method correctly propagates the new fields. |
+
+No breaking changes detected. All new public API surface uses default interface implementations. All internal changes use optional parameters with defaults.
 
 ## Classifications
 
 | # | Finding | Section | Class | Action Taken |
 |---|---------|---------|-------|-------------|
-| 1 | QRY043/QRY044 not implemented | Plan Compliance | A | Added QRY072 (projection mismatch). QRY044 not needed — type system prevents invalid column references. |
-| 2 | Cross-entity unions not wired | Plan Compliance | A | Added QRY073 diagnostic for unsupported cross-entity set operations. |
-| 3 | GetSetOperatorKeyword default → "UNION" | Correctness | A | Changed to throw InvalidOperationException. |
-| 4 | GROUP BY paramIndex not advanced | Correctness | A | Fixed both regular and post-union GROUP BY rendering. |
-| 5 | RawCallSite.Equals omits EndLine/Column | Correctness | A | Added OperandArgEndLine and OperandArgEndColumn to Equals. |
-| 6 | Stale QRY041/042 comment | Correctness | A | Updated to QRY070/071. |
-| 7 | QRY070/071 tests [Ignore]d | Test Quality | A | Replaced with descriptor validation tests (unique IDs, severity). 0 skipped tests. |
-| 8 | No post-union HAVING test | Test Quality | A | Added Union_WithPostUnionGroupByAndHaving test. |
-| 9 | Duplicate XML doc | Codebase Consistency | A | Fixed — restored DetectPreparedQueryEscape doc, removed duplicate. |
-| 10 | AnalyzeOperandChain duplication | Codebase Consistency | A | Extracted EnrichIdentityProjectionWithEntityColumns shared helper. |
+| 1 | AssembledPlan.Equals omits IsOperandChain | Correctness | D | Ignored — unreachable in practice. |
+| 2 | QueryPlan.GetHashCode omits set operation fields | Correctness | D | Ignored — follows existing convention. |
+| 3 | No parameterized post-union WHERE test | Test Quality | A | Added test — exposed and fixed a real bug in ResolveSiteParams (post-union param offset). |
+| 4 | No parameterized post-union ORDER BY test | Test Quality | A | Added test — passes correctly. |
 
 ## Issues Created
-(none — all items addressed in this session)
+(none)
