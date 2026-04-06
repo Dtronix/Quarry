@@ -6,10 +6,10 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #203
-pr:
+pr: #209
 session: 2
 phases-total: 8
 phases-complete: 8
@@ -47,4 +47,4 @@ Baseline: 2957 tests passing (79 migration + 103 analyzer + 2775 main), 0 pre-ex
 | 1 | PLAN | IMPLEMENT | 8-phase plan approved |
 | 1 | IMPLEMENT | REVIEW | All 8 phases complete, 2987 tests passing (30 new) |
 | 1 | REVIEW | REVIEW | Review agent produced review.md; suspended mid-classification per user request |
-| 2 | REVIEW |  | Resumed: worktree recreated from origin/203-dml-translation, baseline re-verified |
+| 2 | REVIEW | REMEDIATE | Resumed; classifications confirmed (fix all); 4 fixes implemented; 2992 tests pass; PR #209 created |
