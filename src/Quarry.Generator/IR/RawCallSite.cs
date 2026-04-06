@@ -238,6 +238,131 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     /// Creates a copy with a different ResultTypeName.
     /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
     /// </summary>
+    /// <summary>
+    /// Returns a copy with OperandEntityTypeName replaced. Used by CallSiteBinder to normalize
+    /// the cross-entity set operation operand to the per-context generated entity class.
+    /// </summary>
+    internal RawCallSite WithOperandEntityTypeName(string newOperandEntityTypeName)
+    {
+        var copy = new RawCallSite(
+            methodName: MethodName,
+            filePath: FilePath,
+            line: Line,
+            column: Column,
+            uniqueId: UniqueId,
+            kind: Kind,
+            builderKind: BuilderKind,
+            entityTypeName: EntityTypeName,
+            resultTypeName: ResultTypeName,
+            isAnalyzable: IsAnalyzable,
+            nonAnalyzableReason: NonAnalyzableReason,
+            interceptableLocationData: InterceptableLocationData,
+            interceptableLocationVersion: InterceptableLocationVersion,
+            location: Location,
+            expression: Expression,
+            clauseKind: ClauseKind,
+            isDescending: IsDescending,
+            projectionInfo: ProjectionInfo,
+            joinedEntityTypeName: JoinedEntityTypeName,
+            initializedPropertyNames: InitializedPropertyNames,
+            constantIntValue: ConstantIntValue,
+            isNavigationJoin: IsNavigationJoin,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            isInsideLoop: IsInsideLoop,
+            isInsideTryCatch: IsInsideTryCatch,
+            isCapturedInLambda: IsCapturedInLambda,
+            isPassedAsArgument: IsPassedAsArgument,
+            isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
+            nestingContext: NestingContext,
+            chainId: ChainId,
+            builderTypeName: BuilderTypeName,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            setActionAssignments: SetActionAssignments,
+            setActionParameters: SetActionParameters,
+            setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
+            lambdaParameterNames: LambdaParameterNames,
+            batchInsertColumnNames: BatchInsertColumnNames,
+            isPreparedTerminal: IsPreparedTerminal,
+            preparedQueryEscapeReason: PreparedQueryEscapeReason,
+            isValueTypeResult: IsValueTypeResult,
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn,
+            operandEntityTypeName: newOperandEntityTypeName);
+        // Propagate mutable properties set after construction
+        copy.DisplayClassName = DisplayClassName;
+        copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.CaptureKind = CaptureKind;
+        copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.EnrichmentLambda = EnrichmentLambda;
+        copy.EnrichmentInvocation = EnrichmentInvocation;
+        return copy;
+    }
+
+    /// <summary>
+    /// Returns a copy with EntityTypeName replaced. Used by CallSiteBinder to normalize the
+    /// entity type to the context-qualified form (the per-context generated entity class)
+    /// when the discovery's resolution picked up a user-written class in a different namespace.
+    /// </summary>
+    internal RawCallSite WithEntityTypeName(string newEntityTypeName)
+    {
+        var copy = new RawCallSite(
+            methodName: MethodName,
+            filePath: FilePath,
+            line: Line,
+            column: Column,
+            uniqueId: UniqueId,
+            kind: Kind,
+            builderKind: BuilderKind,
+            entityTypeName: newEntityTypeName,
+            resultTypeName: ResultTypeName,
+            isAnalyzable: IsAnalyzable,
+            nonAnalyzableReason: NonAnalyzableReason,
+            interceptableLocationData: InterceptableLocationData,
+            interceptableLocationVersion: InterceptableLocationVersion,
+            location: Location,
+            expression: Expression,
+            clauseKind: ClauseKind,
+            isDescending: IsDescending,
+            projectionInfo: ProjectionInfo,
+            joinedEntityTypeName: JoinedEntityTypeName,
+            initializedPropertyNames: InitializedPropertyNames,
+            constantIntValue: ConstantIntValue,
+            isNavigationJoin: IsNavigationJoin,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            isInsideLoop: IsInsideLoop,
+            isInsideTryCatch: IsInsideTryCatch,
+            isCapturedInLambda: IsCapturedInLambda,
+            isPassedAsArgument: IsPassedAsArgument,
+            isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
+            nestingContext: NestingContext,
+            chainId: ChainId,
+            builderTypeName: BuilderTypeName,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            setActionAssignments: SetActionAssignments,
+            setActionParameters: SetActionParameters,
+            setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
+            lambdaParameterNames: LambdaParameterNames,
+            batchInsertColumnNames: BatchInsertColumnNames,
+            isPreparedTerminal: IsPreparedTerminal,
+            preparedQueryEscapeReason: PreparedQueryEscapeReason,
+            isValueTypeResult: IsValueTypeResult,
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn,
+            operandEntityTypeName: OperandEntityTypeName);
+        // Propagate mutable properties set after construction
+        copy.DisplayClassName = DisplayClassName;
+        copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.CaptureKind = CaptureKind;
+        copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.EnrichmentLambda = EnrichmentLambda;
+        copy.EnrichmentInvocation = EnrichmentInvocation;
+        return copy;
+    }
+
     internal RawCallSite WithResultTypeName(string resolvedResultTypeName)
     {
         var copy = new RawCallSite(

@@ -28,6 +28,32 @@ internal static class CallSiteBinder
         // Resolve entity from registry with ambiguity detection
         var entry = registry.Resolve(raw.EntityTypeName, raw.ContextClassName, out var isAmbiguous);
 
+        // If the entry's context doesn't match the call site's context, the registry returned a
+        // foreign-context entry because the entity type name happened to match a globalName key
+        // for some other context (e.g., when the discovery resolved Pg.Products() to the
+        // Quarry.Tests.Samples.Product user-written partial — that name's globalName key belongs
+        // to the Lite context, so registry.Resolve returns the Lite entry). Re-resolve by walking
+        // the registry's contexts to find the matching one.
+        if (entry != null && raw.ContextClassName != null && entry.Context.ClassName != raw.ContextClassName)
+        {
+            EntityRegistryEntry? rebound = null;
+            foreach (var ctx in registry.AllContexts)
+            {
+                if (ctx.ClassName != raw.ContextClassName) continue;
+                foreach (var e in ctx.Entities)
+                {
+                    if (e.EntityName == entry.Entity.EntityName)
+                    {
+                        rebound = new EntityRegistryEntry(e, ctx);
+                        break;
+                    }
+                }
+                break;
+            }
+            if (rebound != null)
+                entry = rebound;
+        }
+
         // Build entity ref and context metadata
         EntityRef entity;
         string contextClassName;
@@ -44,6 +70,44 @@ internal static class CallSiteBinder
             dialect = entry.Context.Dialect;
             tableName = entry.Entity.TableName;
             schemaName = entry.Context.Schema;
+
+            // Normalize entity type name only when the discovery resolved to a user-written class
+            // in a DIFFERENT namespace than the context's. EntityCodeGenerator emits each entity
+            // in the context's namespace, so the per-context generated class lives at
+            // {contextNamespace}.{entityName}. When the user has a partial class declared in the
+            // schema's namespace (e.g., to attach an [EntityReader]), discovery picks that up and
+            // pins the interceptor signature to the wrong type, causing CS9144 at compile time.
+            // We rewrite to the context-qualified form so the per-context type matches what
+            // PgDb.Products() / MyDb.Products() / SsDb.Products() actually return.
+            //
+            // For unresolved (Error) types — the common case where no user-written partial exists —
+            // discovery records only the simple name (e.g., "User"), which compiles correctly via
+            // namespace lookup. Leave those alone to avoid changing existing carrier output formats.
+            if (!string.IsNullOrEmpty(contextNamespace) && NeedsContextNamespaceNormalization(raw.EntityTypeName, contextNamespace))
+            {
+                var normalized = $"global::{contextNamespace}.{entry.Entity.EntityName}";
+                if (raw.EntityTypeName != normalized)
+                    raw = raw.WithEntityTypeName(normalized);
+            }
+
+            // Cross-entity set operations carry an OperandEntityTypeName captured at discovery
+            // (e.g., Union(Pg.Products()...) on a Pg.Users() chain). Apply the same normalization
+            // so the cross-entity argument type in the interceptor matches the per-context generated
+            // operand entity rather than a foreign-namespace user-written class.
+            if (!string.IsNullOrEmpty(contextNamespace)
+                && raw.OperandEntityTypeName != null
+                && NeedsContextNamespaceNormalization(raw.OperandEntityTypeName, contextNamespace))
+            {
+                var operandSimple = raw.OperandEntityTypeName;
+                if (operandSimple.StartsWith("global::"))
+                    operandSimple = operandSimple.Substring(8);
+                var lastDot = operandSimple.LastIndexOf('.');
+                if (lastDot >= 0)
+                    operandSimple = operandSimple.Substring(lastDot + 1);
+                var normalizedOperand = $"{contextNamespace}.{operandSimple}";
+                if (raw.OperandEntityTypeName != normalizedOperand)
+                    raw = raw.WithOperandEntityTypeName(normalizedOperand);
+            }
         }
         else
         {
@@ -193,6 +257,23 @@ internal static class CallSiteBinder
             rawSqlTypeInfo: rawSqlTypeInfo);
 
         return ImmutableArray.Create(bound);
+    }
+
+    /// <summary>
+    /// Returns true if the discovery's entity type name has a fully-qualified namespace prefix
+    /// that does NOT match the call site's context namespace. Used to identify the case where
+    /// the source generator's discovery resolved to a user-written class in the schema namespace
+    /// instead of the per-context generated class in the context namespace. Simple names (no
+    /// namespace) and names already in the context namespace are left untouched.
+    /// </summary>
+    private static bool NeedsContextNamespaceNormalization(string entityTypeName, string contextNamespace)
+    {
+        var name = entityTypeName.StartsWith("global::") ? entityTypeName.Substring(8) : entityTypeName;
+        var lastDot = name.LastIndexOf('.');
+        if (lastDot < 0)
+            return false; // Simple name — namespace lookup at compile time will pick the right one
+        var ns = name.Substring(0, lastDot);
+        return ns != contextNamespace;
     }
 
     /// <summary>
