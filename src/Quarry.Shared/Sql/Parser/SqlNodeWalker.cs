@@ -37,6 +37,30 @@ internal static class SqlNodeWalker
                 Walk(s.Offset, visitor);
                 break;
 
+            case SqlDeleteStatement d:
+                Walk(d.Table, visitor);
+                Walk(d.Where, visitor);
+                break;
+
+            case SqlUpdateStatement up:
+                Walk(up.Table, visitor);
+                foreach (var a in up.Assignments) Walk(a, visitor);
+                Walk(up.Where, visitor);
+                break;
+
+            case SqlInsertStatement ins:
+                Walk(ins.Table, visitor);
+                if (ins.Columns != null)
+                    foreach (var col in ins.Columns) Walk(col, visitor);
+                foreach (var row in ins.ValueRows)
+                    foreach (var v in row) Walk(v, visitor);
+                break;
+
+            case SqlAssignment asn:
+                Walk(asn.Column, visitor);
+                Walk(asn.Value, visitor);
+                break;
+
             case SqlSelectColumn c:
                 Walk(c.Expression, visitor);
                 break;

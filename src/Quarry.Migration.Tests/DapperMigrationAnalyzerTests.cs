@@ -147,6 +147,98 @@ public class Example
     }
 
     [Test]
+    public async Task DeleteExecuteAsync_ReportsQRM001()
+    {
+        var diagnostics = await GetDiagnosticsAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""DELETE FROM users WHERE user_id = @id"", new { id = 1 });
+    }
+}
+");
+
+        Assert.That(diagnostics.Any(d => d.Id == "QRM001"), Is.True,
+            $"Expected QRM001. Got: {string.Join(", ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+    }
+
+    [Test]
+    public async Task UpdateExecuteAsync_ReportsQRM001()
+    {
+        var diagnostics = await GetDiagnosticsAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+    public Col<int> IsActive => default;
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""UPDATE users SET is_active = 0 WHERE user_id = @id"", new { id = 1 });
+    }
+}
+");
+
+        Assert.That(diagnostics.Any(d => d.Id == "QRM001"), Is.True,
+            $"Expected QRM001. Got: {string.Join(", ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+    }
+
+    [Test]
+    public async Task InsertExecuteAsync_ReportsQRM003()
+    {
+        var diagnostics = await GetDiagnosticsAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+    public Col<string> UserName => Length<string>(100);
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""INSERT INTO users (user_name) VALUES (@name)"", new { name = ""x"" });
+    }
+}
+");
+
+        // INSERT emits a comment-only suggestion (IsSuggestionOnly=true), which routes to QRM003.
+        // The IDE code fix must NOT replace the invocation with comment text — that produces invalid C#.
+        // Pinning to QRM003 specifically locks the contract that comment-only output is reported as
+        // not-auto-convertible rather than as a fixable warning.
+        Assert.That(diagnostics.Any(d => d.Id == "QRM003"), Is.True,
+            $"Expected QRM003. Got: {string.Join(", ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+        Assert.That(diagnostics.Any(d => d.Id == "QRM001" || d.Id == "QRM002"), Is.False,
+            "INSERT must not be reported as QRM001/QRM002 — the code fix would substitute a comment for the invocation.");
+    }
+
+    [Test]
     public async Task UnmappableTable_ReportsQRM003()
     {
         var diagnostics = await GetDiagnosticsAsync(@"

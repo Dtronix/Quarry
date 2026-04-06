@@ -84,7 +84,9 @@ internal static class RawSqlColumnResolver
         if (parseResult.HasUnsupported)
             return ColumnResolutionResult.Fallback("SQL contains unsupported constructs (CTEs, UNION, window functions)");
 
-        var statement = parseResult.Statement!;
+        var statement = parseResult.SelectStatement;
+        if (statement == null)
+            return ColumnResolutionResult.Fallback("SQL is not a SELECT statement");
 
         // Extract column names from the SELECT list
         var sqlColumnNames = new List<string>(statement.Columns.Count);

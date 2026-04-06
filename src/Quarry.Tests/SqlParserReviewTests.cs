@@ -37,7 +37,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE price * quantity > 100");
         Assert.That(result.Success, Is.True);
-        var gt = (SqlBinaryExpr)result.Statement!.Where!;
+        var gt = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(gt.Operator, Is.EqualTo(SqlBinaryOp.GreaterThan));
         var mul = (SqlBinaryExpr)gt.Left;
         Assert.That(mul.Operator, Is.EqualTo(SqlBinaryOp.Multiply));
@@ -48,7 +48,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE (a + b) / c >= threshold");
         Assert.That(result.Success, Is.True);
-        var gte = (SqlBinaryExpr)result.Statement!.Where!;
+        var gte = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(gte.Operator, Is.EqualTo(SqlBinaryOp.GreaterThanOrEqual));
     }
 
@@ -63,7 +63,7 @@ public class SqlParserReviewTests
                   "GROUP BY u.name, o.amount";
         var result = Parse(sql);
         Assert.That(result.Success, Is.True);
-        var stmt = result.Statement!;
+        var stmt = result.SelectStatement!;
 
         // Column with AS alias
         Assert.That(((SqlSelectColumn)stmt.Columns[0]).Alias, Is.EqualTo("user_name"));
@@ -85,7 +85,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT CAST(x AS DOUBLE PRECISION) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var cast = (SqlCastExpr)col.Expression;
         Assert.That(cast.TypeName, Is.EqualTo("DOUBLE PRECISION"));
     }
@@ -95,7 +95,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT CAST(x AS VARCHAR(255)) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var cast = (SqlCastExpr)col.Expression;
         Assert.That(cast.TypeName, Does.Contain("VARCHAR"));
     }
@@ -134,7 +134,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE a = @p1 AND b = @p2 AND c = @p3", SqlDialect.SQLite);
         Assert.That(result.Success, Is.True);
-        var allParams = SqlNodeWalker.FindAll<SqlParameter>(result.Statement!);
+        var allParams = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
         Assert.That(allParams, Has.Count.EqualTo(3));
         Assert.That(allParams[0].RawText, Is.EqualTo("@p1"));
         Assert.That(allParams[1].RawText, Is.EqualTo("@p2"));
@@ -146,7 +146,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE x = NULL");
         Assert.That(result.Success, Is.True);
-        var eq = (SqlBinaryExpr)result.Statement!.Where!;
+        var eq = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(((SqlLiteral)eq.Right).LiteralKind, Is.EqualTo(SqlLiteralKind.Null));
     }
 
@@ -155,7 +155,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE x > -42");
         Assert.That(result.Success, Is.True);
-        var gt = (SqlBinaryExpr)result.Statement!.Where!;
+        var gt = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(gt.Right, Is.TypeOf<SqlUnaryExpr>());
         var neg = (SqlUnaryExpr)gt.Right;
         Assert.That(neg.Operator, Is.EqualTo(SqlUnaryOp.Negate));
@@ -166,7 +166,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE CASE WHEN x = 1 THEN 1 ELSE 0 END = 1");
         Assert.That(result.Success, Is.True);
-        var eq = (SqlBinaryExpr)result.Statement!.Where!;
+        var eq = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(eq.Left, Is.TypeOf<SqlCaseExpr>());
     }
 
@@ -175,7 +175,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE TRUE");
         Assert.That(result.Success, Is.True);
-        var literal = (SqlLiteral)result.Statement!.Where!;
+        var literal = (SqlLiteral)result.SelectStatement!.Where!;
         Assert.That(literal.LiteralKind, Is.EqualTo(SqlLiteralKind.Boolean));
     }
 
@@ -209,7 +209,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT u.name, u.age FROM users u WHERE u.active = 1");
         Assert.That(result.Success, Is.True);
-        var colRefs = SqlNodeWalker.FindAll<SqlColumnRef>(result.Statement!);
+        var colRefs = SqlNodeWalker.FindAll<SqlColumnRef>(result.SelectStatement!);
         Assert.That(colRefs, Has.Count.GreaterThanOrEqualTo(3)); // u.name, u.age, u.active
     }
 
@@ -218,7 +218,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id LEFT JOIN t3 ON t2.id = t3.id");
         Assert.That(result.Success, Is.True);
-        var tables = SqlNodeWalker.FindAll<SqlTableSource>(result.Statement!);
+        var tables = SqlNodeWalker.FindAll<SqlTableSource>(result.SelectStatement!);
         Assert.That(tables, Has.Count.EqualTo(3)); // t1, t2, t3
     }
 
@@ -227,7 +227,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT a FROM t WHERE x = @p1 AND y = @p2", SqlDialect.SQLite);
         Assert.That(result.Success, Is.True);
-        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.Statement!);
+        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
         Assert.That(parameters, Has.Count.EqualTo(2));
     }
 
@@ -236,7 +236,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT CASE WHEN x = @p1 THEN @p2 ELSE @p3 END FROM t", SqlDialect.SQLite);
         Assert.That(result.Success, Is.True);
-        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.Statement!);
+        var parameters = SqlNodeWalker.FindAll<SqlParameter>(result.SelectStatement!);
         Assert.That(parameters, Has.Count.EqualTo(3));
     }
 
@@ -251,7 +251,7 @@ public class SqlParserReviewTests
         var result = Parse("SELECT a FROM t");
         Assert.That(result.Success, Is.True);
         // SourceStart/SourceLength properties exist on all nodes
-        Assert.That(result.Statement!.SourceStart, Is.EqualTo(-1));
+        Assert.That(result.SelectStatement!.SourceStart, Is.EqualTo(-1));
     }
 
     // ─── A6: SqlWhenClause is now a SqlNode ──────────────
@@ -261,7 +261,7 @@ public class SqlParserReviewTests
     {
         var result = Parse("SELECT CASE WHEN x = 1 THEN 'a' END FROM t");
         Assert.That(result.Success, Is.True);
-        var caseExpr = (SqlCaseExpr)((SqlSelectColumn)result.Statement!.Columns[0]).Expression;
+        var caseExpr = (SqlCaseExpr)((SqlSelectColumn)result.SelectStatement!.Columns[0]).Expression;
         var whenClause = caseExpr.WhenClauses[0];
         Assert.That(whenClause.NodeKind, Is.EqualTo(SqlNodeKind.WhenClause));
     }

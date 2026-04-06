@@ -18,7 +18,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT col FROM table1");
         Assert.That(result.Success, Is.True);
-        var stmt = result.Statement!;
+        var stmt = result.SelectStatement!;
 
         Assert.That(stmt.IsDistinct, Is.False);
         Assert.That(stmt.Columns, Has.Count.EqualTo(1));
@@ -37,7 +37,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a, b, c FROM t");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Columns, Has.Count.EqualTo(3));
+        Assert.That(result.SelectStatement!.Columns, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -45,8 +45,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT * FROM t");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Columns[0], Is.TypeOf<SqlStarColumn>());
-        Assert.That(((SqlStarColumn)result.Statement!.Columns[0]).TableAlias, Is.Null);
+        Assert.That(result.SelectStatement!.Columns[0], Is.TypeOf<SqlStarColumn>());
+        Assert.That(((SqlStarColumn)result.SelectStatement!.Columns[0]).TableAlias, Is.Null);
     }
 
     [Test]
@@ -54,8 +54,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT t.* FROM t");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Columns[0], Is.TypeOf<SqlStarColumn>());
-        Assert.That(((SqlStarColumn)result.Statement!.Columns[0]).TableAlias, Is.EqualTo("t"));
+        Assert.That(result.SelectStatement!.Columns[0], Is.TypeOf<SqlStarColumn>());
+        Assert.That(((SqlStarColumn)result.SelectStatement!.Columns[0]).TableAlias, Is.EqualTo("t"));
     }
 
     [Test]
@@ -63,7 +63,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT DISTINCT a FROM t");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.IsDistinct, Is.True);
+        Assert.That(result.SelectStatement!.IsDistinct, Is.True);
     }
 
     // ─── WHERE ───────────────────────────────────────────
@@ -73,7 +73,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x = 1");
         Assert.That(result.Success, Is.True);
-        var where = (SqlBinaryExpr)result.Statement!.Where!;
+        var where = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(where.Operator, Is.EqualTo(SqlBinaryOp.Equal));
         Assert.That(((SqlColumnRef)where.Left).ColumnName, Is.EqualTo("x"));
         Assert.That(((SqlLiteral)where.Right).Value, Is.EqualTo("1"));
@@ -86,7 +86,7 @@ public class SqlParserTests
         Assert.That(result.Success, Is.True);
 
         // OR has lower precedence: OR(AND(x=1, y=2), z=3)
-        var or = (SqlBinaryExpr)result.Statement!.Where!;
+        var or = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(or.Operator, Is.EqualTo(SqlBinaryOp.Or));
 
         var and = (SqlBinaryExpr)or.Left;
@@ -98,7 +98,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE NOT x = 1");
         Assert.That(result.Success, Is.True);
-        var notExpr = (SqlUnaryExpr)result.Statement!.Where!;
+        var notExpr = (SqlUnaryExpr)result.SelectStatement!.Where!;
         Assert.That(notExpr.Operator, Is.EqualTo(SqlUnaryOp.Not));
     }
 
@@ -121,7 +121,7 @@ public class SqlParserTests
         {
             var result = Parse($"SELECT a FROM t WHERE {where}");
             Assert.That(result.Success, Is.True, $"Failed for: {where}");
-            var bin = (SqlBinaryExpr)result.Statement!.Where!;
+            var bin = (SqlBinaryExpr)result.SelectStatement!.Where!;
             Assert.That(bin.Operator, Is.EqualTo(op), $"Failed for: {where}");
         }
     }
@@ -133,7 +133,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x IN (1, 2, 3)");
         Assert.That(result.Success, Is.True);
-        var inExpr = (SqlInExpr)result.Statement!.Where!;
+        var inExpr = (SqlInExpr)result.SelectStatement!.Where!;
         Assert.That(inExpr.IsNegated, Is.False);
         Assert.That(inExpr.Values, Has.Count.EqualTo(3));
     }
@@ -143,7 +143,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x NOT IN (1, 2)");
         Assert.That(result.Success, Is.True);
-        var inExpr = (SqlInExpr)result.Statement!.Where!;
+        var inExpr = (SqlInExpr)result.SelectStatement!.Where!;
         Assert.That(inExpr.IsNegated, Is.True);
     }
 
@@ -154,7 +154,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x BETWEEN 1 AND 10");
         Assert.That(result.Success, Is.True);
-        var between = (SqlBetweenExpr)result.Statement!.Where!;
+        var between = (SqlBetweenExpr)result.SelectStatement!.Where!;
         Assert.That(between.IsNegated, Is.False);
         Assert.That(((SqlLiteral)between.Low).Value, Is.EqualTo("1"));
         Assert.That(((SqlLiteral)between.High).Value, Is.EqualTo("10"));
@@ -165,7 +165,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x NOT BETWEEN 1 AND 10");
         Assert.That(result.Success, Is.True);
-        var between = (SqlBetweenExpr)result.Statement!.Where!;
+        var between = (SqlBetweenExpr)result.SelectStatement!.Where!;
         Assert.That(between.IsNegated, Is.True);
     }
 
@@ -176,7 +176,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x IS NULL");
         Assert.That(result.Success, Is.True);
-        var isNull = (SqlIsNullExpr)result.Statement!.Where!;
+        var isNull = (SqlIsNullExpr)result.SelectStatement!.Where!;
         Assert.That(isNull.IsNegated, Is.False);
     }
 
@@ -185,7 +185,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x IS NOT NULL");
         Assert.That(result.Success, Is.True);
-        var isNull = (SqlIsNullExpr)result.Statement!.Where!;
+        var isNull = (SqlIsNullExpr)result.SelectStatement!.Where!;
         Assert.That(isNull.IsNegated, Is.True);
     }
 
@@ -196,7 +196,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE name LIKE '%test%'");
         Assert.That(result.Success, Is.True);
-        var like = (SqlBinaryExpr)result.Statement!.Where!;
+        var like = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(like.Operator, Is.EqualTo(SqlBinaryOp.Like));
     }
 
@@ -207,8 +207,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 INNER JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins, Has.Count.EqualTo(1));
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Inner));
+        Assert.That(result.SelectStatement!.Joins, Has.Count.EqualTo(1));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Inner));
     }
 
     [Test]
@@ -216,7 +216,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 LEFT JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Left));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Left));
     }
 
     [Test]
@@ -224,7 +224,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 LEFT OUTER JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Left));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Left));
     }
 
     [Test]
@@ -232,7 +232,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 RIGHT JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Right));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Right));
     }
 
     [Test]
@@ -240,8 +240,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 CROSS JOIN t2");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Cross));
-        Assert.That(result.Statement!.Joins[0].Condition, Is.Null);
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Cross));
+        Assert.That(result.SelectStatement!.Joins[0].Condition, Is.Null);
     }
 
     [Test]
@@ -249,7 +249,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 FULL OUTER JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.FullOuter));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.FullOuter));
     }
 
     [Test]
@@ -257,7 +257,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t1 JOIN t2 ON t1.id = t2.id");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Inner));
+        Assert.That(result.SelectStatement!.Joins[0].JoinKind, Is.EqualTo(SqlJoinKind.Inner));
     }
 
     // ─── GROUP BY / HAVING ───────────────────────────────
@@ -267,7 +267,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT dept, COUNT(*) FROM t GROUP BY dept");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.GroupBy, Has.Count.EqualTo(1));
+        Assert.That(result.SelectStatement!.GroupBy, Has.Count.EqualTo(1));
     }
 
     [Test]
@@ -275,8 +275,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT dept, COUNT(*) FROM t GROUP BY dept HAVING COUNT(*) > 5");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.GroupBy, Has.Count.EqualTo(1));
-        Assert.That(result.Statement!.Having, Is.Not.Null);
+        Assert.That(result.SelectStatement!.GroupBy, Has.Count.EqualTo(1));
+        Assert.That(result.SelectStatement!.Having, Is.Not.Null);
     }
 
     // ─── ORDER BY ────────────────────────────────────────
@@ -286,9 +286,9 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t ORDER BY a ASC, b DESC");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.OrderBy, Has.Count.EqualTo(2));
-        Assert.That(result.Statement!.OrderBy![0].IsDescending, Is.False);
-        Assert.That(result.Statement!.OrderBy![1].IsDescending, Is.True);
+        Assert.That(result.SelectStatement!.OrderBy, Has.Count.EqualTo(2));
+        Assert.That(result.SelectStatement!.OrderBy![0].IsDescending, Is.False);
+        Assert.That(result.SelectStatement!.OrderBy![1].IsDescending, Is.True);
     }
 
     // ─── LIMIT / OFFSET ─────────────────────────────────
@@ -298,8 +298,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t LIMIT 10");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.Limit, Is.Not.Null);
-        Assert.That(((SqlLiteral)result.Statement!.Limit!).Value, Is.EqualTo("10"));
+        Assert.That(result.SelectStatement!.Limit, Is.Not.Null);
+        Assert.That(((SqlLiteral)result.SelectStatement!.Limit!).Value, Is.EqualTo("10"));
     }
 
     [Test]
@@ -307,8 +307,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t LIMIT 10 OFFSET 20");
         Assert.That(result.Success, Is.True);
-        Assert.That(((SqlLiteral)result.Statement!.Limit!).Value, Is.EqualTo("10"));
-        Assert.That(((SqlLiteral)result.Statement!.Offset!).Value, Is.EqualTo("20"));
+        Assert.That(((SqlLiteral)result.SelectStatement!.Limit!).Value, Is.EqualTo("10"));
+        Assert.That(((SqlLiteral)result.SelectStatement!.Offset!).Value, Is.EqualTo("20"));
     }
 
     [Test]
@@ -316,8 +316,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t ORDER BY a OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY", SqlDialect.SqlServer);
         Assert.That(result.Success, Is.True);
-        Assert.That(((SqlLiteral)result.Statement!.Offset!).Value, Is.EqualTo("20"));
-        Assert.That(((SqlLiteral)result.Statement!.Limit!).Value, Is.EqualTo("10"));
+        Assert.That(((SqlLiteral)result.SelectStatement!.Offset!).Value, Is.EqualTo("20"));
+        Assert.That(((SqlLiteral)result.SelectStatement!.Limit!).Value, Is.EqualTo("10"));
     }
 
     // ─── Function calls ──────────────────────────────────
@@ -327,7 +327,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT COUNT(*) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var func = (SqlFunctionCall)col.Expression;
         Assert.That(func.FunctionName, Is.EqualTo("COUNT"));
         Assert.That(func.Arguments, Has.Count.EqualTo(1));
@@ -339,7 +339,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT COUNT(DISTINCT x) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var func = (SqlFunctionCall)col.Expression;
         Assert.That(func.FunctionName, Is.EqualTo("COUNT"));
         Assert.That(func.IsDistinct, Is.True);
@@ -350,7 +350,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT COALESCE(a, b, 0) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var func = (SqlFunctionCall)col.Expression;
         Assert.That(func.FunctionName, Is.EqualTo("COALESCE"));
         Assert.That(func.Arguments, Has.Count.EqualTo(3));
@@ -363,7 +363,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT CASE WHEN x = 1 THEN 'one' ELSE 'other' END FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var caseExpr = (SqlCaseExpr)col.Expression;
         Assert.That(caseExpr.Operand, Is.Null); // searched CASE
         Assert.That(caseExpr.WhenClauses, Has.Count.EqualTo(1));
@@ -375,7 +375,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT CASE status WHEN 1 THEN 'active' WHEN 2 THEN 'inactive' END FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var caseExpr = (SqlCaseExpr)col.Expression;
         Assert.That(caseExpr.Operand, Is.Not.Null); // simple CASE
         Assert.That(caseExpr.WhenClauses, Has.Count.EqualTo(2));
@@ -388,7 +388,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT CAST(x AS INTEGER) FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var cast = (SqlCastExpr)col.Expression;
         Assert.That(cast.TypeName, Is.EqualTo("INTEGER"));
     }
@@ -400,7 +400,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a AS alias1 FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         Assert.That(col.Alias, Is.EqualTo("alias1"));
     }
 
@@ -409,7 +409,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a alias1 FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         Assert.That(col.Alias, Is.EqualTo("alias1"));
     }
 
@@ -418,7 +418,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT u.name FROM users u");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.From!.Alias, Is.EqualTo("u"));
+        Assert.That(result.SelectStatement!.From!.Alias, Is.EqualTo("u"));
     }
 
     [Test]
@@ -426,7 +426,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT u.name FROM users AS u");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.From!.Alias, Is.EqualTo("u"));
+        Assert.That(result.SelectStatement!.From!.Alias, Is.EqualTo("u"));
     }
 
     // ─── Parameters per dialect ──────────────────────────
@@ -436,7 +436,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x = @userId", SqlDialect.SQLite);
         Assert.That(result.Success, Is.True);
-        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        var bin = (SqlBinaryExpr)result.SelectStatement!.Where!;
         var param = (SqlParameter)bin.Right;
         Assert.That(param.RawText, Is.EqualTo("@userId"));
     }
@@ -446,7 +446,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x = $1", SqlDialect.PostgreSQL);
         Assert.That(result.Success, Is.True);
-        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        var bin = (SqlBinaryExpr)result.SelectStatement!.Where!;
         var param = (SqlParameter)bin.Right;
         Assert.That(param.RawText, Is.EqualTo("$1"));
     }
@@ -456,7 +456,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE x = ?", SqlDialect.MySQL);
         Assert.That(result.Success, Is.True);
-        var bin = (SqlBinaryExpr)result.Statement!.Where!;
+        var bin = (SqlBinaryExpr)result.SelectStatement!.Where!;
         var param = (SqlParameter)bin.Right;
         Assert.That(param.RawText, Is.EqualTo("?"));
     }
@@ -468,7 +468,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT u.name FROM users u");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var colRef = (SqlColumnRef)col.Expression;
         Assert.That(colRef.TableAlias, Is.EqualTo("u"));
         Assert.That(colRef.ColumnName, Is.EqualTo("name"));
@@ -479,8 +479,8 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM public.users");
         Assert.That(result.Success, Is.True);
-        Assert.That(result.Statement!.From!.Schema, Is.EqualTo("public"));
-        Assert.That(result.Statement!.From!.TableName, Is.EqualTo("users"));
+        Assert.That(result.SelectStatement!.From!.Schema, Is.EqualTo("public"));
+        Assert.That(result.SelectStatement!.From!.TableName, Is.EqualTo("users"));
     }
 
     // ─── Nested expressions ──────────────────────────────
@@ -490,7 +490,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE (x = 1 OR y = 2) AND z = 3");
         Assert.That(result.Success, Is.True);
-        var and = (SqlBinaryExpr)result.Statement!.Where!;
+        var and = (SqlBinaryExpr)result.SelectStatement!.Where!;
         Assert.That(and.Operator, Is.EqualTo(SqlBinaryOp.And));
         var paren = (SqlParenExpr)and.Left;
         var or = (SqlBinaryExpr)paren.Inner;
@@ -532,9 +532,17 @@ public class SqlParserTests
     }
 
     [Test]
-    public void Parse_NonSelectStatement_HasDiagnostics()
+    public void Parse_NonSelectStatement_NowSupported()
     {
         var result = Parse("INSERT INTO t VALUES (1)");
+        Assert.That(result.Statement, Is.Not.Null);
+        Assert.That(result.Statement, Is.TypeOf<SqlInsertStatement>());
+    }
+
+    [Test]
+    public void Parse_UnknownStatement_HasDiagnostics()
+    {
+        var result = Parse("TRUNCATE TABLE t");
         Assert.That(result.Statement, Is.Null);
         Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
     }
@@ -555,7 +563,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT a FROM t WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.id = t.id)");
         Assert.That(result.Success, Is.True);
-        var exists = (SqlExistsExpr)result.Statement!.Where!;
+        var exists = (SqlExistsExpr)result.SelectStatement!.Where!;
         Assert.That(exists.Subquery, Is.Not.Null);
         Assert.That(exists.Subquery.From!.TableName, Is.EqualTo("t2"));
     }
@@ -568,7 +576,7 @@ public class SqlParserTests
         // 1 + 2 * 3 should be Add(1, Mul(2, 3))
         var result = Parse("SELECT 1 + 2 * 3 FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var add = (SqlBinaryExpr)col.Expression;
         Assert.That(add.Operator, Is.EqualTo(SqlBinaryOp.Add));
         var mul = (SqlBinaryExpr)add.Right;
@@ -582,7 +590,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT -1 FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var unary = (SqlUnaryExpr)col.Expression;
         Assert.That(unary.Operator, Is.EqualTo(SqlUnaryOp.Negate));
     }
@@ -594,7 +602,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT 'hello' FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var lit = (SqlLiteral)col.Expression;
         Assert.That(lit.LiteralKind, Is.EqualTo(SqlLiteralKind.String));
         Assert.That(lit.Value, Is.EqualTo("'hello'"));
@@ -607,7 +615,7 @@ public class SqlParserTests
     {
         var result = Parse("SELECT NULL FROM t");
         Assert.That(result.Success, Is.True);
-        var col = (SqlSelectColumn)result.Statement!.Columns[0];
+        var col = (SqlSelectColumn)result.SelectStatement!.Columns[0];
         var lit = (SqlLiteral)col.Expression;
         Assert.That(lit.LiteralKind, Is.EqualTo(SqlLiteralKind.Null));
     }

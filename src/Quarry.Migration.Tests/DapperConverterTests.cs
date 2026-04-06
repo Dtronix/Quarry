@@ -204,6 +204,87 @@ public class OrderSchema : Schema
     }
 
     [Test]
+    public void ConvertAll_InsertExecuteAsync_IsSuggestionOnly()
+    {
+        var compilation = CreateCompilation(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+    public Col<string> UserName => Length<string>(100);
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""INSERT INTO users (user_name) VALUES (@name)"", new { name = ""x"" });
+    }
+}
+");
+
+        var converter = new DapperConverter();
+        var results = converter.ConvertAll(compilation);
+
+        Assert.That(results, Has.Count.EqualTo(1));
+        var entry = results[0];
+
+        // INSERT must surface as a manual-conversion suggestion, NOT as an
+        // auto-convertible result. The CLI consumer relies on IsSuggestionOnly
+        // to print the comment block as-is rather than flattening it onto one line.
+        Assert.That(entry.IsSuggestionOnly, Is.True,
+            "INSERT should be marked IsSuggestionOnly so the CLI doesn't pretend it's chain code.");
+        Assert.That(entry.IsConvertible, Is.False,
+            "IsConvertible must exclude suggestion-only outputs to prevent mechanical application of comment text.");
+        Assert.That(entry.ChainCode, Does.Contain("// TODO:"),
+            "INSERT chain code should be the comment template, not a substitutable expression.");
+        Assert.That(entry.ChainCode, Does.Contain("Insert(entity).ExecuteNonQueryAsync()"));
+        Assert.That(entry.HasWarnings, Is.True,
+            "INSERT should still report a warning explaining the manual-conversion requirement.");
+    }
+
+    [Test]
+    public void ConvertAll_DeleteExecuteAsync_IsConvertible()
+    {
+        // Counterpart to the INSERT test: DELETE produces real chain code (not a comment),
+        // so IsSuggestionOnly stays false and IsConvertible stays true.
+        var compilation = CreateCompilation(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""DELETE FROM users WHERE user_id = @id"", new { id = 1 });
+    }
+}
+");
+
+        var converter = new DapperConverter();
+        var results = converter.ConvertAll(compilation);
+
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].IsSuggestionOnly, Is.False);
+        Assert.That(results[0].IsConvertible, Is.True);
+        Assert.That(results[0].ChainCode, Does.Contain(".Delete()"));
+        Assert.That(results[0].ChainCode, Does.Contain(".ExecuteNonQueryAsync()"));
+    }
+
+    [Test]
     public void ConvertAll_NoDapperCalls_ReturnsEmpty()
     {
         var compilation = CreateCompilation(@"

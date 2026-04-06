@@ -165,6 +165,12 @@ internal sealed class SqlParser
             case SqlTokenKind.Limit:
             case SqlTokenKind.Offset:
             case SqlTokenKind.Distinct:
+            case SqlTokenKind.Delete:
+            case SqlTokenKind.Update:
+            case SqlTokenKind.Insert:
+            case SqlTokenKind.Set:
+            case SqlTokenKind.Values:
+            case SqlTokenKind.Into:
                 return true;
             default:
                 return false;
@@ -192,19 +198,33 @@ internal sealed class SqlParser
             return new SqlParseResult(null, _diagnostics, true);
         }
 
-        if (!Check(SqlTokenKind.Select))
+        // Dispatch by statement type
+        SqlStatement? stmt;
+        switch (Current.Kind)
         {
-            AddDiagnostic($"Expected SELECT statement, got '{FormatToken(Current)}'");
-            return new SqlParseResult(null, _diagnostics, _hasUnsupported);
+            case SqlTokenKind.Select:
+                stmt = ParseSelectStatement();
+                break;
+            case SqlTokenKind.Delete:
+                stmt = ParseDeleteStatement();
+                break;
+            case SqlTokenKind.Update:
+                stmt = ParseUpdateStatement();
+                break;
+            case SqlTokenKind.Insert:
+                stmt = ParseInsertStatement();
+                break;
+            default:
+                AddDiagnostic($"Expected SQL statement, got '{FormatToken(Current)}'");
+                return new SqlParseResult(null, _diagnostics, _hasUnsupported);
         }
-
-        var stmt = ParseSelectStatement();
 
         // Skip trailing semicolons
         while (Match(SqlTokenKind.Semicolon)) { }
 
-        // Check for UNION/INTERSECT/EXCEPT after the statement
-        if (Check(SqlTokenKind.Union) || Check(SqlTokenKind.Intersect) || Check(SqlTokenKind.Except))
+        // Check for UNION/INTERSECT/EXCEPT after SELECT
+        if (stmt is SqlSelectStatement &&
+            (Check(SqlTokenKind.Union) || Check(SqlTokenKind.Intersect) || Check(SqlTokenKind.Except)))
         {
             _hasUnsupported = true;
             AddDiagnostic($"Set operations ({FormatTokenKind(Current.Kind)}) are not yet supported");
@@ -283,6 +303,105 @@ internal sealed class SqlParser
         return new SqlSelectStatement(
             isDistinct, columns, from, joins,
             where, groupBy, having, orderBy, limit, offset);
+    }
+
+    // ─── DELETE statement ────────────────────────────────
+
+    private SqlDeleteStatement ParseDeleteStatement()
+    {
+        Expect(SqlTokenKind.Delete);
+        Expect(SqlTokenKind.From);
+
+        var table = ParseTableSource();
+
+        SqlExpr? where = null;
+        if (Match(SqlTokenKind.Where))
+            where = ParseExpression();
+
+        return new SqlDeleteStatement(table, where);
+    }
+
+    // ─── UPDATE statement ───────────────────────────────
+
+    private SqlUpdateStatement ParseUpdateStatement()
+    {
+        Expect(SqlTokenKind.Update);
+
+        var table = ParseTableSource();
+
+        Expect(SqlTokenKind.Set);
+
+        var assignments = new List<SqlAssignment>();
+        do
+        {
+            var column = ParseColumnRef();
+            Expect(SqlTokenKind.Equal);
+            var value = ParseExpression();
+            assignments.Add(new SqlAssignment(column, value));
+        }
+        while (Match(SqlTokenKind.Comma));
+
+        SqlExpr? where = null;
+        if (Match(SqlTokenKind.Where))
+            where = ParseExpression();
+
+        return new SqlUpdateStatement(table, assignments, where);
+    }
+
+    /// <summary>
+    /// Parses a column reference (possibly qualified: table.column).
+    /// Used by UPDATE SET assignments where we need an explicit SqlColumnRef.
+    /// </summary>
+    private SqlColumnRef ParseColumnRef()
+    {
+        var name = ReadIdentifierName();
+
+        if (Match(SqlTokenKind.Dot))
+        {
+            var colName = ReadIdentifierName();
+            return new SqlColumnRef(name, colName);
+        }
+
+        return new SqlColumnRef(null, name);
+    }
+
+    // ─── INSERT statement ───────────────────────────────
+
+    private SqlInsertStatement ParseInsertStatement()
+    {
+        Expect(SqlTokenKind.Insert);
+        Expect(SqlTokenKind.Into);
+
+        var table = ParseTableSource();
+
+        // Optional column list: (col1, col2, ...)
+        List<SqlColumnRef>? columns = null;
+        if (Match(SqlTokenKind.OpenParen))
+        {
+            columns = new List<SqlColumnRef>();
+            do
+            {
+                var colName = ReadIdentifierName();
+                columns.Add(new SqlColumnRef(null, colName));
+            }
+            while (Match(SqlTokenKind.Comma));
+            Expect(SqlTokenKind.CloseParen);
+        }
+
+        // VALUES (expr, expr, ...) [, (expr, expr, ...) ...]
+        Expect(SqlTokenKind.Values);
+
+        var rows = new List<IReadOnlyList<SqlExpr>>();
+        do
+        {
+            Expect(SqlTokenKind.OpenParen);
+            var values = ParseExpressionList();
+            Expect(SqlTokenKind.CloseParen);
+            rows.Add(values);
+        }
+        while (Match(SqlTokenKind.Comma));
+
+        return new SqlInsertStatement(table, columns, rows);
     }
 
     // ─── SELECT columns ─────────────────────────────────

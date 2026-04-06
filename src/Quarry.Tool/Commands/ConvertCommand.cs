@@ -58,6 +58,7 @@ internal static class ConvertCommand
 
         var convertible = 0;
         var withWarnings = 0;
+        var manualSuggestion = 0;
         var unconvertible = 0;
 
         foreach (var entry in conversions)
@@ -66,7 +67,19 @@ internal static class ConvertCommand
             Console.WriteLine($"  {relPath}:{entry.Line}  {entry.DapperMethod}<{entry.ResultType ?? "?"}>");
             Console.WriteLine($"    SQL: {Truncate(entry.OriginalSql, 80)}");
 
-            if (entry.IsConvertible)
+            if (entry.IsSuggestionOnly)
+            {
+                // INSERT and similar — comment-only output that the user must apply by hand.
+                // Print the comment block as-is (multi-line) so the suggestion is readable
+                // rather than flattening it and pretending it's chain code.
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"    => Manual conversion required:");
+                foreach (var line2 in (entry.ChainCode ?? string.Empty).Split('\n'))
+                    Console.WriteLine($"       {line2.TrimEnd('\r')}");
+                Console.ResetColor();
+                manualSuggestion++;
+            }
+            else if (entry.IsConvertible)
             {
                 if (entry.HasWarnings)
                 {
@@ -107,10 +120,12 @@ internal static class ConvertCommand
         // Summary
         Console.WriteLine("Summary:");
         Console.WriteLine($"  Fully convertible: {convertible}");
-        Console.WriteLine($"  With Sql.Raw fallback: {withWarnings}");
+        Console.WriteLine($"  Converted with warnings: {withWarnings}");
+        Console.WriteLine($"  Manual conversion required: {manualSuggestion}");
         Console.WriteLine($"  Unconvertible: {unconvertible}");
         Console.WriteLine();
-        Console.WriteLine("To apply conversions, use the IDE code fix (QRM001) or install Quarry.Migration as an analyzer.");
+        Console.WriteLine("To apply conversions, use the IDE code fix (QRM001/QRM002) or install Quarry.Migration as an analyzer.");
+        Console.WriteLine("Manual-conversion suggestions (QRM003) and unconvertible calls must be addressed by hand.");
 
         return 0;
     }

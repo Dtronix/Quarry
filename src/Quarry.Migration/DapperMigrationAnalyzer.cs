@@ -13,7 +13,7 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
         ImmutableArray.Create(
             MigrationDiagnosticDescriptors.DapperQueryDetected,
-            MigrationDiagnosticDescriptors.DapperQueryWithRawFallback,
+            MigrationDiagnosticDescriptors.DapperQueryWithWarnings,
             MigrationDiagnosticDescriptors.DapperQueryNotConvertible);
 
     public override void Initialize(AnalysisContext context)
@@ -54,33 +54,49 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
         var emitter = new ChainEmitter(schemaMap);
         var result = emitter.Translate(parseResult, site);
 
-            if (result.ChainCode == null)
-            {
-                // Cannot convert
-                var reason = result.Diagnostics.Count > 0
-                    ? result.Diagnostics[0].Message
-                    : "SQL could not be parsed";
-                context.ReportDiagnostic(Diagnostic.Create(
-                    MigrationDiagnosticDescriptors.DapperQueryNotConvertible,
-                    site.Location,
-                    reason));
-            }
-            else if (result.Diagnostics.Any(d => d.Severity == ConversionDiagnosticSeverity.Warning))
-            {
-                // Converted with Sql.Raw fallback
-                var rawCount = result.Diagnostics.Count(d => d.Severity == ConversionDiagnosticSeverity.Warning);
-                context.ReportDiagnostic(Diagnostic.Create(
-                    MigrationDiagnosticDescriptors.DapperQueryWithRawFallback,
-                    site.Location,
-                    rawCount));
-            }
-            else
-            {
-                // Fully convertible
-                context.ReportDiagnostic(Diagnostic.Create(
-                    MigrationDiagnosticDescriptors.DapperQueryDetected,
-                    site.Location,
-                    site.MethodName));
+        if (result.ChainCode == null)
+        {
+            // Cannot convert
+            var reason = result.Diagnostics.Count > 0
+                ? result.Diagnostics[0].Message
+                : "SQL could not be parsed";
+            context.ReportDiagnostic(Diagnostic.Create(
+                MigrationDiagnosticDescriptors.DapperQueryNotConvertible,
+                site.Location,
+                reason));
+        }
+        else if (result.IsSuggestionOnly)
+        {
+            // Comment-only suggestion (e.g. INSERT) — not auto-fixable, route to QRM003
+            // so the IDE code fix never replaces the invocation with comment text.
+            var reason = result.Diagnostics.Count > 0
+                ? result.Diagnostics[0].Message
+                : "Manual conversion required";
+            context.ReportDiagnostic(Diagnostic.Create(
+                MigrationDiagnosticDescriptors.DapperQueryNotConvertible,
+                site.Location,
+                reason));
+        }
+        else if (result.Diagnostics.Any(d => d.Severity == ConversionDiagnosticSeverity.Warning))
+        {
+            // Converted with warnings (Sql.Raw fallback, no-WHERE DML, etc.)
+            var warnings = result.Diagnostics
+                .Where(d => d.Severity == ConversionDiagnosticSeverity.Warning)
+                .ToList();
+            var firstMessage = warnings[0].Message;
+            context.ReportDiagnostic(Diagnostic.Create(
+                MigrationDiagnosticDescriptors.DapperQueryWithWarnings,
+                site.Location,
+                warnings.Count,
+                firstMessage));
+        }
+        else
+        {
+            // Fully convertible
+            context.ReportDiagnostic(Diagnostic.Create(
+                MigrationDiagnosticDescriptors.DapperQueryDetected,
+                site.Location,
+                site.MethodName));
         }
     }
 

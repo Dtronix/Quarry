@@ -62,6 +62,10 @@ internal sealed class DapperMigrationCodeFix : CodeFixProvider
 
         if (result.ChainCode == null) return document;
 
+        // Safety: never substitute a manual-conversion suggestion (comment text)
+        // for the invocation — that produces invalid C#.
+        if (result.IsSuggestionOnly) return document;
+
         // Replace the invocation with the Quarry chain code
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root == null) return document;

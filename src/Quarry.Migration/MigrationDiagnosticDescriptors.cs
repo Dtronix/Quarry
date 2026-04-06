@@ -12,10 +12,10 @@ internal static class MigrationDiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: true);
 
-    public static readonly DiagnosticDescriptor DapperQueryWithRawFallback = new(
+    public static readonly DiagnosticDescriptor DapperQueryWithWarnings = new(
         id: "QRM002",
-        title: "Dapper call converted with Sql.Raw fallback",
-        messageFormat: "This Dapper call was converted but uses Sql.Raw for {0} expression(s) that could not be fully translated",
+        title: "Dapper call converted with warnings",
+        messageFormat: "This Dapper call was converted with {0} warning(s): {1}",
         category: "Migration",
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true);
