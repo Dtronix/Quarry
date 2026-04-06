@@ -148,6 +148,24 @@ internal static class SqlAssembler
         var sb = new StringBuilder();
         var paramIndex = paramBaseOffset;
 
+        // WITH clause for CTE definitions
+        if (plan.CteDefinitions.Count > 0)
+        {
+            sb.Append("WITH ");
+            for (int i = 0; i < plan.CteDefinitions.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                var cte = plan.CteDefinitions[i];
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, cte.Name));
+                sb.Append(" AS (");
+                sb.Append(cte.InnerSql);
+                sb.Append(')');
+                // CTE inner parameters precede outer parameters
+                paramIndex += cte.InnerParameters.Count;
+            }
+            sb.Append(' ');
+        }
+
         // SELECT
         sb.Append("SELECT ");
         if (plan.IsDistinct)

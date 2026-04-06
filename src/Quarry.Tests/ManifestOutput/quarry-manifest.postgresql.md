@@ -2172,6 +2172,70 @@ SELECT "UserId", "UserName", "Email" FROM "users" WHERE ("IsActive" = TRUE) AND 
 SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActive" = TRUE)
 ```
 
+---
+
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
+### Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
+```
+
 ## SchemaPgDb
 
 ### Users().ToDiagnostics()
@@ -2186,7 +2250,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 290 |
+| Total discovered | 298 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 54 |
-| Rendered | 236 |
+| Consolidated (deduped) | 55 |
+| Rendered | 243 |

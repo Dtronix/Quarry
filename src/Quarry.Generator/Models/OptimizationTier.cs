@@ -42,6 +42,8 @@ internal enum ClauseRole
     UpdateWhere,
     UpdateSet,
     WithTimeout,
+    CteDefinition,
+    FromCte,
     ChainRoot,
     DeleteTransition,
     UpdateTransition,

@@ -57,7 +57,11 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isValueTypeResult = false,
         string? operandChainId = null,
         int? operandArgEndLine = null,
-        int? operandArgEndColumn = null)
+        int? operandArgEndColumn = null,
+        string? cteEntityTypeName = null,
+        bool isCteInnerChain = false,
+        int? cteInnerArgSpanStart = null,
+        IReadOnlyList<CteColumn>? cteColumns = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -103,6 +107,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         OperandChainId = operandChainId;
         OperandArgEndLine = operandArgEndLine;
         OperandArgEndColumn = operandArgEndColumn;
+        CteEntityTypeName = cteEntityTypeName;
+        IsCteInnerChain = isCteInnerChain;
+        CteInnerArgSpanStart = cteInnerArgSpanStart;
+        CteColumns = cteColumns;
     }
 
     // Identity and location
@@ -189,6 +197,18 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     public int? OperandArgEndLine { get; }
     public int? OperandArgEndColumn { get; }
 
+    // CTE DTO type name (TDto) for CteDefinition and FromCte sites
+    public string? CteEntityTypeName { get; }
+
+    // True when this site is inside an inner query argument of a With<TDto>() call
+    public bool IsCteInnerChain { get; }
+
+    // For CteDefinition sites: SpanStart of the With() argument, for matching to inner chain groups
+    public int? CteInnerArgSpanStart { get; }
+
+    // CTE DTO column metadata resolved during discovery (for CteDefinition sites)
+    public IReadOnlyList<CteColumn>? CteColumns { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -258,7 +278,11 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             isValueTypeResult: IsValueTypeResult,
             operandChainId: OperandChainId,
             operandArgEndLine: OperandArgEndLine,
-            operandArgEndColumn: OperandArgEndColumn);
+            operandArgEndColumn: OperandArgEndColumn,
+            cteEntityTypeName: CteEntityTypeName,
+            isCteInnerChain: IsCteInnerChain,
+            cteInnerArgSpanStart: CteInnerArgSpanStart,
+            cteColumns: CteColumns);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -315,7 +339,11 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && IsValueTypeResult == other.IsValueTypeResult
             && OperandChainId == other.OperandChainId
             && OperandArgEndLine == other.OperandArgEndLine
-            && OperandArgEndColumn == other.OperandArgEndColumn;
+            && OperandArgEndColumn == other.OperandArgEndColumn
+            && CteEntityTypeName == other.CteEntityTypeName
+            && IsCteInnerChain == other.IsCteInnerChain
+            && CteInnerArgSpanStart == other.CteInnerArgSpanStart
+            && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns);
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

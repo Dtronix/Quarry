@@ -2360,4 +2360,182 @@ public static class Queries
 
     #endregion
 
+    #region CTE diagnostics (QRY080 / QRY081)
+
+    [Test]
+    public void Cte_With_NonInlineInnerArgument_EmitsQRY080()
+    {
+        // Regression for review pass #2: when the inner argument to With<T>() is NOT
+        // an inline fluent chain that DetectCteInnerChain can classify as a CTE inner
+        // chain (e.g. a field reference, a hoisted local, an external method result),
+        // the chain analyzer's cteInnerResults lookup misses. The user must see a
+        // dedicated QRY080 diagnostic — NOT QRY900 InternalError, and not a runtime
+        // "no such table" error.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    // Field reference, NOT an inline chain — DetectCteInnerChain cannot classify it
+    // because the field's syntactic ancestor is not an ArgumentSyntax of a With() call.
+    public static IQueryBuilder<Order> _stub = null!;
+
+    public static async Task Test(TestDbContext db)
+    {
+        await db.With<Order>(_stub)
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry080 = diagnostics.FirstOrDefault(d => d.Id == "QRY080");
+        Assert.That(qry080, Is.Not.Null,
+            $"Expected QRY080 for non-inline With<T>() inner argument. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        // Must NOT surface as QRY900 InternalError — that misclassifies a user-input
+        // problem as a generator bug.
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Non-inline CTE inner should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
+    public void Cte_FromCte_WithoutPrecedingWith_EmitsQRY081()
+    {
+        // Regression for review pass #2: FromCte<T>() with no matching With<T>() earlier
+        // in the same chain must produce a dedicated QRY081 diagnostic via the deferred
+        // diagnostics channel — not QRY900 InternalError, not a runtime SQL failure.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // No With<Order>() preceding the FromCte — there is no CTE definition in scope.
+        await db.FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry081 = diagnostics.FirstOrDefault(d => d.Id == "QRY081");
+        Assert.That(qry081, Is.Not.Null,
+            $"Expected QRY081 for FromCte<T>() without preceding With<T>(). Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"FromCte-without-With should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
+    public void Cte_With_GlobalNamespaceDto_StripsGlobalPrefix()
+    {
+        // Regression for review pass #2 Correctness #1: ChainAnalyzer's local
+        // ExtractShortTypeName helper did NOT strip the `global::` prefix while
+        // TransitionBodyEmitter's ExtractDtoShortName helper DID. For a DTO declared
+        // in the global namespace, dtoType.ToFullyQualifiedDisplayString() returns
+        // `global::Foo`, the chain analyzer recorded `cteDef.Name = "global::Foo"`,
+        // and the emitter's name comparison `cteDef.Name == siteCteName` was always
+        // false (because the emitter recovered the bare `Foo`). The captured-param
+        // copy loop silently broke and the inner parameters bound to default values.
+        //
+        // The consolidated CteNameHelpers.ExtractShortName helper strips both
+        // `global::` and namespace prefixes — verify by checking the generated
+        // interceptor code uses the bare DTO name in the WITH clause and that the
+        // captured-param assignment is emitted.
+        var schemaSource = @"
+using Quarry;
+namespace TestApp;
+
+public class OrderSchema : Schema
+{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<int> UserId { get; }
+    public Col<decimal> Total { get; }
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        decimal cutoff = 100m;
+        await db.With<global::GlobalOrderDto>(
+                db.Orders()
+                  .Where(o => o.Total > cutoff)
+                  .Select(o => new global::GlobalOrderDto { OrderId = o.OrderId, Total = o.Total }))
+            .FromCte<global::GlobalOrderDto>()
+            .Select(d => (d.OrderId, d.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        // GlobalOrderDto declared at file scope with NO namespace — lives in the global namespace.
+        var globalDtoSource = @"
+public class GlobalOrderDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+}
+";
+
+        var compilation = CreateCompilation(schemaSource, globalDtoSource);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // Must not produce QRY900 (the symptom of the helper divergence was a runtime
+        // bug, not a generator crash, but verify nothing went sideways).
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Global-namespace DTO must not produce QRY900. Got: {qry900?.GetMessage()}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptor file");
+        var code = interceptorsTree!.GetText().ToString();
+
+        // The generated SQL constant is emitted as a verbatim string `@"..."` so
+        // embedded double quotes appear as `""` (not `\"`). The WITH clause must use
+        // the bare DTO short name, not `global::GlobalOrderDto`.
+        Assert.That(code, Does.Contain("WITH \"\"GlobalOrderDto\"\""),
+            "WITH clause must use bare DTO short name (verbatim quoted), not `global::GlobalOrderDto`");
+        Assert.That(code, Does.Not.Contain("global::GlobalOrderDto\"\""),
+            "WITH clause must strip `global::` prefix from DTO type name");
+
+        // The CTE inner captured-parameter copy loop must have emitted an assignment
+        // from the inner carrier's P0 into an outer carrier P-slot. If the helper
+        // divergence had reappeared, the name comparison `cteDef.Name == siteCteName`
+        // would always be false for global-namespace DTOs, the copy loop would
+        // silently break, and __inner.P0 would never be referenced — the original
+        // silent bug from pass #1.
+        Assert.That(code, Does.Match(@"P\d+\s*=\s*__inner\.P0"),
+            "Outer carrier must copy inner-CTE P0 parameter when DTO is in global namespace");
+    }
+
+    #endregion
+
 }

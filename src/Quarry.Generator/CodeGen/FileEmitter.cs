@@ -181,6 +181,20 @@ internal sealed class FileEmitter
                     }
                     if (chain.PrepareSite != null)
                         carrierLookup[chain.PrepareSite.UniqueId] = (carrierPlan, chain);
+
+                    // CTE inner chains: also register their carrier name keyed by QueryPlan
+                    // so EmitCteDefinition can look up the inner carrier class to copy
+                    // captured parameters from. CTE inner chains are NOT operand chains
+                    // (they retain their own execution terminals for standalone use).
+                    // Inspect every clause site rather than relying on a positional invariant —
+                    // chain analysis may move ChainRoot away from index 0 in future shapes.
+                    var isCteInnerChain = false;
+                    foreach (var cs in chain.ClauseSites)
+                    {
+                        if (cs.Bound.Raw.IsCteInnerChain) { isCteInnerChain = true; break; }
+                    }
+                    if (isCteInnerChain)
+                        operandCarrierNames[chain.Plan] = carrierPlan.ClassName;
                 }
 
                 foreach (var clause in clauses)
@@ -780,6 +794,16 @@ internal sealed class FileEmitter
             case InterceptorKind.ChainRoot:
                 if (carrierInfo != null && carrierChain != null)
                     TransitionBodyEmitter.EmitChainRoot(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.CteDefinition:
+                if (carrierInfo != null && carrierChain != null)
+                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames);
+                break;
+
+            case InterceptorKind.FromCte:
+                if (carrierInfo != null)
+                    TransitionBodyEmitter.EmitFromCte(sb, site, methodName, carrierInfo);
                 break;
 
             case InterceptorKind.DeleteTransition:

@@ -114,7 +114,70 @@ internal static class ChainAnalyzer
 
         var results = new List<AnalyzedChain>();
 
+        // Two-pass analysis: inner CTE chains first, then outer chains.
+        // Inner chains (argument to With()) are analyzed and assembled to SQL
+        // before outer chains so their SQL is available for CteDefinitions.
+        var innerChainGroups = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
+        var outerChainGroups = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
         foreach (var kvp in chains)
+        {
+            if (kvp.Key.Contains(":cte-inner:"))
+                innerChainGroups[kvp.Key] = kvp.Value;
+            else
+                outerChainGroups[kvp.Key] = kvp.Value;
+        }
+
+        // Pass 1: Analyze and assemble inner CTE chains.
+        // Key: argSpanStart of the With() argument syntax — uniquely identifies the call site
+        // within a single source file because two distinct With(...) invocations in the same
+        // file always have distinct argument span starts. (Different files are processed in
+        // separate generator runs, so cross-file collisions cannot occur here.)
+        var cteInnerResults = new Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>();
+        const string CteInnerMarker = ":cte-inner:";
+        foreach (var kvp in innerChainGroups)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                var analyzed = AnalyzeChainGroup(kvp.Value, registry, ct, diagnostics);
+                if (analyzed != null)
+                {
+                    var assembled = SqlAssembler.Assemble(analyzed, registry);
+                    // Extract argSpanStart from ChainId suffix ":cte-inner:NNNN".
+                    // Locate the marker explicitly so we don't depend on substring positions
+                    // beyond the documented format.
+                    var suffix = kvp.Key;
+                    var markerIdx = suffix.LastIndexOf(CteInnerMarker, StringComparison.Ordinal);
+                    if (markerIdx >= 0)
+                    {
+                        var spanStartText = suffix.Substring(markerIdx + CteInnerMarker.Length);
+                        if (int.TryParse(spanStartText, out var argSpanStart))
+                        {
+                            cteInnerResults[argSpanStart] = (analyzed, assembled);
+                        }
+                    }
+                    // Also add to results so the inner chain gets a carrier and interceptors.
+                    // The inner chain may also be invoked standalone (e.g., the user binds it
+                    // to a variable and executes it directly), so we cannot suppress its
+                    // standalone interception even though With(...) embeds its SQL.
+                    // The plan originally called for suppression, but standalone-callability
+                    // makes that infeasible without breaking user code.
+                    results.Add(analyzed);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var first = kvp.Value.Count > 0 ? kvp.Value[0] : null;
+                PipelineErrorBag.Report(
+                    first?.Bound.Raw.FilePath ?? "",
+                    first?.Bound.Raw.Line ?? 0,
+                    first?.Bound.Raw.Column ?? 0,
+                    $"CTE inner chain analysis failed: {ex.Message}");
+            }
+        }
+
+        // Pass 2: Analyze outer chains with CTE inner results available
+        foreach (var kvp in outerChainGroups)
         {
             ct.ThrowIfCancellationRequested();
             var chainSites = kvp.Value;
@@ -127,7 +190,8 @@ internal static class ChainAnalyzer
             try
             {
                 var inlineOperandChains = new List<AnalyzedChain>();
-                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain, inlineOperandChains);
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain, inlineOperandChains,
+                    cteInnerResults: cteInnerResults.Count > 0 ? cteInnerResults : null);
                 if (analyzed != null)
                     results.Add(analyzed);
                 results.AddRange(inlineOperandChains);
@@ -158,7 +222,8 @@ internal static class ChainAnalyzer
         List<DiagnosticInfo>? diagnostics = null,
         Dictionary<string, QueryPlan>? operandPlans = null,
         bool isOperandChain = false,
-        List<AnalyzedChain>? inlineOperandChains = null)
+        List<AnalyzedChain>? inlineOperandChains = null,
+        Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>? cteInnerResults = null)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -271,7 +336,20 @@ internal static class ChainAnalyzer
             }
             else
             {
-                return null;
+                // CTE inner chains don't have execution terminals — use chain root
+                for (int i = clauseSites.Count - 1; i >= 0; i--)
+                {
+                    if (clauseSites[i].Bound.Raw.Kind == InterceptorKind.ChainRoot
+                        && clauseSites[i].Bound.Raw.IsCteInnerChain)
+                    {
+                        executionSite = clauseSites[i];
+                        clauseSites.RemoveAt(i);
+                        break;
+                    }
+                }
+
+                if (executionSite == null)
+                    return null;
             }
         }
 
@@ -575,6 +653,106 @@ internal static class ChainAnalyzer
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
+
+        // Build CTE definitions from CteDefinition/FromCte sites in the chain.
+        // Forward iteration: each CteDefinition is processed before any FromCte that
+        // references it, so the FromCte lookup against cteDefinitions can match by name.
+        var cteDefinitions = new List<CteDef>();
+        for (int i = 0; i < clauseSites.Count; i++)
+        {
+            var site = clauseSites[i];
+            var raw = site.Bound.Raw;
+
+            if (raw.Kind == InterceptorKind.CteDefinition)
+            {
+                // Match this CTE definition to its inner chain's assembled SQL
+                if (cteInnerResults != null && raw.CteInnerArgSpanStart.HasValue
+                    && cteInnerResults.TryGetValue(raw.CteInnerArgSpanStart.Value, out var inner))
+                {
+                    // Get the inner SQL from mask 0 (inner chains don't have conditional clauses)
+                    var innerSql = inner.Assembled.SqlVariants.TryGetValue(0, out var variant)
+                        ? variant.Sql : "";
+                    var innerParams = inner.Chain.Plan.Parameters;
+                    var columns = raw.CteColumns ?? Array.Empty<CteColumn>();
+                    var cteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
+
+                    // Capture the starting index in the outer carrier's parameter slots
+                    // BEFORE prepending — this is where the inner params will live in the outer carrier.
+                    // EmitCteDefinition uses this offset to copy from inner carrier into outer carrier.
+                    var cteParamOffset = paramGlobalIndex;
+
+                    cteDefinitions.Add(new CteDef(
+                        cteName, innerSql, innerParams, columns,
+                        innerPlan: inner.Chain.Plan,
+                        parameterOffset: cteParamOffset));
+
+                    // Prepend CTE inner parameters to the outer parameter list
+                    // Re-index from the current paramGlobalIndex
+                    foreach (var p in innerParams)
+                    {
+                        parameters.Add(new QueryParameter(
+                            globalIndex: paramGlobalIndex++,
+                            clrType: p.ClrType,
+                            valueExpression: p.ValueExpression,
+                            isCaptured: p.IsCaptured,
+                            expressionPath: p.ExpressionPath,
+                            isCollection: p.IsCollection,
+                            elementTypeName: p.ElementTypeName,
+                            typeMappingClass: p.TypeMappingClass,
+                            isEnum: p.IsEnum,
+                            enumUnderlyingType: p.EnumUnderlyingType,
+                            isSensitive: p.IsSensitive,
+                            entityPropertyExpression: p.EntityPropertyExpression,
+                            needsUnsafeAccessor: p.NeedsUnsafeAccessor,
+                            isDirectAccessible: p.IsDirectAccessible,
+                            collectionAccessExpression: p.CollectionAccessExpression,
+                            capturedFieldName: p.CapturedFieldName,
+                            capturedFieldType: p.CapturedFieldType,
+                            isStaticCapture: p.IsStaticCapture,
+                            isEnumerableCollection: p.IsEnumerableCollection));
+                    }
+                }
+                else
+                {
+                    // Inner chain analysis missed (cteInnerResults null, no CteInnerArgSpanStart,
+                    // or no entry for this site's argSpanStart). The CTE cannot be assembled — emit
+                    // a user-visible diagnostic via the deferred-diagnostics channel so the user sees
+                    // QRY080 instead of failing at runtime with "no such table: <CteName>" when a
+                    // sibling FromCte<T>() rewrites primaryTable.
+                    var dtoShort = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "TDto";
+                    diagnostics?.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.CteInnerChainNotAnalyzable.Id,
+                        raw.Location,
+                        dtoShort));
+                }
+            }
+            else if (raw.Kind == InterceptorKind.FromCte)
+            {
+                // FromCte: override primary table with the CTE name — but only if a matching
+                // CteDefinition was successfully resolved above. Otherwise we would emit
+                // SELECT ... FROM "Name" referencing an undeclared CTE.
+                var cteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
+                bool hasMatchingCte = false;
+                for (int j = 0; j < cteDefinitions.Count; j++)
+                {
+                    if (cteDefinitions[j].Name == cteName) { hasMatchingCte = true; break; }
+                }
+                if (hasMatchingCte)
+                {
+                    primaryTable = new TableRef(cteName, schemaName: null);
+                }
+                else
+                {
+                    // Emit QRY081 via the deferred diagnostics channel so the user sees a clear
+                    // source-side error rather than runtime "no such table" or QRY900 InternalError.
+                    diagnostics?.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.FromCteWithoutWith.Id,
+                        raw.Location,
+                        cteName));
+                }
+            }
+        }
+        // CteDefinition/FromCte sites remain in clauseSites for interceptor emission
 
         // Determine query kind — for prepared terminals, use the Prepare site's builder kind
         // since the prepared terminal's BuilderKind is always Query (from PreparedQuery type)
@@ -1015,7 +1193,8 @@ internal static class ChainAnalyzer
             setOperations: setOperationPlans.Count > 0 ? setOperationPlans : null,
             postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null,
             postUnionGroupByExprs: postUnionGroupByExprs.Count > 0 ? postUnionGroupByExprs : null,
-            postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null);
+            postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null,
+            cteDefinitions: cteDefinitions.Count > 0 ? cteDefinitions : null);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.
@@ -1849,6 +2028,7 @@ internal static class ChainAnalyzer
         return null;
     }
 
+
     /// <summary>
     /// Determines the QueryKind from the execution terminal's InterceptorKind.
     /// </summary>
@@ -2043,6 +2223,8 @@ internal static class ChainAnalyzer
             InterceptorKind.IntersectAll => ClauseRole.SetOperation,
             InterceptorKind.Except => ClauseRole.SetOperation,
             InterceptorKind.ExceptAll => ClauseRole.SetOperation,
+            InterceptorKind.CteDefinition => ClauseRole.CteDefinition,
+            InterceptorKind.FromCte => ClauseRole.FromCte,
             _ => null
         };
     }

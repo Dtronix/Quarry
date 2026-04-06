@@ -3423,6 +3423,34 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
 ### Widgets().Insert().ExecuteNonQueryAsync()
 
 ```sql
@@ -3474,11 +3502,59 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 ---
 
+### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
+```
+
+---
+
 ## Summary
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 533 |
+| Total discovered | 543 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 166 |
-| Rendered | 367 |
+| Consolidated (deduped) | 168 |
+| Rendered | 375 |

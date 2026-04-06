@@ -766,6 +766,8 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.PreparedQueryEscapesScope,
         DiagnosticDescriptors.PreparedQueryNoTerminals,
         DiagnosticDescriptors.RawSqlUnresolvableColumn,
+        DiagnosticDescriptors.CteInnerChainNotAnalyzable,
+        DiagnosticDescriptors.FromCteWithoutWith,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

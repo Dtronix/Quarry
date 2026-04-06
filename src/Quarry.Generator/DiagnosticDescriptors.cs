@@ -763,6 +763,34 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Cross-entity UNION/INTERSECT/EXCEPT requires both operands to use the same entity table. This limitation will be removed in a future release.");
 
+    // ─── CTE diagnostics (QRY080–QRY081) ────────────────────────────────
+
+    /// <summary>
+    /// QRY080: CTE inner query could not be analyzed.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor CteInnerChainNotAnalyzable = new(
+        id: "QRY080",
+        title: "CTE inner query not analyzable",
+        messageFormat: "Quarry could not analyze the inner query passed to With<{0}>(...). Make sure the inner query is a complete chain (e.g. db.Orders().Where(...).Select(...)) and not a method-group, lambda, or external variable. The CTE will be skipped and any FromCte<{0}>() in the same chain will fail at runtime.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The inner query passed to With() must be an inline fluent chain on the same context so that the source generator can compose its SQL into the outer WITH clause.");
+
+    /// <summary>
+    /// QRY081: FromCte&lt;T&gt;() has no matching With&lt;T&gt;() earlier in the same chain.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor FromCteWithoutWith = new(
+        id: "QRY081",
+        title: "FromCte without matching With",
+        messageFormat: "FromCte<{0}>() has no matching With<{0}>(...) earlier in the same chain. Each FromCte<T>() must be preceded by a With<T>(innerQuery) that defines the CTE.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "FromCte<T>() reads from a CTE that must be defined earlier in the same fluent chain via With<T>(innerQuery).");
+
     /// <summary>
     /// QRY900: Internal generator error.
     /// Severity: Error

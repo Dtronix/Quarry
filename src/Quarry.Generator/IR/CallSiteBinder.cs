@@ -47,11 +47,35 @@ internal static class CallSiteBinder
         }
         else
         {
-            // Entity not found — create a minimal bound site for non-analyzable reporting
+            // Entity not found — create a minimal bound site for non-analyzable reporting.
+            // This path is also taken legitimately for CTE chains, where downstream sites
+            // (FromCte<TDto>, Select<TDto>, Prepare) carry a DTO type as the entity type
+            // and the DTO is not a schema entity. Resolve the dialect by looking up the
+            // chain's context class instead of falling back to PostgreSQL — the PG fallback
+            // silently corrupts dialect-specific identifier quoting in the rendered SQL
+            // (e.g., a MySQL chain would emit "Name" instead of `Name`).
             entity = EntityRef.Empty(raw.EntityTypeName);
             contextClassName = raw.ContextClassName ?? "";
             contextNamespace = raw.ContextNamespace ?? "";
             dialect = SqlDialect.PostgreSQL; // placeholder
+            if (!string.IsNullOrEmpty(raw.ContextClassName))
+            {
+                foreach (var ctx in registry.AllContexts)
+                {
+                    if (ctx.ClassName == raw.ContextClassName)
+                    {
+                        dialect = ctx.Dialect;
+                        break;
+                    }
+                }
+            }
+            else if (registry.AllContexts.Length == 1)
+            {
+                // Single-context project: when raw.ContextClassName is missing (e.g.,
+                // discovery couldn't walk back to the chain root), there's only one
+                // possible answer — use it instead of the PostgreSQL placeholder.
+                dialect = registry.AllContexts[0].Dialect;
+            }
             tableName = "";
             schemaName = null;
         }

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
@@ -85,6 +86,87 @@ internal static class TransitionBodyEmitter
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
         sb.AppendLine($"        __c.BatchEntities = entities;");
         sb.AppendLine($"        return Unsafe.As<IExecutableBatchInsert<{entityType}>>(__c);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a CteDefinition interceptor (e.g., db.With&lt;TDto&gt;(inner)).
+    /// Creates the outer carrier and copies the inner chain's parameter values from the
+    /// passed-in <c>innerQuery</c> carrier into the outer carrier's matching parameter
+    /// slots, then returns the outer carrier typed as the context class.
+    /// The inner SQL itself is embedded into the outer query's WITH clause at compile time.
+    /// </summary>
+    public static void EmitCteDefinition(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier,
+        AssembledPlan chain,
+        Dictionary<QueryPlan, string>? operandCarrierNames)
+    {
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+        // The method has a generic parameter TDto and takes IQueryBuilder<TDto> (or IQueryBuilder<TEntity,TDto>)
+        // Interceptors for generic methods must match the concrete type arguments from the call site.
+        var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+
+        // Use the stored parameter type from discovery (handles both 1-arg and 2-arg overloads)
+        var paramType = site.Bound.Raw.BuilderTypeName ?? $"IQueryBuilder<{dtoType}>";
+
+        sb.AppendLine($"    public static {contextClass} {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this,");
+        sb.AppendLine($"        {paramType} innerQuery)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = @this }};");
+
+        // Locate the CteDef on the outer chain whose CTE name matches this site's DTO and
+        // whose InnerPlan has a registered carrier. Copy P{0..N-1} from the inner carrier
+        // into __c.P{ParameterOffset..ParameterOffset+N-1}. Without this copy, captured
+        // variables in the inner query (e.g., Where(o => o.Total > cutoff)) would silently
+        // bind default values at runtime.
+        //
+        // Both this site's CTE name and cteDef.Name are produced by the SAME helper
+        // (CteNameHelpers.ExtractShortName) — using divergent helpers here previously
+        // caused the captured-param copy to silently no-op for global-namespace DTOs.
+        //
+        // NOTE: matches the FIRST cteDef whose name equals this site's DTO short name.
+        // Multiple With<T>(...) calls referencing the same DTO type in one chain (e.g.,
+        // db.With<X>(a).With<X>(b)...) would be ambiguous here and silently route the
+        // second call to the first cteDef. Multi-CTE support is tracked in #206 and any
+        // ambiguity-resolution work belongs in that issue.
+        var siteCteName = CteNameHelpers.ExtractShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName) ?? "CTE";
+        for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
+        {
+            var cteDef = chain.Plan.CteDefinitions[i];
+            if (cteDef.Name != siteCteName) continue;
+            if (cteDef.InnerPlan == null || cteDef.InnerParameters.Count == 0) break;
+            string? innerCarrierName = null;
+            operandCarrierNames?.TryGetValue(cteDef.InnerPlan, out innerCarrierName);
+            if (innerCarrierName == null) break;
+
+            sb.AppendLine($"        var __inner = Unsafe.As<{innerCarrierName}>(innerQuery);");
+            for (int p = 0; p < cteDef.InnerParameters.Count; p++)
+            {
+                var targetIdx = cteDef.ParameterOffset + p;
+                sb.AppendLine($"        __c.P{targetIdx} = __inner.P{p};");
+            }
+            break;
+        }
+
+        sb.AppendLine($"        return Unsafe.As<{contextClass}>(__c);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a FromCte interceptor (e.g., db.FromCte&lt;TDto&gt;()).
+    /// Noop type transition — carrier already exists from CteDefinition.
+    /// </summary>
+    public static void EmitFromCte(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+    {
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+        var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+
+        sb.AppendLine($"    public static IEntityAccessor<{dtoType}> {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return Unsafe.As<IEntityAccessor<{dtoType}>>(@this);");
         sb.AppendLine($"    }}");
     }
 
