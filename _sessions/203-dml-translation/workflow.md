@@ -48,3 +48,5 @@ Baseline: 2957 tests passing (79 migration + 103 analyzer + 2775 main), 0 pre-ex
 | 1 | IMPLEMENT | REVIEW | All 8 phases complete, 2987 tests passing (30 new) |
 | 1 | REVIEW | REVIEW | Review agent produced review.md; suspended mid-classification per user request |
 | 2 | REVIEW | REMEDIATE | Resumed; classifications confirmed (fix all); 4 fixes implemented; 2992 tests pass; PR #209 created |
+| 2 | REMEDIATE | REVIEW | User requested re-review of entire branch (incl. REMEDIATE changes); fresh classification round; review.md to be overwritten |
+| 2 | REVIEW | REMEDIATE | Pass-2 review surfaced 7 findings (1 High dup, 1 Medium, 4 Low). User: fix all. INSERT code-fix bug + QRM002 wording fixed; RegisterPrimaryTable returns TableRef; tests tightened; 2993 tests pass |

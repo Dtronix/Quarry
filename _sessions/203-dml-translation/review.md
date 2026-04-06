@@ -1,66 +1,63 @@
-# Review: 203-dml-translation
+# Review: 203-dml-translation (Pass 2)
 
 ## Plan Compliance
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| All 8 phases implemented in order across 4 commits (AST infrastructure, tokenizer keywords, parser dispatch + DELETE/UPDATE/INSERT, emitter for all three) | -- | Implementation matches the planned phase structure faithfully |
-| `SqlStatement` base class introduced; `SqlSelectStatement`, `SqlDeleteStatement`, `SqlUpdateStatement`, `SqlInsertStatement` all inherit from it as specified | -- | Matches plan Phase 1 exactly |
-| `SqlParseResult.Statement` changed from `SqlSelectStatement?` to `SqlStatement?`, with convenience `SelectStatement` accessor added | -- | Clean approach to the planned breaking change, easier migration for callers |
-| UPDATE `.Set()` uses single block-body lambda as planned: `.Set(u => { u.Col1 = val1; u.Col2 = val2; })` | -- | Matches the design decision |
-| INSERT emitted as comment with TODO and diagnostic warning, exactly as specified | -- | Matches the design decision |
-| DELETE/UPDATE without WHERE emit `.All()` plus diagnostic warning, as specified | -- | Matches the design decision |
-| No integration-level analyzer test for DML (Phase 8 item) -- the `RawSqlMigrationAnalyzer` only handles SELECT via `parseResult.SelectStatement` and silently ignores DML | Low | The plan's Phase 8 mentioned verifying that `ExecuteAsync("DELETE ...")` routes through the full pipeline, but no analyzer currently handles `ExecuteAsync`. The `ChainEmitter` is ready, but no analyzer invokes it for DML. This appears intentional (no DML analyzer exists yet) but is worth noting as a gap vs. the plan's Phase 8 aspirations |
+| All 8 phases from the original plan are present, plus the 4 REMEDIATE fixes from Pass 1 are committed in `268b2b5` | -- | Faithful execution of the plan |
+| `TranslateInsert` REMEDIATE refactor correctly calls `RegisterPrimaryTable` and reads the entity via `_tables.Values.First().Entity` -- behavior is preserved (same warning text on missing table, same comment output on success) | -- | Pass-1 finding addressed correctly |
+| New tests added in REMEDIATE for `Update_WithComputedExpression`, `Delete_WithTableAlias`, and three DML analyzer integration tests (`DeleteExecuteAsync_ReportsQRM001`, `UpdateExecuteAsync_ReportsQRM001`, `InsertExecuteAsync_ReportsQRM001`) | -- | Pass-1 gaps addressed |
 
 ## Correctness
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| No concerns with parser dispatch logic -- `ParseRoot()` correctly dispatches by first keyword token and falls through to diagnostic for unknown statements | -- | Clean and correct |
-| `ParseTableSource()` correctly avoids consuming `SET` keyword as table alias because `SET` is now its own `SqlTokenKind`, not `Identifier` -- the implicit alias check only triggers for `Identifier`/`QuotedIdentifier` tokens | -- | Important edge case handled correctly by the existing parser design |
-| UPDATE `ParseExpression()` for assignment values correctly stops at commas and WHERE, since expression parsing bottoms out before those tokens | -- | The `do { ... } while (Match(Comma))` loop in `ParseUpdateStatement` works correctly because `ParseExpression` doesn't consume commas |
-| `TranslateInsert` bypasses `RegisterPrimaryTable()` and does its own `TryGetEntity` lookup | Low | This is intentional since INSERT only emits a comment and doesn't need lambda variables or table registration, but it means the error diagnostic message is duplicated. Not a bug, just minor code duplication |
-| UNION/INTERSECT/EXCEPT check correctly gated to SELECT statements only (line 626: `stmt is SqlSelectStatement`) | -- | Prevents false unsupported-feature warnings on DML statements |
+| `DapperMigrationCodeFix.ConvertToQuarryAsync` calls `SyntaxFactory.ParseExpression(result.ChainCode)` on the INSERT translation output, which is a `// TODO:` comment, not a valid C# expression. Applying the code fix to a Dapper `ExecuteAsync("INSERT ...")` call will replace the invocation with an empty/invalid expression, producing broken source. INSERT is now reachable through the analyzer (the new `InsertExecuteAsync_ReportsQRM001` test confirms this), so a user clicking the fix-it lightbulb on an INSERT site will hit this | High | Real code-fix break for an end-to-end-supported flow. The INSERT comment-only output was tolerable while no analyzer routed INSERT through the emitter, but the new analyzer integration tests (and the existing `DapperMigrationCodeFix` registration on QRM001/QRM002) make this user-reachable |
+| `DapperMigrationAnalyzer` reports any `ChainEmitter` warning as `QRM002` ("Dapper call converted with Sql.Raw fallback ... uses Sql.Raw for {N} expression(s)"). The new DELETE/UPDATE-without-WHERE warning ("DELETE without WHERE — .All() added") and the INSERT warning ("INSERT requires entity construction") get reported under that descriptor, even though neither path actually uses `Sql.Raw`. Users will see a misleading "uses Sql.Raw for 1 expression(s)" message on a perfectly translated `.All()` chain or an INSERT TODO | Medium | Diagnostic message wording is now incorrect for the new DML cases. QRM002 was designed for `Sql.Raw` fallbacks; conflating it with no-WHERE warnings and INSERT TODOs hides the real meaning from users |
+| `TranslateUpdate` reads `var primaryVar = _lambdaVars[0];` and `_tables.Values.First().Entity.AccessorName` immediately after `RegisterPrimaryTable`. This works only because the emitter is constructed per-translation and `_tables`/`_lambdaVars` start empty. The coupling is implicit -- a future refactor that pre-registers anything (or reuses the emitter) would silently emit the wrong table. Same pattern in `TranslateSelect`/`TranslateDelete`/`TranslateInsert` after the REMEDIATE refactor | Low | Brittle implicit assumption introduced by the REMEDIATE refactor. A small `RegisterPrimaryTable` returning the `TableRef` (or out parameters for entity + variable) would make the data flow explicit |
+| `InsertExecuteAsync_ReportsQRM001` asserts `Id == "QRM001" || Id == "QRM002"`. As implemented today INSERT always adds a warning, so it always reports QRM002. The "or QRM001" branch is dead -- the test does not actually pin down the expected diagnostic ID and would silently keep passing if the diagnostic flipped to either side | Low | Test does not lock the contract it claims to verify |
+| `ParseTableSource` consults `ReadIdentifierName` for the implicit alias only if the next token is `Identifier`/`QuotedIdentifier`, so the new `Set`/`Into`/`Values` token kinds correctly do NOT get swallowed as table aliases in `UPDATE users SET ...` and `INSERT INTO users VALUES ...`. Verified by inspection | -- | Important edge case handled correctly by the existing parser design |
+| UNION/INTERSECT/EXCEPT trailing-keyword check is correctly gated to `stmt is SqlSelectStatement`, preventing spurious unsupported-feature diagnostics on DML | -- | Correct |
 
 ## Security
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| No concerns. The code is a source-to-source translator operating at compile time. No runtime SQL execution, no user input handling. Parameter references are preserved by name without evaluation. | -- | -- |
+| No concerns. The translator runs at compile time, never executes SQL, and treats parameter references as opaque names | -- | -- |
 
 ## Test Quality
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| 30 new tests added across 3 files: 19 parser DML tests, 12 tokenizer keyword tests (6 keywords x upper+lower), and ~11 ChainEmitter DML tests. All 2987 tests pass. | -- | Good coverage |
-| Parser tests cover: simple cases, WHERE clauses, parameters, complex WHERE, trailing semicolons, qualified columns, multi-row INSERT, missing-keyword error cases | -- | Solid edge case coverage |
-| Emitter tests cover: DELETE with/without WHERE, complex WHERE, unknown table, UPDATE single/multi column, with/without WHERE, unknown table, INSERT comment output and diagnostic | -- | Covers all the key emission paths |
-| Missing test: UPDATE with expression values (e.g., `SET count = count + 1`) rather than just literals/parameters | Low | Computed-value SET assignments are common in real SQL. The parser would handle these (since `ParseExpression` supports binary ops), and the emitter would emit them via `EmitExpression`, but there is no explicit test verifying this path end-to-end |
-| Missing test: INSERT without INTO (some dialects support `INSERT table ...`) | Low | The parser requires INTO and would correctly produce a diagnostic, but there is no test for this specific error case |
-| Missing test: DELETE with table alias (`DELETE FROM users u WHERE u.id = @id`) | Low | The parser handles this via `ParseTableSource` alias support, but no test verifies alias resolution in DELETE emission |
-| The existing test `Parse_NonSelectStatement_HasDiagnostics` was correctly updated to `Parse_NonSelectStatement_NowSupported` and a new `Parse_UnknownStatement_HasDiagnostics` was added for TRUNCATE | -- | Good maintenance of existing tests |
+| `Update_QualifiedColumn` (parser) and `Delete_WithTableAlias` (emitter) verify the parser side of qualified columns and the emitter side of an aliased DELETE, but no emitter test exercises an UPDATE SET with a *qualified* column reference (`UPDATE users u SET u.is_active = 0`). The emitter path through `ResolveColumnAccess` for `colRef.TableAlias != null` in an UPDATE SET assignment is therefore untested | Low | Small but real coverage gap for a path the parser specifically supports |
+| `Insert_EmitsComment` checks that the comment contains `UserName` and `Email`, and the analyzer test `InsertExecuteAsync_ReportsQRM001` accepts either `QRM001` or `QRM002`. Neither test verifies the actual end-user outcome (broken code-fix output) or the incorrect diagnostic message wording. This is what allowed the High-severity code-fix bug above to slip past two review passes | Low | Tests cover "the comment was emitted" but not "the comment is usable downstream" |
+| `Delete_MissingFrom_HasDiagnostic`, `Update_MissingSet_HasDiagnostic`, `Insert_MissingValues_HasDiagnostic` only assert `Diagnostics.Count > 0`. They do not check the diagnostic message text or that `Statement` is null/non-null, so they would still pass if the parser produced an unrelated diagnostic for the same input | Low | Weak error-case assertions |
+| `Update_WithComputedExpression` test (added in REMEDIATE) correctly exercises `salary = salary + 1000` and asserts the emitter produces `u.Salary = u.Salary + 1000`. The test does what it claims | -- | REMEDIATE Finding #1 fix verified |
+| `Delete_WithTableAlias` test (added in REMEDIATE) correctly exercises `DELETE FROM users u WHERE u.user_id = @id` and asserts the alias-qualified WHERE resolves through the schema. The test does what it claims | -- | REMEDIATE Finding #2 fix verified |
+| The three DML analyzer integration tests (added in REMEDIATE) compile a small Dapper-using snippet through the full `DapperMigrationAnalyzer` pipeline and assert a QRM diagnostic is reported. They do what they claim for DELETE and UPDATE; the INSERT test is loosened (see Correctness finding above) | -- | REMEDIATE Finding #3 fix verified for two of three statement types |
 
 ## Codebase Consistency
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| All existing test files updated from `result.Statement!.` to `result.SelectStatement!.` -- consistent mechanical change across SqlParserTests.cs, SqlParserEdgeCaseTests.cs, SqlParserReviewTests.cs | -- | Clean and consistent |
-| New AST node classes follow the same pattern as existing ones: sealed class, constructor with properties, `NodeKind` override | -- | Matches established patterns |
-| New parser methods follow the same structure as `ParseSelectStatement()`: consume keyword, parse components, return statement | -- | Consistent with codebase style |
-| `RegisterPrimaryTable()` extracted from `TranslateSelect` and reused in `TranslateDelete`/`TranslateUpdate` -- good refactoring to avoid duplication | -- | Reduces code duplication |
-| Section comment style (`// --- DELETE statement ---`) matches existing section separators in the file | -- | Consistent formatting |
-| Keywords added to `ClassifyKeyword()` are inserted in alphabetical order within their length bucket | -- | Follows existing convention |
+| New AST node classes (`SqlDeleteStatement`, `SqlUpdateStatement`, `SqlInsertStatement`, `SqlAssignment`) follow the established sealed-class + `NodeKind` override pattern | -- | Consistent |
+| Mechanical `result.Statement!.` → `result.SelectStatement!.` rename applied uniformly across `SqlParserTests.cs`, `SqlParserEdgeCaseTests.cs`, `SqlParserReviewTests.cs` | -- | Clean |
+| `RegisterPrimaryTable` is now reused by all four `Translate*` methods after the REMEDIATE refactor -- no remaining duplicated table-lookup logic | -- | REMEDIATE Finding #4 fix verified |
+| Emitter section comment style (`// ─── DELETE translation ─── `) matches the existing SELECT-translation separators | -- | Consistent |
+| Tokenizer keyword entries inserted in alphabetical order within each length bucket | -- | Follows existing convention |
 
 ## Integration / Breaking Changes
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `SqlParseResult.Statement` type changed from `SqlSelectStatement?` to `SqlStatement?` -- this is an internal API (all types are `internal`), not a public breaking change | Low | All internal callers updated. The convenience `SelectStatement` property provides a smooth migration path. Since these are `internal` types, there is no external consumer impact |
-| `RawSqlMigrationAnalyzer` updated to use `parseResult.SelectStatement` -- correctly continues to handle only SELECT for its use case | -- | No behavioral change for the existing analyzer |
-| `RawSqlColumnResolver` updated with null check for `SelectStatement` returning fallback for non-SELECT -- handles the new possibility of DML parse results gracefully | -- | Prevents NullReferenceException if a non-SELECT statement reaches this code path |
-| No analyzer integration for DML statements yet -- `ChainEmitter` can translate DELETE/UPDATE/INSERT but no analyzer calls it for `ExecuteAsync` Dapper calls | Medium | The emitter infrastructure is in place but there is no end-to-end integration. Users running the migration analyzer will not get suggestions for DML statements. This is likely a deliberate next-step item, but the plan's Phase 8 implied this would be verified |
+| `SqlParseResult.Statement` widened from `SqlSelectStatement?` to `SqlStatement?`. All internal callers updated. Convenience `SelectStatement` accessor smooths the migration | -- | Internal types only, no external impact |
+| `RawSqlMigrationAnalyzer` and `RawSqlColumnResolver` (in `Quarry.Generator/CodeGen`) updated to use `SelectStatement` and short-circuit on non-SELECT inputs -- behavior unchanged for SELECT, gracefully degrades for DML | -- | Correct |
+| End-to-end DML routing through `DapperMigrationAnalyzer` is now exercised by the new integration tests for DELETE/UPDATE; INSERT is reachable but produces a code-fix that breaks (see Correctness High finding) | High | Same root cause as the High Correctness finding -- INSERT now reaches the code-fix path, where the comment-shaped output is invalid as a C# expression replacement |
 
 ## Classifications
 | Finding | Section | Class | Action Taken |
 |---------|---------|-------|--------------|
-| Missing test for UPDATE with computed expression values (`count = count + 1`) | Test Quality | (B) Gap | Add test in REMEDIATE |
-| Missing test for DELETE with table alias | Test Quality | (B) Gap | Add test in REMEDIATE |
-| Missing end-to-end DML analyzer test (DapperMigrationAnalyzer + ExecuteAsync + DML SQL) — VERIFIED 2026-04-06: agent's "no integration" claim was wrong, DapperMigrationAnalyzer routes ExecuteAsync through ChainEmitter for all SQL types; only the test is missing | Integration | (B) Gap | Add test in REMEDIATE |
-| Duplicated table-lookup logic between `TranslateInsert` and `RegisterPrimaryTable` | Correctness | (B) Gap | Refactor in REMEDIATE — user requested fix-all |
+| `DapperMigrationCodeFix` produces broken C# when applied to INSERT (parses comment as expression) | Correctness (High) | (B) Gap | Add `ConversionResult.IsSuggestionOnly` flag; route to QRM003 in analyzer; guard in code fix |
+| End-to-end INSERT routing through analyzer breaks code fix | Integration (High) | (B) Gap | Same root-cause fix as above |
+| `QRM002` message wording wrong for new DML warnings (claims "Sql.Raw fallback" for `.All()` and INSERT TODOs) | Correctness (Medium) | (B) Gap | Update QRM002 messageFormat to be generic over warning kinds; update ConvertCommand.cs prose |
+| `TranslateUpdate` brittle implicit coupling (`_lambdaVars[0]`/`_tables.Values.First()` after `RegisterPrimaryTable`) | Correctness (Low) | (B) Gap | Refactor `RegisterPrimaryTable` to return `TableRef?`; update all 4 callers |
+| `InsertExecuteAsync_ReportsQRM001` accepts QRM001 OR QRM002 (loose) | Test Quality (Low) | (B) Gap | After High fix, INSERT goes to QRM003 — rename test and tighten assertion |
+| Missing UPDATE qualified-column emitter test | Test Quality (Low) | (B) Gap | Add `Update_QualifiedColumn_WithAlias` test |
+| Parser error-case assertions only check `Diagnostics.Count > 0` | Test Quality (Low) | (B) Gap | Tighten `Delete_MissingFrom_*`, `Update_MissingSet_*`, `Insert_MissingValues_*` to also check Statement is null and message text |
 
 ## Issues Created
 None — all findings addressed in REMEDIATE.
