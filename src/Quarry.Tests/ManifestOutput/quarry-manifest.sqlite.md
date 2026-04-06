@@ -1560,6 +1560,14 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 
 ---
 
+### Users().Select(...).Union(...).Except(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 EXCEPT SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
 ### Users().Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1848,6 +1856,22 @@ UPDATE "users" SET "UserName" = @p0, "IsActive" = @p1 WHERE "UserId" = 3
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Where(...).Except(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 EXCEPT SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Intersect(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 INTERSECT SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
+```
 
 ---
 
@@ -3037,6 +3061,79 @@ SELECT "UserName", "UserId" FROM "users" WHERE "IsActive" = 1
 
 ---
 
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3 ORDER BY "UserName" ASC LIMIT 2
+```
+
+---
+
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3 ORDER BY "UserName" ASC
+```
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3
+```
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3
+```
+
+---
+
 ### Users().Where(...).ToDiagnostics()
 
 ```sql
@@ -3081,6 +3178,30 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE NOT ("IsActive")
+```
+
+---
+
+### Users().Where(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1 UNION ALL SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Users()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 1
 ```
 
 ---
@@ -3278,7 +3399,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 498 |
+| Total discovered | 519 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 154 |
-| Rendered | 344 |
+| Consolidated (deduped) | 160 |
+| Rendered | 359 |
