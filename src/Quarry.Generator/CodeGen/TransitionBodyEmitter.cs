@@ -108,7 +108,7 @@ internal static class TransitionBodyEmitter
         sb.AppendLine($"        this {contextClass} @this,");
         sb.AppendLine($"        {paramType} innerQuery)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = @this }};");
+        sb.AppendLine($"        return Unsafe.As<{contextClass}>(new {carrier.ClassName} {{ Ctx = @this }});");
         sb.AppendLine($"    }}");
     }
 

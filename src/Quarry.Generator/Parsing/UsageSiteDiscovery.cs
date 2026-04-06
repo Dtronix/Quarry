@@ -170,6 +170,7 @@ internal static class UsageSiteDiscovery
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
     {
+
         // ── Step 1: Symbol resolution ──────────────────────────────────────
         var symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
         IMethodSymbol methodSymbol;
@@ -266,7 +267,8 @@ internal static class UsageSiteDiscovery
         // ── Step 3b: CTE method detection ─────────────────────────────────
         if (IsQuarryContextType(containingType) && methodName is "With" or "FromCte")
         {
-            return DiscoverCteSite(invocation, methodSymbol, containingType, methodName, semanticModel, cancellationToken);
+            var result = DiscoverCteSite(invocation, methodSymbol, containingType, methodName, semanticModel, cancellationToken);
+            return result;
         }
 
         // ── Step 4: Chain root detection ───────────────────────────────────
@@ -3283,10 +3285,25 @@ internal static class UsageSiteDiscovery
             cteInnerArgSpanStart = invocation.ArgumentList.Arguments[0].SpanStart;
         }
 
+        // Use the concrete context class type rather than QuarryContext base class,
+        // because CTE methods are defined on the base class but interceptors must match
+        // the concrete derived type. Walk the chain root to find the actual context variable.
         var contextClassName = containingType.Name;
         var contextNamespace = containingType.ContainingNamespace?.IsGlobalNamespace == false
             ? containingType.ContainingNamespace.ToDisplayString()
             : null;
+        if (invocation.Expression is MemberAccessExpressionSyntax cteMa)
+        {
+            var chainRoot = VariableTracer.WalkFluentChainRoot(cteMa.Expression);
+            var rootType = semanticModel.GetTypeInfo(chainRoot, cancellationToken).Type;
+            if (rootType is INamedTypeSymbol rootNamed && IsQuarryContextType(rootNamed))
+            {
+                contextClassName = rootNamed.Name;
+                contextNamespace = rootNamed.ContainingNamespace?.IsGlobalNamespace == false
+                    ? rootNamed.ContainingNamespace.ToDisplayString()
+                    : null;
+            }
+        }
 
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
         var isInsideLoop = DetectLoopAncestor(invocation);

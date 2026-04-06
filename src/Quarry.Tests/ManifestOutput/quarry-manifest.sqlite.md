@@ -3423,6 +3423,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
 ### Widgets().Insert().ExecuteNonQueryAsync()
 
 ```sql
@@ -3471,6 +3479,14 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 | Parameter | Type | Sensitive |
 |-----------|------|-----------|
 | `@p0` | `string` | Yes |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
 
 ---
 

@@ -146,6 +146,9 @@ internal static class ChainAnalyzer
                     {
                         cteInnerResults[argSpanStart] = (analyzed, assembled);
                     }
+                    // Also add to results so the inner chain gets a carrier and interceptors.
+                    // This allows the inner chain to execute at runtime without throwing.
+                    results.Add(analyzed);
                 }
             }
             catch { }

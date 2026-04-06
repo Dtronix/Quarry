@@ -149,7 +149,7 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query.");
         sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
         sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    {access} {context.ClassName} With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class");
         sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
         sb.AppendLine();
 
@@ -158,7 +158,7 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query with a projection.");
         sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
         sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    {access} {context.ClassName} With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) where TEntity : class where TDto : class");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) where TEntity : class where TDto : class");
         sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
         sb.AppendLine();
 
@@ -167,7 +167,7 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"    /// Starts a query from a previously defined CTE as the primary table.");
         sb.AppendLine($"    /// Must be preceded by a With&lt;TDto&gt;() call that defines the CTE.");
         sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    {access} IEntityAccessor<TDto> FromCte<TDto>() where TDto : class");
+        sb.AppendLine($"    {access} new IEntityAccessor<TDto> FromCte<TDto>() where TDto : class");
         sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
         sb.AppendLine();
     }

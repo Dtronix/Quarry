@@ -125,6 +125,41 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     // Update/Delete/Insert operations are now accessed via EntityAccessor:
     // db.Users().Update(), db.Users().Delete(), db.Users().Insert(entity)
 
+    #region CTE (Common Table Expressions)
+
+    /// <summary>
+    /// Defines a Common Table Expression (CTE) from an inner query.
+    /// The TDto class's public properties define the CTE's columns.
+    /// </summary>
+    /// <typeparam name="TDto">The DTO type whose properties define the CTE columns.</typeparam>
+    /// <param name="innerQuery">The inner query that provides the CTE's data.</param>
+    /// <returns>This context for method chaining.</returns>
+    public QuarryContext With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+
+    /// <summary>
+    /// Defines a Common Table Expression (CTE) from an inner query with a projection.
+    /// The TDto class's public properties define the CTE's columns.
+    /// </summary>
+    /// <typeparam name="TEntity">The entity type of the inner query.</typeparam>
+    /// <typeparam name="TDto">The projected DTO type whose properties define the CTE columns.</typeparam>
+    /// <param name="innerQuery">The inner query with projection that provides the CTE's data.</param>
+    /// <returns>This context for method chaining.</returns>
+    public QuarryContext With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery)
+        where TEntity : class where TDto : class
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+
+    /// <summary>
+    /// Starts a query from a previously defined CTE as the primary table.
+    /// Must be preceded by a With&lt;TDto&gt;() call that defines the CTE.
+    /// </summary>
+    /// <typeparam name="TDto">The CTE DTO type to query from.</typeparam>
+    /// <returns>An entity accessor for the CTE.</returns>
+    public IEntityAccessor<TDto> FromCte<TDto>() where TDto : class
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+
+    #endregion
+
     #region Raw SQL
 
     /// <summary>
