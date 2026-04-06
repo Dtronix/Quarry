@@ -48,7 +48,7 @@ internal static class CallSiteBinder
                         break;
                     }
                 }
-                break;
+                if (rebound != null) break;
             }
             if (rebound != null)
                 entry = rebound;

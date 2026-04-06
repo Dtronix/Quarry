@@ -235,10 +235,6 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     public InvocationExpressionSyntax? EnrichmentInvocation { get; set; }
 
     /// <summary>
-    /// Creates a copy with a different ResultTypeName.
-    /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
-    /// </summary>
-    /// <summary>
     /// Returns a copy with OperandEntityTypeName replaced. Used by CallSiteBinder to normalize
     /// the cross-entity set operation operand to the per-context generated entity class.
     /// </summary>
@@ -363,6 +359,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         return copy;
     }
 
+    /// <summary>
+    /// Creates a copy with a different ResultTypeName.
+    /// Used by PipelineOrchestrator to patch unresolved tuple types after chain analysis.
+    /// </summary>
     internal RawCallSite WithResultTypeName(string resolvedResultTypeName)
     {
         var copy = new RawCallSite(

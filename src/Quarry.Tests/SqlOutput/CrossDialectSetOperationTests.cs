@@ -733,9 +733,18 @@ internal class CrossDialectSetOperationTests
             ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [ProductId], [ProductName] FROM [products] WHERE [Price] <= @p1");
 
         var results = await lt.ExecuteFetchAllAsync();
-        // Users where UserId >= 2: Bob(2), Charlie(3). Products where Price <= 40: Widget(29.99), Doohickey(9.95).
-        // UNION: 4 distinct rows
-        Assert.That(results, Has.Count.EqualTo(4));
+        // Users where UserId >= 2: Bob(2), Charlie(3). Products where Price <= 40: Widget(1, 29.99), Doohickey(3, 9.95).
+        // UNION: 4 distinct rows. Verify by value (not just count) to confirm product rows
+        // actually flow through the positional reader, matching the row-value strengthening
+        // already applied to CrossEntity_Union_TupleProjection.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]

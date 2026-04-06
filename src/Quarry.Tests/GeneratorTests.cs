@@ -1409,14 +1409,17 @@ public partial class TestDbContext : QuarryContext
     }
 
     // Note on QRY072 (SetOperationProjectionMismatch) cross-entity coverage:
-    // QRY072 is a defensive check inside PipelineOrchestrator.CollectPostAnalysisDiagnostics that
-    // reports when the two sides of a set operation produce different SQL column counts. In practice
-    // it's almost impossible to trigger from end-to-end test source: any user code that mixes
-    // projections of different column shapes is rejected by the C# type system first because
-    // Union<TOther>(IQueryBuilder<TOther, TResult>) requires both sides to share TResult, which
-    // pins them to the same number of tuple elements. Same-entity Union(IQueryBuilder<TEntity>) is
-    // similarly constrained. Coverage for QRY072 therefore lives at the descriptor level (see
-    // DiagnosticDescriptors_SetOperation_IdsAreUnique above) rather than as a runtime negative test.
+    // QRY072 fires when the two sides of a set operation produce different SQL column counts.
+    // For tuple TResult and required-init records the C# type system pins both sides to the
+    // same column count, but for DTOs with object initializers it does NOT — both sides can
+    // share TResult=MyDto while assigning a different number of properties:
+    //   Select(u => new MyDto { A = u.X, B = u.Y })  // 2 columns
+    //     .Union(Select(u => new MyDto { A = u.X })) // 1 column
+    // ProjectionAnalyzer counts one column per assignment expression, so the IR ends up with
+    // mismatched Columns.Count and the diagnostic fires. This is verified at the unit level
+    // by PipelineOrchestratorTests.CollectPostAnalysisDiagnostics_SetOperationColumnCountMismatch_EmitsQRY072,
+    // which constructs the AssembledPlan directly and asserts the diagnostic is emitted.
+    // The descriptor uniqueness check above guards against ID collisions.
 
     #endregion
 

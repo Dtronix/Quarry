@@ -30,6 +30,10 @@
 - Added a uniform `<remarks>` block to all six cross-entity overloads on `IQueryBuilder` (`Union<TOther>`, `UnionAll<TOther>`, `Intersect<TOther>`, `IntersectAll<TOther>`, `Except<TOther>`, `ExceptAll<TOther>`). The block explains the strict `TResult` constraint enforced by C# generics, the explicit-`Select` escape hatch for structurally different entities, and the parity with EF Core / LINQ to SQL conventions.
 - Updated PR #210 description: added a "Design Notes" section between "Gaps in original plan implemented" and "Migration Steps" covering the strict-TResult constraint, the SQL UNION permissiveness tradeoff, the escape hatch, EF Core / LINQ to SQL parity, and QRY072's defensive retention.
 - Tests still 2965 green after the doc-only changes.
+- **Follow-up in same session**: Investigated QRY072 reachability claim from prior review. Found that the original "C# type system pins column counts" assertion only holds for tuples and required-init records, not DTO object initializers — `Select(u => new MyDto { A, B })` vs `Select(u => new MyDto { A })` both share `TResult=MyDto`, both compile, both reach the orchestrator with mismatched `Columns.Count` (since `ProjectionAnalyzer.AnalyzeInitializerExpressions` counts one column per assignment expression). Reclassified the original (D) finding to (A).
+- Added two unit-level tests in `src/Quarry.Tests/IR/PipelineOrchestratorTests.cs` (`CollectPostAnalysisDiagnostics_SetOperationColumnCountMismatch_EmitsQRY072` and `..._NoDiagnostic`) that construct the `AssembledPlan` directly and invoke the private `PipelineOrchestrator.CollectPostAnalysisDiagnostics` via reflection. This bypasses the source-generator harness limitations with default interface methods (Union/Intersect/Except all use default interface methods) that prevented a source-level negative test.
+- Corrected the misleading comment block in `src/Quarry.Tests/GeneratorTests.cs:1411-1421` to acknowledge the DTO-init reachable shape and point at the new unit tests.
+- All 2967 tests now pass (+2 from the two new QRY072 tests).
 
 ## Session 2 Completions
 - Resumed session, user chose "Fix all" classification.
