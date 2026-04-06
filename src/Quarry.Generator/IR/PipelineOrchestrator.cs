@@ -372,6 +372,9 @@ internal static class PipelineOrchestrator
             for (int i = 0; i < assembledPlans.Count; i++)
             {
                 var plan = assembledPlans[i];
+                // Skip inner CTE chains — they're assembled for SQL capture but don't get carriers
+                if (plan.ExecutionSite.Bound.Raw.IsCteInnerChain)
+                    continue;
                 if (plan.ExecutionSite.Bound.ContextClassName == contextClassName
                     && plan.ExecutionSite.Bound.Raw.FilePath == filePath)
                 {
@@ -385,6 +388,9 @@ internal static class PipelineOrchestrator
             var fileChainMemberSites = new List<TranslatedCallSite>();
             foreach (var s in sites)
             {
+                // Skip inner CTE chain sites — they don't get interceptors
+                if (s.Bound.Raw.IsCteInnerChain)
+                    continue;
                 if (s.Bound.Raw.IsAnalyzable || !chainMemberIds.Contains(s.Bound.Raw.UniqueId))
                     fileSites.Add(s);
                 if (!s.Bound.Raw.IsAnalyzable && chainMemberIds.Contains(s.Bound.Raw.UniqueId))

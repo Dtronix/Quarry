@@ -89,6 +89,47 @@ internal static class TransitionBodyEmitter
     }
 
     /// <summary>
+    /// Emits a CteDefinition interceptor (e.g., db.With&lt;TDto&gt;(inner)).
+    /// Creates the carrier and returns it typed as the context class.
+    /// The inner query argument is unused at runtime — its SQL is compile-time only.
+    /// </summary>
+    public static void EmitCteDefinition(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+    {
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+        // The method has a generic parameter TDto and takes IQueryBuilder<TDto> (or IQueryBuilder<TEntity,TDto>)
+        // Interceptors for generic methods must match the concrete type arguments from the call site.
+        var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+
+        // Determine if this is the 1-arg (IQueryBuilder<TDto>) or 2-arg (IQueryBuilder<TEntity,TDto>) overload
+        var paramType = $"IQueryBuilder<{dtoType}>";
+
+        sb.AppendLine($"    public static {contextClass} {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this,");
+        sb.AppendLine($"        {paramType} innerQuery)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return new {carrier.ClassName} {{ Ctx = @this }};");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Emits a FromCte interceptor (e.g., db.FromCte&lt;TDto&gt;()).
+    /// Noop type transition — carrier already exists from CteDefinition.
+    /// </summary>
+    public static void EmitFromCte(
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+    {
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+        var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+
+        sb.AppendLine($"    public static IEntityAccessor<{dtoType}> {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return Unsafe.As<IEntityAccessor<{dtoType}>>(@this);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Emits a carrier ChainRoot interceptor (e.g., db.Users()).
     /// Creates the carrier directly from the context — zero QueryBuilder allocation.
     /// </summary>

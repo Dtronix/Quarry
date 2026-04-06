@@ -678,21 +678,17 @@ internal static class ChainAnalyzer
                     }
                 }
 
-                // Remove CteDefinition from clause sites — it's been processed
-                clauseSites.RemoveAt(i);
             }
             else if (raw.Kind == InterceptorKind.FromCte)
             {
                 // FromCte: override primary table with the CTE name
                 var cteName = GetShortTypeName(raw.CteEntityTypeName) ?? "CTE";
                 primaryTable = new TableRef(cteName, schemaName: null);
-
-                // Remove FromCte from clause sites — it's structural, not a clause
-                clauseSites.RemoveAt(i);
             }
         }
-        // Reverse CTE definitions to preserve declaration order (we iterated backwards)
+        // CTE definitions were built in reverse iteration order — reverse to preserve declaration order
         cteDefinitions.Reverse();
+        // CteDefinition/FromCte sites remain in clauseSites for interceptor emission
 
         // Determine query kind — for prepared terminals, use the Prepare site's builder kind
         // since the prepared terminal's BuilderKind is always Query (from PreparedQuery type)

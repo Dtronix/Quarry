@@ -782,6 +782,16 @@ internal sealed class FileEmitter
                     TransitionBodyEmitter.EmitChainRoot(sb, site, methodName, carrierInfo);
                 break;
 
+            case InterceptorKind.CteDefinition:
+                if (carrierInfo != null)
+                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo);
+                break;
+
+            case InterceptorKind.FromCte:
+                if (carrierInfo != null)
+                    TransitionBodyEmitter.EmitFromCte(sb, site, methodName, carrierInfo);
+                break;
+
             case InterceptorKind.DeleteTransition:
             case InterceptorKind.UpdateTransition:
                 if (carrierInfo != null)
