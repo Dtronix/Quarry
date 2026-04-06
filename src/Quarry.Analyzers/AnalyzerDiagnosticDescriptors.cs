@@ -200,4 +200,17 @@ internal static class AnalyzerDiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "This query uses a feature that is suboptimal or unsupported for the target SQL dialect.");
+
+    // ── QRY0xx: Migration ──
+
+    private const string MigrationCategory = "QuarryMigration";
+
+    public static readonly DiagnosticDescriptor RawSqlConvertibleToChain = new(
+        id: "QRY042",
+        title: "RawSqlAsync convertible to chain query",
+        messageFormat: "This RawSqlAsync query can be expressed as a chain query",
+        category: MigrationCategory,
+        defaultSeverity: DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: "The SQL in this RawSqlAsync call uses only constructs that Quarry chain queries support. Consider replacing it with a chain query for type safety and compile-time checking.");
 }

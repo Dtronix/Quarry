@@ -1,0 +1,196 @@
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Collections.Immutable;
+using System.Linq;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Quarry.Analyzers.Migration;
+using Quarry.Generators.Models;
+using Quarry.Generators.Parsing;
+using Quarry.Generators.Sql.Parser;
+
+namespace Quarry.Analyzers;
+
+/// <summary>
+/// Detects RawSqlAsync&lt;T&gt; calls with string literal SQL that can be expressed as chain queries.
+/// Emits QRY042 with the generated chain code stored in diagnostic properties for the code fix.
+/// </summary>
+[DiagnosticAnalyzer(LanguageNames.CSharp)]
+internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
+{
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
+        ImmutableArray.Create(AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain);
+
+    public override void Initialize(AnalysisContext context)
+    {
+        context.EnableConcurrentExecution();
+        context.ConfigureGeneratedCodeAnalysis(
+            GeneratedCodeAnalysisFlags.Analyze | GeneratedCodeAnalysisFlags.ReportDiagnostics);
+
+        context.RegisterCompilationStartAction(compilationContext =>
+        {
+            var contextCache = new ConcurrentDictionary<string, ContextInfo>(StringComparer.Ordinal);
+
+            // Pre-discover all contexts and their entities (same pattern as QuarryQueryAnalyzer)
+            foreach (var syntaxTree in compilationContext.Compilation.SyntaxTrees)
+            {
+#pragma warning disable RS1030
+                var semanticModel = compilationContext.Compilation.GetSemanticModel(syntaxTree);
+#pragma warning restore RS1030
+                var root = syntaxTree.GetRoot(compilationContext.CancellationToken);
+
+                foreach (var classDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
+                {
+                    if (!ContextParser.HasQuarryContextAttribute(classDecl))
+                        continue;
+
+                    var contextInfo = ContextParser.ParseContext(classDecl, semanticModel, compilationContext.CancellationToken);
+                    if (contextInfo == null)
+                        continue;
+
+                    contextCache.TryAdd(contextInfo.ClassName, contextInfo);
+                }
+            }
+
+            compilationContext.RegisterSyntaxNodeAction(
+                nodeContext => AnalyzeInvocation(nodeContext, contextCache),
+                SyntaxKind.InvocationExpression);
+        });
+    }
+
+    private static void AnalyzeInvocation(
+        SyntaxNodeAnalysisContext nodeContext,
+        ConcurrentDictionary<string, ContextInfo> contextCache)
+    {
+        var invocation = (InvocationExpressionSyntax)nodeContext.Node;
+
+        // Must be a member access: something.RawSqlAsync<T>(...)
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            return;
+
+        // Method name must be RawSqlAsync
+        if (memberAccess.Name is not GenericNameSyntax genericName
+            || genericName.Identifier.Text != "RawSqlAsync")
+            return;
+
+        // Must have at least one argument (the SQL string)
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return;
+
+        var firstArg = invocation.ArgumentList.Arguments[0].Expression;
+
+        // SQL must be a string literal
+        if (firstArg is not LiteralExpressionSyntax literal
+            || !literal.IsKind(SyntaxKind.StringLiteralExpression))
+            return;
+
+        // Verify the receiver is a QuarryContext via semantic model
+        var symbolInfo = nodeContext.SemanticModel.GetSymbolInfo(invocation, nodeContext.CancellationToken);
+        if (symbolInfo.Symbol is not IMethodSymbol methodSymbol)
+            return;
+
+        var containingType = methodSymbol.ContainingType;
+        if (!InheritsFromQuarryContext(containingType))
+            return;
+
+        // Resolve the context info
+        ContextInfo? contextInfo = null;
+        var receiverType = nodeContext.SemanticModel.GetTypeInfo(memberAccess.Expression, nodeContext.CancellationToken).Type;
+        if (receiverType != null)
+            contextCache.TryGetValue(receiverType.Name, out contextInfo);
+
+        // Need context info with entities to check convertibility
+        if (contextInfo == null || contextInfo.EntityMappings.Count == 0)
+            return;
+
+        // Parse the SQL string
+        var sql = literal.Token.ValueText;
+        var parseResult = SqlParser.Parse(sql, contextInfo.Dialect);
+        if (!parseResult.Success || parseResult.Statement == null)
+            return;
+
+        // Check if the parsed SQL is convertible to a chain query
+        var converter = new SqlToChainConverter(contextInfo);
+        var convertError = converter.CheckConvertibility(parseResult.Statement);
+        if (convertError != null)
+            return;
+
+        // Extract the context variable name from the receiver expression
+        var contextVarName = memberAccess.Expression.ToString();
+
+        // Extract parameter arguments (skip the SQL string, skip CancellationToken if present)
+        var parameterArgs = ExtractParameterArgs(invocation, methodSymbol);
+
+        // Check if .ToListAsync() is chained after the RawSqlAsync call
+        var useExecuteFetchAll = IsFollowedByToListAsync(invocation);
+
+        // Generate the chain code
+        var chainCode = converter.Convert(
+            parseResult.Statement, contextVarName, parameterArgs, useExecuteFetchAll);
+
+        var properties = ImmutableDictionary<string, string?>.Empty
+            .Add("Sql", sql)
+            .Add("ContextClass", contextInfo.ClassName)
+            .Add("ChainCode", chainCode)
+            .Add("UseExecuteFetchAll", useExecuteFetchAll.ToString());
+
+        var diagnostic = Diagnostic.Create(
+            AnalyzerDiagnosticDescriptors.RawSqlConvertibleToChain,
+            invocation.GetLocation(),
+            properties);
+
+        nodeContext.ReportDiagnostic(diagnostic);
+    }
+
+    private static List<string> ExtractParameterArgs(
+        InvocationExpressionSyntax invocation, IMethodSymbol methodSymbol)
+    {
+        var args = new List<string>();
+        var arguments = invocation.ArgumentList.Arguments;
+
+        // Skip first argument (SQL string). Remaining are parameters.
+        // If the method has a CancellationToken parameter, skip that too.
+        var hasCancellationToken = methodSymbol.Parameters.Any(p =>
+            p.Type.Name == "CancellationToken");
+
+        var startIndex = hasCancellationToken ? 2 : 1; // skip sql + optional ct
+
+        for (var i = startIndex; i < arguments.Count; i++)
+        {
+            args.Add(arguments[i].Expression.ToString());
+        }
+
+        return args;
+    }
+
+    private static bool IsFollowedByToListAsync(InvocationExpressionSyntax invocation)
+    {
+        // Check if the parent is a member access calling ToListAsync()
+        // Pattern: db.RawSqlAsync<T>("...").ToListAsync()
+        if (invocation.Parent is MemberAccessExpressionSyntax parentMemberAccess
+            && parentMemberAccess.Name.Identifier.Text == "ToListAsync"
+            && parentMemberAccess.Parent is InvocationExpressionSyntax)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool InheritsFromQuarryContext(INamedTypeSymbol? type)
+    {
+        while (type != null)
+        {
+            if (type.Name == "QuarryContext" &&
+                type.ContainingNamespace?.ToDisplayString() == "Quarry")
+                return true;
+
+            type = type.BaseType;
+        }
+
+        return false;
+    }
+}
