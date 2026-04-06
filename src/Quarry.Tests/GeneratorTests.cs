@@ -1399,7 +1399,6 @@ public partial class TestDbContext : QuarryContext
             DiagnosticDescriptors.IntersectAllNotSupported,
             DiagnosticDescriptors.ExceptAllNotSupported,
             DiagnosticDescriptors.SetOperationProjectionMismatch,
-            DiagnosticDescriptors.CrossEntitySetOperationNotSupported,
         };
 
         var ids = setOpDescriptors.Select(d => d.Id).ToList();
@@ -1407,7 +1406,6 @@ public partial class TestDbContext : QuarryContext
         Assert.That(ids, Does.Contain("QRY070"));
         Assert.That(ids, Does.Contain("QRY071"));
         Assert.That(ids, Does.Contain("QRY072"));
-        Assert.That(ids, Does.Contain("QRY073"));
     }
 
     #endregion

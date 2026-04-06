@@ -212,16 +212,6 @@ internal static class PipelineOrchestrator
                         mainColumnCount.ToString()));
                 }
 
-                // QRY073: Cross-entity set operations not yet supported
-                var operandTable = setOp.Operand.PrimaryTable.TableName;
-                if (!string.Equals(mainTable, operandTable, StringComparison.Ordinal))
-                {
-                    diagnostics.Add(new DiagnosticInfo(
-                        DiagnosticDescriptors.CrossEntitySetOperationNotSupported.Id,
-                        location,
-                        operandTable,
-                        mainTable));
-                }
             }
         }
     }
