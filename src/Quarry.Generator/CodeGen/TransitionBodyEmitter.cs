@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text;
 using Quarry.Generators.Generation;
 using Quarry.Generators.IR;
@@ -98,7 +99,7 @@ internal static class TransitionBodyEmitter
     public static void EmitCteDefinition(
         StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier,
         AssembledPlan chain,
-        System.Collections.Generic.Dictionary<QueryPlan, string>? operandCarrierNames)
+        Dictionary<QueryPlan, string>? operandCarrierNames)
     {
         var contextClass = site.ContextClassName ?? "QuarryContext";
         // The method has a generic parameter TDto and takes IQueryBuilder<TDto> (or IQueryBuilder<TEntity,TDto>)
@@ -119,7 +120,17 @@ internal static class TransitionBodyEmitter
         // into __c.P{ParameterOffset..ParameterOffset+N-1}. Without this copy, captured
         // variables in the inner query (e.g., Where(o => o.Total > cutoff)) would silently
         // bind default values at runtime.
-        var siteCteName = ExtractDtoShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+        //
+        // Both this site's CTE name and cteDef.Name are produced by the SAME helper
+        // (CteNameHelpers.ExtractShortName) — using divergent helpers here previously
+        // caused the captured-param copy to silently no-op for global-namespace DTOs.
+        //
+        // NOTE: matches the FIRST cteDef whose name equals this site's DTO short name.
+        // Multiple With<T>(...) calls referencing the same DTO type in one chain (e.g.,
+        // db.With<X>(a).With<X>(b)...) would be ambiguous here and silently route the
+        // second call to the first cteDef. Multi-CTE support is tracked in #206 and any
+        // ambiguity-resolution work belongs in that issue.
+        var siteCteName = CteNameHelpers.ExtractShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName) ?? "CTE";
         for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
         {
             var cteDef = chain.Plan.CteDefinitions[i];
@@ -140,19 +151,6 @@ internal static class TransitionBodyEmitter
 
         sb.AppendLine($"        return Unsafe.As<{contextClass}>(__c);");
         sb.AppendLine($"    }}");
-    }
-
-    /// <summary>
-    /// Extracts the unqualified type name from a fully-qualified or namespace-qualified
-    /// type name (e.g. <c>"global::Ns.OrderDto"</c> → <c>"OrderDto"</c>). Mirrors
-    /// the helper used by ChainAnalyzer when constructing CteDef.Name.
-    /// </summary>
-    private static string ExtractDtoShortName(string? typeName)
-    {
-        if (string.IsNullOrEmpty(typeName)) return "CTE";
-        var t = typeName!.StartsWith("global::") ? typeName.Substring("global::".Length) : typeName;
-        var lastDot = t.LastIndexOf('.');
-        return lastDot >= 0 ? t.Substring(lastDot + 1) : t;
     }
 
     /// <summary>

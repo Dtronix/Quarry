@@ -915,19 +915,29 @@ internal static class ProjectionAnalyzer
             var fullClrType = propertyType.ToDisplayString();
 
             // Determine column kind. Foreign keys are detected by *type* — only the
-            // generated `EntityRef<TEntity, TKey>` struct is treated as a foreign key.
-            // Name-based heuristics ("ends with Id") produce false positives for primary
-            // keys like `OrderId` on the `Order` entity, and for unrelated DTO properties
-            // (e.g., `UserId` on a CTE projection DTO), which previously left
-            // ReferencedEntityName null and triggered an NRE downstream in
-            // EmitDiagnosticsConstruction.
+            // generated `Quarry.EntityRef<TEntity, TKey>` (or its `Nullable` wrapping) is
+            // treated as a foreign key. Name-based heuristics ("ends with Id") produce
+            // false positives for primary keys like `OrderId` on the `Order` entity, and
+            // for unrelated DTO properties, which previously left `ReferencedEntityName`
+            // null and triggered an NRE downstream in `EmitDiagnosticsConstruction`.
             var kind = ColumnKind.Standard;
             string? referencedEntityName = null;
 
-            if (propertyType is INamedTypeSymbol entityRefType
+            // Unwrap Nullable<T> so a property typed as `EntityRef<User, int>?` still
+            // resolves to a foreign key.
+            var fkCandidate = propertyType;
+            if (fkCandidate is INamedTypeSymbol nullableNamed
+                && nullableNamed.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                && nullableNamed.TypeArguments.Length == 1)
+            {
+                fkCandidate = nullableNamed.TypeArguments[0];
+            }
+
+            if (fkCandidate is INamedTypeSymbol entityRefType
                 && entityRefType.IsGenericType
                 && entityRefType.Name == "EntityRef"
-                && entityRefType.TypeArguments.Length == 2)
+                && entityRefType.TypeArguments.Length == 2
+                && IsQuarryNamespace(entityRefType.ContainingNamespace))
             {
                 kind = ColumnKind.ForeignKey;
                 referencedEntityName = entityRefType.TypeArguments[0].Name;
@@ -958,6 +968,25 @@ internal static class ProjectionAnalyzer
         }
 
         return (columns, lookup);
+    }
+
+    /// <summary>
+    /// Returns true if the given namespace symbol resolves to <c>Quarry</c> (the assembly
+    /// that ships <see cref="Quarry.EntityRef{TEntity, TKey}"/>). Used to disambiguate the
+    /// real Quarry foreign-key marker type from any same-named user-defined struct.
+    /// </summary>
+    private static bool IsQuarryNamespace(INamespaceSymbol? ns)
+    {
+        if (ns == null || ns.IsGlobalNamespace) return false;
+        // Walk up to the top-level namespace to handle nested cases (e.g., Quarry.Schema)
+        var current = ns;
+        while (current != null && !current.IsGlobalNamespace)
+        {
+            if (current.Name == "Quarry" && (current.ContainingNamespace?.IsGlobalNamespace ?? true))
+                return true;
+            current = current.ContainingNamespace;
+        }
+        return false;
     }
 
     /// <summary>

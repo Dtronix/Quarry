@@ -69,6 +69,13 @@ internal static class CallSiteBinder
                     }
                 }
             }
+            else if (registry.AllContexts.Length == 1)
+            {
+                // Single-context project: when raw.ContextClassName is missing (e.g.,
+                // discovery couldn't walk back to the chain root), there's only one
+                // possible answer — use it instead of the PostgreSQL placeholder.
+                dialect = registry.AllContexts[0].Dialect;
+            }
             tableName = "";
             schemaName = null;
         }

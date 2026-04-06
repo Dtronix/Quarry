@@ -2,6 +2,7 @@
 - Closes #187
 - Adds CTE (Common Table Expression) and derived table support via `With<TDto>()` / `FromCte<TDto>()` API
 - Tracking issues for known follow-up work: #205 (CTE+Join chains), #206 (carrier conflict for multiple CTEs), #207 (discovery boilerplate refactor)
+- Second-review remediation pass added a captured-variable inner-param test, a dedicated-DTO test, fixed silent runtime data corruption when an inner CTE captured a variable, and corrected MySQL/SQL Server WITH-clause identifier quoting that was falling back to PostgreSQL when the chain referenced a non-entity DTO type.
 
 ## Reason for Change
 CTEs and derived tables are required for wrapping subquery results (e.g., window functions from #186 that need `WHERE rn = 1`). This adds "query-as-entity" support where a subquery's projection defines a virtual table, using a DTO class to describe the CTE column shape.
@@ -26,9 +27,28 @@ The `FromCte` pattern (CTE as primary FROM source) works end-to-end across all 4
 
 ## Deviations from plan implemented
 - **Phase 5**: Instead of registering CTE DTOs in `EntityRegistry` as pseudo-entities, CTE columns are resolved directly during discovery and stored on `RawCallSite.CteColumns`. This avoids polluting the entity registry with non-schema types.
-- **Phase 6**: Inner chain matching uses `CteInnerArgSpanStart` (syntax span position) rather than terminal syntax node references, which proved more reliable across incremental compilation.
-- **Phase 8**: `With()` creates the carrier (not `Users()`/`FromCte()` as originally considered). `FromCte()` is a no-op type transition via `Unsafe.As<IEntityAccessor<TDto>>`.
-- **Phase 9**: Only 1 of 8 planned test cases implemented (FromCte with simple filter). CTE+Join tests are blocked by #205.
+- **Phase 6**: Inner chain matching uses `CteInnerArgSpanStart` (syntax span position) rather than terminal syntax node references, which proved more reliable across incremental compilation. Inner chains are kept as standalone `AnalyzedChain`s (with their own carriers and interceptors) instead of being suppressed, since users may invoke the inner expression as a standalone query.
+- **Phase 8**: `With()` creates the carrier (not `Users()`/`FromCte()` as originally considered). `FromCte()` is a no-op type transition via `Unsafe.As<IEntityAccessor<TDto>>`. `EmitCteDefinition` copies inner-chain parameter values from the inner carrier into the outer carrier (added during second-review remediation — see Review Remediation section below).
+- **Phase 9**: Implemented 3 test cases — `Cte_FromCte_SimpleFilter`, `Cte_FromCte_CapturedParam`, `Cte_FromCte_DedicatedDto`. The remaining 5 planned cases (CTE+Join, multi-CTE) are blocked by #205 and #206.
+
+## Review Remediation (second pass)
+
+### Critical correctness fixes
+- **CTE inner captured parameters were silently dropped at runtime.** `EmitCteDefinition` previously did `new {carrier} { Ctx = @this }` without copying any inner-chain parameter slots, so any captured variable in an inner `Where`/`Having` would bind to `default(T)`. Now copies `__inner.P0..P(N-1)` into `__outer.P{ParameterOffset}..P{ParameterOffset+N-1}` using a `QueryPlan`-keyed carrier-name lookup, mirroring the same pattern used by set-operation operand chains. Regression-tested by `Cte_FromCte_CapturedParam`.
+- **`CallSiteBinder` fell back to PostgreSQL when entity lookup missed.** This silently corrupted dialect-specific identifier quoting on MySQL and SQL Server CTE chains (the WITH name was rendered with ANSI double quotes regardless of dialect) because CTE chains legitimately reference DTO types that are not schema entities. The binder now resolves the dialect from the chain's context class via `EntityRegistry.AllContexts`. Regression-tested by `Cte_FromCte_DedicatedDto`.
+- **`ProjectionAnalyzer.BuildColumnInfoFromTypeSymbol` flagged primary keys and DTO properties as foreign keys.** A name-only "ends with Id" heuristic was used, which produced FK columns with null `ReferencedEntityName` and an NRE in `EmitDiagnosticsConstruction` whenever such a column flowed through a `Select` tuple projection on `.ToDiagnostics()`. Foreign keys are now detected by `EntityRef<TEntity, TKey>` *type* rather than name, eliminating the false positives.
+
+### Defensive diagnostics
+- `ChainAnalyzer` now reports a generator diagnostic when a `CteDefinition` site has no matching inner-chain analysis result, instead of silently dropping the CTE.
+- `ChainAnalyzer` now reports a generator diagnostic when a `FromCte<T>()` site has no matching `With<T>` earlier in the same chain, instead of silently rewriting `primaryTable` to an undeclared CTE name.
+- The Pass 1 inner-chain analysis catch block now uses `catch (Exception ex) when (ex is not OperationCanceledException) { PipelineErrorBag.Report(...); }`, mirroring the outer pass — was previously a bare `catch { }` that swallowed all failures.
+
+### Quality / consistency
+- Renamed `ChainAnalyzer.GetShortTypeName` → `ExtractShortTypeName` to avoid name collision with `InterceptorCodeGenerator.GetShortTypeName` (different semantics).
+- Replaced `LastIndexOf(':')` based suffix parsing in CTE inner-chain matching with explicit `":cte-inner:"` marker lookup.
+- Deleted dead `CteDtoResolver.Resolve()` method (only `ResolveColumns` is used).
+- Improved `QuarryContext` base-class CTE error message to point at the derived-context typing requirement.
+- Added XML doc warning on `QuarryContext.With` about extension-method ambiguity risk.
 
 ## Gaps in original plan implemented
 - `DiscoverPostCteSites` — forward-scans the chain after `FromCte()` to discover clause/terminal methods that Roslyn cannot resolve (mirrors the existing post-navigation-join discovery pattern)

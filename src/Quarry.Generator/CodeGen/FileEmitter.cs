@@ -186,8 +186,13 @@ internal sealed class FileEmitter
                     // so EmitCteDefinition can look up the inner carrier class to copy
                     // captured parameters from. CTE inner chains are NOT operand chains
                     // (they retain their own execution terminals for standalone use).
-                    var isCteInnerChain = chain.ClauseSites.Count > 0
-                        && chain.ClauseSites[0].Bound.Raw.IsCteInnerChain;
+                    // Inspect every clause site rather than relying on a positional invariant —
+                    // chain analysis may move ChainRoot away from index 0 in future shapes.
+                    var isCteInnerChain = false;
+                    foreach (var cs in chain.ClauseSites)
+                    {
+                        if (cs.Bound.Raw.IsCteInnerChain) { isCteInnerChain = true; break; }
+                    }
                     if (isCteInnerChain)
                         operandCarrierNames[chain.Plan] = carrierPlan.ClassName;
                 }

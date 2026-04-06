@@ -127,8 +127,11 @@ internal static class ChainAnalyzer
                 outerChainGroups[kvp.Key] = kvp.Value;
         }
 
-        // Pass 1: Analyze and assemble inner CTE chains
-        // Key: argSpanStart (from ChainId suffix) → assembled SQL and parameters
+        // Pass 1: Analyze and assemble inner CTE chains.
+        // Key: argSpanStart of the With() argument syntax — uniquely identifies the call site
+        // within a single source file because two distinct With(...) invocations in the same
+        // file always have distinct argument span starts. (Different files are processed in
+        // separate generator runs, so cross-file collisions cannot occur here.)
         var cteInnerResults = new Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>();
         const string CteInnerMarker = ":cte-inner:";
         foreach (var kvp in innerChainGroups)
@@ -671,7 +674,7 @@ internal static class ChainAnalyzer
                         ? variant.Sql : "";
                     var innerParams = inner.Chain.Plan.Parameters;
                     var columns = raw.CteColumns ?? Array.Empty<CteColumn>();
-                    var cteName = ExtractShortTypeName(raw.CteEntityTypeName) ?? "CTE";
+                    var cteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
 
                     // Capture the starting index in the outer carrier's parameter slots
                     // BEFORE prepending — this is where the inner params will live in the outer carrier.
@@ -713,16 +716,14 @@ internal static class ChainAnalyzer
                 {
                     // Inner chain analysis missed (cteInnerResults null, no CteInnerArgSpanStart,
                     // or no entry for this site's argSpanStart). The CTE cannot be assembled — emit
-                    // a diagnostic so the user sees a source-side error instead of failing at runtime
-                    // with "no such table: <CteName>" when a sibling FromCte<T>() rewrites primaryTable.
-                    PipelineErrorBag.Report(
-                        raw.FilePath,
-                        raw.Line,
-                        raw.Column,
-                        $"Quarry could not analyze the inner query passed to With<{raw.CteEntityTypeName}>(...). " +
-                        $"Make sure the inner query is a complete chain (e.g. db.Orders().Where(...).Select(...)) " +
-                        $"and that the parameter is not a method-group or external variable. " +
-                        $"This CTE will be skipped and any FromCte<{raw.CteEntityTypeName}>() in the same chain will fail at runtime.");
+                    // a user-visible diagnostic via the deferred-diagnostics channel so the user sees
+                    // QRY080 instead of failing at runtime with "no such table: <CteName>" when a
+                    // sibling FromCte<T>() rewrites primaryTable.
+                    var dtoShort = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "TDto";
+                    diagnostics?.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.CteInnerChainNotAnalyzable.Id,
+                        raw.Location,
+                        dtoShort));
                 }
             }
             else if (raw.Kind == InterceptorKind.FromCte)
@@ -730,7 +731,7 @@ internal static class ChainAnalyzer
                 // FromCte: override primary table with the CTE name — but only if a matching
                 // CteDefinition was successfully resolved above. Otherwise we would emit
                 // SELECT ... FROM "Name" referencing an undeclared CTE.
-                var cteName = ExtractShortTypeName(raw.CteEntityTypeName) ?? "CTE";
+                var cteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
                 bool hasMatchingCte = false;
                 for (int j = 0; j < cteDefinitions.Count; j++)
                 {
@@ -742,13 +743,12 @@ internal static class ChainAnalyzer
                 }
                 else
                 {
-                    PipelineErrorBag.Report(
-                        raw.FilePath,
-                        raw.Line,
-                        raw.Column,
-                        $"FromCte<{raw.CteEntityTypeName}>() has no matching With<{raw.CteEntityTypeName}>(...) " +
-                        $"earlier in the same chain. Each FromCte<T>() must be preceded by a With<T>(innerQuery) " +
-                        $"that defines the CTE.");
+                    // Emit QRY081 via the deferred diagnostics channel so the user sees a clear
+                    // source-side error rather than runtime "no such table" or QRY900 InternalError.
+                    diagnostics?.Add(new DiagnosticInfo(
+                        Quarry.Generators.DiagnosticDescriptors.FromCteWithoutWith.Id,
+                        raw.Location,
+                        cteName));
                 }
             }
         }
@@ -2028,18 +2028,6 @@ internal static class ChainAnalyzer
         return null;
     }
 
-    /// <summary>
-    /// Extracts the unqualified short type name from a (possibly) namespace-qualified type name
-    /// (e.g., <c>"Ns.OrderCountDto"</c> → <c>"OrderCountDto"</c>).
-    /// Distinct from <see cref="InterceptorCodeGenerator.GetShortTypeName"/>, which only strips
-    /// the <c>global::</c> prefix without dropping namespace segments.
-    /// </summary>
-    private static string? ExtractShortTypeName(string? fullName)
-    {
-        if (fullName == null) return null;
-        var lastDot = fullName.LastIndexOf('.');
-        return lastDot >= 0 ? fullName.Substring(lastDot + 1) : fullName;
-    }
 
     /// <summary>
     /// Determines the QueryKind from the execution terminal's InterceptorKind.

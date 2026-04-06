@@ -117,3 +117,36 @@ internal sealed class CteColumn : IEquatable<CteColumn>
 
     public override int GetHashCode() => HashCode.Combine(PropertyName, ColumnName, ClrType);
 }
+
+/// <summary>
+/// Helpers for deriving the unqualified CTE / DTO name from a (possibly fully-qualified)
+/// type name. The name returned by this helper is the canonical CTE identifier — both
+/// <see cref="ChainAnalyzer"/> (when constructing <see cref="CteDef.Name"/>) and
+/// <see cref="CodeGen.TransitionBodyEmitter"/> (when matching a CteDefinition site to a
+/// <see cref="CteDef"/> at emission time) MUST use this helper so that the names compare
+/// equal under all input forms (`Foo`, `Ns.Foo`, `global::Ns.Foo`, `global::Foo`).
+/// </summary>
+internal static class CteNameHelpers
+{
+    /// <summary>
+    /// Returns the unqualified short type name (the segment after the last dot, with any
+    /// <c>global::</c> prefix removed). Returns <c>null</c> when input is <c>null</c>.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// ExtractShortName("global::Quarry.Tests.Samples.OrderSummaryDto") == "OrderSummaryDto"
+    /// ExtractShortName("OrderSummaryDto")                              == "OrderSummaryDto"
+    /// ExtractShortName("global::OrderSummaryDto")                      == "OrderSummaryDto"
+    /// ExtractShortName(null)                                           == null
+    /// </code>
+    /// </example>
+    public static string? ExtractShortName(string? fullName)
+    {
+        if (fullName == null) return null;
+        var s = fullName;
+        if (s.StartsWith("global::", StringComparison.Ordinal))
+            s = s.Substring("global::".Length);
+        var lastDot = s.LastIndexOf('.');
+        return lastDot >= 0 ? s.Substring(lastDot + 1) : s;
+    }
+}
