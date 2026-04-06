@@ -3494,7 +3494,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 533 |
+| Total discovered | 535 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 166 |
-| Rendered | 367 |
+| Rendered | 369 |
