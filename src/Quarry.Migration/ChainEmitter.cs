@@ -65,10 +65,11 @@ internal sealed class ChainEmitter
             return new ConversionResult(callSite.Sql, null, _diagnostics);
         }
 
-        if (!RegisterPrimaryTable(stmt.From))
+        var primaryTable = RegisterPrimaryTable(stmt.From);
+        if (primaryTable == null)
             return new ConversionResult(callSite.Sql, null, _diagnostics);
 
-        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
+        sb.Append($"db.{primaryTable.Entity.AccessorName}()");
 
         // JOINs
         foreach (var join in stmt.Joins)
@@ -128,10 +129,11 @@ internal sealed class ChainEmitter
     {
         var sb = new StringBuilder();
 
-        if (!RegisterPrimaryTable(stmt.Table))
+        var primaryTable = RegisterPrimaryTable(stmt.Table);
+        if (primaryTable == null)
             return new ConversionResult(callSite.Sql, null, _diagnostics);
 
-        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
+        sb.Append($"db.{primaryTable.Entity.AccessorName}()");
         sb.Append("\n    .Delete()");
 
         if (stmt.Where != null)
@@ -159,16 +161,15 @@ internal sealed class ChainEmitter
     {
         var sb = new StringBuilder();
 
-        if (!RegisterPrimaryTable(stmt.Table))
+        var primaryTable = RegisterPrimaryTable(stmt.Table);
+        if (primaryTable == null)
             return new ConversionResult(callSite.Sql, null, _diagnostics);
 
-        var primaryVar = _lambdaVars[0];
-
-        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
+        sb.Append($"db.{primaryTable.Entity.AccessorName}()");
         sb.Append("\n    .Update()");
 
         // Emit .Set(u => { u.Col1 = val1; u.Col2 = val2; })
-        sb.Append($"\n    .Set({primaryVar} => {{ ");
+        sb.Append($"\n    .Set({primaryTable.Variable} => {{ ");
         for (var i = 0; i < stmt.Assignments.Count; i++)
         {
             var assignment = stmt.Assignments[i];
@@ -201,10 +202,11 @@ internal sealed class ChainEmitter
 
     private ConversionResult TranslateInsert(SqlInsertStatement stmt, DapperCallSite callSite)
     {
-        if (!RegisterPrimaryTable(stmt.Table))
+        var primaryTable = RegisterPrimaryTable(stmt.Table);
+        if (primaryTable == null)
             return new ConversionResult(callSite.Sql, null, _diagnostics);
 
-        var entity = _tables.Values.First().Entity;
+        var entity = primaryTable.Entity;
 
         // Build a comment showing the approximate chain pattern
         var sb = new StringBuilder();
@@ -228,26 +230,32 @@ internal sealed class ChainEmitter
             ConversionDiagnosticSeverity.Warning,
             "INSERT requires entity construction — emitted as comment"));
 
-        return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics);
+        return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics, isSuggestionOnly: true);
     }
 
     // ─── Common table registration ────────────────────────
 
-    private bool RegisterPrimaryTable(SqlTableSource tableSource)
+    /// <summary>
+    /// Registers the primary table from a table source. Returns the resulting
+    /// <see cref="TableRef"/> so callers can use it directly instead of poking
+    /// at <c>_tables</c>/<c>_lambdaVars</c> by index. Returns null on schema miss.
+    /// </summary>
+    private TableRef? RegisterPrimaryTable(SqlTableSource tableSource)
     {
         if (!_schema.TryGetEntity(tableSource.TableName, out var primaryEntity))
         {
             _diagnostics.Add(new ConversionDiagnostic(
                 ConversionDiagnosticSeverity.Warning,
                 $"Table '{tableSource.TableName}' not found in schema — cannot convert"));
-            return false;
+            return null;
         }
 
         var primaryVar = DeriveVariable(primaryEntity.AccessorName);
         var alias = tableSource.Alias ?? tableSource.TableName;
-        _tables[alias] = new TableRef(primaryEntity, primaryVar);
+        var tableRef = new TableRef(primaryEntity, primaryVar);
+        _tables[alias] = tableRef;
         _lambdaVars.Add(primaryVar);
-        return true;
+        return tableRef;
     }
 
     // ─── SELECT ────────────────────────────────────────────

@@ -107,7 +107,7 @@ internal static class ConvertCommand
         // Summary
         Console.WriteLine("Summary:");
         Console.WriteLine($"  Fully convertible: {convertible}");
-        Console.WriteLine($"  With Sql.Raw fallback: {withWarnings}");
+        Console.WriteLine($"  Converted with warnings: {withWarnings}");
         Console.WriteLine($"  Unconvertible: {unconvertible}");
         Console.WriteLine();
         Console.WriteLine("To apply conversions, use the IDE code fix (QRM001) or install Quarry.Migration as an analyzer.");

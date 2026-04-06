@@ -204,7 +204,7 @@ public class Example
     }
 
     [Test]
-    public async Task InsertExecuteAsync_ReportsQRM001()
+    public async Task InsertExecuteAsync_ReportsQRM003()
     {
         var diagnostics = await GetDiagnosticsAsync(@"
 using System.Data;
@@ -228,9 +228,14 @@ public class Example
 }
 ");
 
-        // INSERT emits a comment with a warning, so it's reported as QRM002 (with-fallback) — accept either QRM001 or QRM002
-        Assert.That(diagnostics.Any(d => d.Id == "QRM001" || d.Id == "QRM002"), Is.True,
-            $"Expected QRM001 or QRM002. Got: {string.Join(", ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+        // INSERT emits a comment-only suggestion (IsSuggestionOnly=true), which routes to QRM003.
+        // The IDE code fix must NOT replace the invocation with comment text — that produces invalid C#.
+        // Pinning to QRM003 specifically locks the contract that comment-only output is reported as
+        // not-auto-convertible rather than as a fixable warning.
+        Assert.That(diagnostics.Any(d => d.Id == "QRM003"), Is.True,
+            $"Expected QRM003. Got: {string.Join(", ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+        Assert.That(diagnostics.Any(d => d.Id == "QRM001" || d.Id == "QRM002"), Is.False,
+            "INSERT must not be reported as QRM001/QRM002 — the code fix would substitute a comment for the invocation.");
     }
 
     [Test]

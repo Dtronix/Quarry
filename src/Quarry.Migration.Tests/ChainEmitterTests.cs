@@ -775,6 +775,25 @@ public class ChainEmitterTests
     }
 
     [Test]
+    public void Update_WithQualifiedColumn_AndAlias()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE users u SET u.is_active = 0 WHERE u.user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".Update()"));
+        // The aliased column reference (u.is_active) must resolve through the alias-keyed _tables
+        // entry, producing u.IsActive — not a fallback PascalCase guess on a default variable.
+        Assert.That(result.ChainCode, Does.Contain(".Set(u => { u.IsActive = 0; })"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
+    }
+
+    [Test]
     public void Update_WithComputedExpression()
     {
         var schema = BuildSchemaMap(UsersEntity());

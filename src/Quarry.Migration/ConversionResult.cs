@@ -22,11 +22,23 @@ internal sealed class ConversionResult
     /// </summary>
     public string OriginalSql { get; }
 
-    public ConversionResult(string originalSql, string? chainCode, IReadOnlyList<ConversionDiagnostic> diagnostics)
+    /// <summary>
+    /// True when <see cref="ChainCode"/> is a manual-conversion suggestion (comment text)
+    /// rather than a substitutable C# expression. The IDE code fix must NOT replace the
+    /// invocation in this case — the user has to construct the entity by hand.
+    /// </summary>
+    public bool IsSuggestionOnly { get; }
+
+    public ConversionResult(
+        string originalSql,
+        string? chainCode,
+        IReadOnlyList<ConversionDiagnostic> diagnostics,
+        bool isSuggestionOnly = false)
     {
         OriginalSql = originalSql;
         ChainCode = chainCode;
         Diagnostics = diagnostics;
+        IsSuggestionOnly = isSuggestionOnly;
     }
 }
 

@@ -204,23 +204,30 @@ public class SqlParserDmlTests
     public void Delete_MissingFrom_HasDiagnostic()
     {
         var result = SqlParser.Parse("DELETE users", D(SqlDialect.SQLite));
-        // Parser expects FROM after DELETE — should produce a diagnostic
-        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+        // Parser expects FROM after DELETE — assert we get the specific diagnostic for the
+        // missing FROM, not just "any diagnostic" (which could mask an unrelated error).
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Diagnostics.Any(d => d.Message.Contains("Expected 'FROM'")), Is.True,
+            $"Expected diagnostic mentioning 'FROM'. Got: {string.Join(" | ", result.Diagnostics.Select(d => d.Message))}");
     }
 
     [Test]
     public void Update_MissingSet_HasDiagnostic()
     {
         var result = SqlParser.Parse("UPDATE users WHERE id = 1", D(SqlDialect.SQLite));
-        // Parser expects SET after table — should produce a diagnostic
-        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+        // Parser expects SET after table — assert the specific diagnostic.
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Diagnostics.Any(d => d.Message.Contains("Expected 'SET'")), Is.True,
+            $"Expected diagnostic mentioning 'SET'. Got: {string.Join(" | ", result.Diagnostics.Select(d => d.Message))}");
     }
 
     [Test]
     public void Insert_MissingValues_HasDiagnostic()
     {
         var result = SqlParser.Parse("INSERT INTO users (name)", D(SqlDialect.SQLite));
-        // Parser expects VALUES after column list — should produce a diagnostic
-        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+        // Parser expects VALUES after column list — assert the specific diagnostic.
+        Assert.That(result.Success, Is.False);
+        Assert.That(result.Diagnostics.Any(d => d.Message.Contains("Expected 'VALUES'")), Is.True,
+            $"Expected diagnostic mentioning 'VALUES'. Got: {string.Join(" | ", result.Diagnostics.Select(d => d.Message))}");
     }
 }
