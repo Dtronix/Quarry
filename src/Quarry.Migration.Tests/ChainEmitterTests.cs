@@ -632,4 +632,177 @@ public class ChainEmitterTests
         Assert.That(result.ChainCode, Does.Contain(".OrderBy((u, o) => o.Total, Direction.Descending)"));
         Assert.That(result.ChainCode, Does.Contain(".Limit(10)"));
     }
+
+    // ─── DELETE emission ──────────────────────────────────
+
+    [Test]
+    public void Delete_WithWhere()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "DELETE FROM users WHERE user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain("db.Users()"));
+        Assert.That(result.ChainCode, Does.Contain(".Delete()"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
+        Assert.That(result.ChainCode, Does.Contain(".ExecuteNonQueryAsync()"));
+        Assert.That(result.ChainCode, Does.Not.Contain(".All()"));
+    }
+
+    [Test]
+    public void Delete_WithoutWhere_EmitsAllAndWarning()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "DELETE FROM users";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".Delete()"));
+        Assert.That(result.ChainCode, Does.Contain(".All()"));
+        Assert.That(result.ChainCode, Does.Contain(".ExecuteNonQueryAsync()"));
+        Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
+            d.Message.Contains("DELETE without WHERE")));
+    }
+
+    [Test]
+    public void Delete_WithComplexWhere()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "DELETE FROM users WHERE is_active = 0 AND created_at < @cutoff";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "cutoff" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".Delete()"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.IsActive == 0 && u.CreatedAt < cutoff)"));
+    }
+
+    [Test]
+    public void Delete_UnknownTable_ReturnsNull()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "DELETE FROM unknown_table WHERE id = 1";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    // ─── UPDATE emission ──────────────────────────────────
+
+    [Test]
+    public void Update_SingleColumn_WithWhere()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE users SET is_active = 0 WHERE user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain("db.Users()"));
+        Assert.That(result.ChainCode, Does.Contain(".Update()"));
+        Assert.That(result.ChainCode, Does.Contain(".Set(u => { u.IsActive = 0; })"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
+        Assert.That(result.ChainCode, Does.Contain(".ExecuteNonQueryAsync()"));
+    }
+
+    [Test]
+    public void Update_MultipleColumns_WithWhere()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE users SET email = @email, user_name = @name WHERE user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "email", "name", "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".Update()"));
+        Assert.That(result.ChainCode, Does.Contain(".Set(u => { u.Email = email; u.UserName = name; })"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
+    }
+
+    [Test]
+    public void Update_WithoutWhere_EmitsAllAndWarning()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE users SET is_active = 0";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".Update()"));
+        Assert.That(result.ChainCode, Does.Contain(".All()"));
+        Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
+            d.Message.Contains("UPDATE without WHERE")));
+    }
+
+    [Test]
+    public void Update_UnknownTable_ReturnsNull()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE unknown_table SET col = 1 WHERE id = 1";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
+
+    // ─── INSERT emission ──────────────────────────────────
+
+    [Test]
+    public void Insert_EmitsComment()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "INSERT INTO users (user_name, email) VALUES (@name, @email)";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "name", "email" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain("// TODO:"));
+        Assert.That(result.ChainCode, Does.Contain("db.Users().Insert(entity).ExecuteNonQueryAsync()"));
+        Assert.That(result.ChainCode, Does.Contain("UserName"));
+        Assert.That(result.ChainCode, Does.Contain("Email"));
+        Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
+            d.Message.Contains("INSERT requires entity construction")));
+    }
+
+    [Test]
+    public void Insert_UnknownTable_ReturnsNull()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "INSERT INTO unknown_table (col) VALUES (1)";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Null);
+    }
 }

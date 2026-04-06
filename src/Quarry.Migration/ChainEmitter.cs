@@ -34,13 +34,27 @@ internal sealed class ChainEmitter
             return new ConversionResult(callSite.Sql, null, _diagnostics);
         }
 
-        var stmt = parseResult.SelectStatement;
-        if (stmt == null)
+        switch (parseResult.Statement)
         {
-            _diagnostics.Add(new ConversionDiagnostic(
-                ConversionDiagnosticSeverity.Error, "Only SELECT statements are currently supported"));
-            return new ConversionResult(callSite.Sql, null, _diagnostics);
+            case SqlSelectStatement select:
+                return TranslateSelect(select, callSite);
+            case SqlDeleteStatement delete:
+                return TranslateDelete(delete, callSite);
+            case SqlUpdateStatement update:
+                return TranslateUpdate(update, callSite);
+            case SqlInsertStatement insert:
+                return TranslateInsert(insert, callSite);
+            default:
+                _diagnostics.Add(new ConversionDiagnostic(
+                    ConversionDiagnosticSeverity.Error, "Unsupported statement type"));
+                return new ConversionResult(callSite.Sql, null, _diagnostics);
         }
+    }
+
+    // ─── SELECT translation ───────────────────────────────
+
+    private ConversionResult TranslateSelect(SqlSelectStatement stmt, DapperCallSite callSite)
+    {
         var sb = new StringBuilder();
 
         // FROM → db.Entity()
@@ -51,23 +65,12 @@ internal sealed class ChainEmitter
             return new ConversionResult(callSite.Sql, null, _diagnostics);
         }
 
-        if (!_schema.TryGetEntity(stmt.From.TableName, out var primaryEntity))
-        {
-            _diagnostics.Add(new ConversionDiagnostic(
-                ConversionDiagnosticSeverity.Warning,
-                $"Table '{stmt.From.TableName}' not found in schema — cannot convert"));
+        if (!RegisterPrimaryTable(stmt.From))
             return new ConversionResult(callSite.Sql, null, _diagnostics);
-        }
 
-        // Register the primary table
-        var primaryVar = DeriveVariable(primaryEntity.AccessorName);
-        var alias = stmt.From.Alias ?? stmt.From.TableName;
-        _tables[alias] = new TableRef(primaryEntity, primaryVar);
-        _lambdaVars.Add(primaryVar);
+        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
 
-        sb.Append($"db.{primaryEntity.AccessorName}()");
-
-        // JOINs (Phase 5)
+        // JOINs
         foreach (var join in stmt.Joins)
         {
             EmitJoin(sb, join, callSite);
@@ -81,13 +84,13 @@ internal sealed class ChainEmitter
             sb.Append($"\n    .Where({lambdaParams} => {body})");
         }
 
-        // GROUP BY (Phase 5)
+        // GROUP BY
         if (stmt.GroupBy != null && stmt.GroupBy.Count > 0)
         {
             EmitGroupBy(sb, stmt.GroupBy, callSite);
         }
 
-        // HAVING (Phase 5)
+        // HAVING
         if (stmt.Having != null)
         {
             EmitHaving(sb, stmt.Having, callSite);
@@ -96,13 +99,13 @@ internal sealed class ChainEmitter
         // SELECT
         EmitSelect(sb, stmt.Columns);
 
-        // ORDER BY (Phase 5)
+        // ORDER BY
         if (stmt.OrderBy != null && stmt.OrderBy.Count > 0)
         {
             EmitOrderBy(sb, stmt.OrderBy, callSite);
         }
 
-        // LIMIT / OFFSET (Phase 5)
+        // LIMIT / OFFSET
         if (stmt.Limit != null)
         {
             EmitLimit(sb, stmt.Limit, callSite);
@@ -117,6 +120,137 @@ internal sealed class ChainEmitter
         sb.Append($"\n    .{MapTerminal(callSite.MethodName)}");
 
         return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics);
+    }
+
+    // ─── DELETE translation ───────────────────────────────
+
+    private ConversionResult TranslateDelete(SqlDeleteStatement stmt, DapperCallSite callSite)
+    {
+        var sb = new StringBuilder();
+
+        if (!RegisterPrimaryTable(stmt.Table))
+            return new ConversionResult(callSite.Sql, null, _diagnostics);
+
+        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
+        sb.Append("\n    .Delete()");
+
+        if (stmt.Where != null)
+        {
+            var lambdaParams = BuildLambdaParams();
+            var body = EmitExpression(stmt.Where, callSite);
+            sb.Append($"\n    .Where({lambdaParams} => {body})");
+        }
+        else
+        {
+            sb.Append("\n    .All()");
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Warning,
+                "DELETE without WHERE — .All() added to confirm full-table delete"));
+        }
+
+        sb.Append("\n    .ExecuteNonQueryAsync()");
+
+        return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics);
+    }
+
+    // ─── UPDATE translation ──────────────────────────────
+
+    private ConversionResult TranslateUpdate(SqlUpdateStatement stmt, DapperCallSite callSite)
+    {
+        var sb = new StringBuilder();
+
+        if (!RegisterPrimaryTable(stmt.Table))
+            return new ConversionResult(callSite.Sql, null, _diagnostics);
+
+        var primaryVar = _lambdaVars[0];
+
+        sb.Append($"db.{_tables.Values.First().Entity.AccessorName}()");
+        sb.Append("\n    .Update()");
+
+        // Emit .Set(u => { u.Col1 = val1; u.Col2 = val2; })
+        sb.Append($"\n    .Set({primaryVar} => {{ ");
+        for (var i = 0; i < stmt.Assignments.Count; i++)
+        {
+            var assignment = stmt.Assignments[i];
+            var colAccess = ResolveColumnAccess(assignment.Column);
+            var value = EmitExpression(assignment.Value, callSite);
+            sb.Append($"{colAccess} = {value}; ");
+        }
+        sb.Append("})");
+
+        if (stmt.Where != null)
+        {
+            var lambdaParams = BuildLambdaParams();
+            var body = EmitExpression(stmt.Where, callSite);
+            sb.Append($"\n    .Where({lambdaParams} => {body})");
+        }
+        else
+        {
+            sb.Append("\n    .All()");
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Warning,
+                "UPDATE without WHERE — .All() added to confirm full-table update"));
+        }
+
+        sb.Append("\n    .ExecuteNonQueryAsync()");
+
+        return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics);
+    }
+
+    // ─── INSERT translation ──────────────────────────────
+
+    private ConversionResult TranslateInsert(SqlInsertStatement stmt, DapperCallSite callSite)
+    {
+        if (!_schema.TryGetEntity(stmt.Table.TableName, out var entity))
+        {
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Warning,
+                $"Table '{stmt.Table.TableName}' not found in schema — cannot convert"));
+            return new ConversionResult(callSite.Sql, null, _diagnostics);
+        }
+
+        // Build a comment showing the approximate chain pattern
+        var sb = new StringBuilder();
+        sb.Append($"// TODO: Construct {entity.ClassName} entity and use:\n");
+        sb.Append($"// db.{entity.AccessorName}().Insert(entity).ExecuteNonQueryAsync()");
+
+        if (stmt.Columns != null && stmt.Columns.Count > 0)
+        {
+            sb.Append("\n// Columns: ");
+            for (var i = 0; i < stmt.Columns.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                if (entity.TryGetProperty(stmt.Columns[i].ColumnName, out var propName))
+                    sb.Append(propName);
+                else
+                    sb.Append(ToPascalCase(stmt.Columns[i].ColumnName));
+            }
+        }
+
+        _diagnostics.Add(new ConversionDiagnostic(
+            ConversionDiagnosticSeverity.Warning,
+            "INSERT requires entity construction — emitted as comment"));
+
+        return new ConversionResult(callSite.Sql, sb.ToString(), _diagnostics);
+    }
+
+    // ─── Common table registration ────────────────────────
+
+    private bool RegisterPrimaryTable(SqlTableSource tableSource)
+    {
+        if (!_schema.TryGetEntity(tableSource.TableName, out var primaryEntity))
+        {
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Warning,
+                $"Table '{tableSource.TableName}' not found in schema — cannot convert"));
+            return false;
+        }
+
+        var primaryVar = DeriveVariable(primaryEntity.AccessorName);
+        var alias = tableSource.Alias ?? tableSource.TableName;
+        _tables[alias] = new TableRef(primaryEntity, primaryVar);
+        _lambdaVars.Add(primaryVar);
+        return true;
     }
 
     // ─── SELECT ────────────────────────────────────────────
