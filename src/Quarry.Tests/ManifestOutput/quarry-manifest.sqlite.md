@@ -677,6 +677,14 @@ INSERT INTO "products" ("ProductName", "Price") VALUES (@p0, @p1) RETURNING "Pro
 
 ---
 
+### Products().Select(...).Products()
+
+```sql
+SELECT "ProductId", "ProductName" FROM "products"
+```
+
+---
+
 ### Products().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -742,6 +750,18 @@ SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FRO
 ```sql
 SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 3
 ```
+
+---
+
+### Products().Where(...).Select(...).Products()
+
+```sql
+SELECT "ProductId", "ProductName" FROM "products" WHERE "Price" <= @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
 
 ---
 
@@ -1368,6 +1388,14 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" RIGHT JOIN "orders" AS
 
 ---
 
+### Users().Select(...).Except(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" EXCEPT SELECT "ProductId", "ProductName" FROM "products"
+```
+
+---
+
 ### Users().Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -1404,6 +1432,14 @@ SELECT "UserName" FROM "users"
 
 ```sql
 SELECT COUNT(*) FROM "users"
+```
+
+---
+
+### Users().Select(...).Intersect(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" INTERSECT SELECT "ProductId", "ProductName" FROM "products"
 ```
 
 ---
@@ -1576,6 +1612,22 @@ SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "UserName" FROM 
 
 ---
 
+### Users().Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT "ProductId", "ProductName" FROM "products" ORDER BY "UserName" ASC LIMIT 3
+```
+
+---
+
+### Users().Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT "ProductId", "ProductName" FROM "products"
+```
+
+---
+
 ### Users().Select(...).Union(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1616,6 +1668,14 @@ SELECT * FROM (SELECT "IsActive", "UserName" FROM "users" UNION ALL SELECT "IsAc
 
 ```sql
 SELECT * FROM (SELECT "IsActive", "UserName" FROM "users" UNION ALL SELECT "IsActive", "UserName" FROM "users") AS "__set" GROUP BY "IsActive"
+```
+
+---
+
+### Users().Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION ALL SELECT "ProductId", "ProductName" FROM "products"
 ```
 
 ---
@@ -3153,6 +3213,19 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "User
 ### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "ProductId", "ProductName" FROM "products" WHERE "Price" <= @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p1
 ```
 
@@ -3554,7 +3627,7 @@ WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHE
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 543 |
+| Total discovered | 555 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 168 |
-| Rendered | 375 |
+| Consolidated (deduped) | 172 |
+| Rendered | 383 |
