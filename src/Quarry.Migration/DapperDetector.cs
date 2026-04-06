@@ -45,6 +45,14 @@ internal sealed class DapperDetector
         return results;
     }
 
+    /// <summary>
+    /// Checks a single invocation expression. Used by the analyzer which receives one node at a time.
+    /// </summary>
+    public DapperCallSite? TryDetectSingle(SemanticModel model, InvocationExpressionSyntax invocation)
+    {
+        return TryDetect(model, invocation);
+    }
+
     private static DapperCallSite? TryDetect(SemanticModel model, InvocationExpressionSyntax invocation)
     {
         // Get the method name from the invocation
