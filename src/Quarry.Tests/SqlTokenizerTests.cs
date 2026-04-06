@@ -203,6 +203,18 @@ public class SqlTokenizerTests
             ("ROW", SqlTokenKind.Row),
             ("EXCEPT", SqlTokenKind.Except),
             ("INTERSECT", SqlTokenKind.Intersect),
+            ("DELETE", SqlTokenKind.Delete),
+            ("delete", SqlTokenKind.Delete),
+            ("UPDATE", SqlTokenKind.Update),
+            ("update", SqlTokenKind.Update),
+            ("INSERT", SqlTokenKind.Insert),
+            ("insert", SqlTokenKind.Insert),
+            ("SET", SqlTokenKind.Set),
+            ("set", SqlTokenKind.Set),
+            ("VALUES", SqlTokenKind.Values),
+            ("values", SqlTokenKind.Values),
+            ("INTO", SqlTokenKind.Into),
+            ("into", SqlTokenKind.Into),
         };
 
         foreach (var (text, kind) in keywordMap)

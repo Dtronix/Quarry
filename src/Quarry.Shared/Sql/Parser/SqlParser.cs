@@ -165,6 +165,12 @@ internal sealed class SqlParser
             case SqlTokenKind.Limit:
             case SqlTokenKind.Offset:
             case SqlTokenKind.Distinct:
+            case SqlTokenKind.Delete:
+            case SqlTokenKind.Update:
+            case SqlTokenKind.Insert:
+            case SqlTokenKind.Set:
+            case SqlTokenKind.Values:
+            case SqlTokenKind.Into:
                 return true;
             default:
                 return false;

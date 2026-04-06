@@ -215,6 +215,7 @@ internal static class SqlTokenizer
                 if (SpanEqualsIgnoreCase(text, "END")) return SqlTokenKind.End;
                 if (SpanEqualsIgnoreCase(text, "NOT")) return SqlTokenKind.Not;
                 if (SpanEqualsIgnoreCase(text, "ROW")) return SqlTokenKind.Row;
+                if (SpanEqualsIgnoreCase(text, "SET")) return SqlTokenKind.Set;
                 break;
             case 4:
                 if (SpanEqualsIgnoreCase(text, "CASE")) return SqlTokenKind.Case;
@@ -235,6 +236,7 @@ internal static class SqlTokenizer
                 if (SpanEqualsIgnoreCase(text, "WHEN")) return SqlTokenKind.When;
                 if (SpanEqualsIgnoreCase(text, "WITH")) return SqlTokenKind.With;
                 if (SpanEqualsIgnoreCase(text, "NEXT")) return SqlTokenKind.Next;
+                if (SpanEqualsIgnoreCase(text, "INTO")) return SqlTokenKind.Into;
                 break;
             case 5:
                 if (SpanEqualsIgnoreCase(text, "CROSS")) return SqlTokenKind.Cross;
@@ -251,11 +253,15 @@ internal static class SqlTokenizer
                 if (SpanEqualsIgnoreCase(text, "WHERE")) return SqlTokenKind.Where;
                 break;
             case 6:
+                if (SpanEqualsIgnoreCase(text, "DELETE")) return SqlTokenKind.Delete;
                 if (SpanEqualsIgnoreCase(text, "EXCEPT")) return SqlTokenKind.Except;
                 if (SpanEqualsIgnoreCase(text, "EXISTS")) return SqlTokenKind.Exists;
                 if (SpanEqualsIgnoreCase(text, "HAVING")) return SqlTokenKind.Having;
+                if (SpanEqualsIgnoreCase(text, "INSERT")) return SqlTokenKind.Insert;
                 if (SpanEqualsIgnoreCase(text, "OFFSET")) return SqlTokenKind.Offset;
                 if (SpanEqualsIgnoreCase(text, "SELECT")) return SqlTokenKind.Select;
+                if (SpanEqualsIgnoreCase(text, "UPDATE")) return SqlTokenKind.Update;
+                if (SpanEqualsIgnoreCase(text, "VALUES")) return SqlTokenKind.Values;
                 break;
             case 7:
                 if (SpanEqualsIgnoreCase(text, "BETWEEN")) return SqlTokenKind.Between;
