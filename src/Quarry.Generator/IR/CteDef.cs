@@ -15,12 +15,16 @@ internal sealed class CteDef : IEquatable<CteDef>
         string name,
         string innerSql,
         IReadOnlyList<QueryParameter> innerParameters,
-        IReadOnlyList<CteColumn> columns)
+        IReadOnlyList<CteColumn> columns,
+        QueryPlan? innerPlan = null,
+        int parameterOffset = 0)
     {
         Name = name;
         InnerSql = innerSql;
         InnerParameters = innerParameters;
         Columns = columns;
+        InnerPlan = innerPlan;
+        ParameterOffset = parameterOffset;
     }
 
     /// <summary>
@@ -47,19 +51,36 @@ internal sealed class CteDef : IEquatable<CteDef>
     /// </summary>
     public IReadOnlyList<CteColumn> Columns { get; }
 
+    /// <summary>
+    /// The inner chain's <see cref="QueryPlan"/>. Used at code generation time to look up
+    /// the inner chain's carrier class name (via the same QueryPlan reference) so that
+    /// CTE inner parameter values can be copied from the inner carrier into the outer carrier
+    /// at runtime. Null only if the inner chain failed analysis.
+    /// </summary>
+    public QueryPlan? InnerPlan { get; }
+
+    /// <summary>
+    /// The starting index in the outer carrier's parameter slots where this CTE's inner
+    /// parameters live. The CteDefinition interceptor body must copy
+    /// <c>__inner.P0..P(InnerParameters.Count-1)</c> into
+    /// <c>__outer.P{ParameterOffset}..P{ParameterOffset + InnerParameters.Count - 1}</c>.
+    /// </summary>
+    public int ParameterOffset { get; }
+
     public bool Equals(CteDef? other)
     {
         if (other is null) return false;
         if (ReferenceEquals(this, other)) return true;
         return Name == other.Name
             && InnerSql == other.InnerSql
+            && ParameterOffset == other.ParameterOffset
             && EqualityHelpers.SequenceEqual(InnerParameters, other.InnerParameters)
             && EqualityHelpers.SequenceEqual(Columns, other.Columns);
     }
 
     public override bool Equals(object? obj) => Equals(obj as CteDef);
 
-    public override int GetHashCode() => HashCode.Combine(Name, InnerSql, Columns.Count);
+    public override int GetHashCode() => HashCode.Combine(Name, InnerSql, Columns.Count, ParameterOffset);
 }
 
 /// <summary>

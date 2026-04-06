@@ -3431,6 +3431,26 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 
 ---
 
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
 ### Widgets().Insert().ExecuteNonQueryAsync()
 
 ```sql
@@ -3482,6 +3502,18 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 ---
 
+### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3490,11 +3522,31 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ---
 
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
+```
+
+---
+
 ## Summary
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 535 |
+| Total discovered | 541 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 166 |
-| Rendered | 369 |
+| Consolidated (deduped) | 167 |
+| Rendered | 374 |

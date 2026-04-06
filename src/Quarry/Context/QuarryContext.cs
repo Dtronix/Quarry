@@ -131,11 +131,22 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Defines a Common Table Expression (CTE) from an inner query.
     /// The TDto class's public properties define the CTE's columns.
     /// </summary>
+    /// <remarks>
+    /// The generated derived context shadows this method via <c>new</c>. Interceptors only fire
+    /// when the call site resolves to the derived overload, so callers must hold the variable
+    /// as their generated context type, not as <see cref="QuarryContext"/>.
+    /// <para>
+    /// If your codebase already declares an extension method named <c>With</c> on
+    /// <see cref="QuarryContext"/> (or any of its descendants), the compiler may surface
+    /// ambiguity at the call site. Disambiguate by either renaming the extension or
+    /// invoking the CTE overload as an instance call on the generated context type.
+    /// </para>
+    /// </remarks>
     /// <typeparam name="TDto">The DTO type whose properties define the CTE columns.</typeparam>
     /// <param name="innerQuery">The inner query that provides the CTE's data.</param>
     /// <returns>This context for method chaining.</returns>
     public QuarryContext With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class
-        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
 
     /// <summary>
     /// Defines a Common Table Expression (CTE) from an inner query with a projection.
@@ -147,7 +158,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// <returns>This context for method chaining.</returns>
     public QuarryContext With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery)
         where TEntity : class where TDto : class
-        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
 
     /// <summary>
     /// Starts a query from a previously defined CTE as the primary table.
@@ -156,7 +167,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// <typeparam name="TDto">The CTE DTO type to query from.</typeparam>
     /// <returns>An entity accessor for the CTE.</returns>
     public IEntityAccessor<TDto> FromCte<TDto>() where TDto : class
-        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator.");
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
 
     #endregion
 

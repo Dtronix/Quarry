@@ -2177,6 +2177,34 @@ SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] 
 
 ---
 
+### Where(...).Orders()
+
+```sql
+SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Where(...).Select(...).Orders()
+
+```sql
+SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH [OrderSummaryDto] AS (SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]
+```
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2185,11 +2213,23 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 ---
 
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0) SELECT [OrderId], [Total] FROM [Order]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ## Summary
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 291 |
+| Total discovered | 295 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 54 |
-| Rendered | 237 |
+| Rendered | 241 |

@@ -7,10 +7,10 @@ base-branch: master
 
 ## State
 phase: REMEDIATE
-status: suspended
+status: active
 issue: #187
 pr: #208
-session: 5
+session: 6
 phases-total: 9
 phases-complete: 8
 
@@ -62,3 +62,4 @@ Baseline: 2779 tests passing (65 analyzer + 2714 main), 0 pre-existing failures.
 | 3 | IMPLEMENT | IMPLEMENT | Resumed — Phase 9 pipeline fixes (6 fixes), SQLite CTE test passing, suspended (multi-dialect inner chain detection issue) |
 | 4 | IMPLEMENT | REMEDIATE | Fixed multi-dialect detection, 4-dialect FromCte test, post-CTE discovery infra, review completed, (A)/(B) fixes applied, (C) issues #205/#206/#207 created. Suspended mid-rebase. |
 | 5 | REMEDIATE | REMEDIATE | Resumed — rebased on origin/master (5 commits, resolved conflicts in InterceptorKind, QueryPlan, RawCallSite, UsageSiteDiscovery, ChainAnalyzer, manifests). All 2879 tests passing. PR #208 created, CI passed. Suspended awaiting merge confirmation. |
+| 6 | REMEDIATE | REVIEW | Resumed — verified PR #208 still CLEAN/MERGEABLE, CI green (run 24030927995). User requested "go back to REVIEW": deleted review.md for fresh analysis pass; preserved all prior REMEDIATE outcomes (commits f39391f, issues #205/#206/#207, rebase) and phases-complete=8. |

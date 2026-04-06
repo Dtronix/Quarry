@@ -230,7 +230,10 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         {
             return UsageSiteDiscovery.DiscoverRawCallSites(invocation, context.SemanticModel, ct);
         }
-        catch { return ImmutableArray<IR.RawCallSite>.Empty; }
+        catch
+        {
+            return ImmutableArray<IR.RawCallSite>.Empty;
+        }
     }
 
     /// <summary>

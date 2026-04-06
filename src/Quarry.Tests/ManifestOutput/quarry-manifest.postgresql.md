@@ -2177,7 +2177,27 @@ SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActi
 ### Where(...).Orders()
 
 ```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Where(...).Orders()
+
+```sql
 SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
+### Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
 ```
 
 ---
@@ -2185,7 +2205,27 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
 ```
 
 ## SchemaPgDb
@@ -2202,7 +2242,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 292 |
+| Total discovered | 296 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 54 |
-| Rendered | 238 |
+| Rendered | 242 |

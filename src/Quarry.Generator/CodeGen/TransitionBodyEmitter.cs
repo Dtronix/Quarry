@@ -90,11 +90,15 @@ internal static class TransitionBodyEmitter
 
     /// <summary>
     /// Emits a CteDefinition interceptor (e.g., db.With&lt;TDto&gt;(inner)).
-    /// Creates the carrier and returns it typed as the context class.
-    /// The inner query argument is unused at runtime — its SQL is compile-time only.
+    /// Creates the outer carrier and copies the inner chain's parameter values from the
+    /// passed-in <c>innerQuery</c> carrier into the outer carrier's matching parameter
+    /// slots, then returns the outer carrier typed as the context class.
+    /// The inner SQL itself is embedded into the outer query's WITH clause at compile time.
     /// </summary>
     public static void EmitCteDefinition(
-        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier)
+        StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier,
+        AssembledPlan chain,
+        System.Collections.Generic.Dictionary<QueryPlan, string>? operandCarrierNames)
     {
         var contextClass = site.ContextClassName ?? "QuarryContext";
         // The method has a generic parameter TDto and takes IQueryBuilder<TDto> (or IQueryBuilder<TEntity,TDto>)
@@ -108,8 +112,47 @@ internal static class TransitionBodyEmitter
         sb.AppendLine($"        this {contextClass} @this,");
         sb.AppendLine($"        {paramType} innerQuery)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        return Unsafe.As<{contextClass}>(new {carrier.ClassName} {{ Ctx = @this }});");
+        sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = @this }};");
+
+        // Locate the CteDef on the outer chain whose CTE name matches this site's DTO and
+        // whose InnerPlan has a registered carrier. Copy P{0..N-1} from the inner carrier
+        // into __c.P{ParameterOffset..ParameterOffset+N-1}. Without this copy, captured
+        // variables in the inner query (e.g., Where(o => o.Total > cutoff)) would silently
+        // bind default values at runtime.
+        var siteCteName = ExtractDtoShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+        for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
+        {
+            var cteDef = chain.Plan.CteDefinitions[i];
+            if (cteDef.Name != siteCteName) continue;
+            if (cteDef.InnerPlan == null || cteDef.InnerParameters.Count == 0) break;
+            string? innerCarrierName = null;
+            operandCarrierNames?.TryGetValue(cteDef.InnerPlan, out innerCarrierName);
+            if (innerCarrierName == null) break;
+
+            sb.AppendLine($"        var __inner = Unsafe.As<{innerCarrierName}>(innerQuery);");
+            for (int p = 0; p < cteDef.InnerParameters.Count; p++)
+            {
+                var targetIdx = cteDef.ParameterOffset + p;
+                sb.AppendLine($"        __c.P{targetIdx} = __inner.P{p};");
+            }
+            break;
+        }
+
+        sb.AppendLine($"        return Unsafe.As<{contextClass}>(__c);");
         sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
+    /// Extracts the unqualified type name from a fully-qualified or namespace-qualified
+    /// type name (e.g. <c>"global::Ns.OrderDto"</c> → <c>"OrderDto"</c>). Mirrors
+    /// the helper used by ChainAnalyzer when constructing CteDef.Name.
+    /// </summary>
+    private static string ExtractDtoShortName(string? typeName)
+    {
+        if (string.IsNullOrEmpty(typeName)) return "CTE";
+        var t = typeName!.StartsWith("global::") ? typeName.Substring("global::".Length) : typeName;
+        var lastDot = t.LastIndexOf('.');
+        return lastDot >= 0 ? t.Substring(lastDot + 1) : t;
     }
 
     /// <summary>

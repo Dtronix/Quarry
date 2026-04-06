@@ -170,7 +170,6 @@ internal static class UsageSiteDiscovery
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
     {
-
         // ── Step 1: Symbol resolution ──────────────────────────────────────
         var symbolInfo = semanticModel.GetSymbolInfo(invocation, cancellationToken);
         IMethodSymbol methodSymbol;

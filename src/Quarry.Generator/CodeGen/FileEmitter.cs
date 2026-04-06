@@ -181,6 +181,15 @@ internal sealed class FileEmitter
                     }
                     if (chain.PrepareSite != null)
                         carrierLookup[chain.PrepareSite.UniqueId] = (carrierPlan, chain);
+
+                    // CTE inner chains: also register their carrier name keyed by QueryPlan
+                    // so EmitCteDefinition can look up the inner carrier class to copy
+                    // captured parameters from. CTE inner chains are NOT operand chains
+                    // (they retain their own execution terminals for standalone use).
+                    var isCteInnerChain = chain.ClauseSites.Count > 0
+                        && chain.ClauseSites[0].Bound.Raw.IsCteInnerChain;
+                    if (isCteInnerChain)
+                        operandCarrierNames[chain.Plan] = carrierPlan.ClassName;
                 }
 
                 foreach (var clause in clauses)
@@ -783,8 +792,8 @@ internal sealed class FileEmitter
                 break;
 
             case InterceptorKind.CteDefinition:
-                if (carrierInfo != null)
-                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo);
+                if (carrierInfo != null && carrierChain != null)
+                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames);
                 break;
 
             case InterceptorKind.FromCte:

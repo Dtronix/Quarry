@@ -130,6 +130,7 @@ internal static class ChainAnalyzer
         // Pass 1: Analyze and assemble inner CTE chains
         // Key: argSpanStart (from ChainId suffix) → assembled SQL and parameters
         var cteInnerResults = new Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>();
+        const string CteInnerMarker = ":cte-inner:";
         foreach (var kvp in innerChainGroups)
         {
             ct.ThrowIfCancellationRequested();
@@ -139,19 +140,37 @@ internal static class ChainAnalyzer
                 if (analyzed != null)
                 {
                     var assembled = SqlAssembler.Assemble(analyzed, registry);
-                    // Extract argSpanStart from ChainId suffix ":cte-inner:NNNN"
+                    // Extract argSpanStart from ChainId suffix ":cte-inner:NNNN".
+                    // Locate the marker explicitly so we don't depend on substring positions
+                    // beyond the documented format.
                     var suffix = kvp.Key;
-                    var lastColon = suffix.LastIndexOf(':');
-                    if (lastColon >= 0 && int.TryParse(suffix.Substring(lastColon + 1), out var argSpanStart))
+                    var markerIdx = suffix.LastIndexOf(CteInnerMarker, StringComparison.Ordinal);
+                    if (markerIdx >= 0)
                     {
-                        cteInnerResults[argSpanStart] = (analyzed, assembled);
+                        var spanStartText = suffix.Substring(markerIdx + CteInnerMarker.Length);
+                        if (int.TryParse(spanStartText, out var argSpanStart))
+                        {
+                            cteInnerResults[argSpanStart] = (analyzed, assembled);
+                        }
                     }
                     // Also add to results so the inner chain gets a carrier and interceptors.
-                    // This allows the inner chain to execute at runtime without throwing.
+                    // The inner chain may also be invoked standalone (e.g., the user binds it
+                    // to a variable and executes it directly), so we cannot suppress its
+                    // standalone interception even though With(...) embeds its SQL.
+                    // The plan originally called for suppression, but standalone-callability
+                    // makes that infeasible without breaking user code.
                     results.Add(analyzed);
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var first = kvp.Value.Count > 0 ? kvp.Value[0] : null;
+                PipelineErrorBag.Report(
+                    first?.Bound.Raw.FilePath ?? "",
+                    first?.Bound.Raw.Line ?? 0,
+                    first?.Bound.Raw.Column ?? 0,
+                    $"CTE inner chain analysis failed: {ex.Message}");
+            }
         }
 
         // Pass 2: Analyze outer chains with CTE inner results available
@@ -632,9 +651,11 @@ internal static class ChainAnalyzer
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
 
-        // Build CTE definitions from CteDefinition/FromCte sites in the chain
+        // Build CTE definitions from CteDefinition/FromCte sites in the chain.
+        // Forward iteration: each CteDefinition is processed before any FromCte that
+        // references it, so the FromCte lookup against cteDefinitions can match by name.
         var cteDefinitions = new List<CteDef>();
-        for (int i = clauseSites.Count - 1; i >= 0; i--)
+        for (int i = 0; i < clauseSites.Count; i++)
         {
             var site = clauseSites[i];
             var raw = site.Bound.Raw;
@@ -650,9 +671,17 @@ internal static class ChainAnalyzer
                         ? variant.Sql : "";
                     var innerParams = inner.Chain.Plan.Parameters;
                     var columns = raw.CteColumns ?? Array.Empty<CteColumn>();
-                    var cteName = GetShortTypeName(raw.CteEntityTypeName) ?? "CTE";
+                    var cteName = ExtractShortTypeName(raw.CteEntityTypeName) ?? "CTE";
 
-                    cteDefinitions.Add(new CteDef(cteName, innerSql, innerParams, columns));
+                    // Capture the starting index in the outer carrier's parameter slots
+                    // BEFORE prepending — this is where the inner params will live in the outer carrier.
+                    // EmitCteDefinition uses this offset to copy from inner carrier into outer carrier.
+                    var cteParamOffset = paramGlobalIndex;
+
+                    cteDefinitions.Add(new CteDef(
+                        cteName, innerSql, innerParams, columns,
+                        innerPlan: inner.Chain.Plan,
+                        parameterOffset: cteParamOffset));
 
                     // Prepend CTE inner parameters to the outer parameter list
                     // Re-index from the current paramGlobalIndex
@@ -680,17 +709,49 @@ internal static class ChainAnalyzer
                             isEnumerableCollection: p.IsEnumerableCollection));
                     }
                 }
-
+                else
+                {
+                    // Inner chain analysis missed (cteInnerResults null, no CteInnerArgSpanStart,
+                    // or no entry for this site's argSpanStart). The CTE cannot be assembled — emit
+                    // a diagnostic so the user sees a source-side error instead of failing at runtime
+                    // with "no such table: <CteName>" when a sibling FromCte<T>() rewrites primaryTable.
+                    PipelineErrorBag.Report(
+                        raw.FilePath,
+                        raw.Line,
+                        raw.Column,
+                        $"Quarry could not analyze the inner query passed to With<{raw.CteEntityTypeName}>(...). " +
+                        $"Make sure the inner query is a complete chain (e.g. db.Orders().Where(...).Select(...)) " +
+                        $"and that the parameter is not a method-group or external variable. " +
+                        $"This CTE will be skipped and any FromCte<{raw.CteEntityTypeName}>() in the same chain will fail at runtime.");
+                }
             }
             else if (raw.Kind == InterceptorKind.FromCte)
             {
-                // FromCte: override primary table with the CTE name
-                var cteName = GetShortTypeName(raw.CteEntityTypeName) ?? "CTE";
-                primaryTable = new TableRef(cteName, schemaName: null);
+                // FromCte: override primary table with the CTE name — but only if a matching
+                // CteDefinition was successfully resolved above. Otherwise we would emit
+                // SELECT ... FROM "Name" referencing an undeclared CTE.
+                var cteName = ExtractShortTypeName(raw.CteEntityTypeName) ?? "CTE";
+                bool hasMatchingCte = false;
+                for (int j = 0; j < cteDefinitions.Count; j++)
+                {
+                    if (cteDefinitions[j].Name == cteName) { hasMatchingCte = true; break; }
+                }
+                if (hasMatchingCte)
+                {
+                    primaryTable = new TableRef(cteName, schemaName: null);
+                }
+                else
+                {
+                    PipelineErrorBag.Report(
+                        raw.FilePath,
+                        raw.Line,
+                        raw.Column,
+                        $"FromCte<{raw.CteEntityTypeName}>() has no matching With<{raw.CteEntityTypeName}>(...) " +
+                        $"earlier in the same chain. Each FromCte<T>() must be preceded by a With<T>(innerQuery) " +
+                        $"that defines the CTE.");
+                }
             }
         }
-        // CTE definitions were built in reverse iteration order — reverse to preserve declaration order
-        cteDefinitions.Reverse();
         // CteDefinition/FromCte sites remain in clauseSites for interceptor emission
 
         // Determine query kind — for prepared terminals, use the Prepare site's builder kind
@@ -1968,9 +2029,12 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Extracts the short type name from a fully qualified type name (e.g., "Ns.OrderCountDto" → "OrderCountDto").
+    /// Extracts the unqualified short type name from a (possibly) namespace-qualified type name
+    /// (e.g., <c>"Ns.OrderCountDto"</c> → <c>"OrderCountDto"</c>).
+    /// Distinct from <see cref="InterceptorCodeGenerator.GetShortTypeName"/>, which only strips
+    /// the <c>global::</c> prefix without dropping namespace segments.
     /// </summary>
-    private static string? GetShortTypeName(string? fullName)
+    private static string? ExtractShortTypeName(string? fullName)
     {
         if (fullName == null) return null;
         var lastDot = fullName.LastIndexOf('.');

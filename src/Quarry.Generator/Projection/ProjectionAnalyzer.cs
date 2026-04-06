@@ -914,16 +914,26 @@ internal static class ProjectionAnalyzer
             var clrType = GetSimpleTypeName(propertyType);
             var fullClrType = propertyType.ToDisplayString();
 
-            // Determine column kind based on property name patterns
+            // Determine column kind. Foreign keys are detected by *type* — only the
+            // generated `EntityRef<TEntity, TKey>` struct is treated as a foreign key.
+            // Name-based heuristics ("ends with Id") produce false positives for primary
+            // keys like `OrderId` on the `Order` entity, and for unrelated DTO properties
+            // (e.g., `UserId` on a CTE projection DTO), which previously left
+            // ReferencedEntityName null and triggered an NRE downstream in
+            // EmitDiagnosticsConstruction.
             var kind = ColumnKind.Standard;
             string? referencedEntityName = null;
 
-            if (property.Name.EndsWith("Id") && property.Name.Length > 2)
+            if (propertyType is INamedTypeSymbol entityRefType
+                && entityRefType.IsGenericType
+                && entityRefType.Name == "EntityRef"
+                && entityRefType.TypeArguments.Length == 2)
             {
-                // Simple heuristic for FK detection
                 kind = ColumnKind.ForeignKey;
+                referencedEntityName = entityRefType.TypeArguments[0].Name;
             }
-            else if (property.Name == "Id" || property.Name.EndsWith("Id") && property.Name == typeSymbol.Name + "Id")
+            else if (property.Name == "Id"
+                     || (property.Name.EndsWith("Id") && property.Name == typeSymbol.Name + "Id"))
             {
                 kind = ColumnKind.PrimaryKey;
             }
