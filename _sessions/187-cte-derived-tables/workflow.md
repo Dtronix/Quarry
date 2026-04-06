@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: REMEDIATE
-status: active
+phase: COMPLETE
+status: complete
 issue: #187
 pr: #208
 session: 7
 phases-total: 9
-phases-complete: 8
+phases-complete: 9
 
 ## Problem Statement
 Support CTEs (WITH ... AS) and derived tables (subqueries in FROM clause) in the Quarry query builder. Both introduce "query-as-entity" — a subquery result set whose columns are determined by the inner query's projection, not by a schema entity class. Requires significant IR extension to compose inner query SQL as CTE prefix or FROM-clause subquery.
