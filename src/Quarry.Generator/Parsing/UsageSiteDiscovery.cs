@@ -3262,10 +3262,17 @@ internal static class UsageSiteDiscovery
         // Extract TDto type from type arguments.
         // With<TDto>(inner) has 1 type arg; With<TEntity, TDto>(inner) has 2 — TDto is always last.
         string? cteEntityTypeName = null;
+        IReadOnlyList<IR.CteColumn>? cteColumns = null;
         if (methodSymbol.TypeArguments.Length >= 1)
         {
             var dtoType = methodSymbol.TypeArguments[methodSymbol.TypeArguments.Length - 1];
             cteEntityTypeName = dtoType.ToFullyQualifiedDisplayString();
+
+            // Resolve DTO columns during discovery so they flow through the pipeline
+            if (kind == InterceptorKind.CteDefinition && dtoType is INamedTypeSymbol namedDto)
+            {
+                cteColumns = IR.CteDtoResolver.ResolveColumns(namedDto);
+            }
         }
 
         // For CteDefinition, store the argument's SpanStart for matching to inner chain groups
@@ -3307,7 +3314,8 @@ internal static class UsageSiteDiscovery
             chainId: chainId,
             isInsideLoop: isInsideLoop,
             cteEntityTypeName: cteEntityTypeName,
-            cteInnerArgSpanStart: cteInnerArgSpanStart);
+            cteInnerArgSpanStart: cteInnerArgSpanStart,
+            cteColumns: cteColumns);
     }
 
     /// <summary>
