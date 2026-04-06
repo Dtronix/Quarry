@@ -1560,6 +1560,14 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 
 ---
 
+### Users().Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3) AS "__set" WHERE "UserId" <= 2
+```
+
+---
+
 ### Users().Select(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
