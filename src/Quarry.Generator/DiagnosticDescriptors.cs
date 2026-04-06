@@ -750,19 +750,6 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "All operands of a UNION/INTERSECT/EXCEPT must project the same number of columns.");
 
-    /// <summary>
-    /// QRY073: Cross-entity set operations are not yet supported.
-    /// Severity: Warning
-    /// </summary>
-    public static readonly DiagnosticDescriptor CrossEntitySetOperationNotSupported = new(
-        id: "QRY073",
-        title: "Cross-entity set operation not supported",
-        messageFormat: "Cross-entity set operations are not yet supported — the operand uses table '{0}' but the main query uses table '{1}'",
-        category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
-        isEnabledByDefault: true,
-        description: "Cross-entity UNION/INTERSECT/EXCEPT requires both operands to use the same entity table. This limitation will be removed in a future release.");
-
     // ─── CTE diagnostics (QRY080–QRY081) ────────────────────────────────
 
     /// <summary>

@@ -8,6 +8,7 @@ using Quarry.Generators.Utilities;
 using Quarry.Generators.Models;
 using Quarry.Tests.Testing;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using IRQueryPlan = Quarry.Generators.IR.QueryPlan;
 
 namespace Quarry.Tests.IR;
 
@@ -353,7 +354,167 @@ public class PipelineOrchestratorTests
 
     #endregion
 
+    #region CollectPostAnalysisDiagnostics — QRY072
+
+    [Test]
+    public void CollectPostAnalysisDiagnostics_SetOperationColumnCountMismatch_EmitsQRY072()
+    {
+        // QRY072 (SetOperationProjectionMismatch) is reachable from valid C# source via
+        // asymmetric DTO object initializers across the two sides of a Union/Intersect/Except:
+        //   Select(u => new MyDto { A = u.X, B = u.Y })  // 2 columns
+        //     .Union(Select(u => new MyDto { A = u.X })) // 1 column
+        // Both sides share TResult=MyDto so the C# type system permits the call, but
+        // ProjectionAnalyzer counts one column per assignment expression — not per type
+        // member — so the IR projections end up with different Columns.Count values.
+        // This test verifies the diagnostic still fires for that shape.
+
+        var mainProjection = new SelectProjection(
+            ProjectionKind.Dto,
+            "MyDto",
+            new[]
+            {
+                CreateProjectedColumn("A", "Col_A", 0),
+                CreateProjectedColumn("B", "Col_B", 1),
+            });
+
+        var operandProjection = new SelectProjection(
+            ProjectionKind.Dto,
+            "MyDto",
+            new[]
+            {
+                CreateProjectedColumn("A", "Col_A", 0),
+            });
+
+        var operandPlan = CreateQueryPlanWithProjectionAndSetOps(operandProjection, setOperations: null);
+        var setOp = new SetOperationPlan(SetOperatorKind.Union, operandPlan, parameterOffset: 0);
+        var mainPlan = CreateQueryPlanWithProjectionAndSetOps(mainProjection, new[] { setOp });
+
+        var execSite = new TestCallSiteBuilder()
+            .WithUniqueId("exec_1")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("MyDto")
+            .Build();
+
+        var assembled = WrapInAssembledPlan(mainPlan, execSite);
+
+        var diagnostics = InvokeCollectPostAnalysisDiagnostics(new List<AssembledPlan> { assembled });
+
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].DiagnosticId, Is.EqualTo("QRY072"));
+        Assert.That(diagnostics[0].MessageArgs, Has.Length.EqualTo(2));
+        Assert.That(diagnostics[0].MessageArgs[0], Is.EqualTo("1"), "operand column count");
+        Assert.That(diagnostics[0].MessageArgs[1], Is.EqualTo("2"), "main column count");
+    }
+
+    [Test]
+    public void CollectPostAnalysisDiagnostics_SetOperationColumnCountsMatch_NoDiagnostic()
+    {
+        var mainProjection = new SelectProjection(
+            ProjectionKind.Tuple,
+            "(int, string)",
+            new[]
+            {
+                CreateProjectedColumn("Item1", "UserId", 0),
+                CreateProjectedColumn("Item2", "UserName", 1),
+            });
+
+        var operandProjection = new SelectProjection(
+            ProjectionKind.Tuple,
+            "(int, string)",
+            new[]
+            {
+                CreateProjectedColumn("Item1", "ProductId", 0),
+                CreateProjectedColumn("Item2", "ProductName", 1),
+            });
+
+        var operandPlan = CreateQueryPlanWithProjectionAndSetOps(operandProjection, setOperations: null);
+        var setOp = new SetOperationPlan(SetOperatorKind.Union, operandPlan, parameterOffset: 0, operandEntityTypeName: "global::TestApp.Product");
+        var mainPlan = CreateQueryPlanWithProjectionAndSetOps(mainProjection, new[] { setOp });
+
+        var execSite = new TestCallSiteBuilder()
+            .WithUniqueId("exec_2")
+            .WithKind(InterceptorKind.ExecuteFetchAll)
+            .WithEntityType("User")
+            .WithResultType("(int, string)")
+            .Build();
+
+        var assembled = WrapInAssembledPlan(mainPlan, execSite);
+
+        var diagnostics = InvokeCollectPostAnalysisDiagnostics(new List<AssembledPlan> { assembled });
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    #endregion
+
     #region Helpers
+
+    private static ProjectedColumn CreateProjectedColumn(string propertyName, string columnName, int ordinal)
+    {
+        return new ProjectedColumn(
+            propertyName: propertyName,
+            columnName: columnName,
+            clrType: "int",
+            fullClrType: "int",
+            isNullable: false,
+            ordinal: ordinal);
+    }
+
+    private static IRQueryPlan CreateQueryPlanWithProjectionAndSetOps(
+        SelectProjection projection,
+        IReadOnlyList<SetOperationPlan>? setOperations)
+    {
+        return new IRQueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("users", null, "t0"),
+            joins: Array.Empty<JoinPlan>(),
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: projection,
+            pagination: null,
+            isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: new int[] { 0 },
+            parameters: Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.PrebuiltDispatch,
+            setOperations: setOperations);
+    }
+
+    private static AssembledPlan WrapInAssembledPlan(IRQueryPlan plan, TranslatedCallSite executionSite)
+    {
+        var sqlVariants = new Dictionary<int, AssembledSqlVariant>
+        {
+            [0] = new AssembledSqlVariant("SELECT 1", 0)
+        };
+
+        return new AssembledPlan(
+            plan: plan,
+            sqlVariants: sqlVariants,
+            readerDelegateCode: null,
+            maxParameterCount: 0,
+            executionSite: executionSite,
+            clauseSites: Array.Empty<TranslatedCallSite>(),
+            entityTypeName: executionSite.EntityTypeName,
+            resultTypeName: executionSite.ResultTypeName,
+            dialect: GenSqlDialect.SQLite,
+            entitySchemaNamespace: null,
+            isTraced: false);
+    }
+
+    private static List<DiagnosticInfo> InvokeCollectPostAnalysisDiagnostics(List<AssembledPlan> assembledPlans)
+    {
+        var diagnostics = new List<DiagnosticInfo>();
+        var method = typeof(PipelineOrchestrator).GetMethod(
+            "CollectPostAnalysisDiagnostics",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        method.Invoke(null, new object[] { assembledPlans, diagnostics });
+        return diagnostics;
+    }
 
     private static ImmutableArray<TranslatedCallSite> InvokePropagateChainUpdatedSites(
         ImmutableArray<TranslatedCallSite> allSites,

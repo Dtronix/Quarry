@@ -61,7 +61,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         string? cteEntityTypeName = null,
         bool isCteInnerChain = false,
         int? cteInnerArgSpanStart = null,
-        IReadOnlyList<CteColumn>? cteColumns = null)
+        IReadOnlyList<CteColumn>? cteColumns = null,
+        string? operandEntityTypeName = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -111,6 +112,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsCteInnerChain = isCteInnerChain;
         CteInnerArgSpanStart = cteInnerArgSpanStart;
         CteColumns = cteColumns;
+        OperandEntityTypeName = operandEntityTypeName;
     }
 
     // Identity and location
@@ -209,6 +211,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // CTE DTO column metadata resolved during discovery (for CteDefinition sites)
     public IReadOnlyList<CteColumn>? CteColumns { get; }
 
+    // Fully-qualified entity type name of the operand in cross-entity set operations (e.g., Union<TOther>).
+    // Null for same-entity set operations.
+    public string? OperandEntityTypeName { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -227,6 +233,131 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
 
     // Transient: invocation syntax for deferred RawSql type enrichment. Not part of Equals/GetHashCode.
     public InvocationExpressionSyntax? EnrichmentInvocation { get; set; }
+
+    /// <summary>
+    /// Returns a copy with OperandEntityTypeName replaced. Used by CallSiteBinder to normalize
+    /// the cross-entity set operation operand to the per-context generated entity class.
+    /// </summary>
+    internal RawCallSite WithOperandEntityTypeName(string newOperandEntityTypeName)
+    {
+        var copy = new RawCallSite(
+            methodName: MethodName,
+            filePath: FilePath,
+            line: Line,
+            column: Column,
+            uniqueId: UniqueId,
+            kind: Kind,
+            builderKind: BuilderKind,
+            entityTypeName: EntityTypeName,
+            resultTypeName: ResultTypeName,
+            isAnalyzable: IsAnalyzable,
+            nonAnalyzableReason: NonAnalyzableReason,
+            interceptableLocationData: InterceptableLocationData,
+            interceptableLocationVersion: InterceptableLocationVersion,
+            location: Location,
+            expression: Expression,
+            clauseKind: ClauseKind,
+            isDescending: IsDescending,
+            projectionInfo: ProjectionInfo,
+            joinedEntityTypeName: JoinedEntityTypeName,
+            initializedPropertyNames: InitializedPropertyNames,
+            constantIntValue: ConstantIntValue,
+            isNavigationJoin: IsNavigationJoin,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            isInsideLoop: IsInsideLoop,
+            isInsideTryCatch: IsInsideTryCatch,
+            isCapturedInLambda: IsCapturedInLambda,
+            isPassedAsArgument: IsPassedAsArgument,
+            isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
+            nestingContext: NestingContext,
+            chainId: ChainId,
+            builderTypeName: BuilderTypeName,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            setActionAssignments: SetActionAssignments,
+            setActionParameters: SetActionParameters,
+            setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
+            lambdaParameterNames: LambdaParameterNames,
+            batchInsertColumnNames: BatchInsertColumnNames,
+            isPreparedTerminal: IsPreparedTerminal,
+            preparedQueryEscapeReason: PreparedQueryEscapeReason,
+            isValueTypeResult: IsValueTypeResult,
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn,
+            operandEntityTypeName: newOperandEntityTypeName);
+        // Propagate mutable properties set after construction
+        copy.DisplayClassName = DisplayClassName;
+        copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.CaptureKind = CaptureKind;
+        copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.EnrichmentLambda = EnrichmentLambda;
+        copy.EnrichmentInvocation = EnrichmentInvocation;
+        return copy;
+    }
+
+    /// <summary>
+    /// Returns a copy with EntityTypeName replaced. Used by CallSiteBinder to normalize the
+    /// entity type to the context-qualified form (the per-context generated entity class)
+    /// when the discovery's resolution picked up a user-written class in a different namespace.
+    /// </summary>
+    internal RawCallSite WithEntityTypeName(string newEntityTypeName)
+    {
+        var copy = new RawCallSite(
+            methodName: MethodName,
+            filePath: FilePath,
+            line: Line,
+            column: Column,
+            uniqueId: UniqueId,
+            kind: Kind,
+            builderKind: BuilderKind,
+            entityTypeName: newEntityTypeName,
+            resultTypeName: ResultTypeName,
+            isAnalyzable: IsAnalyzable,
+            nonAnalyzableReason: NonAnalyzableReason,
+            interceptableLocationData: InterceptableLocationData,
+            interceptableLocationVersion: InterceptableLocationVersion,
+            location: Location,
+            expression: Expression,
+            clauseKind: ClauseKind,
+            isDescending: IsDescending,
+            projectionInfo: ProjectionInfo,
+            joinedEntityTypeName: JoinedEntityTypeName,
+            initializedPropertyNames: InitializedPropertyNames,
+            constantIntValue: ConstantIntValue,
+            isNavigationJoin: IsNavigationJoin,
+            contextClassName: ContextClassName,
+            contextNamespace: ContextNamespace,
+            isInsideLoop: IsInsideLoop,
+            isInsideTryCatch: IsInsideTryCatch,
+            isCapturedInLambda: IsCapturedInLambda,
+            isPassedAsArgument: IsPassedAsArgument,
+            isAssignedFromNonQuarryMethod: IsAssignedFromNonQuarryMethod,
+            nestingContext: NestingContext,
+            chainId: ChainId,
+            builderTypeName: BuilderTypeName,
+            joinedEntityTypeNames: JoinedEntityTypeNames,
+            setActionAssignments: SetActionAssignments,
+            setActionParameters: SetActionParameters,
+            setActionAllCapturedIdentifiers: SetActionAllCapturedIdentifiers,
+            lambdaParameterNames: LambdaParameterNames,
+            batchInsertColumnNames: BatchInsertColumnNames,
+            isPreparedTerminal: IsPreparedTerminal,
+            preparedQueryEscapeReason: PreparedQueryEscapeReason,
+            isValueTypeResult: IsValueTypeResult,
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn,
+            operandEntityTypeName: OperandEntityTypeName);
+        // Propagate mutable properties set after construction
+        copy.DisplayClassName = DisplayClassName;
+        copy.CapturedVariableTypes = CapturedVariableTypes;
+        copy.CaptureKind = CaptureKind;
+        copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.EnrichmentLambda = EnrichmentLambda;
+        copy.EnrichmentInvocation = EnrichmentInvocation;
+        return copy;
+    }
 
     /// <summary>
     /// Creates a copy with a different ResultTypeName.
@@ -282,7 +413,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             cteEntityTypeName: CteEntityTypeName,
             isCteInnerChain: IsCteInnerChain,
             cteInnerArgSpanStart: CteInnerArgSpanStart,
-            cteColumns: CteColumns);
+            cteColumns: CteColumns,
+            operandEntityTypeName: OperandEntityTypeName);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -343,7 +475,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && CteEntityTypeName == other.CteEntityTypeName
             && IsCteInnerChain == other.IsCteInnerChain
             && CteInnerArgSpanStart == other.CteInnerArgSpanStart
-            && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns);
+            && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns)
+            && OperandEntityTypeName == other.OperandEntityTypeName;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

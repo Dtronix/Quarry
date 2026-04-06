@@ -509,4 +509,278 @@ internal class CrossDialectSetOperationTests
     }
 
     #endregion
+
+    #region Cross-Entity Set Operations
+
+    [Test]
+    public async Task CrossEntity_Union_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .Union(My.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` UNION SELECT `ProductId`, `ProductName` FROM `products`",
+            ss:     "SELECT [UserId], [UserName] FROM [users] UNION SELECT [ProductId], [ProductName] FROM [products]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Users: (1,Alice),(2,Bob),(3,Charlie). Products: (1,Widget),(2,Gadget),(3,Doohickey).
+        // UNION removes dupes by value — all 6 are distinct → 6 results.
+        // The reader uses positional column access (GetInt32(0), GetString(1)), so the C# tuple
+        // element labels (UserId, UserName) come from the receiver projection but the actual rows
+        // are interleaved from both tables. Verify by value to confirm the reader sees product
+        // rows, not just user rows.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Has.Count.EqualTo(6));
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
+    }
+
+    [Test]
+    public async Task CrossEntity_UnionAll_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .UnionAll(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .UnionAll(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .UnionAll(My.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .UnionAll(Ss.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION ALL SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION ALL SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` UNION ALL SELECT `ProductId`, `ProductName` FROM `products`",
+            ss:     "SELECT [UserId], [UserName] FROM [users] UNION ALL SELECT [ProductId], [ProductName] FROM [products]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // UNION ALL keeps all rows: 3 users + 3 products → 6 results.
+        // Verify by value to confirm both tables flow through the positional reader.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Has.Count.EqualTo(6));
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
+    }
+
+    [Test]
+    public async Task CrossEntity_Intersect_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Intersect(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Intersect(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .Intersect(My.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .Intersect(Ss.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" INTERSECT SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" INTERSECT SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` INTERSECT SELECT `ProductId`, `ProductName` FROM `products`",
+            ss:     "SELECT [UserId], [UserName] FROM [users] INTERSECT SELECT [ProductId], [ProductName] FROM [products]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Same IDs (1,2,3) but different names → no exact row matches → 0 results
+        Assert.That(results, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task CrossEntity_Except_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Except(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Except(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .Except(My.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .Except(Ss.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" EXCEPT SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" EXCEPT SELECT \"ProductId\", \"ProductName\" FROM \"products\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` EXCEPT SELECT `ProductId`, `ProductName` FROM `products`",
+            ss:     "SELECT [UserId], [UserName] FROM [users] EXCEPT SELECT [ProductId], [ProductName] FROM [products]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All user rows are unique vs product rows → all 3 user rows survive EXCEPT.
+        // Verify the surviving rows are the user rows (positional reader, not product rows).
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+        }));
+    }
+
+    [Test]
+    public async Task CrossEntity_IntersectAll_TupleProjection()
+    {
+        // INTERSECT ALL is PostgreSQL-only (QRY070 blocks other dialects).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Pg = t.Pg;
+
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .IntersectAll(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(pg.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" INTERSECT ALL SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+    }
+
+    [Test]
+    public async Task CrossEntity_ExceptAll_TupleProjection()
+    {
+        // EXCEPT ALL is PostgreSQL-only (QRY071 blocks other dialects).
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Pg = t.Pg;
+
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .ExceptAll(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(pg.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" EXCEPT ALL SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+    }
+
+    [Test]
+    public async Task CrossEntity_Union_WithParameters()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minUserId = 2;
+        var maxPrice = 40.0m;
+        var lt = Lite.Users().Where(u => u.UserId >= minUserId).Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Products().Where(p => p.Price <= maxPrice).Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var pg = Pg.Users().Where(u => u.UserId >= minUserId).Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Products().Where(p => p.Price <= maxPrice).Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var my = My.Users().Where(u => u.UserId >= minUserId).Select(u => (u.UserId, u.UserName))
+            .Union(My.Products().Where(p => p.Price <= maxPrice).Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+        var ss = Ss.Users().Where(u => u.UserId >= minUserId).Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Products().Where(p => p.Price <= maxPrice).Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" WHERE \"Price\" <= @p1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= $1 UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" WHERE \"Price\" <= $2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `ProductId`, `ProductName` FROM `products` WHERE `Price` <= ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [ProductId], [ProductName] FROM [products] WHERE [Price] <= @p1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Users where UserId >= 2: Bob(2), Charlie(3). Products where Price <= 40: Widget(1, 29.99), Doohickey(3, 9.95).
+        // UNION: 4 distinct rows. Verify by value (not just count) to confirm product rows
+        // actually flow through the positional reader, matching the row-value strengthening
+        // already applied to CrossEntity_Union_TupleProjection.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (1, "Widget"),
+        }));
+    }
+
+    [Test]
+    public async Task CrossEntity_Union_WithPostUnionOrderByLimit()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .OrderBy(u => u.UserName).Limit(3).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Products().Select(p => (p.ProductId, p.ProductName)))
+            .OrderBy(u => u.UserName).Limit(3).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .Union(My.Products().Select(p => (p.ProductId, p.ProductName)))
+            .OrderBy(u => u.UserName).Limit(3).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Products().Select(p => (p.ProductId, p.ProductName)))
+            .OrderBy(u => u.UserName).Limit(3).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" ORDER BY \"UserName\" ASC LIMIT 3",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" ORDER BY \"UserName\" ASC LIMIT 3",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` UNION SELECT `ProductId`, `ProductName` FROM `products` ORDER BY `UserName` ASC LIMIT 3",
+            ss:     "SELECT [UserId], [UserName] FROM [users] UNION SELECT [ProductId], [ProductName] FROM [products] ORDER BY [UserName] ASC OFFSET 0 ROWS FETCH NEXT 3 ROWS ONLY");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All 6 rows sorted by name ASC: Alice, Bob, Charlie, Doohickey, Gadget, Widget → first 3
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
+    }
+
+    #endregion
 }

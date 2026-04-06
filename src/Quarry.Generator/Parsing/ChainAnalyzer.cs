@@ -1032,7 +1032,7 @@ internal static class ChainAnalyzer
 
                 if (opPlan != null)
                 {
-                    setOperationPlans.Add(new SetOperationPlan(opKind, opPlan, paramGlobalIndex));
+                    setOperationPlans.Add(new SetOperationPlan(opKind, opPlan, paramGlobalIndex, raw.OperandEntityTypeName));
                     // Absorb operand parameters into the main chain's global parameter space
                     foreach (var opParam in opPlan.Parameters)
                     {

@@ -474,6 +474,26 @@ SELECT `t0`.`Total` FROM `orders` AS `t0` INNER JOIN `users` AS `j0` ON `t0`.`Us
 
 ---
 
+### Products().Select(...).Products()
+
+```sql
+SELECT `ProductId`, `ProductName` FROM `products`
+```
+
+---
+
+### Products().Where(...).Select(...).Products()
+
+```sql
+SELECT `ProductId`, `ProductName` FROM `products` WHERE `Price` <= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### Shipments().Select(...).ToDiagnostics()
 
 ```sql
@@ -873,6 +893,22 @@ SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` RIGHT JOIN `orders` AS
 
 ---
 
+### Users().Select(...).Except(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` EXCEPT SELECT `ProductId`, `ProductName` FROM `products`
+```
+
+---
+
+### Users().Select(...).Intersect(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` INTERSECT SELECT `ProductId`, `ProductName` FROM `products`
+```
+
+---
+
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -985,10 +1021,34 @@ SELECT `UserName`, `UserId` FROM `users`
 
 ---
 
+### Users().Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` UNION SELECT `ProductId`, `ProductName` FROM `products` ORDER BY `UserName` ASC LIMIT 3
+```
+
+---
+
+### Users().Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` UNION SELECT `ProductId`, `ProductName` FROM `products`
+```
+
+---
+
 ### Users().Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
 SELECT * FROM (SELECT `UserId`, `UserName` FROM `users` UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` = 3) AS `__set` WHERE `UserId` <= 2
+```
+
+---
+
+### Users().Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` UNION ALL SELECT `ProductId`, `ProductName` FROM `products`
 ```
 
 ---
@@ -2033,6 +2093,19 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1 UNION SELECT `User
 ### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `ProductId`, `ProductName` FROM `products` WHERE `Price` <= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `decimal` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ?
 ```
 
@@ -2237,7 +2310,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 297 |
+| Total discovered | 309 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 55 |
-| Rendered | 242 |
+| Consolidated (deduped) | 59 |
+| Rendered | 250 |
