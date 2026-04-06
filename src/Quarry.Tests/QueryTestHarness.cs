@@ -225,6 +225,16 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             )
             """);
 
+        await SqlAsync("""
+            CREATE TABLE "products" (
+                "ProductId" INTEGER PRIMARY KEY,
+                "ProductName" TEXT NOT NULL,
+                "Price" REAL NOT NULL,
+                "Description" TEXT,
+                "DiscountedPrice" REAL GENERATED ALWAYS AS ("Price" * 0.9) STORED
+            )
+            """);
+
         // View to alias "orders" as "Order" for join table name compatibility.
         await SqlAsync("""
             CREATE VIEW "Order" AS SELECT * FROM "orders"
@@ -278,6 +288,13 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 (1, 1, 1),
                 (2, 1, 2),
                 (3, 2, 1)
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "products" ("ProductId", "ProductName", "Price", "Description") VALUES
+                (1, 'Widget',  29.99, 'A fine widget'),
+                (2, 'Gadget',  49.50, NULL),
+                (3, 'Doohickey', 9.95, 'Budget option')
             """);
 
         await SqlAsync("""

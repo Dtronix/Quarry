@@ -509,4 +509,123 @@ internal class CrossDialectSetOperationTests
     }
 
     #endregion
+
+    #region Cross-Entity Set Operations
+
+    [Test]
+    public async Task CrossEntity_Union_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union<Product>(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Users: (1,Alice),(2,Bob),(3,Charlie). Products: (1,Widget),(2,Gadget),(3,Doohickey).
+        // UNION removes dupes by value — all 6 are distinct → 6 results
+        Assert.That(results, Has.Count.EqualTo(6));
+    }
+
+    [Test]
+    public async Task CrossEntity_UnionAll_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .UnionAll<Product>(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION ALL SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // UNION ALL keeps all rows: 3 users + 3 products → 6 results
+        Assert.That(results, Has.Count.EqualTo(6));
+    }
+
+    [Test]
+    public async Task CrossEntity_Intersect_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Intersect<Product>(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" INTERSECT SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Same IDs (1,2,3) but different names → no exact row matches → 0 results
+        Assert.That(results, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task CrossEntity_Except_TupleProjection()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Except<Product>(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" EXCEPT SELECT \"ProductId\", \"ProductName\" FROM \"products\""));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All user rows are unique vs product rows → all 3 user rows survive EXCEPT
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public async Task CrossEntity_Union_WithParameters()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var minUserId = 2;
+        var maxPrice = 40.0m;
+        var lt = Lite.Users().Where(u => u.UserId >= minUserId).Select(u => (u.UserId, u.UserName))
+            .Union<Product>(Lite.Products().Where(p => p.Price <= maxPrice).Select(p => (p.ProductId, p.ProductName)))
+            .Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" WHERE \"Price\" <= @p1"));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // Users where UserId >= 2: Bob(2), Charlie(3). Products where Price <= 40: Widget(29.99), Doohickey(9.95).
+        // UNION: 4 distinct rows
+        Assert.That(results, Has.Count.EqualTo(4));
+    }
+
+    [Test]
+    public async Task CrossEntity_Union_WithPostUnionOrderByLimit()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var Lite = t.Lite;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union<Product>(Lite.Products().Select(p => (p.ProductId, p.ProductName)))
+            .OrderBy(u => u.UserName).Limit(3).Prepare();
+
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"ProductId\", \"ProductName\" FROM \"products\" ORDER BY \"UserName\" ASC LIMIT 3"));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All 6 rows sorted by name ASC: Alice, Bob, Charlie, Doohickey, Gadget, Widget → first 3
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
+    }
+
+    #endregion
 }
