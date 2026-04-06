@@ -747,6 +747,7 @@ internal static class UsageSiteDiscovery
         string? operandChainId = null;
         int? operandArgEndLine = null;
         int? operandArgEndColumn = null;
+        string? operandEntityTypeName = null;
         if (kind is InterceptorKind.Union or InterceptorKind.UnionAll
             or InterceptorKind.Intersect or InterceptorKind.IntersectAll
             or InterceptorKind.Except or InterceptorKind.ExceptAll)
@@ -759,6 +760,14 @@ internal static class UsageSiteDiscovery
                 var argSpan = invocation.ArgumentList.Arguments[0].Expression.GetLocation().GetLineSpan();
                 operandArgEndLine = argSpan.EndLinePosition.Line + 1; // 0-based → 1-based
                 operandArgEndColumn = argSpan.EndLinePosition.Character + 1;
+            }
+
+            // Extract TOther type argument for cross-entity set operations (e.g., Union<Product>)
+            if (semanticModel.GetSymbolInfo(invocation, cancellationToken).Symbol is IMethodSymbol setOpMethod
+                && setOpMethod.TypeArguments.Length > 0)
+            {
+                var display = setOpMethod.TypeArguments[0].ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+                operandEntityTypeName = display.StartsWith("global::") ? display.Substring(8) : display;
             }
         }
 
@@ -814,7 +823,8 @@ internal static class UsageSiteDiscovery
             operandChainId: operandChainId,
             operandArgEndLine: operandArgEndLine,
             operandArgEndColumn: operandArgEndColumn,
-            isCteInnerChain: isCteInnerChain);
+            isCteInnerChain: isCteInnerChain,
+            operandEntityTypeName: operandEntityTypeName);
     }
 
     /// <summary>
