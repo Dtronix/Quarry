@@ -1,4 +1,5 @@
 using Quarry.Tool.Commands;
+using Quarry.Tool.Schema;
 
 if (args.Length == 0)
 {
@@ -110,6 +111,13 @@ async Task<int> DispatchAsync(string command, string[] args)
                 GetOptOrNull(opts, "o", "output"));
             return 0;
 
+        case "convert":
+            ProjectSchemaReader.EnsureLocatorRegistered();
+            return await ConvertCommand.RunAsync(
+                GetOpt(opts, "p", "project", "."),
+                GetOptOrNull(opts, "d", "dialect"),
+                GetOptOrNull(opts, "f", "from"));
+
         case "scaffold":
             await ScaffoldCommand.RunAsync(
                 dialect: GetOpt(opts, "d", "dialect", ""),
@@ -210,6 +218,7 @@ void PrintUsage()
     Console.WriteLine("  migrate status           Show applied vs pending migration status (requires --connection)");
     Console.WriteLine("  migrate squash           Collapse all migrations into a single baseline");
     Console.WriteLine("  migrate bundle           Build a self-contained migration executable");
+    Console.WriteLine("  convert                  Convert Dapper calls to Quarry chain API (--from dapper)");
     Console.WriteLine("  create-scripts           Generate full CREATE TABLE DDL from current schema");
     Console.WriteLine("  scaffold                 Reverse-engineer an existing database to schema files");
 }

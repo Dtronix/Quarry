@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <IsPackable>true</IsPackable>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>
+    <NoWarn>$(NoWarn);RS2008;RS1038</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.14.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="4.14.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Quarry.Migration.Tests" />
+  </ItemGroup>
+
+  <!-- Shared SQL parser from Quarry.Shared -->
+  <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
+  <ItemGroup>
+    <Compile Remove="..\Quarry.Shared\Migration\**\*.cs" />
+    <Compile Remove="..\Quarry.Shared\Scaffold\**\*.cs" />
+    <!-- Exclude SqlDialect to avoid type conflicts with Quarry.dll consumers -->
+    <Compile Remove="..\Quarry.Shared\Sql\SqlDialect.cs" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <DefineConstants>$(DefineConstants);QUARRY_MIGRATION</DefineConstants>
+  </PropertyGroup>
+
+</Project>

@@ -45,6 +45,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Quarry/Quarry.csproj" />
+    <ProjectReference Include="../Quarry.Migration/Quarry.Migration.csproj" />
   </ItemGroup>
 
 </Project>
