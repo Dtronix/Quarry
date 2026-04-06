@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql.Parser;
 
@@ -18,15 +17,11 @@ internal sealed class SqlToChainConverter
         "COUNT", "SUM", "MIN", "MAX", "AVG"
     };
 
-    private readonly ContextInfo _context;
-
     /// <summary>Table name (case-insensitive) → (EntityInfo, EntityMapping).</summary>
     private readonly Dictionary<string, (EntityInfo Entity, EntityMapping Mapping)> _tableToEntity;
 
     public SqlToChainConverter(ContextInfo context)
     {
-        _context = context;
-
         _tableToEntity = new Dictionary<string, (EntityInfo, EntityMapping)>(StringComparer.OrdinalIgnoreCase);
         foreach (var mapping in context.EntityMappings)
         {
@@ -671,15 +666,19 @@ internal sealed class SqlToChainConverter
                 return $"Sql.Count({TranslateExpr(func.Arguments[0], aliasMap, aliasToParam, parameterArgs)})";
 
             case "SUM":
+                if (func.Arguments.Count == 0) return "Sql.Sum(0)";
                 return $"Sql.Sum({TranslateExpr(func.Arguments[0], aliasMap, aliasToParam, parameterArgs)})";
 
             case "AVG":
+                if (func.Arguments.Count == 0) return "Sql.Avg(0)";
                 return $"Sql.Avg({TranslateExpr(func.Arguments[0], aliasMap, aliasToParam, parameterArgs)})";
 
             case "MIN":
+                if (func.Arguments.Count == 0) return "Sql.Min(0)";
                 return $"Sql.Min({TranslateExpr(func.Arguments[0], aliasMap, aliasToParam, parameterArgs)})";
 
             case "MAX":
+                if (func.Arguments.Count == 0) return "Sql.Max(0)";
                 return $"Sql.Max({TranslateExpr(func.Arguments[0], aliasMap, aliasToParam, parameterArgs)})";
 
             default:

@@ -98,12 +98,21 @@ public class OrderSchema : Schema
     public Col<string> Status { get; }
 }
 
+public class ProductSchema : Schema
+{
+    public static string Table => ""products"";
+    public Key<int> ProductId => Identity();
+    public Col<string> ProductName => Length(200);
+    public Col<decimal> Price => Precision(18, 2);
+}
+
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
     public TestDbContext(IDbConnection connection) : base(connection) { }
     public partial IEntityAccessor<User> Users();
     public partial IEntityAccessor<Order> Orders();
+    public partial IEntityAccessor<Product> Products();
 }
 
 public class User
@@ -120,6 +129,13 @@ public class Order
     public int UserId { get; set; }
     public decimal Total { get; set; }
     public string Status { get; set; }
+}
+
+public class Product
+{
+    public int ProductId { get; set; }
+    public string ProductName { get; set; }
+    public decimal Price { get; set; }
 }
 ";
 
@@ -597,5 +613,156 @@ public class TestService
         Assert.That(diagnostics, Has.Length.EqualTo(1));
         var chainCode = diagnostics[0].Properties["ChainCode"];
         Assert.That(chainCode, Does.Contain("u.UserId >= 1 && u.UserId <= 10"));
+    }
+
+    // ── Additional JOIN type tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_RightJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName FROM users u RIGHT JOIN orders o ON u.UserId = o.UserId"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".RightJoin<Order>("));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_CrossJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName, p.ProductName FROM users u CROSS JOIN products p"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".CrossJoin<Product>("));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_FullOuterJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName FROM users u FULL OUTER JOIN orders o ON u.UserId = o.UserId"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".FullOuterJoin<Order>("));
+    }
+
+    // ── 3-table join test ──
+
+    [Test]
+    public async Task QRY042_ChainCode_ThreeTableJoin()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(
+            ""SELECT u.UserName, o.Total, p.ProductName FROM users u INNER JOIN orders o ON u.UserId = o.UserId INNER JOIN products p ON o.OrderId = p.ProductId"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".Join<Order>("));
+        Assert.That(chainCode, Does.Contain(".Join<Product>("));
+        Assert.That(chainCode, Does.Contain(".Select((u, o, p) => (u.UserName, o.Total, p.ProductName))"));
+    }
+
+    // ── Negation variant tests ──
+
+    [Test]
+    public async Task QRY042_ChainCode_IsNotNull()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE Email IS NOT NULL"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("u.Email != null"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_NotIn()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE UserId NOT IN (@p0, @p1)"", 1, 2);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("!new[] { 1, 2 }.Contains(u.UserId)"));
+    }
+
+    [Test]
+    public async Task QRY042_ChainCode_NotBetween()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users WHERE UserId NOT BETWEEN @p0 AND @p1"", 1, 10);
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain("!(u.UserId >= 1 && u.UserId <= 10)"));
+    }
+
+    // ── Multi ORDER BY (ThenBy) test ──
+
+    [Test]
+    public async Task QRY042_ChainCode_MultipleOrderBy()
+    {
+        var source = ContextAndSchemaPrefix + @"
+public class TestService
+{
+    public void Run(TestDbContext db)
+    {
+        var results = db.RawSqlAsync<User>(""SELECT * FROM users ORDER BY UserName ASC, UserId DESC"");
+    }
+}";
+        var diagnostics = await GetMigrationDiagnosticsAsync(source);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        var chainCode = diagnostics[0].Properties["ChainCode"];
+        Assert.That(chainCode, Does.Contain(".OrderBy(u => u.UserName)"));
+        Assert.That(chainCode, Does.Contain(".ThenBy(u => u.UserId, Direction.Descending)"));
     }
 }
