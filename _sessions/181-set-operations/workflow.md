@@ -4,11 +4,11 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: REVIEW
-status: suspended
+phase: REMEDIATE
+status: active
 issue: #181
 pr: #201
-session: 2
+session: 3
 phases-total: 6
 phases-complete: 6
 ## Problem Statement
@@ -51,3 +51,4 @@ Baseline: 2779 tests pass (65 analyzer, 2714 runtime). No pre-existing failures.
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT | Started from issue #181. Explored codebase, clarified design. Completed phases 1-2 (types, API, discovery). Phase 3-4 in progress — blocked on operand carrier generation. |
 | 2 | IMPLEMENT | REVIEW | Resumed. Solved operand carrier generation (dual-carrier approach). Phases 3-6 complete. Two review passes with remediation. Fixed: param indices, diagnostic IDs, chained set ops, Equals gaps, cross-dialect tests, post-union GroupBy. PR #201 created. User requested third review pass before merge. |
+| 3 | REVIEW | REMEDIATE | Resumed. Third review: 10 findings, all classified A (fix now). Fixed: QRY072/073 diagnostics, GetSetOperatorKeyword throw, GROUP BY paramIndex, RawCallSite.Equals, stale comment, XML doc, diagnostic tests, HAVING test, AnalyzeOperandChain refactor. 2873 tests pass, 0 skipped. |
