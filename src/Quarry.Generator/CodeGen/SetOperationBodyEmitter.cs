@@ -26,7 +26,27 @@ internal static class SetOperationBodyEmitter
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
 
-        var argType = receiverType;
+        // For cross-entity set operations, the argument type uses the operand's entity type
+        string argType;
+        if (setOpIndex < chain.Plan.SetOperations.Count
+            && chain.Plan.SetOperations[setOpIndex].OperandEntityTypeName != null)
+        {
+            var operandEntityType = InterceptorCodeGenerator.GetShortTypeName(
+                chain.Plan.SetOperations[setOpIndex].OperandEntityTypeName!);
+            // Resolve the shared result type (both sides project to the same TResult)
+            var resolved = InterceptorCodeGenerator.ResolveExecutionResultType(
+                site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            var resultType = !string.IsNullOrEmpty(resolved)
+                ? InterceptorCodeGenerator.GetShortTypeName(resolved!)
+                : null;
+            argType = resultType != null
+                ? $"IQueryBuilder<{operandEntityType}, {resultType}>"
+                : $"IQueryBuilder<{operandEntityType}>";
+        }
+        else
+        {
+            argType = receiverType;
+        }
 
         var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
             ? $"IQueryBuilder<{entityType}>" : receiverType;
