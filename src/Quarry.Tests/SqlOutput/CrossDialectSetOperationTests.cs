@@ -541,8 +541,22 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         // Users: (1,Alice),(2,Bob),(3,Charlie). Products: (1,Widget),(2,Gadget),(3,Doohickey).
-        // UNION removes dupes by value — all 6 are distinct → 6 results
-        Assert.That(results, Has.Count.EqualTo(6));
+        // UNION removes dupes by value — all 6 are distinct → 6 results.
+        // The reader uses positional column access (GetInt32(0), GetString(1)), so the C# tuple
+        // element labels (UserId, UserName) come from the receiver projection but the actual rows
+        // are interleaved from both tables. Verify by value to confirm the reader sees product
+        // rows, not just user rows.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Has.Count.EqualTo(6));
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]
@@ -573,8 +587,19 @@ internal class CrossDialectSetOperationTests
             ss:     "SELECT [UserId], [UserName] FROM [users] UNION ALL SELECT [ProductId], [ProductName] FROM [products]");
 
         var results = await lt.ExecuteFetchAllAsync();
-        // UNION ALL keeps all rows: 3 users + 3 products → 6 results
-        Assert.That(results, Has.Count.EqualTo(6));
+        // UNION ALL keeps all rows: 3 users + 3 products → 6 results.
+        // Verify by value to confirm both tables flow through the positional reader.
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Has.Count.EqualTo(6));
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]
@@ -637,8 +662,15 @@ internal class CrossDialectSetOperationTests
             ss:     "SELECT [UserId], [UserName] FROM [users] EXCEPT SELECT [ProductId], [ProductName] FROM [products]");
 
         var results = await lt.ExecuteFetchAllAsync();
-        // All user rows are unique vs product rows → all 3 user rows survive EXCEPT
-        Assert.That(results, Has.Count.EqualTo(3));
+        // All user rows are unique vs product rows → all 3 user rows survive EXCEPT.
+        // Verify the surviving rows are the user rows (positional reader, not product rows).
+        var values = results.OrderBy(r => r.UserName).ToList();
+        Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+        }));
     }
 
     [Test]
