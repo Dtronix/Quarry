@@ -7,7 +7,7 @@ base-branch: master
 
 ## State
 phase: REMEDIATE
-status: active
+status: suspended
 issue: #187
 pr:
 session: 4
@@ -30,33 +30,21 @@ Baseline: 2779 tests passing (65 analyzer + 2714 main), 0 pre-existing failures.
 - 2026-04-05: Multiple CTEs supported from the start — `db.With<A>(a).With<B>(b).Users()...`
 
 ## Suspend State
-- Current phase: IMPLEMENT phase 9/9 (Tests — partially complete)
-- WIP commit: (none — clean commit a748e02)
-- Test status: all 2780 tests passing (65 analyzer + 2715 main), including 1 CTE test (4-dialect FromCte)
-- **Completed in this session**:
-  1. Fixed `DetectCteInnerChain` candidate symbols fallback — non-SQLite dialects now correctly detect CTE inner chains
-  2. Expanded `Cte_FromCte_SimpleFilter` test to verify SQL for all 4 dialects (SQLite, Pg, My, Ss)
-  3. Added `TryResolveViaChainRootContext` — resolves context-specific methods after CTE With() calls
-  4. Added `DiscoverPostCteSites` — forward-scans CTE chains for unresolvable post-With methods
-  5. Added `DiscoverPreparedTerminalsForCteChain` — discovers prepared terminals on CTE chain variables
-- **Blocking issue for CTE+Join/captured vars/multiple CTEs**:
-  - `QuarryContext.With<TDto>()` returns `QuarryContext` (base class) during source generation
-  - Context-specific methods like `Users()` can't be resolved on `QuarryContext`
-  - This cascades: everything after `Users()` (Join, Select, Prepare, terminals) also fails to resolve
-  - The `DiscoverPostCteSites` infrastructure partially addresses this but the full chain type resolution remains incomplete (incorrect builder types in generated interceptors)
-  - Root cause: the generated context class (with `new TestDbContext With<TDto>()` returning concrete type) isn't available during the generator's own semantic model analysis
-  - Potential fixes:
-    a. Self-referencing generic pattern: `QuarryContext<TSelf>` where `With()` returns `TSelf`
-    b. Comprehensive syntactic chain discovery (expand `DiscoverPostCteSites` with full type tracking)
-    c. Make context CTE methods available via `RegisterPostInitializationOutput`
-- **Remaining Phase 9 work** (all blocked by above):
-  1. CTE+Join test (With→Users→Join→Select)
-  2. Captured variable test (inner query with captured var parameter)
-  3. Multiple CTE test (With→With→Users→Join→Join)
-  4. All 3 require `.Users()` after `.With()`, which triggers the cascade
-- Key files:
-  - `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs` — DetectCteInnerChain fix, post-CTE discovery
-  - `src/Quarry.Tests/SqlOutput/CrossDialectCteTests.cs` — 4-dialect FromCte test
+- Current phase: REMEDIATE — (A)/(B) items fixed, (C) issues created, rebase pending
+- WIP commit: (none — clean commits on branch, rebase was aborted)
+- Test status: all 2780 tests passing (65 analyzer + 2715 main) on pre-rebase branch
+- **Immediate next step**: Rebase on `origin/master`. Known conflicting files:
+  - `src/Quarry.Generator/Models/InterceptorKind.cs` — set operations enum values added on master; CTE enum values added on branch. Resolution: keep both, place CTE values after set operations.
+  - `src/Quarry.Generator/IR/QueryPlan.cs` — set operation constructor params added on master; CTE constructor param added on branch. Resolution: keep both.
+  - `src/Quarry.Generator/IR/RawCallSite.cs` — likely similar additive conflicts.
+  - `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs` — large file, may have context conflicts.
+- After rebase: run full test suite, then push and create PR.
+- **Review classifications applied**:
+  - **(A) Fixed**: With<TEntity,TDto> interceptor signature (commit bef1b90)
+  - **(B) Done**: CteDtoResolver.Resolve() marked TODO (commit bef1b90)
+  - **(B) Deferred**: Dedicated DTO class test — requires 2-arg With overload, part of CTE+Join follow-up
+  - **(C) Issues created**: #205 (CTE+Join blocker), #206 (carrier conflict), #207 (boilerplate duplication)
+  - **(D) Ignored**: EmitFromCte validation, manifest cosmetic, formatting, comments, bounds check
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
@@ -67,4 +55,4 @@ Baseline: 2779 tests passing (65 analyzer + 2714 main), 0 pre-existing failures.
 | 1 | IMPLEMENT | IMPLEMENT | Phases 1-3 committed, suspended at phase 4 (context exhaustion) |
 | 2 | IMPLEMENT | IMPLEMENT | Resumed — phases 4-8 committed, suspended at phase 9 (context exhaustion) |
 | 3 | IMPLEMENT | IMPLEMENT | Resumed — Phase 9 pipeline fixes (6 fixes), SQLite CTE test passing, suspended (multi-dialect inner chain detection issue) |
-| 4 | IMPLEMENT | IMPLEMENT | Resumed — Fixed multi-dialect CTE detection (candidate symbols fallback), expanded FromCte test to 4 dialects, added post-CTE discovery infrastructure. CTE+Join/captured vars/multiple CTEs blocked by With() return type cascade. |
+| 4 | IMPLEMENT | REMEDIATE | Fixed multi-dialect detection, 4-dialect FromCte test, post-CTE discovery infra, review completed, (A)/(B) fixes applied, (C) issues #205/#206/#207 created. Suspended mid-rebase. |
