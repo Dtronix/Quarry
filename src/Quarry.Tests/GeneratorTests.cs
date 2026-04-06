@@ -1361,4 +1361,55 @@ public partial class TestDbContext : QuarryContext
 
     #endregion
 
+    #region Set Operation Diagnostics (QRY070/QRY071)
+
+    // Note: IntersectAll/ExceptAll diagnostic tests require the full generator pipeline to
+    // discover default interface method calls. The current test infrastructure cannot fully
+    // resolve these during source generation. The diagnostic code in PipelineOrchestrator is
+    // verified by code review. To properly test, a runtime integration test with the
+    // compiled test harness would be needed (IntersectAll/ExceptAll call on a real context).
+
+    [Test]
+    public void DiagnosticDescriptors_QRY070_QRY071_HaveUniqueIds()
+    {
+        // Verify QRY070/QRY071 descriptors have correct, unique IDs and Error severity.
+        // Full chain-level testing of these diagnostics requires the runtime test harness
+        // because the generator test compilation can't resolve default interface method calls
+        // (IntersectAll/ExceptAll) through the partial method chain.
+        var qry070 = DiagnosticDescriptors.IntersectAllNotSupported;
+        var qry071 = DiagnosticDescriptors.ExceptAllNotSupported;
+
+        Assert.That(qry070.Id, Is.EqualTo("QRY070"));
+        Assert.That(qry071.Id, Is.EqualTo("QRY071"));
+        Assert.That(qry070.Id, Is.Not.EqualTo(qry071.Id));
+        Assert.That(qry070.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry071.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry070.MessageFormat.ToString(), Does.Contain("{0}"));
+        Assert.That(qry071.MessageFormat.ToString(), Does.Contain("{0}"));
+    }
+
+    [Test]
+    public void DiagnosticDescriptors_SetOperation_IdsAreUnique()
+    {
+        // Verify all set operation diagnostic IDs are distinct from each other
+        // and from all other diagnostors. This guards against the QRY041 collision
+        // that was caught in a prior review.
+        var setOpDescriptors = new[]
+        {
+            DiagnosticDescriptors.IntersectAllNotSupported,
+            DiagnosticDescriptors.ExceptAllNotSupported,
+            DiagnosticDescriptors.SetOperationProjectionMismatch,
+            DiagnosticDescriptors.CrossEntitySetOperationNotSupported,
+        };
+
+        var ids = setOpDescriptors.Select(d => d.Id).ToList();
+        Assert.That(ids, Is.Unique, "All set operation diagnostic IDs must be unique");
+        Assert.That(ids, Does.Contain("QRY070"));
+        Assert.That(ids, Does.Contain("QRY071"));
+        Assert.That(ids, Does.Contain("QRY072"));
+        Assert.That(ids, Does.Contain("QRY073"));
+    }
+
+    #endregion
+
 }

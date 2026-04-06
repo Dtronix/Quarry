@@ -74,6 +74,15 @@ internal static class InterceptorRouter
             case InterceptorKind.RawSqlScalarAsync:
                 return EmitterCategory.RawSql;
 
+            // Set operations
+            case InterceptorKind.Union:
+            case InterceptorKind.UnionAll:
+            case InterceptorKind.Intersect:
+            case InterceptorKind.IntersectAll:
+            case InterceptorKind.Except:
+            case InterceptorKind.ExceptAll:
+                return EmitterCategory.SetOperation;
+
             // Chain root
             case InterceptorKind.ChainRoot:
                 return EmitterCategory.ChainRoot;
@@ -101,6 +110,8 @@ internal enum EmitterCategory
     RawSql,
     /// <summary>Chain root (entity set factory method).</summary>
     ChainRoot,
+    /// <summary>Set operation methods (Union, Intersect, Except).</summary>
+    SetOperation,
     /// <summary>Unknown/unhandled kind.</summary>
     Unknown
 }

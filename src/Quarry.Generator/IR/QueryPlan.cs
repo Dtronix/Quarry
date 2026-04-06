@@ -35,12 +35,20 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         string? notAnalyzableReason = null,
         IReadOnlyList<string>? unmatchedMethodNames = null,
         string? forkedVariableName = null,
-        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null)
+        IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null,
+        IReadOnlyList<SetOperationPlan>? setOperations = null,
+        IReadOnlyList<WhereTerm>? postUnionWhereTerms = null,
+        IReadOnlyList<SqlExpr>? postUnionGroupByExprs = null,
+        IReadOnlyList<SqlExpr>? postUnionHavingExprs = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
         Joins = joins;
         ImplicitJoins = implicitJoins ?? Array.Empty<ImplicitJoinInfo>();
+        SetOperations = setOperations ?? Array.Empty<SetOperationPlan>();
+        PostUnionWhereTerms = postUnionWhereTerms ?? Array.Empty<WhereTerm>();
+        PostUnionGroupByExprs = postUnionGroupByExprs ?? Array.Empty<SqlExpr>();
+        PostUnionHavingExprs = postUnionHavingExprs ?? Array.Empty<SqlExpr>();
         WhereTerms = whereTerms;
         OrderTerms = orderTerms;
         GroupByExprs = groupByExprs;
@@ -63,7 +71,11 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public TableRef PrimaryTable { get; }
     public IReadOnlyList<JoinPlan> Joins { get; }
     public IReadOnlyList<ImplicitJoinInfo> ImplicitJoins { get; }
+    public IReadOnlyList<SetOperationPlan> SetOperations { get; }
     public IReadOnlyList<WhereTerm> WhereTerms { get; }
+    public IReadOnlyList<WhereTerm> PostUnionWhereTerms { get; }
+    public IReadOnlyList<SqlExpr> PostUnionGroupByExprs { get; }
+    public IReadOnlyList<SqlExpr> PostUnionHavingExprs { get; }
     public IReadOnlyList<OrderTerm> OrderTerms { get; }
     public IReadOnlyList<SqlExpr> GroupByExprs { get; }
     public IReadOnlyList<SqlExpr> HavingExprs { get; }
@@ -93,7 +105,9 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && NotAnalyzableReason == other.NotAnalyzableReason
             && EqualityHelpers.SequenceEqual(Joins, other.Joins)
             && EqualityHelpers.SequenceEqual(ImplicitJoins, other.ImplicitJoins)
+            && EqualityHelpers.SequenceEqual(SetOperations, other.SetOperations)
             && EqualityHelpers.SequenceEqual(WhereTerms, other.WhereTerms)
+            && EqualityHelpers.SequenceEqual(PostUnionWhereTerms, other.PostUnionWhereTerms)
             && EqualityHelpers.SequenceEqual(OrderTerms, other.OrderTerms)
             && EqualityHelpers.SequenceEqual(SetTerms, other.SetTerms)
             && EqualityHelpers.SequenceEqual(InsertColumns, other.InsertColumns)
@@ -101,6 +115,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SequenceEqual(Parameters, other.Parameters)
             && EqualityHelpers.SqlExprSequenceEqual(GroupByExprs, other.GroupByExprs)
             && EqualityHelpers.SqlExprSequenceEqual(HavingExprs, other.HavingExprs)
+            && EqualityHelpers.SqlExprSequenceEqual(PostUnionGroupByExprs, other.PostUnionGroupByExprs)
+            && EqualityHelpers.SqlExprSequenceEqual(PostUnionHavingExprs, other.PostUnionHavingExprs)
             && EqualityHelpers.SequenceEqual(PossibleMasks, other.PossibleMasks)
             && EqualityHelpers.NullableStringSequenceEqual(UnmatchedMethodNames, other.UnmatchedMethodNames)
             && ForkedVariableName == other.ForkedVariableName;
@@ -517,4 +533,46 @@ internal sealed class InsertColumn : IEquatable<InsertColumn>
 
     public override bool Equals(object? obj) => Equals(obj as InsertColumn);
     public override int GetHashCode() => HashCode.Combine(QuotedColumnName, ParameterIndex, IsIdentity);
+}
+
+/// <summary>
+/// The kind of SQL set operation.
+/// </summary>
+internal enum SetOperatorKind
+{
+    Union,
+    UnionAll,
+    Intersect,
+    IntersectAll,
+    Except,
+    ExceptAll
+}
+
+/// <summary>
+/// A set operation combining the main query with another query (the operand).
+/// </summary>
+internal sealed class SetOperationPlan : IEquatable<SetOperationPlan>
+{
+    public SetOperationPlan(SetOperatorKind kind, QueryPlan operand, int parameterOffset)
+    {
+        Kind = kind;
+        Operand = operand;
+        ParameterOffset = parameterOffset;
+    }
+
+    public SetOperatorKind Kind { get; }
+    public QueryPlan Operand { get; }
+    public int ParameterOffset { get; }
+
+    public bool Equals(SetOperationPlan? other)
+    {
+        if (other is null) return false;
+        if (ReferenceEquals(this, other)) return true;
+        return Kind == other.Kind
+            && ParameterOffset == other.ParameterOffset
+            && Operand.Equals(other.Operand);
+    }
+
+    public override bool Equals(object? obj) => Equals(obj as SetOperationPlan);
+    public override int GetHashCode() => HashCode.Combine(Kind, ParameterOffset, Operand.GetHashCode());
 }

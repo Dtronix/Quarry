@@ -335,6 +335,9 @@ internal static class ClauseBodyEmitter
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
 
+        var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
+
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
         var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(returnType);
@@ -345,13 +348,13 @@ internal static class ClauseBodyEmitter
             var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {receiverType} builder,");
-            sb.AppendLine($"        Func<{entityType}, bool> _)");
+            sb.AppendLine($"        Func<{entityType}, bool> {funcParamName})");
         }
         else
         {
             sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-            sb.AppendLine($"        Func<{entityType}, bool> _)");
+            sb.AppendLine($"        Func<{entityType}, bool> {funcParamName})");
         }
 
         sb.AppendLine($"    {{");

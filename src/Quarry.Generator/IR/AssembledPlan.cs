@@ -32,7 +32,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         int batchInsertColumnsPerRow = 0,
         IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
         TranslatedCallSite? prepareSite = null,
-        Models.InsertInfo? insertInfo = null)
+        Models.InsertInfo? insertInfo = null,
+        bool isOperandChain = false)
     {
         Plan = plan;
         SqlVariants = sqlVariants;
@@ -53,6 +54,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         PreparedTerminals = preparedTerminals;
         PrepareSite = prepareSite;
         InsertInfo = insertInfo;
+        IsOperandChain = isOperandChain;
     }
 
     public QueryPlan Plan { get; }
@@ -100,6 +102,12 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     /// Prepare site rather than the execution terminal (e.g., Prepare chains).
     /// </summary>
     public Models.InsertInfo? InsertInfo { get; }
+
+    /// <summary>
+    /// True when this chain is consumed as a set operation operand (no standalone terminal).
+    /// The carrier is generated for clause interceptors only — no execution terminal is emitted.
+    /// </summary>
+    public bool IsOperandChain { get; }
 
     // Convenience accessors that mirror PrebuiltChainInfo property names
     public QueryKind QueryKind => Plan.Kind;
@@ -153,6 +161,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             && MaxParameterCount == other.MaxParameterCount
             && ReaderDelegateCode == other.ReaderDelegateCode
             && EntitySchemaNamespace == other.EntitySchemaNamespace
+            && IsOperandChain == other.IsOperandChain
             && EqualityHelpers.DictionaryEqual(SqlVariants, other.SqlVariants);
     }
 

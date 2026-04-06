@@ -54,7 +54,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         ImmutableArray<string>? batchInsertColumnNames = null,
         bool isPreparedTerminal = false,
         string? preparedQueryEscapeReason = null,
-        bool isValueTypeResult = false)
+        bool isValueTypeResult = false,
+        string? operandChainId = null,
+        int? operandArgEndLine = null,
+        int? operandArgEndColumn = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -97,6 +100,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         IsPreparedTerminal = isPreparedTerminal;
         PreparedQueryEscapeReason = preparedQueryEscapeReason;
         IsValueTypeResult = isValueTypeResult;
+        OperandChainId = operandChainId;
+        OperandArgEndLine = operandArgEndLine;
+        OperandArgEndColumn = operandArgEndColumn;
     }
 
     // Identity and location
@@ -176,6 +182,13 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // because the interface uses unconstrained TResult? which doesn't create Nullable<T> for value types.
     public bool IsValueTypeResult { get; }
 
+    // ChainId of the operand (right-hand) query for set operations (Union, Intersect, Except, etc.)
+    public string? OperandChainId { get; }
+
+    // End line/column of the set operation argument expression (for inline operand boundary detection)
+    public int? OperandArgEndLine { get; }
+    public int? OperandArgEndColumn { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -242,7 +255,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             batchInsertColumnNames: BatchInsertColumnNames,
             isPreparedTerminal: IsPreparedTerminal,
             preparedQueryEscapeReason: PreparedQueryEscapeReason,
-            isValueTypeResult: IsValueTypeResult);
+            isValueTypeResult: IsValueTypeResult,
+            operandChainId: OperandChainId,
+            operandArgEndLine: OperandArgEndLine,
+            operandArgEndColumn: OperandArgEndColumn);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -296,7 +312,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && ImmutableArrayEqual(BatchInsertColumnNames, other.BatchInsertColumnNames)
             && IsPreparedTerminal == other.IsPreparedTerminal
             && PreparedQueryEscapeReason == other.PreparedQueryEscapeReason
-            && IsValueTypeResult == other.IsValueTypeResult;
+            && IsValueTypeResult == other.IsValueTypeResult
+            && OperandChainId == other.OperandChainId
+            && OperandArgEndLine == other.OperandArgEndLine
+            && OperandArgEndColumn == other.OperandArgEndColumn;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

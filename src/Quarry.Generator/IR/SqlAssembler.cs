@@ -123,7 +123,8 @@ internal static class SqlAssembler
             batchInsertColumnsPerRow: batchColumnsPerRow,
             preparedTerminals: chain.PreparedTerminals,
             prepareSite: chain.PrepareSite,
-            insertInfo: insertInfo);
+            insertInfo: insertInfo,
+            isOperandChain: chain.IsOperandChain);
     }
 
     /// <summary>
@@ -142,10 +143,10 @@ internal static class SqlAssembler
         };
     }
 
-    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset = 0)
     {
         var sb = new StringBuilder();
-        var paramIndex = 0;
+        var paramIndex = paramBaseOffset;
 
         // SELECT
         sb.Append("SELECT ");
@@ -251,7 +252,9 @@ internal static class SqlAssembler
             for (int i = 0; i < plan.GroupByExprs.Count; i++)
             {
                 if (i > 0) sb.Append(", ");
+                var paramsBefore = CountParameters(plan.GroupByExprs[i]);
                 sb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
             }
         }
 
@@ -268,7 +271,80 @@ internal static class SqlAssembler
             }
         }
 
-        // ORDER BY
+        // SET OPERATIONS (UNION, INTERSECT, EXCEPT)
+        if (plan.SetOperations.Count > 0)
+        {
+            foreach (var setOp in plan.SetOperations)
+            {
+                sb.Append(' ');
+                sb.Append(GetSetOperatorKeyword(setOp.Kind));
+                sb.Append(' ');
+                // Render the operand's SELECT SQL inline with global parameter offset
+                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect, paramIndex);
+                sb.Append(operandSql.Sql);
+                // ParameterCount includes the base offset, so compute the delta
+                paramIndex = operandSql.ParameterCount;
+            }
+
+            // Post-union clauses (WHERE/GROUP BY/HAVING): wrap the set operation in a derived table
+            var hasPostUnionClauses = plan.PostUnionWhereTerms.Count > 0
+                || plan.PostUnionGroupByExprs.Count > 0
+                || plan.PostUnionHavingExprs.Count > 0;
+            if (hasPostUnionClauses)
+            {
+                var innerSql = sb.ToString();
+                sb.Clear();
+                sb.Append("SELECT * FROM (");
+                sb.Append(innerSql);
+                sb.Append(") AS ");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__set"));
+
+                // Render post-union WHERE terms
+                var postWhereActive = GetActiveTerms(plan.PostUnionWhereTerms, mask);
+                if (postWhereActive.Count > 0)
+                {
+                    sb.Append(" WHERE ");
+                    for (int i = 0; i < postWhereActive.Count; i++)
+                    {
+                        if (i > 0) sb.Append(" AND ");
+                        var w = postWhereActive[i];
+                        var termParamCount = CountParameters(w.Condition);
+                        if (postWhereActive.Count > 1) sb.Append('(');
+                        sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
+                        if (postWhereActive.Count > 1) sb.Append(')');
+                        paramIndex += termParamCount;
+                    }
+                }
+
+                // Render post-union GROUP BY
+                if (plan.PostUnionGroupByExprs.Count > 0)
+                {
+                    sb.Append(" GROUP BY ");
+                    for (int i = 0; i < plan.PostUnionGroupByExprs.Count; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        var paramsBefore = CountParameters(plan.PostUnionGroupByExprs[i]);
+                        sb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
+                    }
+                }
+
+                // Render post-union HAVING
+                if (plan.PostUnionHavingExprs.Count > 0)
+                {
+                    sb.Append(" HAVING ");
+                    for (int i = 0; i < plan.PostUnionHavingExprs.Count; i++)
+                    {
+                        if (i > 0) sb.Append(" AND ");
+                        var paramsBefore = CountParameters(plan.PostUnionHavingExprs[i]);
+                        sb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
+                    }
+                }
+            }
+        }
+
+        // ORDER BY (applies to combined result when set operations present)
         var activeOrders = GetActiveTerms(plan.OrderTerms, mask);
         if (activeOrders.Count > 0)
         {
@@ -284,7 +360,7 @@ internal static class SqlAssembler
             }
         }
 
-        // PAGINATION
+        // PAGINATION (applies to combined result when set operations present)
         AppendPagination(sb, plan, dialect, activeOrders.Count > 0, ref paramIndex);
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
@@ -563,6 +639,20 @@ internal static class SqlAssembler
                 sb.Append(pagination);
             }
         }
+    }
+
+    private static string GetSetOperatorKeyword(SetOperatorKind kind)
+    {
+        return kind switch
+        {
+            SetOperatorKind.Union => "UNION",
+            SetOperatorKind.UnionAll => "UNION ALL",
+            SetOperatorKind.Intersect => "INTERSECT",
+            SetOperatorKind.IntersectAll => "INTERSECT ALL",
+            SetOperatorKind.Except => "EXCEPT",
+            SetOperatorKind.ExceptAll => "EXCEPT ALL",
+            _ => throw new InvalidOperationException($"Unknown set operator kind: {kind}")
+        };
     }
 
     private static string GetJoinKeyword(JoinClauseKind kind)

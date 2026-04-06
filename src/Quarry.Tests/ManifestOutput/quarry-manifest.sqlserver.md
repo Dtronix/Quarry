@@ -993,6 +993,14 @@ SELECT [UserName], [UserId] FROM [users]
 
 ---
 
+### Users().Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT [UserId], [UserName] FROM [users] UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3) AS [__set] WHERE [UserId] <= 2
+```
+
+---
+
 ### Users().Select(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1125,6 +1133,22 @@ UPDATE [users] SET [UserName] = @p0, [IsActive] = @p1 WHERE [UserId] = 3
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Where(...).Except(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 EXCEPT SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1
+```
+
+---
+
+### Users().Where(...).Intersect(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 INTERSECT SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1
+```
 
 ---
 
@@ -1977,6 +2001,114 @@ SELECT [UserName] FROM [users] WHERE [UserId] IN ({__COL_P0__}) AND [UserId] > @
 
 ---
 
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3 ORDER BY [UserName] ASC OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+---
+
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1 ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3 ORDER BY [UserName] ASC
+```
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3
+```
+
+---
+
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1) AS [__set] WHERE [UserId] = @p2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+| `@p2` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3
+```
+
+---
+
+### Users().Where(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1
+```
+
+---
+
+### Users().Where(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION ALL SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1
+```
+
+---
+
+### Users().Where(...).Users()
+
+```sql
+SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1
+```
+
+---
+
 ### Users().Where(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2041,7 +2173,7 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 267 |
+| Total discovered | 289 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 46 |
-| Rendered | 221 |
+| Consolidated (deduped) | 54 |
+| Rendered | 235 |

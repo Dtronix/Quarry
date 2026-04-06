@@ -73,21 +73,73 @@ internal static class ChainAnalyzer
             }
         }
 
+        // Collect all operand chain IDs referenced by set operation sites.
+        // These chains are consumed as right-hand operands and should not generate standalone carriers.
+        var operandChainIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var kvp in chains)
+        {
+            foreach (var site in kvp.Value)
+            {
+                var opId = site.Bound.Raw.OperandChainId;
+                if (opId != null)
+                    operandChainIds.Add(opId);
+            }
+        }
+
+        // Analyze operand chains first (those without terminals, consumed by set operations).
+        // Build a lookup of ChainId → QueryPlan for use by main chains.
+        var operandPlans = new Dictionary<string, QueryPlan>(StringComparer.Ordinal);
+        foreach (var opId in operandChainIds)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (chains.TryGetValue(opId, out var opSites))
+            {
+                try
+                {
+                    var opChain = AnalyzeOperandChain(opSites, registry, ct);
+                    if (opChain != null)
+                        operandPlans[opId] = opChain;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    var first = opSites.Count > 0 ? opSites[0] : null;
+                    PipelineErrorBag.Report(
+                        first?.Bound.Raw.FilePath ?? "",
+                        first?.Bound.Raw.Line ?? 0,
+                        first?.Bound.Raw.Column ?? 0,
+                        $"Operand chain analysis failed: {ex.Message}");
+                }
+            }
+        }
+
         var results = new List<AnalyzedChain>();
 
         foreach (var kvp in chains)
         {
             ct.ThrowIfCancellationRequested();
             var chainSites = kvp.Value;
+            // A chain is an operand only if it's referenced as one AND has no execution terminal.
+            // When both main and operand share the same ChainId, the main chain contains
+            // both the set operation and the operand — inline splitting handles the separation.
+            bool isOperandChain = operandChainIds.Contains(kvp.Key)
+                && !chainSites.Any(s => IsExecutionKind(s.Bound.Raw.Kind) || s.Bound.Raw.Kind == InterceptorKind.Prepare);
 
             try
             {
-                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics);
+                var inlineOperandChains = new List<AnalyzedChain>();
+                var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain, inlineOperandChains);
                 if (analyzed != null)
                     results.Add(analyzed);
+                results.AddRange(inlineOperandChains);
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                var first = chainSites.Count > 0 ? chainSites[0] : null;
+                PipelineErrorBag.Report(
+                    first?.Bound.Raw.FilePath ?? "",
+                    first?.Bound.Raw.Line ?? 0,
+                    first?.Bound.Raw.Column ?? 0,
+                    $"Chain analysis failed: {ex.Message}");
             }
         }
 
@@ -103,7 +155,10 @@ internal static class ChainAnalyzer
         List<TranslatedCallSite> chainSites,
         EntityRegistry registry,
         CancellationToken ct,
-        List<DiagnosticInfo>? diagnostics = null)
+        List<DiagnosticInfo>? diagnostics = null,
+        Dictionary<string, QueryPlan>? operandPlans = null,
+        bool isOperandChain = false,
+        List<AnalyzedChain>? inlineOperandChains = null)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -194,7 +249,31 @@ internal static class ChainAnalyzer
         }
 
         if (executionSite == null)
-            return null;
+        {
+            // Operand chains (consumed by set operations) have no terminal.
+            // Use the chain root or first clause site as a synthetic execution site
+            // so the carrier still gets generated with ChainRoot + clause interceptors.
+            if (isOperandChain)
+            {
+                // Find chain root as synthetic execution site
+                foreach (var site in chainSites)
+                {
+                    if (site.Bound.Raw.Kind == InterceptorKind.ChainRoot)
+                    {
+                        executionSite = site;
+                        break;
+                    }
+                }
+                if (executionSite == null && clauseSites.Count > 0)
+                    executionSite = clauseSites[clauseSites.Count - 1];
+                if (executionSite == null)
+                    return null;
+            }
+            else
+            {
+                return null;
+            }
+        }
 
         // Detect forked chains (multiple execution terminals sharing one ChainId)
         // Note: prepared multi-terminal chains are NOT forks — they're intentional
@@ -220,6 +299,104 @@ internal static class ChainAnalyzer
             if (cmp != 0) return cmp;
             return a.Bound.Raw.Column.CompareTo(b.Bound.Raw.Column);
         });
+
+        // ── Split operand chain sites from main chain ──
+        // When a chain group contains set operation sites (Union, Intersect, etc.),
+        // the operand chain's sites (ChainRoot + clauses) are interleaved with the
+        // main chain's sites because they share the same ChainId.
+        // Split them out: sites between a set operation and the next set operation/terminal
+        // that start with a ChainRoot belong to the operand.
+        var inlineOperandPlans = new List<(SetOperatorKind Kind, QueryPlan Plan)>();
+        if (clauseSites.Any(s => IsSetOperationKind(s.Bound.Raw.Kind)))
+        {
+            var mainSites = new List<TranslatedCallSite>();
+            var i = 0;
+            while (i < clauseSites.Count)
+            {
+                var site = clauseSites[i];
+                if (IsSetOperationKind(site.Bound.Raw.Kind))
+                {
+                    var setOpKind = MapToSetOperatorKind(site.Bound.Raw.Kind);
+                    mainSites.Add(site); // Keep the set op site in the main chain
+                    i++;
+
+                    // Collect operand sites: starts with ChainRoot, followed by clauses.
+                    // Use the operand argument's end position to bound collection.
+                    var operandSites = new List<TranslatedCallSite>();
+                    var opArgEndLine = site.Bound.Raw.OperandArgEndLine;
+                    var opArgEndCol = site.Bound.Raw.OperandArgEndColumn;
+                    while (i < clauseSites.Count)
+                    {
+                        var next = clauseSites[i];
+                        if (IsSetOperationKind(next.Bound.Raw.Kind)
+                            || IsExecutionKind(next.Bound.Raw.Kind)
+                            || next.Bound.Raw.Kind == InterceptorKind.Prepare)
+                            break;
+                        // Boundary check: if the next site is past the operand argument's end,
+                        // it's a post-union clause on the main chain (e.g., OrderBy after Union).
+                        if (opArgEndLine != null && operandSites.Count > 0)
+                        {
+                            var nextLine = next.Bound.Raw.Line;
+                            var nextCol = next.Bound.Raw.Column;
+                            if (nextLine > opArgEndLine.Value
+                                || (nextLine == opArgEndLine.Value && nextCol >= opArgEndCol))
+                                break;
+                        }
+                        // A new ChainRoot inside the argument signals the operand chain start
+                        if (next.Bound.Raw.Kind == InterceptorKind.ChainRoot && operandSites.Count == 0)
+                        {
+                            operandSites.Add(next);
+                            i++;
+                            continue;
+                        }
+                        // Sites after the operand's ChainRoot belong to the operand
+                        if (operandSites.Count > 0)
+                        {
+                            // Check if this is another ChainRoot (which would mean we've left the operand)
+                            if (next.Bound.Raw.Kind == InterceptorKind.ChainRoot)
+                                break;
+                            operandSites.Add(next);
+                            i++;
+                            continue;
+                        }
+                        // Post-union clause on the main chain (e.g., OrderBy after Union)
+                        mainSites.Add(next);
+                        i++;
+                    }
+
+                    // Analyze the operand sites into a QueryPlan
+                    if (operandSites.Count > 0)
+                    {
+                        var opPlan = AnalyzeOperandChain(operandSites, registry, ct);
+                        if (opPlan != null)
+                        {
+                            inlineOperandPlans.Add((setOpKind, opPlan));
+
+                            // Create an AnalyzedChain for the operand so it gets its own carrier
+                            if (inlineOperandChains != null)
+                            {
+                                TranslatedCallSite? opExecSite = null;
+                                var opClauseSites = new List<TranslatedCallSite>();
+                                foreach (var os in operandSites)
+                                {
+                                    if (os.Bound.Raw.Kind == InterceptorKind.ChainRoot && opExecSite == null)
+                                        opExecSite = os;
+                                    opClauseSites.Add(os);
+                                }
+                                if (opExecSite != null)
+                                    inlineOperandChains.Add(new AnalyzedChain(opPlan, opExecSite, opClauseSites, isOperandChain: true));
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    mainSites.Add(site);
+                    i++;
+                }
+            }
+            clauseSites = mainSites;
+        }
 
         // Check for disqualifiers from RawCallSite flags
         var disqualifyReason = CheckDisqualifiers(chainSites);
@@ -374,6 +551,10 @@ internal static class ChainAnalyzer
 
         // Build QueryPlan terms from TranslatedClause data
         var whereTerms = new List<WhereTerm>();
+        var postUnionWhereTerms = new List<WhereTerm>();
+        var postUnionGroupByExprs = new List<SqlExpr>();
+        var postUnionHavingExprs = new List<SqlExpr>();
+        bool seenSetOperation = false;
         var orderTerms = new List<OrderTerm>();
         var groupByExprs = new List<SqlExpr>();
         var havingExprs = new List<SqlExpr>();
@@ -390,6 +571,7 @@ internal static class ChainAnalyzer
         int? offsetLiteral = null;
         bool isDistinct = false;
         SelectProjection? projection = null;
+        var setOperationPlans = new List<SetOperationPlan>();
         var primaryTable = new TableRef(
             executionSite.Bound.TableName,
             executionSite.Bound.SchemaName);
@@ -439,7 +621,10 @@ internal static class ChainAnalyzer
                 switch (clause.Kind)
                 {
                     case ClauseKind.Where:
-                        whereTerms.Add(new WhereTerm(expr, clauseBitIndex));
+                        if (seenSetOperation)
+                            postUnionWhereTerms.Add(new WhereTerm(expr, clauseBitIndex));
+                        else
+                            whereTerms.Add(new WhereTerm(expr, clauseBitIndex));
                         break;
 
                     case ClauseKind.OrderBy:
@@ -447,11 +632,17 @@ internal static class ChainAnalyzer
                         break;
 
                     case ClauseKind.GroupBy:
-                        groupByExprs.Add(expr);
+                        if (seenSetOperation)
+                            postUnionGroupByExprs.Add(expr);
+                        else
+                            groupByExprs.Add(expr);
                         break;
 
                     case ClauseKind.Having:
-                        havingExprs.Add(expr);
+                        if (seenSetOperation)
+                            postUnionHavingExprs.Add(expr);
+                        else
+                            havingExprs.Add(expr);
                         break;
 
                     case ClauseKind.Set:
@@ -631,6 +822,60 @@ internal static class ChainAnalyzer
             {
                 isDistinct = true;
             }
+            else if (IsSetOperationKind(kind))
+            {
+                seenSetOperation = true;
+                // First check inline operand plans (same-ChainId operands split during preprocessing)
+                QueryPlan? opPlan = null;
+                var opKind = MapToSetOperatorKind(kind);
+
+                // Match inline operand plans by set operation order
+                if (inlineOperandPlans.Count > 0)
+                {
+                    // Find the first unmatched inline plan with matching kind
+                    for (int ip = 0; ip < inlineOperandPlans.Count; ip++)
+                    {
+                        if (inlineOperandPlans[ip].Kind == opKind)
+                        {
+                            opPlan = inlineOperandPlans[ip].Plan;
+                            inlineOperandPlans.RemoveAt(ip);
+                            break;
+                        }
+                    }
+                }
+
+                // Fall back to external operand plans (different-ChainId operands)
+                if (opPlan == null)
+                {
+                    var opChainId = raw.OperandChainId;
+                    if (opChainId != null && operandPlans != null && operandPlans.TryGetValue(opChainId, out var extPlan))
+                        opPlan = extPlan;
+                }
+
+                if (opPlan != null)
+                {
+                    setOperationPlans.Add(new SetOperationPlan(opKind, opPlan, paramGlobalIndex));
+                    // Absorb operand parameters into the main chain's global parameter space
+                    foreach (var opParam in opPlan.Parameters)
+                    {
+                        parameters.Add(new QueryParameter(
+                            globalIndex: paramGlobalIndex++,
+                            clrType: opParam.ClrType,
+                            valueExpression: opParam.ValueExpression,
+                            isCaptured: opParam.IsCaptured,
+                            expressionPath: opParam.ExpressionPath,
+                            isCollection: opParam.IsCollection,
+                            elementTypeName: opParam.ElementTypeName,
+                            typeMappingClass: opParam.TypeMappingClass,
+                            isEnum: opParam.IsEnum,
+                            enumUnderlyingType: opParam.EnumUnderlyingType,
+                            isSensitive: opParam.IsSensitive,
+                            capturedFieldName: opParam.CapturedFieldName,
+                            capturedFieldType: opParam.CapturedFieldType,
+                            isStaticCapture: opParam.IsStaticCapture));
+                    }
+                }
+            }
             else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
             {
                 // Disqualify chains with failed projections (e.g., anonymous types)
@@ -667,40 +912,9 @@ internal static class ChainAnalyzer
 
         // Enrich identity projections with entity columns so SqlAssembler renders
         // explicit column names instead of SELECT *.
-        // Always enrich — even when no explicit Select clause — so the generated SQL
-        // is predictable and never contains SELECT *.
-        // Uses authoritative entity column metadata from EntityRef (not discovery-time
-        // column info which may include computed properties like DisplayLabel).
         if (projection.IsIdentity)
         {
-            var entityRef = executionSite.Bound.Entity;
-            if (entityRef != null && entityRef.Columns.Count > 0)
-            {
-                var entityCols = new List<ProjectedColumn>();
-                var ord = 0;
-                foreach (var ec in entityRef.Columns)
-                {
-                    entityCols.Add(new ProjectedColumn(
-                        propertyName: ec.PropertyName,
-                        columnName: ec.ColumnName,
-                        clrType: ec.ClrType,
-                        fullClrType: ec.FullClrType,
-                        isNullable: ec.IsNullable,
-                        ordinal: ord++,
-                        customTypeMapping: ec.CustomTypeMappingClass,
-                        isValueType: ec.IsValueType,
-                        readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
-                        isForeignKey: ec.Kind == ColumnKind.ForeignKey,
-                        foreignKeyEntityName: ec.ReferencedEntityName,
-                        isEnum: ec.IsEnum));
-                }
-                projection = new SelectProjection(
-                    projection.Kind,
-                    projection.ResultTypeName,
-                    entityCols,
-                    customEntityReaderClass: entityRef.CustomEntityReaderClass,
-                    isIdentity: true);
-            }
+            projection = EnrichIdentityProjectionWithEntityColumns(projection, executionSite.Bound.Entity);
         }
 
         // Handle insert columns — prefer prepare site (has initializer-derived columns),
@@ -797,7 +1011,11 @@ internal static class ChainAnalyzer
             parameters: parameters,
             tier: tier,
             unmatchedMethodNames: unmatchedMethodNames,
-            implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null);
+            implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null,
+            setOperations: setOperationPlans.Count > 0 ? setOperationPlans : null,
+            postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null,
+            postUnionGroupByExprs: postUnionGroupByExprs.Count > 0 ? postUnionGroupByExprs : null,
+            postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.
@@ -818,7 +1036,8 @@ internal static class ChainAnalyzer
 
         return new AnalyzedChain(plan, executionSite, clauseSites, isTraced,
             preparedTerminals: preparedTerminals.Count > 1 ? preparedTerminals : null,
-            prepareSite: prepareSite);
+            prepareSite: prepareSite,
+            isOperandChain: isOperandChain);
     }
 
     /// <summary>
@@ -1818,6 +2037,12 @@ internal static class ChainAnalyzer
             InterceptorKind.InsertTransition => ClauseRole.InsertTransition,
             InterceptorKind.BatchInsertColumnSelector => ClauseRole.InsertTransition,
             InterceptorKind.BatchInsertValues => ClauseRole.BatchInsertValues,
+            InterceptorKind.Union => ClauseRole.SetOperation,
+            InterceptorKind.UnionAll => ClauseRole.SetOperation,
+            InterceptorKind.Intersect => ClauseRole.SetOperation,
+            InterceptorKind.IntersectAll => ClauseRole.SetOperation,
+            InterceptorKind.Except => ClauseRole.SetOperation,
+            InterceptorKind.ExceptAll => ClauseRole.SetOperation,
             _ => null
         };
     }
@@ -1842,6 +2067,224 @@ internal static class ChainAnalyzer
             or InterceptorKind.BatchInsertExecuteNonQuery
             or InterceptorKind.BatchInsertExecuteScalar
             or InterceptorKind.BatchInsertToDiagnostics;
+    }
+
+    /// <summary>
+    /// Analyzes an operand chain (right-hand side of a set operation) that has no terminal.
+    /// Builds a SELECT QueryPlan from the chain's clause sites.
+    /// </summary>
+    private static QueryPlan? AnalyzeOperandChain(
+        List<TranslatedCallSite> chainSites,
+        EntityRegistry registry,
+        CancellationToken ct)
+    {
+        // Find the chain root and collect clause sites
+        TranslatedCallSite? rootSite = null;
+        var clauseSites = new List<TranslatedCallSite>();
+
+        foreach (var site in chainSites)
+        {
+            var kind = site.Bound.Raw.Kind;
+            if (kind == InterceptorKind.ChainRoot)
+            {
+                rootSite = site;
+            }
+            else if (kind == InterceptorKind.Trace)
+            {
+                // Skip trace markers
+            }
+            else if (!IsExecutionKind(kind))
+            {
+                clauseSites.Add(site);
+            }
+        }
+
+        // Need at least a chain root to determine the entity/table
+        if (rootSite == null)
+        {
+            // No chain root — try to use the first clause site's entity info
+            if (chainSites.Count == 0) return null;
+            rootSite = chainSites[0];
+        }
+
+        // Sort clause sites by source location
+        clauseSites.Sort((a, b) =>
+        {
+            var cmp = a.Bound.Raw.Line.CompareTo(b.Bound.Raw.Line);
+            if (cmp != 0) return cmp;
+            return a.Bound.Raw.Column.CompareTo(b.Bound.Raw.Column);
+        });
+
+        var primaryTable = new TableRef(
+            rootSite.Bound.TableName,
+            rootSite.Bound.SchemaName);
+
+        var whereTerms = new List<WhereTerm>();
+        var orderTerms = new List<OrderTerm>();
+        var groupByExprs = new List<SqlExpr>();
+        var havingExprs = new List<SqlExpr>();
+        var joinPlans = new List<JoinPlan>();
+        var implicitJoinInfos = new List<ImplicitJoinInfo>();
+        var parameters = new List<QueryParameter>();
+        var paramGlobalIndex = 0;
+        bool isDistinct = false;
+        SelectProjection? projection = null;
+
+        foreach (var site in clauseSites)
+        {
+            ct.ThrowIfCancellationRequested();
+            var clause = site.Clause;
+            var raw = site.Bound.Raw;
+            var kind = raw.Kind;
+
+            if (clause != null && clause.IsSuccess)
+            {
+                var clauseParams = RemapParameters(clause.Parameters, ref paramGlobalIndex);
+                EnrichParametersFromColumns(clauseParams, clause.ResolvedExpression, rootSite.Bound.Entity, null);
+                parameters.AddRange(clauseParams);
+
+                switch (clause.Kind)
+                {
+                    case ClauseKind.Where:
+                        whereTerms.Add(new WhereTerm(clause.ResolvedExpression));
+                        break;
+                    case ClauseKind.OrderBy:
+                        orderTerms.Add(new OrderTerm(clause.ResolvedExpression, clause.IsDescending));
+                        break;
+                    case ClauseKind.GroupBy:
+                        groupByExprs.Add(clause.ResolvedExpression);
+                        break;
+                    case ClauseKind.Having:
+                        havingExprs.Add(clause.ResolvedExpression);
+                        break;
+                    case ClauseKind.Join:
+                        var joinTable = new TableRef(clause.JoinedTableName ?? "", clause.JoinedSchemaName, clause.TableAlias);
+                        var joinKind = clause.JoinKind ?? JoinClauseKind.Inner;
+                        var onCondition = joinKind == JoinClauseKind.Cross ? null : (SqlExpr?)clause.ResolvedExpression;
+                        joinPlans.Add(new JoinPlan(joinKind, joinTable, onCondition, raw.IsNavigationJoin));
+                        break;
+                }
+
+                if (clause.ImplicitJoins != null)
+                {
+                    foreach (var ij in clause.ImplicitJoins)
+                    {
+                        if (!implicitJoinInfos.Any(existing => existing.TargetAlias == ij.TargetAlias))
+                            implicitJoinInfos.Add(ij);
+                    }
+                }
+            }
+            else if (kind == InterceptorKind.Distinct)
+            {
+                isDistinct = true;
+            }
+            else if (kind == InterceptorKind.Select && raw.ProjectionInfo != null)
+            {
+                if (raw.ProjectionInfo.FailureReason == ProjectionFailureReason.None)
+                {
+                    projection = BuildProjection(raw.ProjectionInfo, rootSite, registry,
+                        rootSite.Bound.Dialect, implicitJoinInfos, null);
+                }
+            }
+        }
+
+        // Default identity projection
+        if (projection == null)
+        {
+            projection = new SelectProjection(
+                ProjectionKind.Entity,
+                rootSite.Bound.Raw.ResultTypeName ?? rootSite.Bound.Raw.EntityTypeName,
+                Array.Empty<ProjectedColumn>(),
+                isIdentity: true);
+            projection = EnrichIdentityProjectionWithEntityColumns(projection, rootSite.Bound.Entity);
+        }
+
+        return new QueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: primaryTable,
+            joins: joinPlans,
+            whereTerms: whereTerms,
+            orderTerms: orderTerms,
+            groupByExprs: groupByExprs,
+            havingExprs: havingExprs,
+            projection: projection,
+            pagination: null,
+            isDistinct: isDistinct,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: new[] { 0 },
+            parameters: parameters,
+            tier: OptimizationTier.PrebuiltDispatch,
+            implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null);
+    }
+
+    /// <summary>
+    /// Enriches an identity projection with entity columns from the EntityRef metadata.
+    /// Replaces the empty column list with full column definitions so SqlAssembler renders
+    /// explicit column names instead of SELECT *.
+    /// </summary>
+    private static SelectProjection EnrichIdentityProjectionWithEntityColumns(
+        SelectProjection projection,
+        EntityRef? entityRef)
+    {
+        if (entityRef == null || entityRef.Columns.Count == 0)
+            return projection;
+
+        var entityCols = new List<ProjectedColumn>();
+        var ord = 0;
+        foreach (var ec in entityRef.Columns)
+        {
+            entityCols.Add(new ProjectedColumn(
+                propertyName: ec.PropertyName,
+                columnName: ec.ColumnName,
+                clrType: ec.ClrType,
+                fullClrType: ec.FullClrType,
+                isNullable: ec.IsNullable,
+                ordinal: ord++,
+                customTypeMapping: ec.CustomTypeMappingClass,
+                isValueType: ec.IsValueType,
+                readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
+                isForeignKey: ec.Kind == ColumnKind.ForeignKey,
+                foreignKeyEntityName: ec.ReferencedEntityName,
+                isEnum: ec.IsEnum));
+        }
+        return new SelectProjection(
+            projection.Kind,
+            projection.ResultTypeName,
+            entityCols,
+            customEntityReaderClass: entityRef.CustomEntityReaderClass,
+            isIdentity: true);
+    }
+
+    /// <summary>
+    /// Checks if an InterceptorKind represents a set operation (Union, Intersect, Except, etc.).
+    /// </summary>
+    internal static bool IsSetOperationKind(InterceptorKind kind)
+    {
+        return kind is InterceptorKind.Union
+            or InterceptorKind.UnionAll
+            or InterceptorKind.Intersect
+            or InterceptorKind.IntersectAll
+            or InterceptorKind.Except
+            or InterceptorKind.ExceptAll;
+    }
+
+    /// <summary>
+    /// Maps an InterceptorKind to the corresponding SetOperatorKind.
+    /// </summary>
+    private static SetOperatorKind MapToSetOperatorKind(InterceptorKind kind)
+    {
+        return kind switch
+        {
+            InterceptorKind.Union => SetOperatorKind.Union,
+            InterceptorKind.UnionAll => SetOperatorKind.UnionAll,
+            InterceptorKind.Intersect => SetOperatorKind.Intersect,
+            InterceptorKind.IntersectAll => SetOperatorKind.IntersectAll,
+            InterceptorKind.Except => SetOperatorKind.Except,
+            InterceptorKind.ExceptAll => SetOperatorKind.ExceptAll,
+            _ => throw new InvalidOperationException($"Not a set operation kind: {kind}")
+        };
     }
 
     /// <summary>
@@ -2068,7 +2511,8 @@ internal sealed class AnalyzedChain
         IReadOnlyList<TranslatedCallSite> clauseSites,
         bool isTraced = false,
         IReadOnlyList<TranslatedCallSite>? preparedTerminals = null,
-        TranslatedCallSite? prepareSite = null)
+        TranslatedCallSite? prepareSite = null,
+        bool isOperandChain = false)
     {
         Plan = plan;
         ExecutionSite = executionSite;
@@ -2076,6 +2520,7 @@ internal sealed class AnalyzedChain
         IsTraced = isTraced;
         PreparedTerminals = preparedTerminals;
         PrepareSite = prepareSite;
+        IsOperandChain = isOperandChain;
     }
 
     /// <summary>The logical query plan.</summary>
@@ -2100,4 +2545,10 @@ internal sealed class AnalyzedChain
     /// The .Prepare() call site. Non-null only for multi-terminal chains.
     /// </summary>
     public TranslatedCallSite? PrepareSite { get; }
+
+    /// <summary>
+    /// True when this chain is consumed as a set operation operand (no standalone terminal).
+    /// The carrier is generated for clause interceptors only — no execution terminal is emitted.
+    /// </summary>
+    public bool IsOperandChain { get; }
 }

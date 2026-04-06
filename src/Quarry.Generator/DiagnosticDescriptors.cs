@@ -709,6 +709,60 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "A column changed from nullable to non-null without an accompanying data migration step.");
 
+    // ─── Set operation diagnostics (QRY070–QRY071) ─────────────────────
+
+    /// <summary>
+    /// QRY070: INTERSECT ALL is not supported by this SQL dialect.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor IntersectAllNotSupported = new(
+        id: "QRY070",
+        title: "INTERSECT ALL not supported",
+        messageFormat: "INTERSECT ALL is not supported by the {0} dialect",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "INTERSECT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
+
+    /// <summary>
+    /// QRY071: EXCEPT ALL is not supported by this SQL dialect.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor ExceptAllNotSupported = new(
+        id: "QRY071",
+        title: "EXCEPT ALL not supported",
+        messageFormat: "EXCEPT ALL is not supported by the {0} dialect",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "EXCEPT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
+
+    /// <summary>
+    /// QRY072: Set operation operands have different column counts.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor SetOperationProjectionMismatch = new(
+        id: "QRY072",
+        title: "Set operation projection mismatch",
+        messageFormat: "Set operation operand has {0} columns but the main query has {1} columns — the SQL engine may reject this or produce unexpected results",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "All operands of a UNION/INTERSECT/EXCEPT must project the same number of columns.");
+
+    /// <summary>
+    /// QRY073: Cross-entity set operations are not yet supported.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor CrossEntitySetOperationNotSupported = new(
+        id: "QRY073",
+        title: "Cross-entity set operation not supported",
+        messageFormat: "Cross-entity set operations are not yet supported — the operand uses table '{0}' but the main query uses table '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Cross-entity UNION/INTERSECT/EXCEPT requires both operands to use the same entity table. This limitation will be removed in a future release.");
+
     /// <summary>
     /// QRY900: Internal generator error.
     /// Severity: Error

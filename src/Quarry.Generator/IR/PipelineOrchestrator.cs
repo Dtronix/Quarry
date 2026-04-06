@@ -65,6 +65,11 @@ internal static class PipelineOrchestrator
 
         ct.ThrowIfCancellationRequested();
 
+        // Post-analysis diagnostics (require assembled plans with resolved projections)
+        CollectPostAnalysisDiagnostics(assembledPlans, diagnostics);
+
+        ct.ThrowIfCancellationRequested();
+
         // Carrier analysis: AssembledPlan → CarrierPlan
         var carrierPlans = new List<CarrierPlan>(assembledPlans.Count);
         foreach (var assembled in assembledPlans)
@@ -155,7 +160,87 @@ internal static class PipelineOrchestrator
                         validationError));
                 }
             }
+
+            // QRY070/QRY071: INTERSECT ALL / EXCEPT ALL not supported on non-PostgreSQL dialects
+            if (raw.Kind == InterceptorKind.IntersectAll && site.Bound.Dialect != Sql.SqlDialect.PostgreSQL)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.IntersectAllNotSupported.Id,
+                    raw.Location,
+                    site.Bound.Dialect.ToString()));
+            }
+            else if (raw.Kind == InterceptorKind.ExceptAll && site.Bound.Dialect != Sql.SqlDialect.PostgreSQL)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ExceptAllNotSupported.Id,
+                    raw.Location,
+                    site.Bound.Dialect.ToString()));
+            }
         }
+    }
+
+    /// <summary>
+    /// Collects diagnostics that require post-analysis information (assembled plans with resolved projections).
+    /// </summary>
+    private static void CollectPostAnalysisDiagnostics(
+        List<AssembledPlan> assembledPlans,
+        List<DiagnosticInfo> diagnostics)
+    {
+        foreach (var assembled in assembledPlans)
+        {
+            var plan = assembled.Plan;
+            if (plan.SetOperations.Count == 0) continue;
+
+            var mainColumnCount = plan.Projection?.Columns.Count ?? 0;
+
+            var mainTable = plan.PrimaryTable.TableName;
+
+            for (int i = 0; i < plan.SetOperations.Count; i++)
+            {
+                var setOp = plan.SetOperations[i];
+                var setOpSite = FindSetOperationSite(assembled.ClauseSites, i);
+                var location = setOpSite?.Bound.Raw.Location ?? assembled.ExecutionSite.Bound.Raw.Location;
+
+                // QRY072: Set operation projection mismatch
+                var operandColumnCount = setOp.Operand.Projection?.Columns.Count ?? 0;
+                if (mainColumnCount > 0 && operandColumnCount > 0 && mainColumnCount != operandColumnCount)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.SetOperationProjectionMismatch.Id,
+                        location,
+                        operandColumnCount.ToString(),
+                        mainColumnCount.ToString()));
+                }
+
+                // QRY073: Cross-entity set operations not yet supported
+                var operandTable = setOp.Operand.PrimaryTable.TableName;
+                if (!string.Equals(mainTable, operandTable, StringComparison.Ordinal))
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.CrossEntitySetOperationNotSupported.Id,
+                        location,
+                        operandTable,
+                        mainTable));
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds the Nth set operation call site in a chain's clause sites.
+    /// </summary>
+    private static TranslatedCallSite? FindSetOperationSite(IReadOnlyList<TranslatedCallSite> clauseSites, int setOpIndex)
+    {
+        int found = 0;
+        foreach (var site in clauseSites)
+        {
+            if (ChainAnalyzer.IsSetOperationKind(site.Kind))
+            {
+                if (found == setOpIndex) return site;
+                found++;
+            }
+        }
+        return null;
     }
 
     /// <summary>
