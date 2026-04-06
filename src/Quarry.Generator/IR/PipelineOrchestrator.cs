@@ -211,7 +211,6 @@ internal static class PipelineOrchestrator
                         operandColumnCount.ToString(),
                         mainColumnCount.ToString()));
                 }
-
             }
         }
     }
