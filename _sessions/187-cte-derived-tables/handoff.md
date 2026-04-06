@@ -29,7 +29,7 @@
 - Improved `QuarryContext.With` error message; XML doc warning about extension ambiguity.
 - Added `Cte_FromCte_CapturedParam` and `Cte_FromCte_DedicatedDto` tests.
 
-### Pass #2 remediation (WIP commit 61a0ee5 — NOT yet on green CI; tests pending)
+### Pass #2 remediation (source: WIP 61a0ee5; tests + final summary in session 7 commit)
 - Consolidated short-name helpers into `CteNameHelpers.ExtractShortName` (strips both `global::` and namespace prefixes). Closes the global-namespace DTO bug that would have re-introduced the captured-param drop fixed in pass #1.
 - Added QRY080/QRY081 dedicated diagnostic descriptors. ChainAnalyzer reports via `diagnostics?.Add(...)` instead of the QRY900 InternalError side-channel.
 - Tightened EntityRef FK detection (Quarry namespace check + Nullable unwrap).
@@ -39,6 +39,13 @@
 - Documented multi-CTE first-match limitation in EmitCteDefinition.
 - Replaced fully-qualified `System.Collections.Generic.Dictionary` with `using` + short name in TransitionBodyEmitter.
 
+### Pass #2 test additions (session 7)
+- `Cte_With_NonInlineInnerArgument_EmitsQRY080` (CarrierGenerationTests.cs): With<T>() takes a field reference rather than an inline chain — DetectCteInnerChain cannot classify, lookup misses, QRY080 must fire. Also asserts NO QRY900 (the prior surfacing).
+- `Cte_FromCte_WithoutPrecedingWith_EmitsQRY081` (CarrierGenerationTests.cs): FromCte<T>() with no preceding With<T>() — QRY081 must fire, no QRY900.
+- `Cte_With_GlobalNamespaceDto_StripsGlobalPrefix` (CarrierGenerationTests.cs): two-source compilation with `global::GlobalOrderDto`, asserts the generated SQL constant uses bare `GlobalOrderDto` (verbatim-quoted form) and the captured-param copy `Pn = __inner.P0` is emitted. Regression for pass #2 Correctness #1.
+- `Cte_FromCte_AllColumns` (CrossDialectCteTests.cs): identity FromCte<Order>().Select(o => o) (vs the existing tuple-projection tests) across all 4 dialects. Closes Plan Compliance #1.
+- Modified `Cte_FromCte_CapturedParam`: added comment documenting that PreparedQuery is a snapshot at construction (no Bind/SetParameter API), so reuse-with-mutation isn't possible — the lt2 pattern is correct. Test Quality #2 reclassified A→D in review.md.
+
 ## Previous Session Completions
 - Sessions 1-3: Phases 1-8 (IR, API, discovery, binding, chain analysis, SQL assembly, code gen) + Phase 9 partial (SQLite test, then multi-dialect fix)
 - Session 4: Fixed DetectCteInnerChain candidate symbols fallback, expanded CrossDialectCteTests to 4-dialect, added TryResolveViaChainRootContext/DiscoverPostCteSites/DiscoverPreparedTerminalsForCteChain, fixed With<TEntity,TDto> interceptor signature, marked CteDtoResolver.Resolve() TODO, created issues #205/#206/#207, completed first review.
@@ -46,16 +53,15 @@
 - Session 6 (current, mid-flight): Two more review passes triggered by user. Pass #1 found and fixed 3 critical bugs + 8 smaller items, committed b02a13e, CI'd. Pass #2 found 16 items (1 Medium silent-bug regression of pass #1 fix, 1 Medium QRY900 misclassification, 1 Medium negative-test gap, 13 Lower). 7 of 8 pass #2 remediation tasks done in WIP commit 61a0ee5. Suspended before adding new tests and final commit.
 
 ## Progress
-- Phases 1-9: implementation complete (3 of 8 originally planned tests delivered)
-- Pass #1 review + remediation: complete + CI'd
+- Phases 1-9: implementation complete (4 of 8 originally planned tests delivered + dedicated CTE diagnostic tests)
+- Pass #1 review + remediation: complete + CI'd at b02a13e (run 24036554463)
 - Pass #2 review: complete
-- Pass #2 remediation: ~80% complete (WIP commit 61a0ee5)
-- 20 commits on branch (19 non-WIP + 1 WIP)
-- PR #208 open. CI green at b02a13e (run 24036554463). Will re-run on push of 61a0ee5 (or replacement non-WIP commit).
-- Last verified test totals: 2778 main + 103 analyzer + 79 migration = 2960 passing — at b02a13e. NOT verified after WIP changes.
+- Pass #2 remediation: COMPLETE — source in WIP 61a0ee5 (CI'd at 243034d run 24043045000), tests + final summary in session 7 commit
+- PR #208 open, awaiting FINALIZE confirmation
+- Verified test totals at session 7: 2782 main + 103 analyzer + 79 migration = **2964 passing**, all green
 
 ## Current State
-PR #208 has 19 non-WIP commits + 1 WIP on top. The pass #2 changes in 61a0ee5 are complete on the source side and the generator builds clean. Full test suite has NOT been run after the WIP changes. The next session must add new tests, run the full suite, replace 61a0ee5 with a non-WIP commit, push, and re-prompt for merge.
+PR #208 has 19 non-WIP commits + WIP 61a0ee5 + suspend artifact 243034d + session 7 final commit (this commit) on top. All pass #2 source remediation and tests are in place. Full test suite verified green locally (2964) and on CI at 243034d. Awaiting user FINALIZE confirmation before merge. The WIP and suspend commits will collapse into the squash merge — no rebase needed.
 
 ## Known Issues / Bugs
 1. **CTE+Join chain cascade** (#205): With() returns QuarryContext during source generation, blocks Users() resolution
@@ -76,13 +82,8 @@ None for the CTE work itself. Pass #2 depends only on adding the missing tests a
 None.
 
 ## Next Work (Priority Order)
-1. **(Test Quality #1, Medium)** Add diagnostic tests for QRY080 and QRY081. Pattern: `src/Quarry.Tests/Generation/CarrierGenerationTests.cs` already has QRY033 tests using `RunGeneratorWithDiagnostics(compilation)` + `diagnostics.FirstOrDefault(d => d.Id == "QRYxxx")`. Build test sources that:
-   - For QRY080: invoke `db.With<TDto>(someMethodGroup)` or pass an external variable instead of an inline chain. The challenge is that the inner-chain-not-analyzable path is hit when `cteInnerResults` lookup misses — i.e., when `DetectCteInnerChain` doesn't find a matching arg span. May require deliberately constructing a chain shape that `DetectCteInnerChain` won't classify.
-   - For QRY081: `db.FromCte<X>().Select(...)` without any preceding `With<X>(...)`. This should be straightforward.
-2. **(Plan Compliance #1, Low)** Add `Cte_FromCte_AllColumns` test in `CrossDialectCteTests.cs` that exercises identity FromCte without tuple projection.
-3. **(Test Quality #2, Low)** In existing `Cte_FromCte_CapturedParam`, after the first execution, mutate `cutoff` and re-execute the SAME prepared `lt` (don't create a new `lt2`).
-4. **(Correctness #1 verification)** Add a test using a global-namespace DTO (no `namespace` in source) to verify the consolidated `CteNameHelpers.ExtractShortName` handles `global::Foo` end-to-end. May not be feasible inside the test project (which is in `Quarry.Tests`); could instead be a `CarrierGenerationTests` source-text test that verifies the captured-param assignment is emitted.
-5. **Run full test suite**: `dotnet test src/Quarry.Tests src/Quarry.Analyzers.Tests src/Quarry.Migration.Tests`. Must be all green. Manifests will regenerate (commit them).
-6. **Convert WIP commit 61a0ee5 to non-WIP**: Per Suspend rules, do NOT amend. Add the test additions in a NEW commit, then either accept the 2-commit history (one WIP, one tests) or interactively rebase to squash. **Recommended**: just create the new commit with the tests + manifests, write a final summary commit message that covers all of pass #2 (the WIP message is informal). Push as new HEAD.
-7. **Update PR #208 body** Review Remediation section to mention pass #2 fixes.
-8. **Re-prompt user for FINALIZE/merge** once CI is green on the new HEAD.
+All pass #2 remediation work is complete (source changes in WIP 61a0ee5; tests + final summary in this session 7 commit). Remaining steps:
+1. Push session 7 final commit to origin/187-cte-derived-tables.
+2. Update PR #208 body Review Remediation section to mention pass #2 fixes + tests.
+3. Wait for CI on the new HEAD; verify green.
+4. Re-prompt user for FINALIZE/merge.

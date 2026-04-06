@@ -2216,6 +2216,14 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [Order]
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0) SELECT [OrderId], [Total] FROM [Order]
 ```
 
@@ -2229,7 +2237,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 295 |
+| Total discovered | 297 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 54 |
-| Rendered | 241 |
+| Consolidated (deduped) | 55 |
+| Rendered | 242 |

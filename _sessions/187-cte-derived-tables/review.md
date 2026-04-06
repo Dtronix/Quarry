@@ -63,7 +63,7 @@ No concerns.
 | EmitCteDefinition matches first cteDef by name without verifying site correspondence | Correctness | A | Use cteDef.OperandPlan reference equality where possible; document multi-CTE limitation already at #206 |
 | cteInnerResults keyed by argSpanStart int collision risk | Correctness | A | Add comment documenting the per-source-file uniqueness invariant |
 | No negative tests for new diagnostic paths | Test Quality | A | Add generator-level diagnostic tests |
-| Cte_FromCte_CapturedParam doesn't reuse prepared chain | Test Quality | A | Add re-execution-of-prepared assertion |
+| Cte_FromCte_CapturedParam doesn't reuse prepared chain | Test Quality | D | Re-classified during pass #2 remediation: PreparedQuery in this codebase is a SNAPSHOT at chain construction (the generated `Where_xxx` interceptor extracts the captured variable into the carrier P0 field BEFORE Prepare() runs). There is no Bind/SetParameter API to re-execute the same instance with a new value. Re-creating the chain with a new captured value is the correct way to test the "different captured value" scenario. Test left as the lt2 pattern; comment added explaining the snapshot semantics. |
 | All CTE tests SQLite-execute-only | Test Quality | C | Project-wide pattern; cross-dialect execution requires harness work |
 | Helper duplication ExtractShortTypeName / ExtractDtoShortName | Codebase Consistency | A | Same fix as Correctness #1 — consolidate |
 | TransitionBodyEmitter fully-qualified Dictionary parameter | Codebase Consistency | A | Add using directive, switch to short name |
