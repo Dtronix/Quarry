@@ -2009,6 +2009,19 @@ SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1 UNION SELECT [User
 
 ---
 
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1 ORDER BY [UserName] DESC OFFSET 0 ROWS FETCH NEXT 2 ROWS ONLY
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
 ### Users().Where(...).Select(...).Union(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2035,6 +2048,20 @@ SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [Use
 |-----------|------|
 | `@p0` | `int` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1) AS [__set] WHERE [UserId] = @p2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -2146,7 +2173,7 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 285 |
+| Total discovered | 289 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 52 |
-| Rendered | 233 |
+| Consolidated (deduped) | 54 |
+| Rendered | 235 |

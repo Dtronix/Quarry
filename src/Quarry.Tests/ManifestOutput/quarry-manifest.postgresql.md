@@ -2014,6 +2014,19 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE UNION SELECT "U
 
 ---
 
+### Users().Where(...).Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= $1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= $2 ORDER BY "UserName" DESC LIMIT 2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
 ### Users().Where(...).Select(...).Union(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2040,6 +2053,20 @@ SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= $1 UNION SELECT "User
 |-----------|------|
 | `@p0` | `int` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= $1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= $2) AS "__set" WHERE "UserId" = $3
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -2159,7 +2186,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 286 |
+| Total discovered | 290 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 52 |
-| Rendered | 234 |
+| Consolidated (deduped) | 54 |
+| Rendered | 236 |
