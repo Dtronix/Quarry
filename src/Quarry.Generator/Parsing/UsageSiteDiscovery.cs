@@ -3579,6 +3579,21 @@ internal static class UsageSiteDiscovery
             cteInnerArgSpanStart = invocation.ArgumentList.Arguments[0].SpanStart;
         }
 
+        // Store the inner query parameter type for correct interceptor signature generation.
+        // With<TDto>(IQueryBuilder<TDto>) → "IQueryBuilder<TDto>"
+        // With<TEntity, TDto>(IQueryBuilder<TEntity, TDto>) → "IQueryBuilder<TEntity, TDto>"
+        string? cteParamType = null;
+        if (kind == InterceptorKind.CteDefinition && methodSymbol.Parameters.Length > 0)
+        {
+            var paramSym = methodSymbol.Parameters[0].Type;
+            if (paramSym is INamedTypeSymbol paramNamed && paramNamed.IsGenericType)
+            {
+                var typeArgs = string.Join(", ", paramNamed.TypeArguments.Select(
+                    t => t.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat)));
+                cteParamType = $"{paramNamed.Name}<{typeArgs}>";
+            }
+        }
+
         // Use the concrete context class type rather than QuarryContext base class,
         // because CTE methods are defined on the base class but interceptors must match
         // the concrete derived type. Walk the chain root to find the actual context variable.
@@ -3626,7 +3641,8 @@ internal static class UsageSiteDiscovery
             isInsideLoop: isInsideLoop,
             cteEntityTypeName: cteEntityTypeName,
             cteInnerArgSpanStart: cteInnerArgSpanStart,
-            cteColumns: cteColumns);
+            cteColumns: cteColumns,
+            builderTypeName: cteParamType);
     }
 
     /// <summary>

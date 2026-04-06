@@ -101,8 +101,8 @@ internal static class TransitionBodyEmitter
         // Interceptors for generic methods must match the concrete type arguments from the call site.
         var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
 
-        // Determine if this is the 1-arg (IQueryBuilder<TDto>) or 2-arg (IQueryBuilder<TEntity,TDto>) overload
-        var paramType = $"IQueryBuilder<{dtoType}>";
+        // Use the stored parameter type from discovery (handles both 1-arg and 2-arg overloads)
+        var paramType = site.Bound.Raw.BuilderTypeName ?? $"IQueryBuilder<{dtoType}>";
 
         sb.AppendLine($"    public static {contextClass} {methodName}(");
         sb.AppendLine($"        this {contextClass} @this,");

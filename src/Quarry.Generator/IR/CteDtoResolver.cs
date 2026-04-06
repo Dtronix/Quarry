@@ -18,6 +18,9 @@ internal static class CteDtoResolver
     /// The entity name and table name are both set to the DTO class name
     /// (CTE name = DTO class name in the generated SQL).
     /// </summary>
+    // TODO: Wire up for CTE+Join support — currently unused because CTE+Join chains
+    // are blocked by the QuarryContext.With() return type limitation (see workflow.md).
+    // This method will be needed when Join<CteDto>() requires EntityInfo for the CTE DTO.
     public static EntityInfo? Resolve(INamedTypeSymbol dtoType)
     {
         if (dtoType == null)
