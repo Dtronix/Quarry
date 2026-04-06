@@ -161,6 +161,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             && MaxParameterCount == other.MaxParameterCount
             && ReaderDelegateCode == other.ReaderDelegateCode
             && EntitySchemaNamespace == other.EntitySchemaNamespace
+            && IsOperandChain == other.IsOperandChain
             && EqualityHelpers.DictionaryEqual(SqlVariants, other.SqlVariants);
     }
 

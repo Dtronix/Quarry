@@ -121,8 +121,16 @@ internal static class TerminalEmitHelpers
     {
         var map = new Dictionary<int, (bool, int?)>();
         var globalOffset = 0;
+        var setOpIndex = 0;
         foreach (var clause in chain.GetClauseEntries())
         {
+            if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
+            {
+                if (setOpIndex < chain.Plan.SetOperations.Count)
+                    globalOffset += chain.Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
+                setOpIndex++;
+                continue;
+            }
             var paramCount = GetClauseParamCount(clause);
             for (int i = 0; i < paramCount; i++)
                 map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
@@ -287,9 +295,17 @@ internal static class TerminalEmitHelpers
         }
 
         var globalParamOffset = 0;
+        var clauseSetOpIndex = 0;
         var clauseParamOffsets = new Dictionary<string, int>();
         foreach (var clause in chain.GetClauseEntries())
         {
+            if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
+            {
+                if (clauseSetOpIndex < chain.Plan.SetOperations.Count)
+                    globalParamOffset += chain.Plan.SetOperations[clauseSetOpIndex].Operand.Parameters.Count;
+                clauseSetOpIndex++;
+                continue;
+            }
             clauseParamOffsets[clause.Site.UniqueId] = globalParamOffset;
             globalParamOffset += GetClauseParamCount(clause);
         }

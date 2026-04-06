@@ -432,5 +432,81 @@ internal class CrossDialectSetOperationTests
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
     }
 
+    [Test]
+    public async Task Union_WithCapturedVariable_PostUnionWhere_DiagnosticClauseParams()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minId = 1;
+        var maxId = 3;
+        var postFilter = 2;
+        var lt = Lite.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId == postFilter).Prepare();
+
+        var diag = lt.ToDiagnostics();
+
+        // AllParameters includes all 3: left + operand + post-union
+        Assert.That(diag.AllParameters, Has.Count.EqualTo(3));
+        Assert.That(diag.AllParameters![0].Name, Is.EqualTo("@p0"));
+        Assert.That(diag.AllParameters[1].Name, Is.EqualTo("@p1"));
+        Assert.That(diag.AllParameters[2].Name, Is.EqualTo("@p2"));
+
+        // Parameters is derived from clause params (excludes operand param @p1 which has no clause)
+        Assert.That(diag.Parameters, Has.Count.EqualTo(2));
+        Assert.That(diag.Parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(diag.Parameters[1].Name, Is.EqualTo("@p2"));
+
+        // Verify the post-union WHERE clause has the correct parameter name (@p2, not @p1)
+        var postUnionWhere = diag.Clauses.LastOrDefault(c => c.ClauseType == "Where");
+        Assert.That(postUnionWhere, Is.Not.Null, "Should have a post-union WHERE clause");
+        Assert.That(postUnionWhere!.Parameters, Has.Count.EqualTo(1));
+        Assert.That(postUnionWhere.Parameters[0].Name, Is.EqualTo("@p2"));
+    }
+
+    #endregion
+
+    #region Edge Cases
+
+    [Test]
+    public async Task Union_WithDistinctOnOperand()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Distinct().Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("UNION"));
+        Assert.That(diag.Sql, Does.Contain("SELECT DISTINCT"));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All 3 users from both sides, UNION removes duplicates → 3 results
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public async Task UnionAll_WithPostUnionGroupByAndParameterizedHaving()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var activeFilter = true;
+        var lt = Lite.Users().Select(u => (u.IsActive, u.UserName))
+            .UnionAll(Lite.Users().Select(u => (u.IsActive, u.UserName)))
+            .GroupBy(u => u.IsActive).Having(u => u.IsActive == activeFilter).Prepare();
+
+        // Verify subquery wrapping and parameterized HAVING
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("SELECT * FROM ("));
+        Assert.That(diag.Sql, Does.Contain(") AS \"__set\""));
+        Assert.That(diag.Sql, Does.Contain("GROUP BY \"IsActive\""));
+        Assert.That(diag.Sql, Does.Contain("HAVING \"IsActive\" = @p0"));
+        Assert.That(diag.Parameters, Has.Count.EqualTo(1));
+    }
+
     #endregion
 }

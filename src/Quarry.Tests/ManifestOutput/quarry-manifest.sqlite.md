@@ -869,6 +869,14 @@ SELECT DISTINCT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLog
 
 ---
 
+### Users().Distinct(...).Select(...).Users()
+
+```sql
+SELECT DISTINCT "UserId", "UserName" FROM "users"
+```
+
+---
+
 ### Users().Distinct(...).ToDiagnostics()
 
 ```sql
@@ -1568,6 +1576,14 @@ SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "UserName" FROM 
 
 ---
 
+### Users().Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT DISTINCT "UserId", "UserName" FROM "users"
+```
+
+---
+
 ### Users().Select(...).Union(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1581,6 +1597,18 @@ SELECT * FROM (SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "
 ```sql
 SELECT * FROM (SELECT "IsActive", "UserName" FROM "users" UNION ALL SELECT "IsActive", "UserName" FROM "users") AS "__set" GROUP BY "IsActive" HAVING "IsActive" = 1
 ```
+
+---
+
+### Users().Select(...).UnionAll(...).GroupBy(...).Having(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT "IsActive", "UserName" FROM "users" UNION ALL SELECT "IsActive", "UserName" FROM "users") AS "__set" GROUP BY "IsActive" HAVING "IsActive" = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `bool` |
 
 ---
 
@@ -3450,7 +3478,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 527 |
+| Total discovered | 533 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 163 |
-| Rendered | 364 |
+| Consolidated (deduped) | 166 |
+| Rendered | 367 |
