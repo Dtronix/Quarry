@@ -21,18 +21,33 @@
 7. **Review analysis**: Agent-produced `review.md` with 5 findings (2 medium, 3 low). Medium findings both relate to multi-dialect test coverage gap.
 
 ## Previous Session Completions
-None — this is session 1.
+- Session 1 (suspended mid-REVIEW): Completed all 6 implementation phases. Wrote `review.md` analysis pass. Suspended before presenting classifications to user.
+
+## Session 2 Completions
+- Resumed session, user chose "Fix all" classification.
+- Investigated and fixed pre-existing source generator bug: per-context entity type resolution in `CallSiteBinder.Bind`. The chain root and builder method discovery had been recording the schema-namespace user-written class instead of the per-context generated class, causing CS9144 interceptor signature mismatches for any non-default context (PgDb/MyDb/SsDb) using an entity that has a partial declaration in user source. Fix rewrites `RawCallSite.EntityTypeName` and `OperandEntityTypeName` to `global::{contextNamespace}.{entityName}` only when the discovery's namespace differs from the context namespace. Includes a foreign-context rebind fallback when registry resolution returns the wrong context entry.
+- Added `WithEntityTypeName` and `WithOperandEntityTypeName` copy helpers on `RawCallSite`.
+- Removed leftover blank line in `PipelineOrchestrator.cs` (Class A finding).
+- Extended cross-entity tests to all 4 dialects via `AssertDialects` (Union, UnionAll, Intersect, Except, WithParameters, WithPostUnionOrderByLimit).
+- Added `CrossEntity_IntersectAll_TupleProjection` and `CrossEntity_ExceptAll_TupleProjection` tests (Pg-only).
+- Strengthened Union/UnionAll/Except assertions with exact row-value checks (not just count) to prove product rows flow through the positional reader despite the C# tuple element labels coming from the receiver projection.
+- Refreshed Pg/My/Ss manifest snapshots.
+- Decided NOT to add a runtime QRY072 negative test (the C# type system rejects column-count mismatches before the generator runs); coverage stays at the descriptor level.
+- Created PR #210 with comprehensive description, CI passed (1m35s).
+- Open Union TResult discussion: explored why same-`TResult` is enforced by C# generic constraints, what SQL would allow, and whether to relax. Conclusion: keep strict — users can explicitly project to a common type if needed; matches EF Core / LINQ to SQL conventions; QRY072 stays as a defensive guard for future projection-flattening shapes.
 
 ## Progress
 - Phases 1-6 complete and committed ✓
-- All 2963 tests passing (79 migration + 103 analyzer + 2781 main) ✓
+- Pre-existing per-context entity resolution bug fixed ✓
+- All 2965 tests passing (79 migration + 103 analyzer + 2783 main) ✓
 - Review analysis complete ✓
-- Review classification NOT yet approved by user ✗
-- Remediation NOT yet done ✗
-- PR NOT yet created ✗
+- Review classifications recorded ✓
+- Remediation complete ✓
+- PR #210 created and CI green ✓
+- Merge NOT yet done ✗ (intentionally paused — user moved phase back to REVIEW)
 
 ## Current State
-Paused mid-REVIEW phase. The review.md analysis is complete. The next step is to present classifications to the user via AskUserQuestion and get approval. Classifications were drafted but the AskUserQuestion prompt was interrupted before user response.
+Phase reset back to REVIEW from REMEDIATE at user request, with all work preserved. PR #210 is open with green CI. The reset is for the user to add additional review items or revisit existing classifications — possibly informed by the Union TResult / SQL UNION permissiveness discussion. No code or commits were reverted.
 
 ## Known Issues / Bugs
 **Pre-existing bug discovered during Phase 6 (not caused by this branch):**
