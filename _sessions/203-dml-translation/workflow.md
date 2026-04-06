@@ -50,3 +50,5 @@ Baseline: 2957 tests passing (79 migration + 103 analyzer + 2775 main), 0 pre-ex
 | 2 | REVIEW | REMEDIATE | Resumed; classifications confirmed (fix all); 4 fixes implemented; 2992 tests pass; PR #209 created |
 | 2 | REMEDIATE | REVIEW | User requested re-review of entire branch (incl. REMEDIATE changes); fresh classification round; review.md to be overwritten |
 | 2 | REVIEW | REMEDIATE | Pass-2 review surfaced 7 findings (1 High dup, 1 Medium, 4 Low). User: fix all. INSERT code-fix bug + QRM002 wording fixed; RegisterPrimaryTable returns TableRef; tests tightened; 2993 tests pass |
+| 2 | REMEDIATE | REVIEW | User requested Pass-3 review on Pass-2 changes; review.md to be overwritten |
+| 2 | REVIEW | REMEDIATE | Pass-3 review surfaced 7 findings (1 High, 1 Medium, 5 Low). User: fix all. DapperConverter INSERT propagation fixed; SqlNodeWalker DML cases added; field rename + xmldoc + prose updated; DapperConverter end-to-end tests added; 2995 tests pass |
