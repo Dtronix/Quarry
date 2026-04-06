@@ -843,7 +843,17 @@ internal sealed class FileEmitter
             case InterceptorKind.Except:
             case InterceptorKind.ExceptAll:
                 if (carrierInfo != null && carrierChain != null)
-                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames);
+                {
+                    // Compute which set operation index this site corresponds to by counting
+                    // how many set operation sites precede this one in the chain's clause entries.
+                    var setOpIndex = 0;
+                    foreach (var clause in carrierChain.GetClauseEntries())
+                    {
+                        if (clause.Site.UniqueId == site.UniqueId) break;
+                        if (clause.Role == ClauseRole.SetOperation) setOpIndex++;
+                    }
+                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain, setOpIndex, operandCarrierNames);
+                }
                 break;
 
             default:

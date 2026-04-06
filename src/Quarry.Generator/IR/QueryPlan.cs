@@ -37,7 +37,9 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         string? forkedVariableName = null,
         IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null,
         IReadOnlyList<SetOperationPlan>? setOperations = null,
-        IReadOnlyList<WhereTerm>? postUnionWhereTerms = null)
+        IReadOnlyList<WhereTerm>? postUnionWhereTerms = null,
+        IReadOnlyList<SqlExpr>? postUnionGroupByExprs = null,
+        IReadOnlyList<SqlExpr>? postUnionHavingExprs = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
@@ -45,6 +47,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         ImplicitJoins = implicitJoins ?? Array.Empty<ImplicitJoinInfo>();
         SetOperations = setOperations ?? Array.Empty<SetOperationPlan>();
         PostUnionWhereTerms = postUnionWhereTerms ?? Array.Empty<WhereTerm>();
+        PostUnionGroupByExprs = postUnionGroupByExprs ?? Array.Empty<SqlExpr>();
+        PostUnionHavingExprs = postUnionHavingExprs ?? Array.Empty<SqlExpr>();
         WhereTerms = whereTerms;
         OrderTerms = orderTerms;
         GroupByExprs = groupByExprs;
@@ -70,6 +74,8 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public IReadOnlyList<SetOperationPlan> SetOperations { get; }
     public IReadOnlyList<WhereTerm> WhereTerms { get; }
     public IReadOnlyList<WhereTerm> PostUnionWhereTerms { get; }
+    public IReadOnlyList<SqlExpr> PostUnionGroupByExprs { get; }
+    public IReadOnlyList<SqlExpr> PostUnionHavingExprs { get; }
     public IReadOnlyList<OrderTerm> OrderTerms { get; }
     public IReadOnlyList<SqlExpr> GroupByExprs { get; }
     public IReadOnlyList<SqlExpr> HavingExprs { get; }
@@ -101,6 +107,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
             && EqualityHelpers.SequenceEqual(ImplicitJoins, other.ImplicitJoins)
             && EqualityHelpers.SequenceEqual(SetOperations, other.SetOperations)
             && EqualityHelpers.SequenceEqual(WhereTerms, other.WhereTerms)
+            && EqualityHelpers.SequenceEqual(PostUnionWhereTerms, other.PostUnionWhereTerms)
             && EqualityHelpers.SequenceEqual(OrderTerms, other.OrderTerms)
             && EqualityHelpers.SequenceEqual(SetTerms, other.SetTerms)
             && EqualityHelpers.SequenceEqual(InsertColumns, other.InsertColumns)

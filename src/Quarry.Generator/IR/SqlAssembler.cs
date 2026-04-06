@@ -283,8 +283,11 @@ internal static class SqlAssembler
                 paramIndex += operandSql.ParameterCount;
             }
 
-            // Post-union WHERE: wrap the entire set operation in a derived table
-            if (plan.PostUnionWhereTerms.Count > 0)
+            // Post-union clauses (WHERE/GROUP BY/HAVING): wrap the set operation in a derived table
+            var hasPostUnionClauses = plan.PostUnionWhereTerms.Count > 0
+                || plan.PostUnionGroupByExprs.Count > 0
+                || plan.PostUnionHavingExprs.Count > 0;
+            if (hasPostUnionClauses)
             {
                 var innerSql = sb.ToString();
                 sb.Clear();
@@ -307,6 +310,30 @@ internal static class SqlAssembler
                         sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
                         if (postWhereActive.Count > 1) sb.Append(')');
                         paramIndex += termParamCount;
+                    }
+                }
+
+                // Render post-union GROUP BY
+                if (plan.PostUnionGroupByExprs.Count > 0)
+                {
+                    sb.Append(" GROUP BY ");
+                    for (int i = 0; i < plan.PostUnionGroupByExprs.Count; i++)
+                    {
+                        if (i > 0) sb.Append(", ");
+                        sb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                    }
+                }
+
+                // Render post-union HAVING
+                if (plan.PostUnionHavingExprs.Count > 0)
+                {
+                    sb.Append(" HAVING ");
+                    for (int i = 0; i < plan.PostUnionHavingExprs.Count; i++)
+                    {
+                        if (i > 0) sb.Append(" AND ");
+                        var paramsBefore = CountParameters(plan.PostUnionHavingExprs[i]);
+                        sb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
                     }
                 }
             }

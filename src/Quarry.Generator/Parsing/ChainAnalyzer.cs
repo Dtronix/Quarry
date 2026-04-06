@@ -100,8 +100,14 @@ internal static class ChainAnalyzer
                     if (opChain != null)
                         operandPlans[opId] = opChain;
                 }
-                catch
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    var first = opSites.Count > 0 ? opSites[0] : null;
+                    PipelineErrorBag.Report(
+                        first?.Bound.Raw.FilePath ?? "",
+                        first?.Bound.Raw.Line ?? 0,
+                        first?.Bound.Raw.Column ?? 0,
+                        $"Operand chain analysis failed: {ex.Message}");
                 }
             }
         }
@@ -126,8 +132,14 @@ internal static class ChainAnalyzer
                     results.Add(analyzed);
                 results.AddRange(inlineOperandChains);
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                var first = chainSites.Count > 0 ? chainSites[0] : null;
+                PipelineErrorBag.Report(
+                    first?.Bound.Raw.FilePath ?? "",
+                    first?.Bound.Raw.Line ?? 0,
+                    first?.Bound.Raw.Column ?? 0,
+                    $"Chain analysis failed: {ex.Message}");
             }
         }
 
@@ -540,6 +552,8 @@ internal static class ChainAnalyzer
         // Build QueryPlan terms from TranslatedClause data
         var whereTerms = new List<WhereTerm>();
         var postUnionWhereTerms = new List<WhereTerm>();
+        var postUnionGroupByExprs = new List<SqlExpr>();
+        var postUnionHavingExprs = new List<SqlExpr>();
         bool seenSetOperation = false;
         var orderTerms = new List<OrderTerm>();
         var groupByExprs = new List<SqlExpr>();
@@ -618,11 +632,17 @@ internal static class ChainAnalyzer
                         break;
 
                     case ClauseKind.GroupBy:
-                        groupByExprs.Add(expr);
+                        if (seenSetOperation)
+                            postUnionGroupByExprs.Add(expr);
+                        else
+                            groupByExprs.Add(expr);
                         break;
 
                     case ClauseKind.Having:
-                        havingExprs.Add(expr);
+                        if (seenSetOperation)
+                            postUnionHavingExprs.Add(expr);
+                        else
+                            havingExprs.Add(expr);
                         break;
 
                     case ClauseKind.Set:
@@ -1024,7 +1044,9 @@ internal static class ChainAnalyzer
             unmatchedMethodNames: unmatchedMethodNames,
             implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null,
             setOperations: setOperationPlans.Count > 0 ? setOperationPlans : null,
-            postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null);
+            postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null,
+            postUnionGroupByExprs: postUnionGroupByExprs.Count > 0 ? postUnionGroupByExprs : null,
+            postUnionHavingExprs: postUnionHavingExprs.Count > 0 ? postUnionHavingExprs : null);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.

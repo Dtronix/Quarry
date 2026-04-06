@@ -15,20 +15,17 @@ internal static class SetOperationBodyEmitter
 {
     /// <summary>
     /// Emits a carrier set operation interceptor method.
-    /// The method signature matches the IQueryBuilder set operation method (e.g., Union(IQueryBuilder&lt;T&gt; other)).
-    /// At runtime, the operand carrier's parameter fields are copied into the main carrier's fields
-    /// at the appropriate offsets.
+    /// <paramref name="setOpIndex"/> identifies which SetOperationPlan this site corresponds to
+    /// (0 for the first Union/Intersect/Except, 1 for the second, etc.).
     /// </summary>
     public static void EmitSetOperation(
         StringBuilder sb, TranslatedCallSite site, string methodName,
-        CarrierPlan carrier, AssembledPlan chain,
+        CarrierPlan carrier, AssembledPlan chain, int setOpIndex,
         Dictionary<QueryPlan, string>? operandCarrierNames = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
 
-        // The argument type is the same as the receiver type — both sides of a set operation
-        // must have compatible projections. Use the receiver type for the argument.
         var argType = receiverType;
 
         var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
@@ -40,25 +37,22 @@ internal static class SetOperationBodyEmitter
         sb.AppendLine($"    {{");
 
         // Copy operand carrier parameters into main carrier parameter fields
-        if (chain.Plan.SetOperations.Count > 0)
+        if (setOpIndex < chain.Plan.SetOperations.Count)
         {
-            sb.AppendLine($"        // Set operation: copy operand carrier parameters to main carrier fields.");
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            var setOp = chain.Plan.SetOperations[setOpIndex];
 
-            foreach (var setOp in chain.Plan.SetOperations)
+            // Resolve the operand carrier class name
+            string? opCarrierName = null;
+            operandCarrierNames?.TryGetValue(setOp.Operand, out opCarrierName);
+
+            if (opCarrierName != null && setOp.Operand.Parameters.Count > 0)
             {
-                // Resolve the operand carrier class name
-                string? opCarrierName = null;
-                operandCarrierNames?.TryGetValue(setOp.Operand, out opCarrierName);
-
-                if (opCarrierName != null && setOp.Operand.Parameters.Count > 0)
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                sb.AppendLine($"        var __op = Unsafe.As<{opCarrierName}>(other);");
+                for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
                 {
-                    sb.AppendLine($"        var __op = Unsafe.As<{opCarrierName}>(other);");
-                    for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
-                    {
-                        var targetIdx = setOp.ParameterOffset + i;
-                        sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
-                    }
+                    var targetIdx = setOp.ParameterOffset + i;
+                    sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
                 }
             }
         }

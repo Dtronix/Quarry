@@ -218,6 +218,34 @@ internal class CrossDialectSetOperationTests
 
     #endregion
 
+    #region Chained Set Operations
+
+    [Test]
+    public async Task Union_Then_Except_Chained()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // All users UNION active users EXCEPT UserId=1
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)))
+            .Except(Lite.Users().Where(u => u.UserId == 1).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+
+        var diag = lt.ToDiagnostics();
+        // All users: (1,Alice), (2,Bob), (3,Charlie)
+        // Active: (1,Alice), (2,Bob)
+        // UNION: (1,Alice), (2,Bob), (3,Charlie)
+        // EXCEPT UserId=1: (2,Bob), (3,Charlie)
+        Assert.That(diag.Sql, Does.Contain("UNION"));
+        Assert.That(diag.Sql, Does.Contain("EXCEPT"));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    #endregion
+
     #region Post-Union WHERE (subquery wrapping)
 
     [Test]
@@ -251,6 +279,28 @@ internal class CrossDialectSetOperationTests
         // All users: (1,Alice), (2,Bob), (3,Charlie). UNION with UserId=3: same set.
         // Post-union WHERE UserId <= 2: (1,Alice), (2,Bob) → 2 results
         Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    #endregion
+
+    #region Parameterized Set Operations
+
+    [Test]
+    public async Task Union_WithCapturedVariable_Parameters()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var minId = 2;
+        var maxId = 3;
+        var lt = Lite.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // UserId >= 2: (2,Bob), (3,Charlie). UserId <= 3: (1,Alice), (2,Bob), (3,Charlie).
+        // UNION: (1,Alice), (2,Bob), (3,Charlie) → 3 results
+        Assert.That(results, Has.Count.EqualTo(3));
     }
 
     #endregion
