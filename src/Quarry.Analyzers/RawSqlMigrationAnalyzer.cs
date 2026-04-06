@@ -109,12 +109,12 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
         // Parse the SQL string
         var sql = literal.Token.ValueText;
         var parseResult = SqlParser.Parse(sql, contextInfo.Dialect);
-        if (!parseResult.Success || parseResult.Statement == null)
+        if (!parseResult.Success || parseResult.SelectStatement == null)
             return;
 
         // Check if the parsed SQL is convertible to a chain query
         var converter = new SqlToChainConverter(contextInfo);
-        var convertError = converter.CheckConvertibility(parseResult.Statement);
+        var convertError = converter.CheckConvertibility(parseResult.SelectStatement);
         if (convertError != null)
             return;
 
@@ -129,7 +129,7 @@ internal sealed class RawSqlMigrationAnalyzer : DiagnosticAnalyzer
 
         // Generate the chain code
         var chainCode = converter.Convert(
-            parseResult.Statement, contextVarName, parameterArgs, useExecuteFetchAll);
+            parseResult.SelectStatement, contextVarName, parameterArgs, useExecuteFetchAll);
 
         var properties = ImmutableDictionary<string, string?>.Empty
             .Add("Sql", sql)

@@ -34,7 +34,13 @@ internal sealed class ChainEmitter
             return new ConversionResult(callSite.Sql, null, _diagnostics);
         }
 
-        var stmt = parseResult.Statement;
+        var stmt = parseResult.SelectStatement;
+        if (stmt == null)
+        {
+            _diagnostics.Add(new ConversionDiagnostic(
+                ConversionDiagnosticSeverity.Error, "Only SELECT statements are currently supported"));
+            return new ConversionResult(callSite.Sql, null, _diagnostics);
+        }
         var sb = new StringBuilder();
 
         // FROM → db.Entity()

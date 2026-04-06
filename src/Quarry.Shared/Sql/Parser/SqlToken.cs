@@ -116,6 +116,12 @@ internal enum SqlTokenKind
     All,
     Over,
     First,
+    Delete,
+    Update,
+    Insert,
+    Set,
+    Values,
+    Into,
 }
 
 /// <summary>

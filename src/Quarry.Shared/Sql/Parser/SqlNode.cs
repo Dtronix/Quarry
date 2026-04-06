@@ -35,6 +35,10 @@ internal enum SqlNodeKind
     ExistsExpr,
     OrderTerm,
     WhenClause,
+    DeleteStatement,
+    UpdateStatement,
+    InsertStatement,
+    Assignment,
 }
 
 /// <summary>Binary operator kinds.</summary>
@@ -109,8 +113,11 @@ internal abstract class SqlExpr : SqlNode { }
 //  Statement nodes
 // ─────────────────────────────────────────────────────────
 
+/// <summary>Abstract base for all SQL statement types.</summary>
+internal abstract class SqlStatement : SqlNode { }
+
 /// <summary>A parsed SELECT statement.</summary>
-internal sealed class SqlSelectStatement : SqlNode
+internal sealed class SqlSelectStatement : SqlStatement
 {
     public override SqlNodeKind NodeKind => SqlNodeKind.SelectStatement;
 
@@ -147,6 +154,70 @@ internal sealed class SqlSelectStatement : SqlNode
         OrderBy = orderBy;
         Limit = limit;
         Offset = offset;
+    }
+}
+
+/// <summary>A parsed DELETE statement.</summary>
+internal sealed class SqlDeleteStatement : SqlStatement
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.DeleteStatement;
+
+    public SqlTableSource Table { get; }
+    public SqlExpr? Where { get; }
+
+    public SqlDeleteStatement(SqlTableSource table, SqlExpr? where)
+    {
+        Table = table;
+        Where = where;
+    }
+}
+
+/// <summary>A parsed UPDATE statement.</summary>
+internal sealed class SqlUpdateStatement : SqlStatement
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.UpdateStatement;
+
+    public SqlTableSource Table { get; }
+    public IReadOnlyList<SqlAssignment> Assignments { get; }
+    public SqlExpr? Where { get; }
+
+    public SqlUpdateStatement(SqlTableSource table, IReadOnlyList<SqlAssignment> assignments, SqlExpr? where)
+    {
+        Table = table;
+        Assignments = assignments;
+        Where = where;
+    }
+}
+
+/// <summary>A column = value assignment in an UPDATE SET clause.</summary>
+internal sealed class SqlAssignment : SqlNode
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.Assignment;
+
+    public SqlColumnRef Column { get; }
+    public SqlExpr Value { get; }
+
+    public SqlAssignment(SqlColumnRef column, SqlExpr value)
+    {
+        Column = column;
+        Value = value;
+    }
+}
+
+/// <summary>A parsed INSERT statement.</summary>
+internal sealed class SqlInsertStatement : SqlStatement
+{
+    public override SqlNodeKind NodeKind => SqlNodeKind.InsertStatement;
+
+    public SqlTableSource Table { get; }
+    public IReadOnlyList<SqlColumnRef>? Columns { get; }
+    public IReadOnlyList<IReadOnlyList<SqlExpr>> ValueRows { get; }
+
+    public SqlInsertStatement(SqlTableSource table, IReadOnlyList<SqlColumnRef>? columns, IReadOnlyList<IReadOnlyList<SqlExpr>> valueRows)
+    {
+        Table = table;
+        Columns = columns;
+        ValueRows = valueRows;
     }
 }
 
@@ -503,11 +574,14 @@ internal sealed class SqlParseDiagnostic
 /// <summary>Result of parsing a SQL string.</summary>
 internal sealed class SqlParseResult
 {
-    public SqlSelectStatement? Statement { get; }
+    public SqlStatement? Statement { get; }
     public IReadOnlyList<SqlParseDiagnostic> Diagnostics { get; }
     public bool HasUnsupported { get; }
 
-    public SqlParseResult(SqlSelectStatement? statement, IReadOnlyList<SqlParseDiagnostic> diagnostics, bool hasUnsupported)
+    /// <summary>Convenience accessor: returns the statement as <see cref="SqlSelectStatement"/>, or null for non-SELECT.</summary>
+    public SqlSelectStatement? SelectStatement => Statement as SqlSelectStatement;
+
+    public SqlParseResult(SqlStatement? statement, IReadOnlyList<SqlParseDiagnostic> diagnostics, bool hasUnsupported)
     {
         Statement = statement;
         Diagnostics = diagnostics;
