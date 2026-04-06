@@ -247,8 +247,21 @@ internal static class UsageSiteDiscovery
         }
         else
         {
-            // No candidates at all — try syntactic-only discovery for execution methods
-            return TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
+            // No candidates at all — try resolving against the concrete context type.
+            // During source generation, CTE methods (With<TDto>) on the base QuarryContext
+            // return QuarryContext, but the chain may continue with context-specific methods
+            // like Users() that only exist on the derived class. Resolve via the chain root
+            // variable's concrete type instead.
+            var postCteResolved = TryResolveViaChainRootContext(invocation, semanticModel, cancellationToken);
+            if (postCteResolved != null)
+            {
+                methodSymbol = postCteResolved;
+            }
+            else
+            {
+                // Fallback: syntactic-only discovery for execution methods
+                return TryDiscoverExecutionSiteSyntactically(invocation, semanticModel, cancellationToken);
+            }
         }
 
         // ── Step 2: Containing type check ──────────────────────────────────
@@ -838,6 +851,22 @@ internal static class UsageSiteDiscovery
             }
         }
 
+        // For CTE definitions, forward-scan the chain to discover post-With methods
+        // that Roslyn can't resolve because With() returns QuarryContext (base class)
+        // and context-specific methods like Users() aren't on the base class.
+        if (site.Kind == InterceptorKind.CteDefinition)
+        {
+            var postCteSites = DiscoverPostCteSites(
+                invocation, site, semanticModel, cancellationToken);
+            if (postCteSites.Length > 0)
+            {
+                var builder = ImmutableArray.CreateBuilder<RawCallSite>(1 + postCteSites.Length);
+                builder.Add(site);
+                builder.AddRange(postCteSites);
+                return builder.MoveToImmutable();
+            }
+        }
+
         return ImmutableArray.Create(site);
     }
 
@@ -1010,6 +1039,271 @@ internal static class UsageSiteDiscovery
             results.Add(postJoinSite);
 
             currentInvoc = parentInvoc;
+        }
+
+        return results.ToImmutable();
+    }
+
+    /// <summary>
+    /// Walks forward from a CTE With() invocation through the fluent chain,
+    /// creating RawCallSites for methods that the normal discovery missed because
+    /// With() returns QuarryContext (base class) and subsequent context-specific
+    /// methods (like Users()) can't be resolved on the base class.
+    /// </summary>
+    private static ImmutableArray<RawCallSite> DiscoverPostCteSites(
+        InvocationExpressionSyntax cteInvocation,
+        RawCallSite cteSite,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var results = ImmutableArray.CreateBuilder<RawCallSite>();
+
+        // Walk UP the syntax tree to find invocations that use the CTE result as receiver.
+        var currentInvoc = cteInvocation;
+        while (currentInvoc.Parent is MemberAccessExpressionSyntax parentMa
+               && parentMa.Parent is InvocationExpressionSyntax parentInvoc
+               && parentMa.Expression == currentInvoc)
+        {
+            var methodName = parentMa.Name.Identifier.ValueText;
+
+            // Check if normal discovery can resolve this invocation
+            var parentSymbolInfo = semanticModel.GetSymbolInfo(parentInvoc, cancellationToken);
+            if (parentSymbolInfo.Symbol is IMethodSymbol || parentSymbolInfo.CandidateSymbols.Length > 0)
+            {
+                // Normal discovery should handle it — continue walking
+                currentInvoc = parentInvoc;
+                continue;
+            }
+
+            // Determine the site kind
+            InterceptorKind kind;
+            BuilderKind builderKind = BuilderKind.Query;
+            string? entityTypeName = null;
+
+            if (InterceptableMethods.TryGetValue(methodName, out kind))
+            {
+                // Known builder method (Join, Select, Where, Prepare, etc.)
+            }
+            else if (parentInvoc.ArgumentList.Arguments.Count == 0
+                     && methodName.Length > 0 && char.IsUpper(methodName[0]))
+            {
+                // Likely a chain root (Users(), Orders(), etc.)
+                // Resolve against the concrete context class
+                var resolved = TryResolveViaChainRootContext(parentInvoc, semanticModel, cancellationToken);
+                if (resolved == null)
+                    break;
+
+                kind = InterceptorKind.ChainRoot;
+                var returnType = resolved.ReturnType as INamedTypeSymbol;
+                if (returnType is { Arity: 1 })
+                    entityTypeName = returnType.TypeArguments[0].ToFullyQualifiedDisplayString();
+            }
+            else
+            {
+                break;
+            }
+
+            // Get location info
+            var location = GetMethodLocation(parentInvoc);
+            if (location == null)
+                break;
+
+            var (filePath, line, column) = location.Value;
+
+            // Get interceptable location
+            string? interceptableLocationData = null;
+            int interceptableLocationVersion = 1;
+#if QUARRY_GENERATOR
+            try
+            {
+#pragma warning disable RSEXPERIMENTAL002
+                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+                if (interceptableLocation != null)
+                {
+                    interceptableLocationData = interceptableLocation.Data;
+                    interceptableLocationVersion = interceptableLocation.Version;
+                }
+            }
+            catch { }
+#endif
+            if (interceptableLocationData == null)
+                break;
+
+            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
+            var isInsideLoop = DetectLoopAncestor(parentInvoc);
+
+            if (entityTypeName == null)
+                entityTypeName = cteSite.EntityTypeName;
+
+            // Parse clause lambda if applicable
+            SqlExpr? expression = null;
+            ClauseKind? clauseKind = null;
+            bool isDescending = false;
+            if (IsClauseMethod(kind))
+            {
+                var parsed = TryParseLambdaToSqlExpr(kind, parentInvoc, semanticModel);
+                if (parsed != null)
+                {
+                    expression = parsed.Value.Expression;
+                    clauseKind = parsed.Value.ClauseKind;
+                    isDescending = parsed.Value.IsDescending;
+                }
+            }
+
+            // Analyze projection for Select()
+            ProjectionInfo? projectionInfo = null;
+            if (kind == InterceptorKind.Select)
+            {
+                try
+                {
+                    var lambdaParamCount = GetLambdaParameterCount(parentInvoc);
+                    projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
+                        parentInvoc,
+                        entityCount: lambdaParamCount > 0 ? lambdaParamCount : 1,
+                        DefaultDiscoveryDialect);
+                }
+                catch { }
+            }
+
+            var postCteSite = new RawCallSite(
+                methodName: methodName,
+                filePath: filePath,
+                line: line,
+                column: column,
+                uniqueId: uniqueId,
+                kind: kind,
+                builderKind: builderKind,
+                entityTypeName: entityTypeName,
+                resultTypeName: null,
+                isAnalyzable: true,
+                nonAnalyzableReason: null,
+                interceptableLocationData: interceptableLocationData,
+                interceptableLocationVersion: interceptableLocationVersion,
+                location: new DiagnosticLocation(filePath, line, column, parentInvoc.Span),
+                expression: expression,
+                clauseKind: clauseKind,
+                isDescending: isDescending,
+                projectionInfo: projectionInfo,
+                contextClassName: cteSite.ContextClassName,
+                contextNamespace: cteSite.ContextNamespace,
+                isInsideLoop: isInsideLoop,
+                chainId: chainId);
+
+            EnrichDisplayClassInfo(postCteSite, parentInvoc);
+            results.Add(postCteSite);
+
+            // When we hit Prepare(), also discover prepared terminal usages on the
+            // assigned variable (e.g., lt.ToDiagnostics(), lt.ExecuteFetchAllAsync()).
+            if (kind == InterceptorKind.Prepare)
+            {
+                var preparedTerminals = DiscoverPreparedTerminalsForCteChain(
+                    parentInvoc, cteSite, chainId, semanticModel, cancellationToken);
+                results.AddRange(preparedTerminals);
+            }
+
+            currentInvoc = parentInvoc;
+        }
+
+        return results.ToImmutable();
+    }
+
+    /// <summary>
+    /// Discovers prepared terminal method calls (ToDiagnostics, ExecuteFetchAllAsync, etc.)
+    /// on the variable assigned from a CTE chain's .Prepare() call.
+    /// </summary>
+    private static ImmutableArray<RawCallSite> DiscoverPreparedTerminalsForCteChain(
+        InvocationExpressionSyntax prepareInvocation,
+        RawCallSite cteSite,
+        string? chainId,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var results = ImmutableArray.CreateBuilder<RawCallSite>();
+
+        // Find the variable name the chain is assigned to
+        var varName = GetAssignedVariableName(prepareInvocation);
+        if (varName == null)
+            return results.ToImmutable();
+
+        // Find the containing method to scan for variable usages
+        SyntaxNode? scope = null;
+        foreach (var ancestor in prepareInvocation.Ancestors())
+        {
+            if (ancestor is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax)
+            {
+                scope = ancestor;
+                break;
+            }
+        }
+        if (scope == null)
+            return results.ToImmutable();
+
+        // Scan for invocations on the variable (e.g., lt.ToDiagnostics(), lt.ExecuteFetchAllAsync())
+        foreach (var descendant in scope.DescendantNodes())
+        {
+            if (descendant is InvocationExpressionSyntax usage
+                && usage != prepareInvocation
+                && usage.Expression is MemberAccessExpressionSyntax usageMa
+                && usageMa.Expression is IdentifierNameSyntax usageIdent
+                && usageIdent.Identifier.ValueText == varName)
+            {
+                var usageMethodName = usageMa.Name.Identifier.ValueText;
+                if (!InterceptableMethods.TryGetValue(usageMethodName, out var usageKind))
+                    continue;
+
+                var location = GetMethodLocation(usage);
+                if (location == null)
+                    continue;
+
+                var (filePath, line, column) = location.Value;
+
+                string? interceptableLocationData = null;
+                int interceptableLocationVersion = 1;
+#if QUARRY_GENERATOR
+                try
+                {
+#pragma warning disable RSEXPERIMENTAL002
+                    var interceptableLocation = semanticModel.GetInterceptableLocation(usage, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+                    if (interceptableLocation != null)
+                    {
+                        interceptableLocationData = interceptableLocation.Data;
+                        interceptableLocationVersion = interceptableLocation.Version;
+                    }
+                }
+                catch { }
+#endif
+                if (interceptableLocationData == null)
+                    continue;
+
+                var uniqueId = GenerateUniqueId(filePath, line, column, usageMethodName);
+                var usageChainId = chainId; // Same chain as the Prepare site
+
+                var terminalSite = new RawCallSite(
+                    methodName: usageMethodName,
+                    filePath: filePath,
+                    line: line,
+                    column: column,
+                    uniqueId: uniqueId,
+                    kind: usageKind,
+                    builderKind: BuilderKind.Query,
+                    entityTypeName: cteSite.EntityTypeName,
+                    resultTypeName: null,
+                    isAnalyzable: true,
+                    nonAnalyzableReason: null,
+                    interceptableLocationData: interceptableLocationData,
+                    interceptableLocationVersion: interceptableLocationVersion,
+                    location: new DiagnosticLocation(filePath, line, column, usage.Span),
+                    contextClassName: cteSite.ContextClassName,
+                    contextNamespace: cteSite.ContextNamespace,
+                    chainId: usageChainId,
+                    isPreparedTerminal: true);
+
+                EnrichDisplayClassInfo(terminalSite, usage);
+                results.Add(terminalSite);
+            }
         }
 
         return results.ToImmutable();
@@ -3336,6 +3630,55 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
+    /// Resolves a method call against the concrete context type when the semantic model
+    /// can't resolve it because the receiver type is the base QuarryContext class.
+    /// This happens after CTE With() calls, which return QuarryContext during source
+    /// generation but the chain continues with context-specific methods like Users().
+    /// </summary>
+    private static IMethodSymbol? TryResolveViaChainRootContext(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken ct)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax ma)
+            return null;
+
+        var methodName = ma.Name.Identifier.ValueText;
+
+        // Walk the fluent chain root to find the context variable
+        var chainRoot = VariableTracer.WalkFluentChainRoot(ma.Expression);
+        var rootType = semanticModel.GetTypeInfo(chainRoot, ct).Type;
+
+        if (rootType is not INamedTypeSymbol rootNamed || !IsQuarryContextType(rootNamed))
+            return null;
+
+        // Don't resolve against the base class itself — only derived context classes
+        if (rootNamed.Name == "QuarryContext")
+            return null;
+
+        var argCount = invocation.ArgumentList.Arguments.Count;
+        foreach (var member in rootNamed.GetMembers(methodName))
+        {
+            if (member is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                return ms;
+        }
+
+        // Also check base type members (for methods defined on QuarryContext like FromCte)
+        var baseType = rootNamed.BaseType;
+        while (baseType != null)
+        {
+            foreach (var member in baseType.GetMembers(methodName))
+            {
+                if (member is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                    return ms;
+            }
+            baseType = baseType.BaseType;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Detects whether an invocation is inside a CTE inner chain (argument to a With() call).
     /// Returns the flag and the argument's SpanStart for ChainId differentiation.
     /// </summary>
@@ -3356,8 +3699,14 @@ internal static class UsageSiteDiscovery
                 && parentInvocation.Expression is MemberAccessExpressionSyntax parentMa
                 && parentMa.Name.Identifier.ValueText == "With")
             {
-                // Syntactic match — verify semantically that it's a Quarry CTE method
-                var parentSymbol = semanticModel.GetSymbolInfo(parentInvocation, ct).Symbol as IMethodSymbol;
+                // Syntactic match — verify semantically that it's a Quarry CTE method.
+                // The semantic model may not fully resolve the With() call during source
+                // generation (e.g., when the generated context class isn't yet available),
+                // so fall back to candidate symbols if the primary symbol is null.
+                var symbolInfo = semanticModel.GetSymbolInfo(parentInvocation, ct);
+                var parentSymbol = symbolInfo.Symbol as IMethodSymbol;
+                if (parentSymbol == null && symbolInfo.CandidateSymbols.Length > 0)
+                    parentSymbol = symbolInfo.CandidateSymbols[0] as IMethodSymbol;
                 if (parentSymbol != null && IsQuarryContextType(parentSymbol.ContainingType))
                     return (true, arg.SpanStart);
             }

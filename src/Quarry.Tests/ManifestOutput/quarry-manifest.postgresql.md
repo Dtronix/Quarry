@@ -2172,6 +2172,22 @@ SELECT "UserId", "UserName", "Email" FROM "users" WHERE ("IsActive" = TRUE) AND 
 SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActive" = TRUE)
 ```
 
+---
+
+### Where(...).Orders()
+
+```sql
+SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
 ## SchemaPgDb
 
 ### Users().ToDiagnostics()

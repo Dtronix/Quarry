@@ -2159,6 +2159,22 @@ SELECT `UserId`, `UserName`, `Email` FROM `users` WHERE (`IsActive` = 1) AND (`U
 SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActive` = 1)
 ```
 
+---
+
+### Where(...).Orders()
+
+```sql
+SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order`
+```
+
 ## SchemaMyDb
 
 ### Users().ToDiagnostics()
