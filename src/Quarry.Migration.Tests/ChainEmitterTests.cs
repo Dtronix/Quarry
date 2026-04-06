@@ -689,6 +689,24 @@ public class ChainEmitterTests
     }
 
     [Test]
+    public void Delete_WithTableAlias()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "DELETE FROM users u WHERE u.user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain("db.Users()"));
+        Assert.That(result.ChainCode, Does.Contain(".Delete()"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
+        Assert.That(result.ChainCode, Does.Contain(".ExecuteNonQueryAsync()"));
+    }
+
+    [Test]
     public void Delete_UnknownTable_ReturnsNull()
     {
         var schema = BuildSchemaMap(UsersEntity());
@@ -754,6 +772,23 @@ public class ChainEmitterTests
         Assert.That(result.ChainCode, Does.Contain(".All()"));
         Assert.That(result.Diagnostics, Has.Some.Matches<ConversionDiagnostic>(d =>
             d.Message.Contains("UPDATE without WHERE")));
+    }
+
+    [Test]
+    public void Update_WithComputedExpression()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "UPDATE users SET salary = salary + 1000 WHERE user_id = @id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql, method: "ExecuteAsync", resultType: null, parameterNames: new[] { "id" });
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Is.Not.Null);
+        Assert.That(result.ChainCode, Does.Contain(".Update()"));
+        Assert.That(result.ChainCode, Does.Contain(".Set(u => { u.Salary = u.Salary + 1000; })"));
+        Assert.That(result.ChainCode, Does.Contain(".Where(u => u.UserId == id)"));
     }
 
     [Test]

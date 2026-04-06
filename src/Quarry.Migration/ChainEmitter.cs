@@ -201,13 +201,10 @@ internal sealed class ChainEmitter
 
     private ConversionResult TranslateInsert(SqlInsertStatement stmt, DapperCallSite callSite)
     {
-        if (!_schema.TryGetEntity(stmt.Table.TableName, out var entity))
-        {
-            _diagnostics.Add(new ConversionDiagnostic(
-                ConversionDiagnosticSeverity.Warning,
-                $"Table '{stmt.Table.TableName}' not found in schema — cannot convert"));
+        if (!RegisterPrimaryTable(stmt.Table))
             return new ConversionResult(callSite.Sql, null, _diagnostics);
-        }
+
+        var entity = _tables.Values.First().Entity;
 
         // Build a comment showing the approximate chain pattern
         var sb = new StringBuilder();
