@@ -10,7 +10,7 @@ phase: IMPLEMENT
 status: suspended
 issue: #187
 pr:
-session: 3
+session: 4
 phases-total: 9
 phases-complete: 8
 
@@ -30,31 +30,33 @@ Baseline: 2779 tests passing (65 analyzer + 2714 main), 0 pre-existing failures.
 - 2026-04-05: Multiple CTEs supported from the start — `db.With<A>(a).With<B>(b).Users()...`
 
 ## Suspend State
-- Current phase: IMPLEMENT phase 9/9 (Tests — in progress)
-- WIP commit: f0a8812 (Phase 9 test infrastructure and pipeline fixes)
-- Test status: all 2780 tests passing (65 analyzer + 2715 main), including 1 new CTE test
-- SQLite FromCte test passes end-to-end (WITH clause generated, query executes, results correct)
-- **Blocking issue**: `DetectCteInnerChain` in `UsageSiteDiscovery.cs` fails for non-SQLite dialect contexts (Pg/My/Ss). The inner chain sites (Orders, Where inside With() argument) are not tagged with `:cte-inner:` suffix on their ChainId, so they get mixed into the outer chain group. This breaks CTE composition for those dialects.
-  - Root cause: unknown — detection works for SQLite (TestDbContext) but not for PgDb/MyDb/SsDb. The syntactic and semantic checks in DetectCteInnerChain appear correct. Likely a subtle difference in how the semantic model resolves the parent `With()` invocation for different context types.
-  - Diagnostic approach: add conditional logging inside DetectCteInnerChain for each dialect's inner chain sites to compare `parentSymbol`, `containingType`, and `IsQuarryContextType` results.
-- **Fixes implemented this session** (all in the WIP commit):
-  1. Added `With<TDto>()` and `FromCte<TDto>()` to `QuarryContext` base class so the semantic model can resolve CTE method calls during incremental generator discovery (before generated code exists)
-  2. Added `new` keyword to generated context CTE methods to suppress shadowing warnings
-  3. Fixed `EmitCteDefinition` to use `Unsafe.As<ContextClass>()` for carrier-to-context return type
-  4. Fixed `DiscoverCteSite` to resolve concrete context class from receiver expression (walks chain root) instead of using method's containing type (QuarryContext)
-  5. Added inner CTE chains to `ChainAnalyzer.Analyze()` results so they get carrier classes and interceptors at runtime
-  6. Removed inner chain suppression from `PipelineOrchestrator` file grouping
-- **Remaining Phase 9 work**:
-  1. Fix multi-dialect inner chain detection (blocking)
-  2. Expand CrossDialectCteTests with proper 4-dialect assertions
-  3. Add CTE+Join test (requires CTE DTO entity resolution)
-  4. Add captured variable test
-  5. Add multiple CTE test
-  6. Verify all 4 dialects produce correct SQL
+- Current phase: IMPLEMENT phase 9/9 (Tests — partially complete)
+- WIP commit: (none — clean commit a748e02)
+- Test status: all 2780 tests passing (65 analyzer + 2715 main), including 1 CTE test (4-dialect FromCte)
+- **Completed in this session**:
+  1. Fixed `DetectCteInnerChain` candidate symbols fallback — non-SQLite dialects now correctly detect CTE inner chains
+  2. Expanded `Cte_FromCte_SimpleFilter` test to verify SQL for all 4 dialects (SQLite, Pg, My, Ss)
+  3. Added `TryResolveViaChainRootContext` — resolves context-specific methods after CTE With() calls
+  4. Added `DiscoverPostCteSites` — forward-scans CTE chains for unresolvable post-With methods
+  5. Added `DiscoverPreparedTerminalsForCteChain` — discovers prepared terminals on CTE chain variables
+- **Blocking issue for CTE+Join/captured vars/multiple CTEs**:
+  - `QuarryContext.With<TDto>()` returns `QuarryContext` (base class) during source generation
+  - Context-specific methods like `Users()` can't be resolved on `QuarryContext`
+  - This cascades: everything after `Users()` (Join, Select, Prepare, terminals) also fails to resolve
+  - The `DiscoverPostCteSites` infrastructure partially addresses this but the full chain type resolution remains incomplete (incorrect builder types in generated interceptors)
+  - Root cause: the generated context class (with `new TestDbContext With<TDto>()` returning concrete type) isn't available during the generator's own semantic model analysis
+  - Potential fixes:
+    a. Self-referencing generic pattern: `QuarryContext<TSelf>` where `With()` returns `TSelf`
+    b. Comprehensive syntactic chain discovery (expand `DiscoverPostCteSites` with full type tracking)
+    c. Make context CTE methods available via `RegisterPostInitializationOutput`
+- **Remaining Phase 9 work** (all blocked by above):
+  1. CTE+Join test (With→Users→Join→Select)
+  2. Captured variable test (inner query with captured var parameter)
+  3. Multiple CTE test (With→With→Users→Join→Join)
+  4. All 3 require `.Users()` after `.With()`, which triggers the cascade
 - Key files:
-  - `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs:DetectCteInnerChain` — multi-dialect fix needed
-  - `src/Quarry.Tests/SqlOutput/CrossDialectCteTests.cs` — expand tests
-  - `src/Quarry/Context/QuarryContext.cs` — CTE base class methods (new in session 3)
+  - `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs` — DetectCteInnerChain fix, post-CTE discovery
+  - `src/Quarry.Tests/SqlOutput/CrossDialectCteTests.cs` — 4-dialect FromCte test
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
@@ -65,3 +67,4 @@ Baseline: 2779 tests passing (65 analyzer + 2714 main), 0 pre-existing failures.
 | 1 | IMPLEMENT | IMPLEMENT | Phases 1-3 committed, suspended at phase 4 (context exhaustion) |
 | 2 | IMPLEMENT | IMPLEMENT | Resumed — phases 4-8 committed, suspended at phase 9 (context exhaustion) |
 | 3 | IMPLEMENT | IMPLEMENT | Resumed — Phase 9 pipeline fixes (6 fixes), SQLite CTE test passing, suspended (multi-dialect inner chain detection issue) |
+| 4 | IMPLEMENT | IMPLEMENT | Resumed — Fixed multi-dialect CTE detection (candidate symbols fallback), expanded FromCte test to 4 dialects, added post-CTE discovery infrastructure. CTE+Join/captured vars/multiple CTEs blocked by With() return type cascade. |
