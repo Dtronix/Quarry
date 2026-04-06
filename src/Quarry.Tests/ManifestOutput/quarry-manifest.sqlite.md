@@ -3077,24 +3077,24 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "User
 
 ---
 
-### Users().Where(...).Select(...).Union(...).Prepare().ExecuteFetchAllAsync()
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p0
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3
 ```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-| `@p1` | `int` |
 
 ---
 
 ### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 3
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= @p0 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= @p1
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
