@@ -1,69 +1,61 @@
 # Work Handoff: 181-set-operations
 
 ## Key Components
-- `src/Quarry/Query/IQueryBuilder.cs` — Union/UnionAll/Intersect/IntersectAll/Except/ExceptAll methods on both IQueryBuilder<T> and IQueryBuilder<TEntity, TResult> (including cross-entity generic overloads)
-- `src/Quarry.Generator/IR/QueryPlan.cs` — SetOperatorKind enum, SetOperationPlan class, QueryPlan.SetOperations property
+- `src/Quarry/Query/IQueryBuilder.cs` — Union/UnionAll/Intersect/IntersectAll/Except/ExceptAll methods
+- `src/Quarry.Generator/IR/QueryPlan.cs` — SetOperatorKind, SetOperationPlan, PostUnionWhereTerms/GroupByExprs/HavingExprs
 - `src/Quarry.Generator/Models/InterceptorKind.cs` — 6 new InterceptorKind values
-- `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs` — InterceptableMethods dict entries, ExtractSetOperationOperandChainId helper
-- `src/Quarry.Generator/IR/RawCallSite.cs` — OperandChainId property
-- `src/Quarry.Generator/Parsing/ChainAnalyzer.cs` — Inline operand splitting, AnalyzeOperandChain, set operation plan building, IsSetOperationKind/MapToSetOperatorKind helpers
-- `src/Quarry.Generator/IR/SqlAssembler.cs` — Set operation SQL rendering (UNION/INTERSECT/EXCEPT between SELECT statements), GetSetOperatorKeyword helper
-- `src/Quarry.Generator/CodeGen/SetOperationBodyEmitter.cs` — Carrier interceptor for set operation methods
-- `src/Quarry.Generator/CodeGen/FileEmitter.cs` — Dispatch for set operation InterceptorKinds
+- `src/Quarry.Generator/Parsing/UsageSiteDiscovery.cs` — Set operation discovery, OperandChainId extraction, OperandArgEndLine/Column
+- `src/Quarry.Generator/IR/RawCallSite.cs` — OperandChainId, OperandArgEndLine, OperandArgEndColumn
+- `src/Quarry.Generator/Parsing/ChainAnalyzer.cs` — Inline operand splitting with boundary detection, AnalyzeOperandChain, seenSetOperation flag for post-union clause routing
+- `src/Quarry.Generator/IR/SqlAssembler.cs` — Set operation SQL rendering, subquery wrapping for post-union clauses, paramBaseOffset for operand parameter indices
+- `src/Quarry.Generator/CodeGen/SetOperationBodyEmitter.cs` — Per-index set operation interceptor emission with operand carrier class casting
+- `src/Quarry.Generator/CodeGen/FileEmitter.cs` — Operand chain carrier emission, operandCarrierNames mapping, QueryPlanReferenceComparer
 - `src/Quarry.Generator/CodeGen/InterceptorRouter.cs` — EmitterCategory.SetOperation routing
-- `src/Quarry.Tests/SqlOutput/CrossDialectSetOperationTests.cs` — 7 cross-dialect tests (currently failing)
+- `src/Quarry.Generator/IR/AssembledPlan.cs` — IsOperandChain flag propagation
+- `src/Quarry.Generator/DiagnosticDescriptors.cs` — QRY070 (IntersectAllNotSupported), QRY071 (ExceptAllNotSupported)
+- `src/Quarry.Generator/IR/PipelineOrchestrator.cs` — QRY070/QRY071 emission in CollectTranslatedDiagnostics
+- `src/Quarry.Tests/SqlOutput/CrossDialectSetOperationTests.cs` — 11 tests (+ 3 skipped diagnostic tests in GeneratorTests.cs)
 
 ## Completions (This Session)
-- Phase 1: Foundation types + runtime API (committed af0d050)
-- Phase 2: Discovery + chain linking (committed 4dfa517)
-- Phase 3 partial: Chain analysis inline operand splitting, SQL assembly, SetOperationBodyEmitter (WIP commit 3e175b9)
+- Phase 3-4: Chain analysis, SQL assembly, dual-carrier code generation
+- Phase 5: Post-union WHERE/GroupBy/Having with subquery wrapping
+- Phase 6: QRY070/QRY071 diagnostics for INTERSECT ALL/EXCEPT ALL
+- Remediation round 1: Chained set ops fix, PostUnionWhereTerms Equals, GroupBy/Having redirect, PipelineErrorBag
+- Remediation round 2: Operand param indices fix (@p0 collision), diagnostic ID collision renumbering (QRY041->QRY070), PostUnionGroupBy/HavingExprs Equals
+- C-tier items: Cross-dialect param tests, GroupBy test, diagnostic scaffolding
 
 ## Previous Session Completions
-(none — first session)
+- Phase 1: Foundation types + runtime API
+- Phase 2: Discovery + chain linking
 
 ## Progress
-- Phases 1-2 fully complete and committed
-- Phase 3-4 merged — SQL assembly works for set operations. The QueryPlan → SQL rendering correctly generates `SELECT ... UNION SELECT ...` with ORDER BY/LIMIT on combined result
-- Code generation partially works — SetOperationBodyEmitter generates the Union method interceptor but the operand chain's sites don't get interceptors
+- All 6 implementation phases complete
+- Two review passes completed with full remediation
+- User requested a THIRD review pass before merge
+- PR #201 is open, branch pushed and rebased on master
 
 ## Current State
-The blocking issue is that the operand chain (right-hand side of Union/Intersect/Except) shares the same ChainId as the main chain. Both chains are rooted at the same db context variable in the same method. The inline operand splitting in ChainAnalyzer correctly identifies operand sites and builds their QueryPlan. The SQL is correctly assembled. But the operand's runtime method calls (db.Users(), .Where()) need interceptors to create and configure the operand carrier at runtime.
+Feature-complete for same-entity set operations. All 2870 tests pass (3 diagnostic tests skipped). Branch rebased on origin/master. PR #201 open.
 
-### Failed approach: Skipping operand chains
-Tried skipping operand chains in the analysis loop entirely. Result: operand's Users() call throws NotSupportedException because no interceptor is generated.
-
-### Failed approach: isOperandChain flag with synthetic terminal
-Tried using ChainRoot as synthetic execution site for operand chains. Result: build succeeds but the generated interceptor for Union has wrong signature (tries to use Users() signature for Union method). Fixed the signature issue but the operand's own ChainRoot and Where interceptors are still not generated because the sites are extracted during splitting.
+Next session: run fresh REVIEW analysis, classify findings, remediate, then FINALIZE (squash merge).
 
 ## Known Issues / Bugs
-- 7 new tests in CrossDialectSetOperationTests fail with NotSupportedException
-- The AnalyzeOperandChain method is unused in the current approach (inline splitting produces plans directly)
+None in implemented scope.
 
 ## Dependencies / Blockers
-- The operand carrier problem blocks all Phase 3-6 work
+None. Ready for review and merge.
 
 ## Architecture Decisions
-- Set operations are modeled as `IReadOnlyList<SetOperationPlan>` on QueryPlan (each with Kind + operand QueryPlan + parameter offset)
-- SQL rendering: left SELECT rendered normally, then each set operation appends `UNION/INTERSECT/EXCEPT + operand SELECT`, then ORDER BY/LIMIT apply to combined result
-- Inline operand splitting: when both chains share ChainId, ChainAnalyzer identifies operand sites by position (sites between set-op call and next terminal that start with a new ChainRoot)
-- SetOperationBodyEmitter: pass-through interceptor that accepts the operand builder argument, copies operand parameters to main carrier fields, returns the carrier
+- **Dual-carrier approach**: Each operand gets its own carrier class. Union interceptor copies parameter fields at correct offsets.
+- **Operand boundary detection**: OperandArgEndLine/Column from Roslyn syntax spans prevents post-union clauses from being absorbed into the operand during inline splitting.
+- **Post-union subquery wrapping**: WHERE/GroupBy/Having after set operations get `SELECT * FROM (...) AS "__set"`. ORDER BY/LIMIT apply directly.
+- **Diagnostic IDs**: QRY070/QRY071 (QRY041/042 already taken by RawSqlUnresolvableColumn).
 
 ## Open Questions
-- Which of the 3 solution approaches for operand carrier generation is best? (See workflow.md Suspend State for descriptions)
-- Should the operand chain share the main carrier (approach 2) or get its own carrier (approach 1)?
-- How should parameter copying work at runtime between operand and main carriers?
+- User wants another review pass — unclear what specific concerns remain.
+- Cross-entity unions deferred (API exists, discovery/codegen don't handle cross-entity type params yet).
 
 ## Next Work (Priority Order)
-1. **Solve operand chain carrier generation** — This is the critical blocker. The operand's ChainRoot and clause sites need interceptors. Recommended approach: dual carrier (approach 1) — generate a separate carrier for the extracted operand sites. The operand carrier is created by its ChainRoot interceptor and clause methods configure it. The Union interceptor on the main carrier receives the operand carrier, casts it, and copies parameter field values. This requires:
-   a. After inline splitting, create an AnalyzedChain for the operand sites (with ChainRoot as synthetic execution site)
-   b. Run the operand AnalyzedChain through SqlAssembler and CarrierAnalyzer
-   c. FileEmitter generates a separate carrier class for the operand
-   d. SetOperationBodyEmitter's Union interceptor casts `other` to the operand carrier class and copies P0, P1, etc.
-
-2. **Get the 7 CrossDialectSetOperationTests passing** — Once the operand carrier works, verify SQL output and execution results
-
-3. **Commit phases 3-4** — Once tests pass
-
-4. **Phase 5: Cross-entity support + post-union WHERE** — Subquery wrapping for post-union filtering
-
-5. **Phase 6: Diagnostics** — Compile-time errors for unsupported dialect combinations
+1. Run third REVIEW analysis pass (fresh review.md)
+2. Classify and remediate any findings
+3. FINALIZE — delete session artifacts, squash merge PR #201, clean up worktree

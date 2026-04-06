@@ -5,7 +5,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: REVIEW
-status: active
+status: suspended
 issue: #181
 pr: #201
 session: 2
@@ -23,8 +23,31 @@ Baseline: 2779 tests pass (65 analyzer, 2714 runtime). No pre-existing failures.
 - 2026-04-05: Auto subquery wrapping for post-union WHERE/HAVING/GroupBy
 - 2026-04-05: Dual-carrier approach for operand chains — each operand gets its own carrier class with parameter fields; Union interceptor copies from operand carrier to main carrier at correct offsets
 ## Suspend State
+- Current phase: REVIEW (user requested reset to REVIEW twice — wants another review pass)
+- WIP commit: bdc6dda
+- Test status: All 2870 tests pass (2767 runtime + 103 analyzer), 3 diagnostic tests skipped (test infra limitation)
+- Immediate next step: Run fresh REVIEW analysis pass, classify findings, then REMEDIATE → FINALIZE
+- PR #201 is open and pushed. Branch is rebased on origin/master (up to date).
+
+### Completed remediation from prior reviews:
+- Fixed operand parameter placeholder indices (@p0 collision → correct @p{offset})
+- Fixed diagnostic ID collision (QRY041 → QRY070, QRY042 → QRY071)
+- Fixed chained set operations (SetOperationBodyEmitter uses per-index dispatch)
+- Fixed PostUnionWhereTerms/GroupByExprs/HavingExprs in QueryPlan.Equals
+- Added post-union GroupBy/Having redirect to subquery wrapping
+- Added PipelineErrorBag reporting for silent catch blocks
+- Added cross-dialect parameterized SQL assertions (SQLite/PostgreSQL/MySQL/SQL Server)
+- Added post-union GroupBy test
+- Added chained set operations test
+- Added QRY070/071 diagnostic test scaffolding (marked [Ignore])
+
+### Known remaining items (from second review):
+- AnalyzeOperandChain duplicates ~215 lines from AnalyzeChainGroup (refactoring deferred)
+- Cross-entity unions deferred (requires interceptor signature changes for generic type params)
+- GetSetOperatorKeyword default case returns "UNION" instead of throwing (low risk)
+- Post-union GroupBy paramIndex not advanced for parameterized expressions (unlikely in practice)
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT | Started from issue #181. Explored codebase, clarified design. Completed phases 1-2 (types, API, discovery). Phase 3-4 in progress — blocked on operand carrier generation. |
-| 2 | IMPLEMENT | REVIEW | Resumed. Solved operand carrier generation (dual-carrier approach). Phases 3-6 complete. Post-union WHERE subquery wrapping. QRY041/QRY042 diagnostics. All 2787 tests pass. Cross-entity unions deferred (requires interceptor signature changes). |
+| 2 | IMPLEMENT | REVIEW | Resumed. Solved operand carrier generation (dual-carrier approach). Phases 3-6 complete. Two review passes with remediation. Fixed: param indices, diagnostic IDs, chained set ops, Equals gaps, cross-dialect tests, post-union GroupBy. PR #201 created. User requested third review pass before merge. |
