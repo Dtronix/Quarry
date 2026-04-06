@@ -539,6 +539,8 @@ internal static class ChainAnalyzer
 
         // Build QueryPlan terms from TranslatedClause data
         var whereTerms = new List<WhereTerm>();
+        var postUnionWhereTerms = new List<WhereTerm>();
+        bool seenSetOperation = false;
         var orderTerms = new List<OrderTerm>();
         var groupByExprs = new List<SqlExpr>();
         var havingExprs = new List<SqlExpr>();
@@ -605,7 +607,10 @@ internal static class ChainAnalyzer
                 switch (clause.Kind)
                 {
                     case ClauseKind.Where:
-                        whereTerms.Add(new WhereTerm(expr, clauseBitIndex));
+                        if (seenSetOperation)
+                            postUnionWhereTerms.Add(new WhereTerm(expr, clauseBitIndex));
+                        else
+                            whereTerms.Add(new WhereTerm(expr, clauseBitIndex));
                         break;
 
                     case ClauseKind.OrderBy:
@@ -799,6 +804,7 @@ internal static class ChainAnalyzer
             }
             else if (IsSetOperationKind(kind))
             {
+                seenSetOperation = true;
                 // First check inline operand plans (same-ChainId operands split during preprocessing)
                 QueryPlan? opPlan = null;
                 var opKind = MapToSetOperatorKind(kind);
@@ -1017,7 +1023,8 @@ internal static class ChainAnalyzer
             tier: tier,
             unmatchedMethodNames: unmatchedMethodNames,
             implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null,
-            setOperations: setOperationPlans.Count > 0 ? setOperationPlans : null);
+            setOperations: setOperationPlans.Count > 0 ? setOperationPlans : null,
+            postUnionWhereTerms: postUnionWhereTerms.Count > 0 ? postUnionWhereTerms : null);
 
         // Trace logging: only for traced chains. Reconstruct per-site discovery/binding/
         // translation traces from the TranslatedCallSite data, then log chain-level analysis.

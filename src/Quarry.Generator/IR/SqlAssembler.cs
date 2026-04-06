@@ -282,6 +282,34 @@ internal static class SqlAssembler
                 sb.Append(operandSql.Sql);
                 paramIndex += operandSql.ParameterCount;
             }
+
+            // Post-union WHERE: wrap the entire set operation in a derived table
+            if (plan.PostUnionWhereTerms.Count > 0)
+            {
+                var innerSql = sb.ToString();
+                sb.Clear();
+                sb.Append("SELECT * FROM (");
+                sb.Append(innerSql);
+                sb.Append(") AS ");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__set"));
+
+                // Render post-union WHERE terms
+                var postWhereActive = GetActiveTerms(plan.PostUnionWhereTerms, mask);
+                if (postWhereActive.Count > 0)
+                {
+                    sb.Append(" WHERE ");
+                    for (int i = 0; i < postWhereActive.Count; i++)
+                    {
+                        if (i > 0) sb.Append(" AND ");
+                        var w = postWhereActive[i];
+                        var termParamCount = CountParameters(w.Condition);
+                        if (postWhereActive.Count > 1) sb.Append('(');
+                        sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
+                        if (postWhereActive.Count > 1) sb.Append(')');
+                        paramIndex += termParamCount;
+                    }
+                }
+            }
         }
 
         // ORDER BY (applies to combined result when set operations present)

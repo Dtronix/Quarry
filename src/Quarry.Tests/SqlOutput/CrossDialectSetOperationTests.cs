@@ -217,4 +217,41 @@ internal class CrossDialectSetOperationTests
     }
 
     #endregion
+
+    #region Post-Union WHERE (subquery wrapping)
+
+    [Test]
+    public async Task Union_WithPostUnionWhere()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Lite.Users().Where(u => u.UserId == 3).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId <= 2).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Where(u => u.UserId == 3).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId <= 2).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName))
+            .Union(My.Users().Where(u => u.UserId == 3).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId <= 2).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Users().Where(u => u.UserId == 3).Select(u => (u.UserId, u.UserName)))
+            .Where(u => u.UserId <= 2).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT * FROM (SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" = 3) AS \"__set\" WHERE \"UserId\" <= 2",
+            pg:     "SELECT * FROM (SELECT \"UserId\", \"UserName\" FROM \"users\" UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" = 3) AS \"__set\" WHERE \"UserId\" <= 2",
+            mysql:  "SELECT * FROM (SELECT `UserId`, `UserName` FROM `users` UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` = 3) AS `__set` WHERE `UserId` <= 2",
+            ss:     "SELECT * FROM (SELECT [UserId], [UserName] FROM [users] UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] = 3) AS [__set] WHERE [UserId] <= 2");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // All users: (1,Alice), (2,Bob), (3,Charlie). UNION with UserId=3: same set.
+        // Post-union WHERE UserId <= 2: (1,Alice), (2,Bob) → 2 results
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    #endregion
 }

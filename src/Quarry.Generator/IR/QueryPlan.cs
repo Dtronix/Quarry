@@ -36,13 +36,15 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
         IReadOnlyList<string>? unmatchedMethodNames = null,
         string? forkedVariableName = null,
         IReadOnlyList<ImplicitJoinInfo>? implicitJoins = null,
-        IReadOnlyList<SetOperationPlan>? setOperations = null)
+        IReadOnlyList<SetOperationPlan>? setOperations = null,
+        IReadOnlyList<WhereTerm>? postUnionWhereTerms = null)
     {
         Kind = kind;
         PrimaryTable = primaryTable;
         Joins = joins;
         ImplicitJoins = implicitJoins ?? Array.Empty<ImplicitJoinInfo>();
         SetOperations = setOperations ?? Array.Empty<SetOperationPlan>();
+        PostUnionWhereTerms = postUnionWhereTerms ?? Array.Empty<WhereTerm>();
         WhereTerms = whereTerms;
         OrderTerms = orderTerms;
         GroupByExprs = groupByExprs;
@@ -67,6 +69,7 @@ internal sealed class QueryPlan : IEquatable<QueryPlan>
     public IReadOnlyList<ImplicitJoinInfo> ImplicitJoins { get; }
     public IReadOnlyList<SetOperationPlan> SetOperations { get; }
     public IReadOnlyList<WhereTerm> WhereTerms { get; }
+    public IReadOnlyList<WhereTerm> PostUnionWhereTerms { get; }
     public IReadOnlyList<OrderTerm> OrderTerms { get; }
     public IReadOnlyList<SqlExpr> GroupByExprs { get; }
     public IReadOnlyList<SqlExpr> HavingExprs { get; }
