@@ -116,8 +116,7 @@ async Task<int> DispatchAsync(string command, string[] args)
             return await ConvertCommand.RunAsync(
                 GetOpt(opts, "p", "project", "."),
                 GetOptOrNull(opts, "d", "dialect"),
-                GetOptOrNull(opts, "f", "from"),
-                HasFlag(opts, null, "apply"));
+                GetOptOrNull(opts, "f", "from"));
 
         case "scaffold":
             await ScaffoldCommand.RunAsync(

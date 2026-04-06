@@ -8,9 +8,8 @@ using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Quarry.Migration;
 
-namespace Quarry.Migration.Analyzers;
+namespace Quarry.Migration;
 
 [ExportCodeFixProvider(LanguageNames.CSharp), Shared]
 internal sealed class DapperMigrationCodeFix : CodeFixProvider
@@ -49,17 +48,15 @@ internal sealed class DapperMigrationCodeFix : CodeFixProvider
 
         // Detect the Dapper call
         var detector = new DapperDetector();
-        var sites = detector.Detect(semanticModel, invocation);
-        if (sites.Count == 0) return document;
-
-        var site = sites[0];
+        var site = detector.TryDetectSingle(semanticModel, invocation);
+        if (site == null) return document;
 
         // Build schema map
         var resolver = new SchemaResolver();
         var schemaMap = resolver.Resolve(semanticModel.Compilation);
 
-        // Translate
-        var parseResult = Quarry.Shared.Sql.Parser.SqlParser.Parse(site.Sql, SqlDialect.SQLite);
+        // Translate — try SQLite first, fall back to SQL Server
+        var parseResult = DapperMigrationAnalyzer.TryParseWithFallback(site.Sql);
         var emitter = new ChainEmitter(schemaMap);
         var result = emitter.Translate(parseResult, site);
 

@@ -1,69 +1,81 @@
-# Review: 185-migration-dapper
+# Review: 185-migration-dapper (Re-review)
+
+Reviewer ran all 76 migration tests (pass), builds clean (0 warnings) for both Quarry.Migration and Quarry.Migration.Analyzers.
 
 ## Plan Compliance
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| Roslyn version 4.14.0 used in Quarry.Migration and Quarry.Migration.Analyzers instead of plan-specified 5.0.0 | Low | Functionally correct (lower version is a stricter compatibility choice for netstandard2.0 analyzer packages), but deviates from plan. Existing Quarry.Analyzers uses 5.0.0. |
-| `--apply` flag documented in CLI help but implementation prints "not yet implemented" | Medium | Plan Phase 8 specifies `--apply` to modify source files in place. This is stubbed but not functional, meaning the CLI convert command is read-only. |
-| `--dry-run` flag from plan not implemented as an explicit option | Low | The default behavior is dry-run (report only), which matches plan intent. Just no explicit `--dry-run` flag. Acceptable since `--apply` being the opt-in action is the right UX. |
-| Missing `ProjectReference` to `Quarry` in test project | Low | Plan Phase 1 specifies tests should reference `Quarry` for entity type references. Tests work without it by defining stub types inline, which is arguably better for isolation. |
-| Code fix does not add `using` directives as plan Phase 7 specifies | Medium | Plan says "Add necessary using directives if missing." The code fix replaces syntax but never checks or adds using directives (e.g., `using Quarry;`). Generated chain code may not compile without manual `using` additions. |
-| No tests for ConvertCommand or DapperConverter (Phase 8 test requirement) | Medium | Plan specifies testing the orchestration logic. The public `DapperConverter` facade and `ConvertCommand` have zero test coverage. |
-| Missing test for NOT LIKE (Phase 6 test requirement) | Low | Plan lists `SELECT * FROM users WHERE name NOT LIKE '%test%'` as a required test case. Not present. The logic appears correct (parser wraps in SqlUnaryExpr(Not) which EmitUnary handles), but it is untested. |
-| Missing test for unknown SQL function producing Sql.Raw fallback (Phase 6) | Low | Plan specifies testing SQL with an unknown function producing Sql.Raw fallback. Only CASE expression fallback is tested. |
+| All 8 plan phases implemented: project scaffolding, SchemaResolver, DapperDetector, ChainEmitter core, JOINs/aggregates/ORDER BY/LIMIT, parameters/edge cases, Roslyn analyzer+code fix, CLI convert command. | N/A (pass) | Full plan coverage. |
+| Plan specifies `Microsoft.CodeAnalysis.CSharp` 5.0.0 for Quarry.Migration; actual is 4.14.0. | Low | The csproj uses 4.14.0 instead of 5.0.0. This builds and works fine but diverges from the plan. See Codebase Consistency. |
+| Plan specifies `QUARRY_GENERATOR` conditional; actual uses `QUARRY_MIGRATION`. | Low | Different define name is fine -- it avoids colliding with the generator define. Reasonable deviation. |
 
 ## Correctness
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| Dead code: qualified star branch in `EmitSelect` is unreachable | Medium | Lines 130-135 of `ChainEmitter.cs` check for `SqlStarColumn star && star.TableAlias != null`, but the preceding branch (line 123) already matches any `SqlStarColumn` and returns. A single `SELECT u.*` query will resolve to `_lambdaVars[0]` instead of the alias-resolved variable, which is wrong for multi-table queries where the alias refers to a non-primary table (e.g., `SELECT o.* FROM users u JOIN orders o ...` would emit `u` instead of `o`). |
-| Analyzer hardcodes `SqlDialect.SQLite` for all parsing | Low | Both `DapperMigrationAnalyzer` and `DapperMigrationCodeFix` parse SQL with `SqlDialect.SQLite`. If the user's codebase targets PostgreSQL or SQL Server, dialect-specific syntax may fail to parse. The CLI command correctly accepts `--dialect` but the analyzer has no configuration mechanism. Acceptable for v1 since SQLite dialect is the most permissive parser. |
-| `ChainEmitter` stores mutable state in instance fields | Low | `_tables`, `_lambdaVars`, and `_diagnostics` are instance-level. Each call to `Translate()` accumulates state, so a `ChainEmitter` instance cannot be reused across multiple translations. Code currently creates a new instance per translation, so this is not a bug, but the API is fragile. |
-| Unused import `System.Collections.Concurrent` in `DapperMigrationAnalyzer.cs` | Trivial | Dead import, no functional impact. |
+| `--apply` flag in `ConvertCommand` is a no-op: it reads the file, iterates entries, logs "Applied" messages, but **never writes the modified content back**. Lines 128-156 read the file, split lines, set a `modified` flag, but never call `File.WriteAllText` or equivalent. | High | Users running `quarry convert --from dapper --apply` will see "Applied" and "Done" messages but their files will be unchanged. This is misleading. Either implement the write or remove the `--apply` flag and document that only the IDE code fix (QRM001) can apply changes. |
+| `DapperDetector.ExtractSqlString` has a dead code path at lines 149-151. The first `if` (line 145) already catches all `StringLiteralExpression` nodes. The second `if` (line 149) re-checks the same variable with the same condition and additionally checks `Utf8StringLiteralExpression`, but `verbatim` is the same `sqlArg` cast that already matched above. | Low | Dead code; the Utf8 string literal branch is unreachable because the first branch already returns. Not a bug (Dapper won't accept Utf8 string literals for SQL), but confusing. |
+| `DapperMigrationAnalyzer.AnalyzeInvocation` hardcodes `SqlDialect.SQLite` (line 55). If the user's project targets PostgreSQL or SQL Server, dialect-specific syntax may fail to parse. | Medium | The analyzer cannot detect the correct dialect from context. The CLI `ConvertCommand` accepts `--dialect` but the analyzer has no equivalent configuration. This should at minimum be documented, or the analyzer should try multiple dialects on parse failure. |
+| `DapperMigrationCodeFix` also hardcodes `SqlDialect.SQLite` (line 62). Same issue as above. | Medium | Code fix will produce incorrect conversions if the user's SQL uses dialect-specific syntax (e.g., SQL Server `TOP` instead of `LIMIT`). |
+| `DapperMigrationCodeFix.ConvertToQuarryAsync` calls `detector.Detect(semanticModel, invocation)` passing the single `invocation` node as the root (line 52). This works because `Detect` walks `DescendantNodes()` and the invocation itself is a descendant of itself. However, it could also match nested invocations within the arguments. | Low | Unlikely to cause issues in practice since Dapper calls don't typically nest, but `TryDetectSingle(model, invocation)` would be more precise here. |
+| `SELECT DISTINCT` is silently ignored -- `IsDistinct` flag is never checked. | Low | Not in scope per the plan (plan doesn't mention DISTINCT). Acceptable for v1, but a diagnostic warning when encountering DISTINCT would improve UX. |
+| `ChainEmitter.DeriveVariable` collision logic: if the one-letter variable collides and the two-letter candidate also collides, digit appending starts at 2 (e.g., `u2`, `u3`). Skipping `u1` is a minor aesthetic issue. | Low | The pattern `u`, `us`, `u2`, `u3` is slightly inconsistent. Not a bug. |
 
 ## Security
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| No concerns. | | The tool operates on source code via Roslyn and does not handle user input, network I/O, or credentials. |
+| No concerns. | N/A | The tool operates on source code only; it does not execute SQL or connect to databases. String escaping in `EscapeString` handles `\` and `"` correctly for C# string literals. |
 
 ## Test Quality
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| 69 tests all pass, covering SchemaResolver, DapperDetector, ChainEmitter, and analyzer diagnostics | -- | Good baseline coverage. |
-| No code fix tests | Medium | Plan Phase 7 specifies: "Code fix test: verify Dapper call replaced with correct Quarry chain" and "Code fix test: verify using directives added." Neither exists. The `DapperMigrationCodeFix` is entirely untested. |
-| No integration test for the full pipeline (DapperConverter or ConvertCommand) | Medium | The public API surface (`DapperConverter.ConvertAll`) is untested. Tests only cover internal components in isolation. |
-| ChainEmitter tests use `Does.Contain` rather than exact output matching | Low | Tests verify that output contains expected substrings rather than matching full output. This means subtle ordering or formatting regressions could slip through. Acceptable for a first version but should be tightened over time. |
-| Analyzer tests duplicate the Dapper/Quarry stub code from DapperDetectorTests | Low | The `DapperStub` and `QuarryStub` strings are copy-pasted between test classes. Should be shared to reduce maintenance burden. |
+| 76 tests covering SchemaResolver (17), DapperDetector (13), ChainEmitter (28), DapperConverter (5), DapperMigrationAnalyzer (3). Good breadth. | N/A (pass) | Solid coverage of the core pipeline. |
+| No test for `RIGHT JOIN`, `CROSS JOIN`, or `FULL OUTER JOIN` emission even though `EmitJoin` handles them. | Medium | These join kinds are implemented in ChainEmitter (lines 360-365) but untested. A regression could go unnoticed. |
+| No test for `QuerySingleOrDefaultAsync` terminal mapping despite it being listed in `DapperMethods`. | Low | The `TerminalMapping_AllVariants` test covers `QuerySingleOrDefaultAsync` indirectly via `MapTerminal` but not through the full pipeline. Minor gap. |
+| No test for multiple qualified star columns in SELECT (e.g., `SELECT u.*, o.*`). | Low | The `EmitSelect` logic handles `SqlStarColumn` in the multi-column branch (lines 145-149) but this path is untested. |
+| `ChainEmitterTests.FakeCallSite` passes `null!` for `invocationSyntax` (line 71). This is fine for unit tests but means `InvocationSyntax` is never null-checked in production code paths that receive these test call sites. | Low | Not a real issue since `InvocationSyntax` is only used by the code fix, which always has a real syntax node. |
+| No test for the `DapperMigrationCodeFix` end-to-end (applying the code fix to a document). | Medium | Analyzer tests verify diagnostic reporting but not the code fix replacement. A bug in `ConvertToQuarryAsync` (e.g., the `await` expression handling, `using` directive insertion) would not be caught. |
+| `ConvertCommand` (`--apply`, `--dry-run`) has no automated tests. | Medium | Plan Phase 8 mentions testing the orchestration logic. The `DapperConverterTests` cover the public API but not the CLI command itself. The no-op `--apply` bug (see Correctness) would have been caught with a test. |
 
 ## Codebase Consistency
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `DapperMigrationAnalyzer` and `DapperMigrationCodeFix` are `public sealed` while existing `QuarryQueryAnalyzer` is `internal sealed` | Low | The existing analyzer pattern uses `internal` visibility. The new analyzers use `public`. This is not technically wrong (Roslyn discovers analyzers by attribute, not visibility), but breaks consistency. |
-| `Quarry.Migration.Analyzers.csproj` missing `BuildOutputTargetFolder` property | Medium | The existing `Quarry.Analyzers.csproj` sets `<BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>` which is required for proper NuGet analyzer packaging. The new project omits this, so the analyzer DLL will not be placed in the correct folder when packed as a NuGet. |
-| Roslyn version mismatch: Migration projects use 4.14.0, rest of codebase uses 5.0.0 | Low | Could cause subtle API differences or type-forwarding issues. Not a build break today but a maintenance concern. |
-| `SqlDialect` enum redefined in `Quarry.Migration/SqlDialect.cs` under `namespace Quarry` | Low | The file has a long explanatory comment about type conflicts. The approach works (exclude the shared one, define a local copy) but is fragile. If the shared `SqlDialect` enum gains new members, this copy must be manually updated. |
+| Roslyn package version mismatch: `Quarry.Migration` and `Quarry.Migration.Analyzers` use `Microsoft.CodeAnalysis.CSharp` 4.14.0, while the rest of the codebase (`Quarry.Analyzers`, `Quarry.Generator`, `Quarry.Analyzers.CodeFixes`) all use 5.0.0. | Medium | Inconsistent Roslyn versions across analyzer packages in the same solution. Could cause confusing version conflicts when both analyzer packages are loaded in the same IDE session. Should align to 5.0.0 for consistency. |
+| `Quarry.Migration.Analyzers` does not set `SuppressDependenciesWhenPacking` like `Quarry.Migration` and the existing `Quarry.Analyzers` do. | Low | When packed as a NuGet, dependencies would be included, potentially causing version conflicts for consumers. |
+| `DapperMigrationAnalyzer` is `internal sealed` while the existing `QuarryQueryAnalyzer` is also `internal sealed`. Consistent. | N/A (pass) | Good. |
+| `DapperMigrationCodeFix` is `internal sealed` while `RawSqlMigrationCodeFix` in the existing codebase is `internal sealed`. Consistent. | N/A (pass) | Good. |
+| File-scoped namespaces used throughout -- consistent with existing codebase style. | N/A (pass) | Good. |
+| `DapperConverter` is the only `public` class in `Quarry.Migration`; all others are `internal`. Clean API surface. | N/A (pass) | Good design. |
+| NUnit test style matches existing tests (`[TestFixture]`, `[Test]`, `Assert.That` with constraint model). | N/A (pass) | Consistent. |
 
 ## Integration / Breaking Changes
+
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `Quarry.Tool.csproj` gains a new `ProjectReference` to `Quarry.Migration` | Low | This adds the Migration assembly and its transitive Roslyn dependencies to the tool package. Increases package size. Not a breaking change, but should be noted for packaging. |
-| New "convert" command added to Quarry.Tool CLI | -- | Non-breaking. Additive command. Help text updated. |
-| No changes to existing public APIs or existing projects beyond `Quarry.sln` and `Quarry.Tool` | -- | Clean isolation. No risk of regression to existing functionality. |
+| `Quarry.Tool.csproj` gains a `ProjectReference` to `Quarry.Migration`. Since `Quarry.Migration` imports `Quarry.Shared.projitems` (shared SQL parser), and `Quarry.Tool` also imports `Quarry.Shared.projitems`, there could be duplicate compilation of shared types. The Migration csproj correctly excludes `SqlDialect.cs` from Shared and defines its own internal copy to avoid type conflicts. The Tool csproj excludes `Sql/**` entirely. | Low | The type isolation is correct. The Tool references Migration via `ProjectReference`, so it uses Migration's compiled types. No conflict. This is well-handled. |
+| The `SqlDialect.cs` in `Quarry.Migration` defines `internal enum SqlDialect` in `namespace Quarry;`. This is visible to `Quarry.Migration.Analyzers` via `InternalsVisibleTo` but hidden from `Quarry.Tool` (which lacks IVT). The Tool uses the public `DapperConverter` API which accepts a `string?` dialect parameter. | N/A (pass) | Clean separation. The public API uses strings, internal API uses the enum. |
+| New solution entries for 3 projects. All configured with Debug/Release for all platform targets (Any CPU, x64, x86). | N/A (pass) | Standard configuration. |
+| No changes to existing source files except `Quarry.sln` (new project entries), `Quarry.Tool/Program.cs` (new command dispatch), and `Quarry.Tool/Quarry.Tool.csproj` (new project reference). | N/A (pass) | Minimal footprint on existing code. |
 
 ## Classifications
+
 | Finding | Section | Class | Action Taken |
 |---------|---------|-------|--------------|
-| Dead code in EmitSelect qualified star branch | Correctness | Bug | Flagged for fix |
-| Missing BuildOutputTargetFolder in Analyzers csproj | Codebase Consistency | Config gap | Flagged for fix |
-| Code fix does not add using directives | Plan Compliance | Missing feature | Flagged |
-| No code fix tests | Test Quality | Coverage gap | Flagged |
-| No DapperConverter/ConvertCommand tests | Test Quality | Coverage gap | Flagged |
-| --apply not implemented | Plan Compliance | Stub | Flagged (acceptable if documented as future work) |
-| Unused import in DapperMigrationAnalyzer | Correctness | Cleanup | Trivial |
-| Analyzer uses public visibility | Codebase Consistency | Style drift | Flagged |
-| Hardcoded SQLite dialect in analyzer | Correctness | Limitation | Acceptable for v1 |
-| Missing NOT LIKE and unknown-function tests | Test Quality | Coverage gap | Low priority |
+| `--apply` flag is a no-op | Correctness | Bug | Logged as High severity finding |
+| Hardcoded SQLite dialect in analyzer/code fix | Correctness | Design limitation | Logged as Medium severity finding |
+| Dead code in `ExtractSqlString` | Correctness | Dead code | Logged as Low |
+| Missing RIGHT/CROSS/FULL OUTER JOIN tests | Test Quality | Coverage gap | Logged as Medium |
+| Missing code fix end-to-end test | Test Quality | Coverage gap | Logged as Medium |
+| Missing ConvertCommand tests | Test Quality | Coverage gap | Logged as Medium |
+| Roslyn version mismatch (4.14.0 vs 5.0.0) | Codebase Consistency | Inconsistency | Logged as Medium |
+| Missing `SuppressDependenciesWhenPacking` in Analyzers csproj | Codebase Consistency | Packaging | Logged as Low |
+| SELECT DISTINCT silently ignored | Correctness | Design limitation | Logged as Low |
+| `detector.Detect` used instead of `TryDetectSingle` in code fix | Correctness | Minor imprecision | Logged as Low |
 
 ## Issues Created
-None created. The two items recommended for immediate fix before merge:
-1. Fix the unreachable qualified-star branch in `ChainEmitter.EmitSelect` (swap the order of the two `if` blocks so the more-specific qualified-star check comes first).
-2. Add `<BuildOutputTargetFolder>analyzers/dotnet/cs</BuildOutputTargetFolder>` to `Quarry.Migration.Analyzers.csproj` for correct NuGet packaging.
+
+None yet. The `--apply` no-op bug (High) should be addressed before merge -- either implement the file-write logic or remove the flag and document that only the IDE code fix applies changes. The remaining Medium findings are acceptable for a v1 but should be tracked for follow-up.

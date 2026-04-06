@@ -27,7 +27,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Quarry.Migration\Quarry.Migration.csproj" />
-    <ProjectReference Include="..\Quarry.Migration.Analyzers\Quarry.Migration.Analyzers.csproj" />
   </ItemGroup>
 
 </Project>

@@ -4,9 +4,8 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Quarry.Migration;
 
-namespace Quarry.Migration.Analyzers;
+namespace Quarry.Migration;
 
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
@@ -50,11 +49,10 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
         var site = detector.TryDetectSingle(context.SemanticModel, invocation);
         if (site == null) return;
 
-        {
-            // Try to translate
-            var parseResult = Quarry.Shared.Sql.Parser.SqlParser.Parse(site.Sql, SqlDialect.SQLite);
-            var emitter = new ChainEmitter(schemaMap);
-            var result = emitter.Translate(parseResult, site);
+        // Try to translate — attempt SQLite first (most permissive), fall back to other dialects
+        var parseResult = TryParseWithFallback(site.Sql);
+        var emitter = new ChainEmitter(schemaMap);
+        var result = emitter.Translate(parseResult, site);
 
             if (result.ChainCode == null)
             {
@@ -83,7 +81,22 @@ internal sealed class DapperMigrationAnalyzer : DiagnosticAnalyzer
                     MigrationDiagnosticDescriptors.DapperQueryDetected,
                     site.Location,
                     site.MethodName));
-            }
         }
+    }
+
+    internal static Quarry.Shared.Sql.Parser.SqlParseResult TryParseWithFallback(string sql)
+    {
+        // Try SQLite first (most permissive LIMIT/OFFSET syntax)
+        var result = Quarry.Shared.Sql.Parser.SqlParser.Parse(sql, SqlDialect.SQLite);
+        if (result.Success)
+            return result;
+
+        // Fall back to SQL Server (handles TOP, OFFSET/FETCH)
+        var sqlServerResult = Quarry.Shared.Sql.Parser.SqlParser.Parse(sql, SqlDialect.SqlServer);
+        if (sqlServerResult.Success)
+            return sqlServerResult;
+
+        // Return the original (SQLite) result with its diagnostics
+        return result;
     }
 }

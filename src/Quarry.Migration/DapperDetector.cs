@@ -141,14 +141,10 @@ internal sealed class DapperDetector
         // The SQL is typically the first argument
         var sqlArg = invocation.ArgumentList.Arguments[0].Expression;
 
-        // String literal
-        if (sqlArg is LiteralExpressionSyntax literal && literal.IsKind(SyntaxKind.StringLiteralExpression))
+        // String literal (regular, verbatim, or UTF-8)
+        if (sqlArg is LiteralExpressionSyntax literal &&
+            (literal.IsKind(SyntaxKind.StringLiteralExpression) || literal.IsKind(SyntaxKind.Utf8StringLiteralExpression)))
             return literal.Token.ValueText;
-
-        // Verbatim/raw string
-        if (sqlArg is LiteralExpressionSyntax verbatim &&
-            (verbatim.IsKind(SyntaxKind.StringLiteralExpression) || verbatim.IsKind(SyntaxKind.Utf8StringLiteralExpression)))
-            return verbatim.Token.ValueText;
 
         // Constant field or variable reference
         if (sqlArg is IdentifierNameSyntax || sqlArg is MemberAccessExpressionSyntax)

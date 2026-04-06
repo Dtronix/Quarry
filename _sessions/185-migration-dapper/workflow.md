@@ -7,7 +7,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #185
-pr:
+pr: #202
 session: 1
 phases-total: 8
 phases-complete: 8
@@ -32,3 +32,7 @@ Baseline: 2859 tests pass (103 analyzer + 2756 main). No pre-existing failures.
 | 1 | DESIGN | PLAN | Full scope confirmed. 8 design decisions recorded. |
 | 1 | PLAN | IMPLEMENT | 8-phase plan approved. Starting implementation. |
 | 1 | IMPLEMENT | REVIEW | All 8 phases complete. 2928 tests pass (69 migration + 103 analyzer + 2756 main). |
+| 1 | REVIEW | REMEDIATE | 10 findings, all addressed. Fixed qualified-star bug, added tests+features. |
+| 1 | REMEDIATE | FINALIZE | PR #202 created. Waiting for CI. |
+| 1 | FINALIZE | REVIEW | User requested re-review from scratch. Preserved decisions and implementation. |
+| 1 | REVIEW | REMEDIATE | Re-review done. Merge projects, remove --apply, fix all medium findings. |

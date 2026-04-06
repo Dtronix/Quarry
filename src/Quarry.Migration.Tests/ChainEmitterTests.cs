@@ -335,6 +335,48 @@ public class ChainEmitterTests
     }
 
     [Test]
+    public void RightJoin()
+    {
+        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
+        var sql = "SELECT u.user_name, o.total FROM users u RIGHT JOIN orders o ON u.user_id = o.user_id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".RightJoin<OrderSchema>((u, o) => u.UserId == o.UserId)"));
+    }
+
+    [Test]
+    public void CrossJoin()
+    {
+        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
+        var sql = "SELECT u.user_name, o.total FROM users u CROSS JOIN orders o";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".CrossJoin<OrderSchema>()"));
+    }
+
+    [Test]
+    public void FullOuterJoin()
+    {
+        var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());
+        var sql = "SELECT u.user_name, o.total FROM users u FULL OUTER JOIN orders o ON u.user_id = o.user_id";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain(".FullOuterJoin<OrderSchema>((u, o) => u.UserId == o.UserId)"));
+    }
+
+    [Test]
     public void GroupByWithCount()
     {
         var schema = BuildSchemaMap(EmployeesEntity());

@@ -4,7 +4,6 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Quarry.Migration;
-using Quarry.Migration.Analyzers;
 
 namespace Quarry.Migration.Tests;
 

@@ -9,8 +9,7 @@ internal static class ConvertCommand
     public static async Task<int> RunAsync(
         string projectPath,
         string? dialectStr,
-        string? fromLibrary,
-        bool apply)
+        string? fromLibrary)
     {
         if (fromLibrary == null || !fromLibrary.Equals("dapper", StringComparison.OrdinalIgnoreCase))
         {
@@ -110,50 +109,8 @@ internal static class ConvertCommand
         Console.WriteLine($"  Fully convertible: {convertible}");
         Console.WriteLine($"  With Sql.Raw fallback: {withWarnings}");
         Console.WriteLine($"  Unconvertible: {unconvertible}");
-
-        if (apply && (convertible + withWarnings) > 0)
-        {
-            Console.WriteLine();
-            Console.WriteLine("Applying conversions...");
-
-            // Group conversions by file, process each file once
-            var byFile = conversions
-                .Where(e => e.IsConvertible)
-                .GroupBy(e => e.FilePath)
-                .ToList();
-
-            foreach (var group in byFile)
-            {
-                var filePath = group.Key;
-                var text = File.ReadAllText(filePath);
-
-                // Apply replacements in reverse line order to preserve positions
-                var sorted = group.OrderByDescending(e => e.Line).ToList();
-                var lines = text.Split('\n');
-
-                // Simple text replacement: find the Dapper call line and replace
-                // This is a best-effort approach; the IDE code fix is more precise
-                var modified = false;
-                foreach (var entry in sorted)
-                {
-                    if (entry.Line - 1 < lines.Length)
-                    {
-                        Console.WriteLine($"  Applied: {Path.GetFileName(filePath)}:{entry.Line}");
-                        modified = true;
-                    }
-                }
-
-                if (modified)
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"  Note: For precise source replacement, use the IDE code fix (QRM001).");
-                    Console.ResetColor();
-                }
-            }
-
-            Console.WriteLine();
-            Console.WriteLine("Done. Review changes and rebuild to verify.");
-        }
+        Console.WriteLine();
+        Console.WriteLine("To apply conversions, use the IDE code fix (QRM001) or install Quarry.Migration as an analyzer.");
 
         return 0;
     }
