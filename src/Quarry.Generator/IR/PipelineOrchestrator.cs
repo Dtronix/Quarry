@@ -155,6 +155,22 @@ internal static class PipelineOrchestrator
                         validationError));
                 }
             }
+
+            // QRY041/QRY042: INTERSECT ALL / EXCEPT ALL not supported on non-PostgreSQL dialects
+            if (raw.Kind == InterceptorKind.IntersectAll && site.Bound.Dialect != Sql.SqlDialect.PostgreSQL)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.IntersectAllNotSupported.Id,
+                    raw.Location,
+                    site.Bound.Dialect.ToString()));
+            }
+            else if (raw.Kind == InterceptorKind.ExceptAll && site.Bound.Dialect != Sql.SqlDialect.PostgreSQL)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ExceptAllNotSupported.Id,
+                    raw.Location,
+                    site.Bound.Dialect.ToString()));
+            }
         }
     }
 

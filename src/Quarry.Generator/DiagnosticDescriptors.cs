@@ -710,6 +710,32 @@ internal static class DiagnosticDescriptors
         description: "A column changed from nullable to non-null without an accompanying data migration step.");
 
     /// <summary>
+    /// QRY041: INTERSECT ALL is not supported by this SQL dialect.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor IntersectAllNotSupported = new(
+        id: "QRY041",
+        title: "INTERSECT ALL not supported",
+        messageFormat: "INTERSECT ALL is not supported by the {0} dialect",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "INTERSECT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
+
+    /// <summary>
+    /// QRY042: EXCEPT ALL is not supported by this SQL dialect.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor ExceptAllNotSupported = new(
+        id: "QRY042",
+        title: "EXCEPT ALL not supported",
+        messageFormat: "EXCEPT ALL is not supported by the {0} dialect",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "EXCEPT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
+
+    /// <summary>
     /// QRY900: Internal generator error.
     /// Severity: Error
     /// </summary>
