@@ -22,6 +22,14 @@
 
 ## Previous Session Completions
 - Session 1 (suspended mid-REVIEW): Completed all 6 implementation phases. Wrote `review.md` analysis pass. Suspended before presenting classifications to user.
+- Session 2 (suspended after REMEDIATE→REVIEW phase reset): All "Fix all" remediation work done, PR #210 created with green CI. Pre-existing CallSiteBinder per-context entity bug fixed. Phase reset back to REVIEW so user could add review items from a Union TResult discussion.
+
+## Session 3 Completions
+- Resumed from suspend. Baseline tests 2965 green.
+- User chose to add Union TResult docs only (declining the QRY072 retest path).
+- Added a uniform `<remarks>` block to all six cross-entity overloads on `IQueryBuilder` (`Union<TOther>`, `UnionAll<TOther>`, `Intersect<TOther>`, `IntersectAll<TOther>`, `Except<TOther>`, `ExceptAll<TOther>`). The block explains the strict `TResult` constraint enforced by C# generics, the explicit-`Select` escape hatch for structurally different entities, and the parity with EF Core / LINQ to SQL conventions.
+- Updated PR #210 description: added a "Design Notes" section between "Gaps in original plan implemented" and "Migration Steps" covering the strict-TResult constraint, the SQL UNION permissiveness tradeoff, the escape hatch, EF Core / LINQ to SQL parity, and QRY072's defensive retention.
+- Tests still 2965 green after the doc-only changes.
 
 ## Session 2 Completions
 - Resumed session, user chose "Fix all" classification.

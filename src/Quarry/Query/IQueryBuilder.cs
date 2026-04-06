@@ -286,8 +286,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Combines this query with another from a different entity type, removing duplicate rows.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> Union<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -299,8 +306,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Combines this query with another from a different entity type, keeping all rows including duplicates.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> UnionAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -312,8 +326,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Returns only rows present in both this query and another from a different entity type.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> Intersect<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -325,8 +346,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Returns only rows present in both this query and another from a different entity type, keeping duplicates.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> IntersectAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -338,8 +366,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Returns rows from this query that are not present in another from a different entity type.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> Except<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
 
@@ -351,8 +386,15 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
 
     /// <summary>
     /// Returns rows from this query that are not present in another from a different entity type, keeping duplicates.
-    /// Both queries must project to the same result type.
+    /// Both queries must project to the same <typeparamref name="TResult"/> type.
     /// </summary>
+    /// <remarks>
+    /// The shared <typeparamref name="TResult"/> is enforced by C# generics: both operands
+    /// must project to the same column shape. If the source entities differ structurally,
+    /// apply an explicit <c>Select</c> on each side to project to a common type (anonymous
+    /// type, named tuple, or DTO) before the set operation. This mirrors EF Core / LINQ to
+    /// SQL semantics rather than SQL's column-positional widening.
+    /// </remarks>
     IQueryBuilder<TEntity, TResult> ExceptAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
 
