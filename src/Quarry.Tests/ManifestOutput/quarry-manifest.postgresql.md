@@ -2030,6 +2030,31 @@ SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE UNION SELECT "U
 
 ---
 
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= $1 UNION SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Users().Where(...).Select(...).Users()
 
 ```sql
@@ -2134,7 +2159,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 284 |
+| Total discovered | 286 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 52 |
-| Rendered | 232 |
+| Rendered | 234 |

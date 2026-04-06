@@ -281,28 +281,56 @@ internal class CrossDialectSetOperationTests
         Assert.That(results, Has.Count.EqualTo(2));
     }
 
+    [Test]
+    public async Task Union_WithPostUnionGroupBy()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.IsActive, u.UserName))
+            .UnionAll(Lite.Users().Select(u => (u.IsActive, u.UserName)))
+            .GroupBy(u => u.IsActive).Prepare();
+
+        // Verify subquery wrapping for post-union GroupBy
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("SELECT * FROM ("));
+        Assert.That(diag.Sql, Does.Contain(") AS \"__set\""));
+        Assert.That(diag.Sql, Does.Contain("GROUP BY \"IsActive\""));
+    }
+
     #endregion
 
     #region Parameterized Set Operations
 
     [Test]
-    public async Task Union_WithCapturedVariable_Parameters()
+    public async Task Union_WithCapturedVariable_CrossDialectParameters()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         var minId = 2;
         var maxId = 3;
         var lt = Lite.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
             .Union(Lite.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
             .Prepare();
+        var pg = Pg.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+        var my = My.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(My.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+        var ss = Ss.Users().Where(u => u.UserId >= minId).Select(u => (u.UserId, u.UserName))
+            .Union(Ss.Users().Where(u => u.UserId <= maxId).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
 
-        // Verify SQL has correct parameter indices (@p0 for left, @p1 for right — no collisions)
-        var diag = lt.ToDiagnostics();
-        Assert.That(diag.Sql, Does.Contain("@p0"));
-        Assert.That(diag.Sql, Does.Contain("@p1"));
-        Assert.That(diag.Sql, Is.EqualTo(
-            "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= @p1"));
+        // Verify parameter indices are distinct across all dialects
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= @p0 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= @p1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" >= $1 UNION SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"UserId\" <= $2",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ?",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [UserId] >= @p0 UNION SELECT [UserId], [UserName] FROM [users] WHERE [UserId] <= @p1");
 
         var results = await lt.ExecuteFetchAllAsync();
         // UserId >= 2: (2,Bob), (3,Charlie). UserId <= 3: (1,Alice), (2,Bob), (3,Charlie).

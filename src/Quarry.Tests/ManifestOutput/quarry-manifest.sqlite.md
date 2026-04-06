@@ -1576,6 +1576,22 @@ SELECT * FROM (SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "
 
 ---
 
+### Users().Select(...).UnionAll(...).GroupBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT * FROM (SELECT "IsActive", "UserName" FROM "users" UNION ALL SELECT "IsActive", "UserName" FROM "users") AS "__set" GROUP BY "IsActive"
+```
+
+---
+
+### Users().Select(...).Users()
+
+```sql
+SELECT "IsActive", "UserName" FROM "users"
+```
+
+---
+
 ### Users().Select(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -3399,7 +3415,7 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 519 |
+| Total discovered | 521 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 160 |
-| Rendered | 359 |
+| Rendered | 361 |

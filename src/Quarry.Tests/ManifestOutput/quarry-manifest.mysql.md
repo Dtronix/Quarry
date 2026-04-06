@@ -2017,6 +2017,31 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1 UNION SELECT `User
 
 ---
 
+### Users().Where(...).Select(...).Union(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` >= ? UNION SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` <= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Users().Where(...).Select(...).Users()
 
 ```sql
@@ -2121,7 +2146,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 283 |
+| Total discovered | 285 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 52 |
-| Rendered | 231 |
+| Rendered | 233 |
