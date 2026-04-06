@@ -738,6 +738,32 @@ internal static class DiagnosticDescriptors
         description: "EXCEPT ALL is only supported by PostgreSQL. SQLite, MySQL, and SQL Server do not support this operation.");
 
     /// <summary>
+    /// QRY072: Set operation operands have different column counts.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor SetOperationProjectionMismatch = new(
+        id: "QRY072",
+        title: "Set operation projection mismatch",
+        messageFormat: "Set operation operand has {0} columns but the main query has {1} columns — the SQL engine may reject this or produce unexpected results",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "All operands of a UNION/INTERSECT/EXCEPT must project the same number of columns.");
+
+    /// <summary>
+    /// QRY073: Cross-entity set operations are not yet supported.
+    /// Severity: Warning
+    /// </summary>
+    public static readonly DiagnosticDescriptor CrossEntitySetOperationNotSupported = new(
+        id: "QRY073",
+        title: "Cross-entity set operation not supported",
+        messageFormat: "Cross-entity set operations are not yet supported — the operand uses table '{0}' but the main query uses table '{1}'",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Cross-entity UNION/INTERSECT/EXCEPT requires both operands to use the same entity table. This limitation will be removed in a future release.");
+
+    /// <summary>
     /// QRY900: Internal generator error.
     /// Severity: Error
     /// </summary>

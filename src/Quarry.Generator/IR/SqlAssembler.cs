@@ -252,7 +252,9 @@ internal static class SqlAssembler
             for (int i = 0; i < plan.GroupByExprs.Count; i++)
             {
                 if (i > 0) sb.Append(", ");
+                var paramsBefore = CountParameters(plan.GroupByExprs[i]);
                 sb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
             }
         }
 
@@ -321,7 +323,9 @@ internal static class SqlAssembler
                     for (int i = 0; i < plan.PostUnionGroupByExprs.Count; i++)
                     {
                         if (i > 0) sb.Append(", ");
+                        var paramsBefore = CountParameters(plan.PostUnionGroupByExprs[i]);
                         sb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
                     }
                 }
 
@@ -647,7 +651,7 @@ internal static class SqlAssembler
             SetOperatorKind.IntersectAll => "INTERSECT ALL",
             SetOperatorKind.Except => "EXCEPT",
             SetOperatorKind.ExceptAll => "EXCEPT ALL",
-            _ => "UNION"
+            _ => throw new InvalidOperationException($"Unknown set operator kind: {kind}")
         };
     }
 

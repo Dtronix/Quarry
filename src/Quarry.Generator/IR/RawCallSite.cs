@@ -313,7 +313,9 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && IsPreparedTerminal == other.IsPreparedTerminal
             && PreparedQueryEscapeReason == other.PreparedQueryEscapeReason
             && IsValueTypeResult == other.IsValueTypeResult
-            && OperandChainId == other.OperandChainId;
+            && OperandChainId == other.OperandChainId
+            && OperandArgEndLine == other.OperandArgEndLine
+            && OperandArgEndColumn == other.OperandArgEndColumn;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

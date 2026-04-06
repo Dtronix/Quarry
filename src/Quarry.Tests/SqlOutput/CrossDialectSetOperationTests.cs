@@ -298,6 +298,24 @@ internal class CrossDialectSetOperationTests
         Assert.That(diag.Sql, Does.Contain("GROUP BY \"IsActive\""));
     }
 
+    [Test]
+    public async Task Union_WithPostUnionGroupByAndHaving()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.IsActive, u.UserName))
+            .UnionAll(Lite.Users().Select(u => (u.IsActive, u.UserName)))
+            .GroupBy(u => u.IsActive).Having(u => u.IsActive).Prepare();
+
+        // Verify subquery wrapping for post-union GroupBy + Having
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("SELECT * FROM ("));
+        Assert.That(diag.Sql, Does.Contain(") AS \"__set\""));
+        Assert.That(diag.Sql, Does.Contain("GROUP BY \"IsActive\""));
+        Assert.That(diag.Sql, Does.Contain("HAVING \"IsActive\" = 1"));
+    }
+
     #endregion
 
     #region Parameterized Set Operations

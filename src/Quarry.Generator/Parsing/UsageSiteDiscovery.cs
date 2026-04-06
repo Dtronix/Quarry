@@ -1364,11 +1364,6 @@ internal static class UsageSiteDiscovery
     }
 
     /// <summary>
-    /// Detects if the result variable of a .Prepare() call escapes the declaring method scope.
-    /// Returns a reason string if escaped, null if contained.
-    /// Checks: returned from method, passed as argument, captured in lambda, assigned to field/property.
-    /// </summary>
-    /// <summary>
     /// Extracts the ChainId of the operand (right-hand) query builder argument
     /// for set operation calls (Union, Intersect, Except, etc.).
     /// The operand is passed as the first argument and may be an invocation chain
@@ -1422,6 +1417,11 @@ internal static class UsageSiteDiscovery
         return null;
     }
 
+    /// <summary>
+    /// Detects if the result variable of a .Prepare() call escapes the declaring method scope.
+    /// Returns a reason string if escaped, null if contained.
+    /// Checks: returned from method, passed as argument, captured in lambda, assigned to field/property.
+    /// </summary>
     internal static string? DetectPreparedQueryEscape(InvocationExpressionSyntax prepareInvocation)
     {
         // Find the variable the .Prepare() result is assigned to

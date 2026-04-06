@@ -912,40 +912,9 @@ internal static class ChainAnalyzer
 
         // Enrich identity projections with entity columns so SqlAssembler renders
         // explicit column names instead of SELECT *.
-        // Always enrich — even when no explicit Select clause — so the generated SQL
-        // is predictable and never contains SELECT *.
-        // Uses authoritative entity column metadata from EntityRef (not discovery-time
-        // column info which may include computed properties like DisplayLabel).
         if (projection.IsIdentity)
         {
-            var entityRef = executionSite.Bound.Entity;
-            if (entityRef != null && entityRef.Columns.Count > 0)
-            {
-                var entityCols = new List<ProjectedColumn>();
-                var ord = 0;
-                foreach (var ec in entityRef.Columns)
-                {
-                    entityCols.Add(new ProjectedColumn(
-                        propertyName: ec.PropertyName,
-                        columnName: ec.ColumnName,
-                        clrType: ec.ClrType,
-                        fullClrType: ec.FullClrType,
-                        isNullable: ec.IsNullable,
-                        ordinal: ord++,
-                        customTypeMapping: ec.CustomTypeMappingClass,
-                        isValueType: ec.IsValueType,
-                        readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
-                        isForeignKey: ec.Kind == ColumnKind.ForeignKey,
-                        foreignKeyEntityName: ec.ReferencedEntityName,
-                        isEnum: ec.IsEnum));
-                }
-                projection = new SelectProjection(
-                    projection.Kind,
-                    projection.ResultTypeName,
-                    entityCols,
-                    customEntityReaderClass: entityRef.CustomEntityReaderClass,
-                    isIdentity: true);
-            }
+            projection = EnrichIdentityProjectionWithEntityColumns(projection, executionSite.Bound.Entity);
         }
 
         // Handle insert columns — prefer prepare site (has initializer-derived columns),
@@ -2227,36 +2196,7 @@ internal static class ChainAnalyzer
                 rootSite.Bound.Raw.ResultTypeName ?? rootSite.Bound.Raw.EntityTypeName,
                 Array.Empty<ProjectedColumn>(),
                 isIdentity: true);
-
-            // Enrich identity projection with entity columns
-            var entityRef = rootSite.Bound.Entity;
-            if (entityRef != null && entityRef.Columns.Count > 0)
-            {
-                var entityCols = new List<ProjectedColumn>();
-                var ord = 0;
-                foreach (var ec in entityRef.Columns)
-                {
-                    entityCols.Add(new ProjectedColumn(
-                        propertyName: ec.PropertyName,
-                        columnName: ec.ColumnName,
-                        clrType: ec.ClrType,
-                        fullClrType: ec.FullClrType,
-                        isNullable: ec.IsNullable,
-                        ordinal: ord++,
-                        customTypeMapping: ec.CustomTypeMappingClass,
-                        isValueType: ec.IsValueType,
-                        readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
-                        isForeignKey: ec.Kind == ColumnKind.ForeignKey,
-                        foreignKeyEntityName: ec.ReferencedEntityName,
-                        isEnum: ec.IsEnum));
-                }
-                projection = new SelectProjection(
-                    projection.Kind,
-                    projection.ResultTypeName,
-                    entityCols,
-                    customEntityReaderClass: entityRef.CustomEntityReaderClass,
-                    isIdentity: true);
-            }
+            projection = EnrichIdentityProjectionWithEntityColumns(projection, rootSite.Bound.Entity);
         }
 
         return new QueryPlan(
@@ -2277,6 +2217,44 @@ internal static class ChainAnalyzer
             parameters: parameters,
             tier: OptimizationTier.PrebuiltDispatch,
             implicitJoins: implicitJoinInfos.Count > 0 ? implicitJoinInfos : null);
+    }
+
+    /// <summary>
+    /// Enriches an identity projection with entity columns from the EntityRef metadata.
+    /// Replaces the empty column list with full column definitions so SqlAssembler renders
+    /// explicit column names instead of SELECT *.
+    /// </summary>
+    private static SelectProjection EnrichIdentityProjectionWithEntityColumns(
+        SelectProjection projection,
+        EntityRef? entityRef)
+    {
+        if (entityRef == null || entityRef.Columns.Count == 0)
+            return projection;
+
+        var entityCols = new List<ProjectedColumn>();
+        var ord = 0;
+        foreach (var ec in entityRef.Columns)
+        {
+            entityCols.Add(new ProjectedColumn(
+                propertyName: ec.PropertyName,
+                columnName: ec.ColumnName,
+                clrType: ec.ClrType,
+                fullClrType: ec.FullClrType,
+                isNullable: ec.IsNullable,
+                ordinal: ord++,
+                customTypeMapping: ec.CustomTypeMappingClass,
+                isValueType: ec.IsValueType,
+                readerMethodName: ec.DbReaderMethodName ?? ec.ReaderMethodName,
+                isForeignKey: ec.Kind == ColumnKind.ForeignKey,
+                foreignKeyEntityName: ec.ReferencedEntityName,
+                isEnum: ec.IsEnum));
+        }
+        return new SelectProjection(
+            projection.Kind,
+            projection.ResultTypeName,
+            entityCols,
+            customEntityReaderClass: entityRef.CustomEntityReaderClass,
+            isIdentity: true);
     }
 
     /// <summary>

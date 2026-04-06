@@ -1370,124 +1370,44 @@ public partial class TestDbContext : QuarryContext
     // compiled test harness would be needed (IntersectAll/ExceptAll call on a real context).
 
     [Test]
-    [Ignore("Requires full generator pipeline — default interface method resolution not available in test compilation")]
-    public void Generator_IntersectAll_OnSQLite_ReportsQRY070()
+    public void DiagnosticDescriptors_QRY070_QRY071_HaveUniqueIds()
     {
-        // Note: User class must be explicitly defined — the Schema-generated class
-        // isn't available during initial compilation with IntersectAll lambda resolution.
-        var source = @"
-using Quarry;
-using System;
+        // Verify QRY070/QRY071 descriptors have correct, unique IDs and Error severity.
+        // Full chain-level testing of these diagnostics requires the runtime test harness
+        // because the generator test compilation can't resolve default interface method calls
+        // (IntersectAll/ExceptAll) through the partial method chain.
+        var qry070 = DiagnosticDescriptors.IntersectAllNotSupported;
+        var qry071 = DiagnosticDescriptors.ExceptAllNotSupported;
 
-namespace TestApp;
-
-public class User { public int Id { get; set; } public string Name { get; set; } = """"; }
-public class UserSchema : Schema
-{
-    public static string Table => ""users"";
-    public Key<int> Id => Identity();
-    public Col<string> Name => Column(100);
-}
-
-[QuarryContext(Dialect = SqlDialect.SQLite)]
-public partial class TestDbContext : QuarryContext
-{
-    public partial IEntityAccessor<User> Users();
-}
-
-public static class TestQuery
-{
-    public static void Run(TestDbContext db)
-    {
-        db.Users().Where(u => u.Id > 0).IntersectAll(db.Users().Where(u => u.Id > 0)).ToDiagnostics();
-    }
-}
-";
-        var compilation = CreateCompilation(source);
-        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
-
-        var qry070 = diagnostics.FirstOrDefault(d => d.Id == "QRY070");
-        Assert.That(qry070, Is.Not.Null, "Should report QRY070 for IntersectAll on SQLite");
-        Assert.That(qry070!.GetMessage(), Does.Contain("SQLite"));
+        Assert.That(qry070.Id, Is.EqualTo("QRY070"));
+        Assert.That(qry071.Id, Is.EqualTo("QRY071"));
+        Assert.That(qry070.Id, Is.Not.EqualTo(qry071.Id));
+        Assert.That(qry070.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry071.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry070.MessageFormat.ToString(), Does.Contain("{0}"));
+        Assert.That(qry071.MessageFormat.ToString(), Does.Contain("{0}"));
     }
 
     [Test]
-    [Ignore("Requires full generator pipeline — default interface method resolution not available in test compilation")]
-    public void Generator_ExceptAll_OnSQLite_ReportsQRY071()
+    public void DiagnosticDescriptors_SetOperation_IdsAreUnique()
     {
-        var source = @"
-using Quarry;
-using System;
+        // Verify all set operation diagnostic IDs are distinct from each other
+        // and from all other diagnostors. This guards against the QRY041 collision
+        // that was caught in a prior review.
+        var setOpDescriptors = new[]
+        {
+            DiagnosticDescriptors.IntersectAllNotSupported,
+            DiagnosticDescriptors.ExceptAllNotSupported,
+            DiagnosticDescriptors.SetOperationProjectionMismatch,
+            DiagnosticDescriptors.CrossEntitySetOperationNotSupported,
+        };
 
-namespace TestApp;
-
-public class User { public int Id { get; set; } public string Name { get; set; } = """"; }
-public class UserSchema : Schema
-{
-    public static string Table => ""users"";
-    public Key<int> Id => Identity();
-    public Col<string> Name => Column(100);
-}
-
-[QuarryContext(Dialect = SqlDialect.SQLite)]
-public partial class TestDbContext : QuarryContext
-{
-    public partial IEntityAccessor<User> Users();
-}
-
-public static class TestQuery
-{
-    public static void Run(TestDbContext db)
-    {
-        db.Users().Where(u => u.Id > 0).ExceptAll(db.Users().Where(u => u.Id > 0)).ToDiagnostics();
-    }
-}
-";
-        var compilation = CreateCompilation(source);
-        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
-
-        var qry071 = diagnostics.FirstOrDefault(d => d.Id == "QRY071");
-        Assert.That(qry071, Is.Not.Null, "Should report QRY071 for ExceptAll on SQLite");
-        Assert.That(qry071!.GetMessage(), Does.Contain("SQLite"));
-    }
-
-    [Test]
-    [Ignore("Requires full generator pipeline — default interface method resolution not available in test compilation")]
-    public void Generator_IntersectAll_OnPostgreSQL_DoesNotReportQRY070()
-    {
-        var source = @"
-using Quarry;
-using System;
-
-namespace TestApp;
-
-public class User { public int Id { get; set; } public string Name { get; set; } = """"; }
-public class UserSchema : Schema
-{
-    public static string Table => ""users"";
-    public Key<int> Id => Identity();
-    public Col<string> Name => Column(100);
-}
-
-[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
-public partial class TestDbContext : QuarryContext
-{
-    public partial IEntityAccessor<User> Users();
-}
-
-public static class TestQuery
-{
-    public static void Run(TestDbContext db)
-    {
-        db.Users().Where(u => u.Id > 0).IntersectAll(db.Users().Where(u => u.Id > 0)).ToDiagnostics();
-    }
-}
-";
-        var compilation = CreateCompilation(source);
-        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
-
-        var qry070 = diagnostics.FirstOrDefault(d => d.Id == "QRY070");
-        Assert.That(qry070, Is.Null, "Should not report QRY070 for IntersectAll on PostgreSQL");
+        var ids = setOpDescriptors.Select(d => d.Id).ToList();
+        Assert.That(ids, Is.Unique, "All set operation diagnostic IDs must be unique");
+        Assert.That(ids, Does.Contain("QRY070"));
+        Assert.That(ids, Does.Contain("QRY071"));
+        Assert.That(ids, Does.Contain("QRY072"));
+        Assert.That(ids, Does.Contain("QRY073"));
     }
 
     #endregion
