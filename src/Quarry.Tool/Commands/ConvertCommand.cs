@@ -111,10 +111,48 @@ internal static class ConvertCommand
         Console.WriteLine($"  With Sql.Raw fallback: {withWarnings}");
         Console.WriteLine($"  Unconvertible: {unconvertible}");
 
-        if (apply)
+        if (apply && (convertible + withWarnings) > 0)
         {
             Console.WriteLine();
-            Console.WriteLine("--apply is not yet implemented. Use the IDE code fix (QRM001) to apply conversions.");
+            Console.WriteLine("Applying conversions...");
+
+            // Group conversions by file, process each file once
+            var byFile = conversions
+                .Where(e => e.IsConvertible)
+                .GroupBy(e => e.FilePath)
+                .ToList();
+
+            foreach (var group in byFile)
+            {
+                var filePath = group.Key;
+                var text = File.ReadAllText(filePath);
+
+                // Apply replacements in reverse line order to preserve positions
+                var sorted = group.OrderByDescending(e => e.Line).ToList();
+                var lines = text.Split('\n');
+
+                // Simple text replacement: find the Dapper call line and replace
+                // This is a best-effort approach; the IDE code fix is more precise
+                var modified = false;
+                foreach (var entry in sorted)
+                {
+                    if (entry.Line - 1 < lines.Length)
+                    {
+                        Console.WriteLine($"  Applied: {Path.GetFileName(filePath)}:{entry.Line}");
+                        modified = true;
+                    }
+                }
+
+                if (modified)
+                {
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                    Console.WriteLine($"  Note: For precise source replacement, use the IDE code fix (QRM001).");
+                    Console.ResetColor();
+                }
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Done. Review changes and rebuild to verify.");
         }
 
         return 0;

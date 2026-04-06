@@ -540,6 +540,35 @@ public class ChainEmitterTests
     }
 
     [Test]
+    public void NotLikeExpression()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "SELECT * FROM users WHERE user_name NOT LIKE '%test%'";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain("!Sql.Like(u.UserName, \"%test%\")"));
+    }
+
+    [Test]
+    public void UnknownFunction_FallsBackToRaw()
+    {
+        var schema = BuildSchemaMap(UsersEntity());
+        var sql = "SELECT COALESCE(email, 'none') FROM users";
+        var parseResult = SqlParser.Parse(sql, SqlDialect.SQLite);
+        var callSite = FakeCallSite(sql);
+
+        var emitter = new ChainEmitter(schema);
+        var result = emitter.Translate(parseResult, callSite);
+
+        Assert.That(result.ChainCode, Does.Contain("Sql.Raw"));
+        Assert.That(result.Diagnostics, Has.Count.GreaterThan(0));
+    }
+
+    [Test]
     public void JoinedQueryWithWhereAndOrderBy()
     {
         var schema = BuildSchemaMap(UsersEntity(), OrdersEntity());

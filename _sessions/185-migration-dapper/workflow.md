@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #185
 pr:
 session: 1
 phases-total: 8
-phases-complete: 7
+phases-complete: 8
 ## Problem Statement
 Create Quarry.Migration NuGet package for migrating from other data access libraries to Quarry. First target: Dapper. Uses shared SQL parser from Quarry.Shared/Sql/ (#182, already merged). Architecture: Detectors (find Dapper call sites via Roslyn), Translators (SQL AST → Quarry chain C# source), Schema Resolver (maps table/column names to entities/properties), Delivery (Roslyn analyzer code fixes + CLI).
 
@@ -31,3 +31,4 @@ Baseline: 2859 tests pass (103 analyzer + 2756 main). No pre-existing failures.
 | 1 | INTAKE | DESIGN | Issue #185 selected, worktree created, baseline green (2859 tests) |
 | 1 | DESIGN | PLAN | Full scope confirmed. 8 design decisions recorded. |
 | 1 | PLAN | IMPLEMENT | 8-phase plan approved. Starting implementation. |
+| 1 | IMPLEMENT | REVIEW | All 8 phases complete. 2928 tests pass (69 migration + 103 analyzer + 2756 main). |

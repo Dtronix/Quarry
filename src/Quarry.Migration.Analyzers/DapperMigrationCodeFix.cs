@@ -13,7 +13,7 @@ using Quarry.Migration;
 namespace Quarry.Migration.Analyzers;
 
 [ExportCodeFixProvider(LanguageNames.CSharp), Shared]
-public sealed class DapperMigrationCodeFix : CodeFixProvider
+internal sealed class DapperMigrationCodeFix : CodeFixProvider
 {
     public override ImmutableArray<string> FixableDiagnosticIds { get; } =
         ImmutableArray.Create("QRM001", "QRM002");
@@ -69,27 +69,39 @@ public sealed class DapperMigrationCodeFix : CodeFixProvider
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root == null) return document;
 
-        // Find the statement containing the invocation to replace the full expression
-        // The Dapper call is typically: await connection.QueryAsync<T>("SQL", new { params })
-        // Replace just the invocation expression
         var newExpression = SyntaxFactory.ParseExpression(result.ChainCode)
             .WithTriviaFrom(invocation);
 
-        // If the invocation is part of an await expression, we need to handle that
-        var parent = invocation.Parent;
-        SyntaxNode nodeToReplace = invocation;
+        SyntaxNode updatedRoot;
 
-        if (parent is AwaitExpressionSyntax awaitExpr)
+        if (invocation.Parent is AwaitExpressionSyntax awaitExpr)
         {
-            // The await is part of the expression — replace the await expression
-            // since Quarry chains end with async methods that need await
             var awaitedChain = SyntaxFactory.ParseExpression($"await {result.ChainCode}")
                 .WithTriviaFrom(awaitExpr);
-            var newRoot = root.ReplaceNode(awaitExpr, awaitedChain);
-            return document.WithSyntaxRoot(newRoot);
+            updatedRoot = root.ReplaceNode(awaitExpr, awaitedChain);
+        }
+        else
+        {
+            updatedRoot = root.ReplaceNode(invocation, newExpression);
         }
 
-        var updatedRoot = root.ReplaceNode(invocation, newExpression);
+        // Add missing using directives
+        if (updatedRoot is CompilationUnitSyntax compilationUnit)
+        {
+            updatedRoot = EnsureUsing(compilationUnit, "Quarry");
+            updatedRoot = EnsureUsing((CompilationUnitSyntax)updatedRoot, "Quarry.Query");
+        }
+
         return document.WithSyntaxRoot(updatedRoot);
+    }
+
+    private static CompilationUnitSyntax EnsureUsing(CompilationUnitSyntax root, string namespaceName)
+    {
+        var hasUsing = root.Usings.Any(u => u.Name?.ToString() == namespaceName);
+        if (hasUsing) return root;
+
+        var usingDirective = SyntaxFactory.UsingDirective(SyntaxFactory.ParseName(namespaceName))
+            .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+        return root.AddUsings(usingDirective);
     }
 }

@@ -119,18 +119,18 @@ internal sealed class ChainEmitter
     {
         var lambdaParams = BuildLambdaParams();
 
-        // SELECT *
-        if (columns.Count == 1 && columns[0] is SqlStarColumn)
-        {
-            sb.Append($"\n    .Select({lambdaParams} => {_lambdaVars[0]})");
-            return;
-        }
-
-        // SELECT with qualified star: u.*
+        // SELECT with qualified star: u.* (must check before unqualified star)
         if (columns.Count == 1 && columns[0] is SqlStarColumn star && star.TableAlias != null)
         {
             var v = ResolveTableVariable(star.TableAlias);
             sb.Append($"\n    .Select({lambdaParams} => {v})");
+            return;
+        }
+
+        // SELECT * (unqualified)
+        if (columns.Count == 1 && columns[0] is SqlStarColumn)
+        {
+            sb.Append($"\n    .Select({lambdaParams} => {_lambdaVars[0]})");
             return;
         }
 
