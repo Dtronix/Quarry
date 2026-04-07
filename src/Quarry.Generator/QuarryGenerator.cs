@@ -768,6 +768,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.RawSqlUnresolvableColumn,
         DiagnosticDescriptors.CteInnerChainNotAnalyzable,
         DiagnosticDescriptors.FromCteWithoutWith,
+        DiagnosticDescriptors.DuplicateCteName,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

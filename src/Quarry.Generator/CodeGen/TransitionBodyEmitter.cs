@@ -91,10 +91,16 @@ internal static class TransitionBodyEmitter
 
     /// <summary>
     /// Emits a CteDefinition interceptor (e.g., db.With&lt;TDto&gt;(inner)).
-    /// Creates the outer carrier and copies the inner chain's parameter values from the
+    /// For the FIRST CTE site in the chain, allocates a new outer carrier from the real
+    /// context. For each SUBSEQUENT CTE site in the same chain, the receiver is the
+    /// outer carrier produced by the previous With() call (typed as the context class via
+    /// <see cref="System.Runtime.CompilerServices.Unsafe.As{T}(object)"/>) — the body
+    /// reinterpret-casts it back to the carrier so that prior CTE state is preserved.
+    /// In both cases, the inner chain's captured parameter values are copied from the
     /// passed-in <c>innerQuery</c> carrier into the outer carrier's matching parameter
-    /// slots, then returns the outer carrier typed as the context class.
-    /// The inner SQL itself is embedded into the outer query's WITH clause at compile time.
+    /// slots, then the outer carrier is returned typed as the context class for the next
+    /// chained call. The inner SQL itself is embedded into the outer query's WITH clause
+    /// at compile time by <see cref="IR.SqlAssembler"/>.
     /// </summary>
     public static void EmitCteDefinition(
         StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier,
@@ -109,11 +115,55 @@ internal static class TransitionBodyEmitter
         // Use the stored parameter type from discovery (handles both 1-arg and 2-arg overloads)
         var paramType = site.Bound.Raw.BuilderTypeName ?? $"IQueryBuilder<{dtoType}>";
 
+        // Determine whether this is the FIRST CteDefinition site in the chain (in source
+        // order) or a subsequent one. The first site allocates a new carrier from the real
+        // context; subsequent sites recover the carrier produced by the previous With()
+        // call, which the call chain has reinterpret-cast as the context class via
+        // Unsafe.As. Detection is purely positional — count CteDefinition-kind sites in
+        // chain.ClauseSites that precede this site by UniqueId. This is O(N) per site but
+        // N is the chain length and chains are short.
+        bool isFirstCteSite = true;
+        bool sawCurrentSite = false;
+        bool sawPriorCte = false;
+        for (int i = 0; i < chain.ClauseSites.Count; i++)
+        {
+            var s = chain.ClauseSites[i];
+            if (s.UniqueId == site.UniqueId) { sawCurrentSite = true; break; }
+            if (s.Bound.Raw.Kind == InterceptorKind.CteDefinition)
+            {
+                sawPriorCte = true;
+                isFirstCteSite = false;
+                break;
+            }
+        }
+        // Defensive note: if the loop walks the entire ClauseSites list without hitting
+        // either the current site or a prior CteDefinition, the current site is not
+        // present in its own chain's ClauseSites — a discovery-pipeline invariant
+        // violation that is not reachable by any current test scenario. The defaulted
+        // behavior (isFirstCteSite = true) is still correct for the only scenario this
+        // could reach: the current site being the only CTE in the chain. Emit a code
+        // comment so that any future bug report can quickly locate the violation.
+        if (!sawCurrentSite && !sawPriorCte)
+        {
+            sb.AppendLine($"    // NOTE: EmitCteDefinition site {site.UniqueId} not found in chain.ClauseSites; defaulted to first-CTE behavior.");
+        }
+
         sb.AppendLine($"    public static {contextClass} {methodName}(");
         sb.AppendLine($"        this {contextClass} @this,");
         sb.AppendLine($"        {paramType} innerQuery)");
         sb.AppendLine($"    {{");
-        sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = @this }};");
+        if (isFirstCteSite)
+        {
+            sb.AppendLine($"        var __c = new {carrier.ClassName} {{ Ctx = @this }};");
+        }
+        else
+        {
+            // Subsequent With() in a multi-CTE chain: @this is actually the carrier from
+            // the previous With() call, reinterpret-cast as the context class. Recover it
+            // so this call extends the same carrier instance instead of allocating a new
+            // one (which would discard prior CTE parameter state and corrupt Ctx).
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(@this);");
+        }
 
         // Locate the CteDef on the outer chain whose CTE name matches this site's DTO and
         // whose InnerPlan has a registered carrier. Copy P{0..N-1} from the inner carrier
@@ -127,9 +177,9 @@ internal static class TransitionBodyEmitter
         //
         // NOTE: matches the FIRST cteDef whose name equals this site's DTO short name.
         // Multiple With<T>(...) calls referencing the same DTO type in one chain (e.g.,
-        // db.With<X>(a).With<X>(b)...) would be ambiguous here and silently route the
-        // second call to the first cteDef. Multi-CTE support is tracked in #206 and any
-        // ambiguity-resolution work belongs in that issue.
+        // db.With<X>(a).With<X>(b)...) would produce duplicate CTE aliases in the WITH
+        // clause and silently route the second call to the first cteDef. The duplicate-
+        // name case is rejected at compile time by diagnostic QRY082.
         var siteCteName = CteNameHelpers.ExtractShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName) ?? "CTE";
         for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
         {

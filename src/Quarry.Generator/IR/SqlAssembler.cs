@@ -158,7 +158,43 @@ internal static class SqlAssembler
                 var cte = plan.CteDefinitions[i];
                 sb.Append(SqlFormatting.QuoteIdentifier(dialect, cte.Name));
                 sb.Append(" AS (");
-                sb.Append(cte.InnerSql);
+
+                // Re-render the inner CTE SQL with the outer chain's parameter offset so that
+                // multi-CTE chains do not collide on placeholder names. The inner chain was
+                // assembled standalone with paramBaseOffset = 0, producing inner SQL with
+                // @p0/@p1 (or $1/$2) starting from zero. When concatenated into the outer
+                // WITH clause, multiple CTEs would each carry their own @p0 — silently
+                // colliding on named-placeholder dialects (sqlite/pg/ss). Re-rendering with
+                // paramBaseOffset = cte.ParameterOffset rebases the placeholders into the
+                // outer chain's global parameter index space, matching the carrier P-slots.
+                //
+                // Mask=0 is used because CTE inner chains are analyzed standalone, before
+                // being embedded into the outer chain, and the existing analyzer does not
+                // propagate outer conditional-clause masks into inner chains. If a future
+                // inner chain has multiple masks, mask=0 is its base/canonical variant.
+                //
+                // Fallback: if cte.InnerPlan is null (inner-chain analysis failed — the
+                // user already received a QRY080 diagnostic), use the pre-rendered raw
+                // string so the SQL is at least non-empty for downstream tooling.
+                if (cte.InnerPlan != null)
+                {
+                    // Fail-loud guard: the mask=0 assumption below is only valid for
+                    // inner chains that have exactly one mask variant. No current code
+                    // path produces multi-mask inner chains, but if a future analyzer
+                    // change starts propagating conditional clauses into inner chains,
+                    // this Debug.Assert will surface the violation instead of silently
+                    // picking the base variant and dropping the others.
+                    System.Diagnostics.Debug.Assert(
+                        cte.InnerPlan.PossibleMasks.Count <= 1,
+                        $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0. Extend RenderSelectSql to render per outer mask if this triggers.");
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    sb.Append(rebased.Sql);
+                }
+                else
+                {
+                    sb.Append(cte.InnerSql);
+                }
+
                 sb.Append(')');
                 // CTE inner parameters precede outer parameters
                 paramIndex += cte.InnerParameters.Count;
