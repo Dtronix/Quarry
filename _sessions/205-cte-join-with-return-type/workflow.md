@@ -10,7 +10,7 @@ issue: #205
 pr:
 session: 2
 phases-total: 6
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 CTE chains that use context-specific methods after `With()` (e.g., `db.With<A>(inner).Users().Join<A>(...).Select(...)`) fail during source generation because `QuarryContext.With<TDto>()` returns the base `QuarryContext` type, and methods like `Users()` only exist on the derived (generated) context class.
 
