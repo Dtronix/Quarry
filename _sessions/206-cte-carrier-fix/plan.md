@@ -124,33 +124,13 @@ After the existing forward pass that builds `cteDefinitions`, scan it once more 
 
 **Expected state:** New diagnostic test passes; QRY082 is wired through the existing deferred-diagnostics channel; all other tests remain green.
 
-### Phase 5 — Conditional-CTE diagnostic (`QRY083`)
-**Goal:** Reject `CteDefinition` and `FromCte` sites with non-null `NestingContext` at compile time. Closes the latent conditional-CTE bug and the matching new failure mode in the carrier fix.
+### Phase 5 — Final test sweep & comment tidy
 
-**Files modified:**
-- `src/Quarry.Generator/DiagnosticDescriptors.cs` — add a new `DiagnosticDescriptor ConditionalCteNotSupported`:
-  - Id: `"QRY083"`
-  - Title: `"Conditional CTE clauses are not supported"`
-  - Message format: `"With<{0}>(...) and FromCte<{0}>() must appear unconditionally in the chain. Wrapping a CTE clause in an if-block produces an invalid query because the WITH clause renders even when the call does not execute. Move the conditional logic outside the chain or branch on whole chains."`
-  - Category, severity, default-enabled, description matching the existing CTE diagnostics block.
-  - Update the section banner comment from `(QRY080–QRY082)` to `(QRY080–QRY083)`.
-- `src/Quarry.Generator/Parsing/ChainAnalyzer.cs` — inside the `for (int i = 0; i < clauseSites.Count; i++)` loop at lines 661–754:
-  - Before the `if (raw.Kind == InterceptorKind.CteDefinition)` branch's body executes (or symmetrically in both branches), check `if (raw.NestingContext != null && raw.NestingContext.NestingDepth > baselineDepth)` (use the same `baselineDepth` calculation as the conditional-clause loop on lines 572–574; this requires moving or duplicating that calculation, OR computing it inline here). On match, append a `DiagnosticInfo` for `ConditionalCteNotSupported` with `raw.Location` and the short DTO name. Continue processing (don't `continue;` past the CteDef build) so we still get a coherent (if broken) plan, but the diagnostic surfaces as a compile error.
-  - **Subtle point:** the existing `baselineDepth` on line 574 is computed inside the same `Analyze*` method as the CTE loop, so it's already in scope. Use it directly.
-  - Apply the same `NestingContext` check to the `else if (raw.Kind == InterceptorKind.FromCte)` branch (lines 729–753).
+**Note:** Phase 5 was originally the QRY083 conditional-CTE diagnostic phase. During implementation, verified that no C# expression can produce a `CteDefinition` site with `NestingDepth > baselineDepth` because fluent chains are single contiguous expressions and all sites share the same nesting depth (the execution terminal included). The "conditional CTE" scenario is unreachable in practice, so QRY083 was dropped.
 
-**Tests to add or modify:**
-- `src/Quarry.Analyzers.Tests/...` — locate the existing CTE diagnostic test fixture (per Phase 4) and add tests:
-  1. `db.With<Order>(...)` inside an `if` block — asserts `QRY083` reported.
-  2. `db.FromCte<Order>(...)` inside an `if` block — asserts `QRY083` reported.
+**Goal:** One last full-suite run plus a tidy of related comments.
 
-**Expected state:** New diagnostic tests pass. Existing tests remain green (no current test exercises conditional CTE — verified during DESIGN). Full suite green.
-
-### Phase 6 — Final test sweep & comment tidy
-**Goal:** One last full-suite run plus a tidy of related comments and any leftover dead notes from the bug.
-
-**Files modified:**
-- `src/Quarry.Generator/CodeGen/TransitionBodyEmitter.cs` — ensure the lines 128–132 inline comment now correctly references `QRY082` (the new diagnostic) for same-DTO ambiguity instead of `#206`. Update the multi-CTE section to note that conditional CTE is rejected by `QRY083`.
+**Files modified:** none required (Phase 2 already updated the EmitCteDefinition comments to reference QRY082).
 
 **Tests to add or modify:** none. Run the full suite (`dotnet test`).
 
@@ -160,5 +140,4 @@ After the existing forward pass that builds `cteDefinitions`, scan it once more 
 
 Phase 1 (SQL placeholder rebasing) and Phase 2 (carrier discard fix) are independent of each other in terms of code locations but BOTH are needed before Phase 3's tests can pass end-to-end. Sequencing: Phase 1 → Phase 2 → Phase 3 keeps each commit committable on its own (each phase keeps existing tests green) while making the regression-test-arrives-with-the-fix story clean.
 Phase 4 (QRY082) is independent of Phases 1–3 but sequenced after them so the regression-fix story is told first in commit history.
-Phase 5 (QRY083) is independent of Phases 1–4 but sequenced after Phase 4 so both diagnostic phases are adjacent.
-Phase 6 depends on all prior phases.
+Phase 5 is a final sweep.
