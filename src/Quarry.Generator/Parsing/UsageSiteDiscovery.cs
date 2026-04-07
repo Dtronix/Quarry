@@ -2672,23 +2672,13 @@ internal static class UsageSiteDiscovery
 
         var (filePath, line, column) = location.Value;
 
-        // Get interceptable location
-        string? interceptableLocationData = null;
-        int? interceptableLocationVersion = null;
-#if ROSLYN_4_12_OR_GREATER
-        try
-        {
-#pragma warning disable RSEXPERIMENTAL002
-            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-            if (interceptableLocation != null)
-            {
-                interceptableLocationData = interceptableLocation.Data;
-                interceptableLocationVersion = interceptableLocation.Version;
-            }
-        }
-        catch { }
-#endif
+        // Previously guarded on the undefined ROSLYN_4_12_OR_GREATER symbol so this block
+        // never ran and interceptable-location data was always null at this discovery path.
+        // Switching to the shared helper means real interceptable-location data flows through
+        // when QUARRY_GENERATOR is defined for the build.
+        var execInterceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        var interceptableLocationData = execInterceptable?.Data;
+        var interceptableLocationVersion = execInterceptable?.Version ?? 1;
 
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
@@ -2718,7 +2708,7 @@ internal static class UsageSiteDiscovery
             isAnalyzable: true,
             nonAnalyzableReason: null,
             interceptableLocationData: interceptableLocationData,
-            interceptableLocationVersion: interceptableLocationVersion ?? 1,
+            interceptableLocationVersion: interceptableLocationVersion,
             location: new DiagnosticLocation(filePath, line, column, invocation.Span),
             contextClassName: contextClassName,
             builderTypeName: builderKind,

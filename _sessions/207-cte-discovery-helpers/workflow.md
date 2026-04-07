@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #207
 pr:
 session: 1
 phases-total: 3
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 Refactor CTE discovery boilerplate into shared helpers.
