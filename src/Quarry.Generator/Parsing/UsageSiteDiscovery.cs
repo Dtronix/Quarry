@@ -293,24 +293,11 @@ internal static class UsageSiteDiscovery
             var rootEntityType = returnType.TypeArguments[0];
             var rootEntityTypeName = rootEntityType.ToFullyQualifiedDisplayString();
 
-            string? rootLocationData = null;
-            int rootLocationVersion = 1;
-#if QUARRY_GENERATOR
-            try
-            {
-#pragma warning disable RSEXPERIMENTAL002
-                var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                if (interceptableLocation != null)
-                {
-                    rootLocationData = interceptableLocation.Data;
-                    rootLocationVersion = interceptableLocation.Version;
-                }
-            }
-            catch { }
-#endif
-            if (rootLocationData == null)
+            var rootInterceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+            if (rootInterceptable == null)
                 return null;
+            var rootLocationData = rootInterceptable.Value.Data;
+            var rootLocationVersion = rootInterceptable.Value.Version;
 
             var rootFilePath = invocation.SyntaxTree.FilePath;
             var rootLineSpan = invocation.SyntaxTree.GetLineSpan(invocation.Span);
@@ -469,22 +456,9 @@ internal static class UsageSiteDiscovery
 
         var (filePath, line, column) = location.Value;
 
-        string? interceptableLocationData = null;
-        int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-        try
-        {
-#pragma warning disable RSEXPERIMENTAL002
-            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-            if (interceptableLocation != null)
-            {
-                interceptableLocationData = interceptableLocation.Data;
-                interceptableLocationVersion = interceptableLocation.Version;
-            }
-        }
-        catch { }
-#endif
+        var interceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        var interceptableLocationData = interceptable?.Data;
+        var interceptableLocationVersion = interceptable?.Version ?? 1;
 
         // ── Step 8: Entity type extraction ─────────────────────────────────
         // For PreparedQuery terminals, trace through the variable to find the originating builder's
@@ -949,34 +923,15 @@ internal static class UsageSiteDiscovery
                 continue;
             }
 
-            // Get location info
-            var location = GetMethodLocation(parentInvoc);
-            if (location == null)
+            var info = TryGetCallSiteLocationInfo(parentInvoc, methodName, semanticModel, cancellationToken);
+            if (info == null)
                 break;
-
-            var (filePath, line, column) = location.Value;
-
-            // Get interceptable location
-            string? interceptableLocationData = null;
-            int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-            try
-            {
-#pragma warning disable RSEXPERIMENTAL002
-                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                if (interceptableLocation != null)
-                {
-                    interceptableLocationData = interceptableLocation.Data;
-                    interceptableLocationVersion = interceptableLocation.Version;
-                }
-            }
-            catch { }
-#endif
-            if (interceptableLocationData == null)
-                break;
-
-            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var filePath = info.Value.FilePath;
+            var line = info.Value.Line;
+            var column = info.Value.Column;
+            var interceptableLocationData = info.Value.InterceptableLocationData;
+            var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+            var uniqueId = info.Value.UniqueId;
             var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
 
             // Detect disqualifying patterns
@@ -1112,34 +1067,15 @@ internal static class UsageSiteDiscovery
                 break;
             }
 
-            // Get location info
-            var location = GetMethodLocation(parentInvoc);
-            if (location == null)
+            var info = TryGetCallSiteLocationInfo(parentInvoc, methodName, semanticModel, cancellationToken);
+            if (info == null)
                 break;
-
-            var (filePath, line, column) = location.Value;
-
-            // Get interceptable location
-            string? interceptableLocationData = null;
-            int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-            try
-            {
-#pragma warning disable RSEXPERIMENTAL002
-                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                if (interceptableLocation != null)
-                {
-                    interceptableLocationData = interceptableLocation.Data;
-                    interceptableLocationVersion = interceptableLocation.Version;
-                }
-            }
-            catch { }
-#endif
-            if (interceptableLocationData == null)
-                break;
-
-            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var filePath = info.Value.FilePath;
+            var line = info.Value.Line;
+            var column = info.Value.Column;
+            var interceptableLocationData = info.Value.InterceptableLocationData;
+            var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+            var uniqueId = info.Value.UniqueId;
             var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
             var isInsideLoop = DetectLoopAncestor(parentInvoc);
 
@@ -1262,32 +1198,15 @@ internal static class UsageSiteDiscovery
                 if (!InterceptableMethods.TryGetValue(usageMethodName, out var usageKind))
                     continue;
 
-                var location = GetMethodLocation(usage);
-                if (location == null)
+                var info = TryGetCallSiteLocationInfo(usage, usageMethodName, semanticModel, cancellationToken);
+                if (info == null)
                     continue;
-
-                var (filePath, line, column) = location.Value;
-
-                string? interceptableLocationData = null;
-                int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-                try
-                {
-#pragma warning disable RSEXPERIMENTAL002
-                    var interceptableLocation = semanticModel.GetInterceptableLocation(usage, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                    if (interceptableLocation != null)
-                    {
-                        interceptableLocationData = interceptableLocation.Data;
-                        interceptableLocationVersion = interceptableLocation.Version;
-                    }
-                }
-                catch { }
-#endif
-                if (interceptableLocationData == null)
-                    continue;
-
-                var uniqueId = GenerateUniqueId(filePath, line, column, usageMethodName);
+                var filePath = info.Value.FilePath;
+                var line = info.Value.Line;
+                var column = info.Value.Column;
+                var interceptableLocationData = info.Value.InterceptableLocationData;
+                var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+                var uniqueId = info.Value.UniqueId;
                 var usageChainId = chainId; // Same chain as the Prepare site
 
                 var terminalSite = new RawCallSite(
@@ -2753,23 +2672,13 @@ internal static class UsageSiteDiscovery
 
         var (filePath, line, column) = location.Value;
 
-        // Get interceptable location
-        string? interceptableLocationData = null;
-        int? interceptableLocationVersion = null;
-#if ROSLYN_4_12_OR_GREATER
-        try
-        {
-#pragma warning disable RSEXPERIMENTAL002
-            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-            if (interceptableLocation != null)
-            {
-                interceptableLocationData = interceptableLocation.Data;
-                interceptableLocationVersion = interceptableLocation.Version;
-            }
-        }
-        catch { }
-#endif
+        // Previously guarded on the undefined ROSLYN_4_12_OR_GREATER symbol so this block
+        // never ran and interceptable-location data was always null at this discovery path.
+        // Switching to the shared helper means real interceptable-location data flows through
+        // when QUARRY_GENERATOR is defined for the build.
+        var execInterceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        var interceptableLocationData = execInterceptable?.Data;
+        var interceptableLocationVersion = execInterceptable?.Version ?? 1;
 
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
@@ -2799,7 +2708,7 @@ internal static class UsageSiteDiscovery
             isAnalyzable: true,
             nonAnalyzableReason: null,
             interceptableLocationData: interceptableLocationData,
-            interceptableLocationVersion: interceptableLocationVersion ?? 1,
+            interceptableLocationVersion: interceptableLocationVersion,
             location: new DiagnosticLocation(filePath, line, column, invocation.Span),
             contextClassName: contextClassName,
             builderTypeName: builderKind,
@@ -3542,24 +3451,11 @@ internal static class UsageSiteDiscovery
 
         var (filePath, line, column) = location.Value;
 
-        string? interceptableLocationData = null;
-        int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-        try
-        {
-#pragma warning disable RSEXPERIMENTAL002
-            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-            if (interceptableLocation != null)
-            {
-                interceptableLocationData = interceptableLocation.Data;
-                interceptableLocationVersion = interceptableLocation.Version;
-            }
-        }
-        catch { }
-#endif
-        if (interceptableLocationData == null)
+        var interceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        if (interceptable == null)
             return null;
+        var interceptableLocationData = interceptable.Value.Data;
+        var interceptableLocationVersion = interceptable.Value.Version;
 
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
         var kind = methodName == "With" ? InterceptorKind.CteDefinition : InterceptorKind.FromCte;
@@ -3803,26 +3699,9 @@ internal static class UsageSiteDiscovery
         var methodName = methodSymbol.Name;
         var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
 
-        // Get InterceptableLocation data
-        string? interceptableLocationData = null;
-        int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-        try
-        {
-#pragma warning disable RSEXPERIMENTAL002
-            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-            if (interceptableLocation != null)
-            {
-                interceptableLocationData = interceptableLocation.Data;
-                interceptableLocationVersion = interceptableLocation.Version;
-            }
-        }
-        catch
-        {
-            // Fallback if GetInterceptableLocation fails
-        }
-#endif
+        var rawSqlInterceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        var interceptableLocationData = rawSqlInterceptable?.Data;
+        var interceptableLocationVersion = rawSqlInterceptable?.Version ?? 1;
 
         // Detect if this overload has CancellationToken
         var hasCancellationToken = methodSymbol.Parameters.Length >= 3
@@ -4016,6 +3895,101 @@ internal static class UsageSiteDiscovery
         return type.ToMinimallyQualifiedDisplayString();
     }
 
+
+    /// <summary>
+    /// Bundle of common location data computed for every synthetic post-chain call site:
+    /// file path, line, column, interceptable-location data/version, and unique id.
+    /// Returned by <see cref="TryGetCallSiteLocationInfo"/> so the caller can replace the
+    /// 25-line <c>GetMethodLocation</c> + interceptable-location + <c>GenerateUniqueId</c>
+    /// boilerplate with a single call.
+    /// </summary>
+    private readonly struct CallSiteLocationInfo
+    {
+        public string FilePath { get; }
+        public int Line { get; }
+        public int Column { get; }
+        public string InterceptableLocationData { get; }
+        public int InterceptableLocationVersion { get; }
+        public string UniqueId { get; }
+
+        public CallSiteLocationInfo(
+            string filePath,
+            int line,
+            int column,
+            string interceptableLocationData,
+            int interceptableLocationVersion,
+            string uniqueId)
+        {
+            FilePath = filePath;
+            Line = line;
+            Column = column;
+            InterceptableLocationData = interceptableLocationData;
+            InterceptableLocationVersion = interceptableLocationVersion;
+            UniqueId = uniqueId;
+        }
+    }
+
+    /// <summary>
+    /// Compound helper that bundles the three steps every synthetic post-chain discovery
+    /// path repeats: resolve <see cref="GetMethodLocation"/>, fetch interceptable-location
+    /// data, and generate a unique id. Returns <c>null</c> if either the method location
+    /// or the interceptable-location data is unavailable. Callers translate the null into
+    /// their own loop control (<c>break</c> for while-walks, <c>continue</c> for foreach
+    /// scans).
+    /// </summary>
+    private static CallSiteLocationInfo? TryGetCallSiteLocationInfo(
+        InvocationExpressionSyntax invocation,
+        string methodName,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var location = GetMethodLocation(invocation);
+        if (location == null)
+            return null;
+
+        var interceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        if (interceptable == null)
+            return null;
+
+        var (filePath, line, column) = location.Value;
+        var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+        return new CallSiteLocationInfo(
+            filePath: filePath,
+            line: line,
+            column: column,
+            interceptableLocationData: interceptable.Value.Data,
+            interceptableLocationVersion: interceptable.Value.Version,
+            uniqueId: uniqueId);
+    }
+
+    /// <summary>
+    /// Wraps <see cref="SemanticModel"/> <c>GetInterceptableLocation</c> behind a single helper
+    /// so call sites don't have to repeat the <c>#if QUARRY_GENERATOR</c> / try-catch /
+    /// <c>#pragma warning disable RSEXPERIMENTAL002</c> boilerplate. Returns the location
+    /// <c>Data</c>/<c>Version</c> when available, or <c>null</c> if Roslyn returned null,
+    /// threw, or <c>QUARRY_GENERATOR</c> isn't defined for this build.
+    /// </summary>
+    private static (string Data, int Version)? TryGetInterceptableLocationData(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+#if QUARRY_GENERATOR
+        try
+        {
+#pragma warning disable RSEXPERIMENTAL002
+            var interceptableLocation = semanticModel.GetInterceptableLocation(invocation, cancellationToken);
+#pragma warning restore RSEXPERIMENTAL002
+            if (interceptableLocation != null)
+                return (interceptableLocation.Data, interceptableLocation.Version);
+        }
+        catch
+        {
+            // Fallback if GetInterceptableLocation fails
+        }
+#endif
+        return null;
+    }
 
     /// <summary>
     /// Stores the lambda syntax reference on a RawCallSite for deferred batch enrichment
