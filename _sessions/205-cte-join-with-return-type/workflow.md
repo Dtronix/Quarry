@@ -4,11 +4,11 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: PLAN
-status: suspended
+phase: IMPLEMENT
+status: active
 issue: #205
 pr:
-session: 1
+session: 2
 phases-total: 6
 phases-complete: 0
 ## Problem Statement
@@ -62,3 +62,4 @@ Baseline: 3012 tests pass (97 Migration + 103 Analyzers + 2812 main). No pre-exi
 | 1 | INTAKE | DESIGN | Issue #205 loaded, worktree created, baseline green (3012 tests) |
 | 1 | DESIGN | PLAN | Design approved: Option A (QuarryContext<TSelf> generic subclass) + Path 2 (conditional generator emission). Principle captured for PR body. |
 | 1 | PLAN | PLAN | plan.md written (6 phases). Suspended by user before explicit plan approval; session pushed to remote for handoff. |
+| 2 | PLAN | — | Resumed from suspend. Re-presenting plan for approval. |
