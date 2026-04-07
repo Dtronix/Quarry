@@ -61,11 +61,67 @@ No concerns.
 | `QRY082` is Error severity. Any user with a pre-existing (broken) `db.With<X>(...).With<X>(...)` chain in their codebase will go from silently-miscompiled runtime SQL failure to a compile-time error. This is a behavior change but strictly an improvement — the prior code path was already broken at runtime. | Info | Safe behavior change (failing loud instead of silent). |
 | No migration steps required for consumers. | Info | — |
 
+## Issues Created
+- Dtronix/Quarry#213: Lambda-form `With<T>()` for more ergonomic multi-CTE chains (surfaced during 3-CTE test writing; out of scope for #206).
+
 ## Classifications
 
 | Finding | Section | Class | Action Taken |
 |---|---|---|---|
-| Missing edge-case test: 2-CTE chain where first CTE has zero inner params, second has N | Test Quality | A | Add `Cte_TwoChainedWiths_FirstEmptySecondCaptured_CapturedParam` to CrossDialectCteTests.cs |
-| QRY082 test does not verify diagnostic location points at second With<> | Test Quality | A | Extend `Cte_TwoWiths_SameDto_EmitsQRY082` with a `Location.GetLineSpan()` assertion |
-| SQL rebasing silently uses mask=0 for multi-mask inner CTE plans | Correctness | A | Add a debug assertion `cte.InnerPlan.PossibleMasks.Count == 1` in `SqlAssembler` CTE loop |
-| `isFirstCteSite` loop does not assert current site exists in ClauseSites | Correctness | A | Add a sanity check after the loop in `TransitionBodyEmitter.EmitCteDefinition` |
+| Missing edge-case test: 2-CTE chain where first CTE has zero inner params, second has N | Test Quality | A | Added `Cte_TwoChainedWiths_FirstEmptySecondCaptured_CapturedParam` to CrossDialectCteTests.cs (commit b65069e). |
+| QRY082 test does not verify diagnostic location points at second With<> | Test Quality | A | Extended `Cte_TwoWiths_SameDto_EmitsQRY082` with a span-text check (`Does.Contain("o.Total > 200")`) in commit b65069e. |
+| SQL rebasing silently uses mask=0 for multi-mask inner CTE plans | Correctness | A | Added `Debug.Assert(cte.InnerPlan.PossibleMasks.Count <= 1)` in SqlAssembler (commit b65069e). |
+| `isFirstCteSite` loop does not assert current site exists in ClauseSites | Correctness | A | Added defensive note in `EmitCteDefinition` when loop walks entire ClauseSites without finding either the current site or a prior CteDefinition (commit b65069e). |
+| A2 assertion brittleness (span-text coupling to source literals) | Test Quality | D | Dismissed 2026-04-07 — assertion works; a line/column alternative would be fragile for a different reason. Not a blocker. |
+| A2 redundant `Does.Contain("With<Order>")` sub-assertion | Test Quality | D | Dismissed 2026-04-07 — cosmetic, harmless. |
+| A3 `Debug.Assert` is Debug-only; silent in Release builds | Correctness | D | Dismissed 2026-04-07 — acceptable; the assert exists to catch a regression at test time (always Debug). |
+| A4 defensive note won't fire when current site missing but a prior CTE exists | Correctness | D | Dismissed 2026-04-07 — unreachable state; result is defensible either way. |
+| A4 emits generated-code comment rather than a diagnostic channel | Codebase Consistency | D | Dismissed 2026-04-07 — appropriate for an unreachable defensive note. |
+| Lambda-form `With<T>()` ergonomics proposal | — | C | Filed as Dtronix/Quarry#213. |
+
+## Re-Review (2026-04-06)
+
+Re-review of branch state at `b65069e`/`f0dfe70` after first-review remediation. Verified that A1–A4 were addressed and that the A4 restructure (which originally introduced a regression in the author's first attempt) is now correct. Full Quarry.Tests suite (2816 tests) passes.
+
+### Plan Compliance
+
+| Finding | Severity | Why It Matters |
+|---|---|---|
+| No new concerns. Remediation commit `b65069e` matches the four entries in the Classifications table; `f0dfe70` only updates session workflow notes. | Info | — |
+
+### Correctness
+
+| Finding | Severity | Why It Matters |
+|---|---|---|
+| **A4 loop logic verified.** `TransitionBodyEmitter.cs:125–138` correctly handles all three reachable cases: (1) current site is the only/first CTE → loop hits `s.UniqueId == site.UniqueId` first, sets `sawCurrentSite = true`, breaks with `isFirstCteSite = true`; (2) prior CTE exists → loop hits `InterceptorKind.CteDefinition` before reaching the current site, sets `sawPriorCte = true` and `isFirstCteSite = false`, breaks; (3) defensive (unreachable) → loop walks the entire list without matching anything, both flags remain false, the note fires and `isFirstCteSite = true` is preserved. The original buggy version that fired the fallback for every subsequent CTE has been correctly restructured. | Info | A4 verified clean. |
+| **One subtle hole in the defensive note**: if the current site is missing from ClauseSites BUT a prior CTE site IS present (an internally inconsistent state), the loop sets `sawPriorCte = true`, breaks with `isFirstCteSite = false`, and the note does NOT fire. This is a benign hole — the result `isFirstCteSite = false` is at least defensible (some prior CTE existed) — and the case is itself unreachable. Documenting only; no action recommended. | Info | Cosmetic. |
+| **A3 — `Debug.Assert` mechanism trade-off.** `Debug.Assert` only fires in DEBUG builds; release-built generators consumed by NuGet would silently fall through to `mask=0` rendering if the invariant is violated by a future analyzer change. Roslyn source-generators ship as Debug-built assemblies in this repo (Quarry.Generator.csproj has no `<Optimize>true` for Release), and the assertion's purpose is to catch a regression at TEST time, where the suite always runs Debug. Acceptable for the stated intent. If the project ever ships Release-built generator binaries the assertion would become a silent fallback — flagging for awareness only. Not actionable now. | Info | Trade-off documented; acceptable. |
+| **A3 condition uses `<= 1` not `== 1`.** The plan/classification text said `== 1`. The implementer chose `<= 1` to also tolerate `Count == 0` (an unusual but possible state for a plan with no tracked masks). `RenderSelectSql(plan, mask: 0, ...)` does not validate that the mask appears in `PossibleMasks`, so `Count == 0` would still produce output. The relaxation is defensible and safer than `== 1` (which would assert on degenerate-but-handleable states). | Info | Intentional broadening; correct. |
+| **Interaction between Phase 1 (rebasing) and Phase 2 (carrier fix) verified.** The two fixes touch different layers: SqlAssembler rewrites the inner SQL placeholder names against `cte.ParameterOffset`, and TransitionBodyEmitter copies the inner carrier's P-slots into `__c.P{ParameterOffset+i}`. Both consume the same `cte.ParameterOffset` (assigned exactly once at `ChainAnalyzer.cs:698` as `paramGlobalIndex` BEFORE the inner params are appended). SQL placeholder names and runtime P-slot indices stay in lockstep across both code paths — no off-by-one between rendered SQL and parameter dispatch. Verified by `Cte_TwoChainedWiths_FirstEmptySecondCaptured_CapturedParam` (zero-offset second CTE) and `Cte_ThreeChainedWiths_AllUsedDownstream` (offsets 0, 1, 2). | Info | Cross-fix integration is correct. |
+
+### Security
+
+No new concerns.
+
+### Test Quality
+
+| Finding | Severity | Why It Matters |
+|---|---|---|
+| **A1 test verified.** `Cte_TwoChainedWiths_FirstEmptySecondCaptured_CapturedParam` (CrossDialectCteTests.cs:313–361) covers all four dialects, asserts SQL strings AND row content, and validates the boundary condition: literal-only first CTE + captured second CTE → second CTE renders `@p0/$1` (offset 0). Test passes. | Info | A1 addressed. |
+| **A2 assertion brittleness — minor.** The remediation uses `Does.Contain("o.Total > 200")` rather than `Location.GetLineSpan()` line/column comparison. This works because both With<Order>() spans differ in their argument literals (100 vs 200), and the second invocation's `invocation.Span` covers both inner Where lambdas — so the second's span uniquely contains "200" while the first's contains only "100". Trade-offs: (a) couples the test to source literal text — renaming `o` to `order` or changing `200` to `300` requires test update; (b) couples to Roslyn's `InvocationExpressionSyntax.Span` shape — if Roslyn ever changes how span-coverage works for chained invocations the assertion could go either way. A line/column assertion (`qry082.Location.SourceSpan` start position vs known second-call line) would be more robust. Severity Low — current assertion does verify the intended behavior, just via a fragile mechanism. | Low | Minor: brittle assertion mechanism. The classification table's recommended action was a `Location.GetLineSpan()` assertion; the implementer chose a span-text-content assertion instead. Both achieve the goal of pinning the diagnostic to the second call. |
+| **A2 second sub-assertion is redundant.** `Does.Contain("With<Order>")` will trivially pass for both With<Order> spans, so it adds no discriminating power on top of `Does.Contain("o.Total > 200")`. Minor cleanup opportunity; not a defect. | Info | Cosmetic. |
+| **Manifest regeneration consistent.** All four dialect snapshots gained the same +10 entries from the new edge-case test (revised from the +7 in the first review which was before A1 was added). Cross-dialect manifests verified consistent. | Info | — |
+
+### Codebase Consistency
+
+| Finding | Severity | Why It Matters |
+|---|---|---|
+| **A4 sentinel loop pattern.** Two-flag (`sawCurrentSite`, `sawPriorCte`) sentinel pattern is uncommon in the codebase but reads cleanly and is well-commented. Could have alternatively been expressed as a tri-state enum or by checking `i == chain.ClauseSites.Count` after the loop, but the chosen form is the most explicit about intent. | Info | Acceptable idiom. |
+| **A4 emits a code comment via `sb.AppendLine` in the generated source** rather than logging to a generator diagnostic channel. This means a violation surfaces only in the generated `.g.cs` file, where a developer would find it during a debugging session — never as a compile-time warning. Consistent with the "unreachable case" framing, but worth noting that a `TraceCapture.Log` or `DiagnosticInfo` channel would be more discoverable. Not actionable for an unreachable defensive note. | Info | Documented for awareness. |
+
+### Integration / Breaking Changes
+
+| Finding | Severity | Why It Matters |
+|---|---|---|
+| No new breaking changes from the remediation commit. A1 only adds a test; A2 only adds assertions; A3 only adds a Debug.Assert (release builds unchanged); A4 adds tracking variables and a generated-code comment in an unreachable path. | Info | — |
+| Manifest snapshots from the A1 test additions are committed and verified consistent across all four dialects. | Info | — |
