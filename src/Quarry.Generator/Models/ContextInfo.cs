@@ -46,6 +46,14 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
     /// </summary>
     public Location Location { get; }
 
+    /// <summary>
+    /// Whether the context class inherits from the generic <c>QuarryContext&lt;TSelf&gt;</c>
+    /// base rather than the non-generic <c>QuarryContext</c> directly.
+    /// When true, the generator skips emitting <c>With&lt;TDto&gt;</c> shadows because
+    /// the typed overloads are already inherited from the generic base.
+    /// </summary>
+    public bool HasGenericContextBase { get; }
+
     public ContextInfo(
         string className,
         string @namespace,
@@ -53,7 +61,8 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
         string? schema,
         IReadOnlyList<EntityInfo> entities,
         IReadOnlyList<EntityMapping> entityMappings,
-        Location location)
+        Location location,
+        bool hasGenericContextBase = false)
     {
         ClassName = className;
         Namespace = @namespace;
@@ -62,6 +71,7 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
         Entities = entities;
         EntityMappings = entityMappings;
         Location = location;
+        HasGenericContextBase = hasGenericContextBase;
     }
 
     public bool Equals(ContextInfo? other)
@@ -72,6 +82,7 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
             && Namespace == other.Namespace
             && Dialect == other.Dialect
             && Schema == other.Schema
+            && HasGenericContextBase == other.HasGenericContextBase
             && EqualityHelpers.SequenceEqual(Entities, other.Entities)
             && EqualityHelpers.SequenceEqual(EntityMappings, other.EntityMappings);
     }
@@ -80,6 +91,6 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(ClassName, Namespace, Dialect, Schema, Entities.Count);
+        return HashCode.Combine(ClassName, Namespace, Dialect, Schema, HasGenericContextBase, Entities.Count);
     }
 }
