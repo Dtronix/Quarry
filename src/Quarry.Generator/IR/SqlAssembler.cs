@@ -178,6 +178,15 @@ internal static class SqlAssembler
                 // string so the SQL is at least non-empty for downstream tooling.
                 if (cte.InnerPlan != null)
                 {
+                    // Fail-loud guard: the mask=0 assumption below is only valid for
+                    // inner chains that have exactly one mask variant. No current code
+                    // path produces multi-mask inner chains, but if a future analyzer
+                    // change starts propagating conditional clauses into inner chains,
+                    // this Debug.Assert will surface the violation instead of silently
+                    // picking the base variant and dropping the others.
+                    System.Diagnostics.Debug.Assert(
+                        cte.InnerPlan.PossibleMasks.Count <= 1,
+                        $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0. Extend RenderSelectSql to render per outer mask if this triggers.");
                     var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
                     sb.Append(rebased.Sql);
                 }

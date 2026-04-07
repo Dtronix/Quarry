@@ -2364,6 +2364,18 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ---
 
+### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100), "User" AS (SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = $1) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `bool` |
+
+---
+
 ### With(...).With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2390,7 +2402,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 321 |
+| Total discovered | 324 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 64 |
-| Rendered | 257 |
+| Consolidated (deduped) | 66 |
+| Rendered | 258 |

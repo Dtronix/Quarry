@@ -123,15 +123,29 @@ internal static class TransitionBodyEmitter
         // chain.ClauseSites that precede this site by UniqueId. This is O(N) per site but
         // N is the chain length and chains are short.
         bool isFirstCteSite = true;
+        bool sawCurrentSite = false;
+        bool sawPriorCte = false;
         for (int i = 0; i < chain.ClauseSites.Count; i++)
         {
             var s = chain.ClauseSites[i];
-            if (s.UniqueId == site.UniqueId) break;
+            if (s.UniqueId == site.UniqueId) { sawCurrentSite = true; break; }
             if (s.Bound.Raw.Kind == InterceptorKind.CteDefinition)
             {
+                sawPriorCte = true;
                 isFirstCteSite = false;
                 break;
             }
+        }
+        // Defensive note: if the loop walks the entire ClauseSites list without hitting
+        // either the current site or a prior CteDefinition, the current site is not
+        // present in its own chain's ClauseSites — a discovery-pipeline invariant
+        // violation that is not reachable by any current test scenario. The defaulted
+        // behavior (isFirstCteSite = true) is still correct for the only scenario this
+        // could reach: the current site being the only CTE in the chain. Emit a code
+        // comment so that any future bug report can quickly locate the violation.
+        if (!sawCurrentSite && !sawPriorCte)
+        {
+            sb.AppendLine($"    // NOTE: EmitCteDefinition site {site.UniqueId} not found in chain.ClauseSites; defaulted to first-CTE behavior.");
         }
 
         sb.AppendLine($"    public static {contextClass} {methodName}(");

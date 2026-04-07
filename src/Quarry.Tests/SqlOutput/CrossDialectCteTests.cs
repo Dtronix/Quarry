@@ -300,6 +300,66 @@ internal class CrossDialectCteTests
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
     }
 
+    /// <summary>
+    /// Boundary test for the parameter-offset logic: the FIRST CTE has zero captured
+    /// parameters (literal-only inner query) and the SECOND CTE has a captured parameter.
+    /// With the fix, the second CTE's parameter lands at outer carrier slot P0 (because
+    /// <c>cte.ParameterOffset</c> accumulates zero from the first CTE) and its inner
+    /// SQL must render <c>@p0</c> (or <c>$1</c>) — NOT an offset placeholder. Validates
+    /// that the rebase correctly handles the zero-offset case for a non-first CTE and
+    /// that the carrier <c>Unsafe.As</c> recovery path works even when no prior params
+    /// have been copied into the shared carrier.
+    /// </summary>
+    [Test]
+    public async Task Cte_TwoChainedWiths_FirstEmptySecondCaptured_CapturedParam()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        bool activeFilter = true;
+
+        // First With uses a literal-only Where (no captured params). Second With
+        // captures activeFilter. The second CTE's parameter must appear as @p0/$1
+        // because the first CTE contributes zero parameters to the outer slot array.
+        var lt = Lite
+            .With<Order>(Lite.Orders().Where(o => o.Total > 100))
+            .With<User>(Lite.Users().Where(u => u.IsActive == activeFilter))
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pg = Pg
+            .With<Pg.Order>(Pg.Orders().Where(o => o.Total > 100))
+            .With<Pg.User>(Pg.Users().Where(u => u.IsActive == activeFilter))
+            .FromCte<Pg.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var my = My
+            .With<My.Order>(My.Orders().Where(o => o.Total > 100))
+            .With<My.User>(My.Users().Where(u => u.IsActive == activeFilter))
+            .FromCte<My.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var ss = Ss
+            .With<Ss.Order>(Ss.Orders().Where(o => o.Total > 100))
+            .With<Ss.User>(Ss.Users().Where(u => u.IsActive == activeFilter))
+            .FromCte<Ss.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100), \"User\" AS (SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = @p0) SELECT \"OrderId\", \"Total\" FROM \"Order\"",
+            pg:     "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100), \"User\" AS (SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = $1) SELECT \"OrderId\", \"Total\" FROM \"Order\"",
+            mysql:  "WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?) SELECT `OrderId`, `Total` FROM `Order`",
+            ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100), [User] AS (SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = @p0) SELECT [OrderId], [Total] FROM [Order]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+    }
+
     #endregion
 
     #region CTE FromCte (dedicated DTO via projection)

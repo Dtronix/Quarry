@@ -2480,6 +2480,20 @@ public static class Queries
         Assert.That(qry082, Is.Not.Null,
             $"Expected QRY082 for duplicate-DTO multi-With chain. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
 
+        // Verify the diagnostic points at the SECOND With<Order>() call (the duplicate-
+        // introducing one), not the first. Quarry's discovery pins call-site locations
+        // to the outermost InvocationExpressionSyntax of each call, which for a fluent
+        // chain covers the whole expression up to that invocation — so the second With()
+        // call's span extends far enough to include the "> 200" literal that uniquely
+        // identifies it as the second call. Extracting the span text is a reliable way
+        // to assert the diagnostic is tied to the duplicate site rather than the first.
+        var sourceText = compilation.SyntaxTrees.First().GetText();
+        var spanText = sourceText.ToString(qry082!.Location.SourceSpan);
+        Assert.That(spanText, Does.Contain("o.Total > 200"),
+            $"Expected QRY082 span to cover the SECOND With<Order>() call (containing 'o.Total > 200'). Got span: '{spanText}'");
+        Assert.That(spanText, Does.Contain("With<Order>"),
+            $"Expected QRY082 span to contain 'With<Order>'. Got span: '{spanText}'");
+
         var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
         Assert.That(qry900, Is.Null,
             $"Duplicate CTE name should not surface as QRY900. Got: {qry900?.GetMessage()}");
