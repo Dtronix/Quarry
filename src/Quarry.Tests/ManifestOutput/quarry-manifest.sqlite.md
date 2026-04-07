@@ -4,18 +4,18 @@
 
 ## CteDb
 
-### Users().With(...)Users().Join(...).Select(...).Prepare().ToDiagnostics()
+### Users().With(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "orders"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users"
 ```
 
 ---
 
-### Users().With(...)Users().Join(...).Select(...).Prepare().ToDiagnostics()
+### Users().With(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "t0"."UserName", "t1"."Total" FROM "orders"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "t0"."UserName", "t1"."Total" FROM "users"
 ```
 
 | Parameter | Type |
@@ -24,10 +24,26 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ---
 
-### Users().With(...)Users().Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
+### Users().With(...).Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "orders" WHERE "Total" > 200
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users" WHERE "t1"."Total" > 200
+```
+
+---
+
+### Users().With(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT ""."UserId", ""."UserName" FROM "users"
+```
+
+---
+
+### Users().With(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT ""."UserId", ""."UserName" FROM "users" WHERE "IsActive" = 1
 ```
 
 ---
@@ -3675,7 +3691,7 @@ WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHE
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 568 |
-| Skipped (errors) | 4 |
-| Consolidated (deduped) | 176 |
-| Rendered | 388 |
+| Total discovered | 565 |
+| Skipped (errors) | 0 |
+| Consolidated (deduped) | 175 |
+| Rendered | 390 |

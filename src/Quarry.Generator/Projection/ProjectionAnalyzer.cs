@@ -104,6 +104,53 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
+    /// Analyzes a single-entity Select() invocation using syntax only — no EntityInfo or SemanticModel required.
+    /// Handles both SimpleLambdaExpressionSyntax (u => ...) and ParenthesizedLambdaExpressionSyntax ((u) => ...).
+    /// Creates placeholder columns with PropertyName set but ClrType/ColumnName empty.
+    /// Used by DiscoverPostCteSites for non-joined CTE chains where the entity type is unresolved.
+    /// </summary>
+    public static ProjectionInfo AnalyzeSingleEntitySyntaxOnly(
+        InvocationExpressionSyntax invocation,
+        SqlDialect dialect)
+    {
+        if (invocation.ArgumentList.Arguments.Count == 0)
+            return ProjectionInfo.CreateFailed("object", "Select() requires a lambda argument");
+
+        var argument = invocation.ArgumentList.Arguments[0].Expression;
+
+        ExpressionSyntax? body;
+        string paramName;
+
+        if (argument is SimpleLambdaExpressionSyntax simpleLambda)
+        {
+            body = simpleLambda.Body as ExpressionSyntax;
+            paramName = simpleLambda.Parameter.Identifier.Text;
+        }
+        else if (argument is ParenthesizedLambdaExpressionSyntax parenLambda
+                 && parenLambda.ParameterList.Parameters.Count == 1)
+        {
+            body = parenLambda.Body as ExpressionSyntax;
+            paramName = parenLambda.ParameterList.Parameters[0].Identifier.Text;
+        }
+        else
+        {
+            return ProjectionInfo.CreateFailed("object", "Select() argument must be a single-parameter lambda");
+        }
+
+        if (body == null)
+            return ProjectionInfo.CreateFailed("object", "Lambda body must be an expression");
+
+        // Use the joined placeholder path with entityCount=1 and no table alias
+        var perParamLookup = new Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)>(StringComparer.Ordinal)
+        {
+            [paramName] = (new Dictionary<string, ColumnInfo>(StringComparer.Ordinal), "")
+        };
+
+        var resultType = InferResultTypeFromSyntax(body);
+        return AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect);
+    }
+
+    /// <summary>
     /// Analyzes a joined projection body with placeholder column resolution.
     /// When column metadata is unavailable, creates columns with PropertyName and TableAlias
     /// but empty ClrType/ColumnName (to be enriched later).

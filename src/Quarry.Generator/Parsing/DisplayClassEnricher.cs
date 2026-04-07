@@ -28,6 +28,24 @@ internal static class DisplayClassEnricher
         if (sites.Length == 0)
             return sites;
 
+        // Deduplicate sites by InterceptableLocationData. Multiple discovery paths
+        // (DiscoverPostCteSites/DiscoverPostJoinSites + normal DiscoverRawCallSites)
+        // can produce sites targeting the same call. Keep the first occurrence.
+        if (sites.Length > 1)
+        {
+            var seen = new HashSet<string>();
+            var deduped = ImmutableArray.CreateBuilder<RawCallSite>(sites.Length);
+            foreach (var site in sites)
+            {
+                var locData = site.InterceptableLocationData;
+                if (locData != null && !seen.Add(locData))
+                    continue;
+                deduped.Add(site);
+            }
+            if (deduped.Count < sites.Length)
+                sites = deduped.ToImmutable();
+        }
+
         // Build a supplemental compilation that includes generated entity and context
         // source. The original compilation does not contain entity classes or context
         // accessor methods produced by Pipeline A (RegisterSourceOutput), so variables
