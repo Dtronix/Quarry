@@ -2263,6 +2263,18 @@ SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActi
 
 ---
 
+### Where(...).OrderItems()
+
+```sql
+SELECT "OrderItemId", "OrderId", "ProductName", "Quantity", "UnitPrice", "LineTotal" FROM "order_items" WHERE "Quantity" > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Where(...).Orders()
 
 ```sql
@@ -2288,6 +2300,18 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 ```sql
 SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
 ```
+
+---
+
+### Where(...).Users()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `bool` |
 
 ---
 
@@ -2325,6 +2349,33 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
 ```
 
+---
+
+### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1), "User" AS (SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = $2) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+
+---
+
+### With(...).With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1), "User" AS (SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = $2), "OrderItem" AS (SELECT "OrderItemId", "OrderId", "ProductName", "Quantity", "UnitPrice", "LineTotal" FROM "order_items" WHERE "Quantity" > $3) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+| `@p2` | `int` |
+
 ## SchemaPgDb
 
 ### Users().ToDiagnostics()
@@ -2339,7 +2390,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 314 |
+| Total discovered | 321 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 61 |
-| Rendered | 253 |
+| Consolidated (deduped) | 64 |
+| Rendered | 257 |

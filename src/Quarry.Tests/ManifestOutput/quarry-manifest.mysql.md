@@ -2234,6 +2234,18 @@ SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActi
 
 ---
 
+### Where(...).OrderItems()
+
+```sql
+SELECT `OrderItemId`, `OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal` FROM `order_items` WHERE `Quantity` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Where(...).Orders()
 
 ```sql
@@ -2259,6 +2271,18 @@ SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` 
 ```sql
 SELECT `OrderId`, `Total`, `Status` FROM `orders` WHERE `Total` > 100
 ```
+
+---
+
+### Where(...).Users()
+
+```sql
+SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `bool` |
 
 ---
 
@@ -2296,6 +2320,33 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 |-----------|------|
 | `@p0` | `decimal` |
 
+---
+
+### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?) SELECT `OrderId`, `Total` FROM `Order`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+
+---
+
+### With(...).With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?), `User` AS (SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = ?), `OrderItem` AS (SELECT `OrderItemId`, `OrderId`, `ProductName`, `Quantity`, `UnitPrice`, `LineTotal` FROM `order_items` WHERE `Quantity` > ?) SELECT `OrderId`, `Total` FROM `Order`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `bool` |
+| `@p2` | `int` |
+
 ## SchemaMyDb
 
 ### Users().ToDiagnostics()
@@ -2310,7 +2361,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 309 |
+| Total discovered | 316 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 59 |
-| Rendered | 250 |
+| Consolidated (deduped) | 62 |
+| Rendered | 254 |
