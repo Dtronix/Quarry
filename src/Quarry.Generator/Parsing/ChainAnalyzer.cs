@@ -658,6 +658,10 @@ internal static class ChainAnalyzer
         // Forward iteration: each CteDefinition is processed before any FromCte that
         // references it, so the FromCte lookup against cteDefinitions can match by name.
         var cteDefinitions = new List<CteDef>();
+        // Track CTE short names already added so we can emit QRY082 on duplicates.
+        // Two With<X>(...) calls in one chain produce two CTE entries with the same
+        // name, which would render an invalid WITH clause with duplicate aliases.
+        var seenCteNames = new HashSet<string>(StringComparer.Ordinal);
         for (int i = 0; i < clauseSites.Count; i++)
         {
             var site = clauseSites[i];
@@ -675,6 +679,18 @@ internal static class ChainAnalyzer
                     var innerParams = inner.Chain.Plan.Parameters;
                     var columns = raw.CteColumns ?? Array.Empty<CteColumn>();
                     var cteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
+
+                    // Reject duplicate CTE names in the same chain via QRY082. We still add
+                    // the CteDef so downstream code (placeholder rebasing, carrier emission)
+                    // sees a coherent plan; the diagnostic surfaces as a compile-time error
+                    // and prevents the broken SQL from ever running.
+                    if (!seenCteNames.Add(cteName))
+                    {
+                        diagnostics?.Add(new DiagnosticInfo(
+                            Quarry.Generators.DiagnosticDescriptors.DuplicateCteName.Id,
+                            raw.Location,
+                            cteName));
+                    }
 
                     // Capture the starting index in the outer carrier's parameter slots
                     // BEFORE prepending — this is where the inner params will live in the outer carrier.

@@ -750,7 +750,7 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "All operands of a UNION/INTERSECT/EXCEPT must project the same number of columns.");
 
-    // ─── CTE diagnostics (QRY080–QRY081) ────────────────────────────────
+    // ─── CTE diagnostics (QRY080–QRY082) ────────────────────────────────
 
     /// <summary>
     /// QRY080: CTE inner query could not be analyzed.
@@ -777,6 +777,19 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         description: "FromCte<T>() reads from a CTE that must be defined earlier in the same fluent chain via With<T>(innerQuery).");
+
+    /// <summary>
+    /// QRY082: Multiple With&lt;T&gt;(...) calls in the same chain produce duplicate CTE names.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor DuplicateCteName = new(
+        id: "QRY082",
+        title: "Duplicate CTE name in chain",
+        messageFormat: "Multiple With<{0}>(...) calls in the same chain produce duplicate CTE name '{0}'. Each CTE in a chain must use a distinct DTO type so the generated WITH clause has unique aliases.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Each CTE in a multi-CTE chain must have a unique short name (the unqualified DTO type name). Reusing the same DTO type for two With<T>() calls would emit a WITH clause with duplicate aliases and is rejected at compile time.");
 
     /// <summary>
     /// QRY900: Internal generator error.

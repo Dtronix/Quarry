@@ -2446,6 +2446,46 @@ public static class Queries
     }
 
     [Test]
+    public void Cte_TwoWiths_SameDto_EmitsQRY082()
+    {
+        // Two With<X>(...) calls in one chain referencing the same DTO type produce
+        // duplicate CTE aliases in the generated WITH clause, which is invalid SQL
+        // and silently routes the second call's CteDef lookup to the first entry in
+        // EmitCteDefinition. Reject the configuration at compile time via QRY082.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // Both With<Order>(...) calls — duplicate short name 'Order'.
+        await db.With<Order>(db.Orders().Where(o => o.Total > 100))
+            .With<Order>(db.Orders().Where(o => o.Total > 200))
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry082 = diagnostics.FirstOrDefault(d => d.Id == "QRY082");
+        Assert.That(qry082, Is.Not.Null,
+            $"Expected QRY082 for duplicate-DTO multi-With chain. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Duplicate CTE name should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
     public void Cte_With_GlobalNamespaceDto_StripsGlobalPrefix()
     {
         // Regression for review pass #2 Correctness #1: ChainAnalyzer's local
