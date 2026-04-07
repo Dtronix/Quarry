@@ -195,6 +195,47 @@ internal static class UsageSiteDiscovery
                     matchCount++;
                 }
             }
+            // When error-typed type arguments cause Roslyn to report both the `new`
+            // method on QuarryContext<TSelf> and the hidden base method on QuarryContext
+            // as candidates (both With<TDto> with the same signature), prefer the
+            // most-derived containing type. This specifically handles CTE methods (With)
+            // where QuarryContext<TSelf>'s `new` shadow and the base QuarryContext method
+            // are both reported as candidates.
+            if (matchCount > 1
+                && invocation.Expression is MemberAccessExpressionSyntax maDisambig
+                && maDisambig.Name.Identifier.ValueText is "With" or "FromCte")
+            {
+                IMethodSymbol? best = null;
+                foreach (var sym in symbolInfo.CandidateSymbols)
+                {
+                    if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                    {
+                        if (best == null)
+                        {
+                            best = ms;
+                        }
+                        else if (ms.ContainingType != null && best.ContainingType != null)
+                        {
+                            // Prefer the method from the more-derived type
+                            var msBase = ms.ContainingType.BaseType;
+                            while (msBase != null)
+                            {
+                                if (SymbolEqualityComparer.Default.Equals(msBase.OriginalDefinition, best.ContainingType.OriginalDefinition))
+                                {
+                                    best = ms;
+                                    break;
+                                }
+                                msBase = msBase.BaseType;
+                            }
+                        }
+                    }
+                }
+                if (best != null)
+                {
+                    matched = best;
+                    matchCount = 1;
+                }
+            }
             if (matchCount == 1 && matched != null)
             {
                 methodSymbol = matched;
@@ -1035,6 +1076,14 @@ internal static class UsageSiteDiscovery
             if (parentSymbolInfo.Symbol is IMethodSymbol || parentSymbolInfo.CandidateSymbols.Length > 0)
             {
                 // Normal discovery should handle it — continue walking
+                currentInvoc = parentInvoc;
+                continue;
+            }
+
+            // CTE methods (With, FromCte) have their own discovery path in Step 3b —
+            // skip them here to avoid duplicate sites.
+            if (methodName is "With" or "FromCte")
+            {
                 currentInvoc = parentInvoc;
                 continue;
             }
@@ -1967,6 +2016,21 @@ internal static class UsageSiteDiscovery
         if (argument is ParenthesizedLambdaExpressionSyntax parenLambda)
             return parenLambda.ParameterList.Parameters.Count;
 
+        return 0;
+    }
+
+    /// <summary>
+    /// Returns the number of explicit type arguments on a generic method call.
+    /// E.g., <c>With&lt;Order&gt;(inner)</c> → 1, <c>With&lt;Order, Dto&gt;(inner)</c> → 2.
+    /// Returns 0 for non-generic calls.
+    /// </summary>
+    private static int GetExplicitTypeArgumentCount(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is MemberAccessExpressionSyntax ma
+            && ma.Name is GenericNameSyntax genericName)
+        {
+            return genericName.TypeArgumentList.Arguments.Count;
+        }
         return 0;
     }
 

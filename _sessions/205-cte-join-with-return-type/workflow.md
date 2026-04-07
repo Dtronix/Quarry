@@ -5,12 +5,12 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #205
 pr:
 session: 2
 phases-total: 6
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 CTE chains that use context-specific methods after `With()` (e.g., `db.With<A>(inner).Users().Join<A>(...).Select(...)`) fail during source generation because `QuarryContext.With<TDto>()` returns the base `QuarryContext` type, and methods like `Users()` only exist on the derived (generated) context class.
 
@@ -47,14 +47,46 @@ Baseline: 3012 tests pass (97 Migration + 103 Analyzers + 2812 main). No pre-exi
 - 2026-04-06: **New test context rather than migrating existing ones.** Add `CteChainTestDbContext : QuarryContext<CteChainTestDbContext>` reusing existing entity types. Keeps blast radius on existing test fixtures to zero and isolates the new-path tests.
 
 ## Suspend State
-- Current phase: **PLAN**, awaiting explicit user approval of `plan.md`
-- Sub-step: plan.md written and presented to the user with 6 phases; last assistant message summarized scope and asked "Does this look right, or are there phases you want split further, reordered, or scoped differently before IMPLEMENT starts?" — user replied with "Handoff and push to remote" instead of answering, so plan approval is **pending** on resume
-- Working tree: clean after the suspend commit (all session artifacts staged and committed)
-- WIP commit: tip of `205-cte-join-with-return-type` at suspend (commit subject starts with `[WIP] #205 PLAN phase suspended`). Session-only; no code changes yet.
-- Test status: baseline 3012 tests passing (97 Migration + 103 Analyzers + 2812 main), 0 pre-existing failures. No code changes have been made on this branch yet — only session artifacts exist.
-- Decisions locked in during DESIGN (see `## Decisions`): Option A (Hybrid `QuarryContext<TSelf>`), Path 2 (conditional generator emission), legacy contexts remain supported, new `CteChainTestDbContext` fixture instead of migrating existing ones, architectural findings to be captured for PR body, follow-ups to be filed during REMEDIATE.
-- **Immediate next step on resume:** re-present the plan summary to the user and get explicit approval (or apply whatever edits they request) before transitioning PLAN → IMPLEMENT.
-- Unrecorded context: none. All design rationale lives in `## Decisions` and `plan.md`. The architectural principle discussion from the session (why `QuarryContext<TSelf>` helps beyond just #205) is captured inline in plan.md under "Key concept" and will be expanded in Phase 6's `architectural-findings.md` during IMPLEMENT.
+- Current phase: **IMPLEMENT**, Phase 4 of 6, mid-phase
+- Sub-step: Phase 4 integration tests — generator discovery is working, remaining issues are in generated code and test format
+
+### Completed commits on this branch
+1. `aeb93f1` Phase 1: `QuarryContext<TSelf>` generic subclass added to `src/Quarry/Context/QuarryContext.cs`
+2. `c88d071` Phase 2: `HasGenericContextBase` flag on `ContextInfo`, `ContextParser` generic detection, conditional `With<>` emission in `ContextCodeGenerator` (NOTE: conditional emission was REVERTED in WIP — see below)
+3. `8cb2c3f` Phase 3: `CteDb` test fixture in `Quarry.Tests.Samples.Cte` namespace
+
+### WIP state (uncommitted changes)
+**Root cause found and fixed:** The `With<>` call on `QuarryContext<TSelf>` contexts was not being discovered by the generator because Roslyn reports BOTH `QuarryContext<TSelf>.With<TDto>` (new) AND `QuarryContext.With<TDto>` (hidden base) as overload-resolution-failure candidates when the type argument is an error type. The disambiguation code in `UsageSiteDiscovery.cs` at Step 1 (line ~185) couldn't narrow from 2 to 1 candidate, so the discovery returned null.
+
+**Fix applied in `UsageSiteDiscovery.cs`** (line ~198-224): Added a CTE-specific disambiguation for the `matchCount > 1` case that prefers the candidate from the most-derived containing type (i.e., `QuarryContext<TSelf>.With<TDto>` over `QuarryContext.With<TDto>`). This correctly narrows to 1 candidate, allowing `DiscoverCteSite` to proceed.
+
+**Fix applied in `UsageSiteDiscovery.cs` `DiscoverPostCteSites`** (line ~1128-1134): Added `FromCte`/`With` exclusion before the entity-accessor fallback to prevent duplicate site creation (QRY900).
+
+**Fix applied in `ContextCodeGenerator.cs`**: Reverted Phase 2's conditional `With<>` shadow emission — the shadow is ALWAYS emitted (even for generic-base contexts) because it's needed as the interceptor target. The `new` keyword is valid in both cases (hides inherited method). The generic base's purpose is for DISCOVERY (makes typed return visible to SemanticModel), while the generated shadow is for INTERCEPTION.
+
+**Temporary debug code in `QuarryGenerator.cs`**: `_withTraces` ConcurrentBag and trace emission via `RegisterImplementationSourceOutput` — MUST be removed before committing.
+
+### Current build status (with WIP changes)
+Build fails with 17 errors, all in generated interceptor code:
+1. **CS0308** ("non-generic type 'Order' cannot be used with type arguments") — 6 errors in `CteDb.Interceptors.*.g.cs`. The generated interceptor references `Order` without namespace qualification, resolving to the wrong `Order` type. The generator's emitter needs to use fully-qualified or namespace-prefixed entity type names for the `Cte` namespace.
+2. **QRY032** ("Joined Select() argument must be a parenthesized lambda") — 4 errors in test file. Tests 1-2 (`Cte_Users_Select`, `Cte_Users_Where_Select`) and test 6 (`Cte_FromCte_StillWorks_OnGenericBase`) have Select lambdas that the chain analysis classifies as "joined" because of the CTE context. Need to investigate whether the lambda format needs changing or the chain analysis classification is wrong.
+3. **QRY080** ("could not analyze inner query for With<OrderSummaryDto>") — 1 error in test 7. The `With<TEntity, TDto>` overload with projected inner query isn't handled correctly. May need to pass the inner query differently or this test may need restructuring.
+
+### Immediate next steps on resume
+1. **Remove debug traces** from `QuarryGenerator.cs` (_withTraces, trace emission)
+2. **Fix CS0308**: Investigate how the interceptor emitter resolves entity type names. The `Cte` sub-namespace creates ambiguity with entity types in the parent namespace. May need to use fully-qualified names in generated code. Look at `TransitionBodyEmitter.EmitCteDefinition` and `CarrierEmitter`.
+3. **Fix QRY032**: Check why CTE+Users+Select chains are classified as "joined" by the chain analysis. Compare with how CTE+FromCte+Select works. The issue may be in how `DiscoverPostCteSites` classifies the entity accessor as part of the chain.
+4. **Fix QRY080**: The `With<TEntity, TDto>` overload's inner query is a projected query stored in a variable (`var innerQuery = ...`). The generator may require the inner query to be inline. Consider restructuring the test.
+5. After all build errors fixed, run tests, fix assertion mismatches, then commit Phase 4.
+6. Phases 5-6 are straightforward (docs + artifact).
+
+### Test status
+3012 tests pass on committed code (phases 1-3). WIP changes don't compile yet due to the above errors.
+
+### Key decisions made during this session
+- **`With<>` shadow must always be emitted** regardless of `HasGenericContextBase`. The generic base provides typed return for DISCOVERY; the generated shadow provides the INTERCEPTOR TARGET. Both are needed. Phase 2's conditional emission was a premature optimization.
+- **CTE methods (With/FromCte) must be excluded from `DiscoverPostCteSites`'s entity-accessor fallback** to prevent duplicate site creation.
+- **CTE-specific candidate disambiguation** is needed in Step 1 of discovery when `QuarryContext<TSelf>` introduces `new` methods that Roslyn reports alongside the hidden base methods as separate overload-resolution-failure candidates.
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
@@ -62,4 +94,4 @@ Baseline: 3012 tests pass (97 Migration + 103 Analyzers + 2812 main). No pre-exi
 | 1 | INTAKE | DESIGN | Issue #205 loaded, worktree created, baseline green (3012 tests) |
 | 1 | DESIGN | PLAN | Design approved: Option A (QuarryContext<TSelf> generic subclass) + Path 2 (conditional generator emission). Principle captured for PR body. |
 | 1 | PLAN | PLAN | plan.md written (6 phases). Suspended by user before explicit plan approval; session pushed to remote for handoff. |
-| 2 | PLAN | — | Resumed from suspend. Re-presenting plan for approval. |
+| 2 | PLAN | IMPLEMENT | Resumed. Plan approved. Phases 1-3 committed. Phase 4 in progress — core discovery fix working, remaining build errors in generated interceptors and test format. |

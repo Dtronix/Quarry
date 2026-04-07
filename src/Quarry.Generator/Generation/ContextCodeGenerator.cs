@@ -144,32 +144,30 @@ internal static class ContextCodeGenerator
     /// </summary>
     private static void GenerateCteMethods(StringBuilder sb, ContextInfo context, string access)
     {
-        // When the context inherits QuarryContext<TSelf>, the typed With<> overloads are
-        // already inherited from the generic base — emitting them here would trigger CS0109.
-        if (!context.HasGenericContextBase)
-        {
-            // With<TDto>(IQueryBuilder<TDto> innerQuery) — identity projection inner query
-            sb.AppendLine($"    /// <summary>");
-            sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query.");
-            sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
-            sb.AppendLine($"    /// </summary>");
-            sb.AppendLine($"    {access} new {context.ClassName} With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class");
-            sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
-            sb.AppendLine();
+        // With<TDto>(IQueryBuilder<TDto> innerQuery) — identity projection inner query
+        // Always emitted: the generated shadow is required as the interceptor target.
+        // When the context inherits QuarryContext<TSelf>, the `new` keyword remains valid
+        // because it hides the inherited QuarryContext<TSelf>.With<TDto>. The generic base
+        // ensures discovery resolves the chain correctly (its typed return is visible to the
+        // SemanticModel), while this shadow provides the interceptable call target.
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TDto>(IQueryBuilder<TDto> innerQuery) where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
 
-            // With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) — projected inner query
-            sb.AppendLine($"    /// <summary>");
-            sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query with a projection.");
-            sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
-            sb.AppendLine($"    /// </summary>");
-            sb.AppendLine($"    {access} new {context.ClassName} With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) where TEntity : class where TDto : class");
-            sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
-            sb.AppendLine();
-        }
+        // With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) — projected inner query
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query with a projection.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery) where TEntity : class where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
 
         // FromCte<TDto>() — use a previously defined CTE as the primary FROM source
-        // Always emitted: it shadows the non-generic QuarryContext.FromCte<TDto> through
-        // the inheritance chain regardless of whether the generic base is used.
         sb.AppendLine($"    /// <summary>");
         sb.AppendLine($"    /// Starts a query from a previously defined CTE as the primary table.");
         sb.AppendLine($"    /// Must be preceded by a With&lt;TDto&gt;() call that defines the CTE.");
