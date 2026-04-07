@@ -12,7 +12,7 @@ issue: #207
 pr:
 session: 1
 phases-total: 3
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 Refactor CTE discovery boilerplate into shared helpers.

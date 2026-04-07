@@ -923,34 +923,15 @@ internal static class UsageSiteDiscovery
                 continue;
             }
 
-            // Get location info
-            var location = GetMethodLocation(parentInvoc);
-            if (location == null)
+            var info = TryGetCallSiteLocationInfo(parentInvoc, methodName, semanticModel, cancellationToken);
+            if (info == null)
                 break;
-
-            var (filePath, line, column) = location.Value;
-
-            // Get interceptable location
-            string? interceptableLocationData = null;
-            int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-            try
-            {
-#pragma warning disable RSEXPERIMENTAL002
-                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                if (interceptableLocation != null)
-                {
-                    interceptableLocationData = interceptableLocation.Data;
-                    interceptableLocationVersion = interceptableLocation.Version;
-                }
-            }
-            catch { }
-#endif
-            if (interceptableLocationData == null)
-                break;
-
-            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var filePath = info.Value.FilePath;
+            var line = info.Value.Line;
+            var column = info.Value.Column;
+            var interceptableLocationData = info.Value.InterceptableLocationData;
+            var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+            var uniqueId = info.Value.UniqueId;
             var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
 
             // Detect disqualifying patterns
@@ -1086,34 +1067,15 @@ internal static class UsageSiteDiscovery
                 break;
             }
 
-            // Get location info
-            var location = GetMethodLocation(parentInvoc);
-            if (location == null)
+            var info = TryGetCallSiteLocationInfo(parentInvoc, methodName, semanticModel, cancellationToken);
+            if (info == null)
                 break;
-
-            var (filePath, line, column) = location.Value;
-
-            // Get interceptable location
-            string? interceptableLocationData = null;
-            int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-            try
-            {
-#pragma warning disable RSEXPERIMENTAL002
-                var interceptableLocation = semanticModel.GetInterceptableLocation(parentInvoc, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                if (interceptableLocation != null)
-                {
-                    interceptableLocationData = interceptableLocation.Data;
-                    interceptableLocationVersion = interceptableLocation.Version;
-                }
-            }
-            catch { }
-#endif
-            if (interceptableLocationData == null)
-                break;
-
-            var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+            var filePath = info.Value.FilePath;
+            var line = info.Value.Line;
+            var column = info.Value.Column;
+            var interceptableLocationData = info.Value.InterceptableLocationData;
+            var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+            var uniqueId = info.Value.UniqueId;
             var chainId = ComputeChainId(parentInvoc, semanticModel, cancellationToken);
             var isInsideLoop = DetectLoopAncestor(parentInvoc);
 
@@ -1236,32 +1198,15 @@ internal static class UsageSiteDiscovery
                 if (!InterceptableMethods.TryGetValue(usageMethodName, out var usageKind))
                     continue;
 
-                var location = GetMethodLocation(usage);
-                if (location == null)
+                var info = TryGetCallSiteLocationInfo(usage, usageMethodName, semanticModel, cancellationToken);
+                if (info == null)
                     continue;
-
-                var (filePath, line, column) = location.Value;
-
-                string? interceptableLocationData = null;
-                int interceptableLocationVersion = 1;
-#if QUARRY_GENERATOR
-                try
-                {
-#pragma warning disable RSEXPERIMENTAL002
-                    var interceptableLocation = semanticModel.GetInterceptableLocation(usage, cancellationToken);
-#pragma warning restore RSEXPERIMENTAL002
-                    if (interceptableLocation != null)
-                    {
-                        interceptableLocationData = interceptableLocation.Data;
-                        interceptableLocationVersion = interceptableLocation.Version;
-                    }
-                }
-                catch { }
-#endif
-                if (interceptableLocationData == null)
-                    continue;
-
-                var uniqueId = GenerateUniqueId(filePath, line, column, usageMethodName);
+                var filePath = info.Value.FilePath;
+                var line = info.Value.Line;
+                var column = info.Value.Column;
+                var interceptableLocationData = info.Value.InterceptableLocationData;
+                var interceptableLocationVersion = info.Value.InterceptableLocationVersion;
+                var uniqueId = info.Value.UniqueId;
                 var usageChainId = chainId; // Same chain as the Prepare site
 
                 var terminalSite = new RawCallSite(
@@ -3960,6 +3905,72 @@ internal static class UsageSiteDiscovery
         return type.ToMinimallyQualifiedDisplayString();
     }
 
+
+    /// <summary>
+    /// Bundle of common location data computed for every synthetic post-chain call site:
+    /// file path, line, column, interceptable-location data/version, and unique id.
+    /// Returned by <see cref="TryGetCallSiteLocationInfo"/> so the caller can replace the
+    /// 25-line <c>GetMethodLocation</c> + interceptable-location + <c>GenerateUniqueId</c>
+    /// boilerplate with a single call.
+    /// </summary>
+    private readonly struct CallSiteLocationInfo
+    {
+        public string FilePath { get; }
+        public int Line { get; }
+        public int Column { get; }
+        public string InterceptableLocationData { get; }
+        public int InterceptableLocationVersion { get; }
+        public string UniqueId { get; }
+
+        public CallSiteLocationInfo(
+            string filePath,
+            int line,
+            int column,
+            string interceptableLocationData,
+            int interceptableLocationVersion,
+            string uniqueId)
+        {
+            FilePath = filePath;
+            Line = line;
+            Column = column;
+            InterceptableLocationData = interceptableLocationData;
+            InterceptableLocationVersion = interceptableLocationVersion;
+            UniqueId = uniqueId;
+        }
+    }
+
+    /// <summary>
+    /// Compound helper that bundles the three steps every synthetic post-chain discovery
+    /// path repeats: resolve <see cref="GetMethodLocation"/>, fetch interceptable-location
+    /// data, and generate a unique id. Returns <c>null</c> if either the method location
+    /// or the interceptable-location data is unavailable. Callers translate the null into
+    /// their own loop control (<c>break</c> for while-walks, <c>continue</c> for foreach
+    /// scans).
+    /// </summary>
+    private static CallSiteLocationInfo? TryGetCallSiteLocationInfo(
+        InvocationExpressionSyntax invocation,
+        string methodName,
+        SemanticModel semanticModel,
+        CancellationToken cancellationToken)
+    {
+        var location = GetMethodLocation(invocation);
+        if (location == null)
+            return null;
+
+        var interceptable = TryGetInterceptableLocationData(invocation, semanticModel, cancellationToken);
+        if (interceptable == null)
+            return null;
+
+        var (filePath, line, column) = location.Value;
+        var uniqueId = GenerateUniqueId(filePath, line, column, methodName);
+        return new CallSiteLocationInfo(
+            filePath: filePath,
+            line: line,
+            column: column,
+            interceptableLocationData: interceptable.Value.Data,
+            interceptableLocationVersion: interceptable.Value.Version,
+            uniqueId: uniqueId);
+    }
 
     /// <summary>
     /// Wraps <see cref="SemanticModel"/> <c>GetInterceptableLocation</c> behind a single helper
