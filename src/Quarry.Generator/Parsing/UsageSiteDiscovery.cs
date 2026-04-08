@@ -2100,18 +2100,6 @@ internal static class UsageSiteDiscovery
     /// <summary>
     /// Returns the number of explicit type arguments on a generic method call.
     /// E.g., <c>With&lt;Order&gt;(inner)</c> → 1, <c>With&lt;Order, Dto&gt;(inner)</c> → 2.
-    /// Returns 0 for non-generic calls.
-    /// </summary>
-    private static int GetExplicitTypeArgumentCount(InvocationExpressionSyntax invocation)
-    {
-        if (invocation.Expression is MemberAccessExpressionSyntax ma
-            && ma.Name is GenericNameSyntax genericName)
-        {
-            return genericName.TypeArgumentList.Arguments.Count;
-        }
-        return 0;
-    }
-
     /// <summary>
     /// Gets the expected lambda parameter count from a method symbol's first delegate parameter.
     /// For example, Func&lt;T, bool&gt; → 1, Func&lt;T1, T2, bool&gt; → 2.

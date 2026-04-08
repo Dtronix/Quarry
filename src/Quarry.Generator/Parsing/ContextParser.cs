@@ -47,28 +47,20 @@ internal static class ContextParser
     }
 
     /// <summary>
-    /// Checks if the class inherits from QuarryContext, and whether it does so
-    /// via the generic <c>QuarryContext&lt;TSelf&gt;</c> intermediate base.
+    /// Checks if the class inherits from QuarryContext (either directly or via the
+    /// generic <c>QuarryContext&lt;TSelf&gt;</c> intermediate base).
     /// </summary>
-    /// <returns>
-    /// A tuple: <c>Inherits</c> is true when the chain reaches <c>Quarry.QuarryContext</c>;
-    /// <c>ViaGeneric</c> is true when a <c>QuarryContext&lt;TSelf&gt;</c> hop was seen along the way.
-    /// </returns>
-    private static (bool Inherits, bool ViaGeneric) InheritsFromQuarryContext(INamedTypeSymbol classSymbol)
+    private static bool InheritsFromQuarryContext(INamedTypeSymbol classSymbol)
     {
-        var viaGeneric = false;
         var baseType = classSymbol.BaseType;
         while (baseType != null)
         {
-            if (baseType.OriginalDefinition.ToDisplayString() == "Quarry.QuarryContext<TSelf>")
-                viaGeneric = true;
-
             if (baseType.ToDisplayString() == "Quarry.QuarryContext")
-                return (true, viaGeneric);
+                return true;
 
             baseType = baseType.BaseType;
         }
-        return (false, false);
+        return false;
     }
 
     /// <summary>
@@ -84,8 +76,7 @@ internal static class ContextParser
             return null;
 
         // Verify the class inherits from QuarryContext
-        var (inherits, viaGeneric) = InheritsFromQuarryContext(classSymbol);
-        if (!inherits)
+        if (!InheritsFromQuarryContext(classSymbol))
             return null;
 
         // Extract attribute data
@@ -127,8 +118,7 @@ internal static class ContextParser
             schema: schema,
             entities: entities,
             entityMappings: mappings,
-            location: classDeclaration.GetLocation(),
-            hasGenericContextBase: viaGeneric);
+            location: classDeclaration.GetLocation());
     }
 
     /// <summary>

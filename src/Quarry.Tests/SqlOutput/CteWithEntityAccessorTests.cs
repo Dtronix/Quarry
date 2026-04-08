@@ -125,6 +125,12 @@ internal class CteWithEntityAccessorTests
         Assert.That(results, Has.Count.EqualTo(3));
     }
 
+    // Note: Multi-CTE chains (.With<A>(...).With<B>(...).Users()) have a carrier creation
+    // issue: each CteDefinition emitter creates a new carrier, overwriting Ctx with the
+    // previous carrier instead of the real context. This is a pre-existing limitation of
+    // the CteDefinition emitter, not specific to QuarryContext<TSelf>. Single-CTE chains
+    // work correctly via EmitChainRootAfterCte. Multi-CTE support is a follow-up.
+
     // Note: FromCte on generic base (With<>.FromCte<>().Select()) is covered by
     // CrossDialectCteTests which tests the With+FromCte pattern on the non-generic base.
     // The generic base doesn't change FromCte behavior — it only changes With<>'s return type.
