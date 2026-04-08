@@ -108,12 +108,16 @@ internal static class TransitionBodyEmitter
         Dictionary<QueryPlan, string>? operandCarrierNames)
     {
         var contextClass = site.ContextClassName ?? "QuarryContext";
+        var raw = site.Bound.Raw;
         // The method has a generic parameter TDto and takes IQueryBuilder<TDto> (or IQueryBuilder<TEntity,TDto>)
         // Interceptors for generic methods must match the concrete type arguments from the call site.
-        var dtoType = InterceptorCodeGenerator.GetShortTypeName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName);
+        var dtoType = InterceptorCodeGenerator.GetShortTypeName(raw.CteEntityTypeName ?? site.EntityTypeName);
 
-        // Use the stored parameter type from discovery (handles both 1-arg and 2-arg overloads)
-        var paramType = site.Bound.Raw.BuilderTypeName ?? $"IQueryBuilder<{dtoType}>";
+        // Use the stored parameter type from discovery (handles both 1-arg and 2-arg overloads,
+        // and lambda form Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>>)
+        var paramType = raw.BuilderTypeName ?? $"IQueryBuilder<{dtoType}>";
+        var isLambdaForm = raw.LambdaInnerSpanStart.HasValue;
+        var paramName = isLambdaForm ? "innerBuilder" : "innerQuery";
 
         // Determine whether this is the FIRST CteDefinition site in the chain (in source
         // order) or a subsequent one. The first site allocates a new carrier from the real
@@ -150,7 +154,7 @@ internal static class TransitionBodyEmitter
 
         sb.AppendLine($"    public static {contextClass} {methodName}(");
         sb.AppendLine($"        this {contextClass} @this,");
-        sb.AppendLine($"        {paramType} innerQuery)");
+        sb.AppendLine($"        {paramType} {paramName})");
         sb.AppendLine($"    {{");
         if (isFirstCteSite)
         {
@@ -165,38 +169,54 @@ internal static class TransitionBodyEmitter
             sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(@this);");
         }
 
-        // Locate the CteDef on the outer chain whose CTE name matches this site's DTO and
-        // whose InnerPlan has a registered carrier. Copy P{0..N-1} from the inner carrier
-        // into __c.P{ParameterOffset..ParameterOffset+N-1}. Without this copy, captured
-        // variables in the inner query (e.g., Where(o => o.Total > cutoff)) would silently
-        // bind default values at runtime.
-        //
-        // Both this site's CTE name and cteDef.Name are produced by the SAME helper
-        // (CteNameHelpers.ExtractShortName) — using divergent helpers here previously
-        // caused the captured-param copy to silently no-op for global-namespace DTOs.
-        //
-        // NOTE: matches the FIRST cteDef whose name equals this site's DTO short name.
-        // Multiple With<T>(...) calls referencing the same DTO type in one chain (e.g.,
-        // db.With<X>(a).With<X>(b)...) would produce duplicate CTE aliases in the WITH
-        // clause and silently route the second call to the first cteDef. The duplicate-
-        // name case is rejected at compile time by diagnostic QRY082.
-        var siteCteName = CteNameHelpers.ExtractShortName(site.Bound.Raw.CteEntityTypeName ?? site.EntityTypeName) ?? "CTE";
-        for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
-        {
-            var cteDef = chain.Plan.CteDefinitions[i];
-            if (cteDef.Name != siteCteName) continue;
-            if (cteDef.InnerPlan == null || cteDef.InnerParameters.Count == 0) break;
-            string? innerCarrierName = null;
-            operandCarrierNames?.TryGetValue(cteDef.InnerPlan, out innerCarrierName);
-            if (innerCarrierName == null) break;
+        var siteCteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName ?? site.EntityTypeName) ?? "CTE";
 
-            sb.AppendLine($"        var __inner = Unsafe.As<{innerCarrierName}>(innerQuery);");
-            for (int p = 0; p < cteDef.InnerParameters.Count; p++)
+        if (isLambdaForm)
+        {
+            // Lambda form: extract captured variables from the lambda delegate's display class
+            // via [UnsafeAccessor] and bind them to carrier P-fields at ParameterOffset.
+            // No inner carrier — the inner chain is purely compile-time.
+            for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
             {
-                var targetIdx = cteDef.ParameterOffset + p;
-                sb.AppendLine($"        __c.P{targetIdx} = __inner.P{p};");
+                var cteDef = chain.Plan.CteDefinitions[i];
+                if (cteDef.Name != siteCteName) continue;
+                if (cteDef.InnerParameters.Count > 0)
+                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, cteDef.InnerParameters, cteDef.ParameterOffset);
+                break;
             }
-            break;
+        }
+        else
+        {
+            // Direct form: copy P-fields from the inner carrier into the outer carrier.
+            // Locate the CteDef whose CTE name matches this site's DTO and whose InnerPlan
+            // has a registered carrier.
+            //
+            // Both this site's CTE name and cteDef.Name are produced by the SAME helper
+            // (CteNameHelpers.ExtractShortName) — using divergent helpers here previously
+            // caused the captured-param copy to silently no-op for global-namespace DTOs.
+            //
+            // NOTE: matches the FIRST cteDef whose name equals this site's DTO short name.
+            // Multiple With<T>(...) calls referencing the same DTO type in one chain (e.g.,
+            // db.With<X>(a).With<X>(b)...) would produce duplicate CTE aliases in the WITH
+            // clause and silently route the second call to the first cteDef. The duplicate-
+            // name case is rejected at compile time by diagnostic QRY082.
+            for (int i = 0; i < chain.Plan.CteDefinitions.Count; i++)
+            {
+                var cteDef = chain.Plan.CteDefinitions[i];
+                if (cteDef.Name != siteCteName) continue;
+                if (cteDef.InnerPlan == null || cteDef.InnerParameters.Count == 0) break;
+                string? innerCarrierName = null;
+                operandCarrierNames?.TryGetValue(cteDef.InnerPlan, out innerCarrierName);
+                if (innerCarrierName == null) break;
+
+                sb.AppendLine($"        var __inner = Unsafe.As<{innerCarrierName}>({paramName});");
+                for (int p = 0; p < cteDef.InnerParameters.Count; p++)
+                {
+                    var targetIdx = cteDef.ParameterOffset + p;
+                    sb.AppendLine($"        __c.P{targetIdx} = __inner.P{p};");
+                }
+                break;
+            }
         }
 
         sb.AppendLine($"        return Unsafe.As<{contextClass}>(__c);");

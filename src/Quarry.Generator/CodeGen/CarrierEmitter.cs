@@ -489,6 +489,30 @@ internal static class CarrierEmitter
     }
 
     /// <summary>
+    /// Emits extraction + parameter binding for a lambda inner chain (CTE or set-op).
+    /// The lambda delegate's Target holds the display class with captured variables.
+    /// Extracted values are bound to carrier P-fields at the given parameter offset.
+    /// </summary>
+    internal static void EmitLambdaInnerChainCapture(
+        StringBuilder sb, CarrierPlan carrier, TranslatedCallSite site,
+        IReadOnlyList<QueryParameter> innerParams, int parameterOffset)
+    {
+        var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
+        if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
+        {
+            sb.AppendLine($"        var __target = {extractionPlan.DelegateParamName}.Target!;");
+            foreach (var extractor in extractionPlan.Extractors)
+            {
+                var targetExpr = extractor.IsStaticField ? "null!" : "__target";
+                sb.AppendLine($"        var {extractor.VariableName} = {carrier.ClassName}.{extractor.MethodName}({targetExpr});");
+            }
+        }
+
+        var hasExtraction = extractionPlan != null && extractionPlan.Extractors.Count > 0;
+        EmitCarrierParamBindings(sb, carrier, innerParams, parameterOffset, hasExtraction);
+    }
+
+    /// <summary>
     /// Emits a carrier noop interceptor (Join, unconditional OrderBy/ThenBy/GroupBy, Distinct).
     /// </summary>
     internal static void EmitCarrierNoop(

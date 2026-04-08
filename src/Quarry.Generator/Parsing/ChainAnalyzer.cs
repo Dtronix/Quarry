@@ -1104,12 +1104,23 @@ internal static class ChainAnalyzer
             else if (IsSetOperationKind(kind))
             {
                 seenSetOperation = true;
-                // First check inline operand plans (same-ChainId operands split during preprocessing)
                 QueryPlan? opPlan = null;
                 var opKind = MapToSetOperatorKind(kind);
 
-                // Match inline operand plans by set operation order
-                if (inlineOperandPlans.Count > 0)
+                // Lambda form: recursively analyze the inner chain group
+                if (raw.LambdaInnerSpanStart.HasValue
+                    && lambdaInnerChainIds != null
+                    && lambdaInnerChainGroups != null
+                    && lambdaInnerChainIds.TryGetValue(raw.LambdaInnerSpanStart.Value, out var setOpInnerChainId)
+                    && lambdaInnerChainGroups.TryGetValue(setOpInnerChainId, out var setOpInnerSites))
+                {
+                    var lambdaInnerAnalyzed = AnalyzeChainGroup(setOpInnerSites, registry, ct, diagnostics);
+                    if (lambdaInnerAnalyzed != null)
+                        opPlan = lambdaInnerAnalyzed.Plan;
+                }
+
+                // Inline operand plans (same-ChainId operands split during preprocessing)
+                if (opPlan == null && inlineOperandPlans.Count > 0)
                 {
                     // Find the first unmatched inline plan with matching kind
                     for (int ip = 0; ip < inlineOperandPlans.Count; ip++)

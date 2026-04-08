@@ -5,12 +5,12 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #213
 pr:
-session: 1
+session: 2
 phases-total: 7
-phases-complete: 3
+phases-complete: 4
 ## Problem Statement
 Add lambda-form `With<TDto>()` and `With<TEntity, TDto>()` overloads for more ergonomic multi-CTE chains. The lambda receives an injected entity accessor, eliminating context re-references and preventing cross-context mixing at compile time.
 
@@ -33,3 +33,4 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT (phase 3/7) | Completed phases 1-3: API overloads, discovery pipeline, ChainAnalyzer tree analysis. Suspended before phase 4 (emission). |
+| 2 | IMPLEMENT (phase 4/7) | | Resumed. Baseline: 3021 tests passing. |
