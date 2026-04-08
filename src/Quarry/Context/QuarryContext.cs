@@ -154,6 +154,10 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Defines a Common Table Expression (CTE) from an inner query with a projection.
     /// The TDto class's public properties define the CTE's columns.
     /// </summary>
+    /// <remarks>
+    /// <inheritdoc cref="With{TDto}(IQueryBuilder{TDto})" path="/remarks"/>
+    /// </remarks>
+    /// <seealso cref="QuarryContext{TSelf}"/>
     /// <typeparam name="TEntity">The entity type of the inner query.</typeparam>
     /// <typeparam name="TDto">The projected DTO type whose properties define the CTE columns.</typeparam>
     /// <param name="innerQuery">The inner query with projection that provides the CTE's data.</param>
