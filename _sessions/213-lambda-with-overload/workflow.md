@@ -4,7 +4,7 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #213
 pr:
@@ -34,4 +34,4 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT (phase 3/7) | Completed phases 1-3: API overloads, discovery pipeline, ChainAnalyzer tree analysis. Suspended before phase 4 (emission). |
-| 2 | IMPLEMENT (phase 4/7) | | Resumed. Baseline: 3021 tests passing. |
+| 2 | IMPLEMENT (phase 4/7) | IMPLEMENT (phase 7/7) | Completed all 7 phases. CTE lambda fully working (6 new tests). Set-op lambda analysis+emission complete but end-to-end tests deferred (context resolution gap). Old CTE API removed, tests migrated. Old set-op API retained. |
