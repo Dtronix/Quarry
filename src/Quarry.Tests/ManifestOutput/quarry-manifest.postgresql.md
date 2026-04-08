@@ -2351,6 +2351,14 @@ WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHE
 
 ---
 
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
+```
+
+---
+
 ### With(...).With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2402,7 +2410,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 324 |
+| Total discovered | 328 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 66 |
-| Rendered | 258 |
+| Consolidated (deduped) | 69 |
+| Rendered | 259 |

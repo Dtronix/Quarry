@@ -243,7 +243,8 @@ internal static class ChainAnalyzer
         List<AnalyzedChain>? inlineOperandChains = null,
         Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>? cteInnerResults = null,
         Dictionary<int, string>? lambdaInnerChainIds = null,
-        Dictionary<string, List<TranslatedCallSite>>? lambdaInnerChainGroups = null)
+        Dictionary<string, List<TranslatedCallSite>>? lambdaInnerChainGroups = null,
+        bool isLambdaInnerChain = false)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -356,7 +357,7 @@ internal static class ChainAnalyzer
             }
             else
             {
-                // CTE inner chains don't have execution terminals — use chain root
+                // CTE inner chains (direct form) don't have execution terminals — use chain root
                 for (int i = clauseSites.Count - 1; i >= 0; i--)
                 {
                     if (clauseSites[i].Bound.Raw.Kind == InterceptorKind.ChainRoot
@@ -367,6 +368,12 @@ internal static class ChainAnalyzer
                         break;
                     }
                 }
+
+                // Lambda inner chains have no ChainRoot or execution terminal.
+                // Use the first clause site for entity/table resolution — it stays
+                // in clauseSites so it's still processed as a clause.
+                if (executionSite == null && isLambdaInnerChain && clauseSites.Count > 0)
+                    executionSite = clauseSites[0];
 
                 if (executionSite == null)
                     return null;
@@ -696,7 +703,7 @@ internal static class ChainAnalyzer
                     && lambdaInnerChainIds.TryGetValue(raw.LambdaInnerSpanStart.Value, out var innerChainId)
                     && lambdaInnerChainGroups.TryGetValue(innerChainId, out var innerChainSites))
                 {
-                    var lambdaInnerAnalyzed = AnalyzeChainGroup(innerChainSites, registry, ct, diagnostics);
+                    var lambdaInnerAnalyzed = AnalyzeChainGroup(innerChainSites, registry, ct, diagnostics, isLambdaInnerChain: true);
                     if (lambdaInnerAnalyzed != null)
                     {
                         var lambdaInnerAssembled = SqlAssembler.Assemble(lambdaInnerAnalyzed, registry);
@@ -1114,7 +1121,7 @@ internal static class ChainAnalyzer
                     && lambdaInnerChainIds.TryGetValue(raw.LambdaInnerSpanStart.Value, out var setOpInnerChainId)
                     && lambdaInnerChainGroups.TryGetValue(setOpInnerChainId, out var setOpInnerSites))
                 {
-                    var lambdaInnerAnalyzed = AnalyzeChainGroup(setOpInnerSites, registry, ct, diagnostics);
+                    var lambdaInnerAnalyzed = AnalyzeChainGroup(setOpInnerSites, registry, ct, diagnostics, isLambdaInnerChain: true);
                     if (lambdaInnerAnalyzed != null)
                         opPlan = lambdaInnerAnalyzed.Plan;
                 }
