@@ -5,7 +5,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: REVIEW
-status: active
+status: suspended
 issue: #213
 pr:
 session: 2
@@ -25,11 +25,11 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 - 2026-04-08: Set-op lambda detection has a context resolution gap — inner chain sites get wrong context when the entity type is registered in multiple contexts. CTE lambdas work because With() is resolved on the context class. Set-op lambdas (Union etc.) on IQueryBuilder have ambiguous resolution during source generation. Defer to follow-up.
 - 2026-04-08: Direct capture with DisplayClassEnricher reuse (Option C). No inner carriers, no inner interceptors, no lambda invocation at runtime. The With()/Union() interceptor accesses captured variables via the outer lambda delegate's display class (innerBuilder.Target). Inner chain is purely compile-time: SQL extracted, params mapped to outer carrier at ParameterOffset.
 ## Suspend State
-- Current phase: IMPLEMENT phase 4/7 (Carrier + Emission direct capture), not yet started
-- What is in progress: Phases 1-3 complete and committed. Phase 4 is next.
+- Current phase: REVIEW, not yet started
+- What is in progress: All 7 IMPLEMENT phases complete. Entering REVIEW.
 - WIP commit hash: none (clean state)
-- Test status: all 3021 tests passing
-- Unrecorded context: Phase 4 requires changes to CarrierAnalyzer (build extraction plans for inner chain params), CarrierEmitter (UnsafeAccessor methods), TransitionBodyEmitter (lambda-form CTE emission using innerBuilder.Target), SetOperationBodyEmitter (lambda-form set-op emission), and InterceptorCodeGenerator (skip inner carrier/interceptor generation for lambda inner chains). The direct capture model means: no inner carriers, no inner interceptors, no lambda invocation — the With()/Union() interceptor extracts captured variables directly from the lambda delegate's display class via UnsafeAccessor.
+- Test status: all 3027 tests passing (97 migration + 103 analyzers + 2827 quarry, including 6 new lambda CTE tests)
+- Unrecorded context: Set-op lambda end-to-end tests are deferred due to a context resolution gap — inner chain sites discovered inside set-op lambdas get the wrong context class when entity types are registered in multiple contexts. The emission code (Phase 4) is correct; the issue is in the discovery pipeline's context resolution for lambda parameter-rooted chains. CTE lambdas don't hit this because With() is resolved on the context class (not on IQueryBuilder). Also: lambda-form With<TEntity,TDto> inner CTE SQL selects all entity columns instead of just the projected ones (Select projection not reduced in lambda inner chain).
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
