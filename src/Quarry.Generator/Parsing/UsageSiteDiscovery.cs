@@ -353,9 +353,14 @@ internal static class UsageSiteDiscovery
 
             var crChainId = ComputeChainId(invocation, semanticModel, cancellationToken);
             var crIsInsideLoop = DetectLoopAncestor(invocation);
-            var (crIsCteInner, crCteArgStart) = DetectCteInnerChain(invocation, semanticModel, cancellationToken);
-            if (crIsCteInner && crChainId != null)
-                crChainId += $":cte-inner:{crCteArgStart}";
+            var crInnerChain = DetectInnerChain(invocation, semanticModel, cancellationToken);
+            if (crInnerChain.IsInnerChain && crChainId != null)
+            {
+                if (crInnerChain.IsLambdaForm)
+                    crChainId += $":lambda-inner:{crInnerChain.SpanStart}";
+                else
+                    crChainId += $":cte-inner:{crInnerChain.SpanStart}";
+            }
 
             return new RawCallSite(
                 methodName: methodName,
@@ -377,7 +382,7 @@ internal static class UsageSiteDiscovery
                 builderTypeName: "IQueryBuilder",
                 chainId: crChainId,
                 isInsideLoop: crIsInsideLoop,
-                isCteInnerChain: crIsCteInner);
+                isCteInnerChain: crInnerChain.IsInnerChain && !crInnerChain.IsLambdaForm);
         }
 
         // ── Step 5: Builder type / extension method check ──────────────────
@@ -709,9 +714,14 @@ internal static class UsageSiteDiscovery
         var isCapturedInLambda = DetectLambdaCaptureAncestor(invocation);
         var nestingContext = DetectNestingContext(invocation);
         var chainId = ComputeChainId(invocation, semanticModel, cancellationToken);
-        var (isCteInnerChain, cteArgSpanStart) = DetectCteInnerChain(invocation, semanticModel, cancellationToken);
-        if (isCteInnerChain && chainId != null)
-            chainId += $":cte-inner:{cteArgSpanStart}";
+        var innerChainDetection = DetectInnerChain(invocation, semanticModel, cancellationToken);
+        if (innerChainDetection.IsInnerChain && chainId != null)
+        {
+            if (innerChainDetection.IsLambdaForm)
+                chainId += $":lambda-inner:{innerChainDetection.SpanStart}";
+            else
+                chainId += $":cte-inner:{innerChainDetection.SpanStart}";
+        }
 
         var (isPassedAsArgument, isAssignedFromNonQuarryMethod) =
             DetectVariableDisqualifiers(invocation, semanticModel);
@@ -763,18 +773,32 @@ internal static class UsageSiteDiscovery
         int? operandArgEndLine = null;
         int? operandArgEndColumn = null;
         string? operandEntityTypeName = null;
+        int? setOpLambdaInnerSpanStart = null;
+        LambdaExpressionSyntax? setOpEnrichmentLambda = null;
         if (kind is InterceptorKind.Union or InterceptorKind.UnionAll
             or InterceptorKind.Intersect or InterceptorKind.IntersectAll
             or InterceptorKind.Except or InterceptorKind.ExceptAll)
         {
-            operandChainId = ExtractSetOperationOperandChainId(invocation, semanticModel, cancellationToken);
-            // Record the end position of the operand argument expression
-            // so ChainAnalyzer can bound inline operand splitting.
-            if (invocation.ArgumentList.Arguments.Count >= 1)
+            // Check if the operand argument is a lambda expression
+            if (invocation.ArgumentList.Arguments.Count >= 1
+                && invocation.ArgumentList.Arguments[0].Expression is LambdaExpressionSyntax setOpLambda)
             {
-                var argSpan = invocation.ArgumentList.Arguments[0].Expression.GetLocation().GetLineSpan();
-                operandArgEndLine = argSpan.EndLinePosition.Line + 1; // 0-based → 1-based
-                operandArgEndColumn = argSpan.EndLinePosition.Character + 1;
+                // Lambda form: store lambda SpanStart and set enrichment lambda
+                setOpLambdaInnerSpanStart = setOpLambda.SpanStart;
+                setOpEnrichmentLambda = setOpLambda;
+            }
+            else
+            {
+                // Direct form: existing operand chain extraction
+                operandChainId = ExtractSetOperationOperandChainId(invocation, semanticModel, cancellationToken);
+                // Record the end position of the operand argument expression
+                // so ChainAnalyzer can bound inline operand splitting.
+                if (invocation.ArgumentList.Arguments.Count >= 1)
+                {
+                    var argSpan = invocation.ArgumentList.Arguments[0].Expression.GetLocation().GetLineSpan();
+                    operandArgEndLine = argSpan.EndLinePosition.Line + 1; // 0-based → 1-based
+                    operandArgEndColumn = argSpan.EndLinePosition.Character + 1;
+                }
             }
 
             // Extract TOther type argument for cross-entity set operations (e.g., Union<Product>)
@@ -794,7 +818,7 @@ internal static class UsageSiteDiscovery
         }
 
         // ── Step 16: Build RawCallSite directly ────────────────────────────
-        return new RawCallSite(
+        var rawSite = new RawCallSite(
             methodName: methodName,
             filePath: filePath,
             line: line,
@@ -838,8 +862,12 @@ internal static class UsageSiteDiscovery
             operandChainId: operandChainId,
             operandArgEndLine: operandArgEndLine,
             operandArgEndColumn: operandArgEndColumn,
-            isCteInnerChain: isCteInnerChain,
-            operandEntityTypeName: operandEntityTypeName);
+            isCteInnerChain: innerChainDetection.IsInnerChain && !innerChainDetection.IsLambdaForm,
+            operandEntityTypeName: operandEntityTypeName,
+            lambdaInnerSpanStart: setOpLambdaInnerSpanStart);
+        if (setOpEnrichmentLambda != null)
+            rawSite.EnrichmentLambda = setOpEnrichmentLambda;
+        return rawSite;
     }
 
     /// <summary>
@@ -1959,6 +1987,8 @@ internal static class UsageSiteDiscovery
         // After tracing, this is only true when tracing stopped at maxHops (the root
         // is still a builder variable we couldn't trace further).
         bool rootIsBuilderLocal = false;
+        bool rootIsLambdaParameter = false;
+        int lambdaParameterScopeStart = -1;
         if (rootExpr is IdentifierNameSyntax rootIdent)
         {
             var symbol = semanticModel.GetSymbolInfo(rootIdent, ct).Symbol;
@@ -1967,6 +1997,30 @@ internal static class UsageSiteDiscovery
                 if (VariableTracer.IsBuilderType(localSymbol.Type))
                     rootIsBuilderLocal = true;
             }
+            else if (symbol is IParameterSymbol paramSymbol)
+            {
+                // Lambda parameter root: use the containing lambda's SpanStart as scope key
+                // to produce unique ChainIds for each lambda body (e.g., multiple With() calls
+                // in the same statement with the same parameter name).
+                foreach (var ancestor in rootExpr.Ancestors())
+                {
+                    if (ancestor is LambdaExpressionSyntax lambdaScope)
+                    {
+                        rootIsLambdaParameter = true;
+                        lambdaParameterScopeStart = lambdaScope.SpanStart;
+                        break;
+                    }
+                    if (ancestor is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax)
+                        break;
+                }
+            }
+        }
+
+        // Lambda parameter roots get a unique ChainId scoped to their lambda
+        if (rootIsLambdaParameter && lambdaParameterScopeStart >= 0)
+        {
+            var filePath = invocation.SyntaxTree.FilePath;
+            return $"{filePath}:{lambdaParameterScopeStart}:{rootText}";
         }
 
         // Determine the assigned variable name for chain linking.
@@ -3606,17 +3660,31 @@ internal static class UsageSiteDiscovery
             }
         }
 
-        // For CteDefinition, store the argument's SpanStart for matching to inner chain groups
+        // For CteDefinition, detect whether the argument is a lambda or a direct query chain.
         int? cteInnerArgSpanStart = null;
+        int? lambdaInnerSpanStart = null;
+        LambdaExpressionSyntax? enrichmentLambda = null;
         if (kind == InterceptorKind.CteDefinition
             && invocation.ArgumentList.Arguments.Count > 0)
         {
-            cteInnerArgSpanStart = invocation.ArgumentList.Arguments[0].SpanStart;
+            var argExpr = invocation.ArgumentList.Arguments[0].Expression;
+            if (argExpr is LambdaExpressionSyntax lambda)
+            {
+                // Lambda form: store lambda SpanStart and set enrichment lambda
+                lambdaInnerSpanStart = lambda.SpanStart;
+                enrichmentLambda = lambda;
+            }
+            else
+            {
+                // Direct form: store argument SpanStart for matching to inner chain groups
+                cteInnerArgSpanStart = invocation.ArgumentList.Arguments[0].SpanStart;
+            }
         }
 
         // Store the inner query parameter type for correct interceptor signature generation.
         // With<TDto>(IQueryBuilder<TDto>) → "IQueryBuilder<TDto>"
         // With<TEntity, TDto>(IQueryBuilder<TEntity, TDto>) → "IQueryBuilder<TEntity, TDto>"
+        // With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>>) → "Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>>"
         string? cteParamType = null;
         if (kind == InterceptorKind.CteDefinition && methodSymbol.Parameters.Length > 0)
         {
@@ -3655,7 +3723,7 @@ internal static class UsageSiteDiscovery
         // Use the CTE DTO type as the entity type placeholder
         var entityTypeName = cteEntityTypeName ?? "object";
 
-        return new RawCallSite(
+        var site = new RawCallSite(
             methodName: methodName,
             filePath: filePath,
             line: line,
@@ -3677,7 +3745,11 @@ internal static class UsageSiteDiscovery
             cteEntityTypeName: cteEntityTypeName,
             cteInnerArgSpanStart: cteInnerArgSpanStart,
             cteColumns: cteColumns,
-            builderTypeName: cteParamType);
+            builderTypeName: cteParamType,
+            lambdaInnerSpanStart: lambdaInnerSpanStart);
+        if (enrichmentLambda != null)
+            site.EnrichmentLambda = enrichmentLambda;
+        return site;
     }
 
     /// <summary>
@@ -3733,7 +3805,35 @@ internal static class UsageSiteDiscovery
     /// Detects whether an invocation is inside a CTE inner chain (argument to a With() call).
     /// Returns the flag and the argument's SpanStart for ChainId differentiation.
     /// </summary>
-    private static (bool IsCteInner, int ArgSpanStart) DetectCteInnerChain(
+    private static readonly HashSet<string> InnerChainParentMethods = new(StringComparer.Ordinal)
+    {
+        "With", "Union", "UnionAll", "Intersect", "IntersectAll", "Except", "ExceptAll"
+    };
+
+    /// <summary>
+    /// Result of inner chain detection. Indicates whether an invocation is inside an inner
+    /// chain argument (either a direct argument to With(), or a lambda body argument to
+    /// With/Union/Intersect/Except etc.).
+    /// </summary>
+    private readonly struct InnerChainDetection
+    {
+        public static readonly InnerChainDetection None = default;
+
+        public InnerChainDetection(bool isInnerChain, bool isLambdaForm, int spanStart)
+        {
+            IsInnerChain = isInnerChain;
+            IsLambdaForm = isLambdaForm;
+            SpanStart = spanStart;
+        }
+
+        public bool IsInnerChain { get; }
+        /// <summary>True for lambda-form (new), false for direct-argument-form (old CTE).</summary>
+        public bool IsLambdaForm { get; }
+        /// <summary>For direct form: SpanStart of the argument. For lambda form: SpanStart of the lambda.</summary>
+        public int SpanStart { get; }
+    }
+
+    private static InnerChainDetection DetectInnerChain(
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         CancellationToken ct)
@@ -3744,6 +3844,27 @@ internal static class UsageSiteDiscovery
             if (ancestor is BaseMethodDeclarationSyntax or LocalFunctionStatementSyntax)
                 break;
 
+            // Lambda form: invocation is inside a lambda body that is an argument to a known method
+            if (ancestor is LambdaExpressionSyntax lambda
+                && lambda.Parent is ArgumentSyntax lambdaArg
+                && lambdaArg.Parent is ArgumentListSyntax lambdaArgList
+                && lambdaArgList.Parent is InvocationExpressionSyntax lambdaParentInv
+                && lambdaParentInv.Expression is MemberAccessExpressionSyntax lambdaParentMa
+                && InnerChainParentMethods.Contains(lambdaParentMa.Name.Identifier.ValueText))
+            {
+                var symbolInfo = semanticModel.GetSymbolInfo(lambdaParentInv, ct);
+                var parentSymbol = symbolInfo.Symbol as IMethodSymbol;
+                if (parentSymbol == null && symbolInfo.CandidateSymbols.Length > 0)
+                    parentSymbol = symbolInfo.CandidateSymbols[0] as IMethodSymbol;
+                if (parentSymbol?.ContainingType != null
+                    && (IsQuarryContextType(parentSymbol.ContainingType)
+                        || IsQuarryBuilderType(parentSymbol.ContainingType)))
+                {
+                    return new InnerChainDetection(true, true, lambda.SpanStart);
+                }
+            }
+
+            // Direct form (old): invocation is a direct argument to With()
             if (ancestor is ArgumentSyntax arg
                 && arg.Parent is ArgumentListSyntax argList
                 && argList.Parent is InvocationExpressionSyntax parentInvocation
@@ -3759,11 +3880,12 @@ internal static class UsageSiteDiscovery
                 if (parentSymbol == null && symbolInfo.CandidateSymbols.Length > 0)
                     parentSymbol = symbolInfo.CandidateSymbols[0] as IMethodSymbol;
                 if (parentSymbol != null && IsQuarryContextType(parentSymbol.ContainingType))
-                    return (true, arg.SpanStart);
+                    return new InnerChainDetection(true, false, arg.SpanStart);
             }
         }
-        return (false, -1);
+        return InnerChainDetection.None;
     }
+
 
     /// <summary>
     /// Discovers a RawSql usage site (RawSqlAsync/RawSqlScalarAsync on QuarryContext).
