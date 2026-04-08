@@ -5,12 +5,12 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #213
 pr:
 session: 1
 phases-total: 7
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 Add lambda-form `With<TDto>()` and `With<TEntity, TDto>()` overloads for more ergonomic multi-CTE chains. The lambda receives an injected entity accessor, eliminating context re-references and preventing cross-context mixing at compile time.
 
@@ -24,7 +24,12 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 - 2026-04-08: Synthesize a virtual ChainRoot site for lambda parameters to serve as inner chain root.
 - 2026-04-08: Direct capture with DisplayClassEnricher reuse (Option C). No inner carriers, no inner interceptors, no lambda invocation at runtime. The With()/Union() interceptor accesses captured variables via the outer lambda delegate's display class (innerBuilder.Target). Inner chain is purely compile-time: SQL extracted, params mapped to outer carrier at ParameterOffset.
 ## Suspend State
+- Current phase: IMPLEMENT phase 4/7 (Carrier + Emission direct capture), not yet started
+- What is in progress: Phases 1-3 complete and committed. Phase 4 is next.
+- WIP commit hash: none (clean state)
+- Test status: all 3021 tests passing
+- Unrecorded context: Phase 4 requires changes to CarrierAnalyzer (build extraction plans for inner chain params), CarrierEmitter (UnsafeAccessor methods), TransitionBodyEmitter (lambda-form CTE emission using innerBuilder.Target), SetOperationBodyEmitter (lambda-form set-op emission), and InterceptorCodeGenerator (skip inner carrier/interceptor generation for lambda inner chains). The direct capture model means: no inner carriers, no inner interceptors, no lambda invocation — the With()/Union() interceptor extracts captured variables directly from the lambda delegate's display class via UnsafeAccessor.
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | | Starting work on #213 |
+| 1 | INTAKE | IMPLEMENT (phase 3/7) | Completed phases 1-3: API overloads, discovery pipeline, ChainAnalyzer tree analysis. Suspended before phase 4 (emission). |
