@@ -35,4 +35,5 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT (phase 3/7) | Completed phases 1-3: API overloads, discovery pipeline, ChainAnalyzer tree analysis. Suspended before phase 4 (emission). |
 | 2 | IMPLEMENT (phase 4/7) | IMPLEMENT (phase 7/7) | Completed all 7 phases. CTE lambda fully working (6 new tests). Set-op lambda analysis+emission complete but end-to-end tests deferred (context resolution gap). Old CTE API removed, tests migrated. Old set-op API retained. |
-| 3 | REVIEW | | Resumed from suspend. 2827 tests passing. Starting review analysis. |
+| 3 | REVIEW | REMEDIATE | Resumed from suspend. Review analysis, classified findings, fixed A items (RawCallSite copy bug, XML docs), created tracking issues #215/#216/#217, created PR #218, CI green. |
+| 3 | REVIEW (reset) | | Back to REVIEW per user request. Decisions and fixes preserved. Re-running analysis from scratch. |
