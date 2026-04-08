@@ -7,7 +7,7 @@
 ### Users().With(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
 ---
@@ -15,7 +15,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 ### Users().With(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "t0"."UserName", "t1"."Total" FROM "users"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > @p0) SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
 | Parameter | Type |
@@ -27,7 +27,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 ### Users().With(...).Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users" WHERE "t1"."Total" > 200
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 200
 ```
 
 ---
@@ -35,7 +35,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 ### Users().With(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT ""."UserId", ""."UserName" FROM "users"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "UserId", "UserName" FROM "users"
 ```
 
 ---
@@ -43,7 +43,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 ### Users().With(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT ""."UserId", ""."UserName" FROM "users" WHERE "IsActive" = 1
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
 ```
 
 ---

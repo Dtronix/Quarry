@@ -238,6 +238,25 @@ internal static class TransitionBodyEmitter
     }
 
     /// <summary>
+    /// Emits a ChainRoot interceptor that follows a CTE definition in the same chain
+    /// (e.g., <c>db.With&lt;A&gt;(inner).Users()</c>).
+    /// The carrier was already created by <see cref="EmitCteDefinition"/>; this is a
+    /// noop type transition — same pattern as <see cref="EmitFromCte"/>.
+    /// </summary>
+    public static void EmitChainRootAfterCte(
+        StringBuilder sb, TranslatedCallSite site, string methodName)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+        var contextClass = site.ContextClassName ?? "QuarryContext";
+
+        sb.AppendLine($"    public static IEntityAccessor<{entityType}> {methodName}(");
+        sb.AppendLine($"        this {contextClass} @this)");
+        sb.AppendLine($"    {{");
+        sb.AppendLine($"        return Unsafe.As<IEntityAccessor<{entityType}>>(@this);");
+        sb.AppendLine($"    }}");
+    }
+
+    /// <summary>
     /// Emits an All() transition interceptor.
     /// Carrier path: noop cast. Non-carrier path: delegates to real All() method.
     /// </summary>
