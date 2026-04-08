@@ -167,6 +167,34 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
 
     /// <summary>
+    /// Defines a Common Table Expression (CTE) from an inner query built via lambda.
+    /// The lambda receives an entity accessor for <typeparamref name="TDto"/> and returns the inner query chain.
+    /// </summary>
+    /// <remarks>
+    /// <inheritdoc cref="With{TDto}(IQueryBuilder{TDto})" path="/remarks"/>
+    /// </remarks>
+    /// <typeparam name="TDto">The DTO type whose properties define the CTE columns.</typeparam>
+    /// <param name="innerBuilder">A lambda that receives an entity accessor and builds the inner query.</param>
+    /// <returns>This context for method chaining.</returns>
+    public virtual QuarryContext With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>> innerBuilder) where TDto : class
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
+
+    /// <summary>
+    /// Defines a Common Table Expression (CTE) from an inner query with a projection built via lambda.
+    /// The lambda receives an entity accessor for <typeparamref name="TEntity"/> and returns the projected inner query chain.
+    /// </summary>
+    /// <remarks>
+    /// <inheritdoc cref="With{TDto}(IQueryBuilder{TDto})" path="/remarks"/>
+    /// </remarks>
+    /// <typeparam name="TEntity">The entity type of the inner query.</typeparam>
+    /// <typeparam name="TDto">The projected DTO type whose properties define the CTE columns.</typeparam>
+    /// <param name="innerBuilder">A lambda that receives an entity accessor and builds the projected inner query.</param>
+    /// <returns>This context for method chaining.</returns>
+    public virtual QuarryContext With<TEntity, TDto>(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TDto>> innerBuilder)
+        where TEntity : class where TDto : class
+        => throw new NotSupportedException("CTE methods must be intercepted by the Quarry source generator. If you reach this exception, your context variable is typed as `QuarryContext` (the base class) instead of your generated derived context type — interceptors only fire when the call site resolves to the derived `new` overload. Type the variable as your generated context (e.g. `MyDb`) instead.");
+
+    /// <summary>
     /// Starts a query from a previously defined CTE as the primary table.
     /// Must be preceded by a With&lt;TDto&gt;() call that defines the CTE.
     /// </summary>
@@ -649,6 +677,22 @@ public abstract class QuarryContext<TSelf> : QuarryContext
     /// <param name="innerQuery">The inner query with projection that provides the CTE's data.</param>
     /// <returns>This context (typed as <typeparamref name="TSelf"/>) for method chaining.</returns>
     public override TSelf With<TEntity, TDto>(IQueryBuilder<TEntity, TDto> innerQuery)
+        => throw new NotSupportedException(
+            "CTE methods must be intercepted by the Quarry source generator. " +
+            "If you reach this exception your context variable is typed as the abstract " +
+            "base class instead of your generated derived type — interceptors only fire " +
+            "when the call site resolves to the derived overload.");
+
+    /// <inheritdoc cref="QuarryContext.With{TDto}(Func{IEntityAccessor{TDto}, IQueryBuilder{TDto}})"/>
+    public override TSelf With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>> innerBuilder)
+        => throw new NotSupportedException(
+            "CTE methods must be intercepted by the Quarry source generator. " +
+            "If you reach this exception your context variable is typed as the abstract " +
+            "base class instead of your generated derived type — interceptors only fire " +
+            "when the call site resolves to the derived overload.");
+
+    /// <inheritdoc cref="QuarryContext.With{TEntity, TDto}(Func{IEntityAccessor{TEntity}, IQueryBuilder{TEntity, TDto}})"/>
+    public override TSelf With<TEntity, TDto>(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TDto>> innerBuilder)
         => throw new NotSupportedException(
             "CTE methods must be intercepted by the Quarry source generator. " +
             "If you reach this exception your context variable is typed as the abstract " +

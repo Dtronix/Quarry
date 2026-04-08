@@ -167,6 +167,24 @@ internal static class ContextCodeGenerator
         sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
         sb.AppendLine();
 
+        // With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>> innerBuilder) — lambda form
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query built via lambda.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>> innerBuilder) where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
+
+        // With<TEntity, TDto>(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TDto>> innerBuilder) — lambda form projected
+        sb.AppendLine($"    /// <summary>");
+        sb.AppendLine($"    /// Defines a Common Table Expression (CTE) from an inner query with a projection built via lambda.");
+        sb.AppendLine($"    /// The TDto class's public properties define the CTE's columns.");
+        sb.AppendLine($"    /// </summary>");
+        sb.AppendLine($"    {access} new {context.ClassName} With<TEntity, TDto>(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TDto>> innerBuilder) where TEntity : class where TDto : class");
+        sb.AppendLine($"        => throw new NotSupportedException(\"CTE methods must be intercepted by the Quarry source generator.\");");
+        sb.AppendLine();
+
         // FromCte<TDto>() — use a previously defined CTE as the primary FROM source
         sb.AppendLine($"    /// <summary>");
         sb.AppendLine($"    /// Starts a query from a previously defined CTE as the primary table.");

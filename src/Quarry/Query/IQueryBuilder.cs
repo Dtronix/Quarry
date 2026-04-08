@@ -151,6 +151,44 @@ public interface IQueryBuilder<T> where T : class
     IQueryBuilder<T> ExceptAll(IQueryBuilder<T> other)
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
 
+    // ── Set operations (lambda form) ──
+
+    /// <summary>
+    /// Combines this query with another built via lambda, removing duplicate rows.
+    /// </summary>
+    IQueryBuilder<T> Union(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another built via lambda, keeping all rows including duplicates.
+    /// </summary>
+    IQueryBuilder<T> UnionAll(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another built via lambda.
+    /// </summary>
+    IQueryBuilder<T> Intersect(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<T> IntersectAll(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another built via lambda.
+    /// </summary>
+    IQueryBuilder<T> Except(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<T> ExceptAll(Func<IEntityAccessor<T>, IQueryBuilder<T>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
     // ── Execution terminals (no Select — result type is the entity type T) ──
 
     /// <summary>
@@ -396,6 +434,80 @@ public interface IQueryBuilder<TEntity, TResult> where TEntity : class
     /// SQL semantics rather than SQL's column-positional widening.
     /// </remarks>
     IQueryBuilder<TEntity, TResult> ExceptAll<TOther>(IQueryBuilder<TOther, TResult> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    // ── Set operations (lambda form) ──
+
+    /// <summary>
+    /// Combines this query with another built via lambda, removing duplicate rows.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Union(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another from a different entity type built via lambda, removing duplicate rows.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Union<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Union is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another built via lambda, keeping all rows including duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> UnionAll(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Combines this query with another from a different entity type built via lambda, keeping all rows including duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> UnionAll<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.UnionAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another built via lambda.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Intersect(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another from a different entity type built via lambda.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Intersect<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Intersect is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> IntersectAll(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns only rows present in both this query and another from a different entity type built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> IntersectAll<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.IntersectAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another built via lambda.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Except(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another from a different entity type built via lambda.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> Except<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.Except is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> ExceptAll(Func<IEntityAccessor<TEntity>, IQueryBuilder<TEntity, TResult>> other)
+        => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
+
+    /// <summary>
+    /// Returns rows from this query that are not present in another from a different entity type built via lambda, keeping duplicates.
+    /// </summary>
+    IQueryBuilder<TEntity, TResult> ExceptAll<TOther>(Func<IEntityAccessor<TOther>, IQueryBuilder<TOther, TResult>> other) where TOther : class
         => throw new InvalidOperationException("Carrier method IQueryBuilder.ExceptAll is not intercepted in this optimized chain. This indicates a code generation bug.");
 
     // ── Execution terminals ──
