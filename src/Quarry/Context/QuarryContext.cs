@@ -128,8 +128,8 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     #region CTE (Common Table Expressions)
 
     /// <summary>
-    /// Defines a Common Table Expression (CTE) from an inner query.
-    /// The TDto class's public properties define the CTE's columns.
+    /// Defines a Common Table Expression (CTE) from an inner query built via lambda.
+    /// The lambda receives an entity accessor for <typeparamref name="TDto"/> and returns the inner query chain.
     /// </summary>
     /// <remarks>
     /// The generated derived context shadows this method via <c>new</c>. Interceptors only fire
@@ -137,23 +137,13 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// as their generated context type, not as <see cref="QuarryContext"/>.
     /// <para>
     /// For contexts that combine CTEs with entity accessors (e.g.,
-    /// <c>db.With&lt;A&gt;(inner).Users().Join&lt;Order&gt;(...)</c>), inherit from
+    /// <c>db.With&lt;A&gt;(a =&gt; a.Where(...)).Users().Join&lt;Order&gt;(...)</c>), inherit from
     /// <see cref="QuarryContext{TSelf}"/> instead. The generic subclass overrides this method
     /// with a covariant return type so the source generator's SemanticModel can resolve the
     /// full chain without synthetic fallback discovery.
     /// </para>
     /// </remarks>
     /// <seealso cref="QuarryContext{TSelf}"/>
-    /// <typeparam name="TDto">The DTO type whose properties define the CTE columns.</typeparam>
-    /// <param name="innerBuilder">A lambda that receives an entity accessor and builds the inner query.</param>
-    /// <returns>This context for method chaining.</returns>
-    /// <summary>
-    /// Defines a Common Table Expression (CTE) from an inner query built via lambda.
-    /// The lambda receives an entity accessor for <typeparamref name="TDto"/> and returns the inner query chain.
-    /// </summary>
-    /// <remarks>
-    /// <inheritdoc cref="With{TDto}(IQueryBuilder{TDto})" path="/remarks"/>
-    /// </remarks>
     /// <typeparam name="TDto">The DTO type whose properties define the CTE columns.</typeparam>
     /// <param name="innerBuilder">A lambda that receives an entity accessor and builds the inner query.</param>
     /// <returns>This context for method chaining.</returns>
@@ -165,7 +155,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// The lambda receives an entity accessor for <typeparamref name="TEntity"/> and returns the projected inner query chain.
     /// </summary>
     /// <remarks>
-    /// <inheritdoc cref="With{TDto}(IQueryBuilder{TDto})" path="/remarks"/>
+    /// <inheritdoc cref="With{TDto}(Func{IEntityAccessor{TDto}, IQueryBuilder{TDto}})" path="/remarks"/>
     /// </remarks>
     /// <typeparam name="TEntity">The entity type of the inner query.</typeparam>
     /// <typeparam name="TDto">The projected DTO type whose properties define the CTE columns.</typeparam>

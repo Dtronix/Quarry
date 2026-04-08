@@ -291,7 +291,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             operandChainId: OperandChainId,
             operandArgEndLine: OperandArgEndLine,
             operandArgEndColumn: OperandArgEndColumn,
-            operandEntityTypeName: newOperandEntityTypeName);
+            operandEntityTypeName: newOperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -354,7 +355,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             operandChainId: OperandChainId,
             operandArgEndLine: OperandArgEndLine,
             operandArgEndColumn: OperandArgEndColumn,
-            operandEntityTypeName: OperandEntityTypeName);
+            operandEntityTypeName: OperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -420,7 +422,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             isCteInnerChain: IsCteInnerChain,
             cteInnerArgSpanStart: CteInnerArgSpanStart,
             cteColumns: CteColumns,
-            operandEntityTypeName: OperandEntityTypeName);
+            operandEntityTypeName: OperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
