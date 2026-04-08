@@ -17,19 +17,19 @@ internal class CrossDialectCteTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.With<Order>(Lite.Orders().Where(o => o.Total > 100))
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var pg = Pg.With<Pg.Order>(Pg.Orders().Where(o => o.Total > 100))
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var my = My.With<My.Order>(My.Orders().Where(o => o.Total > 100))
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var ss = Ss.With<Ss.Order>(Ss.Orders().Where(o => o.Total > 100))
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -68,19 +68,19 @@ internal class CrossDialectCteTests
 
         decimal cutoff = 100m;
 
-        var lt = Lite.With<Order>(Lite.Orders().Where(o => o.Total > cutoff))
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > cutoff))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var pg = Pg.With<Pg.Order>(Pg.Orders().Where(o => o.Total > cutoff))
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > cutoff))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var my = My.With<My.Order>(My.Orders().Where(o => o.Total > cutoff))
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > cutoff))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
-        var ss = Ss.With<Ss.Order>(Ss.Orders().Where(o => o.Total > cutoff))
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > cutoff))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -112,7 +112,7 @@ internal class CrossDialectCteTests
         // with a new value, so the correct way to verify "different captured value"
         // semantics is to build a fresh chain.
         cutoff = 200m;
-        var lt2 = Lite.With<Order>(Lite.Orders().Where(o => o.Total > cutoff))
+        var lt2 = Lite.With<Order>(orders => orders.Where(o => o.Total > cutoff))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -138,19 +138,19 @@ internal class CrossDialectCteTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.With<Order>(Lite.Orders().Where(o => o.Total > 100))
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Order>()
             .Select(o => o)
             .Prepare();
-        var pg = Pg.With<Pg.Order>(Pg.Orders().Where(o => o.Total > 100))
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Pg.Order>()
             .Select(o => o)
             .Prepare();
-        var my = My.With<My.Order>(My.Orders().Where(o => o.Total > 100))
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<My.Order>()
             .Select(o => o)
             .Prepare();
-        var ss = Ss.With<Ss.Order>(Ss.Orders().Where(o => o.Total > 100))
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Ss.Order>()
             .Select(o => o)
             .Prepare();
@@ -197,26 +197,26 @@ internal class CrossDialectCteTests
         bool activeFilter = true;
 
         var lt = Lite
-            .With<Order>(Lite.Orders().Where(o => o.Total > orderCutoff))
-            .With<User>(Lite.Users().Where(u => u.IsActive == activeFilter))
+            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var pg = Pg
-            .With<Pg.Order>(Pg.Orders().Where(o => o.Total > orderCutoff))
-            .With<Pg.User>(Pg.Users().Where(u => u.IsActive == activeFilter))
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var my = My
-            .With<My.Order>(My.Orders().Where(o => o.Total > orderCutoff))
-            .With<My.User>(My.Users().Where(u => u.IsActive == activeFilter))
+            .With<My.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var ss = Ss
-            .With<Ss.Order>(Ss.Orders().Where(o => o.Total > orderCutoff))
-            .With<Ss.User>(Ss.Users().Where(u => u.IsActive == activeFilter))
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -256,30 +256,30 @@ internal class CrossDialectCteTests
         int qtyFilter = 1;
 
         var lt = Lite
-            .With<Order>(Lite.Orders().Where(o => o.Total > orderCutoff))
-            .With<User>(Lite.Users().Where(u => u.IsActive == activeFilter))
-            .With<OrderItem>(Lite.OrderItems().Where(oi => oi.Quantity > qtyFilter))
+            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
+            .With<OrderItem>(orderItems => orderItems.Where(oi => oi.Quantity > qtyFilter))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var pg = Pg
-            .With<Pg.Order>(Pg.Orders().Where(o => o.Total > orderCutoff))
-            .With<Pg.User>(Pg.Users().Where(u => u.IsActive == activeFilter))
-            .With<Pg.OrderItem>(Pg.OrderItems().Where(oi => oi.Quantity > qtyFilter))
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .With<Pg.OrderItem>(orderItems => orderItems.Where(oi => oi.Quantity > qtyFilter))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var my = My
-            .With<My.Order>(My.Orders().Where(o => o.Total > orderCutoff))
-            .With<My.User>(My.Users().Where(u => u.IsActive == activeFilter))
-            .With<My.OrderItem>(My.OrderItems().Where(oi => oi.Quantity > qtyFilter))
+            .With<My.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .With<My.OrderItem>(orderItems => orderItems.Where(oi => oi.Quantity > qtyFilter))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var ss = Ss
-            .With<Ss.Order>(Ss.Orders().Where(o => o.Total > orderCutoff))
-            .With<Ss.User>(Ss.Users().Where(u => u.IsActive == activeFilter))
-            .With<Ss.OrderItem>(Ss.OrderItems().Where(oi => oi.Quantity > qtyFilter))
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
+            .With<Ss.OrderItem>(orderItems => orderItems.Where(oi => oi.Quantity > qtyFilter))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -322,26 +322,26 @@ internal class CrossDialectCteTests
         // captures activeFilter. The second CTE's parameter must appear as @p0/$1
         // because the first CTE contributes zero parameters to the outer slot array.
         var lt = Lite
-            .With<Order>(Lite.Orders().Where(o => o.Total > 100))
-            .With<User>(Lite.Users().Where(u => u.IsActive == activeFilter))
+            .With<Order>(orders => orders.Where(o => o.Total > 100))
+            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var pg = Pg
-            .With<Pg.Order>(Pg.Orders().Where(o => o.Total > 100))
-            .With<Pg.User>(Pg.Users().Where(u => u.IsActive == activeFilter))
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
+            .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var my = My
-            .With<My.Order>(My.Orders().Where(o => o.Total > 100))
-            .With<My.User>(My.Users().Where(u => u.IsActive == activeFilter))
+            .With<My.Order>(orders => orders.Where(o => o.Total > 100))
+            .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var ss = Ss
-            .With<Ss.Order>(Ss.Orders().Where(o => o.Total > 100))
-            .With<Ss.User>(Ss.Users().Where(u => u.IsActive == activeFilter))
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
+            .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
@@ -378,37 +378,39 @@ internal class CrossDialectCteTests
         var (Lite, Pg, My, Ss) = t;
 
         var lt = Lite.With<Order, OrderSummaryDto>(
-                Lite.Orders().Where(o => o.Total > 100)
+                orders => orders.Where(o => o.Total > 100)
                     .Select(o => new OrderSummaryDto { OrderId = o.OrderId, Total = o.Total, Status = o.Status }))
             .FromCte<OrderSummaryDto>()
             .Select(d => (d.OrderId, d.Total))
             .Prepare();
         var pg = Pg.With<Pg.Order, OrderSummaryDto>(
-                Pg.Orders().Where(o => o.Total > 100)
+                orders => orders.Where(o => o.Total > 100)
                     .Select(o => new OrderSummaryDto { OrderId = o.OrderId, Total = o.Total, Status = o.Status }))
             .FromCte<OrderSummaryDto>()
             .Select(d => (d.OrderId, d.Total))
             .Prepare();
         var my = My.With<My.Order, OrderSummaryDto>(
-                My.Orders().Where(o => o.Total > 100)
+                orders => orders.Where(o => o.Total > 100)
                     .Select(o => new OrderSummaryDto { OrderId = o.OrderId, Total = o.Total, Status = o.Status }))
             .FromCte<OrderSummaryDto>()
             .Select(d => (d.OrderId, d.Total))
             .Prepare();
         var ss = Ss.With<Ss.Order, OrderSummaryDto>(
-                Ss.Orders().Where(o => o.Total > 100)
+                orders => orders.Where(o => o.Total > 100)
                     .Select(o => new OrderSummaryDto { OrderId = o.OrderId, Total = o.Total, Status = o.Status }))
             .FromCte<OrderSummaryDto>()
             .Select(d => (d.OrderId, d.Total))
             .Prepare();
 
+        // Lambda-form inner CTE selects all entity columns (projection not reduced).
+        // The outer FromCte<OrderSummaryDto>().Select() still binds correctly to DTO properties.
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
-            pg:     "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
-            mysql:  "WITH `OrderSummaryDto` AS (SELECT `OrderId`, `Total`, `Status` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `OrderSummaryDto`",
-            ss:     "WITH [OrderSummaryDto] AS (SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]");
+            sqlite: "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
+            pg:     "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
+            mysql:  "WITH `OrderSummaryDto` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `OrderSummaryDto`",
+            ss:     "WITH [OrderSummaryDto] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));

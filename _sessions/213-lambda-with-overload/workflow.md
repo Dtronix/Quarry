@@ -10,7 +10,7 @@ issue: #213
 pr:
 session: 2
 phases-total: 7
-phases-complete: 6
+phases-complete: 7
 ## Problem Statement
 Add lambda-form `With<TDto>()` and `With<TEntity, TDto>()` overloads for more ergonomic multi-CTE chains. The lambda receives an injected entity accessor, eliminating context re-references and preventing cross-context mixing at compile time.
 
