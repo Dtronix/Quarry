@@ -10,7 +10,7 @@ issue: #213
 pr:
 session: 2
 phases-total: 7
-phases-complete: 5
+phases-complete: 6
 ## Problem Statement
 Add lambda-form `With<TDto>()` and `With<TEntity, TDto>()` overloads for more ergonomic multi-CTE chains. The lambda receives an injected entity accessor, eliminating context re-references and preventing cross-context mixing at compile time.
 
@@ -22,6 +22,7 @@ Baseline: all 3021 tests pass (97 migration + 103 analyzers + 2821 quarry). No p
 - 2026-04-08: Replace non-lambda With<T> forms entirely (breaking). Lambda-only API: With<TDto>(Func<IEntityAccessor<TDto>, IQueryBuilder<TDto>>). Eliminates cross-context mixing at compile time.
 - 2026-04-08: Unify set operations (Union/Intersect/Except) into same tree mechanism with lambda API: .Union(orders => orders.Where(...)). IEntityAccessor<T> as lambda parameter type.
 - 2026-04-08: Synthesize a virtual ChainRoot site for lambda parameters to serve as inner chain root.
+- 2026-04-08: Set-op lambda detection has a context resolution gap — inner chain sites get wrong context when the entity type is registered in multiple contexts. CTE lambdas work because With() is resolved on the context class. Set-op lambdas (Union etc.) on IQueryBuilder have ambiguous resolution during source generation. Defer to follow-up.
 - 2026-04-08: Direct capture with DisplayClassEnricher reuse (Option C). No inner carriers, no inner interceptors, no lambda invocation at runtime. The With()/Union() interceptor accesses captured variables via the outer lambda delegate's display class (innerBuilder.Target). Inner chain is purely compile-time: SQL extracted, params mapped to outer carrier at ParameterOffset.
 ## Suspend State
 - Current phase: IMPLEMENT phase 4/7 (Carrier + Emission direct capture), not yet started

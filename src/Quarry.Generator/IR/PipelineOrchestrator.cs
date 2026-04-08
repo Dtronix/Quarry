@@ -90,8 +90,23 @@ internal static class PipelineOrchestrator
         // and chain-updated sites.
         var updatedSites = PropagateChainUpdatedSites(translatedSites, assembledPlans, resultTypePatches);
 
+        // Filter out lambda inner chain sites before file grouping — their SQL is embedded
+        // in the outer chain's CTE/set-op clause at compile time. Passing them through to
+        // file grouping would create interceptor files under wrong contexts (the entity type
+        // may be registered in multiple contexts, and without a concrete chain root the
+        // pipeline can't disambiguate).
+        var consumedIds = Parsing.ChainAnalyzer.ConsumedLambdaInnerSiteIds;
+        var filteredSites = updatedSites;
+        if (consumedIds != null && consumedIds.Count > 0)
+        {
+            filteredSites = updatedSites
+                .Where(s => !consumedIds.Contains(s.UniqueId))
+                .ToImmutableArray();
+            consumedIds.Clear(); // avoid stale state across incremental runs
+        }
+
         // Group into files
-        return GroupTranslatedIntoFiles(updatedSites, assembledPlans, carrierPlans, diagnostics);
+        return GroupTranslatedIntoFiles(filteredSites, assembledPlans, carrierPlans, diagnostics);
     }
 
     private static void CollectTranslatedDiagnostics(

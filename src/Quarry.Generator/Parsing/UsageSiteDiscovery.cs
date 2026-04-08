@@ -3862,6 +3862,13 @@ internal static class UsageSiteDiscovery
                 {
                     return new InnerChainDetection(true, true, lambda.SpanStart);
                 }
+                // Fallback: when the semantic model can't resolve the parent method
+                // (common during source generation for lambda set-op overloads),
+                // accept the syntactic match — InnerChainParentMethods is specific enough.
+                if (parentSymbol == null)
+                {
+                    return new InnerChainDetection(true, true, lambda.SpanStart);
+                }
             }
 
             // Direct form (old): invocation is a direct argument to With()

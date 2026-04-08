@@ -29,6 +29,13 @@ internal static class ChainAnalyzer
     internal static List<AnalyzedChain>? TestCapturedChains;
 
     /// <summary>
+    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
+    /// from interceptor generation. Populated during Analyze() and read by PipelineOrchestrator.
+    /// </summary>
+    [ThreadStatic]
+    internal static HashSet<string>? ConsumedLambdaInnerSiteIds;
+
+    /// <summary>
     /// Maximum number of conditional bits for PrebuiltDispatch.
     /// 8 bits = up to 256 dispatch variants. Beyond this, classify as RuntimeBuild (compile error).
     /// </summary>
@@ -141,6 +148,18 @@ internal static class ChainAnalyzer
             }
             else
                 outerChainGroups[kvp.Key] = kvp.Value;
+        }
+
+        // Record all lambda inner chain site IDs so PipelineOrchestrator can exclude
+        // them from interceptor generation (their SQL is embedded in the outer chain).
+        if (lambdaInnerChainGroups.Count > 0)
+        {
+            ConsumedLambdaInnerSiteIds ??= new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kvp in lambdaInnerChainGroups)
+            {
+                foreach (var site in kvp.Value)
+                    ConsumedLambdaInnerSiteIds.Add(site.UniqueId);
+            }
         }
 
         // Pass 1: Analyze and assemble inner CTE chains.
