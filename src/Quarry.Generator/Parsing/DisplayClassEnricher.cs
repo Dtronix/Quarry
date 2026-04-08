@@ -28,6 +28,41 @@ internal static class DisplayClassEnricher
         if (sites.Length == 0)
             return sites;
 
+        // Deduplicate sites by InterceptableLocationData. Multiple discovery paths
+        // (DiscoverPostCteSites/DiscoverPostJoinSites + normal DiscoverRawCallSites)
+        // can produce sites targeting the same call. When both a synthetic site (from
+        // post-CTE/post-Join discovery, which sets BuilderTypeName explicitly) and a
+        // normal discovery site exist for the same location, prefer the normal site
+        // because it has more accurate type information from the SemanticModel.
+        if (sites.Length > 1)
+        {
+            var seen = new Dictionary<string, int>(); // locData → index in deduped
+            var deduped = ImmutableArray.CreateBuilder<RawCallSite>(sites.Length);
+            foreach (var site in sites)
+            {
+                var locData = site.InterceptableLocationData;
+                if (locData == null)
+                {
+                    deduped.Add(site);
+                    continue;
+                }
+                if (seen.TryGetValue(locData, out var existingIdx))
+                {
+                    // Prefer normal discovery (BuilderTypeName == null) over synthetic
+                    if (deduped[existingIdx].BuilderTypeName != null && site.BuilderTypeName == null)
+                        deduped[existingIdx] = site;
+                    // else keep existing
+                }
+                else
+                {
+                    seen[locData] = deduped.Count;
+                    deduped.Add(site);
+                }
+            }
+            if (deduped.Count < sites.Length)
+                sites = deduped.ToImmutable();
+        }
+
         // Build a supplemental compilation that includes generated entity and context
         // source. The original compilation does not contain entity classes or context
         // accessor methods produced by Pipeline A (RegisterSourceOutput), so variables

@@ -195,6 +195,47 @@ internal static class UsageSiteDiscovery
                     matchCount++;
                 }
             }
+            // When error-typed type arguments cause Roslyn to report both the `new`
+            // method on QuarryContext<TSelf> and the hidden base method on QuarryContext
+            // as candidates (both With<TDto> with the same signature), prefer the
+            // most-derived containing type. This specifically handles CTE methods (With)
+            // where QuarryContext<TSelf>'s `new` shadow and the base QuarryContext method
+            // are both reported as candidates.
+            if (matchCount > 1
+                && invocation.Expression is MemberAccessExpressionSyntax maDisambig
+                && maDisambig.Name.Identifier.ValueText is "With" or "FromCte")
+            {
+                IMethodSymbol? best = null;
+                foreach (var sym in symbolInfo.CandidateSymbols)
+                {
+                    if (sym is IMethodSymbol ms && ms.Parameters.Length == argCount)
+                    {
+                        if (best == null)
+                        {
+                            best = ms;
+                        }
+                        else if (ms.ContainingType != null && best.ContainingType != null)
+                        {
+                            // Prefer the method from the more-derived type
+                            var msBase = ms.ContainingType.BaseType;
+                            while (msBase != null)
+                            {
+                                if (SymbolEqualityComparer.Default.Equals(msBase.OriginalDefinition, best.ContainingType.OriginalDefinition))
+                                {
+                                    best = ms;
+                                    break;
+                                }
+                                msBase = msBase.BaseType;
+                            }
+                        }
+                    }
+                }
+                if (best != null)
+                {
+                    matched = best;
+                    matchCount = 1;
+                }
+            }
             if (matchCount == 1 && matched != null)
             {
                 methodSymbol = matched;
@@ -1022,6 +1063,12 @@ internal static class UsageSiteDiscovery
     {
         var results = ImmutableArray.CreateBuilder<RawCallSite>();
 
+        // Track builder state as we walk the chain: entity accessor → query builder → joined builder
+        string? currentBuilderTypeName = null;
+        bool isJoined = false;
+        List<string>? joinedEntityTypeNames = null;
+        string? primaryEntityTypeName = null;
+
         // Walk UP the syntax tree to find invocations that use the CTE result as receiver.
         var currentInvoc = cteInvocation;
         while (currentInvoc.Parent is MemberAccessExpressionSyntax parentMa
@@ -1030,23 +1077,65 @@ internal static class UsageSiteDiscovery
         {
             var methodName = parentMa.Name.Identifier.ValueText;
 
-            // Check if normal discovery can resolve this invocation
-            var parentSymbolInfo = semanticModel.GetSymbolInfo(parentInvoc, cancellationToken);
-            if (parentSymbolInfo.Symbol is IMethodSymbol || parentSymbolInfo.CandidateSymbols.Length > 0)
+            // CTE methods (With, FromCte) have their own discovery path in Step 3b —
+            // skip them here to avoid duplicate sites. Continue walking because the
+            // next With/FromCte also returns the context type (error), so subsequent
+            // methods still need synthetic discovery.
+            if (methodName is "With" or "FromCte")
             {
-                // Normal discovery should handle it — continue walking
                 currentInvoc = parentInvoc;
                 continue;
             }
 
+            // Check if normal discovery can resolve this invocation.
+            // If it can, stop walking — all subsequent chain methods will also resolve
+            // since they're called on a known return type. Any synthetic sites created
+            // here for unresolvable methods are sufficient; resolved methods get their
+            // own DiscoverRawCallSites call via the generator pipeline.
+            var parentSymbolInfo = semanticModel.GetSymbolInfo(parentInvoc, cancellationToken);
+            if (parentSymbolInfo.Symbol is IMethodSymbol || parentSymbolInfo.CandidateSymbols.Length > 0)
+            {
+                break;
+            }
+
             // Determine the site kind
             InterceptorKind kind;
-            BuilderKind builderKind = BuilderKind.Query;
+            BuilderKind builderKind = isJoined ? BuilderKind.JoinedQuery : BuilderKind.Query;
             string? entityTypeName = null;
+            string? joinedEntityTypeName = null;
 
             if (InterceptableMethods.TryGetValue(methodName, out kind))
             {
                 // Known builder method (Join, Select, Where, Prepare, etc.)
+                // The site's builderTypeName is the RECEIVER type (current state),
+                // not the return type. State transitions happen after the site is created.
+
+                if (kind is InterceptorKind.Join or InterceptorKind.LeftJoin
+                    or InterceptorKind.RightJoin or InterceptorKind.CrossJoin
+                    or InterceptorKind.FullOuterJoin)
+                {
+                    // Join is called on the current builder (IEntityAccessor or IQueryBuilder)
+                    // After Join, chain becomes joined
+                    builderKind = BuilderKind.JoinedQuery;
+
+                    // Extract the join type argument from syntax: .Join<Order>(...)
+                    if (parentMa.Name is GenericNameSyntax joinGenericName
+                        && joinGenericName.TypeArgumentList.Arguments.Count > 0)
+                    {
+                        var joinTypeArg = joinGenericName.TypeArgumentList.Arguments[0];
+                        joinedEntityTypeName = joinTypeArg.ToString();
+                        // Attempt to resolve fully-qualified name
+                        var joinTypeSymbol = semanticModel.GetTypeInfo(joinTypeArg, cancellationToken).Type;
+                        if (joinTypeSymbol != null && joinTypeSymbol.TypeKind != TypeKind.Error)
+                            joinedEntityTypeName = joinTypeSymbol.ToFullyQualifiedDisplayString();
+
+                        // Build the joined entity type names list
+                        joinedEntityTypeNames ??= new List<string>();
+                        if (primaryEntityTypeName != null && joinedEntityTypeNames.Count == 0)
+                            joinedEntityTypeNames.Add(primaryEntityTypeName);
+                        joinedEntityTypeNames.Add(joinedEntityTypeName);
+                    }
+                }
             }
             else if (parentInvoc.ArgumentList.Arguments.Count == 0
                      && methodName.Length > 0 && char.IsUpper(methodName[0]))
@@ -1060,7 +1149,11 @@ internal static class UsageSiteDiscovery
                 kind = InterceptorKind.ChainRoot;
                 var returnType = resolved.ReturnType as INamedTypeSymbol;
                 if (returnType is { Arity: 1 })
+                {
                     entityTypeName = returnType.TypeArguments[0].ToFullyQualifiedDisplayString();
+                    primaryEntityTypeName = entityTypeName;
+                }
+                currentBuilderTypeName = "IEntityAccessor";
             }
             else
             {
@@ -1080,7 +1173,7 @@ internal static class UsageSiteDiscovery
             var isInsideLoop = DetectLoopAncestor(parentInvoc);
 
             if (entityTypeName == null)
-                entityTypeName = cteSite.EntityTypeName;
+                entityTypeName = primaryEntityTypeName ?? cteSite.EntityTypeName;
 
             // Parse clause lambda if applicable
             SqlExpr? expression = null;
@@ -1103,11 +1196,20 @@ internal static class UsageSiteDiscovery
             {
                 try
                 {
-                    var lambdaParamCount = GetLambdaParameterCount(parentInvoc);
-                    projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
-                        parentInvoc,
-                        entityCount: lambdaParamCount > 0 ? lambdaParamCount : 1,
-                        DefaultDiscoveryDialect);
+                    if (isJoined)
+                    {
+                        var lambdaParamCount = GetLambdaParameterCount(parentInvoc);
+                        projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
+                            parentInvoc,
+                            entityCount: lambdaParamCount > 0 ? lambdaParamCount : 2,
+                            DefaultDiscoveryDialect);
+                    }
+                    else
+                    {
+                        projectionInfo = Projection.ProjectionAnalyzer.AnalyzeSingleEntitySyntaxOnly(
+                            parentInvoc,
+                            DefaultDiscoveryDialect);
+                    }
                 }
                 catch { }
             }
@@ -1131,20 +1233,44 @@ internal static class UsageSiteDiscovery
                 clauseKind: clauseKind,
                 isDescending: isDescending,
                 projectionInfo: projectionInfo,
+                joinedEntityTypeName: joinedEntityTypeName,
                 contextClassName: cteSite.ContextClassName,
                 contextNamespace: cteSite.ContextNamespace,
                 isInsideLoop: isInsideLoop,
-                chainId: chainId);
+                chainId: chainId,
+                builderTypeName: currentBuilderTypeName,
+                joinedEntityTypeNames: joinedEntityTypeNames);
 
             EnrichDisplayClassInfo(postCteSite, parentInvoc);
             results.Add(postCteSite);
+
+            // Post-site state transitions: update currentBuilderTypeName to the
+            // RETURN type of this method (which becomes the receiver for the next).
+            if (kind == InterceptorKind.ChainRoot)
+            {
+                // ChainRoot returns IEntityAccessor<T> — already set above
+            }
+            else if (kind is InterceptorKind.Join or InterceptorKind.LeftJoin
+                or InterceptorKind.RightJoin or InterceptorKind.CrossJoin
+                or InterceptorKind.FullOuterJoin)
+            {
+                isJoined = true;
+                currentBuilderTypeName = "IJoinedQueryBuilder";
+            }
+            else if (kind is InterceptorKind.Where or InterceptorKind.OrderBy
+                or InterceptorKind.ThenBy or InterceptorKind.GroupBy
+                or InterceptorKind.Having)
+            {
+                currentBuilderTypeName = isJoined ? "IJoinedQueryBuilder" : "IQueryBuilder";
+            }
 
             // When we hit Prepare(), also discover prepared terminal usages on the
             // assigned variable (e.g., lt.ToDiagnostics(), lt.ExecuteFetchAllAsync()).
             if (kind == InterceptorKind.Prepare)
             {
+                var terminalEntityType = primaryEntityTypeName ?? cteSite.EntityTypeName;
                 var preparedTerminals = DiscoverPreparedTerminalsForCteChain(
-                    parentInvoc, cteSite, chainId, semanticModel, cancellationToken);
+                    parentInvoc, cteSite, chainId, terminalEntityType, semanticModel, cancellationToken);
                 results.AddRange(preparedTerminals);
             }
 
@@ -1162,6 +1288,7 @@ internal static class UsageSiteDiscovery
         InvocationExpressionSyntax prepareInvocation,
         RawCallSite cteSite,
         string? chainId,
+        string entityTypeName,
         SemanticModel semanticModel,
         CancellationToken cancellationToken)
     {
@@ -1217,7 +1344,7 @@ internal static class UsageSiteDiscovery
                     uniqueId: uniqueId,
                     kind: usageKind,
                     builderKind: BuilderKind.Query,
-                    entityTypeName: cteSite.EntityTypeName,
+                    entityTypeName: entityTypeName,
                     resultTypeName: null,
                     isAnalyzable: true,
                     nonAnalyzableReason: null,
@@ -1970,6 +2097,9 @@ internal static class UsageSiteDiscovery
         return 0;
     }
 
+    /// <summary>
+    /// Returns the number of explicit type arguments on a generic method call.
+    /// E.g., <c>With&lt;Order&gt;(inner)</c> → 1, <c>With&lt;Order, Dto&gt;(inner)</c> → 2.
     /// <summary>
     /// Gets the expected lambda parameter count from a method symbol's first delegate parameter.
     /// For example, Func&lt;T, bool&gt; → 1, Func&lt;T1, T2, bool&gt; → 2.

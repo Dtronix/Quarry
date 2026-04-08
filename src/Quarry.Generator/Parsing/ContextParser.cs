@@ -47,7 +47,8 @@ internal static class ContextParser
     }
 
     /// <summary>
-    /// Checks if the class inherits from QuarryContext.
+    /// Checks if the class inherits from QuarryContext (either directly or via the
+    /// generic <c>QuarryContext&lt;TSelf&gt;</c> intermediate base).
     /// </summary>
     private static bool InheritsFromQuarryContext(INamedTypeSymbol classSymbol)
     {
@@ -56,6 +57,7 @@ internal static class ContextParser
         {
             if (baseType.ToDisplayString() == "Quarry.QuarryContext")
                 return true;
+
             baseType = baseType.BaseType;
         }
         return false;

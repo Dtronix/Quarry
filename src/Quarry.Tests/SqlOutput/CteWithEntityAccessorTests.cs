@@ -1,0 +1,141 @@
+using Quarry.Tests.Samples;
+using Cte = Quarry.Tests.Samples.Cte;
+
+namespace Quarry.Tests.SqlOutput;
+
+/// <summary>
+/// Integration tests for CTE chains that combine With&lt;TDto&gt;() with entity accessors
+/// and further builder methods (Join, Where, Select). These chains require the context
+/// to inherit from <see cref="QuarryContext{TSelf}"/> so that the source generator's
+/// discovery SemanticModel can resolve the return type of With&lt;&gt; as the concrete
+/// context class. Regression tests for issue #205.
+/// </summary>
+[TestFixture]
+internal class CteWithEntityAccessorTests
+{
+    [Test]
+    public async Task Cte_Users_Select()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var cte = new Cte.CteDb(t.Lite.Connection);
+
+        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+            .Users()
+            .Select(u => (u.UserId, u.UserName))
+            .Prepare();
+
+        Assert.That(q.ToDiagnostics().Sql, Is.EqualTo(
+            "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"UserId\", \"UserName\" FROM \"users\""));
+
+        // Seed data: 3 users (Alice, Bob, Charlie)
+        var results = await q.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Cte_Users_Where_Select()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var cte = new Cte.CteDb(t.Lite.Connection);
+
+        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+            .Users()
+            .Where(u => u.IsActive == true)
+            .Select(u => (u.UserId, u.UserName))
+            .Prepare();
+
+        Assert.That(q.ToDiagnostics().Sql, Is.EqualTo(
+            "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1"));
+
+        // Seed data: Active users are Alice (1) and Bob (2); Charlie is inactive
+        var results = await q.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, "Alice")));
+        Assert.That(results[1], Is.EqualTo((2, "Bob")));
+    }
+
+    [Test]
+    public async Task Cte_Users_Join_Select()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var cte = new Cte.CteDb(t.Lite.Connection);
+
+        // Core regression target: With<> followed by entity accessor + Join + Select.
+        // The CTE is defined but the JOIN currently resolves against the underlying table
+        // ("orders") rather than the CTE name ("Order"). CTE-to-join table resolution
+        // is a follow-up improvement; this test validates the chain compiles and runs.
+        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+            .Users()
+            .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+
+        Assert.That(q.ToDiagnostics().Sql, Is.EqualTo(
+            "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\""));
+
+        // JOIN against real table returns all user-order pairs
+        var results = await q.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.GreaterThanOrEqualTo(3));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task Cte_Users_Join_Where_Select()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var cte = new Cte.CteDb(t.Lite.Connection);
+
+        // JOIN resolves against real "orders" table (CTE-to-join resolution is a follow-up).
+        // WHERE clause still filters correctly on the joined table.
+        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+            .Users()
+            .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > 200)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+
+        Assert.That(q.ToDiagnostics().Sql, Is.EqualTo(
+            "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 200"));
+
+        // Only Alice's order (250.00) exceeds 200 in the real orders table
+        var results = await q.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
+    }
+
+    [Test]
+    public async Task Cte_Users_Join_Select_WithParameter()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var cte = new Cte.CteDb(t.Lite.Connection);
+
+        decimal cutoff = 100m;
+        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > cutoff))
+            .Users()
+            .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+
+        // Verify parameterized SQL (CTE has @p0, JOIN against real table)
+        Assert.That(q.ToDiagnostics().Sql, Does.Contain("@p0"));
+
+        // JOIN resolves against real table — returns all 3 user-order pairs
+        var results = await q.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    // Note: Multi-CTE chains (.With<A>(...).With<B>(...).Users()) have a carrier creation
+    // issue: each CteDefinition emitter creates a new carrier, overwriting Ctx with the
+    // previous carrier instead of the real context. This is a pre-existing limitation of
+    // the CteDefinition emitter, not specific to QuarryContext<TSelf>. Single-CTE chains
+    // work correctly via EmitChainRootAfterCte. Multi-CTE support is a follow-up.
+
+    // Note: FromCte on generic base (With<>.FromCte<>().Select()) is covered by
+    // CrossDialectCteTests which tests the With+FromCte pattern on the non-generic base.
+    // The generic base doesn't change FromCte behavior — it only changes With<>'s return type.
+    // Testing FromCte on the generic base requires chain analysis changes for entity type
+    // mismatch between CTE definition and FromCte (both resolve to "TDto" during discovery).
+    // This will be addressed when DiscoverPostCteSites is removed after full migration to
+    // QuarryContext<TSelf> (follow-up issue).
+}

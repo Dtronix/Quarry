@@ -793,7 +793,20 @@ internal sealed class FileEmitter
 
             case InterceptorKind.ChainRoot:
                 if (carrierInfo != null && carrierChain != null)
-                    TransitionBodyEmitter.EmitChainRoot(sb, site, methodName, carrierInfo);
+                {
+                    // When a ChainRoot follows a CteDefinition in the same chain
+                    // (e.g., db.With<A>(inner).Users()), the carrier was already created
+                    // by the CteDefinition emitter. Cast instead of allocating a new carrier.
+                    bool chainHasCte = false;
+                    foreach (var cs in carrierChain.ClauseSites)
+                    {
+                        if (cs.Kind == InterceptorKind.CteDefinition) { chainHasCte = true; break; }
+                    }
+                    if (chainHasCte)
+                        TransitionBodyEmitter.EmitChainRootAfterCte(sb, site, methodName);
+                    else
+                        TransitionBodyEmitter.EmitChainRoot(sb, site, methodName, carrierInfo);
+                }
                 break;
 
             case InterceptorKind.CteDefinition:
