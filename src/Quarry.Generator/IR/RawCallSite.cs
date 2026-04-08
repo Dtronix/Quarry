@@ -62,7 +62,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         bool isCteInnerChain = false,
         int? cteInnerArgSpanStart = null,
         IReadOnlyList<CteColumn>? cteColumns = null,
-        string? operandEntityTypeName = null)
+        string? operandEntityTypeName = null,
+        int? lambdaInnerSpanStart = null)
     {
         MethodName = methodName;
         FilePath = filePath;
@@ -113,6 +114,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         CteInnerArgSpanStart = cteInnerArgSpanStart;
         CteColumns = cteColumns;
         OperandEntityTypeName = operandEntityTypeName;
+        LambdaInnerSpanStart = lambdaInnerSpanStart;
     }
 
     // Identity and location
@@ -215,6 +217,10 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Null for same-entity set operations.
     public string? OperandEntityTypeName { get; }
 
+    // For CteDefinition and set-op sites with lambda arguments: SpanStart of the lambda expression.
+    // Used to link to the inner chain group whose ChainId contains `:lambda-inner:{LambdaInnerSpanStart}`.
+    public int? LambdaInnerSpanStart { get; }
+
     // Display class name for lambda closures (computed during discovery via DisplayClassNameResolver)
     public string? DisplayClassName { get; set; }
 
@@ -285,7 +291,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             operandChainId: OperandChainId,
             operandArgEndLine: OperandArgEndLine,
             operandArgEndColumn: OperandArgEndColumn,
-            operandEntityTypeName: newOperandEntityTypeName);
+            operandEntityTypeName: newOperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -348,7 +355,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             operandChainId: OperandChainId,
             operandArgEndLine: OperandArgEndLine,
             operandArgEndColumn: OperandArgEndColumn,
-            operandEntityTypeName: OperandEntityTypeName);
+            operandEntityTypeName: OperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -414,7 +422,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             isCteInnerChain: IsCteInnerChain,
             cteInnerArgSpanStart: CteInnerArgSpanStart,
             cteColumns: CteColumns,
-            operandEntityTypeName: OperandEntityTypeName);
+            operandEntityTypeName: OperandEntityTypeName,
+            lambdaInnerSpanStart: LambdaInnerSpanStart);
         // Propagate mutable properties set after construction
         copy.DisplayClassName = DisplayClassName;
         copy.CapturedVariableTypes = CapturedVariableTypes;
@@ -476,7 +485,8 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
             && IsCteInnerChain == other.IsCteInnerChain
             && CteInnerArgSpanStart == other.CteInnerArgSpanStart
             && EqualityHelpers.NullableSequenceEqual(CteColumns, other.CteColumns)
-            && OperandEntityTypeName == other.OperandEntityTypeName;
+            && OperandEntityTypeName == other.OperandEntityTypeName
+            && LambdaInnerSpanStart == other.LambdaInnerSpanStart;
     }
 
     public override bool Equals(object? obj) => Equals(obj as RawCallSite);

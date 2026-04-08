@@ -19,7 +19,7 @@ internal class CteWithEntityAccessorTests
         await using var t = await QueryTestHarness.CreateAsync();
         var cte = new Cte.CteDb(t.Lite.Connection);
 
-        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+        var q = cte.With<Cte.Order>(orders => orders.Where(o => o.Total > 100))
             .Users()
             .Select(u => (u.UserId, u.UserName))
             .Prepare();
@@ -39,7 +39,7 @@ internal class CteWithEntityAccessorTests
         await using var t = await QueryTestHarness.CreateAsync();
         var cte = new Cte.CteDb(t.Lite.Connection);
 
-        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+        var q = cte.With<Cte.Order>(orders => orders.Where(o => o.Total > 100))
             .Users()
             .Where(u => u.IsActive == true)
             .Select(u => (u.UserId, u.UserName))
@@ -65,7 +65,7 @@ internal class CteWithEntityAccessorTests
         // The CTE is defined but the JOIN currently resolves against the underlying table
         // ("orders") rather than the CTE name ("Order"). CTE-to-join table resolution
         // is a follow-up improvement; this test validates the chain compiles and runs.
-        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+        var q = cte.With<Cte.Order>(orders => orders.Where(o => o.Total > 100))
             .Users()
             .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))
@@ -88,7 +88,7 @@ internal class CteWithEntityAccessorTests
 
         // JOIN resolves against real "orders" table (CTE-to-join resolution is a follow-up).
         // WHERE clause still filters correctly on the joined table.
-        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > 100))
+        var q = cte.With<Cte.Order>(orders => orders.Where(o => o.Total > 100))
             .Users()
             .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
             .Where((u, o) => o.Total > 200)
@@ -111,7 +111,7 @@ internal class CteWithEntityAccessorTests
         var cte = new Cte.CteDb(t.Lite.Connection);
 
         decimal cutoff = 100m;
-        var q = cte.With<Cte.Order>(cte.Orders().Where(o => o.Total > cutoff))
+        var q = cte.With<Cte.Order>(orders => orders.Where(o => o.Total > cutoff))
             .Users()
             .Join<Cte.Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total))

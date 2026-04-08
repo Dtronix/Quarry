@@ -2464,8 +2464,8 @@ public static class Queries
     public static async Task Test(TestDbContext db)
     {
         // Both With<Order>(...) calls — duplicate short name 'Order'.
-        await db.With<Order>(db.Orders().Where(o => o.Total > 100))
-            .With<Order>(db.Orders().Where(o => o.Total > 200))
+        await db.With<Order>(orders => orders.Where(o => o.Total > 100))
+            .With<Order>(orders => orders.Where(o => o.Total > 200))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .ExecuteFetchAllAsync();

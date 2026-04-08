@@ -2263,58 +2263,6 @@ SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActi
 
 ---
 
-### Where(...).OrderItems()
-
-```sql
-SELECT "OrderItemId", "OrderId", "ProductName", "Quantity", "UnitPrice", "LineTotal" FROM "order_items" WHERE "Quantity" > $1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Where(...).Orders()
-
-```sql
-SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `decimal` |
-
----
-
-### Where(...).Orders()
-
-```sql
-SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100
-```
-
----
-
-### Where(...).Select(...).Orders()
-
-```sql
-SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100
-```
-
----
-
-### Where(...).Users()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = $1
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `bool` |
-
----
-
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2346,7 +2294,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH "OrderSummaryDto" AS (SELECT "OrderId", "Total", "Status" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
+WITH "OrderSummaryDto" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "OrderSummaryDto"
 ```
 
 ---
@@ -2402,7 +2350,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 324 |
+| Total discovered | 317 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 66 |
-| Rendered | 258 |
+| Consolidated (deduped) | 64 |
+| Rendered | 253 |

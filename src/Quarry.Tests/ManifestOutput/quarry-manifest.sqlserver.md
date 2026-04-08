@@ -2242,62 +2242,10 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 ---
 
-### Where(...).OrderItems()
-
-```sql
-SELECT [OrderItemId], [OrderId], [ProductName], [Quantity], [UnitPrice], [LineTotal] FROM [order_items] WHERE [Quantity] > @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Where(...).Orders()
-
-```sql
-SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100
-```
-
----
-
-### Where(...).Orders()
-
-```sql
-SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `decimal` |
-
----
-
-### Where(...).Select(...).Orders()
-
-```sql
-SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100
-```
-
----
-
-### Where(...).Users()
-
-```sql
-SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = @p0
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `bool` |
-
----
-
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-WITH [OrderSummaryDto] AS (SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]
+WITH [OrderSummaryDto] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]
 ```
 
 ---
@@ -2373,7 +2321,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 319 |
+| Total discovered | 312 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 64 |
-| Rendered | 255 |
+| Consolidated (deduped) | 62 |
+| Rendered | 250 |

@@ -25,9 +25,11 @@ internal static class SetOperationBodyEmitter
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
+        var isLambdaForm = site.Bound.Raw.LambdaInnerSpanStart.HasValue;
 
         // For cross-entity set operations, the argument type uses the operand's entity type
         string argType;
+        string accessorEntityType;
         if (setOpIndex < chain.Plan.SetOperations.Count
             && chain.Plan.SetOperations[setOpIndex].OperandEntityTypeName != null)
         {
@@ -42,11 +44,17 @@ internal static class SetOperationBodyEmitter
             argType = resultType != null
                 ? $"IQueryBuilder<{operandEntityType}, {resultType}>"
                 : $"IQueryBuilder<{operandEntityType}>";
+            accessorEntityType = operandEntityType;
         }
         else
         {
             argType = receiverType;
+            accessorEntityType = entityType;
         }
+
+        // Lambda form: wrap arg type in Func<IEntityAccessor<T>, ...>
+        if (isLambdaForm)
+            argType = $"Func<IEntityAccessor<{accessorEntityType}>, {argType}>";
 
         var returnTypeName = site.BuilderTypeName is "IEntityAccessor" or "EntityAccessor"
             ? $"IQueryBuilder<{entityType}>" : receiverType;
@@ -56,23 +64,36 @@ internal static class SetOperationBodyEmitter
         sb.AppendLine($"        {argType} other)");
         sb.AppendLine($"    {{");
 
-        // Copy operand carrier parameters into main carrier parameter fields
         if (setOpIndex < chain.Plan.SetOperations.Count)
         {
             var setOp = chain.Plan.SetOperations[setOpIndex];
 
-            // Resolve the operand carrier class name
-            string? opCarrierName = null;
-            operandCarrierNames?.TryGetValue(setOp.Operand, out opCarrierName);
-
-            if (opCarrierName != null && setOp.Operand.Parameters.Count > 0)
+            if (isLambdaForm)
             {
-                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-                sb.AppendLine($"        var __op = Unsafe.As<{opCarrierName}>(other);");
-                for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
+                // Lambda form: extract captured variables from the lambda delegate's display
+                // class via [UnsafeAccessor] and bind to carrier P-fields at ParameterOffset.
+                // No operand carrier — the inner chain is purely compile-time.
+                if (setOp.Operand.Parameters.Count > 0)
                 {
-                    var targetIdx = setOp.ParameterOffset + i;
-                    sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
+                    sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, setOp.Operand.Parameters, setOp.ParameterOffset);
+                }
+            }
+            else
+            {
+                // Direct form: copy operand carrier parameters into main carrier fields
+                string? opCarrierName = null;
+                operandCarrierNames?.TryGetValue(setOp.Operand, out opCarrierName);
+
+                if (opCarrierName != null && setOp.Operand.Parameters.Count > 0)
+                {
+                    sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                    sb.AppendLine($"        var __op = Unsafe.As<{opCarrierName}>(other);");
+                    for (int i = 0; i < setOp.Operand.Parameters.Count; i++)
+                    {
+                        var targetIdx = setOp.ParameterOffset + i;
+                        sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
+                    }
                 }
             }
         }

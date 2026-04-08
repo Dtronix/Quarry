@@ -29,6 +29,13 @@ internal static class ChainAnalyzer
     internal static List<AnalyzedChain>? TestCapturedChains;
 
     /// <summary>
+    /// UniqueIds of sites that belong to lambda inner chains and should be excluded
+    /// from interceptor generation. Populated during Analyze() and read by PipelineOrchestrator.
+    /// </summary>
+    [ThreadStatic]
+    internal static HashSet<string>? ConsumedLambdaInnerSiteIds;
+
+    /// <summary>
     /// Maximum number of conditional bits for PrebuiltDispatch.
     /// 8 bits = up to 256 dispatch variants. Beyond this, classify as RuntimeBuild (compile error).
     /// </summary>
@@ -114,17 +121,45 @@ internal static class ChainAnalyzer
 
         var results = new List<AnalyzedChain>();
 
-        // Two-pass analysis: inner CTE chains first, then outer chains.
+        // Multi-pass analysis: inner CTE chains first, then outer chains.
         // Inner chains (argument to With()) are analyzed and assembled to SQL
         // before outer chains so their SQL is available for CteDefinitions.
         var innerChainGroups = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
+        var lambdaInnerChainGroups = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
         var outerChainGroups = new Dictionary<string, List<TranslatedCallSite>>(StringComparer.Ordinal);
+        // Build lambda inner chain lookup: lambdaSpanStart → ChainId
+        var lambdaInnerChainIds = new Dictionary<int, string>();
+        const string LambdaInnerMarker = ":lambda-inner:";
         foreach (var kvp in chains)
         {
             if (kvp.Key.Contains(":cte-inner:"))
                 innerChainGroups[kvp.Key] = kvp.Value;
+            else if (kvp.Key.Contains(LambdaInnerMarker))
+            {
+                lambdaInnerChainGroups[kvp.Key] = kvp.Value;
+                // Extract lambdaSpanStart from suffix
+                var markerIdx = kvp.Key.LastIndexOf(LambdaInnerMarker, StringComparison.Ordinal);
+                if (markerIdx >= 0)
+                {
+                    var spanStartText = kvp.Key.Substring(markerIdx + LambdaInnerMarker.Length);
+                    if (int.TryParse(spanStartText, out var lambdaSpanStart))
+                        lambdaInnerChainIds[lambdaSpanStart] = kvp.Key;
+                }
+            }
             else
                 outerChainGroups[kvp.Key] = kvp.Value;
+        }
+
+        // Record all lambda inner chain site IDs so PipelineOrchestrator can exclude
+        // them from interceptor generation (their SQL is embedded in the outer chain).
+        if (lambdaInnerChainGroups.Count > 0)
+        {
+            ConsumedLambdaInnerSiteIds ??= new HashSet<string>(StringComparer.Ordinal);
+            foreach (var kvp in lambdaInnerChainGroups)
+            {
+                foreach (var site in kvp.Value)
+                    ConsumedLambdaInnerSiteIds.Add(site.UniqueId);
+            }
         }
 
         // Pass 1: Analyze and assemble inner CTE chains.
@@ -191,7 +226,9 @@ internal static class ChainAnalyzer
             {
                 var inlineOperandChains = new List<AnalyzedChain>();
                 var analyzed = AnalyzeChainGroup(chainSites, registry, ct, diagnostics, operandPlans, isOperandChain, inlineOperandChains,
-                    cteInnerResults: cteInnerResults.Count > 0 ? cteInnerResults : null);
+                    cteInnerResults: cteInnerResults.Count > 0 ? cteInnerResults : null,
+                    lambdaInnerChainIds: lambdaInnerChainIds.Count > 0 ? lambdaInnerChainIds : null,
+                    lambdaInnerChainGroups: lambdaInnerChainGroups.Count > 0 ? lambdaInnerChainGroups : null);
                 if (analyzed != null)
                     results.Add(analyzed);
                 results.AddRange(inlineOperandChains);
@@ -223,7 +260,10 @@ internal static class ChainAnalyzer
         Dictionary<string, QueryPlan>? operandPlans = null,
         bool isOperandChain = false,
         List<AnalyzedChain>? inlineOperandChains = null,
-        Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>? cteInnerResults = null)
+        Dictionary<int, (AnalyzedChain Chain, AssembledPlan Assembled)>? cteInnerResults = null,
+        Dictionary<int, string>? lambdaInnerChainIds = null,
+        Dictionary<string, List<TranslatedCallSite>>? lambdaInnerChainGroups = null,
+        bool isLambdaInnerChain = false)
     {
         // Find the execution terminal, detect .Trace()/.Prepare(), and collect clause sites
         TranslatedCallSite? executionSite = null;
@@ -336,7 +376,7 @@ internal static class ChainAnalyzer
             }
             else
             {
-                // CTE inner chains don't have execution terminals — use chain root
+                // CTE inner chains (direct form) don't have execution terminals — use chain root
                 for (int i = clauseSites.Count - 1; i >= 0; i--)
                 {
                     if (clauseSites[i].Bound.Raw.Kind == InterceptorKind.ChainRoot
@@ -347,6 +387,12 @@ internal static class ChainAnalyzer
                         break;
                     }
                 }
+
+                // Lambda inner chains have no ChainRoot or execution terminal.
+                // Use the first clause site for entity/table resolution — it stays
+                // in clauseSites so it's still processed as a clause.
+                if (executionSite == null && isLambdaInnerChain && clauseSites.Count > 0)
+                    executionSite = clauseSites[0];
 
                 if (executionSite == null)
                     return null;
@@ -669,8 +715,73 @@ internal static class ChainAnalyzer
 
             if (raw.Kind == InterceptorKind.CteDefinition)
             {
-                // Match this CTE definition to its inner chain's assembled SQL
-                if (cteInnerResults != null && raw.CteInnerArgSpanStart.HasValue
+                // Lambda form: recursively analyze the inner chain group
+                if (raw.LambdaInnerSpanStart.HasValue
+                    && lambdaInnerChainIds != null
+                    && lambdaInnerChainGroups != null
+                    && lambdaInnerChainIds.TryGetValue(raw.LambdaInnerSpanStart.Value, out var innerChainId)
+                    && lambdaInnerChainGroups.TryGetValue(innerChainId, out var innerChainSites))
+                {
+                    var lambdaInnerAnalyzed = AnalyzeChainGroup(innerChainSites, registry, ct, diagnostics, isLambdaInnerChain: true);
+                    if (lambdaInnerAnalyzed != null)
+                    {
+                        var lambdaInnerAssembled = SqlAssembler.Assemble(lambdaInnerAnalyzed, registry);
+                        var lambdaInnerSql = lambdaInnerAssembled.SqlVariants.TryGetValue(0, out var lambdaVariant)
+                            ? lambdaVariant.Sql : "";
+                        var lambdaInnerParams = lambdaInnerAnalyzed.Plan.Parameters;
+                        var lambdaColumns = raw.CteColumns ?? Array.Empty<CteColumn>();
+                        var lambdaCteName = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "CTE";
+
+                        if (!seenCteNames.Add(lambdaCteName))
+                        {
+                            diagnostics?.Add(new DiagnosticInfo(
+                                Quarry.Generators.DiagnosticDescriptors.DuplicateCteName.Id,
+                                raw.Location,
+                                lambdaCteName));
+                        }
+
+                        var lambdaCteParamOffset = paramGlobalIndex;
+
+                        cteDefinitions.Add(new CteDef(
+                            lambdaCteName, lambdaInnerSql, lambdaInnerParams, lambdaColumns,
+                            innerPlan: lambdaInnerAnalyzed.Plan,
+                            parameterOffset: lambdaCteParamOffset));
+
+                        foreach (var p in lambdaInnerParams)
+                        {
+                            parameters.Add(new QueryParameter(
+                                globalIndex: paramGlobalIndex++,
+                                clrType: p.ClrType,
+                                valueExpression: p.ValueExpression,
+                                isCaptured: p.IsCaptured,
+                                expressionPath: p.ExpressionPath,
+                                isCollection: p.IsCollection,
+                                elementTypeName: p.ElementTypeName,
+                                typeMappingClass: p.TypeMappingClass,
+                                isEnum: p.IsEnum,
+                                enumUnderlyingType: p.EnumUnderlyingType,
+                                isSensitive: p.IsSensitive,
+                                entityPropertyExpression: p.EntityPropertyExpression,
+                                needsUnsafeAccessor: p.NeedsUnsafeAccessor,
+                                isDirectAccessible: p.IsDirectAccessible,
+                                collectionAccessExpression: p.CollectionAccessExpression,
+                                capturedFieldName: p.CapturedFieldName,
+                                capturedFieldType: p.CapturedFieldType,
+                                isStaticCapture: p.IsStaticCapture,
+                                isEnumerableCollection: p.IsEnumerableCollection));
+                        }
+                    }
+                    else
+                    {
+                        var dtoShort = CteNameHelpers.ExtractShortName(raw.CteEntityTypeName) ?? "TDto";
+                        diagnostics?.Add(new DiagnosticInfo(
+                            Quarry.Generators.DiagnosticDescriptors.CteInnerChainNotAnalyzable.Id,
+                            raw.Location,
+                            dtoShort));
+                    }
+                }
+                // Direct form: match this CTE definition to its inner chain's assembled SQL
+                else if (cteInnerResults != null && raw.CteInnerArgSpanStart.HasValue
                     && cteInnerResults.TryGetValue(raw.CteInnerArgSpanStart.Value, out var inner))
                 {
                     // Get the inner SQL from mask 0 (inner chains don't have conditional clauses)
@@ -1019,12 +1130,23 @@ internal static class ChainAnalyzer
             else if (IsSetOperationKind(kind))
             {
                 seenSetOperation = true;
-                // First check inline operand plans (same-ChainId operands split during preprocessing)
                 QueryPlan? opPlan = null;
                 var opKind = MapToSetOperatorKind(kind);
 
-                // Match inline operand plans by set operation order
-                if (inlineOperandPlans.Count > 0)
+                // Lambda form: recursively analyze the inner chain group
+                if (raw.LambdaInnerSpanStart.HasValue
+                    && lambdaInnerChainIds != null
+                    && lambdaInnerChainGroups != null
+                    && lambdaInnerChainIds.TryGetValue(raw.LambdaInnerSpanStart.Value, out var setOpInnerChainId)
+                    && lambdaInnerChainGroups.TryGetValue(setOpInnerChainId, out var setOpInnerSites))
+                {
+                    var lambdaInnerAnalyzed = AnalyzeChainGroup(setOpInnerSites, registry, ct, diagnostics, isLambdaInnerChain: true);
+                    if (lambdaInnerAnalyzed != null)
+                        opPlan = lambdaInnerAnalyzed.Plan;
+                }
+
+                // Inline operand plans (same-ChainId operands split during preprocessing)
+                if (opPlan == null && inlineOperandPlans.Count > 0)
                 {
                     // Find the first unmatched inline plan with matching kind
                     for (int ip = 0; ip < inlineOperandPlans.Count; ip++)

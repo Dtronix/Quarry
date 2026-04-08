@@ -255,8 +255,35 @@ internal static class CarrierAnalyzer
         var plans = new List<Models.ClauseExtractionPlan>();
         var clauseIndex = 0;
 
+        var setOpIndex = 0;
+
         foreach (var cs in assembled.ClauseSites)
         {
+            // Lambda-form CTE definition: extract inner chain params via display class
+            if (cs.Kind == InterceptorKind.CteDefinition
+                && cs.Bound.Raw.LambdaInnerSpanStart.HasValue
+                && cs.DisplayClassName != null)
+            {
+                BuildLambdaInnerExtractionPlan(plans, cs, assembled.Plan.CteDefinitions,
+                    "innerBuilder", ref clauseIndex);
+                continue;
+            }
+
+            // Lambda-form set operation: extract operand params via display class
+            if (Parsing.ChainAnalyzer.IsSetOperationKind(cs.Kind))
+            {
+                if (cs.Bound.Raw.LambdaInnerSpanStart.HasValue
+                    && cs.DisplayClassName != null
+                    && setOpIndex < assembled.Plan.SetOperations.Count)
+                {
+                    var setOp = assembled.Plan.SetOperations[setOpIndex];
+                    BuildLambdaInnerExtractionPlanFromParams(plans, cs, setOp.Operand.Parameters,
+                        "other", ref clauseIndex);
+                }
+                setOpIndex++;
+                continue;
+            }
+
             // Determine which parameters belong to this clause
             IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
             string delegateParamName;
@@ -390,6 +417,100 @@ internal static class CarrierAnalyzer
         }
 
         return plans;
+    }
+
+    /// <summary>
+    /// Builds an extraction plan for a lambda-form CTE definition site.
+    /// Matches the site to its CteDef by name and creates extractors for captured inner parameters.
+    /// </summary>
+    private static void BuildLambdaInnerExtractionPlan(
+        List<Models.ClauseExtractionPlan> plans,
+        TranslatedCallSite cs,
+        IReadOnlyList<IR.CteDef> cteDefinitions,
+        string delegateParamName,
+        ref int clauseIndex)
+    {
+        var cteName = IR.CteNameHelpers.ExtractShortName(
+            cs.Bound.Raw.CteEntityTypeName ?? cs.EntityTypeName);
+        IR.CteDef? matchingCteDef = null;
+        foreach (var cte in cteDefinitions)
+        {
+            if (cte.Name == cteName) { matchingCteDef = cte; break; }
+        }
+
+        if (matchingCteDef != null && matchingCteDef.InnerParameters.Count > 0)
+        {
+            BuildLambdaInnerExtractionPlanFromParams(plans, cs,
+                matchingCteDef.InnerParameters, delegateParamName, ref clauseIndex);
+        }
+        else
+        {
+            clauseIndex++;
+        }
+    }
+
+    /// <summary>
+    /// Builds an extraction plan for a lambda-form inner chain (CTE or set-op).
+    /// Creates extractors for captured parameters using the site's display class info.
+    /// </summary>
+    private static void BuildLambdaInnerExtractionPlanFromParams(
+        List<Models.ClauseExtractionPlan> plans,
+        TranslatedCallSite cs,
+        IReadOnlyList<IR.QueryParameter> innerParams,
+        string delegateParamName,
+        ref int clauseIndex)
+    {
+        var seenVariables = new Dictionary<string, Models.CapturedVariableExtractor>();
+
+        foreach (var p in innerParams)
+        {
+            if (!p.IsCaptured || p.CapturedFieldName == null)
+                continue;
+            if (seenVariables.ContainsKey(p.CapturedFieldName))
+                continue;
+
+            var captureKind = cs.CaptureKind;
+            var displayClassName = cs.DisplayClassName!;
+
+            // Resolve variable type from site's CapturedVariableTypes or fallback to param metadata
+            string variableType;
+            if (cs.CapturedVariableTypes != null
+                && cs.CapturedVariableTypes.TryGetValue(p.CapturedFieldName, out var resolvedType)
+                && resolvedType != "object" && resolvedType != "?")
+            {
+                variableType = resolvedType;
+            }
+            else
+            {
+                variableType = p.CapturedFieldType ?? p.ClrType;
+                if (variableType == "?" || string.IsNullOrWhiteSpace(variableType))
+                    variableType = "object";
+            }
+
+            // For FieldCapture, strip the display class suffix to get the containing type
+            var effectiveDisplayClass = displayClassName;
+            var isStaticField = p.IsStaticCapture;
+            if (captureKind == CaptureKind.FieldCapture)
+            {
+                var marker = displayClassName.IndexOf("+<>c__DisplayClass");
+                if (marker > 0)
+                    effectiveDisplayClass = displayClassName.Substring(0, marker);
+            }
+
+            var methodName = $"__ExtractVar_{p.CapturedFieldName}_{clauseIndex}";
+            seenVariables[p.CapturedFieldName] = new Models.CapturedVariableExtractor(
+                methodName, p.CapturedFieldName, variableType,
+                effectiveDisplayClass, captureKind, isStaticField);
+        }
+
+        if (seenVariables.Count > 0)
+        {
+            plans.Add(new Models.ClauseExtractionPlan(
+                cs.UniqueId, delegateParamName,
+                new List<Models.CapturedVariableExtractor>(seenVariables.Values)));
+        }
+
+        clauseIndex++;
     }
 
     /// <summary>
