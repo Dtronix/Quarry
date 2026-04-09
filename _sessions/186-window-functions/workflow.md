@@ -10,7 +10,7 @@ issue: #186
 pr:
 session: 1
 phases-total: 5
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Add support for SQL window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM/COUNT/AVG/MIN/MAX OVER) in Select projections via new `Sql.*` methods with a lambda-based OVER clause (Approach D from design discussion).
 
@@ -47,6 +47,8 @@ None. All 3034 tests pass (97 migration + 103 analyzers + 2834 quarry).
 - 2026-04-09: **PartitionBy — params array**. `over.PartitionBy(o.Category, o.Region)` single call with multiple columns.
 - 2026-04-09: **Runtime type — IOverClause interface**. Consistent with IQueryBuilder pattern. Methods return IOverClause for chaining. Runtime implementation throws.
 - 2026-04-09: **LAG/LEAD — three overloads each**. `Sql.Lag<T>(T col, over)`, `Sql.Lag<T>(T col, int offset, over)`, `Sql.Lag<T>(T col, int offset, T default, over)`. OVER lambda always last parameter.
+- 2026-04-09: **PartitionBy — changed to `params object[]`**. `params T[]` fails when columns have different types (e.g., string + Ref<>). Since these methods are compile-time-only, runtime type safety is unnecessary.
+- 2026-04-09: **Fix SqlExpression quoting for all dialects**. Pre-existing issue: discovery always uses PostgreSQL dialect, so SqlExpression strings (aggregates + window functions) contain double-quoted identifiers for all dialects. Fix: re-quote during BuildProjection enrichment when the actual dialect is known.
 ## Suspend State
 ## Session Log
 | # | Phase Start | Phase End | Summary |

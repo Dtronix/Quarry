@@ -1748,6 +1748,12 @@ internal static class ProjectionAnalyzer
     {
         var arguments = invocation.ArgumentList.Arguments;
 
+        // Check for window functions and aggregate OVER overloads FIRST.
+        // Without this early check, aggregate OVER calls like Sql.Sum(col, over => ...)
+        // would match the regular Sum case below (arguments.Count > 0) and lose the OVER clause.
+        if (HasOverClauseLambda(invocation))
+            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
+
         switch (methodName)
         {
             case "Count":
@@ -1801,11 +1807,6 @@ internal static class ProjectionAnalyzer
                 }
                 break;
         }
-
-        // Fallthrough: check for window functions (Sql.RowNumber, Sql.Rank, etc.)
-        // and aggregate OVER overloads (Sql.Sum(col, over => ...), etc.)
-        if (HasOverClauseLambda(invocation))
-            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
 
         return (null, null);
     }
@@ -1897,6 +1898,10 @@ internal static class ProjectionAnalyzer
     {
         var arguments = invocation.ArgumentList.Arguments;
 
+        // Check for window functions and aggregate OVER overloads FIRST.
+        if (HasOverClauseLambda(invocation))
+            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup, dialect);
+
         switch (methodName)
         {
             case "Count":
@@ -1946,10 +1951,6 @@ internal static class ProjectionAnalyzer
                 }
                 break;
         }
-
-        // Fallthrough: check for window functions and aggregate OVER overloads
-        if (HasOverClauseLambda(invocation))
-            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup, dialect);
 
         return (null, null);
     }

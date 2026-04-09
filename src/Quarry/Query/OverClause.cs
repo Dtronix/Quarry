@@ -6,7 +6,7 @@ namespace Quarry;
 /// </summary>
 internal sealed class OverClause : IOverClause
 {
-    public IOverClause PartitionBy<T>(params T[] columns) =>
+    public IOverClause PartitionBy(params object[] columns) =>
         throw new InvalidOperationException(
             "IOverClause.PartitionBy() cannot be invoked at runtime. It is translated to SQL at compile-time.");
 

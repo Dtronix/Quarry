@@ -1809,8 +1809,21 @@ internal static class ChainAnalyzer
         var columns = new List<ProjectedColumn>();
         if (projInfo.Columns != null)
         {
-            foreach (var col in projInfo.Columns)
+            foreach (var rawCol in projInfo.Columns)
             {
+                // Re-quote SQL expressions from discovery dialect (PostgreSQL) to target dialect.
+                // This fixes identifiers inside aggregate/window function expressions like
+                // SUM("Total") → SUM(`Total`) for MySQL or SUM([Total]) for SQL Server.
+                var reQuotedSql = SqlFormatting.ReQuoteSqlExpression(rawCol.SqlExpression, dialect);
+                var col = reQuotedSql != rawCol.SqlExpression
+                    ? new ProjectedColumn(
+                        rawCol.PropertyName, rawCol.ColumnName, rawCol.ClrType, rawCol.FullClrType,
+                        rawCol.IsNullable, rawCol.Ordinal, rawCol.Alias, reQuotedSql,
+                        rawCol.IsAggregateFunction, rawCol.CustomTypeMapping, rawCol.IsValueType,
+                        rawCol.ReaderMethodName, rawCol.TableAlias, rawCol.IsForeignKey,
+                        rawCol.ForeignKeyEntityName, rawCol.IsEnum, rawCol.NavigationHops, rawCol.IsJoinNullable)
+                    : rawCol;
+
                 // Aggregate columns with unresolved type ("object"): resolve from the
                 // referenced entity column. During discovery, Min/Max default to "object"
                 // because the semantic model can't resolve generated entity property types.
@@ -2172,17 +2185,25 @@ internal static class ChainAnalyzer
         if (sql.Contains("*"))
             return null;
 
-        // Find the innermost quoted identifier
+        // For window functions like "LAG("Total") OVER (ORDER BY "Date")",
+        // extract from the function arguments only (before " OVER ("), not from
+        // the OVER clause which contains ORDER BY / PARTITION BY column names.
+        var searchRegion = sql;
+        var overIndex = sql.IndexOf(" OVER (", StringComparison.Ordinal);
+        if (overIndex >= 0)
+            searchRegion = sql.Substring(0, overIndex);
+
+        // Find the innermost quoted identifier (scanning from right to left)
         int start = -1, end = -1;
-        for (int i = sql.Length - 1; i >= 0; i--)
+        for (int i = searchRegion.Length - 1; i >= 0; i--)
         {
-            if (end < 0 && (sql[i] == '"' || sql[i] == '`' || sql[i] == ']'))
+            if (end < 0 && (searchRegion[i] == '"' || searchRegion[i] == '`' || searchRegion[i] == ']'))
             {
                 end = i;
-                var closeChar = sql[i] == ']' ? '[' : sql[i];
+                var closeChar = searchRegion[i] == ']' ? '[' : searchRegion[i];
                 for (int j = i - 1; j >= 0; j--)
                 {
-                    if (sql[j] == closeChar)
+                    if (searchRegion[j] == closeChar)
                     {
                         start = j + 1;
                         break;
@@ -2193,11 +2214,10 @@ internal static class ChainAnalyzer
         }
 
         if (start >= 0 && end > start)
-            return sql.Substring(start, end - start);
+            return searchRegion.Substring(start, end - start);
 
         return null;
     }
-
 
     /// <summary>
     /// Checks for disqualifying conditions from RawCallSite flags.

@@ -25,10 +25,9 @@ public interface IOverClause
     /// <summary>
     /// Specifies the PARTITION BY columns for the window function.
     /// </summary>
-    /// <typeparam name="T">The column type.</typeparam>
     /// <param name="columns">One or more columns to partition by.</param>
     /// <returns>The over clause for further chaining.</returns>
-    IOverClause PartitionBy<T>(params T[] columns);
+    IOverClause PartitionBy(params object[] columns);
 
     /// <summary>
     /// Specifies an ORDER BY column (ascending) for the window function.
