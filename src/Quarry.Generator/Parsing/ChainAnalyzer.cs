@@ -742,9 +742,69 @@ internal static class ChainAnalyzer
 
                         var lambdaCteParamOffset = paramGlobalIndex;
 
+                        // Reduce the inner plan's projection to only DTO columns when the
+                        // plan has an identity projection (all entity columns). Lambda inner
+                        // chains produce identity projections because the Select inside the
+                        // lambda body is non-analyzable (receiver is a lambda parameter).
+                        // The CTE DTO columns carry the correct subset.
+                        var lambdaInnerPlan = lambdaInnerAnalyzed.Plan;
+                        if (lambdaColumns.Count > 0 && lambdaInnerPlan.Projection.IsIdentity)
+                        {
+                            var dtoColumnNames = new HashSet<string>(StringComparer.Ordinal);
+                            foreach (var cc in lambdaColumns)
+                                dtoColumnNames.Add(cc.ColumnName);
+
+                            var filteredCols = new List<ProjectedColumn>();
+                            var ord = 0;
+                            foreach (var col in lambdaInnerPlan.Projection.Columns)
+                            {
+                                if (dtoColumnNames.Contains(col.ColumnName))
+                                    filteredCols.Add(new ProjectedColumn(
+                                        col.PropertyName, col.ColumnName, col.ClrType, col.FullClrType,
+                                        col.IsNullable, ordinal: ord++, col.Alias, col.SqlExpression,
+                                        col.IsAggregateFunction, col.CustomTypeMapping, col.IsValueType,
+                                        col.ReaderMethodName, col.TableAlias, col.IsForeignKey,
+                                        col.ForeignKeyEntityName, col.IsEnum));
+                            }
+
+                            var reducedProjection = new SelectProjection(
+                                lambdaInnerPlan.Projection.Kind,
+                                lambdaInnerPlan.Projection.ResultTypeName,
+                                filteredCols,
+                                lambdaInnerPlan.Projection.CustomEntityReaderClass,
+                                isIdentity: false);
+
+                            lambdaInnerPlan = new QueryPlan(
+                                lambdaInnerPlan.Kind,
+                                lambdaInnerPlan.PrimaryTable,
+                                lambdaInnerPlan.Joins,
+                                lambdaInnerPlan.WhereTerms,
+                                lambdaInnerPlan.OrderTerms,
+                                lambdaInnerPlan.GroupByExprs,
+                                lambdaInnerPlan.HavingExprs,
+                                reducedProjection,
+                                lambdaInnerPlan.Pagination,
+                                lambdaInnerPlan.IsDistinct,
+                                lambdaInnerPlan.SetTerms,
+                                lambdaInnerPlan.InsertColumns,
+                                lambdaInnerPlan.ConditionalTerms,
+                                lambdaInnerPlan.PossibleMasks,
+                                lambdaInnerPlan.Parameters,
+                                lambdaInnerPlan.Tier,
+                                lambdaInnerPlan.NotAnalyzableReason,
+                                lambdaInnerPlan.UnmatchedMethodNames,
+                                lambdaInnerPlan.ForkedVariableName,
+                                implicitJoins: lambdaInnerPlan.ImplicitJoins,
+                                setOperations: lambdaInnerPlan.SetOperations,
+                                postUnionWhereTerms: lambdaInnerPlan.PostUnionWhereTerms,
+                                postUnionGroupByExprs: lambdaInnerPlan.PostUnionGroupByExprs,
+                                postUnionHavingExprs: lambdaInnerPlan.PostUnionHavingExprs,
+                                cteDefinitions: lambdaInnerPlan.CteDefinitions);
+                        }
+
                         cteDefinitions.Add(new CteDef(
                             lambdaCteName, lambdaInnerSql, lambdaInnerParams, lambdaColumns,
-                            innerPlan: lambdaInnerAnalyzed.Plan,
+                            innerPlan: lambdaInnerPlan,
                             parameterOffset: lambdaCteParamOffset));
 
                         foreach (var p in lambdaInnerParams)

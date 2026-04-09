@@ -154,11 +154,6 @@ internal class LambdaCteTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        // NOTE: Lambda-form With<TEntity, TDto> currently selects all TEntity columns in the
-        // CTE inner query because the Select projection inside the lambda body isn't reduced
-        // to only projected columns. The outer FromCte<OrderSummaryDto>() still binds correctly
-        // to the DTO properties. This is a known gap — the non-lambda form applies Select column
-        // reduction because the inner chain is analyzed as a standalone chain with its own ChainRoot.
         var lt = Lite.With<Order, OrderSummaryDto>(
                 orders => orders.Where(o => o.Total > 100)
                     .Select(o => new OrderSummaryDto { OrderId = o.OrderId, Total = o.Total, Status = o.Status }))
@@ -184,14 +179,13 @@ internal class LambdaCteTests
             .Select(d => (d.OrderId, d.Total))
             .Prepare();
 
-        // Inner CTE SQL selects all Order columns (projection not reduced in lambda form)
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
-            pg:     "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
-            mysql:  "WITH `OrderSummaryDto` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `OrderSummaryDto`",
-            ss:     "WITH [OrderSummaryDto] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]");
+            sqlite: "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
+            pg:     "WITH \"OrderSummaryDto\" AS (SELECT \"OrderId\", \"Total\", \"Status\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"OrderSummaryDto\"",
+            mysql:  "WITH `OrderSummaryDto` AS (SELECT `OrderId`, `Total`, `Status` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `OrderSummaryDto`",
+            ss:     "WITH [OrderSummaryDto] AS (SELECT [OrderId], [Total], [Status] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [OrderSummaryDto]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
