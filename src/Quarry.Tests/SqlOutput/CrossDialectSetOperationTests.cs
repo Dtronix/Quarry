@@ -783,4 +783,103 @@ internal class CrossDialectSetOperationTests
     }
 
     #endregion
+
+    #region Lambda-form set operations (multi-context entity resolution)
+
+    [Test]
+    public async Task LambdaUnion_SameEntity_Identity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Union(x => x.Where(u => u.UserId == 1)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Union(x => x.Where(u => u.UserId == 1)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Union(x => x.Where(u => u.UserId == 1)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Union(x => x.Where(u => u.UserId == 1)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1 UNION SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE UNION SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 UNION SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task LambdaUnionAll_SameEntity_Identity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).UnionAll(x => x.Where(u => u.UserId == 1)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).UnionAll(x => x.Where(u => u.UserId == 1)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).UnionAll(x => x.Where(u => u.UserId == 1)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).UnionAll(x => x.Where(u => u.UserId == 1)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1 UNION ALL SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE UNION ALL SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 UNION ALL SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 UNION ALL SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public async Task LambdaIntersect_SameEntity_Identity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Intersect(x => x.Where(u => u.UserId == 1)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Intersect(x => x.Where(u => u.UserId == 1)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Intersect(x => x.Where(u => u.UserId == 1)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Intersect(x => x.Where(u => u.UserId == 1)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1 INTERSECT SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE INTERSECT SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 INTERSECT SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 INTERSECT SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task LambdaExcept_SameEntity_Identity()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Except(x => x.Where(u => u.UserId == 1)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Except(x => x.Where(u => u.UserId == 1)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Except(x => x.Where(u => u.UserId == 1)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Except(x => x.Where(u => u.UserId == 1)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 1 EXCEPT SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = TRUE EXCEPT SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"UserId\" = 1",
+            mysql:  "SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1 EXCEPT SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 1",
+            ss:     "SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 EXCEPT SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [UserId] = 1");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        // EXCEPT: active users minus UserId=1(Alice) → Bob only
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0].UserName, Is.EqualTo("Bob"));
+    }
+
+    #endregion
 }

@@ -2321,7 +2321,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 312 |
+| Total discovered | 316 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 62 |
+| Consolidated (deduped) | 66 |
 | Rendered | 250 |
