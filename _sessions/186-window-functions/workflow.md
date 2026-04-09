@@ -5,7 +5,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: REMEDIATE
-status: active
+status: suspended
 issue: #186
 pr: #225
 session: 1
@@ -50,7 +50,14 @@ None. All 3034 tests pass (97 migration + 103 analyzers + 2834 quarry).
 - 2026-04-09: **PartitionBy — changed to `params object[]`**. `params T[]` fails when columns have different types (e.g., string + Ref<>). Since these methods are compile-time-only, runtime type safety is unnecessary.
 - 2026-04-09: **Fix SqlExpression quoting for all dialects**. Pre-existing issue: discovery always uses PostgreSQL dialect, so SqlExpression strings (aggregates + window functions) contain double-quoted identifiers for all dialects. Fix: re-quote during BuildProjection enrichment when the actual dialect is known.
 ## Suspend State
+- **Phase**: REMEDIATE — all B items addressed, C issues created, PR created and CI green
+- **Sub-step**: Awaiting user confirmation to FINALIZE (squash merge)
+- **In progress**: Nothing — all implementation, review, and remediation complete
+- **Immediate next step**: User confirms merge → transition to FINALIZE → squash merge PR #225
+- **WIP commit**: None — all work committed and pushed
+- **Test status**: All 3052 tests passing (97 migration + 103 analyzers + 2852 quarry)
+- **Unrecorded context**: User chose "handoff" instead of confirming merge. Resume should re-prompt for merge confirmation.
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | REVIEW | Window functions: 5 phases implemented, all 3049 tests pass |
+| 1 | INTAKE | REMEDIATE | Window functions: 5 phases implemented, review + remediation complete, PR #225 created, CI green. Suspended awaiting merge confirmation. |
