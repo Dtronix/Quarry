@@ -2707,4 +2707,149 @@ public class GlobalOrderDto
 
     #endregion
 
+    // ── Window function OVER clause failure modes (#223) ──────────────────
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_BlockBodyLambda_FallsToRuntimeBuild()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders()
+            .Where(o => true)
+            .Select(o => (o.OrderId, Rn: Sql.RowNumber(over => { return over.OrderBy(o.Total); })))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on block-body OVER lambda");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should still generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Not.Contain("ROW_NUMBER()"),
+            "Block-body OVER lambda should not produce window function SQL (falls to RuntimeBuild)");
+    }
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_UnknownMethodInChain_FallsToRuntimeBuild()
+    {
+        // over.ToString() returns string, not IOverClause — intentional compilation error.
+        // The generator should still handle the syntax gracefully.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders()
+            .Where(o => true)
+            .Select(o => (o.OrderId, Rn: Sql.RowNumber(over => over.ToString())))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on unknown method in OVER chain");
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for unknown method in OVER chain");
+    }
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_EmptyOverClause_ProducesValidSql()
+    {
+        // over => over produces ROW_NUMBER() OVER () — valid SQL with empty OVER clause.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders()
+            .Where(o => true)
+            .Select(o => (o.OrderId, Rn: Sql.RowNumber(over => over)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Empty OVER clause should not produce QRY errors");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("ROW_NUMBER() OVER ()"),
+            "Empty OVER clause should produce ROW_NUMBER() OVER () in generated SQL");
+    }
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_NonFluentChainExpression_FallsToRuntimeBuild()
+    {
+        // SomeMethod(over) is not a fluent chain — intentional compilation error.
+        // The generator should still handle the syntax gracefully.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Orders()
+            .Where(o => true)
+            .Select(o => (o.OrderId, Rn: Sql.RowNumber(over => SomeMethod(over))))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on non-fluent-chain OVER expression");
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for non-fluent-chain OVER expression");
+    }
+
 }
