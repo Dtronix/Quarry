@@ -10,7 +10,7 @@ issue: #226
 pr:
 session: 1
 phases-total: 5
-phases-complete: 0
+phases-complete: 1
 ## Problem Statement
 `ProjectedColumn` is a C# record with 18+ fields constructed via positional parameters across 30 call sites in 3 files. This is fragile — adding or reordering fields silently breaks all call sites. Issue identified during PR #225 review.
 
