@@ -750,15 +750,15 @@ internal static class ChainAnalyzer
                         var lambdaInnerPlan = lambdaInnerAnalyzed.Plan;
                         if (lambdaColumns.Count > 0 && lambdaInnerPlan.Projection.IsIdentity)
                         {
-                            var dtoColumnNames = new HashSet<string>(StringComparer.Ordinal);
+                            var dtoPropertyNames = new HashSet<string>(StringComparer.Ordinal);
                             foreach (var cc in lambdaColumns)
-                                dtoColumnNames.Add(cc.ColumnName);
+                                dtoPropertyNames.Add(cc.PropertyName);
 
                             var filteredCols = new List<ProjectedColumn>();
                             var ord = 0;
                             foreach (var col in lambdaInnerPlan.Projection.Columns)
                             {
-                                if (dtoColumnNames.Contains(col.ColumnName))
+                                if (dtoPropertyNames.Contains(col.PropertyName))
                                     filteredCols.Add(new ProjectedColumn(
                                         col.PropertyName, col.ColumnName, col.ClrType, col.FullClrType,
                                         col.IsNullable, ordinal: ord++, col.Alias, col.SqlExpression,
