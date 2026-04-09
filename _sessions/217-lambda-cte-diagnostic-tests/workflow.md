@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #217
 pr:
 session: 1
 phases-total: 1
-phases-complete: 0
+phases-complete: 1
 
 ## Problem Statement
 The lambda CTE form (`With<TDto>(dto => ...)`) lacks negative/diagnostic test coverage. Phase 5c of #213 called for QRY080/QRY081/QRY082 equivalents for the lambda form, but only QRY082 (duplicate CTE name) was migrated.
