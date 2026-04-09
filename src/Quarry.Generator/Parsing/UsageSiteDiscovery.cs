@@ -841,7 +841,8 @@ internal static class UsageSiteDiscovery
             initializedPropertyNames: sortedPropertyNames,
             constantIntValue: constantIntValue,
             isNavigationJoin: isNavigationJoin,
-            contextClassName: ResolveContextFromCallSite(invocation, semanticModel, cancellationToken),
+            contextClassName: ResolveContextFromCallSite(invocation, semanticModel, cancellationToken)
+                ?? (innerChainDetection.IsLambdaForm ? innerChainDetection.ParentContextClassName : null),
             isInsideLoop: isInsideLoop,
             isInsideTryCatch: isInsideTryCatch,
             isCapturedInLambda: isCapturedInLambda,
@@ -3819,11 +3820,12 @@ internal static class UsageSiteDiscovery
     {
         public static readonly InnerChainDetection None = default;
 
-        public InnerChainDetection(bool isInnerChain, bool isLambdaForm, int spanStart)
+        public InnerChainDetection(bool isInnerChain, bool isLambdaForm, int spanStart, string? parentContextClassName = null)
         {
             IsInnerChain = isInnerChain;
             IsLambdaForm = isLambdaForm;
             SpanStart = spanStart;
+            ParentContextClassName = parentContextClassName;
         }
 
         public bool IsInnerChain { get; }
@@ -3831,6 +3833,8 @@ internal static class UsageSiteDiscovery
         public bool IsLambdaForm { get; }
         /// <summary>For direct form: SpanStart of the argument. For lambda form: SpanStart of the lambda.</summary>
         public int SpanStart { get; }
+        /// <summary>Context class resolved from the parent invocation's receiver chain (lambda form only).</summary>
+        public string? ParentContextClassName { get; }
     }
 
     private static InnerChainDetection DetectInnerChain(
@@ -3860,14 +3864,16 @@ internal static class UsageSiteDiscovery
                     && (IsQuarryContextType(parentSymbol.ContainingType)
                         || IsQuarryBuilderType(parentSymbol.ContainingType)))
                 {
-                    return new InnerChainDetection(true, true, lambda.SpanStart);
+                    var parentContext = ResolveContextFromCallSite(lambdaParentInv, semanticModel, ct);
+                    return new InnerChainDetection(true, true, lambda.SpanStart, parentContext);
                 }
                 // Fallback: when the semantic model can't resolve the parent method
                 // (common during source generation for lambda set-op overloads),
                 // accept the syntactic match — InnerChainParentMethods is specific enough.
                 if (parentSymbol == null)
                 {
-                    return new InnerChainDetection(true, true, lambda.SpanStart);
+                    var parentContext = ResolveContextFromCallSite(lambdaParentInv, semanticModel, ct);
+                    return new InnerChainDetection(true, true, lambda.SpanStart, parentContext);
                 }
             }
 
