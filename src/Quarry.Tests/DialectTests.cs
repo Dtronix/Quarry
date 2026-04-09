@@ -414,4 +414,55 @@ public class DialectTests
     }
 
     #endregion
+
+    #region QuoteSqlExpression Tests
+
+    [Test]
+    public void QuoteSqlExpression_NullInput_ReturnsNull()
+    {
+        Assert.That(SqlFormatting.QuoteSqlExpression(null, SqlDialect.SQLite), Is.Null);
+    }
+
+    [TestCase(SqlDialect.SQLite, "COUNT(*)", "COUNT(*)")]
+    [TestCase(SqlDialect.MySQL, "COUNT(*)", "COUNT(*)")]
+    [TestCase(SqlDialect.SqlServer, "COUNT(*)", "COUNT(*)")]
+    public void QuoteSqlExpression_NoPlaceholders_PassesThrough(SqlDialect dialect, string input, string expected)
+    {
+        Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, "SUM({Total})", "SUM(\"Total\")")]
+    [TestCase(SqlDialect.PostgreSQL, "SUM({Total})", "SUM(\"Total\")")]
+    [TestCase(SqlDialect.MySQL, "SUM({Total})", "SUM(`Total`)")]
+    [TestCase(SqlDialect.SqlServer, "SUM({Total})", "SUM([Total])")]
+    public void QuoteSqlExpression_SinglePlaceholder_QuotesCorrectly(SqlDialect dialect, string input, string expected)
+    {
+        Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, "{t0}.{Amount}", "\"t0\".\"Amount\"")]
+    [TestCase(SqlDialect.MySQL, "{t0}.{Amount}", "`t0`.`Amount`")]
+    [TestCase(SqlDialect.SqlServer, "{t0}.{Amount}", "[t0].[Amount]")]
+    public void QuoteSqlExpression_MultiplePlaceholders_QuotesAll(SqlDialect dialect, string input, string expected)
+    {
+        Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, "SUM({Total}) OVER (ORDER BY {Date})", "SUM(\"Total\") OVER (ORDER BY \"Date\")")]
+    [TestCase(SqlDialect.MySQL, "SUM({Total}) OVER (ORDER BY {Date})", "SUM(`Total`) OVER (ORDER BY `Date`)")]
+    [TestCase(SqlDialect.SqlServer, "SUM({Total}) OVER (ORDER BY {Date})", "SUM([Total]) OVER (ORDER BY [Date])")]
+    public void QuoteSqlExpression_OverClause_QuotesAllPlaceholders(SqlDialect dialect, string input, string expected)
+    {
+        Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite, "SUM(\"Total\")", "SUM(\"Total\")")]
+    [TestCase(SqlDialect.MySQL, "SUM(\"Total\")", "SUM(\"Total\")")]
+    public void QuoteSqlExpression_LegacyQuotedIdentifiers_PassesThrough(SqlDialect dialect, string input, string expected)
+    {
+        // Expressions without {placeholders} should pass through unchanged
+        Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    #endregion
 }

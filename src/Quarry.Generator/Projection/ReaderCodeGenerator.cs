@@ -35,7 +35,7 @@ internal static class ReaderCodeGenerator
             if (!string.IsNullOrEmpty(column.SqlExpression))
             {
                 // Computed expression or aggregate
-                sb.Append(column.SqlExpression);
+                sb.Append(SqlFormatting.QuoteSqlExpression(column.SqlExpression, dialect));
                 if (!string.IsNullOrEmpty(column.Alias))
                 {
                     sb.Append(" AS ");
@@ -323,9 +323,10 @@ internal static class ReaderCodeGenerator
 
             if (string.IsNullOrEmpty(column.ColumnName) && !string.IsNullOrEmpty(column.SqlExpression))
             {
-                // Aggregate or computed expression with no column name (e.g., COUNT(*), SUM("Total"))
-                // Escape inner double quotes so the C# string literal is valid
-                var escapedExpr = column.SqlExpression!.Replace("\"", "\\\"");
+                // Aggregate or computed expression — resolve {identifier} placeholders
+                // to dialect-quoted form, then escape for C# string literal.
+                var resolved = SqlFormatting.QuoteSqlExpression(column.SqlExpression!, dialect);
+                var escapedExpr = resolved!.Replace("\"", "\\\"");
                 sb.Append($"\"{escapedExpr}\"");
             }
             else if (!string.IsNullOrEmpty(column.TableAlias))

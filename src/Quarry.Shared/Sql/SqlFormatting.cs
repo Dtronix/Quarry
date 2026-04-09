@@ -334,6 +334,43 @@ internal static partial class SqlFormatting
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Resolves <c>{identifier}</c> placeholders in a canonical SQL expression to
+    /// dialect-quoted identifiers.  Placeholders are produced by the projection
+    /// analyzer during discovery; quoting is deferred to render time so that the
+    /// expression is dialect-agnostic until final SQL assembly.
+    /// </summary>
+    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect)
+    {
+        if (sqlExpression == null)
+            return null;
+
+        // Fast path: no placeholders to resolve.
+        if (sqlExpression.IndexOf('{') < 0)
+            return sqlExpression;
+
+        var sb = new StringBuilder(sqlExpression.Length + 8);
+        int i = 0;
+        while (i < sqlExpression.Length)
+        {
+            if (sqlExpression[i] == '{')
+            {
+                int close = sqlExpression.IndexOf('}', i + 1);
+                if (close > i + 1)
+                {
+                    var identifier = sqlExpression.Substring(i + 1, close - i - 1);
+                    sb.Append(QuoteIdentifier(dialect, identifier));
+                    i = close + 1;
+                    continue;
+                }
+            }
+            sb.Append(sqlExpression[i]);
+            i++;
+        }
+
+        return sb.ToString();
+    }
+
     private static string FormatBinaryLiteral(SqlDialect dialect, byte[] bytes)
     {
         var hex = new StringBuilder(bytes.Length * 2);
