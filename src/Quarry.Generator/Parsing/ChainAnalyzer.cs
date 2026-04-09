@@ -1811,18 +1811,9 @@ internal static class ChainAnalyzer
         {
             foreach (var rawCol in projInfo.Columns)
             {
-                // Re-quote SQL expressions from discovery dialect (PostgreSQL) to target dialect.
-                // This fixes identifiers inside aggregate/window function expressions like
-                // SUM("Total") → SUM(`Total`) for MySQL or SUM([Total]) for SQL Server.
-                var reQuotedSql = SqlFormatting.ReQuoteSqlExpression(rawCol.SqlExpression, dialect);
-                var col = reQuotedSql != rawCol.SqlExpression
-                    ? new ProjectedColumn(
-                        rawCol.PropertyName, rawCol.ColumnName, rawCol.ClrType, rawCol.FullClrType,
-                        rawCol.IsNullable, rawCol.Ordinal, rawCol.Alias, reQuotedSql,
-                        rawCol.IsAggregateFunction, rawCol.CustomTypeMapping, rawCol.IsValueType,
-                        rawCol.ReaderMethodName, rawCol.TableAlias, rawCol.IsForeignKey,
-                        rawCol.ForeignKeyEntityName, rawCol.IsEnum, rawCol.NavigationHops, rawCol.IsJoinNullable)
-                    : rawCol;
+                // SqlExpression now uses canonical {identifier} placeholders — dialect
+                // quoting is deferred to render time (SqlFormatting.QuoteSqlExpression).
+                var col = rawCol;
 
                 // Aggregate columns with unresolved type ("object"): resolve from the
                 // referenced entity column. During discovery, Min/Max default to "object"
@@ -2175,8 +2166,9 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Extracts a column/property name from an aggregate SQL expression.
-    /// Handles: SUM("Total"), MIN(t0."Total"), AVG(`Total`), MAX([Total]).
+    /// Extracts a column/property name from an aggregate SQL expression that uses
+    /// canonical <c>{identifier}</c> placeholders.
+    /// E.g. <c>SUM({Total})</c> → <c>Total</c>, <c>MIN({t0}.{Total})</c> → <c>Total</c>.
     /// For COUNT(*), returns null.
     /// </summary>
     private static string? ExtractColumnNameFromAggregateSql(string sql)
@@ -2185,7 +2177,7 @@ internal static class ChainAnalyzer
         if (sql.Contains("*"))
             return null;
 
-        // For window functions like "LAG("Total") OVER (ORDER BY "Date")",
+        // For window functions like "LAG({Total}) OVER (ORDER BY {Date})",
         // extract from the function arguments only (before " OVER ("), not from
         // the OVER clause which contains ORDER BY / PARTITION BY column names.
         var searchRegion = sql;
@@ -2193,30 +2185,16 @@ internal static class ChainAnalyzer
         if (overIndex >= 0)
             searchRegion = sql.Substring(0, overIndex);
 
-        // Find the innermost quoted identifier (scanning from right to left)
-        int start = -1, end = -1;
-        for (int i = searchRegion.Length - 1; i >= 0; i--)
-        {
-            if (end < 0 && (searchRegion[i] == '"' || searchRegion[i] == '`' || searchRegion[i] == ']'))
-            {
-                end = i;
-                var closeChar = searchRegion[i] == ']' ? '[' : searchRegion[i];
-                for (int j = i - 1; j >= 0; j--)
-                {
-                    if (searchRegion[j] == closeChar)
-                    {
-                        start = j + 1;
-                        break;
-                    }
-                }
-                break;
-            }
-        }
+        // Find the last {identifier} placeholder (rightmost = the column, not the alias)
+        int lastOpen = searchRegion.LastIndexOf('{');
+        if (lastOpen < 0)
+            return null;
 
-        if (start >= 0 && end > start)
-            return searchRegion.Substring(start, end - start);
+        int close = searchRegion.IndexOf('}', lastOpen + 1);
+        if (close <= lastOpen + 1)
+            return null;
 
-        return null;
+        return searchRegion.Substring(lastOpen + 1, close - lastOpen - 1);
     }
 
     /// <summary>

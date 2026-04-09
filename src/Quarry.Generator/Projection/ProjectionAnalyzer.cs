@@ -1874,14 +1874,14 @@ internal static class ProjectionAnalyzer
             var propertyName = memberAccess.Name.Identifier.Text;
             if (columnLookup.TryGetValue(propertyName, out var column))
             {
-                return QuoteIdentifier(column.ColumnName, dialect);
+                return WrapIdentifier(column.ColumnName);
             }
 
             // Fallback: use property name as column name. This handles both cases:
             //   - Entity type IS resolved but property wasn't found (naming convention mismatch)
             //   - Entity type is generated and not yet in the semantic model (empty lookup)
             // The enrichment step (FixAggregateSqlExpression) rewrites with correct DB names.
-            return QuoteIdentifier(propertyName, dialect);
+            return WrapIdentifier(propertyName);
         }
 
         return null;
@@ -1969,10 +1969,10 @@ internal static class ProjectionAnalyzer
         {
             var propertyName = memberAccess.Name.Identifier.Text;
             if (info.Lookup.TryGetValue(propertyName, out var column))
-                return $"{QuoteIdentifier(info.Alias, dialect)}.{QuoteIdentifier(column.ColumnName, dialect)}";
+                return $"{WrapIdentifier(info.Alias)}.{WrapIdentifier(column.ColumnName)}";
 
             // Fallback: use property name with table alias (enrichment rewrites later)
-            return $"{QuoteIdentifier(info.Alias, dialect)}.{QuoteIdentifier(propertyName, dialect)}";
+            return $"{WrapIdentifier(info.Alias)}.{WrapIdentifier(propertyName)}";
         }
 
         return null;
@@ -2430,17 +2430,11 @@ internal static class ProjectionAnalyzer
     #endregion
 
     /// <summary>
-    /// Quotes an identifier according to the SQL dialect.
+    /// Wraps an identifier in the canonical <c>{identifier}</c> placeholder format.
+    /// Dialect-specific quoting is deferred to render time via
+    /// <see cref="Quarry.Generators.Sql.SqlFormatting.QuoteSqlExpression"/>.
     /// </summary>
-    private static string QuoteIdentifier(string identifier, SqlDialect dialect)
-    {
-        return dialect switch
-        {
-            SqlDialect.MySQL => $"`{identifier}`",
-            SqlDialect.SqlServer => $"[{identifier}]",
-            _ => $"\"{identifier}\"" // SQLite, PostgreSQL
-        };
-    }
+    private static string WrapIdentifier(string identifier) => $"{{{identifier}}}";
 
 
     /// <summary>
@@ -2565,7 +2559,7 @@ internal static class ProjectionAnalyzer
             var propName = memberAccess.Name.Identifier.Text;
             if (columnLookup.TryGetValue(propName, out var column))
             {
-                return QuoteIdentifier(column.ColumnName, dialect);
+                return WrapIdentifier(column.ColumnName);
             }
         }
 
