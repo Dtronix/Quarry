@@ -330,4 +330,35 @@ internal class CrossDialectWindowFunctionTests
     }
 
     #endregion
+
+    #region Joined Queries
+
+    [Test]
+    public async Task WindowFunction_Joined_RowNumber()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
+
+        // Note: table aliases inside SqlExpression are not quoted (t0."Col" not "t0"."Col")
+        // because GetJoinedColumnSql writes the alias as a plain string. The alias IS quoted
+        // in regular columns rendered by SqlAssembler.AppendSelectColumns.
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY t0.\"UserName\" ORDER BY t1.\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY t0.\"UserName\" ORDER BY t1.\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, ROW_NUMBER() OVER (PARTITION BY t0.`UserName` ORDER BY t1.`Total`) AS `RowNum` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY t0.[UserName] ORDER BY t1.[Total]) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+
+        // Alice has 2 orders (250, 75.50), Bob has 1 (150)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    #endregion
 }

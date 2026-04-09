@@ -10,7 +10,7 @@ issue: #186
 pr:
 session: 1
 phases-total: 5
-phases-complete: 2
+phases-complete: 4
 ## Problem Statement
 Add support for SQL window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM/COUNT/AVG/MIN/MAX OVER) in Select projections via new `Sql.*` methods with a lambda-based OVER clause (Approach D from design discussion).
 
