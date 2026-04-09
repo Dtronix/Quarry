@@ -577,7 +577,7 @@ internal static class ProjectionAnalyzer
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup, dialect);
+            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup);
 
             if (sqlExpr != null)
             {
@@ -697,7 +697,7 @@ internal static class ProjectionAnalyzer
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup, dialect);
+            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup);
 
             if (sqlExpr != null)
             {
@@ -1471,7 +1471,7 @@ internal static class ProjectionAnalyzer
             identifier.Identifier.Text == "Sql")
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
+            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
 
             if (sqlExpr != null)
             {
@@ -1634,7 +1634,7 @@ internal static class ProjectionAnalyzer
             sqlIdentifier.Identifier.Text == "Sql")
         {
             var methodName = invMemberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
+            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
 
             if (sqlExpr != null)
             {
@@ -1743,8 +1743,7 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName,
-        SqlDialect dialect)
+        string lambdaParameterName)
     {
         var arguments = invocation.ArgumentList.Arguments;
 
@@ -1752,7 +1751,7 @@ internal static class ProjectionAnalyzer
         // Without this early check, aggregate OVER calls like Sql.Sum(col, over => ...)
         // would match the regular Sum case below (arguments.Count > 0) and lose the OVER clause.
         if (HasOverClauseLambda(invocation))
-            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
+            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
 
         switch (methodName)
         {
@@ -1763,14 +1762,14 @@ internal static class ProjectionAnalyzer
                 }
                 else
                 {
-                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     return columnSql != null ? ($"COUNT({columnSql})", "int") : (null, null);
                 }
 
             case "Sum":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
                         columnLookup, lambdaParameterName, "decimal");
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
@@ -1780,7 +1779,7 @@ internal static class ProjectionAnalyzer
             case "Avg":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
                         columnLookup, lambdaParameterName, "decimal");
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
@@ -1790,7 +1789,7 @@ internal static class ProjectionAnalyzer
             case "Min":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
                         columnLookup, lambdaParameterName, "object");
                     return columnSql != null ? ($"MIN({columnSql})", clrType) : (null, null);
@@ -1800,7 +1799,7 @@ internal static class ProjectionAnalyzer
             case "Max":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+                    var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
                         columnLookup, lambdaParameterName, "object");
                     return columnSql != null ? ($"MAX({columnSql})", clrType) : (null, null);
@@ -1864,8 +1863,7 @@ internal static class ProjectionAnalyzer
     private static string? GetColumnSql(
         ExpressionSyntax expression,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName,
-        SqlDialect dialect)
+        string lambdaParameterName)
     {
         if (expression is MemberAccessExpressionSyntax memberAccess &&
             memberAccess.Expression is IdentifierNameSyntax identifier &&
@@ -1893,14 +1891,13 @@ internal static class ProjectionAnalyzer
     private static (string? SqlExpression, string? ClrType) GetJoinedAggregateInfo(
         string methodName,
         InvocationExpressionSyntax invocation,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
     {
         var arguments = invocation.ArgumentList.Arguments;
 
         // Check for window functions and aggregate OVER overloads FIRST.
         if (HasOverClauseLambda(invocation))
-            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup, dialect);
+            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup);
 
         switch (methodName)
         {
@@ -1911,14 +1908,14 @@ internal static class ProjectionAnalyzer
                 }
                 else
                 {
-                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
                     return columnSql != null ? ($"COUNT({columnSql})", "int") : (null, null);
                 }
 
             case "Sum":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
                     var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal");
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
                 }
@@ -1927,7 +1924,7 @@ internal static class ProjectionAnalyzer
             case "Avg":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
                     var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal");
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
                 }
@@ -1936,7 +1933,7 @@ internal static class ProjectionAnalyzer
             case "Min":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
                     var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
                     return columnSql != null ? ($"MIN({columnSql})", clrType) : (null, null);
                 }
@@ -1945,7 +1942,7 @@ internal static class ProjectionAnalyzer
             case "Max":
                 if (arguments.Count > 0)
                 {
-                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+                    var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
                     var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
                     return columnSql != null ? ($"MAX({columnSql})", clrType) : (null, null);
                 }
@@ -1960,8 +1957,7 @@ internal static class ProjectionAnalyzer
     /// </summary>
     private static string? GetJoinedColumnSql(
         ExpressionSyntax expression,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
     {
         if (expression is MemberAccessExpressionSyntax memberAccess &&
             memberAccess.Expression is IdentifierNameSyntax identifier &&
@@ -2029,8 +2025,7 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName,
-        SqlDialect dialect)
+        string lambdaParameterName)
     {
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count == 0) return (null, null);
@@ -2040,7 +2035,7 @@ internal static class ProjectionAnalyzer
         if (lastArg is not LambdaExpressionSyntax overLambda)
             return (null, null);
 
-        var overClause = ParseOverClause(overLambda, columnLookup, lambdaParameterName, dialect);
+        var overClause = ParseOverClause(overLambda, columnLookup, lambdaParameterName);
         if (overClause == null) return (null, null);
 
         // Dedicated window functions
@@ -2053,12 +2048,12 @@ internal static class ProjectionAnalyzer
                 "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
                 "Ntile" when arguments.Count >= 2 =>
                     BuildNtileSql(arguments[0].Expression, overClause),
-                "Lag" => BuildLagLeadSql("LAG", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
-                "Lead" => BuildLagLeadSql("LEAD", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                "Lag" => BuildLagLeadSql("LAG", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
+                "Lead" => BuildLagLeadSql("LEAD", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
                 "FirstValue" when arguments.Count >= 2 =>
-                    BuildValueFunctionSql("FIRST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                    BuildValueFunctionSql("FIRST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
                 "LastValue" when arguments.Count >= 2 =>
-                    BuildValueFunctionSql("LAST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                    BuildValueFunctionSql("LAST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
                 _ => (null, null)
             };
         }
@@ -2068,18 +2063,18 @@ internal static class ProjectionAnalyzer
         {
             "Count" when arguments.Count == 1 => ($"COUNT(*) OVER ({overClause})", "int"),
             "Count" when arguments.Count == 2 =>
-                BuildAggregateOverSql("COUNT", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause, "int"),
+                BuildAggregateOverSql("COUNT", arguments[0].Expression, columnLookup, lambdaParameterName, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
-                BuildAggregateOverSql("SUM", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                BuildAggregateOverSql("SUM", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
             "Avg" when arguments.Count == 2 =>
-                BuildAggregateOverSql("AVG", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                BuildAggregateOverSql("AVG", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
             "Min" when arguments.Count == 2 =>
-                BuildAggregateOverSql("MIN", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                BuildAggregateOverSql("MIN", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
             "Max" when arguments.Count == 2 =>
-                BuildAggregateOverSql("MAX", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                BuildAggregateOverSql("MAX", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
             _ => (null, null)
         };
@@ -2091,8 +2086,7 @@ internal static class ProjectionAnalyzer
     private static (string? SqlExpression, string? ClrType) GetJoinedWindowFunctionInfo(
         string methodName,
         InvocationExpressionSyntax invocation,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
     {
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count == 0) return (null, null);
@@ -2101,7 +2095,7 @@ internal static class ProjectionAnalyzer
         if (lastArg is not LambdaExpressionSyntax overLambda)
             return (null, null);
 
-        var overClause = ParseJoinedOverClause(overLambda, perParamLookup, dialect);
+        var overClause = ParseJoinedOverClause(overLambda, perParamLookup);
         if (overClause == null) return (null, null);
 
         // Dedicated window functions
@@ -2114,12 +2108,12 @@ internal static class ProjectionAnalyzer
                 "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
                 "Ntile" when arguments.Count >= 2 =>
                     BuildNtileSql(arguments[0].Expression, overClause),
-                "Lag" => BuildJoinedLagLeadSql("LAG", arguments, perParamLookup, dialect, overClause),
-                "Lead" => BuildJoinedLagLeadSql("LEAD", arguments, perParamLookup, dialect, overClause),
+                "Lag" => BuildJoinedLagLeadSql("LAG", arguments, perParamLookup, overClause),
+                "Lead" => BuildJoinedLagLeadSql("LEAD", arguments, perParamLookup, overClause),
                 "FirstValue" when arguments.Count >= 2 =>
-                    BuildJoinedValueFunctionSql("FIRST_VALUE", arguments[0].Expression, perParamLookup, dialect, overClause),
+                    BuildJoinedValueFunctionSql("FIRST_VALUE", arguments[0].Expression, perParamLookup, overClause),
                 "LastValue" when arguments.Count >= 2 =>
-                    BuildJoinedValueFunctionSql("LAST_VALUE", arguments[0].Expression, perParamLookup, dialect, overClause),
+                    BuildJoinedValueFunctionSql("LAST_VALUE", arguments[0].Expression, perParamLookup, overClause),
                 _ => (null, null)
             };
         }
@@ -2129,18 +2123,18 @@ internal static class ProjectionAnalyzer
         {
             "Count" when arguments.Count == 1 => ($"COUNT(*) OVER ({overClause})", "int"),
             "Count" when arguments.Count == 2 =>
-                BuildJoinedAggregateOverSql("COUNT", arguments[0].Expression, perParamLookup, dialect, overClause, "int"),
+                BuildJoinedAggregateOverSql("COUNT", arguments[0].Expression, perParamLookup, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
-                BuildJoinedAggregateOverSql("SUM", arguments[0].Expression, perParamLookup, dialect, overClause,
+                BuildJoinedAggregateOverSql("SUM", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
             "Avg" when arguments.Count == 2 =>
-                BuildJoinedAggregateOverSql("AVG", arguments[0].Expression, perParamLookup, dialect, overClause,
+                BuildJoinedAggregateOverSql("AVG", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
             "Min" when arguments.Count == 2 =>
-                BuildJoinedAggregateOverSql("MIN", arguments[0].Expression, perParamLookup, dialect, overClause,
+                BuildJoinedAggregateOverSql("MIN", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
             "Max" when arguments.Count == 2 =>
-                BuildJoinedAggregateOverSql("MAX", arguments[0].Expression, perParamLookup, dialect, overClause,
+                BuildJoinedAggregateOverSql("MAX", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
             _ => (null, null)
         };
@@ -2154,8 +2148,7 @@ internal static class ProjectionAnalyzer
     private static string? ParseOverClause(
         LambdaExpressionSyntax lambda,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName,
-        SqlDialect dialect)
+        string lambdaParameterName)
     {
         // Extract the lambda body expression
         var body = lambda switch
@@ -2171,7 +2164,7 @@ internal static class ProjectionAnalyzer
         var orderColumns = new List<(string Sql, bool Descending)>();
 
         if (!WalkOverChain(body, partitionColumns, orderColumns,
-            (expr) => GetColumnSql(expr, columnLookup, lambdaParameterName, dialect)))
+            (expr) => GetColumnSql(expr, columnLookup, lambdaParameterName)))
             return null;
 
         return BuildOverClauseString(partitionColumns, orderColumns);
@@ -2182,8 +2175,7 @@ internal static class ProjectionAnalyzer
     /// </summary>
     private static string? ParseJoinedOverClause(
         LambdaExpressionSyntax lambda,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
     {
         var body = lambda switch
         {
@@ -2197,7 +2189,7 @@ internal static class ProjectionAnalyzer
         var orderColumns = new List<(string Sql, bool Descending)>();
 
         if (!WalkOverChain(body, partitionColumns, orderColumns,
-            (expr) => GetJoinedColumnSql(expr, perParamLookup, dialect)))
+            (expr) => GetJoinedColumnSql(expr, perParamLookup)))
             return null;
 
         return BuildOverClauseString(partitionColumns, orderColumns);
@@ -2309,12 +2301,11 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         SemanticModel semanticModel,
         InvocationExpressionSyntax invocation,
-        SqlDialect dialect,
         string overClause)
     {
         // arguments: [column, (offset?,) (default?,) overLambda]
         // column is always first, overLambda is always last
-        var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+        var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
         if (columnSql == null) return (null, null);
 
         var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
@@ -2337,10 +2328,9 @@ internal static class ProjectionAnalyzer
         string functionName,
         SeparatedSyntaxList<ArgumentSyntax> arguments,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect,
         string overClause)
     {
-        var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+        var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
         if (columnSql == null) return (null, null);
 
         var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
@@ -2365,10 +2355,9 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         SemanticModel semanticModel,
         InvocationExpressionSyntax invocation,
-        SqlDialect dialect,
         string overClause)
     {
-        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName, dialect);
+        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName);
         if (columnSql == null) return (null, null);
 
         var clrType = ResolveAggregateClrType(columnExpr, invocation, semanticModel,
@@ -2384,10 +2373,9 @@ internal static class ProjectionAnalyzer
         string functionName,
         ExpressionSyntax columnExpr,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect,
         string overClause)
     {
-        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup, dialect);
+        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup);
         if (columnSql == null) return (null, null);
 
         var clrType = ResolveJoinedAggregateClrType(columnExpr, perParamLookup, "object");
@@ -2402,11 +2390,10 @@ internal static class ProjectionAnalyzer
         ExpressionSyntax columnExpr,
         Dictionary<string, ColumnInfo> columnLookup,
         string lambdaParameterName,
-        SqlDialect dialect,
         string overClause,
         string clrType)
     {
-        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName, dialect);
+        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName);
         if (columnSql == null) return (null, null);
         return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
     }
@@ -2418,11 +2405,10 @@ internal static class ProjectionAnalyzer
         string functionName,
         ExpressionSyntax columnExpr,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        SqlDialect dialect,
         string overClause,
         string clrType)
     {
-        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup, dialect);
+        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup);
         if (columnSql == null) return (null, null);
         return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
     }
@@ -2520,7 +2506,7 @@ internal static class ProjectionAnalyzer
             return null;
 
         // Resolve the column from the receiver chain
-        var columnSql = ResolveColumnSqlFromExpression(methodAccess.Expression, columnLookup, lambdaParameterName, dialect);
+        var columnSql = ResolveColumnSqlFromExpression(methodAccess.Expression, columnLookup, lambdaParameterName);
         if (columnSql == null)
             return null;
 
@@ -2549,8 +2535,7 @@ internal static class ProjectionAnalyzer
     private static string? ResolveColumnSqlFromExpression(
         ExpressionSyntax expression,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName,
-        SqlDialect dialect)
+        string lambdaParameterName)
     {
         if (expression is MemberAccessExpressionSyntax memberAccess &&
             memberAccess.Expression is IdentifierNameSyntax id &&

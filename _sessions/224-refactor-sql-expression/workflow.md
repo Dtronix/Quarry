@@ -10,7 +10,7 @@ issue: #224
 pr:
 session: 1
 phases-total: 5
-phases-complete: 1
+phases-complete: 3
 ## Problem Statement
 Refactor SqlExpression to dialect-agnostic representation. Currently `ProjectedColumn.SqlExpression` stores pre-built SQL with PostgreSQL-quoted identifiers. A `ReQuoteSqlExpression` post-processing step converts them to the target dialect during `BuildProjection` enrichment. The goal is to store column references in a canonical format and quote at render time in `SqlAssembler.AppendSelectColumns`.
 
