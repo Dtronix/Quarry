@@ -131,7 +131,10 @@ internal static class PipelineOrchestrator
             }
 
             // QRY001: query not analyzable (parameter receiver, variable receiver, etc.)
-            if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null)
+            // Lambda inner chain sites are expected to be non-analyzable (their receiver
+            // is a lambda parameter) and are handled by ChainAnalyzer's recursive analysis.
+            if (!raw.IsAnalyzable && raw.NonAnalyzableReason != null
+                && (raw.ChainId == null || !raw.ChainId.Contains(":lambda-inner:")))
             {
                 diagnostics.Add(new DiagnosticInfo(
                     DiagnosticDescriptors.QueryNotAnalyzable.Id,
