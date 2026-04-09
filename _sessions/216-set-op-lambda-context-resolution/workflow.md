@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #216
 pr:
 session: 1
 phases-total: 2
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Lambda inner chain sites inside set-op lambdas (Union/Intersect/Except) get the wrong context class when the entity type is registered in multiple contexts. CTE lambdas are unaffected because `With()` is resolved on the context class, but set-op lambdas on `IQueryBuilder` have ambiguous resolution.
 
