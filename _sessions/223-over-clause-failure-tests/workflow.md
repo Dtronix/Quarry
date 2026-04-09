@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #223
 pr:
 session: 1
 phases-total: 1
-phases-complete: 0
+phases-complete: 1
 ## Problem Statement
 Add failure-mode tests for malformed OVER clause lambdas in window functions. The `WalkOverChain` in `ProjectionAnalyzer` silently returns `null` for malformed lambda bodies (block bodies, non-fluent-chain expressions, unknown methods). The resulting behavior is unverified by tests.
 

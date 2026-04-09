@@ -2707,7 +2707,7 @@ public class GlobalOrderDto
 
     #endregion
 
-    // ── Window function OVER clause failure modes (#223) ──────────────────
+    #region Window function OVER clause failure modes (#223)
 
     [Test]
     public void CarrierGeneration_WindowFunction_BlockBodyLambda_FallsToRuntimeBuild()
@@ -2778,6 +2778,15 @@ public static class Queries
 
         var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
         Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for unknown method in OVER chain");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        if (interceptorsTree != null)
+        {
+            var code = interceptorsTree.GetText().ToString();
+            Assert.That(code, Does.Not.Contain("ROW_NUMBER()"),
+                "Unknown method in OVER chain should not produce window function SQL");
+        }
     }
 
     [Test]
@@ -2850,6 +2859,17 @@ public static class Queries
 
         var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
         Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for non-fluent-chain OVER expression");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        if (interceptorsTree != null)
+        {
+            var code = interceptorsTree.GetText().ToString();
+            Assert.That(code, Does.Not.Contain("ROW_NUMBER()"),
+                "Non-fluent-chain OVER expression should not produce window function SQL");
+        }
     }
+
+    #endregion
 
 }
