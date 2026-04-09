@@ -1,3 +1,6 @@
+using Quarry.Generators.Models;
+using Quarry.Generators.Parsing;
+using Quarry.Shared.Migration;
 using Quarry.Shared.Sql;
 
 namespace Quarry.Tests;
@@ -449,6 +452,7 @@ public class DialectTests
     }
 
     [TestCase(SqlDialect.SQLite, "SUM({Total}) OVER (ORDER BY {Date})", "SUM(\"Total\") OVER (ORDER BY \"Date\")")]
+    [TestCase(SqlDialect.PostgreSQL, "SUM({Total}) OVER (ORDER BY {Date})", "SUM(\"Total\") OVER (ORDER BY \"Date\")")]
     [TestCase(SqlDialect.MySQL, "SUM({Total}) OVER (ORDER BY {Date})", "SUM(`Total`) OVER (ORDER BY `Date`)")]
     [TestCase(SqlDialect.SqlServer, "SUM({Total}) OVER (ORDER BY {Date})", "SUM([Total]) OVER (ORDER BY [Date])")]
     public void QuoteSqlExpression_OverClause_QuotesAllPlaceholders(SqlDialect dialect, string input, string expected)
@@ -462,6 +466,53 @@ public class DialectTests
     {
         // Expressions without {placeholders} should pass through unchanged
         Assert.That(SqlFormatting.QuoteSqlExpression(input, dialect), Is.EqualTo(expected));
+    }
+
+    #endregion
+
+    #region ExtractColumnNameFromAggregateSql Tests (via TryResolveAggregateTypeFromSql)
+
+    private static Dictionary<string, ColumnInfo> MakeColumnLookup(string propertyName, string clrType)
+    {
+        var col = new ColumnInfo(propertyName, propertyName, clrType, clrType,
+            isNullable: false, kind: ColumnKind.Standard, referencedEntityName: null,
+            modifiers: default!, isValueType: true, readerMethodName: "GetDecimal");
+        return new Dictionary<string, ColumnInfo> { [propertyName] = col };
+    }
+
+    [TestCase("SUM({Total})", "Total", "decimal")]
+    [TestCase("MIN({Total})", "Total", "decimal")]
+    [TestCase("AVG({Total})", "Total", "decimal")]
+    [TestCase("MAX({Total})", "Total", "decimal")]
+    public void ExtractColumnName_SimpleAggregate_ResolvesType(string sqlExpr, string columnName, string expectedType)
+    {
+        var lookup = MakeColumnLookup(columnName, expectedType);
+        var result = ChainAnalyzer.TryResolveAggregateTypeFromSqlPublic(sqlExpr, lookup);
+        Assert.That(result, Is.EqualTo(expectedType));
+    }
+
+    [TestCase("MIN({t0}.{Total})", "Total", "decimal")]
+    public void ExtractColumnName_QualifiedAggregate_ResolvesType(string sqlExpr, string columnName, string expectedType)
+    {
+        var lookup = MakeColumnLookup(columnName, expectedType);
+        var result = ChainAnalyzer.TryResolveAggregateTypeFromSqlPublic(sqlExpr, lookup);
+        Assert.That(result, Is.EqualTo(expectedType));
+    }
+
+    [Test]
+    public void ExtractColumnName_CountStar_ReturnsNull()
+    {
+        var lookup = MakeColumnLookup("Id", "int");
+        var result = ChainAnalyzer.TryResolveAggregateTypeFromSqlPublic("COUNT(*)", lookup);
+        Assert.That(result, Is.Null);
+    }
+
+    [TestCase("LAG({Total}) OVER (ORDER BY {Date})", "Total", "decimal")]
+    public void ExtractColumnName_WindowFunction_ExtractsFromFunctionArgs(string sqlExpr, string columnName, string expectedType)
+    {
+        var lookup = MakeColumnLookup(columnName, expectedType);
+        var result = ChainAnalyzer.TryResolveAggregateTypeFromSqlPublic(sqlExpr, lookup);
+        Assert.That(result, Is.EqualTo(expectedType));
     }
 
     #endregion

@@ -2134,7 +2134,7 @@ internal static class ChainAnalyzer
     /// <summary>
     /// Tries to resolve the CLR type for an aggregate column by extracting the referenced
     /// column name from the SQL expression and looking it up in entity column metadata.
-    /// E.g., SUM("Total") → extract "Total" → look up Total column → type is "decimal".
+    /// E.g., SUM({Total}) → extract "Total" → look up Total column → type is "decimal".
     /// </summary>
     private static string? TryResolveAggregateTypeFromSql(
         string sqlExpression,
@@ -2142,8 +2142,8 @@ internal static class ChainAnalyzer
         Dictionary<string, Dictionary<string, ColumnInfo>>? perAliasLookup,
         string? tableAlias)
     {
-        // Extract the column name from expressions like: SUM("Total"), MIN(t0."Total"),
-        // SUM(`Total`), MIN([Total])
+        // Extract the column name from canonical {identifier} expressions like:
+        // SUM({Total}), MIN({t0}.{Total})
         var propName = ExtractColumnNameFromAggregateSql(sqlExpression);
         if (propName == null)
             return null;
