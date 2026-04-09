@@ -107,8 +107,8 @@ public class WastedWorkRuleTests
         var rule = new DuplicateProjectionColumnRule();
         var columns = new List<ProjectedColumn>
         {
-            new ProjectedColumn("Name", "name", "string", "System.String", false, 0),
-            new ProjectedColumn("Name2", "name", "string", "System.String", false, 1),
+            new ProjectedColumn(propertyName: "Name", columnName: "name", clrType: "string", fullClrType: "System.String", isNullable: false, ordinal: 0),
+            new ProjectedColumn(propertyName: "Name2", columnName: "name", clrType: "string", fullClrType: "System.String", isNullable: false, ordinal: 1),
         };
         var projection = new ProjectionInfo(ProjectionKind.Anonymous, "Anon", columns, true, null);
         var site = CreateSite(InterceptorKind.Select, projectionInfo: projection);
@@ -123,8 +123,8 @@ public class WastedWorkRuleTests
         var rule = new DuplicateProjectionColumnRule();
         var columns = new List<ProjectedColumn>
         {
-            new ProjectedColumn("Id", "user_id", "int", "System.Int32", false, 0),
-            new ProjectedColumn("Name", "user_name", "string", "System.String", false, 1),
+            new ProjectedColumn(propertyName: "Id", columnName: "user_id", clrType: "int", fullClrType: "System.Int32", isNullable: false, ordinal: 0),
+            new ProjectedColumn(propertyName: "Name", columnName: "user_name", clrType: "string", fullClrType: "System.String", isNullable: false, ordinal: 1),
         };
         var projection = new ProjectionInfo(ProjectionKind.Anonymous, "Anon", columns, true, null);
         var site = CreateSite(InterceptorKind.Select, projectionInfo: projection);
