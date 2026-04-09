@@ -832,19 +832,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         {
             if (col.SqlExpression != null && !col.IsAggregateFunction)
             {
-                result.Add(new ProjectedColumn(
-                    col.PropertyName, col.ColumnName, col.ClrType, col.FullClrType,
-                    col.IsNullable, col.Ordinal, col.Alias,
-                    sqlExpression: null,
-                    isAggregateFunction: false,
-                    customTypeMapping: col.CustomTypeMapping,
-                    isValueType: col.IsValueType,
-                    readerMethodName: col.ReaderMethodName,
-                    tableAlias: col.TableAlias,
-                    isForeignKey: col.IsForeignKey,
-                    foreignKeyEntityName: col.ForeignKeyEntityName,
-                    isEnum: col.IsEnum,
-                    isJoinNullable: col.IsJoinNullable));
+                result.Add(col with { SqlExpression = null, IsAggregateFunction = false });
             }
             else
             {
