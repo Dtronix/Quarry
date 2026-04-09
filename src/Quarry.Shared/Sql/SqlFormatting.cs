@@ -298,12 +298,31 @@ internal static partial class SqlFormatting
         {
             if (sqlExpression[i] == '"')
             {
-                // Find the closing double quote
-                int closeIdx = sqlExpression.IndexOf('"', i + 1);
-                if (closeIdx > i)
+                // Find the closing double quote, skipping escaped "" pairs
+                int closeIdx = i + 1;
+                while (closeIdx < sqlExpression.Length)
                 {
-                    var identifier = sqlExpression.Substring(i + 1, closeIdx - i - 1);
-                    sb.Append(startChar).Append(identifier).Append(endChar);
+                    if (sqlExpression[closeIdx] == '"')
+                    {
+                        if (closeIdx + 1 < sqlExpression.Length && sqlExpression[closeIdx + 1] == '"')
+                        {
+                            closeIdx += 2; // Skip escaped ""
+                            continue;
+                        }
+                        break; // Actual closing quote
+                    }
+                    closeIdx++;
+                }
+                if (closeIdx < sqlExpression.Length)
+                {
+                    // Unescape "" → " in the identifier, then re-escape for target dialect
+                    var identifier = sqlExpression.Substring(i + 1, closeIdx - i - 1).Replace("\"\"", "\"");
+                    sb.Append(startChar);
+                    if (dialect == SqlDialect.MySQL)
+                        sb.Append(identifier.Replace("`", "``"));
+                    else // SqlServer
+                        sb.Append(identifier.Replace("]", "]]"));
+                    sb.Append(endChar);
                     i = closeIdx + 1;
                     continue;
                 }

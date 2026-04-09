@@ -1,76 +1,87 @@
-# Review: 186-window-functions
+# Review: #225
 
 ## Plan Compliance
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| Phase 4 enrichment tests missing. Plan specifies "Add unit test in existing enrichment test coverage verifying that window function SQL expressions resolve the correct column type." No such unit test was added; `ExtractColumnNameFromAggregateSql` fix is only implicitly tested via end-to-end SQL output tests. | Low | The fix itself is present and correct (truncating search region at ` OVER (`), but a direct unit test would catch regressions if the extraction logic changes. Implicit coverage via SumOver/CountOver execution tests partially compensates. |
-| Phase 5 tests: only 1 of 2 planned joined tests implemented. Plan specifies `WindowFunction_Joined_RowNumber` and `WindowFunction_Joined_AggregateOver`. Only `WindowFunction_Joined_RowNumber` exists. | Low | The joined aggregate OVER path (`GetJoinedWindowFunctionInfo` aggregate branch) is untested. The code is present and structurally mirrors the non-joined path which IS tested, so risk is low. |
-| Phase 3 execution tests: plan specifies 2 execution tests (#15 `WindowFunction_RowNumber_ExecuteFetchAll` and #16 `WindowFunction_Lag_ExecuteFetchAll`). Instead, execution assertions are embedded within `WindowFunction_RowNumber_OrderBy`, `WindowFunction_DenseRank_OrderByDescending`, `WindowFunction_SumOver`, `WindowFunction_CountOver`, and `WindowFunction_Joined_RowNumber`. LAG execution is not tested. | Low | Execution coverage is actually broader than planned (5 tests have execution assertions vs. 2 planned), but LAG execution is missing. LAG returns NULL for the first row -- verifying this boundary would be valuable. |
-| Plan specifies `PartitionBy<T>(params T[] columns)` initially but Decisions log documents switch to `params object[]`. Implementation uses `params object[]`. | None | Decision was documented and implementation matches the final decision. No concern. |
-| Aggregate OVER tests: plan lists SumOver and CountOver tests. No tests for AvgOver, MinOver, MaxOver OVER variants. | Low | These paths share `BuildAggregateOverSql` / `BuildJoinedAggregateOverSql` which are structurally identical to the tested Sum/Count paths. Risk is minimal but coverage could be improved. |
+| Phase 4 enrichment unit tests missing. Plan specifies "Add unit test in existing enrichment test coverage verifying that window function SQL expressions resolve the correct column type." No such unit test was added; the `ExtractColumnNameFromAggregateSql` fix is only implicitly validated via end-to-end cross-dialect SQL output tests. | Low | The fix itself is present and correct (truncating search region at ` OVER (`), but a targeted unit test would catch regressions if the extraction logic changes independently. Implicit coverage via SumOver/CountOver execution tests partially compensates. |
+| Phase 5: only 1 of 2 planned joined tests implemented. Plan specifies `WindowFunction_Joined_RowNumber` and `WindowFunction_Joined_AggregateOver`. Only `WindowFunction_Joined_RowNumber` was delivered. | Low | The `WindowFunction_Joined_SumOver` test exists and covers a joined aggregate OVER, but the plan name was `WindowFunction_Joined_AggregateOver`. Functionally equivalent. However, the joined path for `GetJoinedWindowFunctionInfo` aggregate OVER branches (Avg, Min, Max, Count) is untested. Risk is low because the code mirrors the tested non-joined path. |
+| Phase 3 execution tests: plan specifies 2 dedicated execution tests. Instead, execution assertions are embedded in 5 other tests (RowNumber, DenseRank, SumOver, CountOver, Joined_RowNumber). LAG execution is not tested end-to-end against a database. | Low | Execution coverage is broader than planned for most functions, but LAG/LEAD execution is absent. The LAG_Execution test explicitly skips execution due to NULL-to-non-nullable-decimal mapping concerns, only verifying SQL shape. |
+| No tests for AvgOver, MinOver, MaxOver aggregate OVER variants. | Low | These paths share `BuildAggregateOverSql` / `BuildJoinedAggregateOverSql` which are structurally identical to the tested Sum/Count paths. Minimal risk. |
+| Plan specifies `PartitionBy<T>(params T[] columns)` initially; decisions log documents switch to `params object[]`. Implementation matches the final decision. | None | Decision was documented and implementation is consistent. |
 
 ## Correctness
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| `BuildNtileSql` uses `bucketsExpr.ToString()` to emit the NTILE argument directly into SQL. If the expression is a variable reference or complex expression rather than a literal, the raw C# source text is emitted into SQL (e.g., `NTILE(myVar)` instead of a parameterized value). | Medium | For the current API signature `Sql.Ntile(int buckets, ...)`, users will typically pass literals. However, passing a variable like `Sql.Ntile(n, ...)` would emit `NTILE(n)` which is invalid SQL. This is the same pattern used by LAG/LEAD offset/default args (`arguments[1].Expression`, `arguments[2].Expression`), so it is a systematic concern across all window functions with non-column arguments. Consider parameterizing or at least validating that the expression is a literal. |
-| `BuildOverClauseString` produces an empty OVER clause string when neither PartitionBy nor OrderBy is specified (e.g., `Sql.RowNumber(over => over)`). This would generate `ROW_NUMBER() OVER ()` which is valid SQL but semantically surprising -- it provides no deterministic ordering. | Low | The API allows this but most databases accept `OVER ()`. This is more of a usability concern than a bug. |
-| Joined query OVER clause produces unquoted table aliases: `t0."UserName"` instead of `"t0"."UserName"`. This is acknowledged in the test comment and is consistent with how `GetJoinedColumnSql` works for regular joined aggregates. | Low | SQL engines accept unquoted aliases (they are plain identifiers without special characters), so this works correctly. However, it creates visual inconsistency between the SELECT column list (quoted aliases) and the OVER clause (unquoted aliases). This is a pre-existing pattern, not introduced by this branch. |
-| `ReQuoteSqlExpression` in `SqlFormatting.cs` assumes identifiers never contain escaped double quotes (i.e., `""` inside an identifier). If an identifier contains `""`, the re-quoting scan would misidentify the boundary. | Low | Column names with embedded double quotes are extremely rare in practice. The same assumption exists in `ExtractColumnNameFromAggregateSql`. |
+| LAG/LEAD/NTILE non-column arguments emit raw C# source text into SQL via `.ToString()`. For LAG 3-arg overload, `Sql.Lag(o.Total, 1, 0m, over => ...)` produces `LAG("Total", 1, 0m) OVER (...)`. The `0m` is a C# decimal literal, not valid SQL. All four manifests contain this invalid SQL. The test passes because it only checks SQL string shape without executing. Similarly, passing a variable like `Sql.Ntile(n, ...)` would emit `NTILE(n)` which is semantically invalid SQL. | High | This produces SQL that will fail at execution time on all database engines. The `0m` suffix is C#-specific; SQL expects `0` or `0.0`. While the offset arguments (`1`, `2`) happen to be valid in both C# and SQL, any non-integer-literal argument (variables, expressions, decimal literals) will produce broken SQL. This affects `BuildLagLeadSql` (nonLambdaArgCount == 2 and == 3 branches) and `BuildNtileSql`. |
+| `BuildOverClauseString` produces an empty string when neither PartitionBy nor OrderBy is specified (e.g., `Sql.RowNumber(over => over)`). This generates `ROW_NUMBER() OVER ()` which is valid SQL syntax but provides no deterministic ordering, making results unpredictable. | Low | Most databases accept `OVER ()`. This is more a usability concern than a correctness bug. No guard or diagnostic is emitted. |
+| Joined query OVER clause produces unquoted table aliases: `t0."UserName"` instead of `"t0"."UserName"`. Visible in all four manifest outputs and explicitly acknowledged in test comments. | Low | SQL engines accept unquoted aliases (they are plain identifiers without special characters), so queries execute correctly. This is consistent with how `GetJoinedColumnSql` works for regular joined aggregates -- a pre-existing pattern. |
+| `ReQuoteSqlExpression` assumes identifiers never contain escaped double quotes (`""` inside an identifier). If an identifier contains embedded double quotes, the re-quoting scan misidentifies the boundary. | Low | Column names with embedded double quotes are extremely rare in practice. The same assumption exists in `ExtractColumnNameFromAggregateSql`. Not a realistic risk. |
+| `ReQuoteSqlExpression` handles an unmatched opening `"` (no closing quote) by falling through and copying the `"` character literally. This is defensive but means a malformed SQL expression would silently produce incorrect output rather than failing. | Low | Malformed SQL expressions at this stage would indicate a bug in the generator, not user input. Silent pass-through is acceptable. |
 
 ## Security
 
-No concerns. All SQL generation is compile-time with quoted identifiers. No user input flows into SQL string construction at runtime. The `Sql.*` methods throw at runtime, preventing misuse outside the generator pipeline.
+No concerns. All SQL generation occurs at compile-time via source generator analysis of syntax trees. No user input flows into SQL string construction at runtime. The `Sql.*` methods and `OverClause` throw at runtime, preventing misuse outside the generator pipeline.
 
 ## Test Quality
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| No test for LAG/LEAD 3-argument overload (`Sql.Lag(o.Total, 2, 0m, over => ...)`). The `BuildLagLeadSql` method has a `nonLambdaArgCount == 3` branch that is untested. | Medium | This branch emits the default value argument using `arguments[2].Expression.ToString()`, which has the same raw-source-to-SQL concern as NTILE. Without a test, both the SQL shape and the argument handling are unverified. |
-| No test for LEAD with offset (`Sql.Lead(o.Total, 2, over => ...)`). Only the simple LEAD overload is tested. | Low | Structurally identical to the tested LAG with offset path, since `BuildLagLeadSql` handles both LAG and LEAD identically. |
-| No negative/failure-mode tests. What happens when the OVER lambda body is not a fluent chain (e.g., `over => { var x = over.OrderBy(o.Date); return x; }`)? The `WalkOverChain` would encounter a block body and `ParseOverClause` returns null, causing `GetWindowFunctionInfo` to return `(null, null)`. The resulting behavior (silent failure or diagnostic) is unverified. | Low | The generator likely emits a diagnostic or skips the column. Testing this would document the expected behavior for malformed OVER lambdas. |
-| Cross-dialect tests are thorough: all 4 dialects (SQLite, PostgreSQL, MySQL, SQL Server) are asserted in every test. The re-quoting fix is validated by test expectations showing backtick/bracket quoting inside aggregate/window function expressions. | None | Good coverage. |
-| Execution assertions verify actual query results against seeded data for RowNumber, DenseRank, SumOver, CountOver, and Joined RowNumber. | None | Good coverage of runtime correctness for the most common functions. |
+| The LAG 3-argument overload test (`WindowFunction_Lag_WithOffsetAndDefault`) verifies the SQL string contains `0m` -- the C# literal -- as if it were correct SQL. The test passes but validates the wrong behavior. This is effectively a test that enshrines a bug. | High | The test provides false confidence. When the `ToString()` issue is fixed (to emit proper SQL numeric literals), this test expectation will need to change. More critically, no execution assertion catches the fact that this SQL would fail at runtime. |
+| No execution test for LAG. The `WindowFunction_Lag_Execution` test explicitly skips execution, only checking SQL shape. The comment explains that LAG returns NULL for the first row, which cannot map to non-nullable `decimal`. | Medium | This reveals an API design gap: LAG/LEAD naturally return NULL when there is no previous/next row, but the generic `T` return type does not communicate this. Users selecting LAG into a non-nullable tuple field will get runtime errors on NULL rows. A test demonstrating the nullable pattern (`decimal?`) would document the correct usage. |
+| No test for LEAD with offset or LEAD with offset+default. Only the simple LEAD overload (`Sql.Lead(o.Total, over => ...)`) is tested. | Low | Structurally identical to the tested LAG with offset path -- `BuildLagLeadSql` handles both LAG and LEAD identically via the `functionName` parameter. |
+| No negative/failure-mode tests. There are no tests for what happens when: (a) the OVER lambda has a block body instead of expression body, (b) an unrecognized method is called on the over clause, (c) PartitionBy is called with zero arguments, (d) the OVER lambda references a variable that is not a column. The `WalkOverChain` returns `false` and `ParseOverClause` returns `null`, causing `GetWindowFunctionInfo` to return `(null, null)`. The downstream behavior (silent skip, diagnostic, or compile error) is undocumented. | Low | The generator likely silently omits the column or emits a diagnostic. Testing one failure case would document the expected behavior and prevent regressions. |
+| Cross-dialect coverage is thorough: all 18 tests assert all 4 dialects (SQLite, PostgreSQL, MySQL, SQL Server). The re-quoting fix is validated by tests showing backtick/bracket quoting inside aggregate and window function expressions. | None | Good coverage. |
+| Execution assertions verify actual query results against seeded data for RowNumber, DenseRank, SumOver, CountOver, and Joined RowNumber (5 of 18 tests). | None | Good execution coverage for the most common window functions. |
+| No test combines window functions with WHERE filtering, GROUP BY, or ORDER BY clauses on the outer query. All tests use `.Where(o => true)` as a passthrough. | Low | Window functions in SELECT should coexist with other query clauses without interference. The `.Where(o => true)` pattern avoids testing this. A test with a real WHERE predicate (e.g., `.Where(o => o.Status == "Shipped")`) would verify no interaction bugs. |
+| No test for PartitionBy with a single column that differs in type from other PartitionBy arguments (the motivating case for `params object[]` instead of `params T[]`). The `PartitionByMultipleColumns` test uses `o.Status, o.UserId` which may coincidentally be the same type or may not -- test does not surface this. | Low | The `params object[]` decision was made to handle mixed types. A test explicitly using columns of different types (e.g., `o.Status` (string) and `o.OrderId` (int)) in the same PartitionBy call would validate this works. |
 
 ## Codebase Consistency
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| Window function code follows the same structural patterns as existing aggregate analysis: `GetWindowFunctionInfo` mirrors `GetAggregateInfo`, `GetJoinedWindowFunctionInfo` mirrors `GetJoinedAggregateInfo`, separated joined/non-joined helpers with matching signatures. | None | Excellent consistency with existing codebase patterns. |
-| `IOverClause` follows the `IQueryBuilder` runtime-dummy pattern: interface + sealed class that throws `InvalidOperationException` on all methods. | None | Consistent with established project conventions. |
-| `Sql.*` window function methods follow the exact same doc comment and exception pattern as existing `Sql.Count`, `Sql.Sum`, etc. | None | Consistent. |
-| The `#region Window Function Analysis` region in `ProjectionAnalyzer.cs` adds 437 lines. While substantial, it is cleanly separated and self-contained. | None | Acceptable for the scope of the feature. |
-| `ReQuoteSqlExpression` is placed in `SqlFormatting.cs` (shared project) and fixes a pre-existing bug (aggregate expressions had wrong quoting for MySQL/SQL Server). The fix is applied during `BuildProjection` enrichment in `ChainAnalyzer.cs`. | None | Good placement -- the fix benefits both aggregates and window functions. |
-| The `CrossDialectAggregateTests` and `CrossDialectCompositionTests` expected values are updated to reflect the re-quoting fix. These are genuine bug fixes in existing test expectations. | None | Correctly updates existing tests to match the fix. |
+| Window function code follows existing aggregate analysis patterns: `GetWindowFunctionInfo` mirrors `GetAggregateInfo`, `GetJoinedWindowFunctionInfo` mirrors `GetJoinedAggregateInfo`, with matching method signatures and dispatch structure. | None | Excellent structural consistency. |
+| `IOverClause` follows the `IQueryBuilder` runtime-dummy pattern: interface with a sealed class that throws `InvalidOperationException` on all methods. | None | Consistent with established conventions. |
+| `Sql.*` window function methods follow the exact same XML doc comment and exception pattern as existing `Sql.Count`, `Sql.Sum`, etc. | None | Consistent. |
+| The `#region Window Function Analysis` region in `ProjectionAnalyzer.cs` adds 437 lines. While substantial, it is cleanly separated and self-contained within a single region. | None | Acceptable scope for the feature. |
+| `ReQuoteSqlExpression` is placed in `SqlFormatting.cs` (shared project) and applied during `BuildProjection` enrichment in `ChainAnalyzer.cs`. This fixes a pre-existing quoting bug that affected existing aggregate expressions for MySQL and SQL Server. | None | Good placement -- benefits both aggregates and window functions. |
+| Updated `CrossDialectAggregateTests` and `CrossDialectCompositionTests` expected values reflect the re-quoting fix. Changes are purely in expected SQL strings (e.g., `SUM("Total")` -> `SUM(\`Total\`)` for MySQL). | None | Correctly updates existing tests to match the behavioral fix. |
 
 ## Integration / Breaking Changes
 
 | Finding | Severity | Why It Matters |
 |---------|----------|----------------|
-| New public API surface: `IOverClause` interface (3 methods), `Sql.RowNumber`, `Sql.Rank`, `Sql.DenseRank`, `Sql.Ntile`, `Sql.Lag` (3 overloads), `Sql.Lead` (3 overloads), `Sql.FirstValue`, `Sql.LastValue`, plus aggregate OVER overloads for `Count` (2), `Sum` (4), `Avg` (4), `Min` (1), `Max` (1). All are additive -- no existing API signatures changed. | None | Purely additive. No breaking changes. |
-| The `ReQuoteSqlExpression` fix changes the generated SQL for MySQL and SQL Server when aggregate functions contain column references (e.g., `SUM("Total")` becomes `SUM(\`Total\`)` for MySQL). This is a **behavioral change** for existing aggregate queries on these dialects. | Medium | Previously, MySQL/SQL Server queries with aggregate expressions had double-quoted identifiers inside the aggregate (e.g., `SUM("Total")`). MySQL supports `"` in ANSI mode but not by default; SQL Server also supports `"` but `[]` is standard. The fix makes generated SQL use the correct dialect-native quoting. This is a correctness improvement but could break users who had `sql_mode=ANSI_QUOTES` or similar workarounds. |
-| `ProjectedColumn` is constructed with a positional constructor call (17+ parameters) in `ChainAnalyzer.cs` line 1819-1825. If `ProjectedColumn` gains new fields, this call would need updating. | Low | This is a fragility concern, not a breaking change. The same pattern exists elsewhere in the codebase. |
+| New public API surface is purely additive: `IOverClause` (3 methods), 12 new `Sql.*` window function methods, and 12 aggregate OVER overloads. No existing API signatures are changed or removed. | None | No breaking changes to the public API. |
+| The `ReQuoteSqlExpression` fix changes generated SQL for MySQL and SQL Server when aggregate functions contain column references. Previously: `SUM("Total")` (double-quoted inside backtick-quoted SQL). Now: `SUM(\`Total\`)` for MySQL, `SUM([Total])` for SQL Server. | Medium | This is a correctness improvement -- the previous behavior emitted PostgreSQL-dialect quoting inside MySQL/SQL Server queries, which only worked because these engines have partial tolerance for double-quoted identifiers (MySQL with `ANSI_QUOTES` mode, SQL Server with `QUOTED_IDENTIFIER`). The fix produces correct native quoting. However, users with existing deployed code that relied on the previous (technically incorrect) SQL output will see different queries after upgrading. This should be documented in release notes. |
+| `ProjectedColumn` is reconstructed with a positional constructor call (18 parameters) in `ChainAnalyzer.cs` for the re-quoting path. If `ProjectedColumn` gains new fields, this call must be updated. | Low | This is a fragility concern, not a breaking change. The same pattern of positional construction exists elsewhere in the codebase. Consider a `with` expression or copy-constructor in a future refactoring. |
+| The `HasOverClauseLambda` check is applied before the existing aggregate `switch` in both `GetAggregateInfo` and `GetJoinedAggregateInfo`. This means any `Sql.*` call whose last argument happens to be a lambda will be routed to window function processing. If a future `Sql.*` method uses a lambda for non-OVER purposes, it would be incorrectly intercepted. | Low | Currently all lambdas on `Sql.*` methods are OVER clauses, so there is no conflict. The check is narrow enough (last-argument-is-lambda) that accidental interception is unlikely. Adding new lambda-bearing `Sql.*` methods would require adjusting the dispatch. |
 
 ## Classifications
 
 | # | Section | Finding | Severity | Class | Action Taken |
 |---|---------|---------|----------|-------|--------------|
 | 1 | Plan Compliance | Phase 4 enrichment unit tests missing | Low | D | Implicit coverage sufficient |
-| 2 | Plan Compliance | Phase 5 `WindowFunction_Joined_AggregateOver` test missing | Low | B | Added test |
-| 3 | Plan Compliance | LAG execution test missing | Low | B | Added execution assertions |
-| 4 | Plan Compliance | No Avg/Min/Max OVER tests | Low | D | Mirrors tested paths |
-| 5 | Correctness | NTILE/LAG/LEAD non-column args use raw `.ToString()` | Medium | C | Tracked as separate issue |
-| 6 | Correctness | Empty OVER clause allowed (`over => over`) | Low | D | Valid SQL |
-| 7 | Correctness | Unquoted table alias in joined OVER clause | Low | D | Pre-existing pattern |
-| 8 | Correctness | `ReQuoteSqlExpression` assumes no escaped double quotes | Low | D | Extremely rare |
-| 9 | Test Quality | LAG/LEAD 3-arg overload untested | Medium | B | Added test |
-| 10 | Test Quality | LEAD with offset untested | Low | D | Mirrors tested LAG path |
-| 11 | Test Quality | No negative/failure-mode tests for malformed OVER lambdas | Low | C | Tracked as separate issue |
-| 12 | Integration | Re-quoting fix changes MySQL/SQL Server aggregate SQL output | Medium | D | Intentional correctness fix |
-| 13 | Integration | `ProjectedColumn` positional constructor fragility | Low | D | Pre-existing pattern |
+| 2 | Plan Compliance | Phase 5 joined test naming mismatch | Low | D | Functionally equivalent test exists |
+| 3 | Plan Compliance | LAG execution not tested end-to-end | Low | B | Add nullable LAG execution test |
+| 4 | Plan Compliance | No Avg/Min/Max OVER tests | Low | B | Add tests |
+| 5 | Correctness | LAG/LEAD/NTILE args emit raw C# source text | High | C | Already tracked as #222 |
+| 6 | Correctness | Empty OVER clause allowed | Low | D | Valid SQL |
+| 7 | Correctness | Unquoted table aliases in joined OVER clause | Low | B | Fix quoting for window function joined OVER |
+| 8 | Correctness | ReQuoteSqlExpression assumes no escaped double quotes | Low | B | Add escaped-quote handling |
+| 9 | Correctness | ReQuoteSqlExpression silent pass-through for unmatched quotes | Low | D | Acceptable defensive behavior |
+| 10 | Test Quality | LAG 3-arg test enshrines `0m` bug | High | C | Tied to #222 |
+| 11 | Test Quality | No LAG execution test — nullable gap | Medium | B | Add nullable decimal? LAG execution test |
+| 12 | Test Quality | No LEAD with offset/default tests | Low | B | Add tests |
+| 13 | Test Quality | No negative/failure-mode tests | Low | B | Add malformed OVER lambda test |
+| 14 | Test Quality | No test with real WHERE/GROUP BY | Low | B | Add test with real WHERE predicate |
+| 15 | Test Quality | No mixed-type PartitionBy test | Low | B | Add test |
+| 16 | Integration | ReQuoteSqlExpression behavioral change | Medium | D | Intentional correctness fix |
+| 17 | Integration | ProjectedColumn positional constructor fragility | Low | C | Track as tech debt with all affected sites |
+| 18 | Integration | HasOverClauseLambda dispatch fragility | Low | D | No current conflict |
 
 ## Issues Created
-- #222: Parameterize non-column arguments in window function SQL generation
-- #223: Add failure-mode tests for malformed OVER clause lambdas
-- #224: Refactor SqlExpression to dialect-agnostic representation
+- #222: Parameterize non-column arguments in window function SQL generation (pre-existing)
+- #223: Add failure-mode tests for malformed OVER clause lambdas (pre-existing)
+- #224: Refactor SqlExpression to dialect-agnostic representation (pre-existing)
+- #226: Refactor ProjectedColumn to reduce positional constructor fragility

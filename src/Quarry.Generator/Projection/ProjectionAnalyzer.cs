@@ -1969,10 +1969,10 @@ internal static class ProjectionAnalyzer
         {
             var propertyName = memberAccess.Name.Identifier.Text;
             if (info.Lookup.TryGetValue(propertyName, out var column))
-                return $"{info.Alias}.{QuoteIdentifier(column.ColumnName, dialect)}";
+                return $"{QuoteIdentifier(info.Alias, dialect)}.{QuoteIdentifier(column.ColumnName, dialect)}";
 
             // Fallback: use property name with table alias (enrichment rewrites later)
-            return $"{info.Alias}.{QuoteIdentifier(propertyName, dialect)}";
+            return $"{QuoteIdentifier(info.Alias, dialect)}.{QuoteIdentifier(propertyName, dialect)}";
         }
 
         return null;

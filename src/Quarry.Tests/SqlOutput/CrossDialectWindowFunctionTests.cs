@@ -344,16 +344,13 @@ internal class CrossDialectWindowFunctionTests
         var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
         var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, RowNum: Sql.RowNumber(over => over.PartitionBy(u.UserName).OrderBy(o.Total)))).Prepare();
 
-        // Note: table aliases inside SqlExpression are not quoted (t0."Col" not "t0"."Col")
-        // because GetJoinedColumnSql writes the alias as a plain string. The alias IS quoted
-        // in regular columns rendered by SqlAssembler.AppendSelectColumns.
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY t0.\"UserName\" ORDER BY t1.\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY t0.\"UserName\" ORDER BY t1.\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, ROW_NUMBER() OVER (PARTITION BY t0.`UserName` ORDER BY t1.`Total`) AS `RowNum` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY t0.[UserName] ORDER BY t1.[Total]) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY \"t0\".\"UserName\" ORDER BY \"t1\".\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY \"t0\".\"UserName\" ORDER BY \"t1\".\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, ROW_NUMBER() OVER (PARTITION BY `t0`.`UserName` ORDER BY `t1`.`Total`) AS `RowNum` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY [t0].[UserName] ORDER BY [t1].[Total]) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
 
         // Alice has 2 orders (250, 75.50), Bob has 1 (150)
         var results = await lt.ExecuteFetchAllAsync();
@@ -374,10 +371,10 @@ internal class CrossDialectWindowFunctionTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", SUM(t1.\"Total\") OVER (PARTITION BY t0.\"UserName\") AS \"UserTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", SUM(t1.\"Total\") OVER (PARTITION BY t0.\"UserName\") AS \"UserTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, SUM(t1.`Total`) OVER (PARTITION BY t0.`UserName`) AS `UserTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], SUM(t1.[Total]) OVER (PARTITION BY t0.[UserName]) AS [UserTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", SUM(\"t1\".\"Total\") OVER (PARTITION BY \"t0\".\"UserName\") AS \"UserTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", SUM(\"t1\".\"Total\") OVER (PARTITION BY \"t0\".\"UserName\") AS \"UserTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, SUM(`t1`.`Total`) OVER (PARTITION BY `t0`.`UserName`) AS `UserTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], SUM([t1].[Total]) OVER (PARTITION BY [t0].[UserName]) AS [UserTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
 
         // Alice: 250+75.50=325.50. Bob: 150.
         var results = await lt.ExecuteFetchAllAsync();
@@ -426,6 +423,239 @@ internal class CrossDialectWindowFunctionTests
         // Verify SQL shape only. Execution of LAG with default value is tested in WindowFunction_Lag_WithOffsetAndDefault.
         var diag = lt.ToDiagnostics();
         Assert.That(diag.Sql, Does.Contain("LAG(\"Total\", 1) OVER (ORDER BY \"Total\")"));
+    }
+
+    #endregion
+
+    #region Aggregate OVER — Additional Coverage
+
+    [Test]
+    public async Task WindowFunction_AvgOver()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, AvgTotal: Sql.Avg(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, AvgTotal: Sql.Avg(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, AvgTotal: Sql.Avg(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, AvgTotal: Sql.Avg(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", AVG(\"Total\") OVER (PARTITION BY \"Status\") AS \"AvgTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", AVG(\"Total\") OVER (PARTITION BY \"Status\") AS \"AvgTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, AVG(`Total`) OVER (PARTITION BY `Status`) AS `AvgTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], AVG([Total]) OVER (PARTITION BY [Status]) AS [AvgTotal] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_MinOver()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, MinTotal: Sql.Min(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, MinTotal: Sql.Min(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, MinTotal: Sql.Min(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, MinTotal: Sql.Min(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", MIN(\"Total\") OVER (PARTITION BY \"Status\") AS \"MinTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", MIN(\"Total\") OVER (PARTITION BY \"Status\") AS \"MinTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, MIN(`Total`) OVER (PARTITION BY `Status`) AS `MinTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], MIN([Total]) OVER (PARTITION BY [Status]) AS [MinTotal] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_MaxOver()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, MaxTotal: Sql.Max(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, MaxTotal: Sql.Max(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, MaxTotal: Sql.Max(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, MaxTotal: Sql.Max(o.Total, over => over.PartitionBy(o.Status)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", MAX(\"Total\") OVER (PARTITION BY \"Status\") AS \"MaxTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", MAX(\"Total\") OVER (PARTITION BY \"Status\") AS \"MaxTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, MAX(`Total`) OVER (PARTITION BY `Status`) AS `MaxTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], MAX([Total]) OVER (PARTITION BY [Status]) AS [MaxTotal] FROM [orders]");
+    }
+
+    #endregion
+
+    #region LEAD Overloads
+
+    [Test]
+    public async Task WindowFunction_Lead_WithOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LEAD([Total], 2) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Lead_WithOffsetAndDefault()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        // Note: "0m" is the raw C# literal emitted by ToString() — tracked as #222
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2, 0m) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LEAD([Total], 2, 0m) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
+    }
+
+    #endregion
+
+    #region Edge Cases
+
+    [Test]
+    public async Task WindowFunction_Lag_NullableColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // LAG on a nullable column (Notes is Col<string?>) to verify the generator
+        // handles nullable types correctly in window function SQL generation.
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, PrevNotes: Sql.Lag(o.Notes, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, PrevNotes: Sql.Lag(o.Notes, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, PrevNotes: Sql.Lag(o.Notes, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, PrevNotes: Sql.Lag(o.Notes, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LAG(\"Notes\") OVER (ORDER BY \"OrderDate\") AS \"PrevNotes\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"Notes\") OVER (ORDER BY \"OrderDate\") AS \"PrevNotes\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`Notes`) OVER (ORDER BY `OrderDate`) AS `PrevNotes` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([Notes]) OVER (ORDER BY [OrderDate]) AS [PrevNotes] FROM [orders]");
+
+        // Note: Execution skipped — LAG returns NULL for the first row and the carrier
+        // reader does not check IsDBNull before reading. This is a pre-existing framework
+        // limitation, not specific to window functions. See #222 for tracking.
+    }
+
+    [Test]
+    public async Task WindowFunction_EmptyOverClause()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Empty OVER clause produces OVER () — valid SQL but non-deterministic ordering
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER () AS \"RowNum\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER () AS \"RowNum\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER () AS `RowNum` FROM `orders`",
+            ss:     "SELECT [OrderId], ROW_NUMBER() OVER () AS [RowNum] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_MultipleOrderBy()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.Status).OrderByDescending(o.Total)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.Status).OrderByDescending(o.Total)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.Status).OrderByDescending(o.Total)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.Status).OrderByDescending(o.Total)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"Status\", \"Total\" DESC) AS \"RowNum\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"Status\", \"Total\" DESC) AS \"RowNum\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (ORDER BY `Status`, `Total` DESC) AS `RowNum` FROM `orders`",
+            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [Status], [Total] DESC) AS [RowNum] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_WithWhereClause()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => o.Total > 100m).Select(o => (o.OrderId, o.Total, RowNum: Sql.RowNumber(over => over.OrderBy(o.Total)))).Prepare();
+        var pg = Pg.Orders().Where(o => o.Total > 100m).Select(o => (o.OrderId, o.Total, RowNum: Sql.RowNumber(over => over.OrderBy(o.Total)))).Prepare();
+        var my = My.Orders().Where(o => o.Total > 100m).Select(o => (o.OrderId, o.Total, RowNum: Sql.RowNumber(over => over.OrderBy(o.Total)))).Prepare();
+        var ss = Ss.Orders().Where(o => o.Total > 100m).Select(o => (o.OrderId, o.Total, RowNum: Sql.RowNumber(over => over.OrderBy(o.Total)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\" WHERE \"Total\" > 100",
+            pg:     "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\" WHERE \"Total\" > 100",
+            mysql:  "SELECT `OrderId`, `Total`, ROW_NUMBER() OVER (ORDER BY `Total`) AS `RowNum` FROM `orders` WHERE `Total` > 100",
+            ss:     "SELECT [OrderId], [Total], ROW_NUMBER() OVER (ORDER BY [Total]) AS [RowNum] FROM [orders] WHERE [Total] > 100");
+
+        // Seed data: 2 orders with Total > 100 (id=1 Total=250, id=3 Total=150)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        var byRowNum = results.OrderBy(r => r.RowNum).ToList();
+        Assert.That(byRowNum[0].Total, Is.EqualTo(150.00m));
+        Assert.That(byRowNum[1].Total, Is.EqualTo(250.00m));
+    }
+
+    [Test]
+    public async Task WindowFunction_MixedTypePartitionBy()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // PartitionBy with different column types (string Status + int OrderId) validates params object[]
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.PartitionBy(o.Status, o.OrderId).OrderBy(o.Total)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.PartitionBy(o.Status, o.OrderId).OrderBy(o.Total)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.PartitionBy(o.Status, o.OrderId).OrderBy(o.Total)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.PartitionBy(o.Status, o.OrderId).OrderBy(o.Total)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"OrderId\" ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"OrderId\" ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (PARTITION BY `Status`, `OrderId` ORDER BY `Total`) AS `RowNum` FROM `orders`",
+            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (PARTITION BY [Status], [OrderId] ORDER BY [Total]) AS [RowNum] FROM [orders]");
+
+        // Each partition has exactly one row since (Status, OrderId) is unique
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results.All(r => r.RowNum == 1), Is.True);
     }
 
     #endregion
