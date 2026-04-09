@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #186
 pr:
 session: 1
 phases-total: 5
-phases-complete: 4
+phases-complete: 5
 ## Problem Statement
 Add support for SQL window functions (ROW_NUMBER, RANK, DENSE_RANK, NTILE, LAG, LEAD, FIRST_VALUE, LAST_VALUE, SUM/COUNT/AVG/MIN/MAX OVER) in Select projections via new `Sql.*` methods with a lambda-based OVER clause (Approach D from design discussion).
 
@@ -53,4 +53,4 @@ None. All 3034 tests pass (97 migration + 103 analyzers + 2834 quarry).
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | | Starting window functions work |
+| 1 | INTAKE | REVIEW | Window functions: 5 phases implemented, all 3049 tests pass |
