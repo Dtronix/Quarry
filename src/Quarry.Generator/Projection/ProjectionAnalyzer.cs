@@ -1802,6 +1802,11 @@ internal static class ProjectionAnalyzer
                 break;
         }
 
+        // Fallthrough: check for window functions (Sql.RowNumber, Sql.Rank, etc.)
+        // and aggregate OVER overloads (Sql.Sum(col, over => ...), etc.)
+        if (HasOverClauseLambda(invocation))
+            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, dialect);
+
         return (null, null);
     }
 
@@ -1942,6 +1947,10 @@ internal static class ProjectionAnalyzer
                 break;
         }
 
+        // Fallthrough: check for window functions and aggregate OVER overloads
+        if (HasOverClauseLambda(invocation))
+            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup, dialect);
+
         return (null, null);
     }
 
@@ -1987,6 +1996,437 @@ internal static class ProjectionAnalyzer
 
         return defaultType;
     }
+
+    #region Window Function Analysis
+
+    /// <summary>
+    /// Known window function method names mapped to their SQL function names.
+    /// </summary>
+    private static readonly HashSet<string> WindowFunctionNames = new(StringComparer.Ordinal)
+    {
+        "RowNumber", "Rank", "DenseRank", "Ntile",
+        "Lag", "Lead", "FirstValue", "LastValue"
+    };
+
+    /// <summary>
+    /// Checks if the last argument of an invocation is a lambda (the OVER clause lambda).
+    /// </summary>
+    private static bool HasOverClauseLambda(InvocationExpressionSyntax invocation)
+    {
+        var args = invocation.ArgumentList.Arguments;
+        if (args.Count == 0) return false;
+        return args[args.Count - 1].Expression is LambdaExpressionSyntax;
+    }
+
+    /// <summary>
+    /// Gets the SQL expression and CLR type for a window function call.
+    /// Handles: Sql.RowNumber(over => ...), Sql.Lag(o.Col, over => ...),
+    /// and aggregate OVER overloads like Sql.Sum(o.Col, over => ...).
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) GetWindowFunctionInfo(
+        string methodName,
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName,
+        SqlDialect dialect)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count == 0) return (null, null);
+
+        // The OVER lambda is always the last argument
+        var lastArg = arguments[arguments.Count - 1].Expression;
+        if (lastArg is not LambdaExpressionSyntax overLambda)
+            return (null, null);
+
+        var overClause = ParseOverClause(overLambda, columnLookup, lambdaParameterName, dialect);
+        if (overClause == null) return (null, null);
+
+        // Dedicated window functions
+        if (WindowFunctionNames.Contains(methodName))
+        {
+            return methodName switch
+            {
+                "RowNumber" => ($"ROW_NUMBER() OVER ({overClause})", "int"),
+                "Rank" => ($"RANK() OVER ({overClause})", "int"),
+                "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
+                "Ntile" when arguments.Count >= 2 =>
+                    BuildNtileSql(arguments[0].Expression, overClause),
+                "Lag" => BuildLagLeadSql("LAG", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                "Lead" => BuildLagLeadSql("LEAD", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                "FirstValue" when arguments.Count >= 2 =>
+                    BuildValueFunctionSql("FIRST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                "LastValue" when arguments.Count >= 2 =>
+                    BuildValueFunctionSql("LAST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, dialect, overClause),
+                _ => (null, null)
+            };
+        }
+
+        // Aggregate OVER overloads: Sum, Avg, Min, Max, Count with a trailing lambda
+        return methodName switch
+        {
+            "Count" when arguments.Count == 1 => ($"COUNT(*) OVER ({overClause})", "int"),
+            "Count" when arguments.Count == 2 =>
+                BuildAggregateOverSql("COUNT", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause, "int"),
+            "Sum" when arguments.Count == 2 =>
+                BuildAggregateOverSql("SUM", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
+            "Avg" when arguments.Count == 2 =>
+                BuildAggregateOverSql("AVG", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
+            "Min" when arguments.Count == 2 =>
+                BuildAggregateOverSql("MIN", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
+            "Max" when arguments.Count == 2 =>
+                BuildAggregateOverSql("MAX", arguments[0].Expression, columnLookup, lambdaParameterName, dialect, overClause,
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
+            _ => (null, null)
+        };
+    }
+
+    /// <summary>
+    /// Gets the SQL expression and CLR type for a window function call in a joined context.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) GetJoinedWindowFunctionInfo(
+        string methodName,
+        InvocationExpressionSyntax invocation,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SqlDialect dialect)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count == 0) return (null, null);
+
+        var lastArg = arguments[arguments.Count - 1].Expression;
+        if (lastArg is not LambdaExpressionSyntax overLambda)
+            return (null, null);
+
+        var overClause = ParseJoinedOverClause(overLambda, perParamLookup, dialect);
+        if (overClause == null) return (null, null);
+
+        // Dedicated window functions
+        if (WindowFunctionNames.Contains(methodName))
+        {
+            return methodName switch
+            {
+                "RowNumber" => ($"ROW_NUMBER() OVER ({overClause})", "int"),
+                "Rank" => ($"RANK() OVER ({overClause})", "int"),
+                "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
+                "Ntile" when arguments.Count >= 2 =>
+                    BuildNtileSql(arguments[0].Expression, overClause),
+                "Lag" => BuildJoinedLagLeadSql("LAG", arguments, perParamLookup, dialect, overClause),
+                "Lead" => BuildJoinedLagLeadSql("LEAD", arguments, perParamLookup, dialect, overClause),
+                "FirstValue" when arguments.Count >= 2 =>
+                    BuildJoinedValueFunctionSql("FIRST_VALUE", arguments[0].Expression, perParamLookup, dialect, overClause),
+                "LastValue" when arguments.Count >= 2 =>
+                    BuildJoinedValueFunctionSql("LAST_VALUE", arguments[0].Expression, perParamLookup, dialect, overClause),
+                _ => (null, null)
+            };
+        }
+
+        // Aggregate OVER overloads
+        return methodName switch
+        {
+            "Count" when arguments.Count == 1 => ($"COUNT(*) OVER ({overClause})", "int"),
+            "Count" when arguments.Count == 2 =>
+                BuildJoinedAggregateOverSql("COUNT", arguments[0].Expression, perParamLookup, dialect, overClause, "int"),
+            "Sum" when arguments.Count == 2 =>
+                BuildJoinedAggregateOverSql("SUM", arguments[0].Expression, perParamLookup, dialect, overClause,
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
+            "Avg" when arguments.Count == 2 =>
+                BuildJoinedAggregateOverSql("AVG", arguments[0].Expression, perParamLookup, dialect, overClause,
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
+            "Min" when arguments.Count == 2 =>
+                BuildJoinedAggregateOverSql("MIN", arguments[0].Expression, perParamLookup, dialect, overClause,
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
+            "Max" when arguments.Count == 2 =>
+                BuildJoinedAggregateOverSql("MAX", arguments[0].Expression, perParamLookup, dialect, overClause,
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
+            _ => (null, null)
+        };
+    }
+
+    /// <summary>
+    /// Parses the OVER clause lambda body to extract PARTITION BY and ORDER BY columns.
+    /// The lambda body is a fluent chain like: over.PartitionBy(o.Category).OrderBy(o.Price)
+    /// Returns the inner text of the OVER clause (e.g., "PARTITION BY \"Category\" ORDER BY \"Price\"").
+    /// </summary>
+    private static string? ParseOverClause(
+        LambdaExpressionSyntax lambda,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName,
+        SqlDialect dialect)
+    {
+        // Extract the lambda body expression
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body as ExpressionSyntax,
+            ParenthesizedLambdaExpressionSyntax paren => paren.Body as ExpressionSyntax,
+            _ => null
+        };
+        if (body == null) return null;
+
+        // Walk the fluent chain and collect PartitionBy / OrderBy calls
+        var partitionColumns = new List<string>();
+        var orderColumns = new List<(string Sql, bool Descending)>();
+
+        if (!WalkOverChain(body, partitionColumns, orderColumns,
+            (expr) => GetColumnSql(expr, columnLookup, lambdaParameterName, dialect)))
+            return null;
+
+        return BuildOverClauseString(partitionColumns, orderColumns);
+    }
+
+    /// <summary>
+    /// Parses the OVER clause lambda body in a joined context.
+    /// </summary>
+    private static string? ParseJoinedOverClause(
+        LambdaExpressionSyntax lambda,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SqlDialect dialect)
+    {
+        var body = lambda switch
+        {
+            SimpleLambdaExpressionSyntax simple => simple.Body as ExpressionSyntax,
+            ParenthesizedLambdaExpressionSyntax paren => paren.Body as ExpressionSyntax,
+            _ => null
+        };
+        if (body == null) return null;
+
+        var partitionColumns = new List<string>();
+        var orderColumns = new List<(string Sql, bool Descending)>();
+
+        if (!WalkOverChain(body, partitionColumns, orderColumns,
+            (expr) => GetJoinedColumnSql(expr, perParamLookup, dialect)))
+            return null;
+
+        return BuildOverClauseString(partitionColumns, orderColumns);
+    }
+
+    /// <summary>
+    /// Recursively walks the fluent OVER chain (innermost to outermost), collecting
+    /// PARTITION BY and ORDER BY column specifications.
+    /// Chain structure: OrderBy(PartitionBy(over, col1), col2) — outermost is last applied.
+    /// </summary>
+    private static bool WalkOverChain(
+        ExpressionSyntax expression,
+        List<string> partitionColumns,
+        List<(string Sql, bool Descending)> orderColumns,
+        Func<ExpressionSyntax, string?> resolveColumn)
+    {
+        // Base case: lambda parameter (e.g., "over") — stop recursion
+        if (expression is IdentifierNameSyntax)
+            return true;
+
+        if (expression is not InvocationExpressionSyntax invocation)
+            return false;
+
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess)
+            return false;
+
+        var methodName = memberAccess.Name.Identifier.Text;
+
+        // Recurse into the receiver first (builds chain from inside out)
+        if (!WalkOverChain(memberAccess.Expression, partitionColumns, orderColumns, resolveColumn))
+            return false;
+
+        var args = invocation.ArgumentList.Arguments;
+
+        switch (methodName)
+        {
+            case "PartitionBy":
+                // PartitionBy has params — process all arguments
+                foreach (var arg in args)
+                {
+                    var colSql = resolveColumn(arg.Expression);
+                    if (colSql == null) return false;
+                    partitionColumns.Add(colSql);
+                }
+                break;
+
+            case "OrderBy":
+                if (args.Count < 1) return false;
+                var orderSql = resolveColumn(args[0].Expression);
+                if (orderSql == null) return false;
+                orderColumns.Add((orderSql, false));
+                break;
+
+            case "OrderByDescending":
+                if (args.Count < 1) return false;
+                var descSql = resolveColumn(args[0].Expression);
+                if (descSql == null) return false;
+                orderColumns.Add((descSql, true));
+                break;
+
+            default:
+                return false; // Unknown method in OVER chain
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Builds the OVER clause string from collected partition and order columns.
+    /// </summary>
+    private static string BuildOverClauseString(
+        List<string> partitionColumns,
+        List<(string Sql, bool Descending)> orderColumns)
+    {
+        var parts = new List<string>();
+
+        if (partitionColumns.Count > 0)
+            parts.Add("PARTITION BY " + string.Join(", ", partitionColumns));
+
+        if (orderColumns.Count > 0)
+        {
+            var orderParts = orderColumns.Select(o =>
+                o.Descending ? $"{o.Sql} DESC" : o.Sql);
+            parts.Add("ORDER BY " + string.Join(", ", orderParts));
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    /// <summary>
+    /// Builds SQL for NTILE(n) OVER (...).
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildNtileSql(
+        ExpressionSyntax bucketsExpr,
+        string overClause)
+    {
+        // The buckets argument should be a literal integer or constant
+        var bucketsText = bucketsExpr.ToString();
+        return ($"NTILE({bucketsText}) OVER ({overClause})", "int");
+    }
+
+    /// <summary>
+    /// Builds SQL for LAG/LEAD with 1-3 column arguments + OVER clause.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildLagLeadSql(
+        string functionName,
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName,
+        SemanticModel semanticModel,
+        InvocationExpressionSyntax invocation,
+        SqlDialect dialect,
+        string overClause)
+    {
+        // arguments: [column, (offset?,) (default?,) overLambda]
+        // column is always first, overLambda is always last
+        var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName, dialect);
+        if (columnSql == null) return (null, null);
+
+        var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
+            columnLookup, lambdaParameterName, "object");
+
+        var nonLambdaArgCount = arguments.Count - 1; // Exclude the OVER lambda
+        return nonLambdaArgCount switch
+        {
+            1 => ($"{functionName}({columnSql}) OVER ({overClause})", clrType),
+            2 => ($"{functionName}({columnSql}, {arguments[1].Expression}) OVER ({overClause})", clrType),
+            3 => ($"{functionName}({columnSql}, {arguments[1].Expression}, {arguments[2].Expression}) OVER ({overClause})", clrType),
+            _ => (null, null)
+        };
+    }
+
+    /// <summary>
+    /// Builds SQL for LAG/LEAD in a joined context.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildJoinedLagLeadSql(
+        string functionName,
+        SeparatedSyntaxList<ArgumentSyntax> arguments,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SqlDialect dialect,
+        string overClause)
+    {
+        var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup, dialect);
+        if (columnSql == null) return (null, null);
+
+        var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
+
+        var nonLambdaArgCount = arguments.Count - 1;
+        return nonLambdaArgCount switch
+        {
+            1 => ($"{functionName}({columnSql}) OVER ({overClause})", clrType),
+            2 => ($"{functionName}({columnSql}, {arguments[1].Expression}) OVER ({overClause})", clrType),
+            3 => ($"{functionName}({columnSql}, {arguments[1].Expression}, {arguments[2].Expression}) OVER ({overClause})", clrType),
+            _ => (null, null)
+        };
+    }
+
+    /// <summary>
+    /// Builds SQL for FIRST_VALUE/LAST_VALUE.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildValueFunctionSql(
+        string functionName,
+        ExpressionSyntax columnExpr,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName,
+        SemanticModel semanticModel,
+        InvocationExpressionSyntax invocation,
+        SqlDialect dialect,
+        string overClause)
+    {
+        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName, dialect);
+        if (columnSql == null) return (null, null);
+
+        var clrType = ResolveAggregateClrType(columnExpr, invocation, semanticModel,
+            columnLookup, lambdaParameterName, "object");
+
+        return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+    }
+
+    /// <summary>
+    /// Builds SQL for FIRST_VALUE/LAST_VALUE in a joined context.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildJoinedValueFunctionSql(
+        string functionName,
+        ExpressionSyntax columnExpr,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SqlDialect dialect,
+        string overClause)
+    {
+        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup, dialect);
+        if (columnSql == null) return (null, null);
+
+        var clrType = ResolveJoinedAggregateClrType(columnExpr, perParamLookup, "object");
+        return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+    }
+
+    /// <summary>
+    /// Builds SQL for aggregate OVER forms like SUM(col) OVER (...).
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildAggregateOverSql(
+        string functionName,
+        ExpressionSyntax columnExpr,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName,
+        SqlDialect dialect,
+        string overClause,
+        string clrType)
+    {
+        var columnSql = GetColumnSql(columnExpr, columnLookup, lambdaParameterName, dialect);
+        if (columnSql == null) return (null, null);
+        return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+    }
+
+    /// <summary>
+    /// Builds SQL for aggregate OVER forms in a joined context.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildJoinedAggregateOverSql(
+        string functionName,
+        ExpressionSyntax columnExpr,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SqlDialect dialect,
+        string overClause,
+        string clrType)
+    {
+        var columnSql = GetJoinedColumnSql(columnExpr, perParamLookup, dialect);
+        if (columnSql == null) return (null, null);
+        return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+    }
+
+    #endregion
 
     /// <summary>
     /// Quotes an identifier according to the SQL dialect.
