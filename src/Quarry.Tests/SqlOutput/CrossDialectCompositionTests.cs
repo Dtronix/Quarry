@@ -364,8 +364,8 @@ internal class CrossDialectCompositionTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 5",
-            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
-            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5");
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(`Total`) AS `Item3` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 5",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5");
 
         // Seed: only 3 orders total, no status group has >5 — 0 results
         var results = await lt.ExecuteFetchAllAsync();
@@ -485,8 +485,8 @@ internal class CrossDialectCompositionTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, AVG(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], AVG(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, AVG(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], AVG([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         // Seed: Shipped=(250+150)/2=200, Pending=75.50 — 2 groups
         var results = await lt.ExecuteFetchAllAsync();
@@ -509,8 +509,8 @@ internal class CrossDialectCompositionTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MIN(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MIN(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, MIN(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MIN([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
@@ -532,8 +532,8 @@ internal class CrossDialectCompositionTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MAX(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MAX(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, MAX(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MAX([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
@@ -555,8 +555,8 @@ internal class CrossDialectCompositionTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\", AVG(\"Total\") AS \"Item4\", MIN(\"Total\") AS \"Item5\", MAX(\"Total\") AS \"Item6\" FROM \"orders\" GROUP BY \"Status\" HAVING COUNT(*) > 1",
-            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3`, AVG(\"Total\") AS `Item4`, MIN(\"Total\") AS `Item5`, MAX(\"Total\") AS `Item6` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
-            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3], AVG(\"Total\") AS [Item4], MIN(\"Total\") AS [Item5], MAX(\"Total\") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(`Total`) AS `Item3`, AVG(`Total`) AS `Item4`, MIN(`Total`) AS `Item5`, MAX(`Total`) AS `Item6` FROM `orders` GROUP BY `Status` HAVING COUNT(*) > 1",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3], AVG([Total]) AS [Item4], MIN([Total]) AS [Item5], MAX([Total]) AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1");
 
         // Seed: Shipped has 2 orders (>1), Pending has 1 (not >1) — 1 group
         var results = await lt.ExecuteFetchAllAsync();

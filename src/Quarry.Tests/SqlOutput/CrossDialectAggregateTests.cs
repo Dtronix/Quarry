@@ -84,8 +84,8 @@ internal class CrossDialectAggregateTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", COUNT(*) AS \"Item2\", SUM(\"Total\") AS \"Item3\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(\"Total\") AS `Item3` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM(\"Total\") AS [Item3] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, COUNT(*) AS `Item2`, SUM(`Total`) AS `Item3` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3] FROM [orders] GROUP BY [Status]");
 
         // "Shipped" has orders 250.00 + 150.00 = 400.00
         var results = await lt.ExecuteFetchAllAsync();
@@ -114,8 +114,8 @@ internal class CrossDialectAggregateTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", AVG(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, AVG(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], AVG(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, AVG(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], AVG([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         // "Shipped" avg = (250 + 150) / 2 = 200.00
         var results = await lt.ExecuteFetchAllAsync();
@@ -139,8 +139,8 @@ internal class CrossDialectAggregateTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MIN(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MIN(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MIN(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, MIN(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MIN([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         // "Shipped" min = 150.00
         var results = await lt.ExecuteFetchAllAsync();
@@ -164,8 +164,8 @@ internal class CrossDialectAggregateTests
             my.ToDiagnostics(), ss.ToDiagnostics(),
             sqlite: "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
             pg:     "SELECT \"Status\", MAX(\"Total\") AS \"Item2\" FROM \"orders\" GROUP BY \"Status\"",
-            mysql:  "SELECT `Status`, MAX(\"Total\") AS `Item2` FROM `orders` GROUP BY `Status`",
-            ss:     "SELECT [Status], MAX(\"Total\") AS [Item2] FROM [orders] GROUP BY [Status]");
+            mysql:  "SELECT `Status`, MAX(`Total`) AS `Item2` FROM `orders` GROUP BY `Status`",
+            ss:     "SELECT [Status], MAX([Total]) AS [Item2] FROM [orders] GROUP BY [Status]");
 
         // "Shipped" max = 250.00
         var results = await lt.ExecuteFetchAllAsync();

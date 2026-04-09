@@ -320,7 +320,7 @@ SELECT [Status], COUNT(*) AS [Item2] FROM [orders] GROUP BY [Status] HAVING COUN
 ### Orders().Where(...).GroupBy(...).Having(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5
+SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 5
 ```
 
 ---
@@ -328,7 +328,7 @@ SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3] FROM [orders] GROU
 ### Orders().Where(...).GroupBy(...).Having(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3], AVG("Total") AS [Item4], MIN("Total") AS [Item5], MAX("Total") AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1
+SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3], AVG([Total]) AS [Item4], MIN([Total]) AS [Item5], MAX([Total]) AS [Item6] FROM [orders] GROUP BY [Status] HAVING COUNT(*) > 1
 ```
 
 ---
@@ -336,7 +336,7 @@ SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3], AVG("Total") AS [
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], AVG("Total") AS [Item2] FROM [orders] GROUP BY [Status]
+SELECT [Status], AVG([Total]) AS [Item2] FROM [orders] GROUP BY [Status]
 ```
 
 ---
@@ -352,7 +352,7 @@ SELECT [Status], COUNT(*) AS [Item2] FROM [orders] GROUP BY [Status]
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3] FROM [orders] GROUP BY [Status]
+SELECT [Status], COUNT(*) AS [Item2], SUM([Total]) AS [Item3] FROM [orders] GROUP BY [Status]
 ```
 
 ---
@@ -360,7 +360,7 @@ SELECT [Status], COUNT(*) AS [Item2], SUM("Total") AS [Item3] FROM [orders] GROU
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], MAX("Total") AS [Item2] FROM [orders] GROUP BY [Status]
+SELECT [Status], MAX([Total]) AS [Item2] FROM [orders] GROUP BY [Status]
 ```
 
 ---
@@ -368,7 +368,7 @@ SELECT [Status], MAX("Total") AS [Item2] FROM [orders] GROUP BY [Status]
 ### Orders().Where(...).GroupBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [Status], MIN("Total") AS [Item2] FROM [orders] GROUP BY [Status]
+SELECT [Status], MIN([Total]) AS [Item2] FROM [orders] GROUP BY [Status]
 ```
 
 ---
@@ -404,6 +404,190 @@ SELECT [OrderId] FROM [orders] WHERE [Priority] = @p0
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [OrderId], AVG([Total]) OVER (PARTITION BY [Status]) AS [AvgTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], COUNT(*) OVER (PARTITION BY [Status]) AS [Cnt] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], DENSE_RANK() OVER (ORDER BY [Total] DESC) AS [DRnk] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], FIRST_VALUE([Total]) OVER (PARTITION BY [Status] ORDER BY [OrderDate]) AS [First] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LAG([Notes]) OVER (ORDER BY [OrderDate]) AS [PrevNotes] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LAG([Total]) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LAG([Total], 1, 0m) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LAG([Total], 2) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LAST_VALUE([Total]) OVER (PARTITION BY [Status] ORDER BY [OrderDate]) AS [Last] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LEAD([Total]) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LEAD([Total], 2) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], LEAD([Total], 2, 0m) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], MAX([Total]) OVER (PARTITION BY [Status]) AS [MaxTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], MIN([Total]) OVER (PARTITION BY [Status]) AS [MinTotal] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], RANK() OVER (PARTITION BY [Status] ORDER BY [Total]) AS [Rnk] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER () AS [RowNum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum], RANK() OVER (ORDER BY [Total]) AS [Rnk] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [Status], [Total] DESC) AS [RowNum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER (PARTITION BY [Status], [OrderId] ORDER BY [Total]) AS [RowNum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], ROW_NUMBER() OVER (PARTITION BY [Status], [UserId] ORDER BY [OrderDate]) AS [Rnk] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], SUM([Total]) OVER (PARTITION BY [Status]) AS [RunSum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [OrderId], [Status] FROM [orders] WHERE [Status] IN ('pending', 'processing', 'shipped')
 ```
 
@@ -431,6 +615,22 @@ SELECT [OrderId], [Total] FROM [orders] WHERE [Priority] = @p0 AND [Total] > @p1
 |-----------|------|
 | `@p0` | `Quarry.Tests.Samples.OrderPriority` |
 | `@p1` | `decimal` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], [Total], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum] FROM [orders]
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], [Total], ROW_NUMBER() OVER (ORDER BY [Total]) AS [RowNum] FROM [orders] WHERE [Total] > 100
+```
 
 ---
 
@@ -756,6 +956,22 @@ SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[Crea
 
 ```sql
 SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY [t0].[UserName] ORDER BY [t1].[Total]) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [t0].[UserName], [t1].[Total], SUM([t1].[Total]) OVER (PARTITION BY [t0].[UserName]) AS [UserTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
 ```
 
 ---
@@ -2321,7 +2537,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 316 |
+| Total discovered | 343 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 66 |
-| Rendered | 250 |
+| Rendered | 277 |
