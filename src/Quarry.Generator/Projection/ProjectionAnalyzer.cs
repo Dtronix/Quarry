@@ -218,7 +218,6 @@ internal static class ProjectionAnalyzer
         foreach (var kvp in entry.Lookup)
         {
             var col = kvp.Value;
-            var quotedName = Quarry.Generators.Sql.SqlFormatting.QuoteIdentifier(dialect, col.ColumnName);
             columns.Add(new ProjectedColumn(
                 propertyName: col.PropertyName,
                 columnName: col.ColumnName,
