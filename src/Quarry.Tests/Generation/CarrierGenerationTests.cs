@@ -2409,6 +2409,121 @@ public static class Queries
     }
 
     [Test]
+    public void Cte_LambdaWith_NullBody_EmitsQRY080()
+    {
+        // Lambda form of With<T>() where the body returns null! instead of building
+        // a fluent chain on the lambda parameter. The discovery phase cannot classify
+        // this as a lambda inner chain, so ChainAnalyzer emits QRY080.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.With<Order>(orders => null!)
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry080 = diagnostics.FirstOrDefault(d => d.Id == "QRY080");
+        Assert.That(qry080, Is.Not.Null,
+            $"Expected QRY080 for null-returning lambda With<T>() body. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Null-returning lambda CTE should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
+    public void Cte_LambdaWith_VariableReturn_EmitsQRY080()
+    {
+        // Lambda form of With<T>() where the body returns a local variable instead of
+        // building a chain on the lambda parameter. Discovery cannot trace the variable
+        // back to a lambda-parameter-rooted chain, so QRY080 fires.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        IQueryBuilder<Order> stub = null!;
+        await db.With<Order>(orders => stub)
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry080 = diagnostics.FirstOrDefault(d => d.Id == "QRY080");
+        Assert.That(qry080, Is.Not.Null,
+            $"Expected QRY080 for variable-returning lambda With<T>() body. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Variable-returning lambda CTE should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
+    public void Cte_LambdaWith_NonQuarryMethodCall_EmitsQRY080()
+    {
+        // Lambda form of With<T>() where the body calls a static helper method that
+        // returns IQueryBuilder<Order> — a valid return type but NOT a fluent chain
+        // rooted on the lambda parameter. Discovery does not detect a lambda inner
+        // chain, so QRY080 fires.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static IQueryBuilder<Order> GetFallback() => null!;
+
+    public static async Task Test(TestDbContext db)
+    {
+        await db.With<Order>(orders => GetFallback())
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry080 = diagnostics.FirstOrDefault(d => d.Id == "QRY080");
+        Assert.That(qry080, Is.Not.Null,
+            $"Expected QRY080 for non-Quarry method call in lambda With<T>() body. Got: {string.Join("; ", diagnostics.Select(d => d.Id + ": " + d.GetMessage()))}");
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Non-Quarry method call in lambda CTE should not surface as QRY900. Got: {qry900?.GetMessage()}");
+    }
+
+    [Test]
     public void Cte_FromCte_WithoutPrecedingWith_EmitsQRY081()
     {
         // Regression for review pass #2: FromCte<T>() with no matching With<T>() earlier
