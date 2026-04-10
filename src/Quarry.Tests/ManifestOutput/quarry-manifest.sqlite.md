@@ -1511,6 +1511,54 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Total", LAG("t1"."Total", 1, @p0) OVER (ORDER BY "t1"."OrderDate") AS "PrevTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", LAG("t1"."Total", @p0) OVER (ORDER BY "t1"."OrderDate") AS "PrevTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", LEAD("t1"."Total", @p0) OVER (ORDER BY "t1"."OrderDate") AS "NextTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", NTILE(@p0) OVER (ORDER BY "t1"."Total") AS "Grp" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t0"."UserName", "t1"."Total", ROW_NUMBER() OVER (PARTITION BY "t0"."UserName" ORDER BY "t1"."Total") AS "RowNum" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -4018,7 +4066,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 606 |
+| Total discovered | 610 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 182 |
-| Rendered | 424 |
+| Rendered | 428 |

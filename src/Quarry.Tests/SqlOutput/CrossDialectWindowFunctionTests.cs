@@ -382,6 +382,90 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(alice1.UserTotal, Is.EqualTo(325.50m).Within(0.01m));
     }
 
+    [Test]
+    public async Task WindowFunction_Joined_Lag_VariableOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var offset = 1;
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LAG(\"t1\".\"Total\", @p0) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"PrevTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LAG(\"t1\".\"Total\", $1) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"PrevTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, LAG(`t1`.`Total`, ?) OVER (ORDER BY `t1`.`OrderDate`) AS `PrevTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], LAG([t1].[Total], @p0) OVER (ORDER BY [t1].[OrderDate]) AS [PrevTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Joined_Lead_VariableOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var offset = 1;
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LEAD(\"t1\".\"Total\", @p0) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"NextTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LEAD(\"t1\".\"Total\", $1) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"NextTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, LEAD(`t1`.`Total`, ?) OVER (ORDER BY `t1`.`OrderDate`) AS `NextTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], LEAD([t1].[Total], @p0) OVER (ORDER BY [t1].[OrderDate]) AS [NextTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Joined_Lag_VariableDefault()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var defaultVal = 0m;
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LAG(\"t1\".\"Total\", 1, @p0) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"PrevTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", LAG(\"t1\".\"Total\", 1, $1) OVER (ORDER BY \"t1\".\"OrderDate\") AS \"PrevTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, LAG(`t1`.`Total`, 1, ?) OVER (ORDER BY `t1`.`OrderDate`) AS `PrevTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], LAG([t1].[Total], 1, @p0) OVER (ORDER BY [t1].[OrderDate]) AS [PrevTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Joined_Ntile_Variable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var buckets = 3;
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", NTILE(@p0) OVER (ORDER BY \"t1\".\"Total\") AS \"Grp\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", NTILE($1) OVER (ORDER BY \"t1\".\"Total\") AS \"Grp\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, NTILE(?) OVER (ORDER BY `t1`.`Total`) AS `Grp` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], NTILE(@p0) OVER (ORDER BY [t1].[Total]) AS [Grp] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
     #endregion
 
     #region LAG/LEAD Overloads
