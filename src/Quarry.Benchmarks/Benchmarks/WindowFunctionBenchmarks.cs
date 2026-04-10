@@ -252,9 +252,9 @@ public class WindowFunctionBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderLagDto>> Dapper_Lag()
+    public async Task<List<DapperOrderLagDto>> Dapper_Lag()
     {
-        return (await Connection.QueryAsync<OrderLagDto>(LagSql)).AsList();
+        return (await Connection.QueryAsync<DapperOrderLagDto>(LagSql)).AsList();
     }
 
     [Benchmark]

@@ -102,6 +102,18 @@ public class OrderLagDto
     public decimal? PrevTotal { get; set; }
 }
 
+/// <summary>
+/// Dapper-specific DTO for LAG benchmarks. SQLite returns LAG(Total) as Double
+/// (because Total is stored as REAL). Dapper cannot auto-cast Double to decimal?,
+/// so this DTO uses double? for the LAG result column.
+/// </summary>
+public class DapperOrderLagDto
+{
+    public int OrderId { get; set; }
+    public double Total { get; set; }
+    public double? PrevTotal { get; set; }
+}
+
 public class OrderIdTotalDto
 {
     public int OrderId { get; set; }
