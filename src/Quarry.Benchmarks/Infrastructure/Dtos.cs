@@ -75,3 +75,47 @@ public class UserOrderItemDto
     public decimal Total { get; set; }
     public string ProductName { get; set; } = "";
 }
+
+public class OrderRowNumberDto
+{
+    public int OrderId { get; set; }
+    public long RowNum { get; set; }
+}
+
+public class OrderRunningSumDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+    public decimal RunningSum { get; set; }
+}
+
+public class OrderRankDto
+{
+    public int OrderId { get; set; }
+    public long Rank { get; set; }
+}
+
+public class OrderLagDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+    public decimal? PrevTotal { get; set; }
+}
+
+public class OrderIdTotalDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+}
+
+public class UserIdNameDto
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = "";
+}
+
+public class CteJoinDto
+{
+    public string UserName { get; set; } = "";
+    public decimal Total { get; set; }
+}
