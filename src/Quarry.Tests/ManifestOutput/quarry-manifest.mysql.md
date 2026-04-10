@@ -1187,6 +1187,10 @@ SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET 1
 SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET ?
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1195,6 +1199,10 @@ SELECT `UserId`, `UserName` FROM `users` LIMIT 2 OFFSET ?
 SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET 1
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1202,6 +1210,11 @@ SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET 1
 ```sql
 SELECT `UserId`, `UserName` FROM `users` LIMIT ? OFFSET ?
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 

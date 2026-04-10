@@ -1794,6 +1794,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET 1
 SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET @p0
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1802,6 +1806,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET @p0
 SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET 1
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1809,6 +1817,11 @@ SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET 1
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET @p1
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2632,6 +2645,7 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -2661,6 +2675,7 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 

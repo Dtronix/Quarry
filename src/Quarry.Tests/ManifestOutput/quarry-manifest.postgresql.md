@@ -1208,6 +1208,11 @@ SELECT "UserId", "UserName" FROM "users" INTERSECT ALL SELECT "ProductId", "Prod
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1216,6 +1221,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1223,6 +1232,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET $1
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 

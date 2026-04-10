@@ -1195,6 +1195,10 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FE
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1203,6 +1207,10 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FE
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1210,6 +1218,11 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS 
 ```sql
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
