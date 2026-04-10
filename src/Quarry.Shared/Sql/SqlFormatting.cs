@@ -300,7 +300,16 @@ internal static partial class SqlFormatting
                 if (close > i + 1)
                 {
                     var identifier = sqlExpression.Substring(i + 1, close - i - 1);
-                    sb.Append(QuoteIdentifier(dialect, identifier));
+                    if (identifier.Length > 1 && identifier[0] == '@'
+                        && int.TryParse(identifier.Substring(1), out var paramIdx))
+                    {
+                        // {@N} → dialect-specific parameter placeholder
+                        sb.Append(FormatParameter(dialect, paramIdx));
+                    }
+                    else
+                    {
+                        sb.Append(QuoteIdentifier(dialect, identifier));
+                    }
                     i = close + 1;
                     continue;
                 }

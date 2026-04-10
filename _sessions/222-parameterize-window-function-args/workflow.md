@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #222
 pr:
 session: 2
 phases-total: 5
-phases-complete: 4
+phases-complete: 5
 ## Problem Statement
 Window function methods (`Sql.Ntile`, `Sql.Lag`, `Sql.Lead`) emit non-column arguments (offset, default value, bucket count) using raw `.ToString()` on the C# syntax expression. This embeds C# source text directly into SQL, producing invalid SQL for non-literal expressions (e.g., variables, C# suffixed literals like `0m`).
 

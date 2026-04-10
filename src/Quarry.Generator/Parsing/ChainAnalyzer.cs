@@ -1260,7 +1260,8 @@ internal static class ChainAnalyzer
                     site.Bound.Dialect, implicitJoinInfos, joinPlans, diagnostics);
 
                 // Merge projection parameters (window function variable args) into the
-                // global parameter list and remap local @__proj{N} placeholders to @p{globalIndex}.
+                // global parameter list and remap local @__proj{N} placeholders to {@globalIndex}
+                // (dialect-agnostic format resolved by QuoteSqlExpression at render time).
                 if (raw.ProjectionInfo.ProjectionParameters is { Count: > 0 } projParams
                     && projection != null)
                 {
@@ -1268,7 +1269,7 @@ internal static class ChainAnalyzer
                     // Build local→global index mapping for placeholder substitution
                     var localToGlobal = new Dictionary<string, string>(remapped.Count);
                     for (int pi = 0; pi < remapped.Count; pi++)
-                        localToGlobal[$"@__proj{pi}"] = $"@p{remapped[pi].GlobalIndex}";
+                        localToGlobal[$"@__proj{pi}"] = $"{{@{remapped[pi].GlobalIndex}}}";
 
                     parameters.AddRange(remapped);
 

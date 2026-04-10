@@ -3023,4 +3023,80 @@ public static class Queries
 
     #endregion
 
+    #region Parameterized Window Functions
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_NtileVariableParameter()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var buckets = 3;
+        await db.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for variable Ntile parameter");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("file sealed class Chain_"), "Should generate carrier class");
+        // Carrier should have a P-field for the captured Ntile buckets parameter
+        Assert.That(code, Does.Contain("NTILE(@p"), "SQL should use parameterized NTILE");
+    }
+
+    [Test]
+    public void CarrierGeneration_WindowFunction_NtileConstantInlined()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        const int buckets = 3;
+        await db.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.Total)))).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Generator should not produce QRY errors for const Ntile parameter");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // Constant should be inlined — SQL should have literal 3, not a parameter
+        Assert.That(code, Does.Contain("NTILE(3)"), "Constant Ntile bucket should be inlined in SQL");
+        Assert.That(code, Does.Not.Contain("NTILE(@p"), "Constant should not be parameterized");
+    }
+
+    #endregion
+
 }
