@@ -573,7 +573,7 @@ internal static class TerminalBodyEmitter
             var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__entity", convertBool);
             sb.AppendLine($"            {{");
             sb.AppendLine($"                var __p = __cmd.CreateParameter();");
-            sb.AppendLine($"                __p.ParameterName = \"@p\" + __paramIdx;");
+            sb.AppendLine($"                __p.ParameterName = Quarry.Internal.ParameterNames.AtP(__paramIdx);");
             sb.AppendLine($"                __p.Value = (object?){valueExpr} ?? DBNull.Value;");
             if (needsIntType)
                 sb.AppendLine($"                __p.DbType = System.Data.DbType.Int32;");
