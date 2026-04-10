@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -8,6 +9,7 @@ using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
 using Quarry.Shared.Migration;
+using Quarry.Generators.Translation;
 using Quarry.Generators.Utilities;
 
 namespace Quarry.Generators.Projection;
@@ -1742,7 +1744,8 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName)
+        string lambdaParameterName,
+        List<ParameterInfo>? projectionParams = null)
     {
         var arguments = invocation.ArgumentList.Arguments;
 
@@ -1750,7 +1753,7 @@ internal static class ProjectionAnalyzer
         // Without this early check, aggregate OVER calls like Sql.Sum(col, over => ...)
         // would match the regular Sum case below (arguments.Count > 0) and lose the OVER clause.
         if (HasOverClauseLambda(invocation))
-            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
+            return GetWindowFunctionInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, projectionParams);
 
         switch (methodName)
         {
@@ -1890,13 +1893,15 @@ internal static class ProjectionAnalyzer
     private static (string? SqlExpression, string? ClrType) GetJoinedAggregateInfo(
         string methodName,
         InvocationExpressionSyntax invocation,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         var arguments = invocation.ArgumentList.Arguments;
 
         // Check for window functions and aggregate OVER overloads FIRST.
         if (HasOverClauseLambda(invocation))
-            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup);
+            return GetJoinedWindowFunctionInfo(methodName, invocation, perParamLookup, semanticModel, projectionParams);
 
         switch (methodName)
         {
@@ -2024,7 +2029,8 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         SemanticModel semanticModel,
         Dictionary<string, ColumnInfo> columnLookup,
-        string lambdaParameterName)
+        string lambdaParameterName,
+        List<ParameterInfo>? projectionParams = null)
     {
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count == 0) return (null, null);
@@ -2046,9 +2052,9 @@ internal static class ProjectionAnalyzer
                 "Rank" => ($"RANK() OVER ({overClause})", "int"),
                 "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
                 "Ntile" when arguments.Count >= 2 =>
-                    BuildNtileSql(arguments[0].Expression, overClause),
-                "Lag" => BuildLagLeadSql("LAG", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
-                "Lead" => BuildLagLeadSql("LEAD", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
+                    BuildNtileSql(arguments[0].Expression, semanticModel, projectionParams, overClause),
+                "Lag" => BuildLagLeadSql("LAG", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, projectionParams, overClause),
+                "Lead" => BuildLagLeadSql("LEAD", arguments, columnLookup, lambdaParameterName, semanticModel, invocation, projectionParams, overClause),
                 "FirstValue" when arguments.Count >= 2 =>
                     BuildValueFunctionSql("FIRST_VALUE", arguments[0].Expression, columnLookup, lambdaParameterName, semanticModel, invocation, overClause),
                 "LastValue" when arguments.Count >= 2 =>
@@ -2085,7 +2091,9 @@ internal static class ProjectionAnalyzer
     private static (string? SqlExpression, string? ClrType) GetJoinedWindowFunctionInfo(
         string methodName,
         InvocationExpressionSyntax invocation,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         var arguments = invocation.ArgumentList.Arguments;
         if (arguments.Count == 0) return (null, null);
@@ -2106,9 +2114,9 @@ internal static class ProjectionAnalyzer
                 "Rank" => ($"RANK() OVER ({overClause})", "int"),
                 "DenseRank" => ($"DENSE_RANK() OVER ({overClause})", "int"),
                 "Ntile" when arguments.Count >= 2 =>
-                    BuildNtileSql(arguments[0].Expression, overClause),
-                "Lag" => BuildJoinedLagLeadSql("LAG", arguments, perParamLookup, overClause),
-                "Lead" => BuildJoinedLagLeadSql("LEAD", arguments, perParamLookup, overClause),
+                    BuildNtileSql(arguments[0].Expression, semanticModel, projectionParams, overClause),
+                "Lag" => BuildJoinedLagLeadSql("LAG", arguments, perParamLookup, semanticModel, projectionParams, overClause),
+                "Lead" => BuildJoinedLagLeadSql("LEAD", arguments, perParamLookup, semanticModel, projectionParams, overClause),
                 "FirstValue" when arguments.Count >= 2 =>
                     BuildJoinedValueFunctionSql("FIRST_VALUE", arguments[0].Expression, perParamLookup, overClause),
                 "LastValue" when arguments.Count >= 2 =>
@@ -2279,14 +2287,108 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
+    /// Formats a CLR constant value as a SQL literal, stripping C# type suffixes.
+    /// </summary>
+    private static string? FormatConstantForSql(object? value)
+    {
+        return value switch
+        {
+            null => "NULL",
+            int i => i.ToString(CultureInfo.InvariantCulture),
+            long l => l.ToString(CultureInfo.InvariantCulture),
+            float f => f.ToString(CultureInfo.InvariantCulture),
+            double d => d.ToString(CultureInfo.InvariantCulture),
+            decimal m => m.ToString(CultureInfo.InvariantCulture),
+            bool b => b ? "TRUE" : "FALSE",
+            string s => $"'{s.Replace("'", "''")}'",
+            _ => value.ToString()
+        };
+    }
+
+    /// <summary>
+    /// Resolves a scalar (non-column) argument expression to its SQL representation.
+    /// For compile-time constants: returns the value formatted as a SQL literal.
+    /// For runtime variables: creates a projection parameter with a placeholder.
+    /// Returns null if the expression cannot be resolved (triggers runtime fallback).
+    /// </summary>
+    private static string? ResolveScalarArgSql(
+        ExpressionSyntax expr,
+        SemanticModel? semanticModel,
+        List<ParameterInfo>? projectionParams)
+    {
+        // Try compile-time constant evaluation via semantic model
+        if (semanticModel != null)
+        {
+            var constantValue = semanticModel.GetConstantValue(expr);
+            if (constantValue.HasValue)
+                return FormatConstantForSql(constantValue.Value);
+        }
+
+        // Fallback for literal expressions when no semantic model is available
+        if (expr is LiteralExpressionSyntax literal)
+        {
+            if (literal.Kind() == SyntaxKind.NumericLiteralExpression)
+                return FormatConstantForSql(literal.Token.Value);
+            if (literal.Kind() == SyntaxKind.StringLiteralExpression)
+                return FormatConstantForSql(literal.Token.ValueText);
+            if (literal.Kind() == SyntaxKind.TrueLiteralExpression)
+                return "TRUE";
+            if (literal.Kind() == SyntaxKind.FalseLiteralExpression)
+                return "FALSE";
+            if (literal.Kind() == SyntaxKind.NullLiteralExpression)
+                return "NULL";
+        }
+
+        // Non-constant expression: parameterize if we have the infrastructure
+        if (projectionParams == null || semanticModel == null)
+            return null;
+
+        var typeInfo = semanticModel.GetTypeInfo(expr);
+        var clrType = typeInfo.Type != null ? GetSimpleTypeName(typeInfo.Type) : "object";
+        var localIndex = projectionParams.Count;
+        var placeholder = $"@__proj{localIndex}";
+
+        var paramInfo = new ParameterInfo(
+            index: localIndex,
+            name: placeholder,
+            clrType: clrType,
+            valueExpression: expr.ToString(),
+            isCaptured: true);
+
+        // Detect captured variable name for display class extraction
+        var symbolInfo = semanticModel.GetSymbolInfo(expr);
+        if (symbolInfo.Symbol is ILocalSymbol localSymbol)
+        {
+            paramInfo.CapturedFieldName = localSymbol.Name;
+            paramInfo.CapturedFieldType = GetSimpleTypeName(localSymbol.Type);
+        }
+        else if (symbolInfo.Symbol is IParameterSymbol paramSymbol)
+        {
+            paramInfo.CapturedFieldName = paramSymbol.Name;
+            paramInfo.CapturedFieldType = GetSimpleTypeName(paramSymbol.Type);
+        }
+        else
+        {
+            // Complex expression (member access, method call, etc.) — not directly extractable
+            // Fall back to runtime for now
+            return null;
+        }
+
+        projectionParams.Add(paramInfo);
+        return placeholder;
+    }
+
+    /// <summary>
     /// Builds SQL for NTILE(n) OVER (...).
     /// </summary>
     private static (string? SqlExpression, string? ClrType) BuildNtileSql(
         ExpressionSyntax bucketsExpr,
+        SemanticModel? semanticModel,
+        List<ParameterInfo>? projectionParams,
         string overClause)
     {
-        // The buckets argument should be a literal integer or constant
-        var bucketsText = bucketsExpr.ToString();
+        var bucketsText = ResolveScalarArgSql(bucketsExpr, semanticModel, projectionParams);
+        if (bucketsText == null) return (null, null);
         return ($"NTILE({bucketsText}) OVER ({overClause})", "int");
     }
 
@@ -2300,6 +2402,7 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         SemanticModel semanticModel,
         InvocationExpressionSyntax invocation,
+        List<ParameterInfo>? projectionParams,
         string overClause)
     {
         // arguments: [column, (offset?,) (default?,) overLambda]
@@ -2311,13 +2414,26 @@ internal static class ProjectionAnalyzer
             columnLookup, lambdaParameterName, "object");
 
         var nonLambdaArgCount = arguments.Count - 1; // Exclude the OVER lambda
-        return nonLambdaArgCount switch
+        if (nonLambdaArgCount == 1)
+            return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+
+        if (nonLambdaArgCount == 2)
         {
-            1 => ($"{functionName}({columnSql}) OVER ({overClause})", clrType),
-            2 => ($"{functionName}({columnSql}, {arguments[1].Expression}) OVER ({overClause})", clrType),
-            3 => ($"{functionName}({columnSql}, {arguments[1].Expression}, {arguments[2].Expression}) OVER ({overClause})", clrType),
-            _ => (null, null)
-        };
+            var offsetSql = ResolveScalarArgSql(arguments[1].Expression, semanticModel, projectionParams);
+            if (offsetSql == null) return (null, null);
+            return ($"{functionName}({columnSql}, {offsetSql}) OVER ({overClause})", clrType);
+        }
+
+        if (nonLambdaArgCount == 3)
+        {
+            var offsetSql = ResolveScalarArgSql(arguments[1].Expression, semanticModel, projectionParams);
+            if (offsetSql == null) return (null, null);
+            var defaultSql = ResolveScalarArgSql(arguments[2].Expression, semanticModel, projectionParams);
+            if (defaultSql == null) return (null, null);
+            return ($"{functionName}({columnSql}, {offsetSql}, {defaultSql}) OVER ({overClause})", clrType);
+        }
+
+        return (null, null);
     }
 
     /// <summary>
@@ -2327,6 +2443,8 @@ internal static class ProjectionAnalyzer
         string functionName,
         SeparatedSyntaxList<ArgumentSyntax> arguments,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
+        SemanticModel? semanticModel,
+        List<ParameterInfo>? projectionParams,
         string overClause)
     {
         var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
@@ -2335,13 +2453,26 @@ internal static class ProjectionAnalyzer
         var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
 
         var nonLambdaArgCount = arguments.Count - 1;
-        return nonLambdaArgCount switch
+        if (nonLambdaArgCount == 1)
+            return ($"{functionName}({columnSql}) OVER ({overClause})", clrType);
+
+        if (nonLambdaArgCount == 2)
         {
-            1 => ($"{functionName}({columnSql}) OVER ({overClause})", clrType),
-            2 => ($"{functionName}({columnSql}, {arguments[1].Expression}) OVER ({overClause})", clrType),
-            3 => ($"{functionName}({columnSql}, {arguments[1].Expression}, {arguments[2].Expression}) OVER ({overClause})", clrType),
-            _ => (null, null)
-        };
+            var offsetSql = ResolveScalarArgSql(arguments[1].Expression, semanticModel, projectionParams);
+            if (offsetSql == null) return (null, null);
+            return ($"{functionName}({columnSql}, {offsetSql}) OVER ({overClause})", clrType);
+        }
+
+        if (nonLambdaArgCount == 3)
+        {
+            var offsetSql = ResolveScalarArgSql(arguments[1].Expression, semanticModel, projectionParams);
+            if (offsetSql == null) return (null, null);
+            var defaultSql = ResolveScalarArgSql(arguments[2].Expression, semanticModel, projectionParams);
+            if (defaultSql == null) return (null, null);
+            return ($"{functionName}({columnSql}, {offsetSql}, {defaultSql}) OVER ({overClause})", clrType);
+        }
+
+        return (null, null);
     }
 
     /// <summary>

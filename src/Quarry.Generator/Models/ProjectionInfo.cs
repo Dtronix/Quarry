@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Models;
 
@@ -17,7 +18,8 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         string? nonOptimalReason = null,
         ProjectionFailureReason failureReason = ProjectionFailureReason.None,
         string? customEntityReaderClass = null,
-        string? joinedEntityAlias = null)
+        string? joinedEntityAlias = null,
+        IReadOnlyList<Translation.ParameterInfo>? projectionParameters = null)
     {
         Kind = kind;
         ResultTypeName = resultTypeName;
@@ -27,6 +29,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         FailureReason = failureReason;
         CustomEntityReaderClass = customEntityReaderClass;
         JoinedEntityAlias = joinedEntityAlias;
+        ProjectionParameters = projectionParameters;
     }
 
     /// <summary>
@@ -76,6 +79,13 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
     public string? JoinedEntityAlias { get; }
 
     /// <summary>
+    /// Gets parameters captured from non-constant scalar arguments in window functions
+    /// (e.g., variable references in Sql.Ntile(n, ...) or Sql.Lag(col, offset, ...)).
+    /// Null when no projection parameters exist.
+    /// </summary>
+    public IReadOnlyList<Translation.ParameterInfo>? ProjectionParameters { get; }
+
+    /// <summary>
     /// Creates a projection info for a failed analysis.
     /// </summary>
     public static ProjectionInfo CreateFailed(
@@ -103,7 +113,8 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
             && FailureReason == other.FailureReason
             && CustomEntityReaderClass == other.CustomEntityReaderClass
             && JoinedEntityAlias == other.JoinedEntityAlias
-            && EqualityHelpers.SequenceEqual(Columns, other.Columns);
+            && EqualityHelpers.SequenceEqual(Columns, other.Columns)
+            && EqualityHelpers.SequenceEqual(ProjectionParameters, other.ProjectionParameters);
     }
 
     public override bool Equals(object? obj) => Equals(obj as ProjectionInfo);

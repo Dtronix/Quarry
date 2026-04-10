@@ -400,10 +400,10 @@ internal class CrossDialectWindowFunctionTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", LAG(\"Total\", 1, 0m) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
-            pg:     "SELECT \"OrderId\", LAG(\"Total\", 1, 0m) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
-            mysql:  "SELECT `OrderId`, LAG(`Total`, 1, 0m) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
-            ss:     "SELECT [OrderId], LAG([Total], 1, 0m) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
+            sqlite: "SELECT \"OrderId\", LAG(\"Total\", 1, 0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"Total\", 1, 0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`Total`, 1, 0) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([Total], 1, 0) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
     }
 
     [Test]
@@ -524,14 +524,13 @@ internal class CrossDialectWindowFunctionTests
         var my = My.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
         var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
 
-        // Note: "0m" is the raw C# literal emitted by ToString() — tracked as #222
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
-            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
-            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2, 0m) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
-            ss:     "SELECT [OrderId], LEAD([Total], 2, 0m) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
+            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2, 0) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2, 0) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2, 0) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LEAD([Total], 2, 0) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
     }
 
     #endregion

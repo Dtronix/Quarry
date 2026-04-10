@@ -720,7 +720,7 @@ SELECT "OrderId", LAG("Total") OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "OrderId", LAG("Total", 1, 0m) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
+SELECT "OrderId", LAG("Total", 1, 0) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
 ```
 
 ---
@@ -760,7 +760,7 @@ SELECT "OrderId", LEAD("Total", 2) OVER (ORDER BY "OrderDate") AS "NextTotal" FR
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "OrderId", LEAD("Total", 2, 0m) OVER (ORDER BY "OrderDate") AS "NextTotal" FROM "orders"
+SELECT "OrderId", LEAD("Total", 2, 0) OVER (ORDER BY "OrderDate") AS "NextTotal" FROM "orders"
 ```
 
 ---
