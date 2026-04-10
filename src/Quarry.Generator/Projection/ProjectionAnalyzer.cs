@@ -1880,11 +1880,6 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Resolves the CLR type for an aggregate function argument.
-    /// Tries the argument type first, then the invocation return type, then falls back to the default.
-    /// This handles generated entity types where the semantic model may return error types.
-    /// </summary>
-    /// <summary>
     /// Checks whether the target type (after implicit conversions) of an expression is nullable.
     /// Used to determine if aggregate/window function results need IsDBNull guards in reader code.
     /// For example, Sql.Lag(o.Total, 1, ...) returns decimal, but when assigned to a decimal?
@@ -1904,6 +1899,11 @@ internal static class ProjectionAnalyzer
                 namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
     }
 
+    /// <summary>
+    /// Resolves the CLR type for an aggregate function argument.
+    /// Tries the argument type first, then the invocation return type, then falls back to the default.
+    /// This handles generated entity types where the semantic model may return error types.
+    /// </summary>
     private static string ResolveAggregateClrType(
         ExpressionSyntax argumentExpression,
         InvocationExpressionSyntax invocation,
