@@ -2354,6 +2354,7 @@ internal static class ProjectionAnalyzer
             decimal m => m.ToString(CultureInfo.InvariantCulture),
             bool b => b ? "TRUE" : "FALSE",
             string s => $"'{s.Replace("'", "''")}'",
+            IFormattable fmt => fmt.ToString(null, CultureInfo.InvariantCulture),
             _ => value.ToString()
         };
     }
