@@ -43,16 +43,38 @@ jobs:
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
 
-      - name: Store benchmark results
+      - name: Clone benchmark store
+        run: |
+          git clone --branch gh-pages \
+            "https://x-access-token:${TOKEN}@github.com/Dtronix/Quarry-benchmarks.git" \
+            benchmark-store 2>/dev/null || {
+            mkdir benchmark-store
+            cd benchmark-store
+            git init
+            git checkout -b gh-pages
+            git remote add origin "https://x-access-token:${TOKEN}@github.com/Dtronix/Quarry-benchmarks.git"
+          }
+          mkdir -p benchmark-store/dev/bench
+        env:
+          TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
+
+      - name: Process results
         uses: benchmark-action/github-action-benchmark@v1
         with:
           name: Quarry Benchmarks
           tool: 'benchmarkdotnet'
           output-file-path: BenchmarkDotNet.Artifacts/combined-results.json
-          gh-repository: Dtronix/Quarry-benchmarks
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: dev/bench
-          github-token: ${{ secrets.BENCHMARK_TOKEN }}
-          auto-push: true
+          external-data-json-path: benchmark-store/dev/bench/data.js
           alert-threshold: '120%'
-          comment-on-alert: false
+
+      - name: Push results
+        run: |
+          cd benchmark-store
+          git config user.name "github-action-benchmark"
+          git config user.email "github@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "No changes to push" && exit 0
+          git commit -m "Benchmark results for ${COMMIT_SHA::8}"
+          git push origin gh-pages
+        env:
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
