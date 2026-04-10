@@ -299,6 +299,12 @@ internal static class CarrierAnalyzer
                 clauseParams = cs.Clause.Parameters;
                 delegateParamName = "func";
             }
+            else if (cs.Kind == InterceptorKind.Select
+                && cs.ProjectionInfo?.ProjectionParameters is { Count: > 0 })
+            {
+                clauseParams = cs.ProjectionInfo.ProjectionParameters;
+                delegateParamName = "func";
+            }
             else
             {
                 continue;

@@ -344,9 +344,11 @@ internal static class JoinBodyEmitter
         if (prebuiltChain != null && projection != null && projection.IsOptimalPath && projection.Columns.Count > 0 && projection.ResultTypeName != "?")
         {
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
+            var hasProjectionCaptures = site.ProjectionInfo?.ProjectionParameters?.Any(p => p.IsCaptured) == true;
+            var delegateParamName = hasProjectionCaptures ? "func" : "_";
             sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisBuilderName}<{typeArgs}> builder,");
-            sb.AppendLine($"        Func<{typeArgs}, {resultType}> _)");
+            sb.AppendLine($"        Func<{typeArgs}, {resultType}> {delegateParamName})");
             sb.AppendLine($"    {{");
 
             if (carrier != null)
@@ -361,7 +363,7 @@ internal static class JoinBodyEmitter
                 }
                 else
                 {
-                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site);
                 }
                 sb.AppendLine($"    }}");
             }

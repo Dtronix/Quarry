@@ -200,9 +200,11 @@ internal static class ClauseBodyEmitter
             var resultType = InterceptorCodeGenerator.GetShortTypeName(projection.ResultTypeName);
             var thisType = site.BuilderTypeName;
             var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
+            var hasProjectionCaptures = site.ProjectionInfo?.ProjectionParameters?.Any(p => p.IsCaptured) == true;
+            var delegateParamName = hasProjectionCaptures ? "func" : "_";
             sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
             sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-            sb.AppendLine($"        Func<{entityType}, {resultType}> _)");
+            sb.AppendLine($"        Func<{entityType}, {resultType}> {delegateParamName})");
             sb.AppendLine($"    {{");
 
             if (carrier != null)
@@ -216,7 +218,7 @@ internal static class ClauseBodyEmitter
                 }
                 else
                 {
-                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site);
                 }
                 sb.AppendLine($"    }}");
                 return;
