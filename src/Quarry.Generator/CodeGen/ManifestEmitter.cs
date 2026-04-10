@@ -306,6 +306,17 @@ internal static class ManifestEmitter
             }
         }
 
+        // Add pagination parameters (LIMIT/OFFSET) — these are tracked in
+        // PaginationPlan rather than in ChainParameters.
+        var pagination = plan.Plan.Pagination;
+        if (pagination != null)
+        {
+            if (pagination.LimitParamIndex is int limitIdx)
+                rows.Add(($"@p{limitIdx}", "int", false, null));
+            if (pagination.OffsetParamIndex is int offsetIdx)
+                rows.Add(($"@p{offsetIdx}", "int", false, null));
+        }
+
         if (rows.Count == 0)
             return;
 
