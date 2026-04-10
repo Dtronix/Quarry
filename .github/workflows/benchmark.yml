@@ -58,6 +58,11 @@ jobs:
         env:
           TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
 
+      - name: Patch event payload for benchmark action
+        run: |
+          jq '.head_commit = .workflow_run.head_commit' "$GITHUB_EVENT_PATH" > /tmp/patched-event.json
+          mv /tmp/patched-event.json "$GITHUB_EVENT_PATH"
+
       - name: Process results
         uses: benchmark-action/github-action-benchmark@v1
         with:
