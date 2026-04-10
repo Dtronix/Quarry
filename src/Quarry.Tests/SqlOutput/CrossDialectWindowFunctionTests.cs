@@ -509,6 +509,39 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(diag.Sql, Does.Contain("LAG(\"Total\", 1) OVER (ORDER BY \"Total\")"));
     }
 
+    [Test]
+    public async Task WindowFunction_Lag_NullableDto_Execution()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // LAG with a DTO that has decimal? PrevTotal — the generated reader must emit
+        // an IsDBNull guard so the first row (where LAG returns NULL) reads as null.
+        var lt = Lite.Orders().Where(o => true).Select(o => new OrderLagDto
+        {
+            OrderId = o.OrderId,
+            Total = o.Total,
+            PrevTotal = Sql.Lag(o.Total, 1, over => over.OrderBy(o.Total))
+        }).Prepare();
+
+        var diag = lt.ToDiagnostics();
+        Assert.That(diag.Sql, Does.Contain("LAG(\"Total\", 1) OVER (ORDER BY \"Total\") AS \"PrevTotal\""));
+
+        // Ordered by Total: 75.50 (order 2), 150 (order 3), 250 (order 1)
+        // LAG(Total, 1): NULL, 75.50, 150.00
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+
+        var byTotal = results.OrderBy(r => r.Total).ToList();
+        // First row: LAG returns NULL → PrevTotal should be null
+        Assert.That(byTotal[0].PrevTotal, Is.Null, "First row LAG should be null");
+        Assert.That(byTotal[0].Total, Is.EqualTo(75.50m));
+        // Second row: LAG returns previous Total (75.50)
+        Assert.That(byTotal[1].PrevTotal, Is.EqualTo(75.50m));
+        // Third row: LAG returns previous Total (150.00)
+        Assert.That(byTotal[2].PrevTotal, Is.EqualTo(150.00m));
+    }
+
     #endregion
 
     #region Aggregate OVER — Additional Coverage
@@ -642,9 +675,10 @@ internal class CrossDialectWindowFunctionTests
             mysql:  "SELECT `OrderId`, LAG(`Notes`) OVER (ORDER BY `OrderDate`) AS `PrevNotes` FROM `orders`",
             ss:     "SELECT [OrderId], LAG([Notes]) OVER (ORDER BY [OrderDate]) AS [PrevNotes] FROM [orders]");
 
-        // Note: Execution skipped — LAG returns NULL for the first row and the carrier
-        // reader does not check IsDBNull before reading. This is a pre-existing framework
-        // limitation, not specific to window functions. See #222 for tracking.
+        // Note: Execution skipped — this uses a tuple with non-nullable string element.
+        // LAG returns NULL for the first row. For DTO projections with nullable properties
+        // (e.g., string? or decimal?), the generator now emits IsDBNull guards correctly.
+        // See WindowFunction_Lag_NullableDto_Execution for a DTO-based execution test.
     }
 
     [Test]

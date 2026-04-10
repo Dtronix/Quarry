@@ -32,6 +32,17 @@ public class OrderSummaryDto
 }
 
 /// <summary>
+/// DTO for projecting LAG window function results with nullable value type.
+/// PrevTotal is decimal? because LAG returns NULL for the first row.
+/// </summary>
+public class OrderLagDto
+{
+    public int OrderId { get; set; }
+    public decimal Total { get; set; }
+    public decimal? PrevTotal { get; set; }
+}
+
+/// <summary>
 /// DTO for projecting data from User + Order joins.
 /// </summary>
 public class UserOrderDto

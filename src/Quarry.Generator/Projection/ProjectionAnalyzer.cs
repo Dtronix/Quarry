@@ -611,7 +611,7 @@ internal static class ProjectionAnalyzer
                     columnName: "",
                     clrType: aggregateClrType,
                     fullClrType: aggregateClrType,
-                    isNullable: false,
+                    isNullable: IsConvertedTypeNullable(semanticModel, invocation),
                     ordinal: 0,
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
@@ -749,7 +749,7 @@ internal static class ProjectionAnalyzer
                     columnName: "",
                     clrType: aggregateClrType,
                     fullClrType: aggregateClrType,
-                    isNullable: false,
+                    isNullable: IsConvertedTypeNullable(semanticModel, invocation),
                     ordinal: ordinal,
                     alias: propertyName,
                     sqlExpression: sqlExpr,
@@ -1712,7 +1712,7 @@ internal static class ProjectionAnalyzer
                     columnName: "",
                     clrType: aggregateClrType,
                     fullClrType: aggregateClrType,
-                    isNullable: false,
+                    isNullable: IsConvertedTypeNullable(semanticModel, expression),
                     ordinal: ordinal,
                     alias: propertyName,
                     sqlExpression: sqlExpr,
@@ -1877,6 +1877,26 @@ internal static class ProjectionAnalyzer
         }
 
         return (null, null);
+    }
+
+    /// <summary>
+    /// Checks whether the target type (after implicit conversions) of an expression is nullable.
+    /// Used to determine if aggregate/window function results need IsDBNull guards in reader code.
+    /// For example, Sql.Lag(o.Total, 1, ...) returns decimal, but when assigned to a decimal?
+    /// property, the ConvertedType is Nullable&lt;decimal&gt;, so the reader must emit a null check.
+    /// </summary>
+    private static bool IsConvertedTypeNullable(SemanticModel? semanticModel, ExpressionSyntax expression)
+    {
+        if (semanticModel == null)
+            return false;
+
+        var convertedType = semanticModel.GetTypeInfo(expression).ConvertedType;
+        if (convertedType == null)
+            return false;
+
+        return convertedType.NullableAnnotation == NullableAnnotation.Annotated ||
+               (convertedType is INamedTypeSymbol namedType &&
+                namedType.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
     }
 
     /// <summary>
