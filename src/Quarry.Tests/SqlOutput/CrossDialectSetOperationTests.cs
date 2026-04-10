@@ -920,5 +920,41 @@ internal class CrossDialectSetOperationTests
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders x 2 sides (UNION ALL keeps dupes)
     }
 
+    [Test]
+    public async Task UnionAll_WithVariableWindowFunctionArg_ParamOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minId = 0;
+        var buckets = 2;
+        // Main query has a parameterized Where (@p0), so the operand's Ntile variable
+        // must land at @p1/$2, verifying global index offset across the set boundary.
+        var lt = Lite.Orders().Where(o => o.OrderId > minId).Select(o => (o.OrderId, Grp: Sql.Ntile(2, over => over.OrderBy(o.OrderDate))))
+            .UnionAll(Lite.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))))
+            .Prepare();
+        var pg = Pg.Orders().Where(o => o.OrderId > minId).Select(o => (o.OrderId, Grp: Sql.Ntile(2, over => over.OrderBy(o.OrderDate))))
+            .UnionAll(Pg.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))))
+            .Prepare();
+        var my = My.Orders().Where(o => o.OrderId > minId).Select(o => (o.OrderId, Grp: Sql.Ntile(2, over => over.OrderBy(o.OrderDate))))
+            .UnionAll(My.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))))
+            .Prepare();
+        var ss = Ss.Orders().Where(o => o.OrderId > minId).Select(o => (o.OrderId, Grp: Sql.Ntile(2, over => over.OrderBy(o.OrderDate))))
+            .UnionAll(Ss.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))))
+            .Prepare();
+
+        // @p0/$1 = Where param (minId), @p1/$2 = operand Ntile param (buckets)
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" WHERE \"OrderId\" > @p0 UNION ALL SELECT \"OrderId\", NTILE(@p1) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" WHERE \"OrderId\" > $1 UNION ALL SELECT \"OrderId\", NTILE($2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WHERE `OrderId` > ? UNION ALL SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
+            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], NTILE(@p1) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(6)); // 3 orders (all > 0) + 3 orders
+    }
+
     #endregion
 }

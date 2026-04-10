@@ -281,7 +281,7 @@ internal static partial class SqlFormatting
     /// analyzer during discovery; quoting is deferred to render time so that the
     /// expression is dialect-agnostic until final SQL assembly.
     /// </summary>
-    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect)
+    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect, int paramOffset = 0)
     {
         if (sqlExpression == null)
             return null;
@@ -304,7 +304,7 @@ internal static partial class SqlFormatting
                         && int.TryParse(identifier.Substring(1), out var paramIdx))
                     {
                         // {@N} → dialect-specific parameter placeholder
-                        sb.Append(FormatParameter(dialect, paramIdx));
+                        sb.Append(FormatParameter(dialect, paramIdx + paramOffset));
                     }
                     else
                     {

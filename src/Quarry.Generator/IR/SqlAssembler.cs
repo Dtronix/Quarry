@@ -209,7 +209,7 @@ internal static class SqlAssembler
 
         if (plan.Projection.Columns.Count > 0)
         {
-            AppendSelectColumns(sb, dialect, plan.Projection.Columns);
+            AppendSelectColumns(sb, dialect, plan.Projection.Columns, paramIndex);
         }
         else
         {
@@ -417,6 +417,15 @@ internal static class SqlAssembler
         // PAGINATION (applies to combined result when set operations present)
         AppendPagination(sb, plan, dialect, activeOrders.Count > 0, ref paramIndex);
 
+        // Ensure returned ParameterCount includes projection params.  Projection
+        // column {@N} placeholders are resolved by AppendSelectColumns (rendered in
+        // SELECT) but paramIndex only tracks clause-level params (WHERE, ORDER BY,
+        // etc.).  When this plan is a set-operation operand, the caller uses the
+        // returned count as the base offset for the next operand — omitting
+        // projection params would cause index collisions.
+        var totalPlanParams = paramBaseOffset + plan.Parameters.Count;
+        paramIndex = Math.Max(paramIndex, totalPlanParams);
+
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
@@ -614,7 +623,7 @@ internal static class SqlAssembler
         sb.Append(SqlFormatting.FormatTableName(dialect, table.TableName, table.SchemaName));
     }
 
-    private static void AppendSelectColumns(StringBuilder sb, SqlDialect dialect, IReadOnlyList<ProjectedColumn> columns)
+    private static void AppendSelectColumns(StringBuilder sb, SqlDialect dialect, IReadOnlyList<ProjectedColumn> columns, int paramOffset = 0)
     {
         for (int i = 0; i < columns.Count; i++)
         {
@@ -623,7 +632,7 @@ internal static class SqlAssembler
             if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
             {
                 // Aggregate function: render the SQL expression with an alias
-                sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression, dialect));
+                sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression, dialect, paramOffset));
                 if (!string.IsNullOrEmpty(col.Alias))
                 {
                     sb.Append(" AS ");

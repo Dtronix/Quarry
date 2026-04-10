@@ -4,7 +4,7 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #232
 pr:
@@ -17,6 +17,7 @@ Window function variable parameters (e.g., `Sql.Ntile(n, ...)` where `n` is a ca
 Baseline: 3101 tests, 0 failures, 0 pre-existing issues.
 ## Decisions
 - 2026-04-09: Copy projection parameter merging block from AnalyzeChainGroup (lines 1262-1295) into AnalyzeOperandChain after BuildProjection call at line 2549. Add cross-dialect set-operation test with variable window function arg.
+- 2026-04-09: Fix assembler param offset for projection columns in set operation operands. QuoteSqlExpression now accepts paramOffset; AppendSelectColumns passes paramIndex; RenderSelectSql fixup ensures returned ParameterCount includes projection params.
 ## Suspend State
 ## Session Log
 | # | Phase Start | Phase End | Summary |
