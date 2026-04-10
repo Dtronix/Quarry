@@ -728,8 +728,32 @@ SELECT "OrderId", LAG("Total", 1, 0) OVER (ORDER BY "OrderDate") AS "PrevTotal" 
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", LAG("Total", 1, @p0) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", LAG("Total", 2) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
 ```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", LAG("Total", @p0) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -768,6 +792,18 @@ SELECT "OrderId", LEAD("Total", 2, 0) OVER (ORDER BY "OrderDate") AS "NextTotal"
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", LEAD("Total", @p0) OVER (ORDER BY "OrderDate") AS "NextTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", MAX("Total") OVER (PARTITION BY "Status") AS "MaxTotal" FROM "orders"
 ```
 
@@ -786,6 +822,18 @@ SELECT "OrderId", MIN("Total") OVER (PARTITION BY "Status") AS "MinTotal" FROM "
 ```sql
 SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
 ```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(@p0) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -3918,7 +3966,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 597 |
+| Total discovered | 602 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 180 |
-| Rendered | 417 |
+| Consolidated (deduped) | 181 |
+| Rendered | 421 |

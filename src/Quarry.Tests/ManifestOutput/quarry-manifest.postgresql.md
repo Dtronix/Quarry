@@ -501,6 +501,30 @@ SELECT "OrderId", LAG("Total") OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", LAG("Total", $1) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", LAG("Total", 1, $1) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", LAG("Total", 1, 0) OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
 ```
 
@@ -533,6 +557,18 @@ SELECT "OrderId", LEAD("Total") OVER (ORDER BY "OrderDate") AS "NextTotal" FROM 
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", LEAD("Total", $1) OVER (ORDER BY "OrderDate") AS "NextTotal" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", LEAD("Total", 2) OVER (ORDER BY "OrderDate") AS "NextTotal" FROM "orders"
 ```
 
@@ -559,6 +595,18 @@ SELECT "OrderId", MAX("Total") OVER (PARTITION BY "Status") AS "MaxTotal" FROM "
 ```sql
 SELECT "OrderId", MIN("Total") OVER (PARTITION BY "Status") AS "MinTotal" FROM "orders"
 ```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -2566,7 +2614,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 348 |
+| Total discovered | 353 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 68 |
-| Rendered | 280 |
+| Consolidated (deduped) | 69 |
+| Rendered | 284 |

@@ -452,8 +452,32 @@ SELECT `OrderId`, LAG(`Total`, 1, 0) OVER (ORDER BY `OrderDate`) AS `PrevTotal` 
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `OrderId`, LAG(`Total`, 1, ?) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `OrderId`, LAG(`Total`, 2) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`
 ```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `OrderId`, LAG(`Total`, ?) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -492,6 +516,18 @@ SELECT `OrderId`, LEAD(`Total`, 2, 0) OVER (ORDER BY `OrderDate`) AS `NextTotal`
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `OrderId`, LEAD(`Total`, ?) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `OrderId`, MAX(`Total`) OVER (PARTITION BY `Status`) AS `MaxTotal` FROM `orders`
 ```
 
@@ -510,6 +546,18 @@ SELECT `OrderId`, MIN(`Total`) OVER (PARTITION BY `Status`) AS `MinTotal` FROM `
 ```sql
 SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`
 ```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -2537,7 +2585,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 343 |
+| Total discovered | 348 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 66 |
-| Rendered | 277 |
+| Consolidated (deduped) | 67 |
+| Rendered | 281 |
