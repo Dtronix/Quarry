@@ -138,10 +138,35 @@ internal static class SqlExprBinder
 
             case UnaryOpExpr unary:
             {
-                var operand = BindExpr(unary.Operand, ctx, false);
-                if (ReferenceEquals(operand, unary.Operand))
+                if (unary.Operator == SqlUnaryOperator.Not)
+                {
+                    // Bind operand with boolean context so bare boolean columns
+                    // produce "col = 1"/"col = TRUE" instead of bare "col".
+                    var operand = BindExpr(unary.Operand, ctx, true);
+                    // Boolean column → negate directly: "col = 0"/"col = FALSE"
+                    // (avoids invalid SQL Server syntax NOT ([bit_col]))
+                    string? boolText = operand switch
+                    {
+                        SqlRawExpr raw => raw.SqlText,
+                        ResolvedColumnExpr res => res.QuotedColumnName,
+                        _ => null
+                    };
+                    if (boolText != null)
+                    {
+                        var negated = NegateBoolean(boolText, ctx.Dialect);
+                        if (negated != null)
+                            return new SqlRawExpr(negated);
+                    }
+                    // Non-boolean operand: standard NOT(...) wrapping
+                    if (ReferenceEquals(operand, unary.Operand))
+                        return unary;
+                    return new UnaryOpExpr(unary.Operator, operand);
+                }
+
+                var op = BindExpr(unary.Operand, ctx, false);
+                if (ReferenceEquals(op, unary.Operand))
                     return unary;
-                return new UnaryOpExpr(unary.Operator, operand);
+                return new UnaryOpExpr(unary.Operator, op);
             }
 
             case FunctionCallExpr func:
@@ -327,6 +352,19 @@ internal static class SqlExprBinder
             SqlDialect.PostgreSQL => value ? "TRUE" : "FALSE",
             _ => value ? "1" : "0"
         };
+    }
+
+    private static string? NegateBoolean(string boolExpr, SqlDialect dialect)
+    {
+        var trueLit = FormatBoolean(true, dialect);
+        var falseLit = FormatBoolean(false, dialect);
+        var trueSuffix = $" = {trueLit}";
+        var falseSuffix = $" = {falseLit}";
+        if (boolExpr.EndsWith(trueSuffix))
+            return boolExpr.Substring(0, boolExpr.Length - trueSuffix.Length) + $" = {falseLit}";
+        if (boolExpr.EndsWith(falseSuffix))
+            return boolExpr.Substring(0, boolExpr.Length - falseSuffix.Length) + $" = {trueLit}";
+        return null;
     }
 
     private static SqlExpr BindSubquery(SubqueryExpr sub, BindContext ctx)
