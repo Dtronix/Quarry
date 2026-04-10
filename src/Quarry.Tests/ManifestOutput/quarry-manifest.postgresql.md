@@ -381,6 +381,18 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -732,6 +744,31 @@ SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."Us
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" UNION ALL SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" WHERE "OrderId" > $1 UNION ALL SELECT "OrderId", NTILE($2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2627,7 +2664,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 353 |
+| Total discovered | 357 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 69 |
-| Rendered | 284 |
+| Consolidated (deduped) | 70 |
+| Rendered | 287 |

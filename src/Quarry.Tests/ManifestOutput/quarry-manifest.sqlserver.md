@@ -389,6 +389,18 @@ SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] 
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -727,6 +739,31 @@ SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[Us
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] UNION ALL SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], NTILE(@p1) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2598,7 +2635,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 348 |
+| Total discovered | 352 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 67 |
-| Rendered | 281 |
+| Consolidated (deduped) | 68 |
+| Rendered | 284 |
