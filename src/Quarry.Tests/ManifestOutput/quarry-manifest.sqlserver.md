@@ -389,6 +389,18 @@ SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] 
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -727,6 +739,31 @@ SELECT [t0].[Total] FROM [orders] AS [t0] INNER JOIN [users] AS [j0] ON [t0].[Us
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] UNION ALL SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], NTILE(@p1) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -1243,6 +1280,10 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FE
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FETCH NEXT @p0 ROWS ONLY
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1251,6 +1292,10 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET 1 ROWS FE
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS FETCH NEXT 2 ROWS ONLY
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1258,6 +1303,11 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p0 ROWS 
 ```sql
 SELECT [UserId], [UserName] FROM [users] ORDER BY (SELECT NULL) OFFSET @p1 ROWS FETCH NEXT @p0 ROWS ONLY
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2633,7 +2683,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 352 |
+| Total discovered | 356 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 67 |
-| Rendered | 285 |
+| Consolidated (deduped) | 68 |
+| Rendered | 288 |

@@ -381,6 +381,18 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -732,6 +744,31 @@ SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."Us
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" UNION ALL SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" WHERE "OrderId" > $1 UNION ALL SELECT "OrderId", NTILE($2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -1256,6 +1293,11 @@ SELECT "UserId", "UserName" FROM "users" INTERSECT ALL SELECT "ProductId", "Prod
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1264,6 +1306,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1271,6 +1317,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET $1
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -2662,7 +2712,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 357 |
+| Total discovered | 361 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 69 |
-| Rendered | 288 |
+| Consolidated (deduped) | 70 |
+| Rendered | 291 |

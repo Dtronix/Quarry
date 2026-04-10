@@ -572,6 +572,18 @@ SELECT "OrderId" FROM "orders" WHERE "OrderId" IN ({__COL_P0__}) AND "Status" IN
 
 ---
 
+### Orders().Where(...).Select(...).Orders()
+
+```sql
+SELECT "OrderId", NTILE(@p0) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -939,6 +951,31 @@ SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."Us
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" UNION ALL SELECT "OrderId", NTILE(@p0) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" WHERE "OrderId" > @p0 UNION ALL SELECT "OrderId", NTILE(@p1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -1842,6 +1879,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET 1
 SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET @p0
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1850,6 +1891,10 @@ SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET @p0
 SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET 1
 ```
 
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1857,6 +1902,11 @@ SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET 1
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT @p0 OFFSET @p1
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int` |
 
 ---
 
@@ -2680,6 +2730,7 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -2709,6 +2760,7 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -4014,7 +4066,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 606 |
+| Total discovered | 610 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 181 |
-| Rendered | 425 |
+| Consolidated (deduped) | 182 |
+| Rendered | 428 |
