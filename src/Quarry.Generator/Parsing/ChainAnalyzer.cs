@@ -759,12 +759,7 @@ internal static class ChainAnalyzer
                             foreach (var col in lambdaInnerPlan.Projection.Columns)
                             {
                                 if (dtoPropertyNames.Contains(col.PropertyName))
-                                    filteredCols.Add(new ProjectedColumn(
-                                        col.PropertyName, col.ColumnName, col.ClrType, col.FullClrType,
-                                        col.IsNullable, ordinal: ord++, col.Alias, col.SqlExpression,
-                                        col.IsAggregateFunction, col.CustomTypeMapping, col.IsValueType,
-                                        col.ReaderMethodName, col.TableAlias, col.IsForeignKey,
-                                        col.ForeignKeyEntityName, col.IsEnum));
+                                    filteredCols.Add(col with { Ordinal = ord++ });
                             }
 
                             var reducedProjection = new SelectProjection(
@@ -1340,24 +1335,7 @@ internal static class ChainAnalyzer
             {
                 if (col.TableAlias == null && !col.IsAggregateFunction)
                 {
-                    qualified.Add(new ProjectedColumn(
-                        propertyName: col.PropertyName,
-                        columnName: col.ColumnName,
-                        clrType: col.ClrType,
-                        fullClrType: col.FullClrType,
-                        isNullable: col.IsNullable,
-                        ordinal: col.Ordinal,
-                        alias: col.Alias,
-                        sqlExpression: col.SqlExpression,
-                        isAggregateFunction: col.IsAggregateFunction,
-                        customTypeMapping: col.CustomTypeMapping,
-                        isValueType: col.IsValueType,
-                        readerMethodName: col.ReaderMethodName,
-                        tableAlias: "t0",
-                        isForeignKey: col.IsForeignKey,
-                        foreignKeyEntityName: col.ForeignKeyEntityName,
-                        isEnum: col.IsEnum,
-                        isJoinNullable: col.IsJoinNullable));
+                    qualified.Add(col with { TableAlias = "t0" });
                 }
                 else
                 {
@@ -1823,19 +1801,14 @@ internal static class ChainAnalyzer
                     var resolvedType = TryResolveAggregateTypeFromSql(col.SqlExpression, entityColumnLookup, perAliasLookup, col.TableAlias);
                     if (resolvedType != null)
                     {
-                        columns.Add(new ProjectedColumn(
-                            propertyName: col.PropertyName,
-                            columnName: col.ColumnName,
-                            clrType: resolvedType,
-                            fullClrType: resolvedType,
-                            isNullable: col.IsNullable,
-                            ordinal: col.Ordinal,
-                            alias: col.Alias,
-                            sqlExpression: col.SqlExpression,
-                            isAggregateFunction: true,
-                            isValueType: true,
-                            readerMethodName: TypeClassification.GetReaderMethod(resolvedType),
-                            tableAlias: col.TableAlias));
+                        columns.Add(col with
+                        {
+                            ClrType = resolvedType,
+                            FullClrType = resolvedType,
+                            IsAggregateFunction = true,
+                            IsValueType = true,
+                            ReaderMethodName = TypeClassification.GetReaderMethod(resolvedType),
+                        });
                         continue;
                     }
                 }
@@ -1887,49 +1860,27 @@ internal static class ChainAnalyzer
 
                     if (entityCol != null)
                     {
-                        columns.Add(new ProjectedColumn(
-                            propertyName: col.PropertyName,
-                            columnName: entityCol.ColumnName,
-                            clrType: TypeClassification.IsUnresolvedTypeName(col.ClrType) ? entityCol.ClrType : col.ClrType,
-                            fullClrType: TypeClassification.IsUnresolvedTypeName(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
-                            isNullable: entityCol.IsNullable,
-                            ordinal: col.Ordinal,
-                            alias: col.Alias,
-                            sqlExpression: col.SqlExpression,
-                            isAggregateFunction: col.IsAggregateFunction,
-                            customTypeMapping: entityCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
-                            isValueType: entityCol.IsValueType,
-                            readerMethodName: entityCol.DbReaderMethodName ?? entityCol.ReaderMethodName,
-                            tableAlias: col.TableAlias,
-                            isForeignKey: entityCol.Kind == ColumnKind.ForeignKey,
-                            foreignKeyEntityName: entityCol.ReferencedEntityName,
-                            isEnum: entityCol.IsEnum,
-                            isJoinNullable: IsJoinNullable(col.TableAlias)));
+                        columns.Add(col with
+                        {
+                            ColumnName = entityCol.ColumnName,
+                            ClrType = TypeClassification.IsUnresolvedTypeName(col.ClrType) ? entityCol.ClrType : col.ClrType,
+                            FullClrType = TypeClassification.IsUnresolvedTypeName(col.FullClrType) ? entityCol.FullClrType : col.FullClrType,
+                            IsNullable = entityCol.IsNullable,
+                            CustomTypeMapping = entityCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
+                            IsValueType = entityCol.IsValueType,
+                            ReaderMethodName = entityCol.DbReaderMethodName ?? entityCol.ReaderMethodName,
+                            IsForeignKey = entityCol.Kind == ColumnKind.ForeignKey,
+                            ForeignKeyEntityName = entityCol.ReferencedEntityName,
+                            IsEnum = entityCol.IsEnum,
+                            IsJoinNullable = IsJoinNullable(col.TableAlias),
+                        });
                         continue;
                     }
                 }
                 // Apply join-nullable override for unenriched columns
                 if (!col.IsJoinNullable && IsJoinNullable(col.TableAlias))
                 {
-                    columns.Add(new ProjectedColumn(
-                        propertyName: col.PropertyName,
-                        columnName: col.ColumnName,
-                        clrType: col.ClrType,
-                        fullClrType: col.FullClrType,
-                        isNullable: col.IsNullable,
-                        ordinal: col.Ordinal,
-                        alias: col.Alias,
-                        sqlExpression: col.SqlExpression,
-                        isAggregateFunction: col.IsAggregateFunction,
-                        customTypeMapping: col.CustomTypeMapping,
-                        isValueType: col.IsValueType,
-                        readerMethodName: col.ReaderMethodName,
-                        tableAlias: col.TableAlias,
-                        isForeignKey: col.IsForeignKey,
-                        foreignKeyEntityName: col.ForeignKeyEntityName,
-                        isEnum: col.IsEnum,
-                        navigationHops: col.NavigationHops,
-                        isJoinNullable: true));
+                    columns.Add(col with { IsJoinNullable = true });
                 }
                 else
                 {

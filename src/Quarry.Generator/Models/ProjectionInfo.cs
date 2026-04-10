@@ -117,7 +117,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
 /// <summary>
 /// Represents a single column in a projection.
 /// </summary>
-internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
+internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
 {
     public ProjectedColumn(
         string propertyName,
@@ -162,27 +162,27 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
     /// <summary>
     /// Gets the property name in the result type.
     /// </summary>
-    public string PropertyName { get; }
+    public string PropertyName { get; init; }
 
     /// <summary>
     /// Gets the database column name.
     /// </summary>
-    public string ColumnName { get; }
+    public string ColumnName { get; init; }
 
     /// <summary>
     /// Gets the simple CLR type (e.g., "int", "string").
     /// </summary>
-    public string ClrType { get; }
+    public string ClrType { get; init; }
 
     /// <summary>
     /// Gets the fully qualified CLR type.
     /// </summary>
-    public string FullClrType { get; }
+    public string FullClrType { get; init; }
 
     /// <summary>
     /// Gets whether this column is nullable (based on schema metadata).
     /// </summary>
-    public bool IsNullable { get; }
+    public bool IsNullable { get; init; }
 
     /// <summary>
     /// Gets whether this column is effectively nullable due to being on the nullable side
@@ -191,7 +191,7 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
     /// This is separate from <see cref="IsNullable"/> to preserve the user's declared
     /// result type for interceptor signature matching.
     /// </summary>
-    public bool IsJoinNullable { get; }
+    public bool IsJoinNullable { get; init; }
 
     /// <summary>
     /// Gets whether this column requires a null check in reader code generation.
@@ -202,72 +202,72 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
     /// <summary>
     /// Gets the ordinal position in the result set (0-based).
     /// </summary>
-    public int Ordinal { get; }
+    public int Ordinal { get; init; }
 
     /// <summary>
     /// Gets the alias for this column in the SELECT list, if different from column name.
     /// Used for computed expressions or property renames.
     /// </summary>
-    public string? Alias { get; }
+    public string? Alias { get; init; }
 
     /// <summary>
     /// Gets the SQL expression for this column if it's not a simple column reference.
     /// Used for computed columns or aggregate functions.
     /// </summary>
-    public string? SqlExpression { get; }
+    public string? SqlExpression { get; init; }
 
     /// <summary>
     /// Gets whether this column is an aggregate function (COUNT, SUM, etc.).
     /// </summary>
-    public bool IsAggregateFunction { get; }
+    public bool IsAggregateFunction { get; init; }
 
     /// <summary>
     /// Gets the custom type mapping class name, if this column uses one.
     /// </summary>
-    public string? CustomTypeMapping { get; }
+    public string? CustomTypeMapping { get; init; }
 
     /// <summary>
     /// Gets whether this column's CLR type is a value type (struct).
     /// Used to determine nullability handling in reader code generation.
     /// </summary>
-    public bool IsValueType { get; }
+    public bool IsValueType { get; init; }
 
     /// <summary>
     /// Gets the DbDataReader method name for reading this column (e.g., "GetInt32", "GetString").
     /// Computed from the ITypeSymbol during analysis to avoid string parsing later.
     /// </summary>
-    public string ReaderMethodName { get; }
+    public string ReaderMethodName { get; init; }
 
     /// <summary>
     /// Gets the table alias for this column in joined queries (e.g., "t0", "t1").
     /// Null for non-joined queries where no aliasing is needed.
     /// </summary>
-    public string? TableAlias { get; }
+    public string? TableAlias { get; init; }
 
     /// <summary>
     /// Gets whether this column is a foreign key (Ref&lt;TEntity, TKey&gt;).
     /// When true, reader code must wrap the raw key value in new Ref&lt;TEntity, TKey&gt;(...).
     /// </summary>
-    public bool IsForeignKey { get; }
+    public bool IsForeignKey { get; init; }
 
     /// <summary>
     /// Gets the referenced entity type name for foreign key columns (e.g., "User").
     /// Null for non-FK columns.
     /// </summary>
-    public string? ForeignKeyEntityName { get; }
+    public string? ForeignKeyEntityName { get; init; }
 
     /// <summary>
     /// Gets whether this column is an enum type.
     /// When true, reader code must cast the integral value to the enum type.
     /// </summary>
-    public bool IsEnum { get; }
+    public bool IsEnum { get; init; }
 
     /// <summary>
     /// Navigation chain hops for One&lt;T&gt; navigation access in projections.
     /// E.g., ["User"] for o.User.UserName, or ["User", "Department"] for o.User.Department.Name.
     /// Null for non-navigation columns.
     /// </summary>
-    public IReadOnlyList<string>? NavigationHops { get; }
+    public IReadOnlyList<string>? NavigationHops { get; init; }
 
     public bool Equals(ProjectedColumn? other)
     {
@@ -292,8 +292,6 @@ internal sealed class ProjectedColumn : IEquatable<ProjectedColumn>
             && IsEnum == other.IsEnum
             && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops);
     }
-
-    public override bool Equals(object? obj) => Equals(obj as ProjectedColumn);
 
     public override int GetHashCode()
     {

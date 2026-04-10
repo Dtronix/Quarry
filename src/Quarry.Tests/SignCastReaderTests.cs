@@ -149,9 +149,9 @@ public class SignCastReaderTests
             "(uint, int)",
             new[]
             {
-                new ProjectedColumn("Item1", "unsigned_col", "uint", "uint",
+                new ProjectedColumn(propertyName: "Item1", columnName: "unsigned_col", clrType: "uint", fullClrType: "uint",
                     isNullable: false, ordinal: 0, isValueType: true, readerMethodName: "GetInt32"),
-                new ProjectedColumn("Item2", "signed_col", "int", "int",
+                new ProjectedColumn(propertyName: "Item2", columnName: "signed_col", clrType: "int", fullClrType: "int",
                     isNullable: false, ordinal: 1, isValueType: true, readerMethodName: "GetInt32"),
             });
 
