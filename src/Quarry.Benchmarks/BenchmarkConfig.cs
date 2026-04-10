@@ -2,6 +2,7 @@ using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Diagnosers;
 using BenchmarkDotNet.Exporters;
+using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Order;
@@ -15,6 +16,7 @@ public class BenchmarkConfig : ManualConfig
         AddDiagnoser(MemoryDiagnoser.Default);
         AddJob(Job.Default);
         AddExporter(MarkdownExporter.GitHub);
+        AddExporter(JsonExporter.Full);
         AddLogger(ConsoleLogger.Default);
         AddColumnProvider(DefaultColumnProviders.Instance);
         WithOrderer(new DefaultOrderer(SummaryOrderPolicy.FastestToSlowest));

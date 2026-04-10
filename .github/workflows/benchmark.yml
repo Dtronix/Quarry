@@ -1,0 +1,54 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [master]
+
+concurrency:
+  group: benchmark
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: debian-benchmark
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run benchmarks
+        run: |
+          dotnet run --project src/Quarry.Benchmarks -c Release \
+            -- --filter '*' --artifacts BenchmarkDotNet.Artifacts
+
+      - name: Merge benchmark results
+        run: |
+          jq -s '{
+            Title: "Quarry Benchmarks",
+            HostEnvironmentInfo: .[0].HostEnvironmentInfo,
+            Benchmarks: [.[].Benchmarks[]]
+          }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
+            > BenchmarkDotNet.Artifacts/combined-results.json
+
+      - name: Store benchmark results
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: Quarry Benchmarks
+          tool: 'benchmarkdotnet'
+          output-file-path: BenchmarkDotNet.Artifacts/combined-results.json
+          gh-repository: Dtronix/Quarry-benchmarks
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          github-token: ${{ secrets.BENCHMARK_TOKEN }}
+          auto-push: true
+          alert-threshold: '120%'
+          comment-on-alert: false
