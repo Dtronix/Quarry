@@ -1,0 +1,96 @@
+using System.Data;
+using BenchmarkDotNet.Attributes;
+using Dapper;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
+
+namespace Quarry.Benchmarks.Benchmarks;
+
+public class FilterWhereCompoundBenchmarks : BenchmarkBase
+{
+    [Benchmark(Baseline = true)]
+    public async Task<List<UserSummaryDto>> Raw_WhereCompound()
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users WHERE IsActive = 1 AND Email IS NOT NULL";
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        var results = new List<UserSummaryDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserSummaryDto
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return results;
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> Dapper_WhereCompound()
+    {
+        return (await Connection.QueryAsync<UserSummaryDto>(
+            "SELECT UserId, UserName, IsActive FROM users WHERE IsActive = 1 AND Email IS NOT NULL")).AsList();
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> EfCore_WhereCompound()
+    {
+        return await EfContext.Users.AsNoTracking()
+            .Where(u => u.IsActive && u.Email != null)
+            .Select(u => new UserSummaryDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName,
+                IsActive = u.IsActive
+            })
+            .ToListAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> Quarry_WhereCompound()
+    {
+        return await QuarryDb.Users()
+            .Where(u => u.IsActive && u.Email != null)
+            .Select(u => new UserSummaryDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName,
+                IsActive = u.IsActive
+            })
+            .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<UserSummaryDto>> SqlKata_WhereCompound()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "IsActive")
+            .Where("IsActive", true)
+            .WhereNotNull("Email");
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<UserSummaryDto>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new UserSummaryDto
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                IsActive = reader.GetBoolean(2)
+            });
+        }
+        return results;
+    }
+}

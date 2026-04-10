@@ -1,0 +1,90 @@
+using System.Data;
+using BenchmarkDotNet.Attributes;
+using Dapper;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Quarry.Benchmarks.Infrastructure;
+using SqlKata;
+using SqlKata.Compilers;
+
+namespace Quarry.Benchmarks.Benchmarks;
+
+public class PaginationFirstPageBenchmarks : BenchmarkBase
+{
+    [Benchmark(Baseline = true)]
+    public async Task<List<RawUser>> Raw_FirstPage()
+    {
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10";
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        var results = new List<RawUser>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new RawUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            });
+        }
+        return results;
+    }
+
+    [Benchmark]
+    public async Task<List<DapperUser>> Dapper_FirstPage()
+    {
+        return (await Connection.QueryAsync<DapperUser>(
+            "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users LIMIT 10")).AsList();
+    }
+
+    [Benchmark]
+    public async Task<List<EfUser>> EfCore_FirstPage()
+    {
+        return await EfContext.Users.AsNoTracking()
+            .Take(10)
+            .ToListAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<User>> Quarry_FirstPage()
+    {
+        return await QuarryDb.Users()
+            .Select(u => u)
+            .Limit(10)
+            .ExecuteFetchAllAsync();
+    }
+
+    [Benchmark]
+    public async Task<List<SqlKataUser>> SqlKata_FirstPage()
+    {
+        var query = new Query("users")
+            .Select("UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin")
+            .Limit(10);
+        var compiled = SqlKataCompiler.Compile(query);
+
+        await using var cmd = Connection.CreateCommand();
+        cmd.CommandText = compiled.Sql;
+        foreach (var binding in compiled.Bindings)
+        {
+            cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
+        }
+        await using var reader = await cmd.ExecuteReaderAsync();
+        var results = new List<SqlKataUser>();
+        while (await reader.ReadAsync())
+        {
+            results.Add(new SqlKataUser
+            {
+                UserId = reader.GetInt32(0),
+                UserName = reader.GetString(1),
+                Email = reader.IsDBNull(2) ? null : reader.GetString(2),
+                IsActive = reader.GetBoolean(3),
+                CreatedAt = reader.GetDateTime(4),
+                LastLogin = reader.IsDBNull(5) ? null : reader.GetDateTime(5)
+            });
+        }
+        return results;
+    }
+}
