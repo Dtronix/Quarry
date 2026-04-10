@@ -731,6 +731,19 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
+
+                // Extract the table alias from the first column argument (e.g., o.Total → "t1")
+                // so enrichment can resolve unresolved types from entity column metadata.
+                string? tableAlias = null;
+                var args = invocation.ArgumentList.Arguments;
+                if (args.Count > 0 &&
+                    args[0].Expression is MemberAccessExpressionSyntax colAccess &&
+                    colAccess.Expression is IdentifierNameSyntax paramId &&
+                    perParamLookup.TryGetValue(paramId.Identifier.Text, out var paramInfo))
+                {
+                    tableAlias = paramInfo.Alias;
+                }
+
                 return new ProjectedColumn(
                     propertyName: propertyName,
                     columnName: "",
@@ -742,7 +755,8 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true,
-                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    tableAlias: tableAlias);
             }
         }
 

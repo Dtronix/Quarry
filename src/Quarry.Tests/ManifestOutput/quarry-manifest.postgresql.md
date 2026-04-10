@@ -381,18 +381,6 @@ SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" 
 
 ---
 
-### Orders().Where(...).Select(...).Orders()
-
-```sql
-SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -747,31 +735,6 @@ SELECT "t0"."Total" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."Us
 
 ---
 
-### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" UNION ALL SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
----
-
-### Orders().Where(...).Select(...).UnionAll(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "OrderId", NTILE(2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders" WHERE "OrderId" > $1 UNION ALL SELECT "OrderId", NTILE($2) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-| `@p1` | `int` |
-
----
-
 ### Products().Select(...).Products()
 
 ```sql
@@ -1053,6 +1016,54 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Total", LAG("t1"."Total", $1) OVER (ORDER BY "t1"."OrderDate") AS "PrevTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", LAG("t1"."Total", 1, $1) OVER (ORDER BY "t1"."OrderDate") AS "PrevTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", LEAD("t1"."Total", $1) OVER (ORDER BY "t1"."OrderDate") AS "NextTotal" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total", NTILE($1) OVER (ORDER BY "t1"."Total") AS "Grp" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t0"."UserName", "t1"."Total", ROW_NUMBER() OVER (PARTITION BY "t0"."UserName" ORDER BY "t1"."Total") AS "RowNum" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -1245,11 +1256,6 @@ SELECT "UserId", "UserName" FROM "users" INTERSECT ALL SELECT "ProductId", "Prod
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 ```
 
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-| `@p1` | `int` |
-
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1258,10 +1264,6 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET $2
 SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```
 
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
-
 ---
 
 ### Users().Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
@@ -1269,10 +1271,6 @@ SELECT "UserId", "UserName" FROM "users" LIMIT $1 OFFSET 1
 ```sql
 SELECT "UserId", "UserName" FROM "users" LIMIT 2 OFFSET $1
 ```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `int` |
 
 ---
 
@@ -2666,5 +2664,5 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 |--------|------:|
 | Total discovered | 357 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 70 |
-| Rendered | 287 |
+| Consolidated (deduped) | 69 |
+| Rendered | 288 |
