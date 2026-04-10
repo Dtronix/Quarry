@@ -8,7 +8,7 @@ phase: REMEDIATE
 status: active
 issue: #222
 pr: #234
-session: 2
+session: 3
 phases-total: 5
 phases-complete: 5
 ## Problem Statement
@@ -41,4 +41,5 @@ Baseline: All 3062 tests pass (97 Migration, 103 Analyzers, 2862 Quarry.Tests). 
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT | Issue #222 loaded, worktree created, baseline green. Design: full parameterization approach selected. Phases 1-2 implemented (literal fix + call chain threading + discovery enrichment). Suspended for context management. |
-| 2 | IMPLEMENT | | Resumed from suspend. Baseline: 3090 tests passing. Starting Phase 3. |
+| 2 | IMPLEMENT | REMEDIATE | Resumed from suspend. Baseline: 3090 tests passing. Completed Phases 3-5. Review done, (A) fix committed, (C) issues #232 #233 created. PR #234 opened. |
+| 3 | REMEDIATE | | Resumed. Rebase, verify CI, finalize. |
