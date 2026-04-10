@@ -5,12 +5,12 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: #222
 pr:
 session: 1
 phases-total: 5
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Window function methods (`Sql.Ntile`, `Sql.Lag`, `Sql.Lead`) emit non-column arguments (offset, default value, bucket count) using raw `.ToString()` on the C# syntax expression. This embeds C# source text directly into SQL, producing invalid SQL for non-literal expressions (e.g., variables, C# suffixed literals like `0m`).
 
@@ -30,8 +30,14 @@ Baseline: All 3062 tests pass (97 Migration, 103 Analyzers, 2862 Quarry.Tests). 
 - 2026-04-09: Literal extraction uses `SemanticModel.GetConstantValue()` as primary; falls back to `LiteralExpressionSyntax.Token.Value` when no SemanticModel.
 
 ## Suspend State
+- Phase: IMPLEMENT, phase 3/5 (ChainAnalyzer parameter merging) not yet started
+- In progress: Nothing — Phase 2 just committed cleanly
+- Immediate next step: Implement Phase 3 — merge projection params into global param list in ChainAnalyzer
+- WIP commit: none (all work committed)
+- Test status: all 3090 tests passing
+- Unrecorded context: None — all decisions in Decisions section, all code committed
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | DESIGN | Issue #222 loaded, worktree created, baseline green. Design: full parameterization approach selected. |
+| 1 | INTAKE | IMPLEMENT | Issue #222 loaded, worktree created, baseline green. Design: full parameterization approach selected. Phases 1-2 implemented (literal fix + call chain threading + discovery enrichment). Suspended for context management. |
