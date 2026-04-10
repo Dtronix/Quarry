@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #227
 pr:
 session: 1
 phases-total: 1
-phases-complete: 0
+phases-complete: 1
 ## Problem Statement
 Issue #223 added failure-mode tests for single-entity OVER clause lambdas (`ParseOverClause` / `WalkOverChain`). The joined-entity variant `ParseJoinedOverClause` (which handles OVER clauses in joined Select projections) has the same failure modes but is not yet covered by tests.
 
