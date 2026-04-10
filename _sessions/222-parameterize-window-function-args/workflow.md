@@ -5,12 +5,12 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #222
 pr:
-session: 1
+session: 2
 phases-total: 5
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 Window function methods (`Sql.Ntile`, `Sql.Lag`, `Sql.Lead`) emit non-column arguments (offset, default value, bucket count) using raw `.ToString()` on the C# syntax expression. This embeds C# source text directly into SQL, producing invalid SQL for non-literal expressions (e.g., variables, C# suffixed literals like `0m`).
 
@@ -41,3 +41,4 @@ Baseline: All 3062 tests pass (97 Migration, 103 Analyzers, 2862 Quarry.Tests). 
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE | IMPLEMENT | Issue #222 loaded, worktree created, baseline green. Design: full parameterization approach selected. Phases 1-2 implemented (literal fix + call chain threading + discovery enrichment). Suspended for context management. |
+| 2 | IMPLEMENT | | Resumed from suspend. Baseline: 3090 tests passing. Starting Phase 3. |
