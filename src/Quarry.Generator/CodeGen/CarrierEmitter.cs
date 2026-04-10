@@ -263,10 +263,6 @@ internal static class CarrierEmitter
         // Compute global parameter offset for this clause's params
         var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
 
-        // In the carrier-only architecture, the builder is always the carrier
-        // (created by the ChainRoot interceptor). Just cast to it.
-        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
         // Determine which parameters to bind: prefer translated clause params (handles
         // column expression assignments), fall back to raw SetAction params.
         IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
@@ -274,6 +270,12 @@ internal static class CarrierEmitter
             clauseParams = site.Clause?.Parameters ?? site.Bound.Raw.SetActionParameters;
         else if (site.Clause != null)
             clauseParams = site.Clause.Parameters;
+
+        // Only emit the carrier cast when the body actually uses it
+        // (parameter binding or mask bit setting).
+        bool needsCarrierRef = (clauseParams != null && clauseParams.Count > 0) || clauseBit.HasValue;
+        if (needsCarrierRef)
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         if (clauseParams != null && clauseParams.Count > 0)
         {
