@@ -2872,4 +2872,155 @@ public static class Queries
 
     #endregion
 
+    #region Joined window function OVER clause failure modes (#227)
+
+    [Test]
+    public void CarrierGeneration_JoinedWindowFunction_BlockBodyLambda_FallsToRuntimeBuild()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => (u.UserName, o.Total, Rn: Sql.RowNumber(over => { return over.OrderBy(o.Total); })))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on block-body OVER lambda in joined projection");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should still generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Not.Contain("ROW_NUMBER()"),
+            "Block-body OVER lambda should not produce window function SQL (falls to RuntimeBuild)");
+    }
+
+    [Test]
+    public void CarrierGeneration_JoinedWindowFunction_UnknownMethodInChain_FallsToRuntimeBuild()
+    {
+        // over.ToString() returns string, not IOverClause — intentional compilation error.
+        // The generator should still handle the syntax gracefully.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => (u.UserName, o.Total, Rn: Sql.RowNumber(over => over.ToString())))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on unknown method in OVER chain in joined projection");
+
+        // Joined projections produce QRY032 when a tuple element is not analyzable,
+        // unlike single-entity projections which silently fall to RuntimeBuild.
+        var qry032 = diagnostics.FirstOrDefault(d => d.Id == "QRY032");
+        Assert.That(qry032, Is.Not.Null, "Unanalyzable joined projection should produce QRY032");
+    }
+
+    [Test]
+    public void CarrierGeneration_JoinedWindowFunction_EmptyOverClause_ProducesValidSql()
+    {
+        // over => over produces ROW_NUMBER() OVER () — valid SQL with empty OVER clause.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => (u.UserName, o.Total, Rn: Sql.RowNumber(over => over)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qryErrors = diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error && d.Id.StartsWith("QRY")).ToList();
+        Assert.That(qryErrors, Is.Empty, "Empty OVER clause should not produce QRY errors in joined projection");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("ROW_NUMBER() OVER ()"),
+            "Empty OVER clause should produce ROW_NUMBER() OVER () in generated SQL");
+    }
+
+    [Test]
+    public void CarrierGeneration_JoinedWindowFunction_NonFluentChainExpression_FallsToRuntimeBuild()
+    {
+        // SomeMethod(over) is not a fluent chain — intentional compilation error.
+        // The generator should still handle the syntax gracefully.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => (u.UserName, o.Total, Rn: Sql.RowNumber(over => SomeMethod(over))))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null, "Generator should not crash on non-fluent-chain OVER expression in joined projection");
+
+        // Joined projections produce QRY032 when a tuple element is not analyzable,
+        // unlike single-entity projections which silently fall to RuntimeBuild.
+        var qry032 = diagnostics.FirstOrDefault(d => d.Id == "QRY032");
+        Assert.That(qry032, Is.Not.Null, "Unanalyzable joined projection should produce QRY032");
+    }
+
+    #endregion
+
 }
