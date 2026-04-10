@@ -1,7 +1,9 @@
 name: Benchmarks
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [master]
 
 concurrency:
@@ -14,10 +16,12 @@ permissions:
 jobs:
   benchmark:
     runs-on: debian-benchmark
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Setup .NET 10
@@ -35,7 +39,7 @@ jobs:
           jq -s '{
             Title: "Quarry Benchmarks",
             HostEnvironmentInfo: .[0].HostEnvironmentInfo,
-            Benchmarks: [.[].Benchmarks[]]
+            Benchmarks: [.[].Benchmarks[] | select(.Statistics != null)]
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
 
