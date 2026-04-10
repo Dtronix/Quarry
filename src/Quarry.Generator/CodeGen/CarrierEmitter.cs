@@ -1190,7 +1190,7 @@ internal static class CarrierEmitter
     {
         var maxMask = chain.SqlVariants.Count == 1 ? 0 : chain.SqlVariants.Keys.Max();
         var arraySize = maxMask + 1;
-        sb.AppendLine($"    internal static Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
+        sb.AppendLine($"    internal static readonly Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
     }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
