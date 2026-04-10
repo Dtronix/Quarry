@@ -595,7 +595,8 @@ internal static class UsageSiteDiscovery
                     projectionInfo = Projection.ProjectionAnalyzer.AnalyzeJoinedSyntaxOnly(
                         invocation,
                         entityCount,
-                        DefaultDiscoveryDialect);
+                        DefaultDiscoveryDialect,
+                        semanticModel);
                 }
                 else
                 {
@@ -868,6 +869,17 @@ internal static class UsageSiteDiscovery
             lambdaInnerSpanStart: setOpLambdaInnerSpanStart);
         if (setOpEnrichmentLambda != null)
             rawSite.EnrichmentLambda = setOpEnrichmentLambda;
+
+        // Set EnrichmentLambda for Select sites with projection parameters (captured variables)
+        // so DisplayClassEnricher can resolve the display class for runtime extraction.
+        if (kind == InterceptorKind.Select
+            && projectionInfo?.ProjectionParameters != null
+            && projectionInfo.ProjectionParameters.Count > 0
+            && rawSite.EnrichmentLambda == null)
+        {
+            EnrichDisplayClassInfo(rawSite, invocation);
+        }
+
         return rawSite;
     }
 

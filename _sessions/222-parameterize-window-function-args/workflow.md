@@ -10,7 +10,7 @@ issue: #222
 pr:
 session: 1
 phases-total: 5
-phases-complete: 0
+phases-complete: 1
 ## Problem Statement
 Window function methods (`Sql.Ntile`, `Sql.Lag`, `Sql.Lead`) emit non-column arguments (offset, default value, bucket count) using raw `.ToString()` on the C# syntax expression. This embeds C# source text directly into SQL, producing invalid SQL for non-literal expressions (e.g., variables, C# suffixed literals like `0m`).
 

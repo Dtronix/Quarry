@@ -66,7 +66,8 @@ internal static class ProjectionAnalyzer
     public static ProjectionInfo AnalyzeJoinedSyntaxOnly(
         InvocationExpressionSyntax invocation,
         int entityCount,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null)
     {
         if (invocation.ArgumentList.Arguments.Count == 0)
             return ProjectionInfo.CreateFailed("object", "Select() requires a lambda argument");
@@ -94,7 +95,18 @@ internal static class ProjectionAnalyzer
 
         // Analyze using placeholder resolution — column lookups are empty, so
         // ResolveJoinedColumn will fall through. We use a dedicated placeholder path.
-        var result = AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect);
+        var projectionParams = new List<ParameterInfo>();
+        var result = AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect, semanticModel, projectionParams);
+
+        // Attach collected projection parameters to the result
+        if (projectionParams.Count > 0)
+        {
+            result = new ProjectionInfo(
+                result.Kind, result.ResultTypeName, result.Columns,
+                result.IsOptimalPath, result.NonOptimalReason, result.FailureReason,
+                result.CustomEntityReaderClass, result.JoinedEntityAlias,
+                projectionParameters: projectionParams);
+        }
 
         if (result.Kind == ProjectionKind.Tuple && result.Columns.Count > 0)
         {
@@ -161,7 +173,9 @@ internal static class ProjectionAnalyzer
         ExpressionSyntax expression,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         return expression switch
         {
@@ -171,13 +185,13 @@ internal static class ProjectionAnalyzer
                     ProjectionFailureReason.AnonymousTypeNotSupported),
 
             ObjectCreationExpressionSyntax objectCreation when objectCreation.Initializer != null =>
-                AnalyzeJoinedInitializerWithPlaceholders(objectCreation.Initializer.Expressions, perParamLookup, resultType, ProjectionKind.Dto, dialect),
+                AnalyzeJoinedInitializerWithPlaceholders(objectCreation.Initializer.Expressions, perParamLookup, resultType, ProjectionKind.Dto, dialect, semanticModel, projectionParams),
 
             ImplicitObjectCreationExpressionSyntax implicitCreation when implicitCreation.Initializer != null =>
-                AnalyzeJoinedInitializerWithPlaceholders(implicitCreation.Initializer.Expressions, perParamLookup, resultType, ProjectionKind.Dto, dialect),
+                AnalyzeJoinedInitializerWithPlaceholders(implicitCreation.Initializer.Expressions, perParamLookup, resultType, ProjectionKind.Dto, dialect, semanticModel, projectionParams),
 
             TupleExpressionSyntax tuple =>
-                AnalyzeJoinedTupleWithPlaceholders(tuple, perParamLookup, resultType, dialect),
+                AnalyzeJoinedTupleWithPlaceholders(tuple, perParamLookup, resultType, dialect, semanticModel, projectionParams),
 
             MemberAccessExpressionSyntax memberAccess when IsJoinedMemberAccess(memberAccess, perParamLookup) =>
                 AnalyzeJoinedSingleColumnWithPlaceholder(memberAccess, perParamLookup, resultType),
@@ -187,7 +201,7 @@ internal static class ProjectionAnalyzer
                 AnalyzeJoinedSingleColumnWithPlaceholder(memberAccess, perParamLookup, resultType),
 
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
-                AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
+                AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect, semanticModel, projectionParams),
 
             // Whole entity: (s, u) => u
             IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
@@ -246,7 +260,9 @@ internal static class ProjectionAnalyzer
         TupleExpressionSyntax tuple,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -257,7 +273,7 @@ internal static class ProjectionAnalyzer
                 ?? GetImplicitPropertyName(argument.Expression)
                 ?? $"Item{ordinal + 1}";
 
-            var col = ResolveJoinedProjectedExpressionWithPlaceholder(argument.Expression, perParamLookup, propertyName, ordinal++, dialect);
+            var col = ResolveJoinedProjectedExpressionWithPlaceholder(argument.Expression, perParamLookup, propertyName, ordinal++, dialect, semanticModel, projectionParams);
             if (col == null)
                 return ProjectionInfo.CreateFailed(resultType, $"Could not analyze tuple element at position {ordinal}");
 
@@ -272,7 +288,9 @@ internal static class ProjectionAnalyzer
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
         ProjectionKind kind,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -286,7 +304,7 @@ internal static class ProjectionAnalyzer
             if (propertyName == null)
                 return ProjectionInfo.CreateFailed(resultType, "Could not determine property name in initializer");
 
-            var col = ResolveJoinedProjectedExpressionWithPlaceholder(assignment.Right, perParamLookup, propertyName, ordinal++, dialect);
+            var col = ResolveJoinedProjectedExpressionWithPlaceholder(assignment.Right, perParamLookup, propertyName, ordinal++, dialect, semanticModel, projectionParams);
             if (col == null)
                 return ProjectionInfo.CreateFailed(resultType, $"Could not analyze projection for property '{propertyName}'");
 
@@ -301,13 +319,15 @@ internal static class ProjectionAnalyzer
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string propertyName,
         int ordinal,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         if (expression is MemberAccessExpressionSyntax memberAccess)
             return ResolveJoinedColumnWithPlaceholder(memberAccess, perParamLookup, propertyName, ordinal);
 
         if (expression is InvocationExpressionSyntax invocation && IsAggregateCall(invocation))
-            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect);
+            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
 
         return null;
     }
@@ -484,7 +504,8 @@ internal static class ProjectionAnalyzer
         SemanticModel? semanticModel,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         return expression switch
         {
@@ -496,15 +517,15 @@ internal static class ProjectionAnalyzer
 
             // DTO/Object initializer: (u, o) => new Dto { Name = u.Name, Total = o.Total }
             ObjectCreationExpressionSyntax objectCreation when objectCreation.Initializer != null =>
-                AnalyzeJoinedInitializer(objectCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect),
+                AnalyzeJoinedInitializer(objectCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect, projectionParams),
 
             // Implicit object creation
             ImplicitObjectCreationExpressionSyntax implicitCreation when implicitCreation.Initializer != null =>
-                AnalyzeJoinedInitializer(implicitCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect),
+                AnalyzeJoinedInitializer(implicitCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect, projectionParams),
 
             // Tuple: (u, o) => (u.Name, o.Total)
             TupleExpressionSyntax tuple =>
-                AnalyzeJoinedTuple(tuple, semanticModel, perParamLookup, resultType, dialect),
+                AnalyzeJoinedTuple(tuple, semanticModel, perParamLookup, resultType, dialect, projectionParams),
 
             // Single column: (u, o) => u.Name
             MemberAccessExpressionSyntax memberAccess when IsJoinedMemberAccess(memberAccess, perParamLookup) =>
@@ -516,7 +537,7 @@ internal static class ProjectionAnalyzer
 
             // Aggregate function: (u, o) => Sql.Count()
             InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
-                AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect),
+                AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect, semanticModel, projectionParams),
 
             // Whole entity: (s, u) => u
             IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
@@ -573,12 +594,14 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup);
+            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup, semanticModel, projectionParams);
 
             if (sqlExpr != null)
             {
@@ -611,7 +634,8 @@ internal static class ProjectionAnalyzer
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
         ProjectionKind kind,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -625,7 +649,7 @@ internal static class ProjectionAnalyzer
             if (propertyName == null)
                 return ProjectionInfo.CreateFailed(resultType, "Could not determine property name in initializer");
 
-            var col = ResolveJoinedProjectedExpression(assignment.Right, semanticModel, perParamLookup, propertyName, ordinal++, dialect);
+            var col = ResolveJoinedProjectedExpression(assignment.Right, semanticModel, perParamLookup, propertyName, ordinal++, dialect, projectionParams);
             if (col == null)
                 return ProjectionInfo.CreateFailed(resultType, $"Could not analyze projection for property '{propertyName}'");
 
@@ -643,7 +667,8 @@ internal static class ProjectionAnalyzer
         SemanticModel? semanticModel,
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -654,7 +679,7 @@ internal static class ProjectionAnalyzer
                 ?? GetImplicitPropertyName(argument.Expression)
                 ?? $"Item{ordinal + 1}";
 
-            var col = ResolveJoinedProjectedExpression(argument.Expression, semanticModel, perParamLookup, propertyName, ordinal++, dialect);
+            var col = ResolveJoinedProjectedExpression(argument.Expression, semanticModel, perParamLookup, propertyName, ordinal++, dialect, projectionParams);
             if (col == null)
                 return ProjectionInfo.CreateFailed(resultType, $"Could not analyze tuple element at position {ordinal}");
 
@@ -673,14 +698,15 @@ internal static class ProjectionAnalyzer
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string propertyName,
         int ordinal,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         if (expression is MemberAccessExpressionSyntax memberAccess)
             return ResolveJoinedColumn(memberAccess, semanticModel, perParamLookup, propertyName, ordinal);
 
         // Aggregate functions: Sql.Count(), Sql.Sum(u.Amount)
         if (expression is InvocationExpressionSyntax invocation && IsAggregateCall(invocation))
-            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect);
+            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
 
         return null;
     }
@@ -693,12 +719,14 @@ internal static class ProjectionAnalyzer
         Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
         string propertyName,
         int ordinal,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        SemanticModel? semanticModel = null,
+        List<ParameterInfo>? projectionParams = null)
     {
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup);
+            var (sqlExpr, clrType) = GetJoinedAggregateInfo(methodName, invocation, perParamLookup, semanticModel, projectionParams);
 
             if (sqlExpr != null)
             {
@@ -887,8 +915,19 @@ internal static class ProjectionAnalyzer
             }
         }
 
-        // Analyze the lambda body
-        var result = AnalyzeExpression(body, semanticModel, columns, columnLookup, lambdaParameterName, resultType, entityName, dialect);
+        // Analyze the lambda body — collect projection parameters for window function scalar args
+        var projectionParams = new List<ParameterInfo>();
+        var result = AnalyzeExpression(body, semanticModel, columns, columnLookup, lambdaParameterName, resultType, entityName, dialect, projectionParams);
+
+        // Attach collected projection parameters to the result
+        if (projectionParams.Count > 0)
+        {
+            result = new ProjectionInfo(
+                result.Kind, result.ResultTypeName, result.Columns,
+                result.IsOptimalPath, result.NonOptimalReason, result.FailureReason,
+                result.CustomEntityReaderClass, result.JoinedEntityAlias,
+                projectionParameters: projectionParams);
+        }
 
         // Post-analysis fixup: If result type is still invalid and we have column info, derive from columns
         if (TypeClassification.IsUnresolvedTypeNameLenient(result.ResultTypeName) && result.Columns.Count > 0)
@@ -904,7 +943,8 @@ internal static class ProjectionAnalyzer
                     result.Columns,
                     result.IsOptimalPath,
                     result.NonOptimalReason,
-                    result.FailureReason);
+                    result.FailureReason,
+                    projectionParameters: result.ProjectionParameters);
             }
         }
 
@@ -921,7 +961,8 @@ internal static class ProjectionAnalyzer
                     result.Columns,
                     result.IsOptimalPath,
                     result.NonOptimalReason,
-                    result.FailureReason);
+                    result.FailureReason,
+                    projectionParameters: result.ProjectionParameters);
             }
         }
 
@@ -1061,7 +1102,8 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         string resultType,
         string entityName,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         return expression switch
         {
@@ -1071,19 +1113,19 @@ internal static class ProjectionAnalyzer
 
             // Anonymous type: u => new { u.Id, u.Name }
             AnonymousObjectCreationExpressionSyntax anonymous =>
-                AnalyzeAnonymousType(anonymous, semanticModel, columnLookup, lambdaParameterName, resultType, entityName, dialect),
+                AnalyzeAnonymousType(anonymous, semanticModel, columnLookup, lambdaParameterName, resultType, entityName, dialect, projectionParams),
 
             // DTO/Object initializer: u => new UserDto { Id = u.Id }
             ObjectCreationExpressionSyntax objectCreation when objectCreation.Initializer != null =>
-                AnalyzeObjectInitializer(objectCreation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
+                AnalyzeObjectInitializer(objectCreation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect, projectionParams),
 
             // Implicit object creation: u => new() { Id = u.Id }
             ImplicitObjectCreationExpressionSyntax implicitCreation when implicitCreation.Initializer != null =>
-                AnalyzeImplicitObjectInitializer(implicitCreation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
+                AnalyzeImplicitObjectInitializer(implicitCreation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect, projectionParams),
 
             // Tuple: u => (u.Id, u.Name)
             TupleExpressionSyntax tuple =>
-                AnalyzeTuple(tuple, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
+                AnalyzeTuple(tuple, semanticModel, columnLookup, lambdaParameterName, resultType, dialect, projectionParams),
 
             // Single column: u => u.Name
             MemberAccessExpressionSyntax memberAccess when IsMemberOfParameter(memberAccess, lambdaParameterName) =>
@@ -1095,7 +1137,7 @@ internal static class ProjectionAnalyzer
 
             // Invocation (possibly aggregate): u => Sql.Count()
             InvocationExpressionSyntax invocation =>
-                AnalyzeInvocation(invocation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect),
+                AnalyzeInvocation(invocation, semanticModel, columnLookup, lambdaParameterName, resultType, dialect, projectionParams),
 
             _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported projection expression: {expression.Kind()}")
         };
@@ -1152,7 +1194,8 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         string resultType,
         string entityName,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         // Anonymous types are not supported - return failed projection
         return ProjectionInfo.CreateFailed(
@@ -1170,7 +1213,8 @@ internal static class ProjectionAnalyzer
         Dictionary<string, ColumnInfo> columnLookup,
         string lambdaParameterName,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         return AnalyzeInitializerExpressions(
             objectCreation.Initializer!.Expressions,
@@ -1179,7 +1223,8 @@ internal static class ProjectionAnalyzer
             lambdaParameterName,
             resultType,
             ProjectionKind.Dto,
-            dialect);
+            dialect,
+            projectionParams);
     }
 
     /// <summary>
@@ -1191,7 +1236,8 @@ internal static class ProjectionAnalyzer
         Dictionary<string, ColumnInfo> columnLookup,
         string lambdaParameterName,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         return AnalyzeInitializerExpressions(
             implicitCreation.Initializer!.Expressions,
@@ -1200,7 +1246,8 @@ internal static class ProjectionAnalyzer
             lambdaParameterName,
             resultType,
             ProjectionKind.Dto,
-            dialect);
+            dialect,
+            projectionParams);
     }
 
     /// <summary>
@@ -1213,7 +1260,8 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         string resultType,
         ProjectionKind kind,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -1240,7 +1288,8 @@ internal static class ProjectionAnalyzer
                 lambdaParameterName,
                 propertyName,
                 ordinal++,
-                dialect);
+                dialect,
+                projectionParams);
 
             if (column == null)
             {
@@ -1263,7 +1312,8 @@ internal static class ProjectionAnalyzer
         Dictionary<string, ColumnInfo> columnLookup,
         string lambdaParameterName,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         var columns = new List<ProjectedColumn>();
         var ordinal = 0;
@@ -1282,7 +1332,8 @@ internal static class ProjectionAnalyzer
                 lambdaParameterName,
                 propertyName,
                 ordinal++,
-                dialect);
+                dialect,
+                projectionParams);
 
             if (column == null)
             {
@@ -1464,7 +1515,8 @@ internal static class ProjectionAnalyzer
         Dictionary<string, ColumnInfo> columnLookup,
         string lambdaParameterName,
         string resultType,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         // Check for Sql.Count(), Sql.Sum(), etc.
         if (invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
@@ -1472,7 +1524,7 @@ internal static class ProjectionAnalyzer
             identifier.Identifier.Text == "Sql")
         {
             var methodName = memberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
+            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, projectionParams);
 
             if (sqlExpr != null)
             {
@@ -1512,7 +1564,8 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         string propertyName,
         int ordinal,
-        SqlDialect dialect)
+        SqlDialect dialect,
+        List<ParameterInfo>? projectionParams = null)
     {
         // Track the entity member name from member access (e.g. "UserId" from u.UserId)
         // so that downstream enrichment can match even when the tuple element name differs
@@ -1635,7 +1688,7 @@ internal static class ProjectionAnalyzer
             sqlIdentifier.Identifier.Text == "Sql")
         {
             var methodName = invMemberAccess.Name.Identifier.Text;
-            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName);
+            var (sqlExpr, clrType) = GetAggregateInfo(methodName, invocation, semanticModel, columnLookup, lambdaParameterName, projectionParams);
 
             if (sqlExpr != null)
             {
