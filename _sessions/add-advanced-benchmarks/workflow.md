@@ -10,7 +10,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 6
-phases-complete: 0
+phases-complete: 2
 ## Problem Statement
 Add new benchmark classes to Quarry.Benchmarks comparing Quarry against Raw ADO.NET, Dapper, EF Core, and SqlKata for features added since the initial benchmarks: Window Functions, CTEs, Subqueries (EXISTS/correlated), and Set Operations (UNION/INTERSECT/EXCEPT). Each benchmark follows the existing pattern (BenchmarkBase, same libraries, same database setup).
 
