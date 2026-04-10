@@ -383,6 +383,39 @@ public class EntityReaderTests
             "Nullable DateTime (value type) should emit 'default(DateTime?)'");
     }
 
+    [Test]
+    public void GenerateReaderDelegate_WithNullableDecimalAggregate_EmitsIsDBNullCheck()
+    {
+        // Arrange - nullable decimal from a window function (e.g., LAG returning NULL)
+        var projection = new ProjectionInfo(
+            ProjectionKind.Dto,
+            "OrderLagDto",
+            new[]
+            {
+                CreateProjectedColumn("OrderId", "OrderId", "int", 0),
+                CreateProjectedColumn("Total", "Total", "decimal", 1),
+                new ProjectedColumn(
+                    propertyName: "PrevTotal",
+                    columnName: "",
+                    clrType: "decimal",
+                    fullClrType: "decimal",
+                    isNullable: true,
+                    ordinal: 2,
+                    alias: "PrevTotal",
+                    sqlExpression: "LAG(\"Total\", 1) OVER (ORDER BY \"OrderDate\")",
+                    isAggregateFunction: true,
+                    isValueType: true,
+                    readerMethodName: "GetDecimal"),
+            });
+
+        // Act
+        var readerCode = ReaderCodeGenerator.GenerateReaderDelegate(projection, "OrderLagDto");
+
+        // Assert - nullable value type aggregate should emit IsDBNull guard
+        Assert.That(readerCode, Does.Contain("r.IsDBNull(2) ? default(decimal?) : r.GetDecimal(2)"),
+            "Nullable decimal aggregate should emit IsDBNull check with default(decimal?)");
+    }
+
     #endregion
 
     #region Helper Methods
