@@ -1258,6 +1258,41 @@ internal static class ChainAnalyzer
                 }
                 projection = BuildProjection(raw.ProjectionInfo, executionSite, registry,
                     site.Bound.Dialect, implicitJoinInfos, joinPlans, diagnostics);
+
+                // Merge projection parameters (window function variable args) into the
+                // global parameter list and remap local @__proj{N} placeholders to {@globalIndex}
+                // (dialect-agnostic format resolved by QuoteSqlExpression at render time).
+                if (raw.ProjectionInfo.ProjectionParameters is { Count: > 0 } projParams
+                    && projection != null)
+                {
+                    var remapped = RemapParameters(projParams, ref paramGlobalIndex);
+                    // Build local→global index mapping for placeholder substitution
+                    var localToGlobal = new Dictionary<string, string>(remapped.Count);
+                    for (int pi = 0; pi < remapped.Count; pi++)
+                        localToGlobal[$"@__proj{pi}"] = $"{{@{remapped[pi].GlobalIndex}}}";
+
+                    parameters.AddRange(remapped);
+
+                    // Replace placeholders in ProjectedColumn.SqlExpression
+                    var updatedCols = new List<ProjectedColumn>(projection.Columns.Count);
+                    foreach (var col in projection.Columns)
+                    {
+                        if (col.SqlExpression != null && col.SqlExpression.Contains("@__proj"))
+                        {
+                            var sql = col.SqlExpression;
+                            foreach (var kvp in localToGlobal)
+                                sql = sql.Replace(kvp.Key, kvp.Value);
+                            updatedCols.Add(col with { SqlExpression = sql });
+                        }
+                        else
+                        {
+                            updatedCols.Add(col);
+                        }
+                    }
+                    projection = new SelectProjection(
+                        projection.Kind, projection.ResultTypeName, updatedCols,
+                        projection.CustomEntityReaderClass, projection.IsIdentity);
+                }
             }
         }
 

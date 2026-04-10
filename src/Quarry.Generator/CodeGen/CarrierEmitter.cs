@@ -529,9 +529,24 @@ internal static class CarrierEmitter
 
     /// <summary>
     /// Emits a carrier Select interceptor (interface crossing via Unsafe.As).
+    /// When projection parameters exist, extracts captured variables and binds them.
     /// </summary>
-    internal static void EmitCarrierSelect(StringBuilder sb, string targetInterface)
+    internal static void EmitCarrierSelect(
+        StringBuilder sb, string targetInterface,
+        CarrierPlan? carrier = null, AssembledPlan? chain = null,
+        TranslatedCallSite? site = null)
     {
+        if (carrier != null && chain != null && site != null)
+        {
+            var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
+            if (siteParams.Count > 0)
+            {
+                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+                EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
+                sb.AppendLine($"        return Unsafe.As<{targetInterface}>(__c);");
+                return;
+            }
+        }
         sb.AppendLine($"        return Unsafe.As<{targetInterface}>(builder);");
     }
 

@@ -35,6 +35,10 @@ internal static class TerminalEmitHelpers
                 if (clause.Site.Clause != null)
                     for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < chain.ChainParameters.Count; i++)
                         siteParams.Add(chain.ChainParameters[globalParamOffset + i]);
+                else if (clause.Site.Kind == InterceptorKind.Select
+                    && clause.Site.ProjectionInfo?.ProjectionParameters is { Count: > 0 } projParams)
+                    for (int i = 0; i < projParams.Count && globalParamOffset + i < chain.ChainParameters.Count; i++)
+                        siteParams.Add(chain.ChainParameters[globalParamOffset + i]);
                 return (siteParams, globalParamOffset);
             }
             if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
@@ -51,6 +55,9 @@ internal static class TerminalEmitHelpers
                 globalParamOffset += clause.Site.Clause.Parameters.Count;
             else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
                 globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
+            else if (clause.Site.Kind == InterceptorKind.Select
+                && clause.Site.ProjectionInfo?.ProjectionParameters?.Count > 0)
+                globalParamOffset += clause.Site.ProjectionInfo.ProjectionParameters.Count;
         }
         return (new List<QueryParameter>(), globalParamOffset);
     }

@@ -400,10 +400,10 @@ internal class CrossDialectWindowFunctionTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", LAG(\"Total\", 1, 0m) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
-            pg:     "SELECT \"OrderId\", LAG(\"Total\", 1, 0m) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
-            mysql:  "SELECT `OrderId`, LAG(`Total`, 1, 0m) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
-            ss:     "SELECT [OrderId], LAG([Total], 1, 0m) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
+            sqlite: "SELECT \"OrderId\", LAG(\"Total\", 1, 0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"Total\", 1, 0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`Total`, 1, 0) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([Total], 1, 0) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
     }
 
     [Test]
@@ -524,14 +524,13 @@ internal class CrossDialectWindowFunctionTests
         var my = My.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
         var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, 2, 0m, over => over.OrderBy(o.OrderDate)))).Prepare();
 
-        // Note: "0m" is the raw C# literal emitted by ToString() — tracked as #222
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
-            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2, 0m) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
-            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2, 0m) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
-            ss:     "SELECT [OrderId], LEAD([Total], 2, 0m) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
+            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", 2, 0) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LEAD(\"Total\", 2, 0) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LEAD(`Total`, 2, 0) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LEAD([Total], 2, 0) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
     }
 
     #endregion
@@ -656,6 +655,123 @@ internal class CrossDialectWindowFunctionTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results.All(r => r.RowNum == 1), Is.True);
+    }
+
+    #endregion
+
+    #region Parameterized Window Functions
+
+    [Test]
+    public async Task WindowFunction_Ntile_ConstVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // const int should be inlined (not parameterized)
+        const int buckets = 2;
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
+            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+    }
+
+    [Test]
+    public async Task WindowFunction_Ntile_Variable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var buckets = 3;
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, Grp: Sql.Ntile(buckets, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", NTILE(@p0) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", NTILE($1) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
+            ss:     "SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results.Select(r => r.Grp).All(g => g >= 1 && g <= 3), Is.True);
+    }
+
+    [Test]
+    public async Task WindowFunction_Lag_VariableOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var offset = 1;
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LAG(\"Total\", @p0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"Total\", $1) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`Total`, ?) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([Total], @p0) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Lead_VariableOffset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var offset = 1;
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, NextTotal: Sql.Lead(o.Total, offset, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LEAD(\"Total\", @p0) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LEAD(\"Total\", $1) OVER (ORDER BY \"OrderDate\") AS \"NextTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LEAD(`Total`, ?) OVER (ORDER BY `OrderDate`) AS `NextTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LEAD([Total], @p0) OVER (ORDER BY [OrderDate]) AS [NextTotal] FROM [orders]");
+    }
+
+    [Test]
+    public async Task WindowFunction_Lag_VariableDefault()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var defaultVal = 0m;
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, PrevTotal: Sql.Lag(o.Total, 1, defaultVal, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LAG(\"Total\", 1, @p0) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"Total\", 1, $1) OVER (ORDER BY \"OrderDate\") AS \"PrevTotal\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`Total`, 1, ?) OVER (ORDER BY `OrderDate`) AS `PrevTotal` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([Total], 1, @p0) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
     }
 
     #endregion
