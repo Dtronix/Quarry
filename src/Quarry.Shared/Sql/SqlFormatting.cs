@@ -276,54 +276,32 @@ internal static partial class SqlFormatting
     }
 
     /// <summary>
-    /// Re-quotes double-quoted (PostgreSQL/ANSI) identifiers in a SQL expression to match
-    /// the target dialect. Discovery always uses PostgreSQL dialect, so expressions like
-    /// <c>SUM("Total")</c> or <c>ROW_NUMBER() OVER (ORDER BY "Date")</c> need re-quoting
-    /// for MySQL (backticks) and SQL Server (brackets).
-    /// Returns the expression unchanged for SQLite and PostgreSQL.
+    /// Resolves <c>{identifier}</c> placeholders in a canonical SQL expression to
+    /// dialect-quoted identifiers.  Placeholders are produced by the projection
+    /// analyzer during discovery; quoting is deferred to render time so that the
+    /// expression is dialect-agnostic until final SQL assembly.
     /// </summary>
-    public static string? ReQuoteSqlExpression(string? sqlExpression, SqlDialect dialect)
+    public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect)
     {
         if (sqlExpression == null)
             return null;
 
-        // Only MySQL and SqlServer need re-quoting
-        if (dialect != SqlDialect.MySQL && dialect != SqlDialect.SqlServer)
+        // Fast path: no placeholders to resolve.
+        if (sqlExpression.IndexOf('{') < 0)
             return sqlExpression;
 
-        var (startChar, endChar) = GetIdentifierQuoteChars(dialect);
-        var sb = new StringBuilder(sqlExpression.Length + 4);
+        var sb = new StringBuilder(sqlExpression.Length + 8);
         int i = 0;
         while (i < sqlExpression.Length)
         {
-            if (sqlExpression[i] == '"')
+            if (sqlExpression[i] == '{')
             {
-                // Find the closing double quote, skipping escaped "" pairs
-                int closeIdx = i + 1;
-                while (closeIdx < sqlExpression.Length)
+                int close = sqlExpression.IndexOf('}', i + 1);
+                if (close > i + 1)
                 {
-                    if (sqlExpression[closeIdx] == '"')
-                    {
-                        if (closeIdx + 1 < sqlExpression.Length && sqlExpression[closeIdx + 1] == '"')
-                        {
-                            closeIdx += 2; // Skip escaped ""
-                            continue;
-                        }
-                        break; // Actual closing quote
-                    }
-                    closeIdx++;
-                }
-                if (closeIdx < sqlExpression.Length)
-                {
-                    // Unescape "" → " in the identifier, then re-escape for target dialect
-                    var identifier = sqlExpression.Substring(i + 1, closeIdx - i - 1).Replace("\"\"", "\"");
-                    sb.Append(startChar);
-                    if (dialect == SqlDialect.MySQL)
-                        sb.Append(identifier.Replace("`", "``"));
-                    else // SqlServer
-                        sb.Append(identifier.Replace("]", "]]"));
-                    sb.Append(endChar);
-                    i = closeIdx + 1;
+                    var identifier = sqlExpression.Substring(i + 1, close - i - 1);
+                    sb.Append(QuoteIdentifier(dialect, identifier));
+                    i = close + 1;
                     continue;
                 }
             }

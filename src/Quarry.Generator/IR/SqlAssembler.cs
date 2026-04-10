@@ -623,7 +623,7 @@ internal static class SqlAssembler
             if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
             {
                 // Aggregate function: render the SQL expression with an alias
-                sb.Append(col.SqlExpression);
+                sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression, dialect));
                 if (!string.IsNullOrEmpty(col.Alias))
                 {
                     sb.Append(" AS ");
