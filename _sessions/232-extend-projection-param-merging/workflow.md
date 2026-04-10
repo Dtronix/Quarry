@@ -10,7 +10,7 @@ issue: #232
 pr:
 session: 1
 phases-total: 2
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Window function variable parameters (e.g., `Sql.Ntile(n, ...)` where `n` is a captured variable) are correctly parameterized in `AnalyzeChainGroup`, but `AnalyzeOperandChain` (used for set operation operands) does not include the same `@__proj{N}` -> `{@globalIndex}` placeholder remapping logic. If a set operation operand contains a Select with variable window function args, the `@__proj{N}` placeholders will remain unresolved in the SQL.
 
