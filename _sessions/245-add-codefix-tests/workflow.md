@@ -4,7 +4,7 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #245
 pr:
@@ -29,3 +29,4 @@ Baseline: 3178 tests all passing (163 Migration.Tests, 103 Analyzers.Tests, 2912
 | 1 | DESIGN | PLAN | Explored code fixes, stubs, test patterns. All four code fixes in scope. E2E test approach. |
 | 1 | PLAN | IMPLEMENT | 4-phase plan approved. One test file per code fix. |
 | 1 | IMPLEMENT | REVIEW | All 4 phases complete. 23 new tests, 3201 total, 0 failures. |
+| 1 | REVIEW | REMEDIATE | Review: 5 Low findings (D), 1 Medium finding (A-fixed: 0x2-tier tests added). |

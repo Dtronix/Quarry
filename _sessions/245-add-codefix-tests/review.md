@@ -41,7 +41,14 @@ No concerns.
 No concerns. This is a test-only change adding 4 new test files. No production code is modified. No APIs are changed. No new dependencies are introduced. The test project already has all required NuGet package references.
 
 ## Classifications
-(leave empty -- main context fills this in)
+| # | Section | Finding | Severity | Class | Action Taken |
+|---|---------|---------|----------|-------|-------------|
+| 1 | Plan Compliance | SqlKata bare query deviation | Low | D | Intentional, documented |
+| 2 | Correctness | UsingDirectivesAdded structural limitation | Low | D | Not fixable (Schema requires `using Quarry;`) |
+| 3 | Correctness | AdhocWorkspace not disposed | Low | D | Common in Roslyn tests |
+| 4 | Test Quality | Substring matching | Low | D | Converter tests cover exact output |
+| 5 | Test Quality | Shared input source | Low | D | Matches repo patterns |
+| 6 | Test Quality | No 0x2-tier functional test | Medium | A | Fixed — added QRM012, QRM022, QRM002 warning-tier tests. SqlKata QRM032 skipped due to code fix AncestorsAndSelf() limitation. |
 
 ## Issues Created
-(leave empty -- main context fills this in)
+- None
