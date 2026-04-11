@@ -62,7 +62,33 @@
 | ADO.NET converter takes a dependency on `DapperCallSite` and `DapperMigrationAnalyzer.TryParseWithFallback` | Low | The ADO.NET converter creates adapter `DapperCallSite` instances to reuse the `ChainEmitter` pipeline. This couples ADO.NET conversion to the Dapper infrastructure. If Dapper types change, ADO.NET conversion breaks. A shared interface or adapter pattern would be more resilient, but for now the internal coupling is acceptable since both live in the same assembly. |
 
 ## Classifications
-(leave empty -- main context fills this in)
+| # | Section | Finding | Severity | Class | Action Taken |
+|---|---------|---------|----------|-------|-------------|
+| 1 | Plan Compliance | ChainExpression name differs from plan | Low | D | Ignored — improvement |
+| 2 | Plan Compliance | ChainStep as top-level class | Low | D | Ignored — consistent |
+| 3 | Plan Compliance | ADO.NET TODO as leading trivia | Low | D | Ignored — functionally correct |
+| 4 | Correctness | GroupJoin in ChainMethods no converter case | Medium | A | Moved to UnsupportedEfCoreMethods |
+| 5 | Correctness | EF Core ReplaceParameter string-based | Medium | D | Acceptable for migration tool |
+| 6 | Correctness | ADO.NET FindCommandTextAssignment top-level only | Medium | A | Changed to DescendantNodes |
+| 7 | Correctness | ADO.NET returns first not last CommandText | Low | C | Tracked as #244 |
+| 8 | Correctness | ADO.NET CollectParameterNames scans full block | Low | D | Acceptable |
+| 9 | Correctness | SqlKata TryDetectSingle backward walk | Low | D | Mitigated by semantic check |
+| 10 | Correctness | SqlKata converter missing Where variant cases | Low | A | Added explicit cases with diagnostics |
+| 11 | Correctness | SqlKata EmitNullCheck silent no-op | Medium | A | Added fallback comment |
+| 12 | Test Quality | No code fix tests | High | C | Tracked as #245 |
+| 13 | Test Quality | Stub duplication | Low | D | Follows Dapper convention |
+| 14 | Test Quality | No multi-unsupported EF Core chain test | Low | D | Single unsupported covered |
+| 15 | Test Quality | No ADO.NET concatenation SQL test | Low | D | Covered by Dapper tests |
+| 16 | Test Quality | No ADO.NET multi-CommandText test | Low | D | Edge case |
+| 17 | Test Quality | No SqlKata ForPage test | Low | B | Added test |
+| 18 | Test Quality | No SqlKata aggregate terminal tests | Low | B | Added AsSum and AsMax tests |
+| 19 | Codebase | EF Core different schema resolution path | Medium | A | Centralized in SchemaMap.TryGetEntityByTypeName |
+| 20 | Codebase | Analyzer detector allocation per node | Low | D | Follows Dapper pattern |
+| 21 | Codebase | EnsureUsing duplicated | Low | D | Follows Dapper pattern |
+| 22 | Integration | 9 new public types without shared interface | Medium | C | Tracked as #246 |
+| 23 | Integration | ADO.NET depends on DapperCallSite adapter | Low | D | Internal coupling acceptable |
 
 ## Issues Created
-(leave empty -- main context fills this in)
+- #244: ADO.NET converter: use last CommandText assignment before Execute call
+- #245: Add code fix tests for EF Core, ADO.NET, and SqlKata converters
+- #246: Add shared interface for migration converter result types
