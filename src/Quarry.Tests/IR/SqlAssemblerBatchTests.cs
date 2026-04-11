@@ -225,6 +225,65 @@ public class SqlAssemblerBatchTests
 
     #endregion
 
+    #region SELECT — Set operations with conditional post-union WHERE
+
+    [Test]
+    public void BatchSelect_SetOperationWithConditionalPostUnionWhere_MatchesPerMask()
+    {
+        // Main query: SELECT * FROM users
+        // UNION ALL: SELECT * FROM admins
+        // Post-union WHERE "role" = @p0 (conditional, bit 0)
+
+        var operandPlan = new IRQueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("admins"),
+            joins: Array.Empty<JoinPlan>(),
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: new SelectProjection(
+                ProjectionKind.Entity, "User",
+                Array.Empty<ProjectedColumn>(), isIdentity: true),
+            pagination: null,
+            isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: Array.Empty<ConditionalTerm>(),
+            possibleMasks: new[] { 0 },
+            parameters: Array.Empty<QueryParameter>(),
+            tier: OptimizationTier.PrebuiltDispatch);
+
+        var plan = new IRQueryPlan(
+            kind: QueryKind.Select,
+            primaryTable: new TableRef("users"),
+            joins: Array.Empty<JoinPlan>(),
+            whereTerms: Array.Empty<WhereTerm>(),
+            orderTerms: Array.Empty<OrderTerm>(),
+            groupByExprs: Array.Empty<SqlExpr>(),
+            havingExprs: Array.Empty<SqlExpr>(),
+            projection: new SelectProjection(
+                ProjectionKind.Entity, "User",
+                Array.Empty<ProjectedColumn>(), isIdentity: true),
+            pagination: null,
+            isDistinct: false,
+            setTerms: Array.Empty<SetTerm>(),
+            insertColumns: Array.Empty<InsertColumn>(),
+            conditionalTerms: new[] { new ConditionalTerm(0, ClauseRole.Where) },
+            possibleMasks: new[] { 0, 1 },
+            parameters: new[] { new QueryParameter(0, "int", "role") },
+            tier: OptimizationTier.PrebuiltDispatch,
+            setOperations: new[] { new SetOperationPlan(SetOperatorKind.UnionAll, operandPlan, 0) },
+            postUnionWhereTerms: new[]
+            {
+                new WhereTerm(MakeComparison("role", SqlBinaryOperator.Equal, paramLocalIndex: 0), bitIndex: 0),
+            });
+
+        AssertBatchMatchesPerMask(plan, GenSqlDialect.SQLite, plan.PossibleMasks);
+    }
+
+    #endregion
+
     #region DELETE — Conditional WHERE
 
     [Test]

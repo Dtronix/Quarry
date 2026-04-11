@@ -696,43 +696,43 @@ internal static class SqlAssembler
         var finalParamCount = Math.Max(paramIndex, plan.Parameters.Count);
 
         // ── Assemble per mask ──
+        // Reuse a single StringBuilder across masks to reduce allocations.
 
+        var sb = new StringBuilder();
         foreach (var mask in masks)
         {
-            var sb = new StringBuilder();
-            var whereClause = AssembleWhereClause(whereTerms, mask);
+            sb.Clear();
 
             if (hasPostUnionWrapping)
             {
                 sb.Append("SELECT * FROM (");
                 sb.Append(prefixStr);
-                sb.Append(whereClause);
+                AppendWhereClause(sb, whereTerms, mask);
                 sb.Append(middleStr);
                 sb.Append(setOpsStr);
                 sb.Append(") AS ");
                 sb.Append(quotedSetAlias);
-                sb.Append(AssembleWhereClause(postUnionWhereTerms!, mask));
+                AppendWhereClause(sb, postUnionWhereTerms!, mask);
                 sb.Append(postUnionMiddleStr);
             }
             else if (setOpsStr.Length > 0)
             {
                 sb.Append(prefixStr);
-                sb.Append(whereClause);
+                AppendWhereClause(sb, whereTerms, mask);
                 sb.Append(middleStr);
                 sb.Append(setOpsStr);
             }
             else
             {
                 sb.Append(prefixStr);
-                sb.Append(whereClause);
+                AppendWhereClause(sb, whereTerms, mask);
                 sb.Append(middleStr);
             }
 
             // ORDER BY
-            var orderByClause = AssembleOrderByClause(orderTerms, mask);
-            if (orderByClause.Length == 0 && needsSqlServerOrderByFallback)
+            var hasActiveOrderBy = AppendOrderByClause(sb, orderTerms, mask);
+            if (!hasActiveOrderBy && needsSqlServerOrderByFallback)
                 sb.Append(" ORDER BY (SELECT NULL)");
-            sb.Append(orderByClause);
 
             // Pagination
             sb.Append(paginationStr);
@@ -801,11 +801,14 @@ internal static class SqlAssembler
         foreach (var w in plan.WhereTerms)
             paramIndex += CountParameters(w.Condition);
 
-        // Assemble per mask
+        // Assemble per mask — reuse StringBuilder
+        var sb = new StringBuilder();
         foreach (var mask in masks)
         {
-            var sql = prefixStr + AssembleWhereClause(whereTerms, mask);
-            results[mask] = new AssembledSqlVariant(sql, paramIndex);
+            sb.Clear();
+            sb.Append(prefixStr);
+            AppendWhereClause(sb, whereTerms, mask);
+            results[mask] = new AssembledSqlVariant(sb.ToString(), paramIndex);
         }
     }
 
@@ -985,46 +988,62 @@ internal static class SqlAssembler
     }
 
     /// <summary>
-    /// Assembles a WHERE clause from pre-rendered term strings, selecting only
-    /// active terms for the given mask.
+    /// Appends a WHERE clause to <paramref name="sb"/> from pre-rendered term strings,
+    /// selecting only active terms for the given mask. Appends nothing if no terms are active.
     /// </summary>
-    private static string AssembleWhereClause(
-        List<(WhereTerm Term, string Rendered)> preRendered, int mask)
+    private static void AppendWhereClause(
+        StringBuilder sb, List<(WhereTerm Term, string Rendered)> preRendered, int mask)
     {
-        var active = new List<string>();
+        // Count active terms first to determine parenthesization without an intermediate list.
+        int activeCount = 0;
+        foreach (var (term, _) in preRendered)
+        {
+            if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
+                activeCount++;
+        }
+        if (activeCount == 0) return;
+
+        sb.Append(" WHERE ");
+        int written = 0;
         foreach (var (term, rendered) in preRendered)
         {
             if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
-                active.Add(rendered);
+            {
+                if (written > 0) sb.Append(" AND ");
+                if (activeCount > 1) sb.Append('(');
+                sb.Append(rendered);
+                if (activeCount > 1) sb.Append(')');
+                written++;
+            }
         }
-        if (active.Count == 0) return "";
-
-        var sb = new StringBuilder(" WHERE ");
-        for (int i = 0; i < active.Count; i++)
-        {
-            if (i > 0) sb.Append(" AND ");
-            if (active.Count > 1) sb.Append('(');
-            sb.Append(active[i]);
-            if (active.Count > 1) sb.Append(')');
-        }
-        return sb.ToString();
     }
 
     /// <summary>
-    /// Assembles an ORDER BY clause from pre-rendered term strings, selecting only
-    /// active terms for the given mask.
+    /// Appends an ORDER BY clause to <paramref name="sb"/> from pre-rendered term strings,
+    /// selecting only active terms for the given mask.
+    /// Returns true if any ORDER BY terms were appended.
     /// </summary>
-    private static string AssembleOrderByClause(
-        List<(OrderTerm Term, string Rendered)> preRendered, int mask)
+    private static bool AppendOrderByClause(
+        StringBuilder sb, List<(OrderTerm Term, string Rendered)> preRendered, int mask)
     {
-        var active = new List<string>();
+        bool first = true;
         foreach (var (term, rendered) in preRendered)
         {
             if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
-                active.Add(rendered);
+            {
+                if (first)
+                {
+                    sb.Append(" ORDER BY ");
+                    first = false;
+                }
+                else
+                {
+                    sb.Append(", ");
+                }
+                sb.Append(rendered);
+            }
         }
-        if (active.Count == 0) return "";
-        return " ORDER BY " + string.Join(", ", active);
+        return !first;
     }
 
     /// <summary>
