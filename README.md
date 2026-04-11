@@ -47,12 +47,20 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 | No runtime dependencies | Yes | No | Yes | Yes |
 | Type-safe schema definition | Yes | Yes (DbContext/model) | No | No |
 | Multi-dialect support | Yes (4 dialects) | Yes (providers) | Manual | Yes |
-| Join support | Up to 4 tables | Unlimited | Manual | Yes |
-| Navigation subqueries | Yes (Any/All/Count) | Yes (full LINQ) | No | No |
+| Join support | Up to 6 tables | Unlimited | Manual | Yes |
+| Navigation joins (One\<T\>, HasManyThrough) | Yes (compile-time) | Yes (conventions) | No | No |
+| Navigation subqueries | Yes (Any/All/Count/Sum/Min/Max/Avg) | Yes (full LINQ) | No | No |
+| Window functions | Yes (compile-time) | Limited | Manual | No |
+| Common Table Expressions | Yes (single + multi-CTE) | Raw SQL only | Manual | Limited |
+| Set operations (Union/Intersect/Except) | Yes | Yes (LINQ) | Manual | Yes |
+| Raw SQL with compile-time readers | Yes (ordinal-cached) | No (runtime binding) | Manual | No |
 | Conditional branch analysis | Yes | No | No | No |
 | Database scaffolding | Yes | Yes | No | No |
 | Change tracking | No | Yes | No | No |
-| Migrations | Yes (code-first, bundles, seed data, views) | Yes | No | No |
+| Migrations | Yes (code-first, bundles, seed data, views, stored procedures, checksums, squash) | Yes | No | No |
+| Cross-ORM migration converters | Yes (EF Core, Dapper, ADO.NET, SqlKata) | No | No | No |
+| Structured logging | Yes (Logsmith) | Yes (built-in) | No | No |
+| SQL manifest emission | Yes (opt-in) | No | No | No |
 | Prepared multi-terminal queries | Yes (all builder types) | No | No | No |
 
 
@@ -142,7 +150,7 @@ public partial class AppDb : QuarryContext
 await using var db = new AppDb(connection);
 
 var activeUsers = await db.Users()
-    .Select(u => new { u.UserName, u.Email })
+    .Select(u => (u.UserName, u.Email))
     .Where(u => u.IsActive)
     .OrderBy(u => u.UserName)
     .Limit(10)
