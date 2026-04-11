@@ -53,6 +53,23 @@ jobs:
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
 
+      - name: Filter Quarry-only results for charts
+        run: |
+          jq '.Benchmarks |= map(select(.Method | startswith("Quarry_")))' \
+            BenchmarkDotNet.Artifacts/combined-results.json \
+            > BenchmarkDotNet.Artifacts/quarry-only-results.json
+
+      - name: Generate merged HTML report
+        run: |
+          COMMIT_SHA=$(git log -1 --format='%H' HEAD)
+          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
+          COMMIT_DATE=$(git log -1 --format='%aI' HEAD)
+          mkdir -p BenchmarkDotNet.Artifacts/reports
+          dotnet run --project src/Quarry.Benchmarks.Reporter -c Release -- \
+            BenchmarkDotNet.Artifacts/combined-results.json \
+            BenchmarkDotNet.Artifacts/reports/report.html \
+            "$COMMIT_SHA" "$COMMIT_MSG" "$COMMIT_DATE"
+
       - name: Ensure gh-pages branch exists
         run: |
           TMP_DIR=$(mktemp -d)
@@ -82,7 +99,7 @@ jobs:
         with:
           name: Quarry Benchmarks
           tool: 'benchmarkdotnet'
-          output-file-path: BenchmarkDotNet.Artifacts/combined-results.json
+          output-file-path: BenchmarkDotNet.Artifacts/quarry-only-results.json
           gh-repository: github.com/Dtronix/Quarry-benchmarks
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench
@@ -92,3 +109,64 @@ jobs:
           max-items-in-chart: 500
           alert-threshold: '120%'
           comment-on-alert: false
+
+      - name: Publish report, pages, and update manifest
+        if: inputs.dry_run != true
+        run: |
+          COMMIT_SHA=$(git log -1 --format='%H' HEAD)
+          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
+          COMMIT_DATE_ISO=$(git log -1 --format='%aI' HEAD)
+          COMMIT_DATE_PREFIX=$(date -d "$COMMIT_DATE_ISO" -u +%Y-%m-%d)
+          SHORT_SHA=${COMMIT_SHA:0:8}
+          REPORT_NAME="${COMMIT_DATE_PREFIX}-${SHORT_SHA}.html"
+
+          rm -rf benchmark-store
+          git clone --branch gh-pages \
+            "https://x-access-token:${TOKEN}@github.com/Dtronix/Quarry-benchmarks.git" \
+            benchmark-store
+          cd benchmark-store
+          git config user.name "github-action-benchmark"
+          git config user.email "github@users.noreply.github.com"
+
+          mkdir -p dev/bench/runs
+          cp ../BenchmarkDotNet.Artifacts/reports/report.html "dev/bench/runs/${REPORT_NAME}"
+
+          # Copy front-end pages (override the action's index.html)
+          cp ../scripts/benchmark-pages/landing.html index.html
+          cp ../scripts/benchmark-pages/dashboard.html dev/bench/index.html
+          cp ../scripts/benchmark-pages/runs.html dev/bench/runs/index.html
+
+          # Update manifest
+          MANIFEST=dev/bench/runs/runs.json
+          if [ ! -f "$MANIFEST" ]; then
+            echo '[]' > "$MANIFEST"
+          fi
+          jq --arg sha "$COMMIT_SHA" \
+             --arg msg "$COMMIT_MSG" \
+             --arg date "$COMMIT_DATE_ISO" \
+             --arg file "$REPORT_NAME" \
+             '. + [{sha: $sha, message: $msg, date: $date, file: $file}]
+              | sort_by(.date) | reverse | .[0:500]' \
+             "$MANIFEST" > "$MANIFEST.tmp"
+          mv "$MANIFEST.tmp" "$MANIFEST"
+
+          # Trim old report files beyond 500
+          KEEP_FILES=$(jq -r '.[].file' "$MANIFEST" | sort -u)
+          for f in dev/bench/runs/*.html; do
+            BASENAME=$(basename "$f")
+            if [ "$BASENAME" = "index.html" ]; then continue; fi
+            if ! grep -qx "$BASENAME" <<<"$KEEP_FILES"; then
+              echo "Removing old report: $BASENAME"
+              rm -f "$f"
+            fi
+          done
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to push"
+          else
+            git commit -m "Add report for ${SHORT_SHA}"
+            git push origin gh-pages
+          fi
+        env:
+          TOKEN: ${{ secrets.BENCHMARK_TOKEN }}

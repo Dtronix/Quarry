@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quarry Benchmark Runs</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #24292e; background: #f5f5f5; }
+    header { background: white; padding: 1.25rem 2rem; border-bottom: 1px solid #e1e4e8; }
+    header h1 { margin: 0; font-size: 1.4rem; }
+    header nav { margin-top: 0.6rem; }
+    header nav a { color: #0366d6; text-decoration: none; margin-right: 1.25rem; font-size: 0.9rem; }
+    header nav a:hover { text-decoration: underline; }
+    main { padding: 1.5rem 2rem; }
+    .card { background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    th { background: #f6f8fa; font-weight: 600; color: #586069; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.3px; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f6f8fa; }
+    td.sha { font-family: monospace; }
+    td.sha a { color: #0366d6; text-decoration: none; }
+    td.sha a:hover { text-decoration: underline; }
+    td.message { max-width: 600px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .empty { padding: 4rem 2rem; text-align: center; color: #586069; }
+    .count { color: #586069; font-size: 0.85rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Quarry Benchmark Runs</h1>
+    <nav>
+      <a href="../../">Home</a>
+      <a href="../">Dashboard</a>
+      <a href="https://github.com/Dtronix/Quarry">Source</a>
+    </nav>
+  </header>
+  <main>
+    <div class="count" id="count"></div>
+    <div class="card">
+      <table id="runs">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Commit</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </main>
+  <script>
+    fetch('runs.json')
+      .then(r => r.ok ? r.json() : [])
+      .then(runs => {
+        const tbody = document.querySelector('#runs tbody');
+        const count = document.getElementById('count');
+        if (!runs || runs.length === 0) {
+          document.querySelector('main').innerHTML = '<div class="empty">No benchmark runs yet.</div>';
+          return;
+        }
+        count.textContent = runs.length + ' run' + (runs.length === 1 ? '' : 's');
+        for (const run of runs) {
+          const tr = document.createElement('tr');
+          const date = new Date(run.date);
+          const dateStr = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          tr.innerHTML =
+            '<td>' + dateStr + '</td>' +
+            '<td class="sha"><a href="' + escapeAttr(run.file) + '">' + escapeHtml(run.sha.slice(0, 8)) + '</a></td>' +
+            '<td class="message" title="' + escapeAttr(run.message) + '">' + escapeHtml(run.message) + '</td>';
+          tbody.appendChild(tr);
+        }
+      })
+      .catch(() => {
+        document.querySelector('main').innerHTML = '<div class="empty">Could not load run history.</div>';
+      });
+
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s || '';
+      return div.innerHTML;
+    }
+    function escapeAttr(s) {
+      return (s || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+  </script>
+</body>
+</html>
