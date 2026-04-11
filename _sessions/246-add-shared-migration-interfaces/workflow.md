@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #246
 pr:
 session: 1
 phases-total: 2
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Add shared interfaces (`IConversionEntry`, `IConversionDiagnostic`) for migration converter result types across Dapper, EF Core, ADO.NET, and SqlKata converters. Currently 9 public result types share identical shapes but no common base, limiting uniform processing.
 
