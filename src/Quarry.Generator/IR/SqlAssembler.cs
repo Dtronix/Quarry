@@ -353,22 +353,31 @@ internal static class SqlAssembler
                 sb.Append(") AS ");
                 sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__set"));
 
-                // Render post-union WHERE terms
-                var postWhereActive = GetActiveTerms(plan.PostUnionWhereTerms, mask);
-                if (postWhereActive.Count > 0)
+                // Render post-union WHERE terms — compute each term's global parameter
+                // offset from ALL terms (not just active), matching the main WHERE pattern.
+                var postWhereActiveSet = new HashSet<WhereTerm>(GetActiveTerms(plan.PostUnionWhereTerms, mask));
+                var postWhereNonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+                var postWhereParamOffset = paramIndex;
+                foreach (var w in plan.PostUnionWhereTerms)
+                {
+                    var termParamCount = CountParameters(w.Condition);
+                    if (postWhereActiveSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                        postWhereNonTrivialActive.Add((w, postWhereParamOffset));
+                    postWhereParamOffset += termParamCount;
+                }
+                if (postWhereNonTrivialActive.Count > 0)
                 {
                     sb.Append(" WHERE ");
-                    for (int i = 0; i < postWhereActive.Count; i++)
+                    for (int i = 0; i < postWhereNonTrivialActive.Count; i++)
                     {
                         if (i > 0) sb.Append(" AND ");
-                        var w = postWhereActive[i];
-                        var termParamCount = CountParameters(w.Condition);
-                        if (postWhereActive.Count > 1) sb.Append('(');
-                        sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
-                        if (postWhereActive.Count > 1) sb.Append(')');
-                        paramIndex += termParamCount;
+                        var (w, termOffset) = postWhereNonTrivialActive[i];
+                        if (postWhereNonTrivialActive.Count > 1) sb.Append('(');
+                        sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                        if (postWhereNonTrivialActive.Count > 1) sb.Append(')');
                     }
                 }
+                paramIndex = postWhereParamOffset;
 
                 // Render post-union GROUP BY
                 if (plan.PostUnionGroupByExprs.Count > 0)
@@ -398,24 +407,31 @@ internal static class SqlAssembler
             }
         }
 
-        // ORDER BY (applies to combined result when set operations present)
-        var activeOrders = GetActiveTerms(plan.OrderTerms, mask);
-        if (activeOrders.Count > 0)
+        // ORDER BY — compute each term's parameter offset from ALL terms (not just active),
+        // matching the WHERE pre-computation pattern. This ensures parameter indices align
+        // with carrier GlobalIndex values for conditional ORDER BY terms.
+        var activeOrderSet = new HashSet<OrderTerm>(GetActiveTerms(plan.OrderTerms, mask));
+        var activeOrderRendered = new List<string>();
+        var orderParamOffset = paramIndex;
+        foreach (var o in plan.OrderTerms)
+        {
+            var termParamCount = CountParameters(o.Expression);
+            if (activeOrderSet.Contains(o))
+            {
+                var rendered = SqlExprRenderer.Render(o.Expression, dialect, orderParamOffset);
+                activeOrderRendered.Add(rendered + (o.IsDescending ? " DESC" : " ASC"));
+            }
+            orderParamOffset += termParamCount;
+        }
+        if (activeOrderRendered.Count > 0)
         {
             sb.Append(" ORDER BY ");
-            for (int i = 0; i < activeOrders.Count; i++)
-            {
-                if (i > 0) sb.Append(", ");
-                var o = activeOrders[i];
-                var paramsBefore = CountParameters(o.Expression);
-                sb.Append(SqlExprRenderer.Render(o.Expression, dialect, paramIndex));
-                paramIndex += paramsBefore;
-                sb.Append(o.IsDescending ? " DESC" : " ASC");
-            }
+            sb.Append(string.Join(", ", activeOrderRendered));
         }
+        paramIndex = orderParamOffset;
 
         // PAGINATION (applies to combined result when set operations present)
-        AppendPagination(sb, plan, dialect, activeOrders.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, dialect, activeOrderRendered.Count > 0, ref paramIndex);
 
         // Ensure returned ParameterCount includes projection params.  Projection
         // column {@N} placeholders are resolved by AppendSelectColumns (rendered in
