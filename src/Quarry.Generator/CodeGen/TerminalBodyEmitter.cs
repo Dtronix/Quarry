@@ -88,7 +88,11 @@ internal static class TerminalBodyEmitter
         {
             var carrierExecutorMethod = TerminalEmitHelpers.ResolveCarrierExecutorMethod(site.Kind, resultType, scalarTypeArg);
             // Scalar queries don't use a reader delegate — pass null to omit the reader argument.
-            var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
+            // Non-scalar queries reference the static _reader field on the carrier class when
+            // the reader is self-contained; otherwise fall back to inline lambda.
+            string? readerCode = null;
+            if (site.Kind != InterceptorKind.ExecuteScalar)
+                readerCode = CarrierEmitter.IsReaderSelfContained(chain) ? $"{carrier.ClassName}._reader" : chain.ReaderDelegateCode;
             CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         }
         sb.AppendLine($"    }}");
@@ -158,7 +162,9 @@ internal static class TerminalBodyEmitter
 
         {
             var carrierExecutorMethod = TerminalEmitHelpers.ResolveCarrierExecutorMethod(site.Kind, resultType, scalarTypeArg);
-            var readerCode = site.Kind == InterceptorKind.ExecuteScalar ? null : chain.ReaderDelegateCode;
+            string? readerCode = null;
+            if (site.Kind != InterceptorKind.ExecuteScalar)
+                readerCode = CarrierEmitter.IsReaderSelfContained(chain) ? $"{carrier.ClassName}._reader" : chain.ReaderDelegateCode;
             CarrierEmitter.EmitCarrierExecutionTerminal(sb, carrier, chain, readerCode, carrierExecutorMethod);
         }
         sb.AppendLine($"    }}");

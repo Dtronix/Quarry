@@ -361,6 +361,20 @@ internal static class CarrierEmitter
         if (chain.ChainParameters.Any(p => p.IsCollection))
             EmitCollectionSqlCacheField(sb, chain);
 
+        // Emit static reader delegate field to avoid duplicating the lambda at each terminal.
+        // Only extract when the reader is self-contained (no references to interceptor-class
+        // fields like _entityReader_* or _mapper_*).
+        if (chain.ReaderDelegateCode != null && IsReaderSelfContained(chain))
+        {
+            var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(
+                chain.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            if (!string.IsNullOrEmpty(rawResult))
+            {
+                var readerResultType = InterceptorCodeGenerator.GetShortTypeName(rawResult!);
+                sb.AppendLine($"    internal static readonly System.Func<System.Data.Common.DbDataReader, {readerResultType}> _reader = {chain.ReaderDelegateCode};");
+            }
+        }
+
         // Emit the execution context field using the concrete context type for devirtualization
         sb.AppendLine($"    internal {contextTypeName}? Ctx;");
 
@@ -1296,6 +1310,22 @@ internal static class CarrierEmitter
         }
 
         return queryParam.ClrType;
+    }
+
+    /// <summary>
+    /// Returns true when the reader delegate is self-contained (only references DbDataReader),
+    /// false when it references interceptor-class fields (_entityReader_*, _mapper_*).
+    /// </summary>
+    internal static bool IsReaderSelfContained(AssembledPlan chain)
+    {
+        var proj = chain.ProjectionInfo;
+        if (proj == null) return false;
+        if (proj.CustomEntityReaderClass != null) return false;
+        foreach (var col in proj.Columns)
+        {
+            if (col.CustomTypeMapping != null) return false;
+        }
+        return true;
     }
 
 }
