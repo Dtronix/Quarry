@@ -41,7 +41,7 @@ jobs:
         run: |
           EXTRA_ARGS=""
           if [ "$DRY_RUN" == "true" ]; then
-            EXTRA_ARGS="--dryRun"
+            EXTRA_ARGS="-j Dry"
           fi
           dotnet run --project src/Quarry.Benchmarks -c Release \
             -- --filter '*' $EXTRA_ARGS --artifacts BenchmarkDotNet.Artifacts
