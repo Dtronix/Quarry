@@ -10,7 +10,7 @@ issue: #241
 pr:
 session: 1
 phases-total: 4
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Incremental SQL mask rendering for compile speed. Full SQL is re-rendered per mask variant in `SqlAssembler.RenderSelectSql`. For chains with many conditional clauses, this duplicates work rendering the shared prefix (SELECT, FROM, static WHERE clauses). Splitting into a shared prefix + per-mask suffix would reduce compile-time SQL generation cost.
 

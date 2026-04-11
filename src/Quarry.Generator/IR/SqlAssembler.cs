@@ -68,10 +68,13 @@ internal static class SqlAssembler
             insertInfo = new Models.InsertInfo(insertInfo.Columns, null, null, null);
         }
         var maxParamCount = 0;
-        if (plan.Kind == QueryKind.Select && plan.PossibleMasks.Count > 1)
+        if (plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete)
         {
             // Batch rendering: pre-render shared segments once and assemble per mask
-            RenderSelectSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+            if (plan.Kind == QueryKind.Select)
+                RenderSelectSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+            else
+                RenderDeleteSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
             foreach (var v in sqlVariants.Values)
             {
                 if (v.ParameterCount > maxParamCount)
@@ -775,6 +778,35 @@ internal static class SqlAssembler
         paramIndex = whereParamOffset;
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
+    }
+
+    /// <summary>
+    /// Renders all mask variants for a DELETE query at once by pre-rendering the
+    /// shared prefix and WHERE terms, then assembling per mask via string concatenation.
+    /// </summary>
+    private static void RenderDeleteSqlBatch(
+        QueryPlan plan, SqlDialect dialect,
+        IReadOnlyList<int> masks,
+        Dictionary<int, AssembledSqlVariant> results)
+    {
+        // Shared prefix: DELETE FROM table
+        var prefixSb = new StringBuilder();
+        prefixSb.Append("DELETE FROM ");
+        AppendTableRef(prefixSb, dialect, plan.PrimaryTable);
+        var prefixStr = prefixSb.ToString();
+
+        // Pre-render WHERE terms (paramBaseOffset = 0 for DELETE)
+        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, dialect, 0);
+        var paramIndex = 0;
+        foreach (var w in plan.WhereTerms)
+            paramIndex += CountParameters(w.Condition);
+
+        // Assemble per mask
+        foreach (var mask in masks)
+        {
+            var sql = prefixStr + AssembleWhereClause(whereTerms, mask);
+            results[mask] = new AssembledSqlVariant(sql, paramIndex);
+        }
     }
 
     private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, int mask, SqlDialect dialect)
