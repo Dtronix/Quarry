@@ -142,6 +142,7 @@ internal sealed class FileEmitter
         if (_chains != null && _carrierPlans != null)
         {
             var carrierIndex = 0;
+            var carrierDedup = new Dictionary<CarrierStructuralKey, string>();
             for (var chainIndex = 0; chainIndex < _chains.Count; chainIndex++)
             {
                 var chain = _chains[chainIndex];
@@ -158,12 +159,24 @@ internal sealed class FileEmitter
                 if (!chain.IsOperandChain && !CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
-                // Assign carrier class name and interfaces (deferred from CarrierAnalyzer)
-                carrierPlan.ClassName = $"Chain_{carrierIndex}";
+                // Resolve interfaces (needed for every chain regardless of dedup)
                 var resolvedInterfaces = CarrierEmitter.ResolveCarrierInterfaceList(chain);
                 carrierPlan.BaseClassName = "";
                 carrierPlan.ImplementedInterfaces = resolvedInterfaces;
-                carrierIndex++;
+
+                // Deduplicate: structurally identical carriers share a single class definition
+                var key = CarrierStructuralKey.Create(carrierPlan, chain, resolvedInterfaces);
+                if (carrierDedup.TryGetValue(key, out var existingName))
+                {
+                    carrierPlan.ClassName = existingName;
+                }
+                else
+                {
+                    carrierPlan.ClassName = $"Chain_{carrierIndex}";
+                    carrierDedup[key] = carrierPlan.ClassName;
+                    carrierIndex++;
+                    CarrierEmitter.EmitCarrierClass(sb, carrierPlan, chain, _contextClassName);
+                }
 
                 if (chain.IsOperandChain)
                 {
@@ -212,8 +225,6 @@ internal sealed class FileEmitter
                 {
                     carrierFirstClauseIds.Add(clauses[0].Site.UniqueId);
                 }
-
-                CarrierEmitter.EmitCarrierClass(sb, carrierPlan, chain, _contextClassName);
             }
         }
 
