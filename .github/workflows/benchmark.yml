@@ -5,6 +5,12 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run a single quick benchmark to test the pipeline'
+        type: boolean
+        default: true
 
 concurrency:
   group: benchmark
@@ -16,12 +22,14 @@ permissions:
 jobs:
   benchmark:
     runs-on: debian-benchmark
-    if: github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Setup .NET 10
@@ -31,8 +39,15 @@ jobs:
 
       - name: Run benchmarks
         run: |
+          if [ "$DRY_RUN" == "true" ]; then
+            FILTER='*SelectBenchmarks.Quarry_SimpleSelect'
+          else
+            FILTER='*'
+          fi
           dotnet run --project src/Quarry.Benchmarks -c Release \
-            -- --filter '*' --artifacts BenchmarkDotNet.Artifacts
+            -- --filter "$FILTER" --artifacts BenchmarkDotNet.Artifacts
+        env:
+          DRY_RUN: ${{ inputs.dry_run || 'false' }}
 
       - name: Merge benchmark results
         run: |
@@ -60,6 +75,7 @@ jobs:
 
       - name: Patch event payload for benchmark action
         run: |
+          COMMIT_SHA="${WORKFLOW_RUN_SHA:-$GITHUB_SHA}"
           COMMIT_MSG=$(git log -1 --format='%s' HEAD)
           COMMIT_AUTHOR=$(git log -1 --format='%an' HEAD)
           COMMIT_EMAIL=$(git log -1 --format='%ae' HEAD)
@@ -78,7 +94,7 @@ jobs:
              }' "$GITHUB_EVENT_PATH" > /tmp/patched-event.json
           mv /tmp/patched-event.json "$GITHUB_EVENT_PATH"
         env:
-          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
 
       - name: Process results
         uses: benchmark-action/github-action-benchmark@v1
@@ -88,15 +104,19 @@ jobs:
           output-file-path: BenchmarkDotNet.Artifacts/combined-results.json
           external-data-json-path: benchmark-store/dev/bench/data.js
           alert-threshold: '120%'
+        env:
+          GITHUB_EVENT_NAME: push
 
       - name: Push results
+        if: inputs.dry_run != 'true'
         run: |
           cd benchmark-store
           git config user.name "github-action-benchmark"
           git config user.email "github@users.noreply.github.com"
           git add -A
           git diff --cached --quiet && echo "No changes to push" && exit 0
+          COMMIT_SHA="${WORKFLOW_RUN_SHA:-$GITHUB_SHA}"
           git commit -m "Benchmark results for ${COMMIT_SHA::8}"
           git push origin gh-pages
         env:
-          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_RUN_SHA: ${{ github.event.workflow_run.head_sha }}
