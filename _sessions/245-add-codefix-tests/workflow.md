@@ -10,7 +10,7 @@ issue: #245
 pr:
 session: 1
 phases-total: 4
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 Add dedicated code fix tests for EfCoreMigrationCodeFix, AdoNetMigrationCodeFix, and SqlKataMigrationCodeFix. These are the most complex components — they manipulate syntax trees, handle `await` expressions, and add `using` directives. Currently only tested indirectly via analyzer tests.
 
