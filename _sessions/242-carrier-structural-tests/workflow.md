@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #242
 pr:
 session: 1
 phases-total: 1
-phases-complete: 0
+phases-complete: 1
 ## Problem Statement
 Add structural unit tests for generated carrier code shape. The carrier codegen efficiency changes (dead code removal, readonly fields, ParameterNames caching, reader field extraction) lack targeted structural assertions on generated code. Existing end-to-end tests provide indirect coverage through compilation and execution, but explicit shape assertions would catch regressions more precisely.
 
