@@ -60,8 +60,25 @@ jobs:
 
       - name: Patch event payload for benchmark action
         run: |
-          jq '.head_commit = .workflow_run.head_commit' "$GITHUB_EVENT_PATH" > /tmp/patched-event.json
+          COMMIT_MSG=$(git log -1 --format='%s' HEAD)
+          COMMIT_AUTHOR=$(git log -1 --format='%an' HEAD)
+          COMMIT_EMAIL=$(git log -1 --format='%ae' HEAD)
+          COMMIT_TIME=$(git log -1 --format='%aI' HEAD)
+          jq --arg sha "$COMMIT_SHA" \
+             --arg msg "$COMMIT_MSG" \
+             --arg author "$COMMIT_AUTHOR" \
+             --arg email "$COMMIT_EMAIL" \
+             --arg time "$COMMIT_TIME" \
+             '.head_commit = {
+               "id": $sha,
+               "message": $msg,
+               "timestamp": $time,
+               "author": {"name": $author, "email": $email},
+               "committer": {"name": $author, "email": $email}
+             }' "$GITHUB_EVENT_PATH" > /tmp/patched-event.json
           mv /tmp/patched-event.json "$GITHUB_EVENT_PATH"
+        env:
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
 
       - name: Process results
         uses: benchmark-action/github-action-benchmark@v1
