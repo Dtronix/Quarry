@@ -513,7 +513,7 @@ public sealed class SqlKataConverter
 /// <summary>
 /// Result of attempting to convert a single SqlKata Query chain.
 /// </summary>
-public sealed class SqlKataConversionEntry
+public sealed class SqlKataConversionEntry : IConversionEntry
 {
     public string FilePath { get; }
     public int Line { get; }
@@ -537,6 +537,9 @@ public sealed class SqlKataConversionEntry
 
     public bool IsConvertible => ChainCode != null;
     public bool HasWarnings => Diagnostics.Any(d => d.Severity == "Warning");
+
+    IReadOnlyList<IConversionDiagnostic> IConversionEntry.Diagnostics => Diagnostics;
+    string IConversionEntry.OriginalSource => OriginalCode;
 }
 
 /// <summary>
