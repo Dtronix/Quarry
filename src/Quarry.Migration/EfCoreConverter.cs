@@ -57,7 +57,7 @@ public sealed class EfCoreConverter
         var diagnostics = new List<ConversionDiagnostic>();
 
         // Resolve entity type to schema mapping
-        if (!TryResolveEntity(site.EntityTypeName, schemaMap, out var entity))
+        if (!schemaMap.TryGetEntityByTypeName(site.EntityTypeName, out var entity))
         {
             diagnostics.Add(new ConversionDiagnostic(
                 ConversionDiagnosticSeverity.Error,
@@ -172,23 +172,6 @@ public sealed class EfCoreConverter
             site.ChainExpression.ToString(),
             sb.ToString(),
             diagnostics);
-    }
-
-    private static bool TryResolveEntity(string entityTypeName, SchemaMap schemaMap, out EntityMapping entity)
-    {
-        // Try matching by class name
-        foreach (var e in schemaMap.Entities)
-        {
-            if (string.Equals(e.ClassName, entityTypeName + "Schema", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(e.ClassName, entityTypeName, StringComparison.OrdinalIgnoreCase))
-            {
-                entity = e;
-                return true;
-            }
-        }
-
-        entity = null!;
-        return false;
     }
 
     private static string? RewriteLambda(EfCoreChainStep step, string lambdaVar, EntityMapping entity)

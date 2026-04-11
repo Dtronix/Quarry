@@ -27,11 +27,12 @@ internal sealed class EfCoreDetector
     {
         "Where", "OrderBy", "OrderByDescending", "ThenBy", "ThenByDescending",
         "Select", "GroupBy", "Take", "Skip", "Distinct",
-        "Join", "GroupJoin",
+        "Join",
     };
 
     private static readonly HashSet<string> UnsupportedEfCoreMethods = new(StringComparer.Ordinal)
     {
+        "GroupJoin",
         "Include", "ThenInclude", "AsNoTracking", "AsTracking",
         "FromSqlRaw", "FromSqlInterpolated", "ExecuteUpdate", "ExecuteDelete",
         "AsSplitQuery", "AsNoTrackingWithIdentityResolution",

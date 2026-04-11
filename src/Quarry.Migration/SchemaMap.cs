@@ -21,6 +21,26 @@ internal sealed class SchemaMap
     public bool TryGetEntity(string tableName, out EntityMapping mapping)
         => _entities.TryGetValue(tableName, out mapping!);
 
+    /// <summary>
+    /// Tries to find an entity mapping by C# entity type name (e.g., "User" matches "UserSchema").
+    /// Used by EF Core converter where detection provides the entity type, not the SQL table name.
+    /// </summary>
+    public bool TryGetEntityByTypeName(string typeName, out EntityMapping mapping)
+    {
+        foreach (var entity in _entities.Values)
+        {
+            if (string.Equals(entity.ClassName, typeName + "Schema", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(entity.ClassName, typeName, StringComparison.OrdinalIgnoreCase))
+            {
+                mapping = entity;
+                return true;
+            }
+        }
+
+        mapping = null!;
+        return false;
+    }
+
     public IEnumerable<EntityMapping> Entities => _entities.Values;
 }
 

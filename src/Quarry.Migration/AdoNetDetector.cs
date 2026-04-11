@@ -129,20 +129,19 @@ internal sealed class AdoNetDetector
     private static string? FindCommandTextAssignment(BlockSyntax block, string commandVarName, SemanticModel model)
     {
         // Look for: cmd.CommandText = "SQL string";
-        foreach (var statement in block.Statements)
+        // Uses DescendantNodes to also find assignments inside nested blocks (if, using, try, etc.)
+        foreach (var assignment in block.DescendantNodes().OfType<AssignmentExpressionSyntax>())
         {
-            if (statement is ExpressionStatementSyntax exprStatement &&
-                exprStatement.Expression is AssignmentExpressionSyntax assignment &&
-                assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
+            if (!assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
+                continue;
+
+            // Check left side is commandVar.CommandText
+            if (assignment.Left is MemberAccessExpressionSyntax leftMember &&
+                leftMember.Name.Identifier.Text == "CommandText" &&
+                leftMember.Expression is IdentifierNameSyntax leftIdentifier &&
+                leftIdentifier.Identifier.Text == commandVarName)
             {
-                // Check left side is commandVar.CommandText
-                if (assignment.Left is MemberAccessExpressionSyntax leftMember &&
-                    leftMember.Name.Identifier.Text == "CommandText" &&
-                    leftMember.Expression is IdentifierNameSyntax leftIdentifier &&
-                    leftIdentifier.Identifier.Text == commandVarName)
-                {
-                    return ExtractStringValue(assignment.Right, model);
-                }
+                return ExtractStringValue(assignment.Right, model);
             }
         }
 

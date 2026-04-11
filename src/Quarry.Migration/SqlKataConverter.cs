@@ -108,7 +108,45 @@ public sealed class SqlKataConverter
                     break;
 
                 case "WhereBetween":
+                case "OrWhereBetween":
                     EmitWhereBetween(sb, step, lambdaVar, entity, diagnostics);
+                    break;
+
+                case "WhereNot":
+                    diagnostics.Add(new ConversionDiagnostic(
+                        ConversionDiagnosticSeverity.Warning,
+                        "WhereNot requires manual negation in Quarry Where lambda"));
+                    EmitWhereClause(sb, step, lambdaVar, entity, diagnostics);
+                    break;
+
+                case "OrWhereNull":
+                    diagnostics.Add(new ConversionDiagnostic(
+                        ConversionDiagnosticSeverity.Warning,
+                        "OrWhereNull requires manual combination with preceding Where using || operator"));
+                    EmitNullCheck(sb, step, lambdaVar, entity, "==");
+                    break;
+
+                case "OrWhereNotNull":
+                    diagnostics.Add(new ConversionDiagnostic(
+                        ConversionDiagnosticSeverity.Warning,
+                        "OrWhereNotNull requires manual combination with preceding Where using || operator"));
+                    EmitNullCheck(sb, step, lambdaVar, entity, "!=");
+                    break;
+
+                case "WhereNotIn":
+                case "OrWhereIn":
+                    diagnostics.Add(new ConversionDiagnostic(
+                        ConversionDiagnosticSeverity.Warning,
+                        $"'{step.MethodName}' requires manual rewrite — use Contains() with negation or || as needed"));
+                    EmitWhereIn(sb, step, lambdaVar, entity, diagnostics);
+                    break;
+
+                case "WhereTrue":
+                case "WhereFalse":
+                    diagnostics.Add(new ConversionDiagnostic(
+                        ConversionDiagnosticSeverity.Warning,
+                        $"'{step.MethodName}' requires manual conversion to boolean comparison"));
+                    sb.Append($"/* TODO: {step.MethodName}({FormatArguments(step)}) */");
                     break;
 
                 case "OrderBy":
@@ -269,6 +307,10 @@ public sealed class SqlKataConverter
         {
             var prop = ResolveProperty(columnArg, entity);
             sb.Append($".Where({lambdaVar} => {lambdaVar}.{prop} {op} null)");
+        }
+        else
+        {
+            sb.Append($"/* TODO: {step.MethodName}({FormatArguments(step)}) — non-literal column */");
         }
     }
 

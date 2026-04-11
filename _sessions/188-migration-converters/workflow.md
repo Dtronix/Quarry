@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #188
 pr:
 session: 1
 phases-total: 7
-phases-complete: 6
+phases-complete: 7
 ## Problem Statement
 Extend the Quarry.Migration package (#185) beyond Dapper with additional source framework converters: EF Core, Raw ADO.NET, and SqlKata. The Dapper converter already exists and establishes the architecture. Dependencies: #185 (Dapper converter), #182 (shared SQL parser for ADO.NET).
 

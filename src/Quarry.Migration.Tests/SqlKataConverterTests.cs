@@ -38,6 +38,9 @@ namespace SqlKata
         public Query Distinct() => this;
         public Query AsCount(params string[] columns) => this;
         public Query AsSum(string column) => this;
+        public Query AsAvg(string column) => this;
+        public Query AsMin(string column) => this;
+        public Query AsMax(string column) => this;
         public Query ForPage(int page, int perPage = 15) => this;
     }
 }
@@ -387,5 +390,87 @@ public class Example
         Assert.That(entries, Has.Count.EqualTo(1));
         Assert.That(entries[0].ChainCode, Does.Contain("Sql.Count()"));
         Assert.That(entries[0].ChainCode, Does.Contain("ExecuteScalarAsync<int>()"));
+    }
+
+    [Test]
+    public void ForPage_MapsToOffsetLimit()
+    {
+        var entries = Convert(@"
+using SqlKata;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class Example
+{
+    public void Run()
+    {
+        var query = new Query(""users"").ForPage(3, 25);
+    }
+}
+");
+
+        Assert.That(entries, Has.Count.EqualTo(1));
+        Assert.That(entries[0].ChainCode, Does.Contain(".Offset("));
+        Assert.That(entries[0].ChainCode, Does.Contain(".Limit(25)"));
+    }
+
+    [Test]
+    public void AsSum_MapsToSqlSum()
+    {
+        var entries = Convert(@"
+using SqlKata;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+    public Col<int> Age => default;
+}
+
+public class Example
+{
+    public void Run()
+    {
+        var query = new Query(""users"").AsSum(""age"");
+    }
+}
+");
+
+        Assert.That(entries, Has.Count.EqualTo(1));
+        Assert.That(entries[0].ChainCode, Does.Contain("Sql.Sum("));
+        Assert.That(entries[0].ChainCode, Does.Contain("ExecuteScalarAsync<int>()"));
+    }
+
+    [Test]
+    public void AsMax_MapsToSqlMax()
+    {
+        var entries = Convert(@"
+using SqlKata;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+    public Col<int> Age => default;
+}
+
+public class Example
+{
+    public void Run()
+    {
+        var query = new Query(""users"").AsMax(""age"");
+    }
+}
+");
+
+        Assert.That(entries, Has.Count.EqualTo(1));
+        Assert.That(entries[0].ChainCode, Does.Contain("Sql.Max("));
     }
 }
