@@ -7,7 +7,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #241
-pr:
+pr: #252
 session: 1
 phases-total: 4
 phases-complete: 4
@@ -30,3 +30,4 @@ Baseline: 3190 tests all passing (175 Migration, 103 Analyzers, 2912 Quarry). No
 | 1 | DESIGN | PLAN | Explored SqlAssembler.cs, QueryPlan, carrier param binding. Identified mask-invariant segments. User approved SELECT+DELETE scope with conditional ORDER BY support. |
 | 1 | PLAN | IMPLEMENT | 4-phase plan approved: (1) Fix ORDER BY/post-union WHERE paramIndex, (2) Batch SELECT, (3) Batch DELETE, (4) Unit tests. |
 | 1 | IMPLEMENT | REVIEW | All 4 phases complete. 9 new tests, 3199 total, 0 failures. |
+| 1 | REVIEW | REMEDIATE | Review: 8 findings (0 critical/high, 1 medium, 7 low). Fixed #3 (allocation reuse) and #4 (set-operation test). |
