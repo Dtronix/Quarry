@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #240
 pr:
 session: 1
 phases-total: 3
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 Structurally identical carriers produce separate classes, causing 30-50% code bloat in generated output. Carriers with the same parameter types, field layout, and interface set should share a single class definition.
 
@@ -27,3 +27,5 @@ Baseline: All 3,190 tests pass (175 Migration + 103 Analyzers + 2,912 Quarry.Tes
 | 1 | INTAKE | DESIGN | Loaded issue #240, created worktree, baseline green |
 | 1 | DESIGN | PLAN | Full structural key approach approved; private helper in FileEmitter |
 | 1 | PLAN | IMPLEMENT | 3-phase plan approved |
+| 1 | IMPLEMENT | REVIEW | All 3 phases implemented, 3,193 tests green |
+| 1 | REVIEW | REMEDIATE | 2 A-fixes (test assertions), 1 edge-case test addition |
