@@ -247,6 +247,37 @@ public class Example
     }
 
     [Test]
+    public async Task WarningTierDiagnostic_QRM002_StillAppliesCodeFix()
+    {
+        // DELETE without WHERE → QRM002 (conversion with warnings) → code fix still applies
+        var (source, actions) = await ApplyCodeFixAsync(@"
+using System.Data;
+using Dapper;
+using System.Threading.Tasks;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class Example
+{
+    public async Task Run(IDbConnection connection)
+    {
+        await connection.ExecuteAsync(""DELETE FROM users"");
+    }
+}
+");
+
+        Assert.That(actions, Has.Count.EqualTo(1));
+        Assert.That(source, Is.Not.Null);
+        Assert.That(source, Does.Contain(".Users()"));
+        Assert.That(source, Does.Contain(".All()"));
+    }
+
+    [Test]
     public async Task NonFixableDiagnostic_QRM003_NoCodeAction()
     {
         // INSERT emits IsSuggestionOnly=true → routed to QRM003 → not in FixableDiagnosticIds

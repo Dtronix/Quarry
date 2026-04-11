@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #245
 pr:
 session: 1
 phases-total: 4
-phases-complete: 3
+phases-complete: 4
 ## Problem Statement
 Add dedicated code fix tests for EfCoreMigrationCodeFix, AdoNetMigrationCodeFix, and SqlKataMigrationCodeFix. These are the most complex components — they manipulate syntax trees, handle `await` expressions, and add `using` directives. Currently only tested indirectly via analyzer tests.
 
@@ -28,3 +28,4 @@ Baseline: 3178 tests all passing (163 Migration.Tests, 103 Analyzers.Tests, 2912
 | 1 | INTAKE | DESIGN | Loaded issue #245, created worktree, baseline 3178 tests all green |
 | 1 | DESIGN | PLAN | Explored code fixes, stubs, test patterns. All four code fixes in scope. E2E test approach. |
 | 1 | PLAN | IMPLEMENT | 4-phase plan approved. One test file per code fix. |
+| 1 | IMPLEMENT | REVIEW | All 4 phases complete. 23 new tests, 3201 total, 0 failures. |

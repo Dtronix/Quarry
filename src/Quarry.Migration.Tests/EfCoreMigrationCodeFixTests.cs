@@ -297,6 +297,44 @@ public class Example
     }
 
     [Test]
+    public async Task WarningTierDiagnostic_QRM012_StillAppliesCodeFix()
+    {
+        // AsNoTracking() is unsupported → QRM012 (conversion with warnings) → code fix still applies
+        var (source, actions) = await ApplyCodeFixAsync(@"
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class User { public int UserId { get; set; } }
+
+public class AppDbContext : DbContext
+{
+    public DbSet<User> Users { get; set; }
+}
+
+public class Example
+{
+    public async Task Run(AppDbContext db)
+    {
+        var results = await db.Users.AsNoTracking().ToListAsync();
+    }
+}
+");
+
+        Assert.That(actions, Has.Count.EqualTo(1));
+        Assert.That(source, Is.Not.Null);
+        Assert.That(source, Does.Contain(".Users()"));
+    }
+
+    [Test]
     public async Task NonFixableDiagnostic_QRM013_NoCodeAction()
     {
         // No schema match → analyzer reports QRM013 → code fix should not apply

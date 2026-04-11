@@ -280,6 +280,37 @@ public class Example
     }
 
     [Test]
+    public async Task WarningTierDiagnostic_QRM022_StillAppliesCodeFix()
+    {
+        // DELETE without WHERE → QRM022 (conversion with warnings) → code fix still applies
+        var (source, actions) = await ApplyCodeFixAsync(@"
+using System.Data.SqlClient;
+using Quarry;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity<int>();
+}
+
+public class Example
+{
+    public void Run()
+    {
+        var cmd = new SqlCommand();
+        cmd.CommandText = ""DELETE FROM users"";
+        cmd.ExecuteNonQuery();
+    }
+}
+");
+
+        Assert.That(actions, Has.Count.EqualTo(1));
+        Assert.That(source, Is.Not.Null);
+        Assert.That(source, Does.Contain(".Users()"));
+        Assert.That(source, Does.Contain(".All()"));
+    }
+
+    [Test]
     public async Task NonFixableDiagnostic_QRM023_NoCodeAction()
     {
         var (source, actions) = await ApplyCodeFixAsync(@"
