@@ -4,7 +4,7 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: REMEDIATE
+phase: FINALIZE
 status: active
 issue: #242
 pr: #250
