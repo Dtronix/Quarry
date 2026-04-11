@@ -142,6 +142,7 @@ internal sealed class FileEmitter
         if (_chains != null && _carrierPlans != null)
         {
             var carrierIndex = 0;
+            var carrierDedup = new Dictionary<CarrierStructuralKey, string>();
             for (var chainIndex = 0; chainIndex < _chains.Count; chainIndex++)
             {
                 var chain = _chains[chainIndex];
@@ -158,12 +159,24 @@ internal sealed class FileEmitter
                 if (!chain.IsOperandChain && !CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
                     continue;
 
-                // Assign carrier class name and interfaces (deferred from CarrierAnalyzer)
-                carrierPlan.ClassName = $"Chain_{carrierIndex}";
+                // Resolve interfaces (needed for every chain regardless of dedup)
                 var resolvedInterfaces = CarrierEmitter.ResolveCarrierInterfaceList(chain);
                 carrierPlan.BaseClassName = "";
                 carrierPlan.ImplementedInterfaces = resolvedInterfaces;
-                carrierIndex++;
+
+                // Deduplicate: structurally identical carriers share a single class definition
+                var key = CarrierStructuralKey.Create(carrierPlan, chain, resolvedInterfaces);
+                if (carrierDedup.TryGetValue(key, out var existingName))
+                {
+                    carrierPlan.ClassName = existingName;
+                }
+                else
+                {
+                    carrierPlan.ClassName = $"Chain_{carrierIndex}";
+                    carrierDedup[key] = carrierPlan.ClassName;
+                    carrierIndex++;
+                    CarrierEmitter.EmitCarrierClass(sb, carrierPlan, chain, _contextClassName);
+                }
 
                 if (chain.IsOperandChain)
                 {
@@ -212,8 +225,6 @@ internal sealed class FileEmitter
                 {
                     carrierFirstClauseIds.Add(clauses[0].Site.UniqueId);
                 }
-
-                CarrierEmitter.EmitCarrierClass(sb, carrierPlan, chain, _contextClassName);
             }
         }
 
@@ -909,5 +920,111 @@ internal sealed class FileEmitter
         public static readonly QueryPlanReferenceComparer Instance = new();
         public bool Equals(QueryPlan x, QueryPlan y) => ReferenceEquals(x, y);
         public int GetHashCode(QueryPlan obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+    }
+
+    /// <summary>
+    /// Structural key for carrier class deduplication. Two carriers with the same key
+    /// produce identical class text (modulo class name) and can share a single definition.
+    /// </summary>
+    private readonly struct CarrierStructuralKey : IEquatable<CarrierStructuralKey>
+    {
+        private readonly IReadOnlyList<CarrierField> _fields;
+        private readonly string? _maskType;
+        private readonly int _maskBitCount;
+        private readonly IReadOnlyList<CapturedVariableExtractor> _extractors;
+        private readonly Dictionary<int, AssembledSqlVariant> _sqlVariants;
+        private readonly string? _readerDelegateCode;
+        private readonly bool _hasCollectionParam;
+        private readonly string[] _interfaces;
+        private readonly int _hashCode;
+
+        private CarrierStructuralKey(
+            IReadOnlyList<CarrierField> fields,
+            string? maskType,
+            int maskBitCount,
+            IReadOnlyList<CapturedVariableExtractor> extractors,
+            Dictionary<int, AssembledSqlVariant> sqlVariants,
+            string? readerDelegateCode,
+            bool hasCollectionParam,
+            string[] interfaces)
+        {
+            _fields = fields;
+            _maskType = maskType;
+            _maskBitCount = maskBitCount;
+            _extractors = extractors;
+            _sqlVariants = sqlVariants;
+            _readerDelegateCode = readerDelegateCode;
+            _hasCollectionParam = hasCollectionParam;
+            _interfaces = interfaces;
+
+            var hash = new HashCode();
+            hash.Add(fields.Count);
+            hash.Add(maskType);
+            hash.Add(maskBitCount);
+            hash.Add(extractors.Count);
+            hash.Add(sqlVariants.Count);
+            hash.Add(readerDelegateCode);
+            hash.Add(hasCollectionParam);
+            hash.Add(interfaces.Length);
+            foreach (var kvp in sqlVariants)
+            {
+                hash.Add(kvp.Key);
+                hash.Add(kvp.Value.Sql);
+                break;
+            }
+            _hashCode = hash.ToHashCode();
+        }
+
+        public static CarrierStructuralKey Create(
+            CarrierPlan carrier, AssembledPlan chain, string[] resolvedInterfaces)
+        {
+            var extractors = new List<CapturedVariableExtractor>();
+            foreach (var plan in carrier.ExtractionPlans)
+            {
+                foreach (var ext in plan.Extractors)
+                    extractors.Add(ext);
+            }
+
+            var readerCode = chain.ReaderDelegateCode != null && CarrierEmitter.IsReaderSelfContained(chain)
+                ? chain.ReaderDelegateCode
+                : null;
+
+            var hasCollection = false;
+            foreach (var p in chain.ChainParameters)
+            {
+                if (p.IsCollection) { hasCollection = true; break; }
+            }
+
+            return new CarrierStructuralKey(
+                carrier.Fields,
+                carrier.MaskType,
+                carrier.MaskBitCount,
+                extractors,
+                chain.SqlVariants,
+                readerCode,
+                hasCollection,
+                resolvedInterfaces);
+        }
+
+        public bool Equals(CarrierStructuralKey other)
+        {
+            if (_hashCode != other._hashCode) return false;
+            if (_maskType != other._maskType) return false;
+            if (_maskBitCount != other._maskBitCount) return false;
+            if (_hasCollectionParam != other._hasCollectionParam) return false;
+            if (_readerDelegateCode != other._readerDelegateCode) return false;
+            if (!EqualityHelpers.SequenceEqual(_fields, other._fields)) return false;
+            if (!EqualityHelpers.SequenceEqual(_extractors, other._extractors)) return false;
+            if (!EqualityHelpers.DictionaryEqual(_sqlVariants, other._sqlVariants)) return false;
+            if (_interfaces.Length != other._interfaces.Length) return false;
+            for (int i = 0; i < _interfaces.Length; i++)
+            {
+                if (_interfaces[i] != other._interfaces[i]) return false;
+            }
+            return true;
+        }
+
+        public override bool Equals(object? obj) => obj is CarrierStructuralKey other && Equals(other);
+        public override int GetHashCode() => _hashCode;
     }
 }

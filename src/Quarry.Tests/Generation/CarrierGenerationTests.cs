@@ -3249,4 +3249,251 @@ public static class Queries
 
     #endregion
 
+    // ── Carrier deduplication tests ──────────────────────────────────────
+
+    [Test]
+    public void DuplicateCarriers_SameWherePattern_SharedClass()
+    {
+        // Two chains with identical structure (same Where column, same Select,
+        // same terminal) should share a single carrier class definition.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+    }
+
+    public static async Task Method2(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(1),
+            "Structurally identical carriers should share a single class definition");
+        Assert.That(code, Does.Contain("file sealed class Chain_0"));
+
+        // Both interceptor methods must reference the shared carrier class
+        var chain0Refs = System.Text.RegularExpressions.Regex.Matches(code, @"Chain_0").Count;
+        Assert.That(chain0Refs, Is.GreaterThan(1),
+            "Both interceptor method bodies should reference the shared Chain_0 class");
+    }
+
+    [Test]
+    public void DuplicateCarriers_DifferentWhereClauses_SeparateClasses()
+    {
+        // Two chains with different Where columns produce different SQL,
+        // so they must NOT be deduplicated.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+    }
+
+    public static async Task Method2(TestDbContext db)
+    {
+        await db.Users().Where(u => u.UserId == 1).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(2),
+            "Carriers with different SQL should not be deduplicated");
+        Assert.That(code, Does.Contain("file sealed class Chain_0"));
+        Assert.That(code, Does.Contain("file sealed class Chain_1"));
+    }
+
+    [Test]
+    public void DuplicateCarriers_SameFieldsDifferentSql_SeparateClasses()
+    {
+        // Two chains with identical parameter types/fields but different SQL
+        // (different column in Where) must remain separate.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.UserId == 1).Select(u => u).ExecuteFetchAllAsync();
+    }
+
+    public static async Task Method2(TestDbContext db)
+    {
+        await db.Users().Where(u => u.UserId == 2).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+
+        // Same field layout (one int param) but the SQL literal values differ
+        // (WHERE "UserId" = 1 vs WHERE "UserId" = 2), so carriers must stay separate
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(2),
+            "Carriers with different SQL should not be deduplicated");
+    }
+
+    [Test]
+    public void DuplicateCarriers_NoParamQueries_SharedClass()
+    {
+        // Minimal dedup case: two identical no-parameter queries
+        // (no fields, no mask, no extraction plans — only SQL and interfaces).
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).ExecuteFetchAllAsync();
+    }
+
+    public static async Task Method2(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(1),
+            "Identical no-parameter carriers should share a single class definition");
+    }
+
+    [Test]
+    public void DuplicateCarriers_DifferentTerminals_SharedClass()
+    {
+        // Same WHERE clause with FetchAll vs FetchFirst. The carrier class is a
+        // data holder — terminal differences are handled by separate interceptor
+        // methods. When the carrier structure is identical, dedup should fire.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).ExecuteFetchAllAsync();
+    }
+
+    public static async Task<User> Method2(TestDbContext db)
+    {
+        return await db.Users().Where(u => u.IsActive).ExecuteFetchFirstAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(1),
+            "Same carrier structure with different terminals should share a class");
+    }
+
+    [Test]
+    public void DuplicateCarriers_WithAndWithoutSelect_SeparateClasses()
+    {
+        // One query with Select projection, one without — different interfaces
+        // (IQueryBuilder<User> vs IQueryBuilder<User, string>) and different SQL.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Method1(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).Select(u => u).ExecuteFetchAllAsync();
+    }
+
+    public static async Task Method2(TestDbContext db)
+    {
+        await db.Users().Where(u => u.IsActive).Select(u => u.UserName).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        var carrierCount = System.Text.RegularExpressions.Regex.Matches(code, @"file sealed class Chain_\d+").Count;
+        Assert.That(carrierCount, Is.EqualTo(2),
+            "Different Select projections should produce separate carriers (different interfaces/SQL)");
+    }
 }
