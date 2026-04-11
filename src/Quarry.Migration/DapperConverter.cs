@@ -89,7 +89,7 @@ public sealed class DapperConverter
 /// <summary>
 /// Result of attempting to convert a single Dapper call site.
 /// </summary>
-public sealed class DapperConversionEntry
+public sealed class DapperConversionEntry : IConversionEntry
 {
     public string FilePath { get; }
     public int Line { get; }
@@ -131,12 +131,15 @@ public sealed class DapperConversionEntry
     public bool IsConvertible => ChainCode != null && !IsSuggestionOnly;
 
     public bool HasWarnings => Diagnostics.Any(d => d.Severity == "Warning");
+
+    IReadOnlyList<IConversionDiagnostic> IConversionEntry.Diagnostics => Diagnostics;
+    string IConversionEntry.OriginalSource => OriginalSql;
 }
 
 /// <summary>
 /// A diagnostic message from the conversion process.
 /// </summary>
-public sealed class DapperConversionDiagnostic
+public sealed class DapperConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }

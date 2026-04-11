@@ -307,7 +307,7 @@ public sealed class EfCoreConverter
 /// <summary>
 /// Result of attempting to convert a single EF Core LINQ chain.
 /// </summary>
-public sealed class EfCoreConversionEntry
+public sealed class EfCoreConversionEntry : IConversionEntry
 {
     public string FilePath { get; }
     public int Line { get; }
@@ -333,12 +333,15 @@ public sealed class EfCoreConversionEntry
 
     public bool IsConvertible => ChainCode != null;
     public bool HasWarnings => Diagnostics.Any(d => d.Severity == "Warning");
+
+    IReadOnlyList<IConversionDiagnostic> IConversionEntry.Diagnostics => Diagnostics;
+    string IConversionEntry.OriginalSource => OriginalCode;
 }
 
 /// <summary>
 /// A diagnostic message from the EF Core conversion process.
 /// </summary>
-public sealed class EfCoreConversionDiagnostic
+public sealed class EfCoreConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }

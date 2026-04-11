@@ -124,7 +124,7 @@ public sealed class AdoNetConverter
 /// <summary>
 /// Result of attempting to convert a single ADO.NET call site.
 /// </summary>
-public sealed class AdoNetConversionEntry
+public sealed class AdoNetConversionEntry : IConversionEntry
 {
     public string FilePath { get; }
     public int Line { get; }
@@ -151,12 +151,15 @@ public sealed class AdoNetConversionEntry
 
     public bool IsConvertible => ChainCode != null && !IsSuggestionOnly;
     public bool HasWarnings => Diagnostics.Any(d => d.Severity == "Warning");
+
+    IReadOnlyList<IConversionDiagnostic> IConversionEntry.Diagnostics => Diagnostics;
+    string IConversionEntry.OriginalSource => OriginalSql;
 }
 
 /// <summary>
 /// A diagnostic message from the ADO.NET conversion process.
 /// </summary>
-public sealed class AdoNetConversionDiagnostic
+public sealed class AdoNetConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }
