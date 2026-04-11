@@ -10,7 +10,7 @@ issue: #188
 pr:
 session: 1
 phases-total: 7
-phases-complete: 1
+phases-complete: 2
 ## Problem Statement
 Extend the Quarry.Migration package (#185) beyond Dapper with additional source framework converters: EF Core, Raw ADO.NET, and SqlKata. The Dapper converter already exists and establishes the architecture. Dependencies: #185 (Dapper converter), #182 (shared SQL parser for ADO.NET).
 
