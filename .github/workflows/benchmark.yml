@@ -39,13 +39,12 @@ jobs:
 
       - name: Run benchmarks
         run: |
+          EXTRA_ARGS=""
           if [ "$DRY_RUN" == "true" ]; then
-            FILTER='*SelectBenchmarks.Quarry_SimpleSelect'
-          else
-            FILTER='*'
+            EXTRA_ARGS="--dryRun"
           fi
           dotnet run --project src/Quarry.Benchmarks -c Release \
-            -- --filter "$FILTER" --artifacts BenchmarkDotNet.Artifacts
+            -- --filter '*' $EXTRA_ARGS --artifacts BenchmarkDotNet.Artifacts
         env:
           DRY_RUN: ${{ inputs.dry_run || 'false' }}
 
