@@ -3099,4 +3099,154 @@ public static class Queries
 
     #endregion
 
+    #region Structural Shape Assertions
+
+    [Test]
+    public void CarrierGeneration_ParameterlessClause_OmitsCarrierCast()
+    {
+        // Phase 2 dead-code removal: clause bodies with no parameters and no mask bit
+        // should not emit 'var __c = Unsafe.As<...>(builder)' since it is unused.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        // The carrier cast appears exactly once — in the terminal preamble.
+        // If dead-code removal were absent, it would also appear in the Select clause body.
+        var carrierCastCount = System.Text.RegularExpressions.Regex.Matches(code, @"var __c = Unsafe\.As<").Count;
+        Assert.That(carrierCastCount, Is.EqualTo(1),
+            "Carrier cast should appear once (terminal only); parameterless clause should omit it");
+        // The return line is always emitted for interface crossing
+        Assert.That(code, Does.Contain("return Unsafe.As<"),
+            "Return line should still use Unsafe.As for interface crossing");
+    }
+
+    [Test]
+    public void CarrierGeneration_CollectionParam_HasReadonlySqlCache()
+    {
+        // Phase 3: collection parameter chains emit a static readonly _sqlCache field.
+        var source = SharedSchema + @"
+using System.Collections.Generic;
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async System.Threading.Tasks.Task Test(TestDbContext db, IReadOnlyList<int> ids)
+    {
+        await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("static readonly Quarry.Internal.CollectionSqlCache?[] _sqlCache"),
+            "Collection parameter chain should emit readonly _sqlCache field");
+    }
+
+    [Test]
+    public void CarrierGeneration_BatchInsert_UsesParameterNameCache()
+    {
+        // Phase 4: batch insert terminals use ParameterNames.AtP for zero-allocation
+        // parameter name lookup instead of string concatenation.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var users = new[] { new User { UserName = ""a"", IsActive = true } };
+        await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("ParameterNames.AtP("),
+            "Batch insert should use ParameterNames.AtP for cached parameter name lookup");
+        Assert.That(code, Does.Not.Contain("\"@p\" + __paramIdx"),
+            "Batch insert should not use string concatenation for parameter names");
+    }
+
+    [Test]
+    public void CarrierGeneration_SelfContainedReader_EmitsReaderField()
+    {
+        // Phase 5: self-contained reader carriers emit a static readonly _reader field
+        // to avoid duplicating the reader lambda at each terminal call site.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Select(u => u).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("internal static readonly System.Func<System.Data.Common.DbDataReader,"),
+            "Self-contained reader should emit static readonly _reader field with Func type");
+        Assert.That(code, Does.Contain("> _reader ="),
+            "Carrier class should declare _reader field");
+        Assert.That(code, Does.Contain("Chain_0._reader"),
+            "Terminal should reference the carrier's static _reader field");
+    }
+
+    #endregion
+
 }
