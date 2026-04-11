@@ -85,7 +85,7 @@ internal sealed class AdoNetDetector
             return null;
 
         // Extract SQL from CommandText assignment
-        var sql = FindCommandTextAssignment(enclosingBlock, commandVarName, model);
+        var sql = FindCommandTextAssignment(enclosingBlock, commandVarName, invocation, model);
         if (sql == null)
             return null;
 
@@ -126,10 +126,17 @@ internal sealed class AdoNetDetector
         return false;
     }
 
-    private static string? FindCommandTextAssignment(BlockSyntax block, string commandVarName, SemanticModel model)
+    private static string? FindCommandTextAssignment(
+        BlockSyntax block,
+        string commandVarName,
+        InvocationExpressionSyntax executeInvocation,
+        SemanticModel model)
     {
         // Look for: cmd.CommandText = "SQL string";
         // Uses DescendantNodes to also find assignments inside nested blocks (if, using, try, etc.)
+        // When CommandText is reassigned, we want the last assignment before the Execute call.
+        AssignmentExpressionSyntax? lastMatch = null;
+
         foreach (var assignment in block.DescendantNodes().OfType<AssignmentExpressionSyntax>())
         {
             if (!assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
@@ -139,13 +146,14 @@ internal sealed class AdoNetDetector
             if (assignment.Left is MemberAccessExpressionSyntax leftMember &&
                 leftMember.Name.Identifier.Text == "CommandText" &&
                 leftMember.Expression is IdentifierNameSyntax leftIdentifier &&
-                leftIdentifier.Identifier.Text == commandVarName)
+                leftIdentifier.Identifier.Text == commandVarName &&
+                assignment.Span.End <= executeInvocation.SpanStart)
             {
-                return ExtractStringValue(assignment.Right, model);
+                lastMatch = assignment;
             }
         }
 
-        return null;
+        return lastMatch != null ? ExtractStringValue(lastMatch.Right, model) : null;
     }
 
     private static string? ExtractStringValue(ExpressionSyntax expression, SemanticModel model)
