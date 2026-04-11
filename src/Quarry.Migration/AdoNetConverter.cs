@@ -156,7 +156,7 @@ public sealed class AdoNetConversionEntry
 /// <summary>
 /// A diagnostic message from the ADO.NET conversion process.
 /// </summary>
-public sealed class AdoNetConversionDiagnostic
+public sealed class AdoNetConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }

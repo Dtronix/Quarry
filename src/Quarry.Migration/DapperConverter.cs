@@ -136,7 +136,7 @@ public sealed class DapperConversionEntry
 /// <summary>
 /// A diagnostic message from the conversion process.
 /// </summary>
-public sealed class DapperConversionDiagnostic
+public sealed class DapperConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }

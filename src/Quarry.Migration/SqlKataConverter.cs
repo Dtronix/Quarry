@@ -542,7 +542,7 @@ public sealed class SqlKataConversionEntry
 /// <summary>
 /// A diagnostic message from the SqlKata conversion process.
 /// </summary>
-public sealed class SqlKataConversionDiagnostic
+public sealed class SqlKataConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }

@@ -338,7 +338,7 @@ public sealed class EfCoreConversionEntry
 /// <summary>
 /// A diagnostic message from the EF Core conversion process.
 /// </summary>
-public sealed class EfCoreConversionDiagnostic
+public sealed class EfCoreConversionDiagnostic : IConversionDiagnostic
 {
     public string Severity { get; }
     public string Message { get; }
