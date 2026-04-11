@@ -85,12 +85,17 @@ internal sealed class AdoNetDetector
             return null;
 
         // Extract SQL from CommandText assignment
-        var sql = FindCommandTextAssignment(enclosingBlock, commandVarName, model);
+        var commandTextAssignment = FindCommandTextAssignment(enclosingBlock, commandVarName, invocation);
+        if (commandTextAssignment == null)
+            return null;
+
+        var sql = ExtractStringValue(commandTextAssignment.Right, model);
         if (sql == null)
             return null;
 
         // Collect parameter names from Parameters.Add/AddWithValue calls
-        var parameterNames = CollectParameterNames(enclosingBlock, commandVarName);
+        // between the CommandText assignment and the Execute call
+        var parameterNames = CollectParameterNames(enclosingBlock, commandVarName, commandTextAssignment, invocation);
 
         return new AdoNetCallSite(
             invocationSyntax: invocation,
@@ -126,10 +131,16 @@ internal sealed class AdoNetDetector
         return false;
     }
 
-    private static string? FindCommandTextAssignment(BlockSyntax block, string commandVarName, SemanticModel model)
+    private static AssignmentExpressionSyntax? FindCommandTextAssignment(
+        BlockSyntax block,
+        string commandVarName,
+        InvocationExpressionSyntax executeInvocation)
     {
         // Look for: cmd.CommandText = "SQL string";
         // Uses DescendantNodes to also find assignments inside nested blocks (if, using, try, etc.)
+        // When CommandText is reassigned, we want the last assignment before the Execute call.
+        AssignmentExpressionSyntax? lastMatch = null;
+
         foreach (var assignment in block.DescendantNodes().OfType<AssignmentExpressionSyntax>())
         {
             if (!assignment.IsKind(SyntaxKind.SimpleAssignmentExpression))
@@ -139,13 +150,14 @@ internal sealed class AdoNetDetector
             if (assignment.Left is MemberAccessExpressionSyntax leftMember &&
                 leftMember.Name.Identifier.Text == "CommandText" &&
                 leftMember.Expression is IdentifierNameSyntax leftIdentifier &&
-                leftIdentifier.Identifier.Text == commandVarName)
+                leftIdentifier.Identifier.Text == commandVarName &&
+                assignment.Span.End <= executeInvocation.SpanStart)
             {
-                return ExtractStringValue(assignment.Right, model);
+                lastMatch = assignment;
             }
         }
 
-        return null;
+        return lastMatch;
     }
 
     private static string? ExtractStringValue(ExpressionSyntax expression, SemanticModel model)
@@ -175,12 +187,21 @@ internal sealed class AdoNetDetector
         return null;
     }
 
-    private static IReadOnlyList<string> CollectParameterNames(BlockSyntax block, string commandVarName)
+    private static IReadOnlyList<string> CollectParameterNames(
+        BlockSyntax block,
+        string commandVarName,
+        AssignmentExpressionSyntax commandTextAssignment,
+        InvocationExpressionSyntax executeInvocation)
     {
         var names = new List<string>();
 
         foreach (var invocation in block.DescendantNodes().OfType<InvocationExpressionSyntax>())
         {
+            // Only collect parameters added between the CommandText assignment and the Execute call
+            if (invocation.Span.End <= commandTextAssignment.Span.End ||
+                invocation.Span.End > executeInvocation.SpanStart)
+                continue;
+
             if (invocation.Expression is MemberAccessExpressionSyntax memberAccess)
             {
                 var methodName = memberAccess.Name.Identifier.Text;

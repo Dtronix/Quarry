@@ -299,6 +299,89 @@ public class Example
     }
 
     [Test]
+    public void Detect_ReassignedCommandText_UsesLastBeforeExecute()
+    {
+        var (model, root) = CreateCompilationForDetection(@"
+using System.Data.SqlClient;
+
+public class Example
+{
+    public void Run()
+    {
+        var cmd = new SqlCommand();
+        cmd.CommandText = ""SELECT 1"";
+        cmd.CommandText = ""SELECT * FROM orders"";
+        cmd.ExecuteReader();
+    }
+}
+");
+
+        var detector = new AdoNetDetector();
+        var sites = detector.Detect(model, root);
+
+        Assert.That(sites, Has.Count.EqualTo(1));
+        Assert.That(sites[0].Sql, Is.EqualTo("SELECT * FROM orders"));
+    }
+
+    [Test]
+    public void Detect_CommandTextAfterExecute_Ignored()
+    {
+        var (model, root) = CreateCompilationForDetection(@"
+using System.Data.SqlClient;
+
+public class Example
+{
+    public void Run()
+    {
+        var cmd = new SqlCommand();
+        cmd.CommandText = ""SELECT * FROM users"";
+        cmd.ExecuteReader();
+        cmd.CommandText = ""SELECT * FROM orders"";
+        cmd.ExecuteReader();
+    }
+}
+");
+
+        var detector = new AdoNetDetector();
+        var sites = detector.Detect(model, root);
+
+        Assert.That(sites, Has.Count.EqualTo(2));
+        Assert.That(sites[0].Sql, Is.EqualTo("SELECT * FROM users"));
+        Assert.That(sites[1].Sql, Is.EqualTo("SELECT * FROM orders"));
+    }
+
+    [Test]
+    public void Detect_ParametersAfterExecute_NotCollected()
+    {
+        var (model, root) = CreateCompilationForDetection(@"
+using System.Data.SqlClient;
+
+public class Example
+{
+    public void Run()
+    {
+        var cmd = new SqlCommand();
+        cmd.CommandText = ""SELECT * FROM users WHERE name = @name"";
+        cmd.Parameters.AddWithValue(""@name"", ""John"");
+        cmd.ExecuteReader();
+        cmd.CommandText = ""SELECT * FROM orders WHERE id = @id"";
+        cmd.Parameters.AddWithValue(""@id"", 42);
+        cmd.ExecuteReader();
+    }
+}
+");
+
+        var detector = new AdoNetDetector();
+        var sites = detector.Detect(model, root);
+
+        Assert.That(sites, Has.Count.EqualTo(2));
+        Assert.That(sites[0].ParameterNames, Has.Count.EqualTo(1));
+        Assert.That(sites[0].ParameterNames[0], Is.EqualTo("name"));
+        Assert.That(sites[1].ParameterNames, Has.Count.EqualTo(1));
+        Assert.That(sites[1].ParameterNames[0], Is.EqualTo("id"));
+    }
+
+    [Test]
     public void Detect_AsyncMethods_DetectsCallSite()
     {
         var (model, root) = CreateCompilationForDetection(@"
