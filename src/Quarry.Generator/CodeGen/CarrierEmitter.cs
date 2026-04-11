@@ -263,10 +263,6 @@ internal static class CarrierEmitter
         // Compute global parameter offset for this clause's params
         var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
 
-        // In the carrier-only architecture, the builder is always the carrier
-        // (created by the ChainRoot interceptor). Just cast to it.
-        sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-
         // Determine which parameters to bind: prefer translated clause params (handles
         // column expression assignments), fall back to raw SetAction params.
         IReadOnlyList<Translation.ParameterInfo>? clauseParams = null;
@@ -274,6 +270,12 @@ internal static class CarrierEmitter
             clauseParams = site.Clause?.Parameters ?? site.Bound.Raw.SetActionParameters;
         else if (site.Clause != null)
             clauseParams = site.Clause.Parameters;
+
+        // Only emit the carrier cast when the body actually uses it
+        // (parameter binding or mask bit setting).
+        bool needsCarrierRef = (clauseParams != null && clauseParams.Count > 0) || clauseBit.HasValue;
+        if (needsCarrierRef)
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         if (clauseParams != null && clauseParams.Count > 0)
         {
@@ -358,6 +360,20 @@ internal static class CarrierEmitter
         // Emit collection SQL cache field if needed
         if (chain.ChainParameters.Any(p => p.IsCollection))
             EmitCollectionSqlCacheField(sb, chain);
+
+        // Emit static reader delegate field to avoid duplicating the lambda at each terminal.
+        // Only extract when the reader is self-contained (no references to interceptor-class
+        // fields like _entityReader_* or _mapper_*).
+        if (chain.ReaderDelegateCode != null && IsReaderSelfContained(chain))
+        {
+            var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(
+                chain.ExecutionSite.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
+            if (!string.IsNullOrEmpty(rawResult))
+            {
+                var readerResultType = InterceptorCodeGenerator.GetShortTypeName(rawResult!);
+                sb.AppendLine($"    internal static readonly System.Func<System.Data.Common.DbDataReader, {readerResultType}> _reader = {chain.ReaderDelegateCode};");
+            }
+        }
 
         // Emit the execution context field using the concrete context type for devirtualization
         sb.AppendLine($"    internal {contextTypeName}? Ctx;");
@@ -1188,7 +1204,7 @@ internal static class CarrierEmitter
     {
         var maxMask = chain.SqlVariants.Count == 1 ? 0 : chain.SqlVariants.Keys.Max();
         var arraySize = maxMask + 1;
-        sb.AppendLine($"    internal static Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
+        sb.AppendLine($"    internal static readonly Quarry.Internal.CollectionSqlCache?[] _sqlCache = new Quarry.Internal.CollectionSqlCache?[{arraySize}];");
     }
 
     internal static bool HasCarrierField(CarrierPlan carrier, FieldRole role)
@@ -1294,6 +1310,22 @@ internal static class CarrierEmitter
         }
 
         return queryParam.ClrType;
+    }
+
+    /// <summary>
+    /// Returns true when the reader delegate is self-contained (only references DbDataReader),
+    /// false when it references interceptor-class fields (_entityReader_*, _mapper_*).
+    /// </summary>
+    internal static bool IsReaderSelfContained(AssembledPlan chain)
+    {
+        var proj = chain.ProjectionInfo;
+        if (proj == null) return false;
+        if (proj.CustomEntityReaderClass != null) return false;
+        foreach (var col in proj.Columns)
+        {
+            if (col.CustomTypeMapping != null) return false;
+        }
+        return true;
     }
 
 }

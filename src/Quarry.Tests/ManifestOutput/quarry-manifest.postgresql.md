@@ -827,6 +827,14 @@ DELETE FROM "users"
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
+DELETE FROM "users" WHERE "IsActive" = FALSE
+```
+
+---
+
+### Users().Delete().Where(...).Prepare().ToDiagnostics()
+
+```sql
 DELETE FROM "users" WHERE "IsActive" = TRUE
 ```
 
@@ -860,14 +868,6 @@ DELETE FROM "users" WHERE "UserId" > 100
 
 ```sql
 DELETE FROM "users" WHERE "UserId" IN (1, 2)
-```
-
----
-
-### Users().Delete().Where(...).Prepare().ToDiagnostics()
-
-```sql
-DELETE FROM "users" WHERE NOT ("IsActive")
 ```
 
 ---
@@ -1978,6 +1978,14 @@ SELECT "UserId", "UserName" FROM "users" WHERE "Email" LIKE '%@example%'
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = FALSE
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE
 ```
 
@@ -2197,14 +2205,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE LOWER("UserName") = $1
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName" FROM "users" WHERE NOT ("IsActive")
-```
 
 ---
 

@@ -1161,6 +1161,14 @@ DELETE FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
+DELETE FROM "users" WHERE "IsActive" = 0
+```
+
+---
+
+### Users().Delete().Where(...).Prepare().ToDiagnostics()
+
+```sql
 DELETE FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -1194,14 +1202,6 @@ DELETE FROM "users" WHERE "UserId" > 100
 
 ```sql
 DELETE FROM "users" WHERE "UserId" IN (1, 2)
-```
-
----
-
-### Users().Delete().Where(...).Prepare().ToDiagnostics()
-
-```sql
-DELETE FROM "users" WHERE NOT ("IsActive")
 ```
 
 ---
@@ -1780,7 +1780,7 @@ SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priorit
 ### Users().LeftJoin(...).Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE NOT ("t0"."IsActive")
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 0
 ```
 
 ---
@@ -2819,6 +2819,14 @@ SELECT "UserId", "UserName" FROM "users" WHERE "Email" LIKE '%@example%'
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 0
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -3280,14 +3288,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE LOWER("UserName") = @p0
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName" FROM "users" WHERE NOT ("IsActive")
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT "UserId", "UserName" FROM "users" WHERE NOT (@p0) OR "Email" IS NULL
 ```
 
@@ -3729,6 +3729,14 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 0
+```
+
+---
+
+### Users().Where(...).ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = 1
 ```
 
@@ -3751,14 +3759,6 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
-
----
-
-### Users().Where(...).ToDiagnostics()
-
-```sql
-SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE NOT ("IsActive")
-```
 
 ---
 

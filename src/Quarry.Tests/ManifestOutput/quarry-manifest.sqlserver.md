@@ -822,7 +822,7 @@ DELETE FROM [users]
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
-DELETE FROM [users] WHERE NOT ([IsActive])
+DELETE FROM [users] WHERE [IsActive] = 0
 ```
 
 ---
@@ -2014,14 +2014,6 @@ SELECT [UserId], [UserName] FROM [users] WHERE NOT (@p0) OR [Email] IS NULL
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT [UserId], [UserName] FROM [users] WHERE NOT ([IsActive])
-```
-
----
-
-### Users().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT [UserId], [UserName] FROM [users] WHERE TRIM([UserName]) = @p0
 ```
 
@@ -2063,6 +2055,14 @@ SELECT [UserId], [UserName] FROM [users] WHERE [Email] IS NULL
 
 ```sql
 SELECT [UserId], [UserName] FROM [users] WHERE [Email] LIKE '%@example%'
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 0
 ```
 
 ---

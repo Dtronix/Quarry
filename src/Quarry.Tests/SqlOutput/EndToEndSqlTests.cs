@@ -93,7 +93,7 @@ public class EndToEndSqlTests
     public void Where_NegatedBooleanProperty()
     {
         var sql = _db.Users().Where(u => !u.IsActive).ToDiagnostics().Sql;
-        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE NOT (\"IsActive\")"));
+        Assert.That(sql, Is.EqualTo("SELECT \"UserId\", \"UserName\", \"Email\", \"IsActive\", \"CreatedAt\", \"LastLogin\" FROM \"users\" WHERE \"IsActive\" = 0"));
     }
 
     [Test]

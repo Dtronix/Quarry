@@ -98,10 +98,10 @@ internal class CrossDialectDeleteTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
-            pg:     "DELETE FROM \"users\" WHERE NOT (\"IsActive\")",
-            mysql:  "DELETE FROM `users` WHERE NOT (`IsActive`)",
-            ss:     "DELETE FROM [users] WHERE NOT ([IsActive])");
+            sqlite: "DELETE FROM \"users\" WHERE \"IsActive\" = 0",
+            pg:     "DELETE FROM \"users\" WHERE \"IsActive\" = FALSE",
+            mysql:  "DELETE FROM `users` WHERE `IsActive` = 0",
+            ss:     "DELETE FROM [users] WHERE [IsActive] = 0");
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1)); // Only Charlie is inactive

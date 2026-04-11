@@ -51,10 +51,10 @@ internal class CrossDialectWhereTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"IsActive\")",
-            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE NOT (\"IsActive\")",
-            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE NOT (`IsActive`)",
-            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE NOT ([IsActive])");
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 0",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = FALSE",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 0",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 0");
 
         // Execution: 1 inactive user
         var results = await lt.ExecuteFetchAllAsync();
