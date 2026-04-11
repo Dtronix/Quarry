@@ -15,11 +15,59 @@ permissions:
   contents: read
 
 jobs:
-  benchmark:
-    runs-on: debian-benchmark
+  check:
+    runs-on: ubuntu-latest
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Check for benchmark-relevant changes
+        id: check
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual trigger, running benchmarks"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LAST_SHA=$(curl -fsS https://raw.githubusercontent.com/Dtronix/Quarry-benchmarks/gh-pages/dev/bench/runs/runs.json 2>/dev/null \
+            | jq -r '.[0].sha // empty' 2>/dev/null || echo "")
+
+          if [ -z "$LAST_SHA" ]; then
+            echo "No previous benchmark run found, running benchmarks"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git cat-file -e "$LAST_SHA" 2>/dev/null; then
+            echo "Previous benchmark SHA $LAST_SHA not in history, running benchmarks"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          CHANGED=$(git diff --name-only "$LAST_SHA" HEAD)
+          echo "Changed files since $LAST_SHA:"
+          echo "$CHANGED"
+
+          if echo "$CHANGED" | grep -qE '^(src/Quarry/|src/Quarry\.Shared/|src/Quarry\.Generator/|src/Quarry\.Benchmarks/|src/Quarry\.Benchmarks\.Reporter/|\.github/workflows/benchmark\.yml|scripts/benchmark-pages/)'; then
+            echo "Benchmark-relevant changes detected, running benchmarks"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No benchmark-relevant changes, skipping"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  benchmark:
+    needs: check
+    if: needs.check.outputs.should_run == 'true'
+    runs-on: debian-benchmark
 
     steps:
       - uses: actions/checkout@v5

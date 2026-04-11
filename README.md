@@ -2,7 +2,7 @@
 
 Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit all SQL at compile time. AOT compatible. Zero runtime dependencies. Structured logging via Logsmith Abstraction mode.
 
-**[Documentation](https://dtronix.github.io/Quarry/)** | **[API Reference](https://dtronix.github.io/Quarry/api/)**
+**[Documentation](https://dtronix.github.io/Quarry/)** | **[API Reference](https://dtronix.github.io/Quarry/api/)** | **[Benchmark Dashboard](https://dtronix.github.io/Quarry-benchmarks/)**
 
 ---
 
@@ -67,7 +67,7 @@ Quarry is benchmarked against Raw ADO.NET, Dapper, EF Core, and SqlKata using [B
 | **Median speed ratio** | 1.23x | <u>1.01x</u> | 1.69x | 2.47x |
 | **Median alloc ratio** | 1.41x | <u>1.08x</u> | 6.45x | 5.23x |
 
-Quarry's median overhead is **1.01x Raw ADO.NET** across 23 benchmarks — faster than Dapper with fewer allocations. See the [full benchmark results](https://dtronix.github.io/Quarry/articles/benchmarks.html) for per-category breakdowns and the [performance tracking issue](https://github.com/Dtronix/Quarry/issues/105) for run-over-run history.
+Quarry's median overhead is **1.01x Raw ADO.NET** across 23 benchmarks — faster than Dapper with fewer allocations. See the [full benchmark results](https://dtronix.github.io/Quarry/articles/benchmarks.html) for per-category breakdowns and the [live benchmark dashboard](https://dtronix.github.io/Quarry-benchmarks/) for run-over-run trends with per-commit reports.
 
 ---
 

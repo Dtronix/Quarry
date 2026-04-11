@@ -4,3 +4,5 @@
 - name: API Reference
   href: api/
   homepage: api/index.md
+- name: Benchmarks
+  href: https://dtronix.github.io/Quarry-benchmarks/

@@ -60,7 +60,7 @@ Compile-time SQL analysis rules and code fixes.
 Migrate from Dapper, EF Core, SqlKata, or raw ADO.NET.
 
 ### [Benchmarks](articles/benchmarks.md)
-Performance comparison against Dapper, EF Core, and SqlKata.
+Performance comparison against Dapper, EF Core, and SqlKata. See the [live benchmark dashboard](https://dtronix.github.io/Quarry-benchmarks/) for trends across commits.
 
 </div>
 </div>
