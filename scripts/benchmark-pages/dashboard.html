@@ -8,23 +8,51 @@
   <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
   <script src="data.js"></script>
   <style>
+    :root {
+      --bg: #f5f5f5;
+      --text: #24292e;
+      --text-muted: #586069;
+      --card-bg: #ffffff;
+      --border: #e1e4e8;
+      --input-border: #d1d5da;
+      --link: #0366d6;
+      --shadow: rgba(0,0,0,0.08);
+      --chart-line: #0366d6;
+      --chart-fill: rgba(3,102,214,0.1);
+      --chart-grid: rgba(0,0,0,0.08);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --card-bg: #161b22;
+        --border: #30363d;
+        --input-border: #30363d;
+        --link: #58a6ff;
+        --shadow: rgba(0,0,0,0.5);
+        --chart-line: #58a6ff;
+        --chart-fill: rgba(88,166,255,0.15);
+        --chart-grid: rgba(255,255,255,0.08);
+      }
+    }
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #24292e; background: #f5f5f5; }
-    header { background: white; padding: 1.25rem 2rem; border-bottom: 1px solid #e1e4e8; position: sticky; top: 0; z-index: 10; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: var(--text); background: var(--bg); }
+    header { background: var(--card-bg); padding: 1.25rem 2rem; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 10; }
     header h1 { margin: 0; font-size: 1.4rem; }
-    header .meta { color: #586069; font-size: 0.85rem; margin-top: 0.4rem; }
+    header .meta { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.4rem; }
     header nav { margin-top: 0.6rem; }
-    header nav a { color: #0366d6; text-decoration: none; margin-right: 1.25rem; font-size: 0.9rem; }
+    header nav a { color: var(--link); text-decoration: none; margin-right: 1.25rem; font-size: 0.9rem; }
     header nav a:hover { text-decoration: underline; }
-    .toolbar { padding: 1rem 2rem; background: white; border-bottom: 1px solid #e1e4e8; }
-    .toolbar input { padding: 0.5rem 0.75rem; border: 1px solid #d1d5da; border-radius: 4px; font-size: 0.9rem; width: 320px; max-width: 100%; }
+    .toolbar { padding: 1rem 2rem; background: var(--card-bg); border-bottom: 1px solid var(--border); }
+    .toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9rem; width: 320px; max-width: 100%; background: var(--bg); color: var(--text); }
     main { padding: 1.5rem 2rem; }
     .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem; }
-    .chart { background: white; padding: 1rem 1.25rem; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
-    .chart h3 { margin: 0 0 0.5rem; font-family: monospace; font-size: 0.9rem; color: #24292e; word-break: break-all; }
+    .chart { background: var(--card-bg); padding: 1rem 1.25rem; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); }
+    .chart h3 { margin: 0 0 0.5rem; font-family: monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
     .chart canvas { max-height: 220px !important; }
-    .empty { padding: 4rem 2rem; text-align: center; color: #586069; background: white; border-radius: 6px; }
-    .count { color: #586069; font-size: 0.85rem; margin-bottom: 1rem; }
+    .empty { padding: 4rem 2rem; text-align: center; color: var(--text-muted); background: var(--card-bg); border-radius: 6px; }
+    .count { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
   </style>
 </head>
 <body>
@@ -50,6 +78,25 @@
     if (data.lastUpdate) {
       meta.textContent = 'Last updated: ' + new Date(data.lastUpdate).toLocaleString();
     }
+
+    function readThemeColors() {
+      const styles = getComputedStyle(document.documentElement);
+      return {
+        text: styles.getPropertyValue('--text').trim() || '#24292e',
+        textMuted: styles.getPropertyValue('--text-muted').trim() || '#586069',
+        line: styles.getPropertyValue('--chart-line').trim() || '#0366d6',
+        fill: styles.getPropertyValue('--chart-fill').trim() || 'rgba(3,102,214,0.1)',
+        grid: styles.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.08)'
+      };
+    }
+
+    function applyChartDefaults() {
+      const c = readThemeColors();
+      Chart.defaults.color = c.textMuted;
+      Chart.defaults.borderColor = c.grid;
+      return c;
+    }
+    let themeColors = applyChartDefaults();
 
     const benchmarkPoints = {};
     for (const [, runs] of Object.entries(data.entries || {})) {
@@ -98,13 +145,13 @@
         data: {
           datasets: [{
             data: points,
-            borderColor: '#0366d6',
-            backgroundColor: 'rgba(3, 102, 214, 0.1)',
+            borderColor: themeColors.line,
+            backgroundColor: themeColors.fill,
             tension: 0.2,
             pointRadius: 4,
             pointHoverRadius: 7,
             pointHoverBorderWidth: 2,
-            pointBackgroundColor: '#0366d6'
+            pointBackgroundColor: themeColors.line
           }]
         },
         options: {
@@ -156,6 +203,18 @@
       }
       countDiv.textContent = visible + ' of ' + charts.length + ' benchmarks';
     });
+
+    if (window.matchMedia) {
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        themeColors = applyChartDefaults();
+        for (const { chart } of charts) {
+          chart.data.datasets[0].borderColor = themeColors.line;
+          chart.data.datasets[0].backgroundColor = themeColors.fill;
+          chart.data.datasets[0].pointBackgroundColor = themeColors.line;
+          chart.update();
+        }
+      });
+    }
   </script>
 </body>
 </html>

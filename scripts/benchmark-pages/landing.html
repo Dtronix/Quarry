@@ -5,17 +5,37 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quarry Benchmarks</title>
   <style>
+    :root {
+      --bg: #f5f5f5;
+      --text: #24292e;
+      --text-muted: #586069;
+      --card-bg: #ffffff;
+      --border: #e1e4e8;
+      --link: #0366d6;
+      --link-glow: rgba(3,102,214,0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0d1117;
+        --text: #e6edf3;
+        --text-muted: #8b949e;
+        --card-bg: #161b22;
+        --border: #30363d;
+        --link: #58a6ff;
+        --link-glow: rgba(88,166,255,0.15);
+      }
+    }
     * { box-sizing: border-box; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 760px; margin: 0 auto; padding: 4rem 2rem; color: #24292e; background: #f5f5f5; min-height: 100vh; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 760px; margin: 0 auto; padding: 4rem 2rem; color: var(--text); background: var(--bg); min-height: 100vh; }
     h1 { font-size: 2.25rem; margin: 0 0 0.5rem; }
-    .subtitle { color: #586069; font-size: 1.1rem; margin: 0 0 2.5rem; }
+    .subtitle { color: var(--text-muted); font-size: 1.1rem; margin: 0 0 2.5rem; }
     .links { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .link-card { display: block; padding: 1.5rem; background: white; border-radius: 8px; text-decoration: none; color: inherit; border: 1px solid #e1e4e8; transition: all 0.15s; }
-    .link-card:hover { border-color: #0366d6; box-shadow: 0 4px 12px rgba(3,102,214,0.1); transform: translateY(-1px); }
-    .link-card h2 { margin: 0 0 0.5rem; font-size: 1.05rem; color: #0366d6; }
-    .link-card p { margin: 0; font-size: 0.9rem; color: #586069; line-height: 1.5; }
-    .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid #e1e4e8; color: #586069; font-size: 0.85rem; }
-    .footer a { color: #0366d6; text-decoration: none; }
+    .link-card { display: block; padding: 1.5rem; background: var(--card-bg); border-radius: 8px; text-decoration: none; color: inherit; border: 1px solid var(--border); transition: all 0.15s; }
+    .link-card:hover { border-color: var(--link); box-shadow: 0 4px 12px var(--link-glow); transform: translateY(-1px); }
+    .link-card h2 { margin: 0 0 0.5rem; font-size: 1.05rem; color: var(--link); }
+    .link-card p { margin: 0; font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; }
+    .footer { margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem; }
+    .footer a { color: var(--link); text-decoration: none; }
     .footer a:hover { text-decoration: underline; }
   </style>
 </head>
