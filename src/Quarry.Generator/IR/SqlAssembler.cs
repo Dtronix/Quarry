@@ -68,12 +68,28 @@ internal static class SqlAssembler
             insertInfo = new Models.InsertInfo(insertInfo.Columns, null, null, null);
         }
         var maxParamCount = 0;
-        foreach (var mask in plan.PossibleMasks)
+        if (plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete)
         {
-            var result = RenderSqlForMask(plan, mask, dialect, insertInfo);
-            sqlVariants[mask] = result;
-            if (result.ParameterCount > maxParamCount)
-                maxParamCount = result.ParameterCount;
+            // Batch rendering: pre-render shared segments once and assemble per mask
+            if (plan.Kind == QueryKind.Select)
+                RenderSelectSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+            else
+                RenderDeleteSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+            foreach (var v in sqlVariants.Values)
+            {
+                if (v.ParameterCount > maxParamCount)
+                    maxParamCount = v.ParameterCount;
+            }
+        }
+        else
+        {
+            foreach (var mask in plan.PossibleMasks)
+            {
+                var result = RenderSqlForMask(plan, mask, dialect, insertInfo);
+                sqlVariants[mask] = result;
+                if (result.ParameterCount > maxParamCount)
+                    maxParamCount = result.ParameterCount;
+            }
         }
 
         // Build reader delegate code for SELECT queries
@@ -353,22 +369,31 @@ internal static class SqlAssembler
                 sb.Append(") AS ");
                 sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__set"));
 
-                // Render post-union WHERE terms
-                var postWhereActive = GetActiveTerms(plan.PostUnionWhereTerms, mask);
-                if (postWhereActive.Count > 0)
+                // Render post-union WHERE terms — compute each term's global parameter
+                // offset from ALL terms (not just active), matching the main WHERE pattern.
+                var postWhereActiveSet = new HashSet<WhereTerm>(GetActiveTerms(plan.PostUnionWhereTerms, mask));
+                var postWhereNonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+                var postWhereParamOffset = paramIndex;
+                foreach (var w in plan.PostUnionWhereTerms)
+                {
+                    var termParamCount = CountParameters(w.Condition);
+                    if (postWhereActiveSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                        postWhereNonTrivialActive.Add((w, postWhereParamOffset));
+                    postWhereParamOffset += termParamCount;
+                }
+                if (postWhereNonTrivialActive.Count > 0)
                 {
                     sb.Append(" WHERE ");
-                    for (int i = 0; i < postWhereActive.Count; i++)
+                    for (int i = 0; i < postWhereNonTrivialActive.Count; i++)
                     {
                         if (i > 0) sb.Append(" AND ");
-                        var w = postWhereActive[i];
-                        var termParamCount = CountParameters(w.Condition);
-                        if (postWhereActive.Count > 1) sb.Append('(');
-                        sb.Append(RenderWhereCondition(w.Condition, dialect, paramIndex));
-                        if (postWhereActive.Count > 1) sb.Append(')');
-                        paramIndex += termParamCount;
+                        var (w, termOffset) = postWhereNonTrivialActive[i];
+                        if (postWhereNonTrivialActive.Count > 1) sb.Append('(');
+                        sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                        if (postWhereNonTrivialActive.Count > 1) sb.Append(')');
                     }
                 }
+                paramIndex = postWhereParamOffset;
 
                 // Render post-union GROUP BY
                 if (plan.PostUnionGroupByExprs.Count > 0)
@@ -398,24 +423,31 @@ internal static class SqlAssembler
             }
         }
 
-        // ORDER BY (applies to combined result when set operations present)
-        var activeOrders = GetActiveTerms(plan.OrderTerms, mask);
-        if (activeOrders.Count > 0)
+        // ORDER BY — compute each term's parameter offset from ALL terms (not just active),
+        // matching the WHERE pre-computation pattern. This ensures parameter indices align
+        // with carrier GlobalIndex values for conditional ORDER BY terms.
+        var activeOrderSet = new HashSet<OrderTerm>(GetActiveTerms(plan.OrderTerms, mask));
+        var activeOrderRendered = new List<string>();
+        var orderParamOffset = paramIndex;
+        foreach (var o in plan.OrderTerms)
+        {
+            var termParamCount = CountParameters(o.Expression);
+            if (activeOrderSet.Contains(o))
+            {
+                var rendered = SqlExprRenderer.Render(o.Expression, dialect, orderParamOffset);
+                activeOrderRendered.Add(rendered + (o.IsDescending ? " DESC" : " ASC"));
+            }
+            orderParamOffset += termParamCount;
+        }
+        if (activeOrderRendered.Count > 0)
         {
             sb.Append(" ORDER BY ");
-            for (int i = 0; i < activeOrders.Count; i++)
-            {
-                if (i > 0) sb.Append(", ");
-                var o = activeOrders[i];
-                var paramsBefore = CountParameters(o.Expression);
-                sb.Append(SqlExprRenderer.Render(o.Expression, dialect, paramIndex));
-                paramIndex += paramsBefore;
-                sb.Append(o.IsDescending ? " DESC" : " ASC");
-            }
+            sb.Append(string.Join(", ", activeOrderRendered));
         }
+        paramIndex = orderParamOffset;
 
         // PAGINATION (applies to combined result when set operations present)
-        AppendPagination(sb, plan, dialect, activeOrders.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, dialect, activeOrderRendered.Count > 0, ref paramIndex);
 
         // Ensure returned ParameterCount includes projection params.  Projection
         // column {@N} placeholders are resolved by AppendSelectColumns (rendered in
@@ -427,6 +459,286 @@ internal static class SqlAssembler
         paramIndex = Math.Max(paramIndex, totalPlanParams);
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
+    }
+
+    /// <summary>
+    /// Renders all mask variants for a SELECT query at once by pre-rendering shared
+    /// segments and assembling per-mask variants via string concatenation.
+    /// Avoids re-rendering the shared prefix (CTE, SELECT, FROM, JOINs), middle
+    /// (GROUP BY, HAVING), and suffix (pagination) for each mask.
+    /// </summary>
+    private static void RenderSelectSqlBatch(
+        QueryPlan plan, SqlDialect dialect,
+        IReadOnlyList<int> masks,
+        Dictionary<int, AssembledSqlVariant> results)
+    {
+        var paramIndex = 0;
+
+        // ── Shared prefix: CTE + SELECT + FROM + JOINs ──
+
+        var prefixSb = new StringBuilder();
+
+        // WITH clause for CTE definitions
+        if (plan.CteDefinitions.Count > 0)
+        {
+            prefixSb.Append("WITH ");
+            for (int i = 0; i < plan.CteDefinitions.Count; i++)
+            {
+                if (i > 0) prefixSb.Append(", ");
+                var cte = plan.CteDefinitions[i];
+                prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, cte.Name));
+                prefixSb.Append(" AS (");
+                if (cte.InnerPlan != null)
+                {
+                    System.Diagnostics.Debug.Assert(
+                        cte.InnerPlan.PossibleMasks.Count <= 1,
+                        $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0.");
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    prefixSb.Append(rebased.Sql);
+                }
+                else
+                {
+                    prefixSb.Append(cte.InnerSql);
+                }
+                prefixSb.Append(')');
+                paramIndex += cte.InnerParameters.Count;
+            }
+            prefixSb.Append(' ');
+        }
+
+        // SELECT
+        prefixSb.Append("SELECT ");
+        if (plan.IsDistinct)
+            prefixSb.Append("DISTINCT ");
+
+        if (plan.Projection.Columns.Count > 0)
+        {
+            AppendSelectColumns(prefixSb, dialect, plan.Projection.Columns, paramIndex);
+        }
+        else
+        {
+            prefixSb.Append('*');
+        }
+
+        // FROM
+        prefixSb.Append(" FROM ");
+        AppendTableRef(prefixSb, dialect, plan.PrimaryTable);
+
+        // Join aliases
+        if (plan.Joins.Count > 0 || plan.ImplicitJoins.Count > 0)
+        {
+            prefixSb.Append(" AS ");
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, "t0"));
+        }
+
+        // Explicit JOINs
+        for (int i = 0; i < plan.Joins.Count; i++)
+        {
+            var join = plan.Joins[i];
+            prefixSb.Append(' ');
+            prefixSb.Append(GetJoinKeyword(join.Kind));
+            prefixSb.Append(' ');
+            AppendTableRef(prefixSb, dialect, join.Table);
+            var alias = join.Table.Alias ?? $"t{i + 1}";
+            prefixSb.Append(" AS ");
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
+            if (join.OnCondition != null)
+            {
+                prefixSb.Append(" ON ");
+                var paramsBefore = CountParameters(join.OnCondition);
+                prefixSb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        // Implicit JOINs
+        for (int i = 0; i < plan.ImplicitJoins.Count; i++)
+        {
+            var ij = plan.ImplicitJoins[i];
+            prefixSb.Append(' ');
+            prefixSb.Append(ij.JoinKind == JoinClauseKind.Left ? "LEFT JOIN" : "INNER JOIN");
+            prefixSb.Append(' ');
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetTableName));
+            prefixSb.Append(" AS ");
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            prefixSb.Append(" ON ");
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.SourceAlias));
+            prefixSb.Append('.');
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.FkColumnName));
+            prefixSb.Append(" = ");
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            prefixSb.Append('.');
+            prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetPkColumnName));
+        }
+
+        var prefixStr = prefixSb.ToString();
+
+        // ── Pre-render WHERE terms ──
+
+        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, dialect, paramIndex);
+        foreach (var w in plan.WhereTerms)
+            paramIndex += CountParameters(w.Condition);
+
+        // ── Shared middle: GROUP BY + HAVING ──
+
+        var middleSb = new StringBuilder();
+
+        if (plan.GroupByExprs.Count > 0)
+        {
+            middleSb.Append(" GROUP BY ");
+            for (int i = 0; i < plan.GroupByExprs.Count; i++)
+            {
+                if (i > 0) middleSb.Append(", ");
+                var paramsBefore = CountParameters(plan.GroupByExprs[i]);
+                middleSb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        if (plan.HavingExprs.Count > 0)
+        {
+            middleSb.Append(" HAVING ");
+            for (int i = 0; i < plan.HavingExprs.Count; i++)
+            {
+                if (i > 0) middleSb.Append(" AND ");
+                var paramsBefore = CountParameters(plan.HavingExprs[i]);
+                middleSb.Append(RenderWhereCondition(plan.HavingExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        var middleStr = middleSb.ToString();
+
+        // ── Set operations (if any) ──
+
+        var setOpsStr = "";
+        var hasPostUnionWrapping = false;
+        var quotedSetAlias = "";
+        List<(WhereTerm Term, string Rendered)>? postUnionWhereTerms = null;
+        var postUnionMiddleStr = "";
+
+        if (plan.SetOperations.Count > 0)
+        {
+            var setOpsSb = new StringBuilder();
+            foreach (var setOp in plan.SetOperations)
+            {
+                setOpsSb.Append(' ');
+                setOpsSb.Append(GetSetOperatorKeyword(setOp.Kind));
+                setOpsSb.Append(' ');
+                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect, paramIndex);
+                setOpsSb.Append(operandSql.Sql);
+                paramIndex = operandSql.ParameterCount;
+            }
+            setOpsStr = setOpsSb.ToString();
+
+            var hasPostUnionClauses = plan.PostUnionWhereTerms.Count > 0
+                || plan.PostUnionGroupByExprs.Count > 0
+                || plan.PostUnionHavingExprs.Count > 0;
+
+            if (hasPostUnionClauses)
+            {
+                hasPostUnionWrapping = true;
+                quotedSetAlias = SqlFormatting.QuoteIdentifier(dialect, "__set");
+
+                // Pre-render post-union WHERE terms
+                postUnionWhereTerms = PreRenderWhereTerms(plan.PostUnionWhereTerms, dialect, paramIndex);
+                foreach (var w in plan.PostUnionWhereTerms)
+                    paramIndex += CountParameters(w.Condition);
+
+                // Render post-union GROUP BY + HAVING (shared)
+                var postUnionMiddleSb = new StringBuilder();
+                if (plan.PostUnionGroupByExprs.Count > 0)
+                {
+                    postUnionMiddleSb.Append(" GROUP BY ");
+                    for (int i = 0; i < plan.PostUnionGroupByExprs.Count; i++)
+                    {
+                        if (i > 0) postUnionMiddleSb.Append(", ");
+                        var paramsBefore = CountParameters(plan.PostUnionGroupByExprs[i]);
+                        postUnionMiddleSb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
+                    }
+                }
+                if (plan.PostUnionHavingExprs.Count > 0)
+                {
+                    postUnionMiddleSb.Append(" HAVING ");
+                    for (int i = 0; i < plan.PostUnionHavingExprs.Count; i++)
+                    {
+                        if (i > 0) postUnionMiddleSb.Append(" AND ");
+                        var paramsBefore = CountParameters(plan.PostUnionHavingExprs[i]);
+                        postUnionMiddleSb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], dialect, paramIndex));
+                        paramIndex += paramsBefore;
+                    }
+                }
+                postUnionMiddleStr = postUnionMiddleSb.ToString();
+            }
+        }
+
+        // ── Pre-render ORDER BY terms ──
+
+        var orderTerms = PreRenderOrderByTerms(plan.OrderTerms, dialect, paramIndex);
+        foreach (var o in plan.OrderTerms)
+            paramIndex += CountParameters(o.Expression);
+
+        // ── Pagination (shared, SQL Server ORDER BY fallback handled per mask) ──
+
+        var paginationStr = "";
+        var needsSqlServerOrderByFallback = false;
+        if (plan.Pagination != null)
+        {
+            needsSqlServerOrderByFallback = dialect == SqlDialect.SqlServer;
+            // Render pagination without SQL Server ORDER BY fallback — handled per mask
+            var pagSb = new StringBuilder();
+            AppendPagination(pagSb, plan, dialect, hasOrderBy: true, ref paramIndex);
+            paginationStr = pagSb.ToString();
+        }
+
+        // Final param count
+        var finalParamCount = Math.Max(paramIndex, plan.Parameters.Count);
+
+        // ── Assemble per mask ──
+        // Reuse a single StringBuilder across masks to reduce allocations.
+
+        var sb = new StringBuilder();
+        foreach (var mask in masks)
+        {
+            sb.Clear();
+
+            if (hasPostUnionWrapping)
+            {
+                sb.Append("SELECT * FROM (");
+                sb.Append(prefixStr);
+                AppendWhereClause(sb, whereTerms, mask);
+                sb.Append(middleStr);
+                sb.Append(setOpsStr);
+                sb.Append(") AS ");
+                sb.Append(quotedSetAlias);
+                AppendWhereClause(sb, postUnionWhereTerms!, mask);
+                sb.Append(postUnionMiddleStr);
+            }
+            else if (setOpsStr.Length > 0)
+            {
+                sb.Append(prefixStr);
+                AppendWhereClause(sb, whereTerms, mask);
+                sb.Append(middleStr);
+                sb.Append(setOpsStr);
+            }
+            else
+            {
+                sb.Append(prefixStr);
+                AppendWhereClause(sb, whereTerms, mask);
+                sb.Append(middleStr);
+            }
+
+            // ORDER BY
+            var hasActiveOrderBy = AppendOrderByClause(sb, orderTerms, mask);
+            if (!hasActiveOrderBy && needsSqlServerOrderByFallback)
+                sb.Append(" ORDER BY (SELECT NULL)");
+
+            // Pagination
+            sb.Append(paginationStr);
+
+            results[mask] = new AssembledSqlVariant(sb.ToString(), finalParamCount);
+        }
     }
 
     private static AssembledSqlVariant RenderDeleteSql(QueryPlan plan, int mask, SqlDialect dialect)
@@ -466,6 +778,38 @@ internal static class SqlAssembler
         paramIndex = whereParamOffset;
 
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
+    }
+
+    /// <summary>
+    /// Renders all mask variants for a DELETE query at once by pre-rendering the
+    /// shared prefix and WHERE terms, then assembling per mask via string concatenation.
+    /// </summary>
+    private static void RenderDeleteSqlBatch(
+        QueryPlan plan, SqlDialect dialect,
+        IReadOnlyList<int> masks,
+        Dictionary<int, AssembledSqlVariant> results)
+    {
+        // Shared prefix: DELETE FROM table
+        var prefixSb = new StringBuilder();
+        prefixSb.Append("DELETE FROM ");
+        AppendTableRef(prefixSb, dialect, plan.PrimaryTable);
+        var prefixStr = prefixSb.ToString();
+
+        // Pre-render WHERE terms (paramBaseOffset = 0 for DELETE)
+        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, dialect, 0);
+        var paramIndex = 0;
+        foreach (var w in plan.WhereTerms)
+            paramIndex += CountParameters(w.Condition);
+
+        // Assemble per mask — reuse StringBuilder
+        var sb = new StringBuilder();
+        foreach (var mask in masks)
+        {
+            sb.Clear();
+            sb.Append(prefixStr);
+            AppendWhereClause(sb, whereTerms, mask);
+            results[mask] = new AssembledSqlVariant(sb.ToString(), paramIndex);
+        }
     }
 
     private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, int mask, SqlDialect dialect)
@@ -600,6 +944,107 @@ internal static class SqlAssembler
     }
 
     #region Helpers
+
+    /// <summary>
+    /// Pre-renders each WHERE term's SQL string with its pre-computed parameter offset.
+    /// Trivial-true conditions are excluded. Parameter offsets are computed from ALL terms
+    /// (active + inactive) to match the carrier's GlobalIndex assignment.
+    /// </summary>
+    private static List<(WhereTerm Term, string Rendered)> PreRenderWhereTerms(
+        IReadOnlyList<WhereTerm> terms, SqlDialect dialect, int startParamOffset)
+    {
+        var result = new List<(WhereTerm, string)>();
+        var paramOffset = startParamOffset;
+        foreach (var w in terms)
+        {
+            var termParamCount = CountParameters(w.Condition);
+            if (!IsTrivialTrueCondition(w.Condition))
+            {
+                var rendered = RenderWhereCondition(w.Condition, dialect, paramOffset);
+                result.Add((w, rendered));
+            }
+            paramOffset += termParamCount;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Pre-renders each ORDER BY term's SQL string with its pre-computed parameter offset.
+    /// Parameter offsets are computed from ALL terms to match the carrier's GlobalIndex assignment.
+    /// </summary>
+    private static List<(OrderTerm Term, string Rendered)> PreRenderOrderByTerms(
+        IReadOnlyList<OrderTerm> terms, SqlDialect dialect, int startParamOffset)
+    {
+        var result = new List<(OrderTerm, string)>();
+        var paramOffset = startParamOffset;
+        foreach (var o in terms)
+        {
+            var termParamCount = CountParameters(o.Expression);
+            var rendered = SqlExprRenderer.Render(o.Expression, dialect, paramOffset);
+            result.Add((o, rendered + (o.IsDescending ? " DESC" : " ASC")));
+            paramOffset += termParamCount;
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Appends a WHERE clause to <paramref name="sb"/> from pre-rendered term strings,
+    /// selecting only active terms for the given mask. Appends nothing if no terms are active.
+    /// </summary>
+    private static void AppendWhereClause(
+        StringBuilder sb, List<(WhereTerm Term, string Rendered)> preRendered, int mask)
+    {
+        // Count active terms first to determine parenthesization without an intermediate list.
+        int activeCount = 0;
+        foreach (var (term, _) in preRendered)
+        {
+            if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
+                activeCount++;
+        }
+        if (activeCount == 0) return;
+
+        sb.Append(" WHERE ");
+        int written = 0;
+        foreach (var (term, rendered) in preRendered)
+        {
+            if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
+            {
+                if (written > 0) sb.Append(" AND ");
+                if (activeCount > 1) sb.Append('(');
+                sb.Append(rendered);
+                if (activeCount > 1) sb.Append(')');
+                written++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Appends an ORDER BY clause to <paramref name="sb"/> from pre-rendered term strings,
+    /// selecting only active terms for the given mask.
+    /// Returns true if any ORDER BY terms were appended.
+    /// </summary>
+    private static bool AppendOrderByClause(
+        StringBuilder sb, List<(OrderTerm Term, string Rendered)> preRendered, int mask)
+    {
+        bool first = true;
+        foreach (var (term, rendered) in preRendered)
+        {
+            if (term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0)
+            {
+                if (first)
+                {
+                    sb.Append(" ORDER BY ");
+                    first = false;
+                }
+                else
+                {
+                    sb.Append(", ");
+                }
+                sb.Append(rendered);
+            }
+        }
+        return !first;
+    }
 
     /// <summary>
     /// Renders the RETURNING/OUTPUT suffix for identity column retrieval.
