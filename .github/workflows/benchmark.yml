@@ -53,6 +53,30 @@ jobs:
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
 
+      - name: Ensure gh-pages branch exists
+        run: |
+          TMP_DIR=$(mktemp -d)
+          cd "$TMP_DIR"
+          git clone "https://x-access-token:${TOKEN}@github.com/Dtronix/Quarry-benchmarks.git" repo
+          cd repo
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            echo "gh-pages branch already exists"
+          else
+            echo "Creating gh-pages branch"
+            git config user.name "github-action-benchmark"
+            git config user.email "github@users.noreply.github.com"
+            git checkout --orphan gh-pages
+            git rm -rf . 2>/dev/null || true
+            echo "# Quarry Benchmarks" > README.md
+            git add README.md
+            git commit -m "Initialize gh-pages branch"
+            git push origin gh-pages
+          fi
+          cd /
+          rm -rf "$TMP_DIR"
+        env:
+          TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
+
       - name: Store benchmark results
         uses: benchmark-action/github-action-benchmark@v1
         with:
