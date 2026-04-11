@@ -6,11 +6,6 @@ on:
     types: [completed]
     branches: [master]
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: 'Run BDN dry job (single execution, no warmup) for pipeline testing'
-        type: boolean
-        default: true
 
 concurrency:
   group: benchmark
@@ -41,8 +36,6 @@ jobs:
         run: |
           dotnet run --project src/Quarry.Benchmarks -c Release \
             -- --filter '*' --artifacts BenchmarkDotNet.Artifacts
-        env:
-          BENCHMARK_DRY_RUN: ${{ inputs.dry_run || 'false' }}
 
       - name: Merge benchmark results
         run: |
@@ -104,14 +97,13 @@ jobs:
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench
           github-token: ${{ secrets.BENCHMARK_TOKEN }}
-          auto-push: ${{ inputs.dry_run != true }}
+          auto-push: true
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           max-items-in-chart: 500
           alert-threshold: '120%'
           comment-on-alert: false
 
       - name: Publish report, pages, and update manifest
-        if: inputs.dry_run != true
         run: |
           COMMIT_SHA=$(git log -1 --format='%H' HEAD)
           COMMIT_MSG=$(git log -1 --format='%s' HEAD)

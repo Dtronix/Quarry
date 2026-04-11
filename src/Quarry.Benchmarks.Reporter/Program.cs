@@ -14,6 +14,7 @@ var outputPath = args[1];
 var commitSha = args.Length > 2 ? args[2] : "";
 var commitMessage = args.Length > 3 ? args[3] : "";
 var commitDate = args.Length > 4 ? args[4] : "";
+const string RepoUrl = "https://github.com/Dtronix/Quarry";
 
 using var doc = JsonDocument.Parse(File.ReadAllBytes(inputPath));
 var root = doc.RootElement;
@@ -45,15 +46,20 @@ sb.Append("""
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; color: #24292e; background: #f5f5f5; }
 header { background: white; padding: 1.25rem 2rem; border-bottom: 1px solid #e1e4e8; position: sticky; top: 0; z-index: 10; }
 header h1 { margin: 0 0 0.4rem; font-size: 1.4rem; }
-header .commit { color: #0366d6; font-family: monospace; font-size: 0.9rem; }
+header .commit { font-family: monospace; font-size: 0.9rem; }
+header .commit a { color: #0366d6; text-decoration: none; }
+header .commit a:hover { text-decoration: underline; }
 header .meta { color: #586069; font-size: 0.8rem; margin-top: 0.4rem; }
+header nav { margin-top: 0.6rem; }
+header nav a { color: #0366d6; text-decoration: none; margin-right: 1.25rem; font-size: 0.9rem; }
+header nav a:hover { text-decoration: underline; }
 .layout { display: grid; grid-template-columns: 260px 1fr; gap: 0; }
-nav { background: white; border-right: 1px solid #e1e4e8; padding: 1rem; height: calc(100vh - 110px); overflow-y: auto; position: sticky; top: 110px; }
-nav h2 { font-size: 0.75rem; text-transform: uppercase; color: #586069; margin: 0 0 0.5rem; letter-spacing: 0.5px; }
-nav ul { list-style: none; padding: 0; margin: 0; }
-nav li { margin-bottom: 0.15rem; }
-nav a { text-decoration: none; color: #0366d6; font-size: 0.85rem; display: block; padding: 0.3rem 0.5rem; border-radius: 3px; font-family: monospace; }
-nav a:hover { background: #f1f8ff; }
+.sidebar { background: white; border-right: 1px solid #e1e4e8; padding: 1rem; height: calc(100vh - 140px); overflow-y: auto; position: sticky; top: 140px; }
+.sidebar h2 { font-size: 0.75rem; text-transform: uppercase; color: #586069; margin: 0 0 0.5rem; letter-spacing: 0.5px; }
+.sidebar ul { list-style: none; padding: 0; margin: 0; }
+.sidebar li { margin-bottom: 0.15rem; }
+.sidebar a { text-decoration: none; color: #0366d6; font-size: 0.85rem; display: block; padding: 0.3rem 0.5rem; border-radius: 3px; font-family: monospace; }
+.sidebar a:hover { background: #f1f8ff; }
 main { padding: 1.5rem 2rem; min-width: 0; }
 section { background: white; padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
 section h2 { margin: 0 0 1rem; font-family: monospace; font-size: 1.05rem; color: #24292e; }
@@ -73,11 +79,15 @@ tr:hover:not(.quarry) { background: #f6f8fa; }
 sb.Append("<header>\n<h1>Quarry Benchmark Report</h1>\n");
 if (!string.IsNullOrEmpty(commitSha))
 {
-    sb.Append("<div class=\"commit\">");
-    sb.Append(HtmlEncode(commitSha[..Math.Min(8, commitSha.Length)]));
+    var shortSha = commitSha[..Math.Min(8, commitSha.Length)];
+    sb.Append("<div class=\"commit\"><a href=\"");
+    sb.Append(RepoUrl).Append("/commit/").Append(HtmlEncode(commitSha));
+    sb.Append("\" target=\"_blank\" rel=\"noopener\">");
+    sb.Append(HtmlEncode(shortSha));
+    sb.Append("</a>");
     if (!string.IsNullOrEmpty(commitMessage))
     {
-        sb.Append(" — ");
+        sb.Append(" \u2014 ");
         sb.Append(HtmlEncode(commitMessage));
     }
     sb.Append("</div>\n");
@@ -97,15 +107,21 @@ if (!string.IsNullOrEmpty(commitDate))
     sb.Append(" &middot; ");
     sb.Append(HtmlEncode(commitDate));
 }
-sb.Append("</div>\n</header>\n");
+sb.Append("</div>\n");
+sb.Append("<nav>");
+sb.Append("<a href=\"../../../\">Home</a>");
+sb.Append("<a href=\"../\">Dashboard</a>");
+sb.Append("<a href=\"./\">Run History</a>");
+sb.Append("<a href=\"").Append(RepoUrl).Append("\" target=\"_blank\" rel=\"noopener\">Source</a>");
+sb.Append("</nav>\n</header>\n");
 
-sb.Append("<div class=\"layout\">\n<nav>\n<h2>Benchmark Classes</h2>\n<ul>\n");
+sb.Append("<div class=\"layout\">\n<aside class=\"sidebar\">\n<h2>Benchmark Classes</h2>\n<ul>\n");
 foreach (var (type, _) in groups)
 {
     var anchor = AnchorFor(type);
     sb.Append("<li><a href=\"#").Append(anchor).Append("\">").Append(HtmlEncode(type)).Append("</a></li>\n");
 }
-sb.Append("</ul>\n</nav>\n<main>\n");
+sb.Append("</ul>\n</aside>\n<main>\n");
 
 foreach (var (type, benches) in groups)
 {
@@ -121,7 +137,7 @@ foreach (var (type, benches) in groups)
     sb.Append("<th>Gen0</th>");
     sb.Append("</tr></thead>\n<tbody>\n");
 
-    foreach (var bench in benches.OrderBy(b => TryGetString(b, "Method") ?? "", StringComparer.Ordinal))
+    foreach (var bench in benches.OrderBy(b => b.GetProperty("Statistics").GetProperty("Mean").GetDouble()))
     {
         var method = TryGetString(bench, "Method") ?? "";
         var stats = bench.GetProperty("Statistics");

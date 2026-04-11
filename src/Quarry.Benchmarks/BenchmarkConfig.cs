@@ -14,9 +14,7 @@ public class BenchmarkConfig : ManualConfig
     public BenchmarkConfig()
     {
         AddDiagnoser(MemoryDiagnoser.Default);
-        AddJob(Environment.GetEnvironmentVariable("BENCHMARK_DRY_RUN") == "true"
-            ? Job.Dry
-            : Job.Default);
+        AddJob(Job.Default);
         AddExporter(MarkdownExporter.GitHub);
         AddExporter(JsonExporter.Full);
         AddLogger(ConsoleLogger.Default);
