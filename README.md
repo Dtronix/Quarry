@@ -68,14 +68,14 @@ In most .NET data access libraries, SQL is built at runtime. LINQ expressions ar
 
 ## Performance
 
-Quarry is benchmarked against Raw ADO.NET, Dapper, EF Core, and SqlKata using [BenchmarkDotNet](https://benchmarkdotnet.org/) on an in-memory SQLite database. All libraries execute the same logical operation so that numbers reflect framework overhead, not network or engine variance.
+Quarry approaches raw ADO.NET throughput with near-zero framework overhead — faster than Dapper and significantly faster than EF Core or SqlKata. This is possible because the compile-time architecture eliminates entire categories of runtime work:
 
-| | Dapper | **Quarry** | SqlKata | EF Core |
-|---|---:|---:|---:|---:|
-| **Median speed ratio** | 1.23x | <u>1.01x</u> | 1.69x | 2.47x |
-| **Median alloc ratio** | 1.41x | <u>1.08x</u> | 6.45x | 5.23x |
+- **Pre-built SQL string literals** — no runtime translation or expression tree walking
+- **Ordinal-based readers** — no reflection or column-name lookups
+- **Carrier dispatch** — zero-allocation query execution via generated carrier classes
+- **No runtime dependencies** — nothing to initialize or warm up
 
-Quarry's median overhead is **1.01x Raw ADO.NET** across 23 benchmarks — faster than Dapper with fewer allocations. See the [full benchmark results](https://dtronix.github.io/Quarry/articles/benchmarks.html) for per-category breakdowns and the [live benchmark dashboard](https://dtronix.github.io/Quarry-benchmarks/) for run-over-run trends with per-commit reports.
+Benchmarks are run against Raw ADO.NET, Dapper, EF Core, and SqlKata using [BenchmarkDotNet](https://benchmarkdotnet.org/) on an in-memory SQLite database. See the [live benchmark dashboard](https://dtronix.github.io/Quarry-benchmarks/dev/bench/) for run-over-run trends with per-commit reports and the [benchmark methodology](https://dtronix.github.io/Quarry/articles/benchmarks.html) for category descriptions and how to run locally.
 
 ---
 
