@@ -42,7 +42,7 @@ public class WindowLagBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderLagDto>> EfCore_Lag()
+    public async Task<List<OrderLagDto>> EfCore_Lag_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderLagDto>(LagSql)
@@ -63,7 +63,7 @@ public class WindowLagBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderLagDto>> SqlKata_Lag()
+    public async Task<List<OrderLagDto>> SqlKata_Lag_RawFallback()
     {
         var query = new Query("orders")
             .SelectRaw("OrderId, Total, LAG(Total, 1) OVER (ORDER BY OrderDate) AS PrevTotal");

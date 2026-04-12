@@ -48,7 +48,7 @@ public class CteMultiBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> EfCore_MultiCte()
+    public async Task<List<OrderIdTotalDto>> EfCore_MultiCte_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderIdTotalDto>(MultiCteSql)
@@ -71,7 +71,7 @@ public class CteMultiBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> SqlKata_MultiCte()
+    public async Task<List<OrderIdTotalDto>> SqlKata_MultiCte_RawFallback()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = MultiCteSql;

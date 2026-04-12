@@ -17,6 +17,27 @@ database so that the numbers reflect framework overhead rather than network or e
 | **SqlKata** | Query-builder that compiles a query object to SQL at runtime. Included in all benchmark classes. |
 | **Quarry** | Source-generated queries. SQL text and reader logic are emitted at compile time. |
 
+### The `_RawFallback` suffix
+
+Some scenarios that Quarry models as a fully analyzable chain (CTEs, window functions, certain
+correlated subqueries) have no equivalent in EF Core's LINQ provider or in SqlKata's builder
+API. In those cases the comparison library is forced to drop down to a hand-written SQL string
+plus a manual `DbDataReader` (or `SqlQueryRaw`/`SelectRaw`/`WhereRaw`) to express the same
+workload at all.
+
+Benchmark methods where this happens are suffixed `_RawFallback` (for example
+`EfCore_Rank_RawFallback`, `SqlKata_SimpleCte_RawFallback`). The suffix is a flag that the
+result is **not strictly apples-to-apples**: the library is being measured executing raw SQL
+rather than its native builder pipeline, because no native builder pipeline exists for that
+workload. Quarry's row in the same benchmark is still the full chain-interceptor path, so the
+comparison highlights what Quarry's compile-time pipeline gets you over a runtime builder that
+cannot model the scenario.
+
+This convention applies only to the comparison libraries. The `Raw_*` baselines are raw SQL
+*by design* (they are the theoretical floor) and are not suffixed. Dapper is also unsuffixed:
+its only execution model is raw SQL with reflection-based materialization, so every Dapper row
+is uniformly raw and the suffix would be redundant.
+
 ## Benchmark categories
 
 The suite is organized into benchmark classes, each targeting a specific category of database
@@ -85,7 +106,8 @@ conditional LINQ chains in EF Core.
 
 Tests Common Table Expression (CTE) generation: a simple single-CTE query, a CTE with column
 projection, and a multi-CTE query chaining two CTEs together. Measures the overhead of CTE
-clause construction across all frameworks.
+clause construction across all frameworks. EF Core and SqlKata have no first-class CTE builder
+and are measured running raw SQL — those rows carry the `_RawFallback` suffix.
 
 ### SetOperationBenchmarks
 
@@ -97,13 +119,16 @@ result materialization overhead.
 
 Tests subquery patterns: `EXISTS`, filtered `EXISTS`, `COUNT` subquery, and `SUM` subquery.
 These benchmarks use correlated and uncorrelated subqueries in `WHERE` and `SELECT` clauses,
-representing common application patterns for existence checks and scalar aggregation.
+representing common application patterns for existence checks and scalar aggregation. SqlKata's
+builder cannot model scalar correlated subqueries in `WHERE`, so `SqlKata_CountSubquery` and
+`SqlKata_SumSubquery` carry the `_RawFallback` suffix and use `WhereRaw` with hand-written SQL.
 
 ### WindowFunctionBenchmarks
 
 Tests window function generation: `ROW_NUMBER()`, `SUM() OVER (...)` (running sum),
 `RANK()`, and `LAG()`. Each benchmark applies a window function with `PARTITION BY` and
-`ORDER BY` clauses.
+`ORDER BY` clauses. Neither EF Core's LINQ provider nor SqlKata's builder model window
+functions, so those rows are marked `_RawFallback` and execute hand-written SQL instead.
 
 ### ThroughputBenchmarks
 

@@ -41,7 +41,7 @@ public class WindowRowNumberBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRowNumberDto>> EfCore_RowNumber()
+    public async Task<List<OrderRowNumberDto>> EfCore_RowNumber_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderRowNumberDto>(RowNumberSql)
@@ -61,7 +61,7 @@ public class WindowRowNumberBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRowNumberDto>> SqlKata_RowNumber()
+    public async Task<List<OrderRowNumberDto>> SqlKata_RowNumber_RawFallback()
     {
         var query = new Query("orders")
             .SelectRaw("OrderId, ROW_NUMBER() OVER (PARTITION BY Status ORDER BY Total) AS RowNum");

@@ -42,7 +42,7 @@ public class WindowRunningSumBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRunningSumDto>> EfCore_RunningSum()
+    public async Task<List<OrderRunningSumDto>> EfCore_RunningSum_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderRunningSumDto>(RunningSumSql)
@@ -63,7 +63,7 @@ public class WindowRunningSumBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRunningSumDto>> SqlKata_RunningSum()
+    public async Task<List<OrderRunningSumDto>> SqlKata_RunningSum_RawFallback()
     {
         var query = new Query("orders")
             .SelectRaw("OrderId, Total, SUM(Total) OVER (PARTITION BY Status) AS RunningSum");

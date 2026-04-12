@@ -41,7 +41,7 @@ public class WindowRankBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRankDto>> EfCore_Rank()
+    public async Task<List<OrderRankDto>> EfCore_Rank_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderRankDto>(RankSql)
@@ -61,7 +61,7 @@ public class WindowRankBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderRankDto>> SqlKata_Rank()
+    public async Task<List<OrderRankDto>> SqlKata_Rank_RawFallback()
     {
         var query = new Query("orders")
             .SelectRaw("OrderId, RANK() OVER (PARTITION BY Status ORDER BY Total) AS Rank");

@@ -95,8 +95,8 @@ header nav a:hover { text-decoration: underline; }
 main { padding: 1.5rem 2rem; min-width: 0; }
 section { background: var(--card-bg); padding: 1.25rem 1.5rem; margin-bottom: 1.5rem; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); }
 section h2 { margin: 0 0 1rem; font-family: monospace; font-size: 1.05rem; color: var(--text); }
-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-th, td { padding: 0.5rem 0.75rem; text-align: right; border-bottom: 1px solid var(--row-border); white-space: nowrap; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed; }
+th, td { padding: 0.5rem 0.75rem; text-align: right; border-bottom: 1px solid var(--row-border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 th { background: var(--table-header-bg); font-weight: 600; text-align: right; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.3px; }
 th:first-child, td:first-child { text-align: left; font-family: monospace; }
 tr.quarry { background: var(--quarry-bg); }
@@ -159,7 +159,18 @@ foreach (var (type, benches) in groups)
 {
     var anchor = AnchorFor(type);
     sb.Append("<section id=\"").Append(anchor).Append("\">\n<h2>").Append(HtmlEncode(type)).Append("</h2>\n");
-    sb.Append("<table>\n<thead><tr>");
+    sb.Append("<table>\n");
+    // Shared column template — keeps columns aligned across every per-class table.
+    sb.Append("<colgroup>");
+    sb.Append("<col style=\"width:34%\">");
+    sb.Append("<col style=\"width:11%\">");
+    sb.Append("<col style=\"width:11%\">");
+    sb.Append("<col style=\"width:11%\">");
+    sb.Append("<col style=\"width:11%\">");
+    sb.Append("<col style=\"width:12%\">");
+    sb.Append("<col style=\"width:10%\">");
+    sb.Append("</colgroup>\n");
+    sb.Append("<thead><tr>");
     sb.Append("<th>Method</th>");
     sb.Append("<th>Mean</th>");
     sb.Append("<th>Error</th>");
@@ -191,7 +202,7 @@ foreach (var (type, benches) in groups)
 
         var rowClass = method.StartsWith("Quarry", StringComparison.Ordinal) ? " class=\"quarry\"" : "";
         sb.Append("<tr").Append(rowClass).Append(">");
-        sb.Append("<td>").Append(HtmlEncode(method)).Append("</td>");
+        sb.Append("<td title=\"").Append(HtmlEncode(method)).Append("\">").Append(HtmlEncode(method)).Append("</td>");
         sb.Append("<td class=\"numeric\">").Append(FormatTime(mean)).Append("</td>");
         sb.Append("<td class=\"numeric\">").Append(FormatTime(error)).Append("</td>");
         sb.Append("<td class=\"numeric\">").Append(FormatTime(stdDev)).Append("</td>");

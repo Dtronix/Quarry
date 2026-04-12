@@ -63,7 +63,7 @@ public class SubqueryCountBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<UserIdNameDto>> SqlKata_CountSubquery()
+    public async Task<List<UserIdNameDto>> SqlKata_CountSubquery_RawFallback()
     {
         var query = new Query("users")
             .Select("UserId", "UserName")

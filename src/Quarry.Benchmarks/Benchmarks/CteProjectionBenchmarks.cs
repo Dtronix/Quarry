@@ -44,7 +44,7 @@ public class CteProjectionBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> EfCore_CteProjection()
+    public async Task<List<OrderIdTotalDto>> EfCore_CteProjection_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderIdTotalDto>(CteProjectionSql)
@@ -73,7 +73,7 @@ public class CteProjectionBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> SqlKata_CteProjection()
+    public async Task<List<OrderIdTotalDto>> SqlKata_CteProjection_RawFallback()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = CteProjectionSql;

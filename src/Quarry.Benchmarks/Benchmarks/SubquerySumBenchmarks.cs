@@ -63,7 +63,7 @@ public class SubquerySumBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<UserIdNameDto>> SqlKata_SumSubquery()
+    public async Task<List<UserIdNameDto>> SqlKata_SumSubquery_RawFallback()
     {
         var query = new Query("users")
             .Select("UserId", "UserName")

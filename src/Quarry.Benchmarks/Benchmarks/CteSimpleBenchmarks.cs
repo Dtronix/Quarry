@@ -44,7 +44,7 @@ public class CteSimpleBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> EfCore_SimpleCte()
+    public async Task<List<OrderIdTotalDto>> EfCore_SimpleCte_RawFallback()
     {
         return await EfContext.Database
             .SqlQueryRaw<OrderIdTotalDto>(SimpleCteFilterSql)
@@ -66,7 +66,7 @@ public class CteSimpleBenchmarks : BenchmarkBase
     }
 
     [Benchmark]
-    public async Task<List<OrderIdTotalDto>> SqlKata_SimpleCte()
+    public async Task<List<OrderIdTotalDto>> SqlKata_SimpleCte_RawFallback()
     {
         // SqlKata has no native CTE support; use raw SQL.
         await using var cmd = Connection.CreateCommand();
