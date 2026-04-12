@@ -58,6 +58,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     }
 
     private IReadOnlyList<ChainClauseEntry>? _clauseEntries;
+    private Dictionary<string, (List<QueryParameter> SiteParams, int GlobalOffset)>? _siteParamsMap;
+    private Dictionary<int, (bool IsConditional, int? BitIndex)>? _paramConditionalMap;
 
     public QueryPlan Plan { get; }
     public Dictionary<int, AssembledSqlVariant> SqlVariants { get; }
@@ -153,6 +155,106 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         }
         _clauseEntries = entries;
         return entries;
+    }
+
+    /// <summary>
+    /// Returns pre-computed site parameters and global offset for a clause site.
+    /// Cached on first access — eliminates O(N^2) iteration when called per-site.
+    /// </summary>
+    internal (List<QueryParameter> SiteParams, int GlobalOffset) GetSiteParams(string siteUniqueId)
+    {
+        var map = _siteParamsMap;
+        if (map == null)
+        {
+            map = BuildSiteParamsMap();
+            _siteParamsMap = map;
+        }
+        return map.TryGetValue(siteUniqueId, out var result) ? result : (new List<QueryParameter>(), 0);
+    }
+
+    private Dictionary<string, (List<QueryParameter> SiteParams, int GlobalOffset)> BuildSiteParamsMap()
+    {
+        var entries = GetClauseEntries();
+        var map = new Dictionary<string, (List<QueryParameter>, int)>(entries.Count);
+        var globalParamOffset = 0;
+        var setOpIndex = 0;
+        foreach (var clause in entries)
+        {
+            var siteParams = new List<QueryParameter>();
+            if (clause.Site.Clause != null)
+                for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < ChainParameters.Count; i++)
+                    siteParams.Add(ChainParameters[globalParamOffset + i]);
+            else if (clause.Site.Kind == Models.InterceptorKind.Select
+                && clause.Site.ProjectionInfo?.ProjectionParameters is { Count: > 0 } projParams)
+                for (int i = 0; i < projParams.Count && globalParamOffset + i < ChainParameters.Count; i++)
+                    siteParams.Add(ChainParameters[globalParamOffset + i]);
+            map[clause.Site.UniqueId] = (siteParams, globalParamOffset);
+
+            if (clause.Site.Kind == Models.InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
+            else if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
+            {
+                if (setOpIndex < Plan.SetOperations.Count)
+                    globalParamOffset += Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
+                setOpIndex++;
+            }
+            else if (clause.Site.Clause != null)
+                globalParamOffset += clause.Site.Clause.Parameters.Count;
+            else if (clause.Site.Kind == Models.InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
+                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
+            else if (clause.Site.Kind == Models.InterceptorKind.Select
+                && clause.Site.ProjectionInfo?.ProjectionParameters?.Count > 0)
+                globalParamOffset += clause.Site.ProjectionInfo.ProjectionParameters.Count;
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Returns a cached mapping from global parameter index to conditional metadata.
+    /// </summary>
+    internal Dictionary<int, (bool IsConditional, int? BitIndex)> GetParamConditionalMap()
+    {
+        var map = _paramConditionalMap;
+        if (map == null)
+        {
+            map = BuildParamConditionalMap();
+            _paramConditionalMap = map;
+        }
+        return map;
+    }
+
+    private Dictionary<int, (bool IsConditional, int? BitIndex)> BuildParamConditionalMap()
+    {
+        var entries = GetClauseEntries();
+        var map = new Dictionary<int, (bool, int?)>();
+        var globalOffset = 0;
+        var setOpIndex = 0;
+        foreach (var clause in entries)
+        {
+            if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
+            {
+                if (setOpIndex < Plan.SetOperations.Count)
+                    globalOffset += Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
+                setOpIndex++;
+                continue;
+            }
+            var paramCount = GetClauseParamCount(clause);
+            for (int i = 0; i < paramCount; i++)
+                map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
+            globalOffset += paramCount;
+        }
+        return map;
+    }
+
+    private static int GetClauseParamCount(ChainClauseEntry clause)
+    {
+        if (clause.Site.Kind == Models.InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
+            return clause.Site.UpdateInfo.Columns.Count;
+        if (clause.Site.Clause != null)
+            return clause.Site.Clause.Parameters.Count;
+        if (clause.Site.Kind == Models.InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
+            return clause.Site.Bound.Raw.SetActionParameters.Count;
+        return 0;
     }
 
     public bool Equals(AssembledPlan? other)
