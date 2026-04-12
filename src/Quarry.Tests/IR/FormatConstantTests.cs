@@ -174,10 +174,7 @@ public class FormatConstantTests
 
     private static string InvokeEscape(string value)
     {
-        var method = typeof(UsageSiteDiscovery).GetMethod(
-            "EscapeSqlString",
-            BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (string)method.Invoke(null, new object[] { value })!;
+        return Quarry.Generators.Translation.SqlLikeHelpers.EscapeSqlStringLiteral(value);
     }
 
     #endregion

@@ -58,4 +58,43 @@ internal static class SqlLikeHelpers
 
         return $"{column} LIKE {pattern}";
     }
+
+    /// <summary>
+    /// Formats a compile-time constant value as a SQL literal string.
+    /// Returns null for types that cannot be safely inlined (DateTime, Guid, enums, byte[], etc.).
+    /// Callers should fall back to parameter binding when null is returned.
+    /// </summary>
+    public static string? FormatConstantAsSqlLiteral(object? value)
+    {
+        return value switch
+        {
+            null => "NULL",
+            int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            short s => s.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            byte b => b.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            sbyte sb => sb.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            uint ui => ui.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ulong ul => ul.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ushort us => us.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            decimal m => m.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            bool bv => bv ? "TRUE" : "FALSE",
+            char c => $"'{EscapeSqlStringLiteral(c.ToString())}'",
+            string str => $"'{EscapeSqlStringLiteral(str)}'",
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Escapes a string for use in a SQL single-quoted literal.
+    /// Handles single quotes and backslashes.
+    /// </summary>
+    public static string EscapeSqlStringLiteral(string value)
+    {
+        if (value.IndexOf('\'') < 0 && value.IndexOf('\\') < 0)
+            return value;
+        return value.Replace("'", "''").Replace("\\", "\\\\");
+    }
 }

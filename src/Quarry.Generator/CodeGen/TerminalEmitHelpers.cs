@@ -25,41 +25,7 @@ internal static class TerminalEmitHelpers
         AssembledPlan chain,
         string siteUniqueId)
     {
-        var globalParamOffset = 0;
-        var setOpIndex = 0;
-        foreach (var clause in chain.GetClauseEntries())
-        {
-            if (clause.Site.UniqueId == siteUniqueId)
-            {
-                var siteParams = new List<QueryParameter>();
-                if (clause.Site.Clause != null)
-                    for (int i = 0; i < clause.Site.Clause.Parameters.Count && globalParamOffset + i < chain.ChainParameters.Count; i++)
-                        siteParams.Add(chain.ChainParameters[globalParamOffset + i]);
-                else if (clause.Site.Kind == InterceptorKind.Select
-                    && clause.Site.ProjectionInfo?.ProjectionParameters is { Count: > 0 } projParams)
-                    for (int i = 0; i < projParams.Count && globalParamOffset + i < chain.ChainParameters.Count; i++)
-                        siteParams.Add(chain.ChainParameters[globalParamOffset + i]);
-                return (siteParams, globalParamOffset);
-            }
-            if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-                globalParamOffset += clause.Site.UpdateInfo.Columns.Count;
-            else if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
-            {
-                // Set operation operand parameters occupy carrier fields between
-                // the left chain's params and any post-union clause params.
-                if (setOpIndex < chain.Plan.SetOperations.Count)
-                    globalParamOffset += chain.Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
-                setOpIndex++;
-            }
-            else if (clause.Site.Clause != null)
-                globalParamOffset += clause.Site.Clause.Parameters.Count;
-            else if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
-                globalParamOffset += clause.Site.Bound.Raw.SetActionParameters.Count;
-            else if (clause.Site.Kind == InterceptorKind.Select
-                && clause.Site.ProjectionInfo?.ProjectionParameters?.Count > 0)
-                globalParamOffset += clause.Site.ProjectionInfo.ProjectionParameters.Count;
-        }
-        return (new List<QueryParameter>(), globalParamOffset);
+        return chain.GetSiteParams(siteUniqueId);
     }
 
     /// <summary>
@@ -126,38 +92,7 @@ internal static class TerminalEmitHelpers
     /// </summary>
     internal static Dictionary<int, (bool IsConditional, int? BitIndex)> BuildParamConditionalMap(AssembledPlan chain)
     {
-        var map = new Dictionary<int, (bool, int?)>();
-        var globalOffset = 0;
-        var setOpIndex = 0;
-        foreach (var clause in chain.GetClauseEntries())
-        {
-            if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
-            {
-                if (setOpIndex < chain.Plan.SetOperations.Count)
-                    globalOffset += chain.Plan.SetOperations[setOpIndex].Operand.Parameters.Count;
-                setOpIndex++;
-                continue;
-            }
-            var paramCount = GetClauseParamCount(clause);
-            for (int i = 0; i < paramCount; i++)
-                map[globalOffset + i] = (clause.IsConditional, clause.BitIndex);
-            globalOffset += paramCount;
-        }
-        return map;
-    }
-
-    /// <summary>
-    /// Gets the parameter count for a clause entry, handling all three parameter sources.
-    /// </summary>
-    private static int GetClauseParamCount(ChainClauseEntry clause)
-    {
-        if (clause.Site.Kind == InterceptorKind.UpdateSetPoco && clause.Site.UpdateInfo != null)
-            return clause.Site.UpdateInfo.Columns.Count;
-        if (clause.Site.Clause != null)
-            return clause.Site.Clause.Parameters.Count;
-        if (clause.Site.Kind == InterceptorKind.UpdateSetAction && clause.Site.Bound.Raw.SetActionParameters != null)
-            return clause.Site.Bound.Raw.SetActionParameters.Count;
-        return 0;
+        return chain.GetParamConditionalMap();
     }
 
     /// <summary>
@@ -301,20 +236,12 @@ internal static class TerminalEmitHelpers
             return;
         }
 
-        var globalParamOffset = 0;
-        var clauseSetOpIndex = 0;
+        // Reuse cached site params map for per-clause offsets
         var clauseParamOffsets = new Dictionary<string, int>();
-        foreach (var clause in chain.GetClauseEntries())
+        foreach (var clause in diagnosticClauses)
         {
-            if (Parsing.ChainAnalyzer.IsSetOperationKind(clause.Site.Kind))
-            {
-                if (clauseSetOpIndex < chain.Plan.SetOperations.Count)
-                    globalParamOffset += chain.Plan.SetOperations[clauseSetOpIndex].Operand.Parameters.Count;
-                clauseSetOpIndex++;
-                continue;
-            }
-            clauseParamOffsets[clause.Site.UniqueId] = globalParamOffset;
-            globalParamOffset += GetClauseParamCount(clause);
+            var (_, offset) = chain.GetSiteParams(clause.Site.UniqueId);
+            clauseParamOffsets[clause.Site.UniqueId] = offset;
         }
 
         var paginationBaseIdx = chain.ChainParameters.Count;

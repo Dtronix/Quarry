@@ -2438,38 +2438,7 @@ internal static class UsageSiteDiscovery
     /// Unsupported types return null, causing the value to be emitted as a runtime parameter instead.
     /// </summary>
     private static string? FormatConstantAsSqlLiteralSimple(object? value)
-    {
-        return value switch
-        {
-            null => "NULL",
-            int i => i.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            long l => l.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            short s => s.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            byte b => b.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            sbyte sb => sb.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            uint ui => ui.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ulong ul => ul.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ushort us => us.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            float f => f.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            double d => d.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            decimal m => m.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            bool bv => bv ? "TRUE" : "FALSE",
-            char c => $"'{EscapeSqlString(c.ToString())}'",
-            string str => $"'{EscapeSqlString(str)}'",
-            _ => null // DateTime, Guid, byte[], enums, etc. fall back to parameter binding
-        };
-    }
-
-    /// <summary>
-    /// Escapes a string for use in a SQL single-quoted literal.
-    /// Handles single quotes and backslashes (PostgreSQL standard_conforming_strings=on).
-    /// </summary>
-    private static string EscapeSqlString(string value)
-    {
-        if (value.IndexOf('\'') < 0 && value.IndexOf('\\') < 0)
-            return value;
-        return value.Replace("'", "''").Replace("\\", "\\\\");
-    }
+        => Translation.SqlLikeHelpers.FormatConstantAsSqlLiteral(value);
 
     /// <summary>
     /// Extracts the root identifier from a value expression.

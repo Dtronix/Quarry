@@ -24,6 +24,16 @@ internal static class SqlExprRenderer
     public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
     {
         var sb = new StringBuilder();
+        RenderTo(sb, expr, dialect, parameterBaseIndex, useGenericParamFormat, stripOuterParens);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Renders a SqlExpr tree into an existing StringBuilder, avoiding an intermediate string allocation.
+    /// Callers that already have a StringBuilder (e.g., SqlAssembler) can use this overload directly.
+    /// </summary>
+    public static void RenderTo(StringBuilder sb, SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
+    {
         RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat);
         if (stripOuterParens && sb.Length >= 2 && sb[0] == '(' && sb[sb.Length - 1] == ')')
         {
@@ -42,7 +52,6 @@ internal static class SqlExprRenderer
                 sb.Remove(0, 1);
             }
         }
-        return sb.ToString();
     }
 
     /// <summary>
@@ -100,6 +109,13 @@ internal static class SqlExprRenderer
             case SubqueryExpr sub:
                 if (sub.Predicate != null)
                     CollectParamsRecursive(sub.Predicate, result);
+                if (sub.Selector != null)
+                    CollectParamsRecursive(sub.Selector, result);
+                break;
+
+            case RawCallExpr rawCall:
+                foreach (var arg in rawCall.Arguments)
+                    CollectParamsRecursive(arg, result);
                 break;
         }
     }

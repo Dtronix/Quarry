@@ -20,14 +20,21 @@ internal static class SqlExprClauseTranslator
     /// </summary>
     private static SqlExpr ExtractSubqueryParameters(SubqueryExpr sub, List<ParameterInfo> parameters, ref int paramIndex)
     {
-        if (sub.Predicate == null) return sub;
+        var newPredicate = sub.Predicate != null
+            ? ExtractParametersCore(sub.Predicate, parameters, ref paramIndex, subqueryPredicate: true)
+            : null;
+        var newSelector = sub.Selector != null
+            ? ExtractParametersCore(sub.Selector, parameters, ref paramIndex, subqueryPredicate: true)
+            : null;
 
-        var newPredicate = ExtractParametersCore(sub.Predicate, parameters, ref paramIndex, subqueryPredicate: true);
-        if (ReferenceEquals(newPredicate, sub.Predicate)) return sub;
+        bool predicateChanged = !ReferenceEquals(newPredicate, sub.Predicate);
+        bool selectorChanged = !ReferenceEquals(newSelector, sub.Selector);
+        if (!predicateChanged && !selectorChanged) return sub;
 
+        SubqueryExpr result;
         if (sub.IsResolved)
         {
-            return new SubqueryExpr(
+            result = new SubqueryExpr(
                 sub.OuterParameterName,
                 sub.NavigationPropertyName,
                 sub.SubqueryKind,
@@ -35,14 +42,20 @@ internal static class SqlExprClauseTranslator
                 sub.InnerParameterName,
                 sub.InnerTableQuoted!,
                 sub.InnerAliasQuoted!,
-                sub.CorrelationSql!);
+                sub.CorrelationSql!,
+                selector: newSelector);
         }
-        return new SubqueryExpr(
-            sub.OuterParameterName,
-            sub.NavigationPropertyName,
-            sub.SubqueryKind,
-            newPredicate,
-            sub.InnerParameterName);
+        else
+        {
+            result = new SubqueryExpr(
+                sub.OuterParameterName,
+                sub.NavigationPropertyName,
+                sub.SubqueryKind,
+                newPredicate,
+                sub.InnerParameterName,
+                selector: newSelector);
+        }
+        return sub.ImplicitJoins != null ? result.WithImplicitJoins(sub.ImplicitJoins) : result;
     }
 
     /// <summary>

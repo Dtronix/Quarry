@@ -356,6 +356,143 @@ public class SqlExprTests
         Assert.That(params_[1].LocalIndex, Is.EqualTo(1));
     }
 
+    [Test]
+    public void CollectParameters_FindsParamsInSubquerySelector()
+    {
+        // Simulates: u.Orders.Sum(o => o.Total * discount)
+        // where discount is a captured variable → ParamSlotExpr in the selector
+        var sub = new SubqueryExpr(
+            "u", "Orders", SubqueryKind.Sum,
+            predicate: null,
+            innerParameterName: "o",
+            selector: new BinaryOpExpr(
+                new ResolvedColumnExpr("\"total\""),
+                SqlBinaryOperator.Multiply,
+                new ParamSlotExpr(0, "decimal", "discount")));
+
+        var collected = SqlExprRenderer.CollectParameters(sub);
+        Assert.That(collected, Has.Count.EqualTo(1));
+        Assert.That(collected[0].LocalIndex, Is.EqualTo(0));
+    }
+
+    [Test]
+    public void CollectParameters_FindsParamsInSubqueryPredicateAndSelector()
+    {
+        var sub = new SubqueryExpr(
+            "u", "Orders", SubqueryKind.Sum,
+            predicate: new BinaryOpExpr(
+                new ResolvedColumnExpr("\"status\""),
+                SqlBinaryOperator.Equal,
+                new ParamSlotExpr(0, "int", "activeStatus")),
+            innerParameterName: "o",
+            selector: new BinaryOpExpr(
+                new ResolvedColumnExpr("\"total\""),
+                SqlBinaryOperator.Multiply,
+                new ParamSlotExpr(1, "decimal", "discount")));
+
+        var collected = SqlExprRenderer.CollectParameters(sub);
+        Assert.That(collected, Has.Count.EqualTo(2));
+        Assert.That(collected[0].LocalIndex, Is.EqualTo(0));
+        Assert.That(collected[1].LocalIndex, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void CollectParameters_FindsParamsInRawCallExprArguments()
+    {
+        // Simulates: Sql.Raw<int>("COALESCE({0}, {1})", col, fallbackValue)
+        var rawCall = new RawCallExpr(
+            "COALESCE({0}, {1})",
+            new SqlExpr[]
+            {
+                new ResolvedColumnExpr("\"col\""),
+                new ParamSlotExpr(0, "int", "fallbackValue")
+            });
+
+        var collected = SqlExprRenderer.CollectParameters(rawCall);
+        Assert.That(collected, Has.Count.EqualTo(1));
+        Assert.That(collected[0].LocalIndex, Is.EqualTo(0));
+    }
+
+    #endregion
+
+    #region ExtractParameters Tests
+
+    [Test]
+    public void ExtractParameters_SubquerySelector_CapturedValueParameterized()
+    {
+        // SubqueryExpr with a CapturedValueExpr in the selector (C1 bug fix)
+        var sub = new SubqueryExpr(
+            "u", "Orders", SubqueryKind.Sum,
+            predicate: null,
+            innerParameterName: "o",
+            selector: new CapturedValueExpr("discount", "discount", "decimal"));
+
+        var parameters = new System.Collections.Generic.List<Generators.Translation.ParameterInfo>();
+        int paramIndex = 0;
+        var result = SqlExprClauseTranslator.ExtractParametersPublic(sub, parameters, ref paramIndex);
+
+        Assert.That(parameters, Has.Count.EqualTo(1));
+        Assert.That(parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(parameters[0].ClrType, Is.EqualTo("decimal"));
+
+        // Result should be a SubqueryExpr with a ParamSlotExpr selector
+        Assert.That(result, Is.InstanceOf<SubqueryExpr>());
+        var resultSub = (SubqueryExpr)result;
+        Assert.That(resultSub.Selector, Is.InstanceOf<ParamSlotExpr>());
+        Assert.That(resultSub.Predicate, Is.Null);
+    }
+
+    [Test]
+    public void ExtractParameters_SubqueryPredicateAndSelector_BothParameterized()
+    {
+        var sub = new SubqueryExpr(
+            "u", "Orders", SubqueryKind.Sum,
+            predicate: new CapturedValueExpr("minStatus", "minStatus", "int"),
+            innerParameterName: "o",
+            selector: new CapturedValueExpr("multiplier", "multiplier", "decimal"));
+
+        var parameters = new System.Collections.Generic.List<Generators.Translation.ParameterInfo>();
+        int paramIndex = 0;
+        var result = SqlExprClauseTranslator.ExtractParametersPublic(sub, parameters, ref paramIndex);
+
+        Assert.That(parameters, Has.Count.EqualTo(2));
+        Assert.That(parameters[0].Name, Is.EqualTo("@p0"));
+        Assert.That(parameters[1].Name, Is.EqualTo("@p1"));
+
+        var resultSub = (SubqueryExpr)result;
+        Assert.That(resultSub.Predicate, Is.InstanceOf<ParamSlotExpr>());
+        Assert.That(resultSub.Selector, Is.InstanceOf<ParamSlotExpr>());
+    }
+
+    [Test]
+    public void ExtractParameters_ResolvedSubquery_PreservesImplicitJoins()
+    {
+        var implicitJoins = new[] {
+            new ImplicitJoinInfo("sq0", "user_id", "\"user_id\"", "profiles", "\"profiles\"",
+                null, "j0", "\"id\"", JoinClauseKind.Inner)
+        };
+
+        var sub = new SubqueryExpr(
+            "u", "Orders", SubqueryKind.Exists,
+            predicate: new CapturedValueExpr("minTotal", "minTotal", "decimal"),
+            innerParameterName: "o",
+            innerTableQuoted: "\"orders\"",
+            innerAliasQuoted: "\"sq0\"",
+            correlationSql: "\"sq0\".\"user_id\" = \"u\".\"id\"")
+            .WithImplicitJoins(implicitJoins);
+
+        var parameters = new System.Collections.Generic.List<Generators.Translation.ParameterInfo>();
+        int paramIndex = 0;
+        var result = SqlExprClauseTranslator.ExtractParametersPublic(sub, parameters, ref paramIndex);
+
+        Assert.That(parameters, Has.Count.EqualTo(1));
+        var resultSub = (SubqueryExpr)result;
+        Assert.That(resultSub.IsResolved, Is.True);
+        Assert.That(resultSub.ImplicitJoins, Is.Not.Null);
+        Assert.That(resultSub.ImplicitJoins, Has.Count.EqualTo(1));
+        Assert.That(resultSub.CorrelationSql, Is.EqualTo("\"sq0\".\"user_id\" = \"u\".\"id\""));
+    }
+
     #endregion
 
     #region LIKE Renderer Tests

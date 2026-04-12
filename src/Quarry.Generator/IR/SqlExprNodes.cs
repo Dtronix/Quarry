@@ -118,7 +118,7 @@ internal sealed class ParamSlotExpr : SqlExpr
         bool isEnum = false,
         string? enumUnderlyingType = null,
         Microsoft.CodeAnalysis.ISymbol? collectionReceiverSymbol = null)
-        : base(HashCode.Combine(SqlExprKind.ParamSlot, localIndex, clrType, valueExpression, isCaptured, isCollection))
+        : base(ComputeParamSlotHash(localIndex, clrType, valueExpression, isCaptured, expressionPath, isCollection, elementTypeName, customTypeMappingClass, isEnum, enumUnderlyingType))
     {
         LocalIndex = localIndex;
         ClrType = clrType;
@@ -131,6 +131,25 @@ internal sealed class ParamSlotExpr : SqlExpr
         IsEnum = isEnum;
         EnumUnderlyingType = enumUnderlyingType;
         CollectionReceiverSymbol = collectionReceiverSymbol;
+    }
+
+    private static int ComputeParamSlotHash(int localIndex, string clrType, string valueExpression,
+        bool isCaptured, string? expressionPath, bool isCollection, string? elementTypeName,
+        string? customTypeMappingClass, bool isEnum, string? enumUnderlyingType)
+    {
+        var hc = new HashCode();
+        hc.Add(SqlExprKind.ParamSlot);
+        hc.Add(localIndex);
+        hc.Add(clrType);
+        hc.Add(valueExpression);
+        hc.Add(isCaptured);
+        hc.Add(expressionPath);
+        hc.Add(isCollection);
+        hc.Add(elementTypeName);
+        hc.Add(customTypeMappingClass);
+        hc.Add(isEnum);
+        hc.Add(enumUnderlyingType);
+        return hc.ToHashCode();
     }
 
     /// <summary>
@@ -363,7 +382,7 @@ internal sealed class LikeExpr : SqlExpr
 
     public LikeExpr(SqlExpr operand, SqlExpr pattern, bool isNegated = false,
         string? likePrefix = null, string? likeSuffix = null, bool needsEscape = false)
-        : base(HashCode.Combine(SqlExprKind.LikeExpr, operand.GetHashCode(), pattern.GetHashCode(), isNegated))
+        : base(ComputeLikeHash(operand, pattern, isNegated, likePrefix, likeSuffix, needsEscape))
     {
         Operand = operand;
         Pattern = pattern;
@@ -371,6 +390,20 @@ internal sealed class LikeExpr : SqlExpr
         LikePrefix = likePrefix;
         LikeSuffix = likeSuffix;
         NeedsEscape = needsEscape;
+    }
+
+    private static int ComputeLikeHash(SqlExpr operand, SqlExpr pattern, bool isNegated,
+        string? likePrefix, string? likeSuffix, bool needsEscape)
+    {
+        var hc = new HashCode();
+        hc.Add(SqlExprKind.LikeExpr);
+        hc.Add(operand.GetHashCode());
+        hc.Add(pattern.GetHashCode());
+        hc.Add(isNegated);
+        hc.Add(likePrefix);
+        hc.Add(likeSuffix);
+        hc.Add(needsEscape);
+        return hc.ToHashCode();
     }
 
     protected override bool DeepEquals(SqlExpr other)
@@ -407,7 +440,7 @@ internal sealed class CapturedValueExpr : SqlExpr
     public Microsoft.CodeAnalysis.ITypeSymbol? TypeSymbol { get; }
 
     public CapturedValueExpr(string variableName, string syntaxText, string clrType = "object", string? expressionPath = null, bool isStaticField = false, Microsoft.CodeAnalysis.ITypeSymbol? typeSymbol = null)
-        : base(HashCode.Combine(SqlExprKind.CapturedValue, variableName, syntaxText, expressionPath))
+        : base(HashCode.Combine(SqlExprKind.CapturedValue, variableName, syntaxText, expressionPath, clrType, isStaticField))
     {
         VariableName = variableName;
         SyntaxText = syntaxText;

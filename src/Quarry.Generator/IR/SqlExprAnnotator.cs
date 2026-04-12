@@ -30,7 +30,7 @@ internal static class SqlExprAnnotator
         {
             return AnnotateExpr(expr, syntax, semanticModel);
         }
-        catch
+        catch (Exception)
         {
             // Graceful degradation — return original tree
             return expr;
@@ -325,7 +325,7 @@ internal static class SqlExprAnnotator
         {
             return InlineCollectionsRecursive(expr, lambdaBody, semanticModel);
         }
-        catch
+        catch (Exception)
         {
             return expr;
         }
@@ -576,7 +576,7 @@ internal static class SqlExprAnnotator
         {
             return InlineLikePatternsRecursive(expr, lambdaBody, semanticModel);
         }
-        catch
+        catch (Exception)
         {
             return expr;
         }

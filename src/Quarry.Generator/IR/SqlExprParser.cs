@@ -102,8 +102,11 @@ internal static class SqlExprParser
             case IsPatternExpressionSyntax isPattern:
                 return ParseIsPattern(isPattern, lambdaParameters, context);
 
-            case ConditionalExpressionSyntax conditional:
-                return new SqlRawExpr(conditional.ToString());
+            case ConditionalExpressionSyntax:
+                // C# ternary (a ? b : c) cannot be directly translated to SQL.
+                // A CASE WHEN expression would be the SQL equivalent, but is not yet supported.
+                // Emit a clear marker rather than raw C# syntax that would be invalid SQL.
+                return new SqlRawExpr("/* unsupported: C# ternary expression */");
 
             case CastExpressionSyntax cast:
                 return ParseExpression(cast.Expression, lambdaParameters, context);
