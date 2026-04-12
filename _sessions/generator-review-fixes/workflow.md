@@ -9,7 +9,7 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: discussion
-pr:
+pr: #254
 session: 1
 phases-total: 8
 phases-complete: 8
