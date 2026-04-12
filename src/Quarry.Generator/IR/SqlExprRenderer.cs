@@ -100,6 +100,13 @@ internal static class SqlExprRenderer
             case SubqueryExpr sub:
                 if (sub.Predicate != null)
                     CollectParamsRecursive(sub.Predicate, result);
+                if (sub.Selector != null)
+                    CollectParamsRecursive(sub.Selector, result);
+                break;
+
+            case RawCallExpr rawCall:
+                foreach (var arg in rawCall.Arguments)
+                    CollectParamsRecursive(arg, result);
                 break;
         }
     }
