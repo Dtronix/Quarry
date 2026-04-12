@@ -521,68 +521,23 @@ internal sealed class FileEmitter
                 return;
         }
 
-        // Execution interceptor validation
+        // Execution interceptor validation — delegates to CarrierEmitter's eligibility methods
+        // to keep the logic in one place and prevent divergence.
         if (site.Kind is InterceptorKind.ExecuteFetchAll or InterceptorKind.ExecuteFetchFirst
             or InterceptorKind.ExecuteFetchFirstOrDefault or InterceptorKind.ExecuteFetchSingle
-            or InterceptorKind.ExecuteFetchSingleOrDefault or InterceptorKind.ToAsyncEnumerable)
+            or InterceptorKind.ExecuteFetchSingleOrDefault or InterceptorKind.ToAsyncEnumerable
+            or InterceptorKind.ExecuteScalar or InterceptorKind.ExecuteNonQuery)
         {
             if (!chainLookup.TryGetValue(site.UniqueId, out var chain))
             {
-                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} Method={site.MethodName} — NOT in chainLookup (chainLookup has {chainLookup.Count} entries)");
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup (chainLookup has {chainLookup.Count} entries)");
                 return;
             }
-            if (chain.UnmatchedMethodNames != null)
+            if (!CarrierEmitter.WouldExecutionTerminalBeEmitted(chain))
             {
-                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — UnmatchedMethodNames={string.Join(",", chain.UnmatchedMethodNames)}");
+                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — failed eligibility check");
                 return;
             }
-            var rawResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, chain.ResultTypeName, chain.ProjectionInfo);
-            if (string.IsNullOrEmpty(rawResult))
-            {
-                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — empty result type. site.ResultTypeName={site.ResultTypeName ?? "(null)"} chain.ResultTypeName={chain.ResultTypeName ?? "(null)"} projInfo={chain.ProjectionInfo?.ResultTypeName ?? "(null)"}");
-                return;
-            }
-            if (chain.ReaderDelegateCode == null)
-            {
-                sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — ReaderDelegateCode is null. QueryKind={chain.QueryKind} ProjInfo={chain.ProjectionInfo != null} ProjCols={chain.ProjectionInfo?.Columns.Count ?? 0}");
-                return;
-            }
-            if (chain.ProjectionInfo != null)
-            {
-                var hasAmbiguousColumns = chain.ProjectionInfo.Columns.Any(c =>
-                    c.SqlExpression != null && !string.IsNullOrEmpty(c.ColumnName));
-                if (hasAmbiguousColumns)
-                {
-                    sb.AppendLine($"    // TRACE SKIPPED TERMINAL: Kind={site.Kind} UniqueId={site.UniqueId} — ambiguous columns. ProjKind={chain.ProjectionInfo.Kind}");
-                    foreach (var col in chain.ProjectionInfo.Columns)
-                        sb.AppendLine($"    //   Col: Name={col.PropertyName ?? "(null)"} ColumnName={col.ColumnName ?? "(null)"} SqlExpr={col.SqlExpression ?? "(null)"} ClrType={col.ClrType ?? "(null)"}");
-                    return;
-                }
-            }
-        }
-        else if (site.Kind is InterceptorKind.ExecuteScalar)
-        {
-            if (!chainLookup.TryGetValue(site.UniqueId, out var scalarChain))
-            {
-                sb.AppendLine($"    // TRACE SKIPPED SCALAR: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
-                return;
-            }
-            if (scalarChain.UnmatchedMethodNames != null)
-                return;
-            var rawScalarResult = InterceptorCodeGenerator.ResolveExecutionResultType(site.ResultTypeName, scalarChain.ResultTypeName, scalarChain.ProjectionInfo);
-            if (string.IsNullOrEmpty(rawScalarResult))
-                return;
-        }
-        else if (site.Kind is InterceptorKind.ExecuteNonQuery)
-        {
-            if (!chainLookup.TryGetValue(site.UniqueId, out var nqChain))
-            {
-                sb.AppendLine($"    // TRACE SKIPPED NONQUERY: Kind={site.Kind} UniqueId={site.UniqueId} — NOT in chainLookup");
-                return;
-            }
-            if (nqChain.SqlVariants.Values.Any(v => string.IsNullOrWhiteSpace(v.Sql)
-                || (nqChain.QueryKind == QueryKind.Update && v.Sql.Contains("SET  "))))
-                return;
         }
         else if (site.Kind is InterceptorKind.ToDiagnostics)
         {
