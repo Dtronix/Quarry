@@ -2378,19 +2378,12 @@ internal static class ProjectionAnalyzer
     /// </summary>
     private static string? FormatConstantForSql(object? value)
     {
-        return value switch
-        {
-            null => "NULL",
-            int i => i.ToString(CultureInfo.InvariantCulture),
-            long l => l.ToString(CultureInfo.InvariantCulture),
-            float f => f.ToString(CultureInfo.InvariantCulture),
-            double d => d.ToString(CultureInfo.InvariantCulture),
-            decimal m => m.ToString(CultureInfo.InvariantCulture),
-            bool b => b ? "TRUE" : "FALSE",
-            string s => $"'{s.Replace("'", "''")}'",
-            IFormattable fmt => fmt.ToString(null, CultureInfo.InvariantCulture),
-            _ => value.ToString()
-        };
+        // Delegate to shared formatter; fall back to IFormattable/ToString for
+        // types not handled by the core formatter (e.g., DateTime, Guid).
+        return Translation.SqlLikeHelpers.FormatConstantAsSqlLiteral(value)
+            ?? (value is IFormattable fmt
+                ? fmt.ToString(null, CultureInfo.InvariantCulture)
+                : value?.ToString());
     }
 
     /// <summary>
