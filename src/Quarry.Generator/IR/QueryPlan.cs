@@ -456,6 +456,10 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
             && IsEnum == other.IsEnum
             && EnumUnderlyingType == other.EnumUnderlyingType
             && IsSensitive == other.IsSensitive
+            && EntityPropertyExpression == other.EntityPropertyExpression
+            && NeedsUnsafeAccessor == other.NeedsUnsafeAccessor
+            && IsDirectAccessible == other.IsDirectAccessible
+            && CollectionAccessExpression == other.CollectionAccessExpression
             && CapturedFieldName == other.CapturedFieldName
             && CapturedFieldType == other.CapturedFieldType
             && IsStaticCapture == other.IsStaticCapture
@@ -466,7 +470,7 @@ internal sealed class QueryParameter : IEquatable<QueryParameter>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured, CapturedFieldName);
+        return HashCode.Combine(GlobalIndex, ClrType, ValueExpression, IsCaptured, NeedsUnsafeAccessor, CapturedFieldName);
     }
 }
 

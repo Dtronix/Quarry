@@ -162,6 +162,14 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             && ReaderDelegateCode == other.ReaderDelegateCode
             && EntitySchemaNamespace == other.EntitySchemaNamespace
             && IsOperandChain == other.IsOperandChain
+            && IsTraced == other.IsTraced
+            && BatchInsertReturningSuffix == other.BatchInsertReturningSuffix
+            && BatchInsertColumnsPerRow == other.BatchInsertColumnsPerRow
+            && ExecutionSite.Equals(other.ExecutionSite)
+            && EqualityHelpers.SequenceEqual(ClauseSites, other.ClauseSites)
+            && EqualityHelpers.NullableSequenceEqual(PreparedTerminals, other.PreparedTerminals)
+            && Equals(PrepareSite, other.PrepareSite)
+            && Equals(InsertInfo, other.InsertInfo)
             && EqualityHelpers.DictionaryEqual(SqlVariants, other.SqlVariants);
     }
 
@@ -169,7 +177,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Plan.GetHashCode(), EntityTypeName, Dialect, MaxParameterCount);
+        return HashCode.Combine(Plan.GetHashCode(), EntityTypeName, Dialect, MaxParameterCount, IsTraced, BatchInsertColumnsPerRow);
     }
 }
 
