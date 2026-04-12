@@ -19,6 +19,7 @@
       --shadow: rgba(0,0,0,0.08);
       --chart-line: #0366d6;
       --chart-fill: rgba(3,102,214,0.1);
+      --chart-band: rgba(3,102,214,0.18);
       --chart-grid: rgba(0,0,0,0.08);
     }
     @media (prefers-color-scheme: dark) {
@@ -33,6 +34,7 @@
         --shadow: rgba(0,0,0,0.5);
         --chart-line: #58a6ff;
         --chart-fill: rgba(88,166,255,0.15);
+        --chart-band: rgba(88,166,255,0.22);
         --chart-grid: rgba(255,255,255,0.08);
       }
     }
@@ -47,10 +49,11 @@
     .toolbar { padding: 1rem 2rem; background: var(--card-bg); border-bottom: 1px solid var(--border); }
     .toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9rem; width: 320px; max-width: 100%; background: var(--bg); color: var(--text); }
     main { padding: 1.5rem 2rem; }
-    .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 1rem; }
-    .chart { background: var(--card-bg); padding: 1rem 1.25rem; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); }
-    .chart h3 { margin: 0 0 0.5rem; font-family: monospace; font-size: 0.9rem; color: var(--text); word-break: break-all; }
-    .chart canvas { max-height: 220px !important; }
+    .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(840px, 1fr)); gap: 1.25rem; }
+    .chart { background: var(--card-bg); padding: 1.25rem 1.5rem; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); }
+    .chart h3 { margin: 0 0 0.25rem; font-family: monospace; font-size: 1rem; color: var(--text); word-break: break-all; }
+    .chart .unit-label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem; font-family: monospace; }
+    .chart canvas { max-height: 440px !important; }
     .empty { padding: 4rem 2rem; text-align: center; color: var(--text-muted); background: var(--card-bg); border-radius: 6px; }
     .count { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
   </style>
@@ -86,6 +89,7 @@
         textMuted: styles.getPropertyValue('--text-muted').trim() || '#586069',
         line: styles.getPropertyValue('--chart-line').trim() || '#0366d6',
         fill: styles.getPropertyValue('--chart-fill').trim() || 'rgba(3,102,214,0.1)',
+        band: styles.getPropertyValue('--chart-band').trim() || 'rgba(3,102,214,0.18)',
         grid: styles.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.08)'
       };
     }
@@ -108,9 +112,13 @@
         const message = run.commit && run.commit.message ? run.commit.message : '';
         for (const bench of run.benches || []) {
           if (!benchmarkPoints[bench.name]) benchmarkPoints[bench.name] = [];
+          // `range` from github-action-benchmark looks like "± 12.34" — strip
+          // the prefix and parse the magnitude. Falls back to 0 when absent.
+          const rangeNum = parseFloat((bench.range || '').replace(/[^0-9.\-eE]/g, '')) || 0;
           benchmarkPoints[bench.name].push({
             x: ts,
             y: bench.value,
+            range: rangeNum,
             sha: shortSha,
             datePrefix: datePrefix,
             message: message,
@@ -118,6 +126,106 @@
           });
         }
       }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Per-chart unit selection.
+    // Picks the most readable unit (ns/us/ms/s) based on the median value
+    // of each series. Same unit is used for the y-axis, the band, and the
+    // tooltip so a single chart never mixes scales.
+    // ─────────────────────────────────────────────────────────────────────
+    const TIME_UNITS = [
+      { unit: 'ns', factor: 1,   threshold: 1e3,      relative: '10\u207B\u2079 s' },
+      { unit: 'us', factor: 1e3, threshold: 1e6,      relative: '10\u207B\u2076 s' },
+      { unit: 'ms', factor: 1e6, threshold: 1e9,      relative: '10\u207B\u00B3 s' },
+      { unit: 's',  factor: 1e9, threshold: Infinity, relative: '10\u2070 s' }
+    ];
+
+    function pickUnit(points) {
+      if (points.length === 0) return TIME_UNITS[0];
+      const sorted = points.map(p => p.y).sort((a, b) => a - b);
+      const median = sorted[Math.floor(sorted.length / 2)];
+      for (const u of TIME_UNITS) {
+        if (median < u.threshold) return u;
+      }
+      return TIME_UNITS[TIME_UNITS.length - 1];
+    }
+
+    function formatValue(v) {
+      // Adaptive precision — 3 sig figs is plenty once the unit is right-sized.
+      if (v >= 1000) return v.toFixed(0);
+      if (v >= 100)  return v.toFixed(1);
+      if (v >= 10)   return v.toFixed(2);
+      return v.toFixed(3);
+    }
+
+    function buildDatasets(points, colors, unit) {
+      // Convert ns → display unit. Original ns values stay on each point
+      // (yNs / rangeNs) so theme rebuilds can rescale without losing precision.
+      const f = unit.factor;
+      const scaled = points.map(p => ({
+        x: p.x,
+        y: p.y / f,
+        range: p.range / f,
+        yNs: p.y,
+        rangeNs: p.range,
+        sha: p.sha,
+        datePrefix: p.datePrefix,
+        message: p.message,
+        unit: unit.unit
+      }));
+      const lower = scaled.map(p => ({ x: p.x, y: p.y - p.range }));
+      const upper = scaled.map(p => ({ x: p.x, y: p.y + p.range }));
+
+      // Adaptive marker visibility: hide circles on dense series. Markers
+      // become noise (and slow) past ~100 points; hover still surfaces them.
+      const dense = scaled.length > 100;
+      const meanPointRadius = dense ? 0 : 4;
+      const meanPointHitRadius = dense ? 12 : 4;
+
+      return [
+        {
+          // Lower bound — invisible line, fill anchor only.
+          label: '_lower',
+          data: lower,
+          borderColor: 'transparent',
+          backgroundColor: 'transparent',
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: false,
+          tension: 0,
+          spanGaps: true,
+          parsing: false
+        },
+        {
+          // Upper bound — fills down to the previous dataset → the band.
+          label: '_upper',
+          data: upper,
+          borderColor: 'transparent',
+          backgroundColor: colors.band,
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          fill: '-1',
+          tension: 0,
+          spanGaps: true,
+          parsing: false
+        },
+        {
+          // Mean line, drawn last → on top of the band.
+          label: 'Mean',
+          data: scaled,
+          borderColor: colors.line,
+          backgroundColor: colors.fill,
+          pointBackgroundColor: colors.line,
+          tension: 0,
+          spanGaps: true,
+          pointRadius: meanPointRadius,
+          pointHitRadius: meanPointHitRadius,
+          pointHoverRadius: 7,
+          pointHoverBorderWidth: 2,
+          fill: false
+        }
+      ];
     }
 
     const chartsDiv = document.getElementById('charts');
@@ -134,33 +242,31 @@
     const charts = [];
     for (const name of allNames) {
       const points = benchmarkPoints[name].sort((a, b) => a.x - b.x);
+      const unit = pickUnit(points);
+
       const container = document.createElement('div');
       container.className = 'chart';
       container.dataset.name = name.toLowerCase();
-      container.innerHTML = '<h3>' + name + '</h3><canvas></canvas>';
+      container.innerHTML =
+        '<h3>' + name + '</h3>' +
+        '<div class="unit-label">Time (' + unit.unit + ') \u2014 ' + unit.relative + '</div>' +
+        '<canvas></canvas>';
       chartsDiv.appendChild(container);
 
       const chart = new Chart(container.querySelector('canvas').getContext('2d'), {
         type: 'line',
-        data: {
-          datasets: [{
-            data: points,
-            borderColor: themeColors.line,
-            backgroundColor: themeColors.fill,
-            tension: 0.2,
-            pointRadius: 4,
-            pointHoverRadius: 7,
-            pointHoverBorderWidth: 2,
-            pointBackgroundColor: themeColors.line
-          }]
-        },
+        data: { datasets: buildDatasets(points, themeColors, unit) },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           interaction: { mode: 'nearest', intersect: true },
           onClick: (evt, elements, chart) => {
             if (elements.length === 0) return;
-            const point = chart.data.datasets[0].data[elements[0].index];
+            // Only react to clicks on the mean-line dataset.
+            const meanDsIndex = chart.data.datasets.length - 1;
+            const hit = elements.find(e => e.datasetIndex === meanDsIndex);
+            if (!hit) return;
+            const point = chart.data.datasets[meanDsIndex].data[hit.index];
             window.location.href = 'runs/' + point.datePrefix + '-' + point.sha + '.html';
           },
           onHover: (evt, elements) => {
@@ -170,12 +276,13 @@
             x: { type: 'time', time: { unit: 'day' } },
             y: {
               beginAtZero: false,
-              ticks: { callback: (v) => v.toFixed(0) }
+              ticks: { callback: (v) => formatValue(v) }
             }
           },
           plugins: {
             legend: { display: false },
             tooltip: {
+              filter: (ctx) => ctx.dataset.label === 'Mean',
               callbacks: {
                 title: (items) => {
                   const p = items[0].raw;
@@ -183,14 +290,16 @@
                 },
                 label: (ctx) => {
                   const p = ctx.raw;
-                  return [p.y.toFixed(2) + ' ' + p.unit, p.message, '(click to open report)'];
+                  const main = formatValue(p.y) + ' ' + p.unit
+                    + (p.range ? '  \u00B1 ' + formatValue(p.range) + ' ' + p.unit : '');
+                  return [main, p.message, '(click to open report)'];
                 }
               }
             }
           }
         }
       });
-      charts.push({ container, chart });
+      charts.push({ container, chart, unit });
     }
 
     document.getElementById('filter').addEventListener('input', (e) => {
@@ -207,10 +316,20 @@
     if (window.matchMedia) {
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         themeColors = applyChartDefaults();
-        for (const { chart } of charts) {
-          chart.data.datasets[0].borderColor = themeColors.line;
-          chart.data.datasets[0].backgroundColor = themeColors.fill;
-          chart.data.datasets[0].pointBackgroundColor = themeColors.line;
+        for (const { chart, unit } of charts) {
+          // Rebuild datasets from the original ns-scaled points so band/line
+          // colors track the new theme without losing precision.
+          const meanDs = chart.data.datasets[chart.data.datasets.length - 1];
+          const originalNs = meanDs.data.map(p => ({
+            x: p.x,
+            y: p.yNs,
+            range: p.rangeNs,
+            sha: p.sha,
+            datePrefix: p.datePrefix,
+            message: p.message,
+            unit: 'ns'
+          }));
+          chart.data.datasets = buildDatasets(originalNs, themeColors, unit);
           chart.update();
         }
       });
