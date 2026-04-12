@@ -57,6 +57,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
         IsOperandChain = isOperandChain;
     }
 
+    private IReadOnlyList<ChainClauseEntry>? _clauseEntries;
+
     public QueryPlan Plan { get; }
     public Dictionary<int, AssembledSqlVariant> SqlVariants { get; }
     public string? ReaderDelegateCode { get; set; }
@@ -128,6 +130,8 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
     /// </summary>
     public IReadOnlyList<ChainClauseEntry> GetClauseEntries()
     {
+        if (_clauseEntries != null) return _clauseEntries;
+
         var entries = new List<ChainClauseEntry>();
         int condIdx = 0;
         foreach (var cs in ClauseSites)
@@ -147,6 +151,7 @@ internal sealed class AssembledPlan : IEquatable<AssembledPlan>
             // being genuinely conditional (relative depth <= baseline).
             entries.Add(new ChainClauseEntry(cs, bitIndex.HasValue, bitIndex, role.Value));
         }
+        _clauseEntries = entries;
         return entries;
     }
 
