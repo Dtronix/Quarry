@@ -559,13 +559,15 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
-        // Command creation and parameter binding
+        // Command creation and parameter binding. CommandTimeout uses a guarded
+        // compare-and-set so the setter is skipped when the value already matches.
         var timeoutExpr = carrier.Fields.Any(f => f.Role == FieldRole.Timeout)
             ? "__c.Timeout ?? __ctx.DefaultTimeout"
             : "__ctx.DefaultTimeout";
         sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
-        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine($"        var __timeoutSec = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine("        if (__cmd.CommandTimeout != __timeoutSec) __cmd.CommandTimeout = __timeoutSec;");
 
         // Bind parameters from entities
         var convertBool = InterceptorCodeGenerator.RequiresBoolToIntConversion(chain.Dialect);

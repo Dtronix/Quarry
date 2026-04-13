@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using Quarry.Logging;
 
@@ -15,18 +16,35 @@ namespace Quarry.Internal;
 public static class QueryExecutor
 {
     /// <summary>
-    /// Executes a carrier-optimized query with a pre-built command and returns all results as a list.
-    /// Delegates to <see cref="ToCarrierAsyncEnumerableWithCommandAsync{TResult}"/> for the actual execution.
+    /// Executes a carrier-optimized query with a pre-built command and materializes all results into a list.
     /// </summary>
     public static async Task<List<TResult>> ExecuteCarrierWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
-        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior, CancellationToken ct)
     {
+        await using var _cmd = command;
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        var startTimestamp = Stopwatch.GetTimestamp();
+        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
+
         var results = new List<TResult>();
-        await foreach (var item in ToCarrierAsyncEnumerableWithCommandAsync(opId, ctx, command, reader, ct).ConfigureAwait(false))
+        try
         {
-            results.Add(item);
+            while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
+            {
+                results.Add(reader(dbReader));
+            }
         }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            ReportReaderFailure(opId, command, ex);
+        }
+
+        FinalizeQuery(opId, ctx, startTimestamp, results.Count, command.CommandText);
         return results;
     }
 
@@ -35,34 +53,28 @@ public static class QueryExecutor
     /// </summary>
     public static async Task<TResult> ExecuteCarrierFirstWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
-        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
 
         try
         {
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
             {
-                var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                    QueryLog.FetchCompleted(opId, 1, elapsedMs);
-
-                CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
+                FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
                 return reader(dbReader);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                QueryLog.QueryFailed(opId, ex);
-
-            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            ReportReaderFailure(opId, command, ex);
         }
 
         throw new InvalidOperationException("Sequence contains no elements.");
@@ -73,43 +85,32 @@ public static class QueryExecutor
     /// </summary>
     public static async Task<TResult?> ExecuteCarrierFirstOrDefaultWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
-        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior | CommandBehavior.SingleRow, ct).ConfigureAwait(false);
 
         try
         {
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
             {
-                var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                    QueryLog.FetchCompleted(opId, 1, elapsedMs);
-
-                CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
-                return reader(dbReader);
+                var result = reader(dbReader);
+                FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
+                return result;
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                QueryLog.QueryFailed(opId, ex);
-
-            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            ReportReaderFailure(opId, command, ex);
         }
 
-        var elapsed = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-            QueryLog.FetchCompleted(opId, 0, elapsed);
-
-        CheckSlowQuery(opId, ctx, elapsed, command.CommandText);
-
+        FinalizeQuery(opId, ctx, startTimestamp, 0, command.CommandText);
         return default;
     }
 
@@ -118,13 +119,16 @@ public static class QueryExecutor
     /// </summary>
     public static async Task<TResult> ExecuteCarrierSingleWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
-        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
 
         try
         {
@@ -136,13 +140,7 @@ public static class QueryExecutor
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
                 throw new InvalidOperationException("Sequence contains more than one element.");
 
-            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                QueryLog.FetchCompleted(opId, 1, elapsedMs);
-
-            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
+            FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
             return result;
         }
         catch (InvalidOperationException)
@@ -151,10 +149,8 @@ public static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                QueryLog.QueryFailed(opId, ex);
-
-            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            ReportReaderFailure(opId, command, ex);
+            throw; // unreachable — ReportReaderFailure always throws
         }
     }
 
@@ -164,25 +160,22 @@ public static class QueryExecutor
     /// </summary>
     public static async Task<TResult?> ExecuteCarrierSingleOrDefaultWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
-        DbCommand command, Func<DbDataReader, TResult> reader, CancellationToken ct)
+        DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
 
         try
         {
             if (!await dbReader.ReadAsync(ct).ConfigureAwait(false))
             {
-                var elapsedMs0 = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                    QueryLog.FetchCompleted(opId, 0, elapsedMs0);
-
-                CheckSlowQuery(opId, ctx, elapsedMs0, command.CommandText);
-
+                FinalizeQuery(opId, ctx, startTimestamp, 0, command.CommandText);
                 return default;
             }
 
@@ -191,13 +184,7 @@ public static class QueryExecutor
             if (await dbReader.ReadAsync(ct).ConfigureAwait(false))
                 throw new InvalidOperationException("Sequence contains more than one element.");
 
-            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                QueryLog.FetchCompleted(opId, 1, elapsedMs);
-
-            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
+            FinalizeQuery(opId, ctx, startTimestamp, 1, command.CommandText);
             return result;
         }
         catch (InvalidOperationException)
@@ -206,10 +193,8 @@ public static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                QueryLog.QueryFailed(opId, ex);
-
-            throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+            ReportReaderFailure(opId, command, ex);
+            throw; // unreachable
         }
     }
 
@@ -221,9 +206,12 @@ public static class QueryExecutor
         DbCommand command, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
-        var instrumented = LogsmithOutput.Logger != null || ctx.SlowQueryThreshold.HasValue;
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        var logger = LogsmithOutput.Logger;
+        var instrumented = logger != null || ctx.SlowQueryThreshold.HasValue;
         var startTimestamp = instrumented ? Stopwatch.GetTimestamp() : 0;
 
         try
@@ -238,7 +226,7 @@ public static class QueryExecutor
 
             if (result is null or DBNull)
             {
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+                if (logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                     QueryLog.ScalarResult(opId, "null");
 
                 if (default(TScalar) is null)
@@ -247,7 +235,7 @@ public static class QueryExecutor
                 throw new InvalidOperationException("Query returned null but expected a non-nullable value.");
             }
 
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+            if (logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
                 QueryLog.ScalarResult(opId, result.ToString() ?? "null");
 
             return ScalarConverter.Convert<TScalar>(result);
@@ -258,7 +246,7 @@ public static class QueryExecutor
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
+            if (logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error executing scalar query: {ex.Message}", command.CommandText, ex);
@@ -273,25 +261,22 @@ public static class QueryExecutor
         DbCommand command, CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
 
         try
         {
             var rowCount = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-                QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
-
-            CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
-
+            FinalizeQuery(opId, ctx, startTimestamp, rowCount, command.CommandText);
             return rowCount;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
+            var logger = LogsmithOutput.Logger;
+            if (logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
                 QueryLog.QueryFailed(opId, ex);
 
             throw new QuarryQueryException($"Error executing query: {ex.Message}", command.CommandText, ex);
@@ -304,13 +289,16 @@ public static class QueryExecutor
     public static async IAsyncEnumerable<TResult> ToCarrierAsyncEnumerableWithCommandAsync<TResult>(
         long opId, QuarryContext ctx,
         DbCommand command, Func<DbDataReader, TResult> reader,
+        CommandBehavior behavior,
         [EnumeratorCancellation] CancellationToken ct)
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
 
         int rowCount = 0;
         while (await dbReader.ReadAsync(ct).ConfigureAwait(false))
@@ -322,22 +310,15 @@ public static class QueryExecutor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                    QueryLog.QueryFailed(opId, ex);
-
-                throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+                ReportReaderFailure(opId, command, ex);
+                throw; // unreachable
             }
 
             rowCount++;
             yield return result;
         }
 
-        var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
-
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
-            QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
-
-        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+        FinalizeQuery(opId, ctx, startTimestamp, rowCount, command.CommandText);
     }
 
     /// <summary>
@@ -347,14 +328,17 @@ public static class QueryExecutor
     public static async IAsyncEnumerable<TResult> ToCarrierAsyncEnumerableWithCommandAsync<TResult, TReader>(
         long opId, QuarryContext ctx,
         DbCommand command,
+        CommandBehavior behavior,
         [EnumeratorCancellation] CancellationToken ct)
         where TReader : struct, IRowReader<TResult>
     {
         await using var _cmd = command;
-        await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
+
+        if (ctx.Connection.State != ConnectionState.Open)
+            await ctx.EnsureConnectionOpenAsync(ct).ConfigureAwait(false);
 
         var startTimestamp = Stopwatch.GetTimestamp();
-        await using var dbReader = await command.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        await using var dbReader = await command.ExecuteReaderAsync(behavior, ct).ConfigureAwait(false);
 
         var reader = new TReader();
         reader.Resolve(dbReader);
@@ -369,22 +353,42 @@ public static class QueryExecutor
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
-                    QueryLog.QueryFailed(opId, ex);
-
-                throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
+                ReportReaderFailure(opId, command, ex);
+                throw; // unreachable
             }
 
             rowCount++;
             yield return result;
         }
 
+        FinalizeQuery(opId, ctx, startTimestamp, rowCount, command.CommandText);
+    }
+
+    /// <summary>
+    /// Logs fetch completion at Debug and runs the slow-query check, in one place.
+    /// </summary>
+    private static void FinalizeQuery(long opId, QuarryContext ctx, long startTimestamp, int rowCount, string sql)
+    {
         var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
 
-        if (LogsmithOutput.Logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
+        var logger = LogsmithOutput.Logger;
+        if (logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)
             QueryLog.FetchCompleted(opId, rowCount, elapsedMs);
 
-        CheckSlowQuery(opId, ctx, elapsedMs, command.CommandText);
+        CheckSlowQuery(opId, ctx, elapsedMs, sql);
+    }
+
+    /// <summary>
+    /// Centralizes the wrap-as-QuarryQueryException pattern used by every reader path.
+    /// </summary>
+    [DoesNotReturn]
+    private static void ReportReaderFailure(long opId, DbCommand command, Exception ex)
+    {
+        var logger = LogsmithOutput.Logger;
+        if (logger?.IsEnabled(LogLevel.Error, QueryLog.CategoryName) == true)
+            QueryLog.QueryFailed(opId, ex);
+
+        throw new QuarryQueryException($"Error reading query results: {ex.Message}", command.CommandText, ex);
     }
 
     /// <summary>

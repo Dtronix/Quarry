@@ -607,13 +607,22 @@ internal static class CarrierEmitter
     /// <summary>
     /// Emits DbCommand creation and binds parameters with mask-gated conditional support.
     /// </summary>
+    /// <remarks>
+    /// The CommandTimeout assignment is guarded by a compare-and-set that skips the property
+    /// setter when the value already matches the driver's default — saving a setter call
+    /// (and any provider-side validation) on the hot path.
+    /// </remarks>
     private static void EmitCarrierCommandBinding(
-        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier,
-        string timeoutExpr)
+        StringBuilder sb, AssembledPlan chain, CarrierPlan carrier)
     {
+        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
+            ? "__c.Timeout ?? __ctx.DefaultTimeout"
+            : "__ctx.DefaultTimeout";
+
         sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
-        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine($"        var __timeoutSec = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine("        if (__cmd.CommandTimeout != __timeoutSec) __cmd.CommandTimeout = __timeoutSec;");
 
         var dialectLiteral = GetDialectLiteral(chain.Dialect);
         var paramCount = chain.ChainParameters.Count;
@@ -753,15 +762,21 @@ internal static class CarrierEmitter
         // Parameter logging
         EmitInlineParameterLogging(sb, chain, carrier);
 
-        // Command binding
-        var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
-            ? "__c.Timeout ?? __ctx.DefaultTimeout"
-            : "__ctx.DefaultTimeout";
-        EmitCarrierCommandBinding(sb, chain, carrier, timeoutExpr);
+        // Command binding (CommandTimeout is set inside the executor)
+        EmitCarrierCommandBinding(sb, chain, carrier);
 
-        // Executor call
+        // Executor call. Reader-shaped terminals receive a per-query CommandBehavior literal
+        // chosen by CommandBehaviorSelector — non-row terminals (NonQuery / Scalar) do not.
         var readerArg = readerExpression != null ? $", {readerExpression}" : "";
-        sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd{readerArg}, cancellationToken);");
+        if (readerExpression != null)
+        {
+            var behaviorExpr = CommandBehaviorSelector.Select(chain.Dialect, chain.ProjectionInfo?.Columns);
+            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd{readerArg}, {behaviorExpr}, cancellationToken);");
+        }
+        else
+        {
+            sb.AppendLine($"        return QueryExecutor.{executorMethod}(__opId, __ctx, __cmd, cancellationToken);");
+        }
     }
 
     /// <summary>
@@ -901,13 +916,16 @@ internal static class CarrierEmitter
         sb.AppendLine("        if (__logger?.IsEnabled(LogLevel.Debug, QueryLog.CategoryName) == true)");
         sb.AppendLine("            QueryLog.SqlGenerated(__opId, sql);");
 
-        // Command creation + inline parameter binding from entity properties
+        // Command creation + inline parameter binding from entity properties.
+        // CommandTimeout uses a guarded compare-and-set to skip the property setter when
+        // the value already matches.
         var timeoutExpr = HasCarrierField(carrier, FieldRole.Timeout)
             ? "__c.Timeout ?? __ctx.DefaultTimeout"
             : "__ctx.DefaultTimeout";
         sb.AppendLine("        var __cmd = __ctx.Connection.CreateCommand();");
         sb.AppendLine("        __cmd.CommandText = sql;");
-        sb.AppendLine($"        __cmd.CommandTimeout = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine($"        var __timeoutSec = (int)({timeoutExpr}).TotalSeconds;");
+        sb.AppendLine("        if (__cmd.CommandTimeout != __timeoutSec) __cmd.CommandTimeout = __timeoutSec;");
 
         // Bind entity properties as parameters using InsertInfo
         var insertInfo = chain.InsertInfo;
