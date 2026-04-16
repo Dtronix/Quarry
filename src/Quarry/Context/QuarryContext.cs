@@ -386,7 +386,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync(opId, this, command, reader, cancellationToken);
+        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync(opId, this, command, reader, CommandBehavior.SingleResult, cancellationToken);
     }
 
     /// <summary>
@@ -421,7 +421,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
             command.Parameters.Add(param);
         }
 
-        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync<T, TReader>(opId, this, command, cancellationToken);
+        return QueryExecutor.ToCarrierAsyncEnumerableWithCommandAsync<T, TReader>(opId, this, command, CommandBehavior.SingleResult, cancellationToken);
     }
 
     /// <summary>
