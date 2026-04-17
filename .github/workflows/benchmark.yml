@@ -210,6 +210,7 @@ jobs:
           # ── Copy per-run HTML report and static front-end pages ────────
           cp ../BenchmarkDotNet.Artifacts/reports/report.html "dev/bench/runs/${REPORT_NAME}"
           cp ../scripts/benchmark-pages/landing.html index.html
+          cp ../scripts/benchmark-pages/README.md README.md
           cp ../scripts/benchmark-pages/dashboard.html dev/bench/index.html
           cp ../scripts/benchmark-pages/runs.html dev/bench/runs/index.html
 
