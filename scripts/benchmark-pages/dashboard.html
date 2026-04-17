@@ -21,6 +21,8 @@
       --chart-fill: rgba(3,102,214,0.1);
       --chart-band: rgba(3,102,214,0.18);
       --chart-grid: rgba(0,0,0,0.08);
+      --chart-memory-line: #d1741f;
+      --chart-memory-point: #d1741f;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -36,6 +38,8 @@
         --chart-fill: rgba(88,166,255,0.15);
         --chart-band: rgba(88,166,255,0.22);
         --chart-grid: rgba(255,255,255,0.08);
+        --chart-memory-line: #f0883e;
+        --chart-memory-point: #f0883e;
       }
     }
     * { box-sizing: border-box; }
@@ -46,13 +50,15 @@
     header nav { margin-top: 0.6rem; }
     header nav a { color: var(--link); text-decoration: none; margin-right: 1.25rem; font-size: 0.9rem; }
     header nav a:hover { text-decoration: underline; }
-    .toolbar { padding: 1rem 2rem; background: var(--card-bg); border-bottom: 1px solid var(--border); }
-    .toolbar input { padding: 0.5rem 0.75rem; border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9rem; width: 320px; max-width: 100%; background: var(--bg); color: var(--text); }
+    .toolbar { padding: 1rem 2rem; background: var(--card-bg); border-bottom: 1px solid var(--border); display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+    .toolbar input[type="search"] { padding: 0.5rem 0.75rem; border: 1px solid var(--input-border); border-radius: 4px; font-size: 0.9rem; width: 320px; max-width: 100%; background: var(--bg); color: var(--text); }
+    .toolbar label { font-size: 0.85rem; color: var(--text-muted); display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; }
     main { padding: 1.5rem 2rem; }
     .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(840px, 1fr)); gap: 1.25rem; }
     .chart { background: var(--card-bg); padding: 1.25rem 1.5rem; border-radius: 6px; box-shadow: 0 1px 3px var(--shadow); }
     .chart h3 { margin: 0 0 0.25rem; font-family: monospace; font-size: 1rem; color: var(--text); word-break: break-all; }
     .chart .unit-label { color: var(--text-muted); font-size: 0.8rem; margin-bottom: 0.5rem; font-family: monospace; }
+    .chart .unit-label .mem-label { color: var(--chart-memory-line); }
     .chart canvas { max-height: 440px !important; }
     .empty { padding: 4rem 2rem; text-align: center; color: var(--text-muted); background: var(--card-bg); border-radius: 6px; }
     .count { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem; }
@@ -70,6 +76,7 @@
   </header>
   <div class="toolbar">
     <input type="search" id="filter" placeholder="Filter benchmarks by name...">
+    <label><input type="checkbox" id="toggle-mem" checked> Show memory</label>
   </div>
   <main>
     <div class="count" id="count"></div>
@@ -90,7 +97,9 @@
         line: styles.getPropertyValue('--chart-line').trim() || '#0366d6',
         fill: styles.getPropertyValue('--chart-fill').trim() || 'rgba(3,102,214,0.1)',
         band: styles.getPropertyValue('--chart-band').trim() || 'rgba(3,102,214,0.18)',
-        grid: styles.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.08)'
+        grid: styles.getPropertyValue('--chart-grid').trim() || 'rgba(0,0,0,0.08)',
+        memLine: styles.getPropertyValue('--chart-memory-line').trim() || '#d1741f',
+        memPoint: styles.getPropertyValue('--chart-memory-point').trim() || '#d1741f'
       };
     }
 
@@ -101,6 +110,20 @@
       return c;
     }
     let themeColors = applyChartDefaults();
+
+    // Mirrors `Reporter.AnchorFor`: letters/digits lowercased, everything
+    // else → '-'. Used to build section-anchored run links from FQNs like
+    // "Quarry.Benchmarks.Benchmarks.ComplexMultiJoinAggregateBenchmarks.Quarry_Three".
+    function anchorFor(s) {
+      let out = '';
+      for (const c of s) out += /[a-zA-Z0-9]/.test(c) ? c.toLowerCase() : '-';
+      return out;
+    }
+    function deriveSectionAnchor(fqn) {
+      const parts = (fqn || '').split('.');
+      if (parts.length < 2) return '';
+      return anchorFor(parts[parts.length - 2]);
+    }
 
     const benchmarkPoints = {};
     for (const [, runs] of Object.entries(data.entries || {})) {
@@ -116,9 +139,12 @@
           // the prefix and parse the magnitude. Falls back to 0 when absent.
           const rangeNum = parseFloat((bench.range || '').replace(/[^0-9.\-eE]/g, '')) || 0;
           benchmarkPoints[bench.name].push({
-            x: ts,
+            ts: ts,
             y: bench.value,
             range: rangeNum,
+            // `allocated` (bytes) is injected by the workflow's patch step.
+            // Missing for pre-backfill runs — chart tolerates null.
+            alloc: typeof bench.allocated === 'number' ? bench.allocated : null,
             sha: shortSha,
             datePrefix: datePrefix,
             message: message,
@@ -129,10 +155,9 @@
     }
 
     // ─────────────────────────────────────────────────────────────────────
-    // Per-chart unit selection.
-    // Picks the most readable unit (ns/us/ms/s) based on the median value
-    // of each series. Same unit is used for the y-axis, the band, and the
-    // tooltip so a single chart never mixes scales.
+    // Unit selection per series — ns/us/ms/s for time, B/KB/MB/GB for bytes.
+    // Each series picks its own best-fit unit from its median value, so the
+    // left and right axes scale independently.
     // ─────────────────────────────────────────────────────────────────────
     const TIME_UNITS = [
       { unit: 'ns', factor: 1,   threshold: 1e3,      relative: '10\u207B\u2079 s' },
@@ -140,15 +165,19 @@
       { unit: 'ms', factor: 1e6, threshold: 1e9,      relative: '10\u207B\u00B3 s' },
       { unit: 's',  factor: 1e9, threshold: Infinity, relative: '10\u2070 s' }
     ];
+    const BYTE_UNITS = [
+      { unit: 'B',  factor: 1,                 threshold: 1024 },
+      { unit: 'KB', factor: 1024,              threshold: 1024 * 1024 },
+      { unit: 'MB', factor: 1024 * 1024,       threshold: 1024 * 1024 * 1024 },
+      { unit: 'GB', factor: 1024 * 1024 * 1024, threshold: Infinity }
+    ];
 
-    function pickUnit(points) {
-      if (points.length === 0) return TIME_UNITS[0];
-      const sorted = points.map(p => p.y).sort((a, b) => a - b);
+    function pickUnitFrom(values, table) {
+      if (values.length === 0) return table[0];
+      const sorted = values.slice().sort((a, b) => a - b);
       const median = sorted[Math.floor(sorted.length / 2)];
-      for (const u of TIME_UNITS) {
-        if (median < u.threshold) return u;
-      }
-      return TIME_UNITS[TIME_UNITS.length - 1];
+      for (const u of table) if (median < u.threshold) return u;
+      return table[table.length - 1];
     }
 
     function formatValue(v) {
@@ -159,16 +188,17 @@
       return v.toFixed(3);
     }
 
-    function buildDatasets(points, colors, unit) {
-      // Convert ns → display unit. Original ns values stay on each point
-      // (yNs / rangeNs) so theme rebuilds can rescale without losing precision.
+    function buildTimeDatasets(points, colors, unit) {
+      // x = commit index (equal-width slots); `ts` stays on each point for
+      // tooltip/click routing. yNs/rangeNs preserve raw ns for theme rebuilds.
       const f = unit.factor;
-      const scaled = points.map(p => ({
-        x: p.x,
+      const scaled = points.map((p, i) => ({
+        x: i,
         y: p.y / f,
         range: p.range / f,
         yNs: p.y,
         rangeNs: p.range,
+        ts: p.ts,
         sha: p.sha,
         datePrefix: p.datePrefix,
         message: p.message,
@@ -195,7 +225,8 @@
           fill: false,
           tension: 0,
           spanGaps: true,
-          parsing: false
+          parsing: false,
+          yAxisID: 'y'
         },
         {
           // Upper bound — fills down to the previous dataset → the band.
@@ -208,7 +239,8 @@
           fill: '-1',
           tension: 0,
           spanGaps: true,
-          parsing: false
+          parsing: false,
+          yAxisID: 'y'
         },
         {
           // Mean line, drawn last → on top of the band.
@@ -223,9 +255,47 @@
           pointHitRadius: meanPointHitRadius,
           pointHoverRadius: 7,
           pointHoverBorderWidth: 2,
-          fill: false
+          fill: false,
+          yAxisID: 'y'
         }
       ];
+    }
+
+    function buildAllocDataset(points, colors, unit) {
+      if (!unit) return null;
+      const f = unit.factor;
+      // Preserve full-array index so a gap (null alloc) renders as a break,
+      // not a false connection to the next available point.
+      const scaled = points
+        .map((p, i) => ({ point: p, index: i }))
+        .filter(e => e.point.alloc != null)
+        .map(e => ({
+          x: e.index,
+          y: e.point.alloc / f,
+          yBytes: e.point.alloc,
+          ts: e.point.ts,
+          sha: e.point.sha,
+          datePrefix: e.point.datePrefix,
+          message: e.point.message,
+          unit: unit.unit
+        }));
+      if (scaled.length === 0) return null;
+      const dense = scaled.length > 100;
+      return {
+        label: 'Allocated',
+        data: scaled,
+        borderColor: colors.memLine,
+        backgroundColor: 'transparent',
+        borderDash: [6, 4],
+        pointBackgroundColor: colors.memPoint,
+        tension: 0,
+        spanGaps: true,
+        pointRadius: dense ? 0 : 3,
+        pointHitRadius: dense ? 12 : 4,
+        pointHoverRadius: 6,
+        fill: false,
+        yAxisID: 'y1'
+      };
     }
 
     const chartsDiv = document.getElementById('charts');
@@ -240,66 +310,135 @@
     }
 
     const charts = [];
+    // Dataset labels that count as "navigate to run" when clicked.
+    const NAV_LABELS = new Set(['Mean', 'Allocated']);
+
     for (const name of allNames) {
-      const points = benchmarkPoints[name].sort((a, b) => a.x - b.x);
-      const unit = pickUnit(points);
+      const points = benchmarkPoints[name].sort((a, b) => a.ts - b.ts);
+      const timeUnit = pickUnitFrom(points.map(p => p.y), TIME_UNITS);
+      const allocValues = points.map(p => p.alloc).filter(v => v != null);
+      const allocUnit = allocValues.length ? pickUnitFrom(allocValues, BYTE_UNITS) : null;
+      const sectionAnchor = deriveSectionAnchor(name);
 
       const container = document.createElement('div');
       container.className = 'chart';
       container.dataset.name = name.toLowerCase();
+
+      const unitLabelParts = [
+        '<span>Time (' + timeUnit.unit + ') \u2014 ' + timeUnit.relative + '</span>'
+      ];
+      if (allocUnit) {
+        unitLabelParts.push('<span class="mem-label">Memory (' + allocUnit.unit + ')</span>');
+      }
+
       container.innerHTML =
         '<h3>' + name + '</h3>' +
-        '<div class="unit-label">Time (' + unit.unit + ') \u2014 ' + unit.relative + '</div>' +
+        '<div class="unit-label">' + unitLabelParts.join(' &nbsp;\u00B7&nbsp; ') + '</div>' +
         '<canvas></canvas>';
       chartsDiv.appendChild(container);
 
+      const datasets = buildTimeDatasets(points, themeColors, timeUnit);
+      const allocDs = buildAllocDataset(points, themeColors, allocUnit);
+      if (allocDs) datasets.push(allocDs);
+
+      const xMax = Math.max(1, points.length - 1);
+      const scales = {
+        x: {
+          // Commit-indexed axis — equal slot per run so gaps between runs
+          // carry no visual weight. Ticks show short SHA at the commit index.
+          type: 'linear',
+          min: 0,
+          max: xMax,
+          offset: true,
+          ticks: {
+            precision: 0,
+            maxTicksLimit: 12,
+            autoSkip: true,
+            callback: (v) => {
+              const i = Math.round(v);
+              return points[i] ? points[i].sha : '';
+            }
+          },
+          grid: { display: false }
+        },
+        y: {
+          position: 'left',
+          beginAtZero: false,
+          ticks: { callback: (v) => formatValue(v) },
+          title: { display: true, text: 'Time (' + timeUnit.unit + ')', color: themeColors.line }
+        }
+      };
+      if (allocUnit) {
+        scales.y1 = {
+          position: 'right',
+          beginAtZero: false,
+          // Second axis suppresses its own gridlines so they don't double up
+          // with the left axis's.
+          grid: { drawOnChartArea: false },
+          ticks: { callback: (v) => formatValue(v) },
+          title: { display: true, text: 'Memory (' + allocUnit.unit + ')', color: themeColors.memLine }
+        };
+      }
+
       const chart = new Chart(container.querySelector('canvas').getContext('2d'), {
         type: 'line',
-        data: { datasets: buildDatasets(points, themeColors, unit) },
+        data: { datasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          interaction: { mode: 'nearest', intersect: true },
+          // Index-mode interaction: hovering anywhere in a commit column
+          // surfaces both the Mean and Allocated points for that x. Avoids
+          // the stale-tooltip quirk that occurs crossing between points on
+          // different Y axes under nearest/intersect mode.
+          interaction: { mode: 'index', intersect: false },
           onClick: (evt, elements, chart) => {
             if (elements.length === 0) return;
-            // Only react to clicks on the mean-line dataset.
-            const meanDsIndex = chart.data.datasets.length - 1;
-            const hit = elements.find(e => e.datasetIndex === meanDsIndex);
+            // Accept a hit on either the Mean or Allocated line — both
+            // navigate to the same run report, anchored to this benchmark's
+            // class section.
+            const hit = elements.find(e => NAV_LABELS.has(chart.data.datasets[e.datasetIndex].label));
             if (!hit) return;
-            const point = chart.data.datasets[meanDsIndex].data[hit.index];
-            window.location.href = 'runs/' + point.datePrefix + '-' + point.sha + '.html';
+            const point = chart.data.datasets[hit.datasetIndex].data[hit.index];
+            const url = 'runs/' + point.datePrefix + '-' + point.sha + '.html'
+              + (sectionAnchor ? '#' + sectionAnchor : '');
+            window.location.href = url;
           },
           onHover: (evt, elements) => {
-            evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+            const navigable = elements.some(e => NAV_LABELS.has(chart.data.datasets[e.datasetIndex].label));
+            evt.native.target.style.cursor = navigable ? 'pointer' : 'default';
           },
-          scales: {
-            x: { type: 'time', time: { unit: 'day' } },
-            y: {
-              beginAtZero: false,
-              ticks: { callback: (v) => formatValue(v) }
-            }
-          },
+          scales,
           plugins: {
-            legend: { display: false },
+            legend: {
+              display: true,
+              // Hide internal band datasets from the legend.
+              labels: { filter: (item) => !item.text.startsWith('_') }
+            },
             tooltip: {
-              filter: (ctx) => ctx.dataset.label === 'Mean',
+              filter: (ctx) => !ctx.dataset.label.startsWith('_'),
               callbacks: {
                 title: (items) => {
                   const p = items[0].raw;
-                  return p.sha + ' \u2014 ' + new Date(p.x).toLocaleDateString();
+                  return (p.sha ? p.sha + ' \u2014 ' : '') + new Date(p.ts).toLocaleDateString();
                 },
                 label: (ctx) => {
                   const p = ctx.raw;
-                  const main = formatValue(p.y) + ' ' + p.unit
-                    + (p.range ? '  \u00B1 ' + formatValue(p.range) + ' ' + p.unit : '');
-                  return [main, p.message, '(click to open report)'];
+                  if (ctx.dataset.label === 'Mean') {
+                    const main = 'Mean: ' + formatValue(p.y) + ' ' + p.unit
+                      + (p.range ? '  \u00B1 ' + formatValue(p.range) + ' ' + p.unit : '');
+                    return [main, p.message, '(click to open report)'];
+                  }
+                  if (ctx.dataset.label === 'Allocated') {
+                    return ['Alloc: ' + formatValue(p.y) + ' ' + p.unit, '(click to open report)'];
+                  }
+                  return ctx.dataset.label + ': ' + formatValue(p.y);
                 }
               }
             }
           }
         }
       });
-      charts.push({ container, chart, unit });
+      charts.push({ container, chart, timeUnit, allocUnit, points });
     }
 
     document.getElementById('filter').addEventListener('input', (e) => {
@@ -313,23 +452,32 @@
       countDiv.textContent = visible + ' of ' + charts.length + ' benchmarks';
     });
 
+    document.getElementById('toggle-mem').addEventListener('change', (e) => {
+      const show = e.target.checked;
+      for (const { chart } of charts) {
+        const allocIdx = chart.data.datasets.findIndex(d => d.label === 'Allocated');
+        if (allocIdx < 0) continue;
+        chart.setDatasetVisibility(allocIdx, show);
+        if (chart.options.scales.y1) chart.options.scales.y1.display = show;
+        chart.update();
+      }
+    });
+
     if (window.matchMedia) {
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
         themeColors = applyChartDefaults();
-        for (const { chart, unit } of charts) {
-          // Rebuild datasets from the original ns-scaled points so band/line
-          // colors track the new theme without losing precision.
-          const meanDs = chart.data.datasets[chart.data.datasets.length - 1];
-          const originalNs = meanDs.data.map(p => ({
-            x: p.x,
-            y: p.yNs,
-            range: p.rangeNs,
-            sha: p.sha,
-            datePrefix: p.datePrefix,
-            message: p.message,
-            unit: 'ns'
-          }));
-          chart.data.datasets = buildDatasets(originalNs, themeColors, unit);
+        for (const entry of charts) {
+          const { chart, timeUnit, allocUnit, points } = entry;
+          const datasets = buildTimeDatasets(points, themeColors, timeUnit);
+          const allocDs = buildAllocDataset(points, themeColors, allocUnit);
+          if (allocDs) datasets.push(allocDs);
+          chart.data.datasets = datasets;
+          if (chart.options.scales.y && chart.options.scales.y.title) {
+            chart.options.scales.y.title.color = themeColors.line;
+          }
+          if (chart.options.scales.y1 && chart.options.scales.y1.title) {
+            chart.options.scales.y1.title.color = themeColors.memLine;
+          }
           chart.update();
         }
       });

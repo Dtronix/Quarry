@@ -94,12 +94,6 @@ jobs:
           }' BenchmarkDotNet.Artifacts/results/*-report-full.json \
             > BenchmarkDotNet.Artifacts/combined-results.json
 
-      - name: Filter Quarry-only results for charts
-        run: |
-          jq '.Benchmarks |= map(select(.Method | startswith("Quarry_")))' \
-            BenchmarkDotNet.Artifacts/combined-results.json \
-            > BenchmarkDotNet.Artifacts/quarry-only-results.json
-
       - name: Generate merged HTML report
         run: |
           COMMIT_SHA=$(git log -1 --format='%H' HEAD)
@@ -135,23 +129,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.BENCHMARK_TOKEN }}
 
-      - name: Store benchmark results
-        uses: benchmark-action/github-action-benchmark@v1
-        with:
-          name: Quarry Benchmarks
-          tool: 'benchmarkdotnet'
-          output-file-path: BenchmarkDotNet.Artifacts/quarry-only-results.json
-          gh-repository: github.com/Dtronix/Quarry-benchmarks
-          gh-pages-branch: gh-pages
-          benchmark-data-dir-path: dev/bench
-          github-token: ${{ secrets.BENCHMARK_TOKEN }}
-          auto-push: true
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          max-items-in-chart: 500
-          alert-threshold: '120%'
-          comment-on-alert: false
-
-      - name: Publish report, pages, and update manifest
+      - name: Publish benchmark run (data.js, report, pages, manifest)
         run: |
           COMMIT_SHA=$(git log -1 --format='%H' HEAD)
           COMMIT_MSG=$(git log -1 --format='%s' HEAD)
@@ -168,19 +146,76 @@ jobs:
           git config user.name "github-action-benchmark"
           git config user.email "github@users.noreply.github.com"
 
-          mkdir -p dev/bench/runs
-          cp ../BenchmarkDotNet.Artifacts/reports/report.html "dev/bench/runs/${REPORT_NAME}"
+          # ── Build the new data.js entry ─────────────────────────────────
+          # Commit metadata comes from the GitHub API so we get the same
+          # {name, email, username} shape the old action produced.
+          COMMIT_OBJ=$(curl -fsS \
+            -H "Authorization: Bearer ${TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/commits/${COMMIT_SHA}" | \
+            jq '{
+              author: ({name: .commit.author.name, email: .commit.author.email}
+                       + (if .author and .author.login then {username: .author.login} else {} end)),
+              committer: ({name: .commit.committer.name, email: .commit.committer.email}
+                          + (if .committer and .committer.login then {username: .committer.login} else {} end)),
+              id: .sha,
+              message: .commit.message,
+              timestamp: .commit.author.date,
+              url: .html_url
+            }')
 
-          # Copy front-end pages (override the action's index.html)
+          # Build the new run entry. Filters to Quarry_* methods and pulls
+          # both Mean (time) and BytesAllocatedPerOperation (memory) in one
+          # pass from the BenchmarkDotNet JSON.
+          NEW_ENTRY=$(jq -n \
+            --argjson commit "$COMMIT_OBJ" \
+            --slurpfile bdn ../BenchmarkDotNet.Artifacts/combined-results.json \
+            '{
+              commit: $commit,
+              date: (now * 1000 | floor),
+              tool: "benchmarkdotnet",
+              benches: [
+                $bdn[0].Benchmarks[]
+                | select(.Method | startswith("Quarry_"))
+                | {
+                    name: .FullName,
+                    value: .Statistics.Mean,
+                    unit: "ns",
+                    range: ("± " + (.Statistics.StandardDeviation | tostring)),
+                    allocated: (.Memory.BytesAllocatedPerOperation // 0)
+                  }
+              ]
+            }')
+
+          # ── Merge into existing data.js, or seed a fresh file ──────────
+          mkdir -p dev/bench/runs
+          DATA_JS=dev/bench/data.js
+          if [ ! -f "$DATA_JS" ]; then
+            printf 'window.BENCHMARK_DATA = %s\n' \
+              '{"lastUpdate":0,"repoUrl":"https://github.com/Dtronix/Quarry","entries":{"Quarry Benchmarks":[]}}' \
+              > "$DATA_JS"
+          fi
+
+          # Strip the `window.BENCHMARK_DATA = ` wrapper (and trailing `;` if present).
+          EXISTING_JSON=$(sed -e '1s|^window\.BENCHMARK_DATA *= *||' -e '$s|;[[:space:]]*$||' "$DATA_JS")
+
+          PATCHED_JSON=$(jq --argjson entry "$NEW_ENTRY" \
+            '.lastUpdate = (now * 1000 | floor)
+             | .entries["Quarry Benchmarks"] += [$entry]
+             | .entries["Quarry Benchmarks"] |= (if length > 500 then .[length - 500:] else . end)' \
+            <<<"$EXISTING_JSON")
+
+          { printf 'window.BENCHMARK_DATA = '; printf '%s' "$PATCHED_JSON"; } > "$DATA_JS"
+
+          # ── Copy per-run HTML report and static front-end pages ────────
+          cp ../BenchmarkDotNet.Artifacts/reports/report.html "dev/bench/runs/${REPORT_NAME}"
           cp ../scripts/benchmark-pages/landing.html index.html
           cp ../scripts/benchmark-pages/dashboard.html dev/bench/index.html
           cp ../scripts/benchmark-pages/runs.html dev/bench/runs/index.html
 
-          # Update manifest
+          # ── Update runs manifest ───────────────────────────────────────
           MANIFEST=dev/bench/runs/runs.json
-          if [ ! -f "$MANIFEST" ]; then
-            echo '[]' > "$MANIFEST"
-          fi
+          if [ ! -f "$MANIFEST" ]; then echo '[]' > "$MANIFEST"; fi
           jq --arg sha "$COMMIT_SHA" \
              --arg msg "$COMMIT_MSG" \
              --arg date "$COMMIT_DATE_ISO" \
