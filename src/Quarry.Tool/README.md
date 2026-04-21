@@ -405,6 +405,40 @@ quarry scaffold -d sqlserver -c "..." --tables users,orders --schema dbo
 
 Introspects tables, columns, primary keys, foreign keys, and indexes. Detects junction tables for many-to-many relationships and applies intelligent FK heuristics.
 
+---
+
+### `quarry convert --from <tool>`
+
+Converts call sites in an existing project from another data-access library to Quarry chain code. Backed by the [`Quarry.Migration`](https://www.nuget.org/packages/Quarry.Migration) package.
+
+```sh
+quarry convert --from dapper   --project src/MyApp
+quarry convert --from efcore   --project src/MyApp
+quarry convert --from adonet   --project src/MyApp
+quarry convert --from sqlkata  --project src/MyApp
+```
+
+| Flag | Long | Default | Description |
+|------|------|---------|-------------|
+| | `--from` | *(required)* | Source tool: `dapper`, `efcore`, `adonet`, or `sqlkata` |
+| `-p` | `--project` | `.` | Path to `.csproj` file or directory containing one |
+| | `--dry-run` | `false` | Preview conversions without writing files |
+| | `--ni` | `false` | Non-interactive — apply all Info-severity conversions automatically |
+
+**What it does:**
+
+1. Opens the project via Roslyn and runs the appropriate detector (Dapper / EF Core / ADO.NET / SqlKata) over every source file.
+2. Parses embedded SQL with the shared recursive-descent parser.
+3. Resolves tables and columns against your Quarry `Schema` classes via `SchemaResolver`.
+4. Emits equivalent chain API code via `ChainEmitter`, falling back to `Sql.Raw` for constructs the converter cannot translate.
+5. Applies the code fix at each convertible call site, leaving sites flagged as not-convertible untouched for manual review.
+
+**Supported translations:** SELECT/WHERE/joins (INNER/LEFT/RIGHT/CROSS/FULL OUTER)/GROUP BY/HAVING/ORDER BY/LIMIT/aggregates/IN/BETWEEN/IS NULL/LIKE, plus DELETE/UPDATE. INSERT sites emit a TODO comment — Quarry's `Insert` requires an entity object rather than positional column values.
+
+**Diagnostic families:** QRM001–003 (Dapper), QRM011–013 (EF Core), QRM021–023 (ADO.NET), QRM031–033 (SqlKata). Each family has detected (Info), with-warnings (Warning), and not-convertible (Info) codes. See [analyzer-rules.md → Migration Converters](https://dtronix.github.io/Quarry/articles/analyzer-rules.html) for the full matrix.
+
+**ADO.NET caveat:** the detector uses the **last** `CommandText` assignment before each `Execute*` call and positionally filters parameters, so reused `DbCommand` variables across multiple executions are handled correctly. Code with heavy mutation of a shared command still warrants manual review.
+
 ## MigrationRunner
 
 The `MigrationRunner` executes migrations at runtime against a live database connection.

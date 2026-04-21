@@ -59,6 +59,21 @@ When set, generated SQL uses qualified table names:
 
 If `Schema` is omitted or null, tables are referenced without schema qualification. This property allows the same schema classes to be reused across multiple contexts targeting different database schemas -- for example, a multi-tenant application where each tenant maps to a separate PostgreSQL schema.
 
+## Typed Accessor Chains (`QuarryContext<TSelf>`)
+
+To chain entity accessors after a CTE-producing `With<TDto>()` call (`db.With<Dto>(…).Users()…`), derive from the generic base class instead:
+
+```csharp
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class AppDb : QuarryContext<AppDb>
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+```
+
+This opt-in form gives `With<TDto>()` the typed receiver it needs to return a builder whose follow-on accessor calls (`.Users()`, `.Orders()`) resolve correctly on the same context. The non-generic `QuarryContext` base class continues to work for all other queries; adopt `QuarryContext<TSelf>` only when you intend to use post-`With` accessor chains. See [Querying → Common Table Expressions](querying.md#common-table-expressions) for the surrounding syntax.
+
 ## Multiple Contexts
 
 Multiple contexts with different dialects can coexist in the same project. Each generates its own interceptor file with dialect-correct SQL. The generator resolves the correct context by walking the receiver chain at each call site.

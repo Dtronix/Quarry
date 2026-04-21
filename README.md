@@ -14,7 +14,8 @@ Type-safe SQL builder for .NET 10. Source generators + C# 12 interceptors emit a
 | [`Quarry.Generator`](https://www.nuget.org/packages/Quarry.Generator) | [![Quarry.Generator](https://img.shields.io/nuget/v/Quarry.Generator.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Generator) | Roslyn incremental source generator + interceptor emitter. |
 | [`Quarry.Analyzers`](https://www.nuget.org/packages/Quarry.Analyzers) | [![Quarry.Analyzers](https://img.shields.io/nuget/v/Quarry.Analyzers.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Analyzers) | Compile-time SQL query analysis rules (QRA series) with code fixes. |
 | [`Quarry.Analyzers.CodeFixes`](https://www.nuget.org/packages/Quarry.Analyzers.CodeFixes) | [![Quarry.Analyzers.CodeFixes](https://img.shields.io/nuget/v/Quarry.Analyzers.CodeFixes.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Analyzers.CodeFixes) | Code fix providers for QRA diagnostics. |
-| [`Quarry.Tool`](https://www.nuget.org/packages/Quarry.Tool) | [![Quarry.Tool](https://img.shields.io/nuget/v/Quarry.Tool.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Tool) | CLI tool for migrations and database scaffolding (`quarry` command). |
+| [`Quarry.Migration`](https://www.nuget.org/packages/Quarry.Migration) | [![Quarry.Migration](https://img.shields.io/nuget/v/Quarry.Migration.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Migration) | Cross-ORM conversion toolkit with Roslyn analyzers + code fixes for EF Core, Dapper, ADO.NET, and SqlKata (QRM series). Backs `quarry convert`. |
+| [`Quarry.Tool`](https://www.nuget.org/packages/Quarry.Tool) | [![Quarry.Tool](https://img.shields.io/nuget/v/Quarry.Tool.svg?maxAge=60)](https://www.nuget.org/packages/Quarry.Tool) | CLI tool for migrations, database scaffolding, and cross-ORM conversion (`quarry` command). |
 
 ---
 
@@ -89,9 +90,15 @@ Benchmarks are run against Raw ADO.NET, Dapper, EF Core, and SqlKata using [Benc
 - **[Zero-allocation readers](https://dtronix.github.io/Quarry/articles/querying.html)** — ordinal-based `Func<DbDataReader, T>` delegates generated at compile time
 - **[Multi-dialect support](https://dtronix.github.io/Quarry/articles/switching-dialects.html)** — SQLite, PostgreSQL, MySQL, SQL Server with correct quoting, parameters, pagination, and identity syntax
 - **[Type-safe schema DSL](https://dtronix.github.io/Quarry/articles/schema-definition.html)** — columns as expression-bodied properties; no attributes, no conventions, no runtime model building
-- **[Navigation subqueries](https://dtronix.github.io/Quarry/articles/querying.html)** — `Any()`, `All()`, `Count()` on `Many<T>` properties compile to correlated EXISTS/COUNT subqueries
+- **[Navigation joins](https://dtronix.github.io/Quarry/articles/querying.html)** — `One<T>` / `HasOne<T>()` reverse navigation and `HasManyThrough<TTarget,TJunction>` many-to-many skip navigation; explicit joins up to 6 tables plus `CrossJoin<T>()` and `FullOuterJoin<T>()`
+- **[Navigation subqueries](https://dtronix.github.io/Quarry/articles/querying.html)** — `Any()`, `All()`, `Count()`, `Sum/Min/Max/Avg(selector)` on `Many<T>` properties compile to correlated subqueries
+- **[Set operations](https://dtronix.github.io/Quarry/articles/querying.html)** — `Union/UnionAll/Intersect/IntersectAll/Except/ExceptAll` on any query builder, cross-entity supported
+- **[Window functions](https://dtronix.github.io/Quarry/articles/querying.html)** — `Sql.RowNumber/Rank/DenseRank/Ntile/Lag/Lead/FirstValue/LastValue` plus aggregate-OVER with fluent `PartitionBy`/`OrderBy`
+- **[Common Table Expressions](https://dtronix.github.io/Quarry/articles/querying.html)** — `With<TDto>(dto => …)` / `FromCte<TDto>()`, single and multi-CTE chains, typed post-`With` accessors via `QuarryContext<TSelf>`
 - **[Custom type mappings](https://dtronix.github.io/Quarry/articles/schema-definition.html)** — `TypeMapping<TClr, TDb>` with optional `IDialectAwareTypeMapping` for dialect-specific SQL types
 - **[Migrations](https://dtronix.github.io/Quarry/articles/migrations.html)** — code-first migrations with bundles, seed data, views/stored procedures, squash, checksums, and runtime hooks
+- **[Cross-ORM conversion](https://dtronix.github.io/Quarry/articles/migrating-to-quarry.html)** — `quarry convert --from {dapper|efcore|adonet|sqlkata}` with analyzer-driven IDE code fixes (QRM001/011/021/031 diagnostic families)
+- **[SQL manifest](https://dtronix.github.io/Quarry/articles/sql-manifest.html)** — opt-in per-dialect markdown documenting every generated SQL statement; zero overhead when disabled
 - **[Scaffolding](https://dtronix.github.io/Quarry/articles/scaffolding.html)** — reverse-engineer existing databases into schema classes and a context
 - **[Query diagnostics](https://dtronix.github.io/Quarry/articles/diagnostics.html)** — `ToDiagnostics()` surfaces SQL, parameters, variants, projection metadata, and carrier class info
 - **[Structured logging](https://dtronix.github.io/Quarry/articles/logging.html)** — Logsmith Abstraction mode with categories, slow query detection, sensitive redaction, and operation correlation

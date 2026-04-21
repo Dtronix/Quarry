@@ -77,11 +77,25 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY028 | Warning | Redundant unique constraint on index |
 | QRY029 | Warning | `Sql.Raw` placeholder mismatch |
 | QRY030 | Info | Prebuilt dispatch optimization applied |
+| QRY031 | Error | `RawSqlAsync<T>` with unresolvable generic type parameter |
 | QRY032 | Error | Chain not analyzable at compile time |
 | QRY033 | Error | Forked chain (multiple terminals) |
 | QRY034 | Warning | `.Trace()` without `QUARRY_TRACE` symbol |
 | QRY035 | Error | PreparedQuery escapes method scope |
 | QRY036 | Error | `.Prepare()` with no terminal calls |
+
+### SQL Manifest (QRY040)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY040 | Warning | SQL manifest write failure (see [SQL Manifest](sql-manifest.md)) |
+
+### Raw SQL Resolution (QRY041--QRY042)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY041 | Warning | `RawSqlAsync` literal SQL has an unresolvable column or un-aliased expression |
+| QRY042 | Info | `RawSqlAsync` call is convertible to a chain query (code fix available) |
 
 ### Migration (QRY050--QRY055)
 
@@ -94,11 +108,61 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY054 | Warning | Destructive operation without backup |
 | QRY055 | Warning | Nullable-to-non-null column change |
 
+### Navigation (QRY060--QRY065)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY060 | Error | No FK column for `One<T>` navigation |
+| QRY061 | Error | Ambiguous FK for `One<T>` navigation |
+| QRY062 | Error | `HasOne` references invalid column |
+| QRY063 | Error | Navigation target entity not found |
+| QRY064 | Error | `HasManyThrough` invalid junction navigation |
+| QRY065 | Error | `HasManyThrough` invalid target navigation |
+
+### Set Operations (QRY070--QRY072)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY070 | Warning | `IntersectAll` not supported on this dialect (e.g., SQLite) |
+| QRY071 | Warning | `ExceptAll` not supported on this dialect (e.g., SQLite) |
+| QRY072 | Error | Set operation projection mismatch (column count or type) |
+
+QRY073 was introduced in v0.3.0 for cross-entity set-ops and retired in the same release when cross-entity support landed. Remove any `#pragma warning disable QRY073` directives.
+
+### Common Table Expressions (QRY080--QRY082)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY080 | Error | CTE inner query not analyzable |
+| QRY081 | Error | `FromCte` without matching `With` |
+| QRY082 | Error | Duplicate CTE name in chain |
+
 ### Internal
 
 | Code | Severity | Description |
 |---|---|---|
 | QRY900 | Error | Internal generator error |
+
+### Migration Converters (QRM series)
+
+Emitted by the [`Quarry.Migration`](https://www.nuget.org/packages/Quarry.Migration) package. Each diagnostic includes an IDE code fix that replaces the source call site with equivalent Quarry chain code.
+
+| Code | Severity | Source tool | Description |
+|---|---|---|---|
+| QRM001 | Info | Dapper | Dapper call convertible to Quarry |
+| QRM002 | Warning | Dapper | Converted with warnings |
+| QRM003 | Info | Dapper | Not convertible (falls back to `Sql.Raw` or manual migration) |
+| QRM011 | Info | EF Core | EF Core query convertible to Quarry |
+| QRM012 | Warning | EF Core | Converted with warnings |
+| QRM013 | Info | EF Core | Not convertible |
+| QRM021 | Info | ADO.NET | ADO.NET call convertible to Quarry |
+| QRM022 | Warning | ADO.NET | Converted with warnings |
+| QRM023 | Info | ADO.NET | Not convertible |
+| QRM031 | Info | SqlKata | SqlKata query convertible to Quarry |
+| QRM032 | Warning | SqlKata | Converted with warnings |
+| QRM033 | Info | SqlKata | Not convertible |
+
+Analyzers only activate when the source tool's framework type is present in the compilation. See [Migrating to Quarry](migrating-to-quarry.md) for the `quarry convert --from <tool>` CLI workflow.
 
 ### Common QRY Diagnostics
 
@@ -220,7 +284,7 @@ Rules that detect dialect-specific issues or missed optimizations.
 | Code | Severity | Description |
 |---|---|---|
 | QRA501 | Info | Dialect-specific optimization available -- e.g., PostgreSQL `ILIKE` instead of `LOWER() + LIKE`, SQLite `COLLATE NOCASE` |
-| QRA502 | Warning | Suboptimal for dialect -- feature unsupported or problematic for the target dialect (e.g., SQLite `RIGHT JOIN`, SQL Server `OFFSET` without `ORDER BY`) |
+| QRA502 | Warning | Suboptimal for dialect -- feature unsupported or problematic for the target dialect (e.g., SQLite `RIGHT JOIN` / `FULL OUTER JOIN`, SQL Server `OFFSET` without `ORDER BY`) |
 
 ---
 

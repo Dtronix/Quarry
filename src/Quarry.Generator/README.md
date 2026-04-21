@@ -253,24 +253,48 @@ Supported operators: `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`. String m
 
 ### Joins
 
-Up to 4 tables. Supports `Join`, `LeftJoin`, `RightJoin`, and navigation-based joins:
+Up to 6 tables. Supports `Join`, `LeftJoin`, `RightJoin`, `CrossJoin`, `FullOuterJoin`, and navigation-based joins:
 
 ```csharp
 db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Select((u, o) => (u.UserName, o.Total));
 
-db.Users().Join(u => u.Orders)  // navigation-based
+db.Users().Join(u => u.Orders)              // navigation-based
     .Select((u, o) => (u.UserName, o.Total));
+
+db.Users().CrossJoin<Region>();               // no condition
+db.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id);
+```
+
+Columns projected from the nullable side of a LEFT/RIGHT/FULL OUTER join are `IsDBNull`-guarded in the generated reader automatically.
+
+### Navigation Joins
+
+`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav property. `HasManyThrough<TTarget, TJunction>()` emits many-to-many skip navigation with the junction→target JOIN implicit in `Count()`, `Any()`, and aggregates.
+
+```csharp
+public class OrderSchema : Schema
+{
+    public One<User> User => HasOne<User>();
+    public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();
+}
+
+db.Orders().Where(o => o.User!.IsActive);
+db.Orders().Where(o => o.Tags.Any(t => t.Name == "urgent"));
 ```
 
 ### Navigation Subqueries
 
-`Many<T>` properties support `Any()`, `All()`, and `Count()` in WHERE clauses, translated to correlated `EXISTS` and `COUNT` subqueries:
+`Many<T>` properties support `Any()`, `All()`, `Count()`, `Sum`, `Min`, `Max`, `Avg`/`Average` in WHERE and SELECT clauses, translated to correlated `EXISTS`, `COUNT`, or aggregate subqueries:
 
 ```csharp
-db.Users().Where(u => u.Orders.Any());
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));
 db.Users().Where(u => u.Orders.Count() > 5);
+db.Users().Select(u => new {
+    u.UserName,
+    OrderTotal = u.Orders.Sum(o => o.Total),
+    BiggestOrder = u.Orders.Max(o => o.Total),
+});
 ```
 
 ### Aggregates
@@ -282,6 +306,44 @@ db.Orders().GroupBy(o => o.Status)
 ```
 
 Markers: `Sql.Count()`, `Sql.Sum()`, `Sql.Avg()`, `Sql.Min()`, `Sql.Max()`.
+
+### Window Functions
+
+Aggregate-OVER and ranking/offset functions with a fluent `IOverClause`:
+
+```csharp
+db.Sales().Select(s => new {
+    s.Region,
+    s.Amount,
+    Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+    RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+    Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+});
+```
+
+Supported: `RowNumber`, `Rank`, `DenseRank`, `Ntile`, `Lag`, `Lead`, `FirstValue`, `LastValue`, and `Sum`/`Count`/`Avg`/`Min`/`Max(col, over => …)`. Non-column arguments are parameterized at compile time. ROWS/RANGE frame specifications are deferred to a later release.
+
+### Set Operations
+
+```csharp
+db.Users().Select(u => u.UserName)
+    .Union(db.Admins().Select(a => a.DisplayName));
+```
+
+Available: `Union`, `UnionAll`, `Intersect`, `IntersectAll`, `Except`, `ExceptAll`. Cross-entity set operations are supported. Post-set `Where`/`GroupBy`/`Having` auto-wrap as a subquery.
+
+### Common Table Expressions
+
+```csharp
+db.With<User, ActiveUser>(users => users
+        .Where(u => u.IsActive)
+        .Select(u => new ActiveUser(u.UserId, u.UserName)))
+    .FromCte<ActiveUser>()
+    .Where(a => a.UserName.StartsWith("a"))
+    .ExecuteFetchAllAsync();
+```
+
+Multi-CTE chains (`.With<A>(…).With<B>(…)`) and typed post-`With` accessors (`QuarryContext<TSelf>`) supported. Diagnostics: QRY080, QRY081, QRY082.
 
 ### Insert
 
@@ -325,11 +387,14 @@ Update and Delete require `Where()` or `All()` before execution (`QRY012`).
 | `ExecuteFetchFirstAsync()` | `Task<T>` (throws if empty) |
 | `ExecuteFetchFirstOrDefaultAsync()` | `Task<T?>` |
 | `ExecuteFetchSingleAsync()` | `Task<T>` (throws if not exactly one) |
+| `ExecuteFetchSingleOrDefaultAsync()` | `Task<T?>` (throws if more than one) |
 | `ExecuteScalarAsync<T>()` | `Task<T>` |
 | `ExecuteNonQueryAsync()` | `Task<int>` |
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
 | `ToDiagnostics()` | `QueryDiagnostics` |
 | `Prepare()` | `PreparedQuery<T>` |
+
+These terminals are also available directly on `IQueryBuilder<T>` (no need for an identity `.Select(u => u)` when fetching full entities).
 
 ---
 
@@ -420,10 +485,16 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY027 | Invalid EntityReader type |
 | QRY029 | Sql.Raw placeholder mismatch |
 | QRY032 | Query chain not analyzable |
+| QRY031 | Unresolvable `RawSqlAsync<T>` generic type parameter |
 | QRY033 | Forked query chain (multiple terminals on same builder variable) |
 | QRY035 | PreparedQuery escapes method scope |
 | QRY036 | PreparedQuery has no terminals |
 | QRY052 | Migration version gap or duplicate |
+| QRY060–065 | Navigation misconfiguration (`One<T>`, `HasManyThrough`) |
+| QRY072 | Set operation projection mismatch |
+| QRY080 | CTE inner query not analyzable |
+| QRY081 | `FromCte` without matching `With` |
+| QRY082 | Duplicate CTE name in chain |
 
 ### Warnings
 
@@ -438,8 +509,11 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY023 | Subquery FK-to-PK correlation ambiguous |
 | QRY028 | Redundant unique constraint (column + index) |
 | QRY034 | .Trace() requires QUARRY_TRACE define |
+| QRY040 | SQL manifest write failure |
 | QRY041 | RawSqlAsync column expression without alias |
 | QRY050 | Schema changed since last migration snapshot |
+| QRY070 | `IntersectAll` not supported on this dialect |
+| QRY071 | `ExceptAll` not supported on this dialect |
 | QRY051 | Migration references unknown table/column |
 | QRY054 | Destructive migration without backup |
 | QRY055 | Nullable to non-null without data migration |
@@ -450,6 +524,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 |----|-------|
 | QRY026 | Custom EntityReader active |
 | QRY030 | Query chain optimized |
+| QRY042 | RawSqlAsync convertible to chain (code fix available) |
 | QRY053 | Pending migrations detected |
 
 ---
@@ -470,15 +545,35 @@ public partial class PgDb : QuarryContext { ... }
 
 ## Raw SQL
 
-Source-generated typed readers — zero reflection:
+`RawSqlAsync<T>` returns `IAsyncEnumerable<T>` — buffer with `.ToListAsync()` or stream with `await foreach`. When the SQL argument is a string literal the shared parser can resolve, the generator emits a static reader lambda with hardcoded ordinals; otherwise it falls back to a struct-based ordinal cache. Column matching is case-insensitive.
 
 ```csharp
-await db.RawSqlAsync<User>("SELECT * FROM users WHERE id = @p0", userId);
+// Stream
+await foreach (var u in db.RawSqlAsync<User>("SELECT * FROM users WHERE id = @p0", userId))
+    Process(u);
+
+// Buffer
+List<User> users = await db.RawSqlAsync<User>("SELECT * FROM users", ).ToListAsync();
+
 await db.RawSqlScalarAsync<int>("SELECT COUNT(*) FROM users");
 await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 ```
 
+Diagnostics: `QRY031` (unresolvable generic `T`), `QRY041` (unresolvable column in literal SQL), `QRY042` (Raw SQL convertible to chain — info + code fix).
+
 ---
+
+## SQL Manifest
+
+Opt-in per-dialect markdown documentation of every generated SQL statement. Enable via MSBuild:
+
+```xml
+<PropertyGroup>
+  <QuarrySqlManifestPath>$(MSBuildProjectDirectory)/sql-manifest</QuarrySqlManifestPath>
+</PropertyGroup>
+```
+
+Zero overhead when disabled. See the [SQL Manifest article](https://dtronix.github.io/Quarry/articles/sql-manifest.html) for details.
 
 ## Migrations
 

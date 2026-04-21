@@ -644,6 +644,42 @@ Apply the same pattern: register `AppDb` with scoped/per-request lifetime, pass 
 
 Convert every query/modification site identified in Phase 1. Apply the complexity rating from Phase 2 to determine approach.
 
+### 5.0 Use `quarry convert` First (Quarry.Migration)
+
+Before hand-translating each call site, run the automated converter over the project:
+
+```bash
+dotnet tool install --global Quarry.Tool
+quarry convert --from dapper   --project src/MyApp
+quarry convert --from efcore   --project src/MyApp
+quarry convert --from adonet   --project src/MyApp
+quarry convert --from sqlkata  --project src/MyApp
+```
+
+Backing library: `Quarry.Migration` package (one converter + detector + Roslyn analyzer + code fix per source tool). The converter:
+
+1. Discovers call sites via Roslyn (`DapperDetector`/`EfCoreDetector`/`AdoNetDetector`/`SqlKataDetector`).
+2. Parses embedded SQL with the shared recursive-descent parser in `Quarry.Shared/Sql/Parser/`.
+3. Resolves table/column identifiers against your Quarry entities via `SchemaResolver`.
+4. Emits equivalent chain-API code via `ChainEmitter`.
+
+**Supported translations:** SELECT/WHERE/INNER/LEFT/RIGHT/CROSS/FULL OUTER joins/GROUP BY/HAVING/ORDER BY/LIMIT/aggregates/IN/BETWEEN/IS NULL/LIKE. DELETE/UPDATE translate directly; INSERT emits a TODO comment (chain API requires entity objects). `Sql.Raw` is the fallback for constructs the converter cannot translate.
+
+**IDE integration:** Install `Quarry.Migration` as an analyzer-only reference. Each call site is flagged with a QRM info diagnostic; the code fix provider replaces it with the converted chain on demand:
+
+| Source tool | Diagnostics | Code fix |
+|---|---|---|
+| Dapper | QRM001 (convertible), QRM002 (with warnings), QRM003 (not convertible) | yes |
+| EF Core | QRM011 / QRM012 / QRM013 | yes |
+| ADO.NET | QRM021 / QRM022 / QRM023 | yes |
+| SqlKata | QRM031 / QRM032 / QRM033 | yes |
+
+Analyzers only activate when the source tool's framework type is present in the compilation — no noise in projects that don't use it.
+
+**After conversion:** build the project. Sites that didn't convert cleanly get `Sql.Raw` fragments or TODO comments — review those manually using the per-tool tables below. Sites flagged QRM00x-not-convertible need hand translation.
+
+ADO.NET caveat: the detector uses the **last** `CommandText` assignment before each `Execute*` call and positionally filters parameters, so reused `DbCommand` variables across multiple executions are handled correctly. If your code heavily mutates a shared command, inspect conversions carefully.
+
 ### 5.1 Dapper → Quarry
 
 | Dapper | Quarry |

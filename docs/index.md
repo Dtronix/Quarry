@@ -59,8 +59,14 @@ Compile-time SQL analysis rules and code fixes.
 ### [Migrating to Quarry](articles/migrating-to-quarry.md)
 Migrate from Dapper, EF Core, SqlKata, or raw ADO.NET.
 
+### [SQL Manifest](articles/sql-manifest.md)
+Opt-in per-dialect markdown documentation of every generated SQL statement.
+
 ### [Benchmarks](articles/benchmarks.md)
 Performance comparison against Dapper, EF Core, and SqlKata. See the [live benchmark dashboard](https://dtronix.github.io/Quarry-benchmarks/) for trends across commits.
+
+### [Release Notes](articles/releases/index.md)
+Per-version changelogs and migration guides.
 
 </div>
 </div>

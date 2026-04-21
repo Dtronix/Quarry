@@ -107,12 +107,15 @@ IQueryBuilder<User> BuildQuery(AppDb db)
 The fix is always to keep the query chain in a single analyzable scope -- the same constraint
 that makes the SQL deterministic at compile time.
 
-Beyond QRY032, the generator enforces over 20 compile-time diagnostics covering missing table
+Beyond QRY032, the generator enforces 40+ compile-time diagnostics covering missing table
 definitions, invalid column types, unmapped projections, unsupported operators, undefined
-joins, aggregates without `GroupBy`, and more. The optional `Quarry.Analyzers` package adds
-another 19 rules covering simplification opportunities, wasteful patterns, performance
-concerns, and dialect-specific issues. See [Analyzer Rules](analyzer-rules.md) for the full
-list.
+joins, aggregates without `GroupBy`, navigation misconfiguration (`QRY060`–`065`), set-op
+projection mismatches (`QRY070`–`072`), and CTE misuse (`QRY080`–`082`), among others. The
+optional `Quarry.Analyzers` package adds another 19 rules covering simplification
+opportunities, wasteful patterns, performance concerns, and dialect-specific issues. The
+optional `Quarry.Migration` package adds 12 `QRM` diagnostics that power automated conversion
+from Dapper, EF Core, ADO.NET, and SqlKata. See [Analyzer Rules](analyzer-rules.md) for the
+full list.
 
 ---
 
@@ -146,14 +149,20 @@ of trade-offs:
 | NativeAOT support | Yes |
 | Code-first migrations | Yes |
 | Database scaffolding | Yes |
+| Cross-ORM conversion (Dapper / EF Core / ADO.NET / SqlKata → Quarry) | Yes (`quarry convert`) |
 | Multi-dialect support | Yes (4 dialects) |
 | Conditional branch analysis | Yes (up to 256 variants) |
-| Navigation subqueries | Yes (`Any`, `All`, `Count`) |
+| Common Table Expressions | Yes (single + multi-CTE) |
+| Window functions | Yes (ranking, offset, aggregate-OVER) |
+| Set operations | Yes (Union / Intersect / Except, cross-entity) |
+| Navigation joins | Yes (`One<T>`, `HasManyThrough`) |
+| Navigation subqueries | Yes (`Any`, `All`, `Count`, `Sum`, `Min`, `Max`, `Avg`) |
+| SQL manifest emission | Yes (opt-in, per-dialect) |
 | Change tracking | No -- explicit insert/update/delete |
 | Lazy loading | No -- explicit joins and subqueries |
 | Arbitrary `IQueryable` composition | No -- query chain must be in a single analyzable scope |
 | Unit of Work pattern | Manual |
-| Join limit | Up to 4 tables |
+| Join limit | Up to 6 tables (explicit); CTEs for more |
 
 Quarry is a good fit when you want predictable performance, AOT compatibility, compile-time
 query validation, and minimal runtime overhead. If your application relies on change tracking,
@@ -198,6 +207,15 @@ it multiple ways.
 **Explicit relationship loading.** Related data is loaded via explicit joins or navigation
 subqueries (`Any`, `All`, `Count` on `Many<T>` properties). There is no transparent proxy
 loading -- you always know when a database call will happen.
+
+### Automated Conversion
+
+If your existing codebase is substantial, run `quarry convert --from efcore` over the project
+before hand-translating call sites. The [`Quarry.Migration`](https://www.nuget.org/packages/Quarry.Migration)
+package ships Roslyn analyzers and IDE code fixes for EF Core, Dapper, ADO.NET, and SqlKata —
+it converts the common relational query surface automatically and flags sites it cannot
+translate with a `QRM` diagnostic for manual review. See
+[Migrating to Quarry](migrating-to-quarry.md) for the full workflow.
 
 ### Getting Started
 

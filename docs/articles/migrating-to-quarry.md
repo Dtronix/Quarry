@@ -42,6 +42,33 @@ Quarry migrations support any combination of:
 
 A single project may use more than one library. The discovery phase detects all of them.
 
+## Automated Conversion with `quarry convert`
+
+The `Quarry.Migration` package (shipped alongside `Quarry.Tool`) provides Roslyn-based converters that translate a large share of source-library call sites to equivalent Quarry chain code. Run it early in the query-migration phase to establish a baseline, then hand-translate the remaining sites flagged as "not convertible."
+
+```sh
+dotnet tool install --global Quarry.Tool
+quarry convert --from dapper   --project ./src/MyApp
+quarry convert --from efcore   --project ./src/MyApp
+quarry convert --from adonet   --project ./src/MyApp
+quarry convert --from sqlkata  --project ./src/MyApp
+```
+
+For each source tool, the converter parses embedded SQL, resolves identifiers against your Quarry entities, and emits equivalent chain code. `Sql.Raw` is used as a fallback when the construct cannot be translated. Supported shapes include SELECT/WHERE/INNER/LEFT/RIGHT/CROSS/FULL OUTER joins/GROUP BY/HAVING/ORDER BY/LIMIT/aggregates/IN/BETWEEN/IS NULL/LIKE plus DELETE and UPDATE. INSERT sites emit a TODO comment since the chain API expects entity objects.
+
+Each source tool has its own Roslyn analyzer and IDE code-fix. Adding `Quarry.Migration` as an analyzer reference surfaces per-call-site diagnostics:
+
+| Source tool | Detected | With warnings | Not convertible |
+|---|---|---|---|
+| Dapper | QRM001 | QRM002 | QRM003 |
+| EF Core | QRM011 | QRM012 | QRM013 |
+| ADO.NET | QRM021 | QRM022 | QRM023 |
+| SqlKata | QRM031 | QRM032 | QRM033 |
+
+Analyzers only activate when the source tool's framework type is present in the compilation, so downstream projects without the source library see no noise.
+
+For the ADO.NET detector specifically: the converter uses the **last** `CommandText` assignment before each `Execute*` call and positionally filters parameters, so reused `DbCommand` variables across multiple executions are handled correctly. Heavy command mutation patterns still warrant manual review.
+
 ## Implicit Modification Analysis
 
 EF Core's change tracker and navigation property manipulation create database modifications
@@ -86,7 +113,7 @@ Quarry's compile-time architecture means some patterns work differently:
   within a single method. The source generator reads them at compile time.
 - **Entity accessors are methods.** Write `db.Users()`, not `db.Users`.
 - **No anonymous type projections.** Use DTOs or tuples in `.Select()`.
-- **Max 4-table joins.** Queries with more tables need to be split or use `RawSqlAsync`.
+- **Max 6-table explicit joins.** Queries beyond six tables need to be split, use CTEs (`.With<…>()`), or fall back to `RawSqlAsync`.
 - **OrderBy requires a prior clause.** Chain after `.Where()` or `.Select()`, not directly on
   the entity accessor.
 

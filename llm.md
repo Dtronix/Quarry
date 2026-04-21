@@ -7,13 +7,17 @@ Compile-time SQL builder for .NET 10. Roslyn source generators + C# 12 intercept
 ## Packages
 
 - `Quarry` (net10.0) — Runtime: carrier base classes, interfaces, schema DSL, executor, migrations. Logsmith 0.5.0 `<LogsmithMode>Abstraction</LogsmithMode>` (PrivateAssets=all)
-- `Quarry.Generator` (netstandard2.0) — Roslyn incremental generator: interceptor emission, entity/context codegen, migration codegen
+- `Quarry.Generator` (netstandard2.0) — Roslyn incremental generator: interceptor emission, entity/context codegen, migration codegen, opt-in SQL manifest emission
 - `Quarry.Analyzers` (netstandard2.0) — 21 compile-time SQL analysis rules (QRA series) + code fixes
-- `Quarry.Tool` (net10.0) — CLI: `quarry migrate`, `quarry scaffold`, `quarry create-scripts`
-- `Quarry.Shared` — Shared source project (linked via MSBuild `<Import>`): SQL formatting, migration diffing/codegen, scaffold introspection. Conditional namespace: `QUARRY_GENERATOR` → `Quarry.Generators.Sql`, else `Quarry.Shared.Sql`
+- `Quarry.Migration` (netstandard2.0) — Cross-ORM conversion toolkit: parses SQL in source code (Dapper/EF Core/ADO.NET/SqlKata), resolves against Quarry schemas, emits equivalent chain API code. Roslyn analyzers (QRM series) + IDE code fixes per source tool. Backs the `quarry convert --from <tool>` CLI
+- `Quarry.Tool` (net10.0) — CLI: `quarry migrate`, `quarry scaffold`, `quarry create-scripts`, `quarry convert --from {dapper|efcore|adonet|sqlkata}`
+- `Quarry.Shared` — Shared source project (linked via MSBuild `<Import>`): SQL formatting, migration diffing/codegen, scaffold introspection, **SQL parser** (tokenizer + recursive-descent parser + AST + walker under `Sql/Parser/`, `#if QUARRY_GENERATOR`-gated so zero runtime surface). Conditional namespace: `QUARRY_GENERATOR` → `Quarry.Generators.Sql`, else `Quarry.Shared.Sql`
 - `Quarry.Tests` — NUnit tests using `QueryTestHarness` (4-dialect cross-dialect testing)
-- `Quarry.Benchmarks` (net10.0) — BenchmarkDotNet vs raw ADO.NET, Dapper, EF Core
+- `Quarry.Migration.Tests` — NUnit tests for converters and analyzer code fixes
+- `Quarry.Benchmarks` (net10.0) — BenchmarkDotNet vs raw ADO.NET, Dapper, EF Core, SqlKata. Published run-over-run to `Quarry-benchmarks` GitHub Pages
 - `Quarry.Sample.WebApp` (net10.0) — Razor Pages + SQLite sample app demonstrating schema, context, queries, auth, migrations
+- `Quarry.Sample.Aot` (net10.0) — PublishAot verification sample
+- `Samples/4_DapperMigration` — End-to-end `quarry convert --from dapper` sample
 
 ## Usage
 
@@ -40,8 +44,15 @@ public class UserSchema : Schema
 }
 ```
 
-Column types: `Key<T>` PK, `Col<T>` standard, `Ref<TSchema,TKey>` FK, `Many<T>` 1:N nav, `Index`, `CompositeKey`. Generated entities use `EntityRef<TEntity,TKey>` for FKs.
+Column types: `Key<T>` PK, `Col<T>` standard, `Ref<TSchema,TKey>` FK, `Many<T>` 1:N nav, `One<T>` reverse-side 1:1 nav, `Index`, `CompositeKey`. Generated entities use `EntityRef<TEntity,TKey>` for FKs.
 Modifiers: `Identity()`, `ClientGenerated()`, `Computed()`, `Length(n)`, `Precision(p,s)`, `Default(v)`, `Default(()=>v)`, `MapTo("name")`, `Mapped<TMapping>()`, `Sensitive()`.
+
+**Navigation declarations:**
+- `public Many<Order> Orders => HasMany<Order>(o => o.UserId);` — 1:N
+- `public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();` — M:N skip navigation (junction→target JOIN is implicit in terminals)
+- `public One<User> User => HasOne<User>();` — reverse One<T> navigation, produces nullable `T?` property on generated entity; lambdas need `!.` (e.g. `o.User!.IsActive`)
+
+Navigation diagnostics: QRY060 (no FK for One<T>), QRY061 (ambiguous FK), QRY062 (HasOne references invalid column), QRY063 (target entity not found), QRY064/065 (HasManyThrough invalid junction/target navigation).
 NamingStyle: `Exact` (default), `SnakeCase`, `CamelCase`, `LowerCase`.
 Index modifiers: `Unique()`, `Where(col)`, `Where("sql")`, `Include(cols...)`, `Using(IndexType)`, `.Asc()`/`.Desc()`.
 
@@ -67,9 +78,18 @@ public partial class AppDb : QuarryContext
     public partial IEntityAccessor<User> Users();
     public partial IEntityAccessor<Order> Orders();
 }
+
+// Opt-in typed accessor chains — required to chain .With<Dto>(...).Users()....
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class AppDb : QuarryContext<AppDb>
+{
+    public partial IEntityAccessor<User> Users();
+}
 ```
 
 Multiple contexts with different dialects can coexist. Generator resolves context from receiver chain at each call site.
+
+**`QuarryContext<TSelf>`:** Generic base class enabling typed post-`With` accessor chains (`db.With<Dto>(…).Users().Join<…>()`). Opt-in — existing non-generic `QuarryContext` continues to work. `QuarryContext.With<TDto>()` is `virtual` so derived `With` overrides participate in dispatch.
 
 **`ownsConnection`:** Constructor accepts optional `bool ownsConnection = false`. When `true`, context disposes the underlying `DbConnection` on `Dispose`/`DisposeAsync`. When `false` (default), context only closes connections it opened. Generator emits constructor overloads with the parameter on generated context classes. Use `ownsConnection: true` for DI registrations where consumers shouldn't manage connection lifetime:
 ```csharp
@@ -101,22 +121,63 @@ db.Orders().GroupBy(o => o.Status)
     .Having(o => Sql.Count() > 5)
     .Select(o => (o.Status, Sql.Count(), Sql.Sum(o.Total)));
 
-// Joins (2/3/4-table, max 4) — supports whole-entity projection from any alias
+// Joins (2–6 table, explicit) — supports whole-entity projection from any alias
 db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Select((u, o) => (u.UserName, o.Total))
     .Where((u, o) => o.Total > 100);
 // Navigation: db.Users().Join(u => u.Orders)
 // Joined entity projection: .Select((u, o) => o) — projects full entity from alias
-// Also: LeftJoin, RightJoin
+// Also: LeftJoin, RightJoin, CrossJoin<T>(), FullOuterJoin<T>(condition)
+// QRA502 warns: FULL OUTER JOIN on SQLite/MySQL
+// Join-aware nullable propagation: columns on the nullable side of LEFT/RIGHT/FULL OUTER are IsDBNull-guarded in generated readers.
 
-// Subqueries on Many<T>
-db.Users().Where(u => u.Orders.Any(o => o.Total > 100));  // EXISTS
-db.Users().Where(u => u.Orders.All(o => o.Status == "paid")); // NOT EXISTS + negated
-db.Users().Where(u => u.Orders.Count() > 5);              // scalar COUNT
+// Subqueries on Many<T> — Any/All/Count + aggregates
+db.Users().Where(u => u.Orders.Any(o => o.Total > 100));          // EXISTS
+db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));      // NOT EXISTS + negated
+db.Users().Where(u => u.Orders.Count() > 5);                       // scalar COUNT
+db.Users().Select(u => new {
+    u.UserName,
+    OrderSum = u.Orders.Sum(o => o.Total),
+    BiggestOrder = u.Orders.Max(o => o.Total),
+    AverageOrder = u.Orders.Average(o => o.Total), // alias: Avg
+});
+
+// One<T> navigation (requires `!.` on nullable nav property)
+db.Orders().Where(o => o.User!.IsActive);
+
+// Set operations (IQueryBuilder<T> / IQueryBuilder<TEntity,TResult>)
+// Post-set WHERE/GROUPBY/HAVING auto-wrap as subquery. Cross-entity supported.
+db.Users().Select(u => u.UserName).Union(db.Products().Select(p => p.Name));
+// Also: UnionAll, Intersect, IntersectAll, Except, ExceptAll
+// Diagnostics: QRY070 (IntersectAll dialect), QRY071 (ExceptAll dialect), QRY072 (projection mismatch).
+
+// Window functions in projections
+db.Sales().Select(s => new {
+    s.Region,
+    s.Amount,
+    Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+    RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+    Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+});
+// Ranking: RowNumber, Rank, DenseRank, Ntile
+// Offset/value: Lag, Lead, FirstValue, LastValue
+// Aggregate-OVER: Sum, Count, Avg, Min, Max
+// Fluent IOverClause: PartitionBy, OrderBy, OrderByDescending. Non-column args (offsets, default values, Ntile buckets) parameterized at compile time. Frame specs (ROWS/RANGE) not yet supported.
+
+// Common Table Expressions (requires QuarryContext<TSelf> for typed post-With accessors)
+db.With<User, ActiveUser>(users => users
+        .Where(u => u.IsActive)
+        .Select(u => new ActiveUser(u.UserId, u.UserName)))
+    .FromCte<ActiveUser>()
+    .Where(a => a.UserName.StartsWith("a"))
+    .ExecuteFetchAllAsync();
+// Multi-CTE: db.With<A>(…).With<B>(…).FromCte<A>().Join<B>(…)
+// Direct-argument With<TDto>(IQueryBuilder<TDto>) overloads REMOVED — use lambda form only.
+// Diagnostics: QRY080 (CTE inner not analyzable), QRY081 (FromCte without With), QRY082 (duplicate CTE name).
 
 // Where operators: ==, !=, <, >, <=, >=, &&, ||, !, null checks
 // String: Contains, StartsWith, EndsWith, ToLower, ToUpper, Trim, Substring
-// Collection: new[]{1,2,3}.Contains(u.Id) → IN
+// Collection: IEnumerable<T>/IReadOnlyList<T>/T[] .Contains(col) → IN (empty collection emits IN (SELECT 1 WHERE 1=0))
 // Raw: Sql.Raw<bool>("\"Age\" > @p0", 18)
 ```
 
@@ -158,19 +219,29 @@ No terminals on PreparedQuery → QRY036 error.
 
 ### Execution Methods
 
-`ExecuteFetchAllAsync()` → `Task<List<T>>`, `ExecuteFetchFirstAsync()` → `Task<T>`, `ExecuteFetchFirstOrDefaultAsync()` → `Task<T?>`, `ExecuteFetchSingleAsync()` → `Task<T>`, `ExecuteScalarAsync<T>()` → `Task<T>`, `ExecuteNonQueryAsync()` → `Task<int>`, `ToAsyncEnumerable()` → `IAsyncEnumerable<T>`, `ToDiagnostics()` → `QueryDiagnostics`.
+`ExecuteFetchAllAsync()` → `Task<List<T>>`, `ExecuteFetchFirstAsync()` → `Task<T>`, `ExecuteFetchFirstOrDefaultAsync()` → `Task<T?>`, `ExecuteFetchSingleAsync()` → `Task<T>`, `ExecuteFetchSingleOrDefaultAsync()` → `Task<T?>`, `ExecuteScalarAsync<T>()` → `Task<T>`, `ExecuteNonQueryAsync()` → `Task<int>`, `ToAsyncEnumerable()` → `IAsyncEnumerable<T>`, `ToDiagnostics()` → `QueryDiagnostics`.
+
+These terminals are also available directly on `IQueryBuilder<T>` (no need to call `.Select(x => x)` first before executing an entity fetch).
 
 **Value-type FirstOrDefault caveat:** The interface uses unconstrained `TResult?`, which for value types (tuples, primitives, enums) does NOT produce `Nullable<T>` — it returns `default(T)` when no rows match (same as LINQ's `FirstOrDefault()`). This means callers cannot distinguish "no rows" from "a row whose value is `default`" (e.g., `0` for `long`, `default` for a tuple). Workarounds: use `ExecuteFetchFirstAsync` (throws on empty result), or project to a reference type (entity or DTO) where `null` signals "no rows".
 
 ### Raw SQL
 
 ```csharp
-await db.RawSqlAsync<User>("SELECT * FROM users WHERE id = @p0", userId);
+// RawSqlAsync<T> is IAsyncEnumerable<T> — not Task<List<T>>. Use .ToListAsync() or await foreach.
+IAsyncEnumerable<User> rows = db.RawSqlAsync<User>("SELECT * FROM users WHERE id = @p0", userId);
+await foreach (var u in rows) { … }
+List<User> buffered = await db.RawSqlAsync<User>("SELECT * FROM users", ).ToListAsync();
+
 await db.RawSqlScalarAsync<int>("SELECT COUNT(*) FROM users");
 await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 ```
 
-Source-generated typed readers — zero reflection.
+**Reader strategy:** When the SQL argument is a string literal the shared SQL parser can resolve, the generator emits a static lambda with hardcoded ordinals (one-time `GetOrdinal` lookup eliminated). Otherwise falls back to a `file struct IRowReader<T>` — `GetName` called once per result set, no per-row lambda or closure allocation. Column matching is case-insensitive (`ToLowerInvariant`).
+
+**Diagnostics:** QRY031 (error) — unresolvable generic `T`. QRY041 (warn) — unresolvable column in literal SQL. QRY042 (info + code fix) — RawSqlAsync convertible to chain API.
+
+**Error propagation:** On the buffered multi-row path, `ReadAsync` errors propagate as raw `DbException` (not wrapped in `QuarryQueryException`). Connection-open failures still wrap.
 
 ### Diagnostics (QueryDiagnostics)
 
@@ -183,6 +254,31 @@ Add `QUARRY_TRACE` to consumer `.csproj` + `.Trace()` to chain. Trace comments e
 ### Scaffold
 
 `quarry scaffold --connection "..." --dialect SQLite --output ./Schemas` — reverse-engineers DB to schema classes. Per-dialect introspectors, junction table detection, implicit FK detection, singularization.
+
+### SQL Manifest (opt-in)
+
+Enable per-dialect markdown documentation of every generated SQL statement:
+
+```xml
+<PropertyGroup>
+  <QuarrySqlManifestPath>$(MSBuildProjectDirectory)/sql-manifest</QuarrySqlManifestPath>
+</PropertyGroup>
+```
+
+Generator emits `quarry-manifest.{sqlite|postgresql|mysql|sqlserver}.md`, one per dialect. Each manifest lists every chain's SQL, parameter table (including `LIMIT`/`OFFSET` rows), bitmask-labeled conditional variants, and summary stats. `WriteIfChanged` guard suppresses spurious git diffs. Zero overhead when unset. Write failures surface as QRY040 warning.
+
+### Cross-ORM Conversion (Quarry.Migration)
+
+`quarry convert --from {dapper|efcore|adonet|sqlkata} --project <path>` — parses existing SQL strings in source code, resolves against Quarry entity schemas, emits equivalent chain API code. Driven by `Quarry.Migration` analyzers which only activate when the target framework type is present in the compilation.
+
+Converter structure (one set per source tool):
+
+- `*Detector` — finds call sites in source (e.g., `DapperDetector` → `QueryAsync`/`ExecuteAsync`/… patterns)
+- `*Converter` — orchestrates: detects, parses SQL via `Quarry.Shared/Sql/Parser/`, resolves columns via `SchemaResolver`, emits chain code via `ChainEmitter`
+- `*MigrationAnalyzer` + `*MigrationCodeFix` — Roslyn analyzer + IDE lightbulb fix
+- Supports SELECT/WHERE/joins (INNER/LEFT/RIGHT/CROSS/FULL OUTER)/GROUP BY/HAVING/ORDER BY/LIMIT/aggregates/IN/BETWEEN/IS NULL/LIKE, plus DELETE/UPDATE/INSERT (INSERT emits TODO since Quarry needs entity objects). `Sql.Raw` fallback for unsupported constructs.
+
+Uniform result interfaces: `IConversionDiagnostic` (severity, code, span, message), `IConversionEntry` (original site + converted code + diagnostics). Four diagnostic families: QRM001–003 (Dapper), QRM011–013 (EF Core), QRM021–023 (ADO.NET), QRM031–033 (SqlKata). Each family: detection (Info), with-warnings (Warning), not-convertible (Info).
 
 ### Logging
 
@@ -205,7 +301,7 @@ All runtime builder classes (QueryBuilder, JoinedQueryBuilder, DeleteBuilder, Up
 
 **Carrier base classes** (`Internal/`):
 - `CarrierBase<T>` / `CarrierBase<T,TResult>` — SELECT queries
-- `JoinedCarrierBase<T1,T2>` through `JoinedCarrierBase4<T1,T2,T3,T4>` (± TResult) — joins (max 4 tables)
+- `JoinedCarrierBase<T1,T2>` through `JoinedCarrierBase6<T1..T6>` (± TResult) — explicit joins (max 6 tables). Generated via T4 templates from arity 2.
 - `DeleteCarrierBase<T>`, `UpdateCarrierBase<T>`, `InsertCarrierBase<T>`, `BatchInsertCarrierBase<T>` — modifications
 
 All base class methods throw `InvalidOperationException` — generator replaces them with actual implementations via interceptors.
@@ -216,7 +312,7 @@ All base class methods throw `InvalidOperationException` — generator replaces 
 
 ### Builder Interfaces
 
-**Query:** `IEntityAccessor<T>` (entry point, includes `GroupBy<TKey>()`) → `IQueryBuilder<T>` (no projection) → `IQueryBuilder<T,TResult>` (with projection, adds execution terminals). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder4<T1,T2,T3,T4>` (± TResult). All lambda parameters are bare `Func<>` delegates (not `Expression<Func<>>`); expression analysis happens at compile time via source generator.
+**Query:** `IEntityAccessor<T>` (entry point, includes `GroupBy<TKey>()`, terminals via `.Select(x => x)` omission) → `IQueryBuilder<T>` (no projection; exposes execution terminals directly) → `IQueryBuilder<T,TResult>` (with projection). `IJoinedQueryBuilder<T1,T2>` through `IJoinedQueryBuilder6<T1..T6>` (± TResult). All lambda parameters are bare `Func<>` delegates (not `Expression<Func<>>`); expression analysis happens at compile time via source generator.
 
 **Chain-continuation methods** (`OrderBy`, `ThenBy`, `Limit`, `Offset`, `Distinct`, `WithTimeout`) are on `IQueryBuilder<T>`, NOT on `IEntityAccessor<T>`. They only become available after the first clause (`.Where()`, `.Select()`, `.GroupBy()`) transitions the chain from the entity accessor. Writing `db.Users().OrderBy(...)` directly will not compile — use `db.Users().Where(...).OrderBy(...)` or `db.Users().Select(...).OrderBy(...)`.
 
@@ -432,13 +528,27 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 
 **Sql.Raw:** QRY029 (warn): placeholder mismatch.
 
-**Chain (QRY030–036):** QRY030 (info): prebuilt dispatch applied. QRY032 (error): chain not analyzable. QRY033 (error): forked chain (multiple terminals). QRY034 (warn): Trace without QUARRY_TRACE. QRY035 (error): PreparedQuery escapes scope. QRY036 (error): Prepare with no terminals.
+**Chain (QRY030–036):** QRY030 (info): prebuilt dispatch applied. QRY031 (error): unresolvable RawSql `T` generic parameter. QRY032 (error): chain not analyzable. QRY033 (error): forked chain (multiple terminals). QRY034 (warn): Trace without QUARRY_TRACE. QRY035 (error): PreparedQuery escapes scope. QRY036 (error): Prepare with no terminals.
+
+**Manifest (QRY040):** QRY040 (warn): SQL manifest write failure.
+
+**RawSqlAsync literal resolution (QRY041–042):** QRY041 (warn): RawSqlAsync column expression without alias / unresolvable. QRY042 (info + code fix): RawSqlAsync convertible to chain API.
 
 **Migration (QRY050–055):** QRY050: schema drift. QRY051: unknown table/column ref. QRY052: version gap/duplicate. QRY053: pending migrations. QRY054: destructive without backup. QRY055: nullable-to-non-null.
 
-**Internal:** QRY900: generator error.
+**Navigation (QRY060–065):** QRY060: no FK for One<T>. QRY061: ambiguous One<T> FK. QRY062: HasOne references invalid column. QRY063: navigation target entity not found. QRY064: HasManyThrough invalid junction navigation. QRY065: HasManyThrough invalid target navigation.
 
-**Analyzer (QRA series):** QRA101–106 (simplification), QRA201–205 (wasteful), QRA301–305 (performance), QRA401–402 (patterns), QRA501–502 (dialect). QRA305 (info): mutable `static readonly` array in IN clause — generator inlines initializer at compile time but elements can be mutated at runtime; suggests `ImmutableArray<T>`. Code fixes: QRA101, QRA102, QRA201.
+**Set operations (QRY070–072):** QRY070 (warn): INTERSECT ALL not supported on this dialect. QRY071 (warn): EXCEPT ALL not supported on this dialect. QRY072 (error): set operation projection mismatch (column count/type).
+
+**CTEs (QRY080–082):** QRY080 (error): CTE inner query not analyzable. QRY081 (error): `FromCte` without matching `With`. QRY082 (error): duplicate CTE name in chain.
+
+**Internal:** QRY900: generator error (stack trace surfaced).
+
+**Retired:** QRY073 (removed in v0.3.0 — cross-entity set-ops now supported).
+
+**Analyzer (QRA series):** QRA101–106 (simplification), QRA201–205 (wasteful), QRA301–305 (performance), QRA401–402 (patterns), QRA501–502 (dialect). QRA502 (warn): FULL OUTER JOIN on SQLite/MySQL. QRA305 (info): mutable `static readonly` array in IN clause — generator inlines initializer at compile time but elements can be mutated at runtime; suggests `ImmutableArray<T>`. Code fixes: QRA101, QRA102, QRA201.
+
+**Migration converter (QRM series — Quarry.Migration package):** QRM001/011/021/031 (info): Dapper/EFCore/ADO.NET/SqlKata call detected, convertible. QRM002/012/022/032 (warn): converted with warnings. QRM003/013/023/033 (info): not convertible (with reason). All include IDE code fix provider to replace source site with generated chain code.
 
 ### Exceptions
 

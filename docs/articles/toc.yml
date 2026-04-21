@@ -26,5 +26,10 @@
   href: analyzer-rules.md
 - name: Migrating to Quarry
   href: migrating-to-quarry.md
+- name: SQL Manifest
+  href: sql-manifest.md
 - name: Benchmarks
   href: benchmarks.md
+- name: Release Notes
+  href: releases/
+  homepage: releases/index.md

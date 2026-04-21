@@ -200,7 +200,7 @@ The generator predicts compiler-generated closure class names to emit `[UnsafeAc
 | `nav.Count()` | `(SELECT COUNT(*) FROM t WHERE correlation)` | Scalar subquery |
 | `nav.Count(x => pred)` | `(SELECT COUNT(*) FROM t WHERE correlation AND pred)` | With predicate |
 
-Not supported on navigation: `.Sum()`, `.Min()`, `.Max()`, `.Average()`, `.FirstOrDefault()`, `.Exists()`.
+Navigation aggregates (v0.3.0): `.Sum(selector)`, `.Min(selector)`, `.Max(selector)`, `.Avg(selector)` / `.Average(selector)` follow the same correlated-subquery pattern. Still not supported on navigation: `.FirstOrDefault()`, `.Exists()`.
 
 **Sql.* aggregate functions** (work in any expression context — Select, Where, Having):
 
@@ -214,6 +214,56 @@ Not supported on navigation: `.Sum()`, `.Min()`, `.Max()`, `.Average()`, `.First
 | `Sql.Max(expr)` | `MAX(expr)` |
 
 Subquery aliases are generated as `sq0`, `sq1`, etc. Correlation is always `inner.FK = outer.PK` (automatic from navigation metadata). Nested subqueries are supported (e.g., `u.Orders.Any(o => o.Items.Any(i => ...))`).
+
+### Window Functions (Select projections)
+
+`Sql.*` window variants use a fluent `IOverClause` lambda:
+
+| Function | SQL |
+|----------|-----|
+| `Sql.RowNumber(over => …)` | `ROW_NUMBER() OVER (…)` |
+| `Sql.Rank(over => …)` | `RANK() OVER (…)` |
+| `Sql.DenseRank(over => …)` | `DENSE_RANK() OVER (…)` |
+| `Sql.Ntile(n, over => …)` | `NTILE(n) OVER (…)` |
+| `Sql.Lag(col, offset, default, over => …)` | `LAG(col, offset, default) OVER (…)` |
+| `Sql.Lead(col, offset, default, over => …)` | `LEAD(col, offset, default) OVER (…)` |
+| `Sql.FirstValue(col, over => …)` | `FIRST_VALUE(col) OVER (…)` |
+| `Sql.LastValue(col, over => …)` | `LAST_VALUE(col) OVER (…)` |
+| `Sql.{Sum,Count,Avg,Min,Max}(col, over => …)` | aggregate + OVER |
+
+`IOverClause` fluent methods: `PartitionBy`, `OrderBy`, `OrderByDescending`. Frame specs (ROWS/RANGE) not yet supported. Non-column args (offsets, defaults, Ntile buckets) are parameterized at compile time (C# suffixes stripped: `0m` → `0`). Aggregate/window column identifiers emit backticks on MySQL and brackets on SQL Server (not double quotes).
+
+### CTEs and Set Operations
+
+**`.With<TDto>(lambda)` / `.With<TEntity,TDto>(lambda)` + `.FromCte<TDto>()`:** compile to standard `WITH name AS (SELECT …)` across all four dialects. Multi-CTE chains supported (`.With<A>(…).With<B>(…)`). Per-CTE parameter-space isolation prevents `@p{n}` collisions. `QRY080` / `QRY081` / `QRY082` diagnostics cover unanalyzable inner, missing `With`, and duplicate names. Typed post-`With` accessor chains require `QuarryContext<TSelf>`.
+
+**`Union/UnionAll/Intersect/IntersectAll/Except/ExceptAll`** on `IQueryBuilder<T>` / `IQueryBuilder<TEntity,TResult>`. Post-set-op `Where`/`GroupBy`/`Having` auto-wraps the set expression as a subquery. Cross-entity set operations are supported (`Users.Select(…).Union(Products.Select(…))`). `QRY070`/`QRY071` for dialect-unsupported variants (SQLite has no INTERSECT ALL/EXCEPT ALL); `QRY072` for projection column-count/type mismatch. Parameter indexing through set-op operands goes through `AnalyzeOperandChain`, which merges projection parameters to avoid cross-operand collisions.
+
+### Navigation Joins and 6-Table Explicit Joins
+
+`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav; `HasManyThrough<TTarget, TJunction>()` emits many-to-many skip nav with an implicit junction→target JOIN. Schema-level diagnostics: QRY060–065. The `NavigationAccessExpr` node threads through parse → bind → translate → assemble → emit; `KnownDotNetMembers` excludes `.ToString()` / `.Equals()` etc. from being parsed as nav access. Implicit joins from nav lambdas are deduplicated against explicit joins.
+
+Explicit joins support 2–6 tables via T4-generated `IJoinedQueryBuilder5/6` and `JoinedCarrierBase5/6`. New join kinds: `CrossJoin<T>()` (no condition), `FullOuterJoin<T>(condition)`. **Join-aware nullable readers:** the projection analyzer inspects join-side nullability and wraps reader column reads on LEFT/RIGHT/FULL OUTER nullable sides with `IsDBNull` guards. Declared tuple types unchanged; only generated reader code is affected.
+
+### SQL Manifest Emission
+
+Gated by MSBuild property `QuarrySqlManifestPath`. `ManifestEmitter` runs after Stage 6 and writes per-dialect markdown files (one per dialect present in the compilation). `WriteIfChanged` compares against on-disk content to suppress no-op writes. Output includes every chain's SQL, parameter table (including LIMIT/OFFSET parameters), bitmask-labeled conditional variants (`Variant[0b0001]`), and per-file summary. Write failures surface as `QRY040` warnings.
+
+### Supplemental Compilation (v0.3.0)
+
+The discovery stage builds a supplemental compilation containing Pipeline-A outputs (entity classes, context accessors) before creating semantic models for Pipeline-B. This replaces ~700 lines of prior error-type fallback heuristics (`TryResolveErrorType`, `TryQualifyErrorTypeFromUsings`). Remaining unresolvable types still fall back to `"object"` under the strict/lenient `IsUnresolvedTypeName` split. `EntityRegistry.Equals`/`GetHashCode` include `_allContexts` — this was a latent incremental-caching bug that could leave stale cross-context views.
+
+### Shared SQL Parser
+
+`Quarry.Shared/Sql/Parser/` (tokenizer, recursive-descent parser, AST, walker) is `#if QUARRY_GENERATOR`-gated — consumed by the generator, excluded from the runtime assembly. Powers: RawSqlAsync compile-time column resolution, QRY042 convertibility detection, and the `Quarry.Migration` converters.
+
+### Carrier Dedup
+
+Structurally-identical carrier classes are merged at emission time. Carrier class numbering (`Chain_N`) may have gaps and is not a stable contract. Dedup checks `CarrierPlan` equality (fields, parameters, extraction plans, SQL variants). Diagnostics still reference the canonical carrier name.
+
+### Incremental SQL Mask Rendering
+
+For chains with N conditional terms (up to 8 bits = 256 variants), shared prefix/suffix is rendered once and variant-specific middle segments are assembled via `StringBuilder.Append` rather than re-rendering from scratch per mask. Applies to SELECT and DELETE multi-mask chains.
 
 ## File Map
 
@@ -368,13 +418,31 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY019 | Warning | Clause not translatable |
 | QRY020 | Error | All() requires predicate |
 | QRY029 | Error | Sql.Raw placeholder mismatch |
+| QRY031 | Error | Unresolvable RawSqlAsync\<T\> generic type parameter |
 | QRY032 | Error | Chain not analyzable |
 | QRY033 | Error | Forked query chain |
 | QRY034 | Warning | .Trace() requires QUARRY_TRACE define |
 | QRY035 | Error | PreparedQuery escapes scope |
+| QRY036 | Error | Prepared query with no terminals |
+| QRY040 | Warning | SQL manifest write failure |
 | QRY041 | Warning | RawSqlAsync column expression without alias (falls back to runtime ordinal discovery) |
+| QRY042 | Info | RawSqlAsync convertible to chain query (code fix available) |
 | QRY050-055 | Mixed | Migration diagnostics |
+| QRY060 | Error | No FK column for `One<T>` navigation |
+| QRY061 | Error | Ambiguous FK for `One<T>` navigation |
+| QRY062 | Error | `HasOne` references invalid column |
+| QRY063 | Error | Navigation target entity not found |
+| QRY064 | Error | `HasManyThrough` invalid junction navigation |
+| QRY065 | Error | `HasManyThrough` invalid target navigation |
+| QRY070 | Warning | `IntersectAll` not supported on this dialect |
+| QRY071 | Warning | `ExceptAll` not supported on this dialect |
+| QRY072 | Error | Set operation projection mismatch |
+| QRY080 | Error | CTE inner query not analyzable |
+| QRY081 | Error | `FromCte` without matching `With` |
+| QRY082 | Error | Duplicate CTE name in chain |
 | QRY900 | Error | Internal generator error (pipeline exception) |
+
+QRY073 was introduced then retired in v0.3.0 when cross-entity set operations became supported; `#pragma warning disable QRY073` directives should be removed.
 
 ## Key Design Decisions
 

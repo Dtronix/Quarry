@@ -3,6 +3,7 @@
 [Dd]ebugPublic/
 [Rr]elease/
 [Rr]eleases/
+!docs/articles/releases/
 x64/
 x86/
 [Aa][Rr][Mm]/

@@ -105,7 +105,7 @@ db.Users().Distinct().Select(u => (u.UserName, u.Email));         // SELECT DIST
 
 ## Joins
 
-Explicit joins support `Join`, `LeftJoin`, and `RightJoin`. Up to 4 tables can be chained.
+Explicit joins support `Join`, `LeftJoin`, `RightJoin`, `CrossJoin`, and `FullOuterJoin`. Up to 6 tables can be chained.
 
 ```csharp
 // 2-table inner join
@@ -117,39 +117,148 @@ db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
 db.Users().Join(u => u.Orders)
     .Select((u, o) => (u.UserName, o.Total));
 
-// 3-table chained join (max 4 tables)
+// 3-table chained join (up to 6 tables total)
 db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
     .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
     .Select((u, o, oi) => (u.UserName, o.Total, oi.ProductName));
+
+// LEFT / RIGHT / CROSS / FULL OUTER
+db.Users().LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id);
+db.Users().RightJoin<Order>((u, o) => u.UserId == o.UserId.Id);
+db.Users().CrossJoin<Region>();
+db.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id);
+```
+
+Columns projected from the nullable side of a `LeftJoin`, `RightJoin`, or `FullOuterJoin` are automatically `IsDBNull`-guarded in the generated reader, so unmatched rows no longer throw `InvalidCastException`. `FullOuterJoin` emits `QRA502` (warning) on SQLite and MySQL, which don't natively support the construct.
+
+## Navigation Joins
+
+Two navigation kinds add implicit joins to your queries without requiring an explicit `.Join()` call.
+
+### One\<T\> — reverse 1:1 navigation
+
+Declare `HasOne<T>()` on the non-FK side of a relationship:
+
+```csharp
+public class OrderSchema : Schema
+{
+    public Key<int> OrderId => Identity();
+    public Ref<UserSchema, int> UserId { get; }
+    public One<User> User => HasOne<User>();
+}
+```
+
+The generated `Order` entity gains a nullable `User?` property. Navigation lambdas require `!.` to assert non-null:
+
+```csharp
+db.Orders().Where(o => o.User!.IsActive)
+    .Select(o => (o.User!.UserName, o.Total));
+```
+
+### HasManyThrough — many-to-many skip navigation
+
+Declare a many-to-many relationship through a junction table with `HasManyThrough<TTarget, TJunction>()`:
+
+```csharp
+public class OrderSchema : Schema
+{
+    public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();
+}
+```
+
+`Count()`, `Any()`, and aggregates automatically include the junction→target JOIN:
+
+```csharp
+db.Orders().Where(o => o.Tags.Any(t => t.Name == "urgent"));
+db.Orders().Select(o => new { o.OrderId, TagCount = o.Tags.Count() });
 ```
 
 ## Navigation Subqueries
 
-Use `Many<T>` properties in `Where` clauses to generate correlated subqueries. The generator infers FK-to-PK correlation from the schema.
+Use `Many<T>` properties in `Where` or `Select` clauses to generate correlated subqueries. The generator infers FK-to-PK correlation from the schema.
 
 ```csharp
 db.Users().Where(u => u.Orders.Any());                          // EXISTS
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));        // filtered EXISTS
 db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));   // NOT EXISTS + negated
 db.Users().Where(u => u.Orders.Count() > 5);                    // scalar COUNT
-db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2);  // filtered COUNT
+db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2);   // filtered COUNT
+
+// Aggregates (Sum, Min, Max, Avg/Average) on Many<T>
+db.Users().Select(u => new {
+    u.UserName,
+    OrderTotal = u.Orders.Sum(o => o.Total),
+    BiggestOrder = u.Orders.Max(o => o.Total),
+    AverageOrder = u.Orders.Average(o => o.Total),
+});
 ```
+
+Both `Avg` and `Average` are accepted as selector names.
 
 ## Set Operations
 
-Combine the results of two queries with set operations. Both queries must have the same projection shape. These methods are called on the context, not on a query builder.
+Combine two queries with `Union`, `UnionAll`, `Intersect`, `IntersectAll`, `Except`, or `ExceptAll`. Both queries must project the same column shape; operands can reference different entities.
 
 ```csharp
-var activeUsers = db.Users().Where(u => u.IsActive).Select(u => u.UserName);
-var adminUsers  = db.Users().Where(u => u.Role == "admin").Select(u => u.UserName);
+db.Users().Select(u => u.UserName)
+    .Union(db.Admins().Select(a => a.DisplayName));
 
-db.Union(activeUsers, adminUsers);                               // UNION (deduplicated)
-db.UnionAll(activeUsers, adminUsers);                            // UNION ALL (preserves duplicates)
-db.Except(activeUsers, adminUsers);                              // EXCEPT
-db.Intersect(activeUsers, adminUsers);                           // INTERSECT
+db.Orders().Select(o => new IdAmount(o.Id, o.Amount))
+    .UnionAll(db.Quotes().Select(q => new IdAmount(q.Id, q.Estimate)))
+    .Where(x => x.Amount > 100)
+    .OrderBy(x => x.Amount)
+    .ExecuteFetchAllAsync();
 ```
 
+When `Where`, `GroupBy`, or `Having` follows a set operation, the generator wraps the set expression in a subquery automatically. `IntersectAll` and `ExceptAll` are not supported on all dialects — the generator emits `QRY070` or `QRY071` when you use them on SQLite. A column-count or projection-type mismatch between operands produces `QRY072`.
+
 Like all other query paths, set operations are fully compiled at build time.
+
+## Window Functions
+
+`Sql.RowNumber`, `Rank`, `DenseRank`, `Ntile`, `Lag`, `Lead`, `FirstValue`, `LastValue`, plus `Sum`/`Count`/`Avg`/`Min`/`Max(column, over => …)` aggregates use a fluent `IOverClause`:
+
+```csharp
+var ranked = await db.Sales()
+    .Select(s => new {
+        s.Region,
+        s.Amount,
+        Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+        RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+        Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+    })
+    .ExecuteFetchAllAsync();
+```
+
+Non-column arguments (offsets, default values, NTILE buckets) are parameterized at compile time — `Sql.Lag(col, 1, 0m, …)` binds `1` and `0` as parameters and strips the `m` suffix. Frame specifications (`ROWS`/`RANGE`) are not yet supported.
+
+## Common Table Expressions
+
+`With<TDto>(dto => dto…)` and `FromCte<TDto>()` compile to standard SQL `WITH` clauses across all four dialects. To chain entity accessors after `With`, your context must derive from `QuarryContext<TSelf>` (see [Context Definition](context-definition.md)).
+
+```csharp
+public record ActiveUser(int UserId, string UserName);
+
+var results = await db
+    .With<User, ActiveUser>(users => users
+        .Where(u => u.IsActive)
+        .Select(u => new ActiveUser(u.UserId, u.UserName)))
+    .FromCte<ActiveUser>()
+    .Where(a => a.UserName.StartsWith("a"))
+    .ExecuteFetchAllAsync();
+```
+
+Multi-CTE chains are supported:
+
+```csharp
+db.With<TopSellers>(…)
+  .With<RecentBuyers>(…)
+  .FromCte<TopSellers>()
+  .Join<RecentBuyers>((t, r) => t.UserId == r.UserId)
+  .Select((t, r) => (t.UserName, r.PurchaseCount));
+```
+
+Diagnostics: `QRY080` (CTE inner query not analyzable), `QRY081` (`FromCte` without matching `With`), `QRY082` (duplicate CTE name in a single chain).
 
 ## Raw SQL Expressions
 
@@ -212,8 +321,11 @@ The generator supports up to 8 conditional bits, producing a maximum of 256 SQL 
 | `ExecuteFetchFirstAsync()` | `Task<T>` (throws if empty) |
 | `ExecuteFetchFirstOrDefaultAsync()` | `Task<T?>` |
 | `ExecuteFetchSingleAsync()` | `Task<T>` (throws if not exactly one) |
+| `ExecuteFetchSingleOrDefaultAsync()` | `Task<T?>` (throws if more than one) |
 | `ExecuteScalarAsync<T>()` | `Task<T>` |
 | `ExecuteNonQueryAsync()` | `Task<int>` |
 | `ToAsyncEnumerable()` | `IAsyncEnumerable<T>` |
 | `ToDiagnostics()` | `QueryDiagnostics` |
 | `Prepare()` | `PreparedQuery<T>` |
+
+These terminals are also available directly on `IQueryBuilder<T>` (no need to insert a `.Select(u => u)` before the terminal when you're fetching the full entity).
