@@ -1,5 +1,7 @@
 # Quarry v0.3.0
 
+_Released 2026-04-21_
+
 **Common Table Expressions, window functions, set operations, navigation joins, and a cross-ORM migration toolkit.** This release rounds out Quarry's SQL surface with the major analytical constructs users have been asking for (CTEs, `ROW_NUMBER`/`LAG`/`LEAD`, `UNION`/`INTERSECT`/`EXCEPT`), adds `One<T>`/`HasManyThrough` navigation joins and expands explicit joins to six tables, delivers the new `Quarry.Migration` package for automated conversion from EF Core/Dapper/ADO.NET/SqlKata, ships an opt-in SQL manifest feature for living query documentation, and fixes a silent-WHERE-drop bug for `Nullable<T>.Value` that was serious enough to hold up the release on its own. 99 commits merged since v0.2.1.
 
 ---
