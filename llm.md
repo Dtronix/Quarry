@@ -135,12 +135,12 @@ db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));          // EXISTS
 db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));      // NOT EXISTS + negated
 db.Users().Where(u => u.Orders.Count() > 5);                       // scalar COUNT
-db.Users().Select(u => new {
+db.Users().Select(u => (
     u.UserName,
-    OrderSum = u.Orders.Sum(o => o.Total),
-    BiggestOrder = u.Orders.Max(o => o.Total),
-    AverageOrder = u.Orders.Average(o => o.Total), // alias: Avg
-});
+    OrderSum: u.Orders.Sum(o => o.Total),
+    BiggestOrder: u.Orders.Max(o => o.Total),
+    AverageOrder: u.Orders.Average(o => o.Total) // alias: Avg
+));
 
 // One<T> navigation (requires `!.` on nullable nav property)
 db.Orders().Where(o => o.User!.IsActive);
@@ -152,13 +152,13 @@ db.Users().Select(u => u.UserName).Union(db.Products().Select(p => p.Name));
 // Diagnostics: QRY070 (IntersectAll dialect), QRY071 (ExceptAll dialect), QRY072 (projection mismatch).
 
 // Window functions in projections
-db.Sales().Select(s => new {
+db.Sales().Select(s => (
     s.Region,
     s.Amount,
-    Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
-    RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-    Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-});
+    Rank: Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+    RunningTotal: Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+    Previous: Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate))
+));
 // Ranking: RowNumber, Rank, DenseRank, Ntile
 // Offset/value: Lag, Lead, FirstValue, LastValue
 // Aggregate-OVER: Sum, Count, Avg, Min, Max

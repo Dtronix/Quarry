@@ -170,7 +170,7 @@ public class OrderSchema : Schema
 
 ```csharp
 db.Orders().Where(o => o.Tags.Any(t => t.Name == "urgent"));
-db.Orders().Select(o => new { o.OrderId, TagCount = o.Tags.Count() });
+db.Orders().Select(o => (o.OrderId, TagCount: o.Tags.Count()));
 ```
 
 ## Navigation Subqueries
@@ -185,12 +185,12 @@ db.Users().Where(u => u.Orders.Count() > 5);                    // scalar COUNT
 db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2);   // filtered COUNT
 
 // Aggregates (Sum, Min, Max, Avg/Average) on Many<T>
-db.Users().Select(u => new {
+db.Users().Select(u => (
     u.UserName,
-    OrderTotal = u.Orders.Sum(o => o.Total),
-    BiggestOrder = u.Orders.Max(o => o.Total),
-    AverageOrder = u.Orders.Average(o => o.Total),
-});
+    OrderTotal: u.Orders.Sum(o => o.Total),
+    BiggestOrder: u.Orders.Max(o => o.Total),
+    AverageOrder: u.Orders.Average(o => o.Total)
+));
 ```
 
 Both `Avg` and `Average` are accepted as selector names.
@@ -220,13 +220,13 @@ Like all other query paths, set operations are fully compiled at build time.
 
 ```csharp
 var ranked = await db.Sales()
-    .Select(s => new {
+    .Select(s => (
         s.Region,
         s.Amount,
-        Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
-        RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-        Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-    })
+        Rank: Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+        RunningTotal: Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+        Previous: Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate))
+    ))
     .ExecuteFetchAllAsync();
 ```
 
@@ -269,10 +269,10 @@ When the built-in operators and string methods are not enough, `Sql.Raw<T>()` le
 db.Users().Where(u => Sql.Raw<bool>("\"Age\" > @p0", 18));
 
 // Raw expression in a Select projection
-db.Users().Select(u => new {
+db.Users().Select(u => (
     u.UserName,
-    AgeGroup = Sql.Raw<string>("CASE WHEN \"Age\" < 18 THEN 'minor' ELSE 'adult' END")
-});
+    AgeGroup: Sql.Raw<string>("CASE WHEN \"Age\" < 18 THEN 'minor' ELSE 'adult' END")
+));
 
 // Multiple parameters
 db.Users().Where(u => Sql.Raw<bool>("\"Age\" BETWEEN @p0 AND @p1", 18, 65));

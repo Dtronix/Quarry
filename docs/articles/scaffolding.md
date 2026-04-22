@@ -266,7 +266,7 @@ await using var db = new SchoolDbContext(connection);
 
 var activeStudents = await db.Students()
     .Where(s => s.IsActive)
-    .Select(s => new { s.FirstName, s.LastName, s.Email })
+    .Select(s => (s.FirstName, s.LastName, s.Email))
     .OrderBy(s => s.LastName)
     .Limit(20)
     .ExecuteFetchAllAsync();

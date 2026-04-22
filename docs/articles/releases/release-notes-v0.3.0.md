@@ -88,13 +88,13 @@ var results = await db
 
 ```csharp
 var ranked = await db.Sales()
-    .Select(s => new {
+    .Select(s => (
         s.Region,
         s.Amount,
-        Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
-        RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-        Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-    })
+        Rank: Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+        RunningTotal: Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+        Previous: Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate))
+    ))
     .ExecuteFetchAllAsync();
 ```
 
@@ -146,12 +146,12 @@ public class OrderSchema : Schema
 
 ```csharp
 var totals = await db.Users()
-    .Select(u => new {
+    .Select(u => (
         u.UserName,
-        OrderTotal = u.Orders.Sum(o => o.Amount),
-        BiggestOrder = u.Orders.Max(o => o.Amount),
-        AverageOrder = u.Orders.Average(o => o.Amount),
-    })
+        OrderTotal: u.Orders.Sum(o => o.Amount),
+        BiggestOrder: u.Orders.Max(o => o.Amount),
+        AverageOrder: u.Orders.Average(o => o.Amount)
+    ))
     .ExecuteFetchAllAsync();
 ```
 

@@ -79,8 +79,8 @@ You write a query in C#:
 
 ```csharp
 var activeUsers = await db.Users()
-    .Select(u => new { u.UserName, u.Email })
     .Where(u => u.IsActive)
+    .Select(u => (u.UserName, u.Email))
     .OrderBy(u => u.UserName)
     .Limit(10)
     .ExecuteFetchAllAsync();

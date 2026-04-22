@@ -160,11 +160,11 @@ var users = await db.Users
 ```csharp
 // Flagged by QRA205 — missing ON condition
 db.Users().Join<Order>()
-    .Select((u, o) => new { u.Name, o.Total });
+    .Select((u, o) => (u.Name, o.Total));
 
 // Fixed: add join condition
 db.Users().Join<Order>((u, o) => u.Id == o.UserId)
-    .Select((u, o) => new { u.Name, o.Total });
+    .Select((u, o) => (u.Name, o.Total));
 ```
 
 ---

@@ -290,11 +290,11 @@ db.Orders().Where(o => o.Tags.Any(t => t.Name == "urgent"));
 ```csharp
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));
 db.Users().Where(u => u.Orders.Count() > 5);
-db.Users().Select(u => new {
+db.Users().Select(u => (
     u.UserName,
-    OrderTotal = u.Orders.Sum(o => o.Total),
-    BiggestOrder = u.Orders.Max(o => o.Total),
-});
+    OrderTotal: u.Orders.Sum(o => o.Total),
+    BiggestOrder: u.Orders.Max(o => o.Total)
+));
 ```
 
 ### Aggregates
@@ -312,13 +312,13 @@ Markers: `Sql.Count()`, `Sql.Sum()`, `Sql.Avg()`, `Sql.Min()`, `Sql.Max()`.
 Aggregate-OVER and ranking/offset functions with a fluent `IOverClause`:
 
 ```csharp
-db.Sales().Select(s => new {
+db.Sales().Select(s => (
     s.Region,
     s.Amount,
-    Rank = Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
-    RunningTotal = Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-    Previous = Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
-});
+    Rank: Sql.Rank(over => over.PartitionBy(s.Region).OrderByDescending(s.Amount)),
+    RunningTotal: Sql.Sum(s.Amount, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate)),
+    Previous: Sql.Lag(s.Amount, 1, 0m, over => over.PartitionBy(s.Region).OrderBy(s.SaleDate))
+));
 ```
 
 Supported: `RowNumber`, `Rank`, `DenseRank`, `Ntile`, `Lag`, `Lead`, `FirstValue`, `LastValue`, and `Sum`/`Count`/`Avg`/`Min`/`Max(col, over => …)`. Non-column arguments are parameterized at compile time. ROWS/RANGE frame specifications are deferred to a later release.
