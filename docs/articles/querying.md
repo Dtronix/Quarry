@@ -184,16 +184,13 @@ db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));   // NOT EXISTS + 
 db.Users().Where(u => u.Orders.Count() > 5);                    // scalar COUNT
 db.Users().Where(u => u.Orders.Count(o => o.Total > 50) > 2);   // filtered COUNT
 
-// Aggregates (Sum, Min, Max, Avg/Average) on Many<T>
-db.Users().Select(u => (
-    u.UserName,
-    OrderTotal: u.Orders.Sum(o => o.Total),
-    BiggestOrder: u.Orders.Max(o => o.Total),
-    AverageOrder: u.Orders.Average(o => o.Total)
-));
+// Aggregates (Sum, Min, Max, Avg/Average) on Many<T> — in Where / Having / HasManyThrough Count only
+db.Users().Where(u => u.Orders.Sum(o => o.Total) > 100);
+db.Users().Where(u => u.Orders.Max(o => o.Total) >= 300);
+db.Users().Where(u => u.Orders.Average(o => o.Total) > 100);
 ```
 
-Both `Avg` and `Average` are accepted as selector names.
+Both `Avg` and `Average` are accepted as selector names. `Many<T>` scalar aggregates are currently supported in predicate positions (`Where`, `Having`, comparisons); projecting one directly into a Select tuple isn't supported yet — the `Count()` form on `HasManyThrough` is fine because its result type is already known.
 
 ## Set Operations
 

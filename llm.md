@@ -135,12 +135,10 @@ db.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));          // EXISTS
 db.Users().Where(u => u.Orders.All(o => o.Status == "paid"));      // NOT EXISTS + negated
 db.Users().Where(u => u.Orders.Count() > 5);                       // scalar COUNT
-db.Users().Select(u => (
-    u.UserName,
-    OrderSum: u.Orders.Sum(o => o.Total),
-    BiggestOrder: u.Orders.Max(o => o.Total),
-    AverageOrder: u.Orders.Average(o => o.Total) // alias: Avg
-));
+db.Users().Where(u => u.Orders.Sum(o => o.Total) > 100);                        // correlated SUM subquery
+db.Users().Where(u => u.Orders.Max(o => o.Total) >= 300);                       // correlated MAX
+db.Users().Where(u => u.Orders.Average(o => o.Total) > 100);                    // alias: Avg
+// Note: Many<T> Sum/Min/Max/Avg are supported in Where/Having/comparisons only; not yet in Select projections.
 
 // One<T> navigation (requires `!.` on nullable nav property)
 db.Orders().Where(o => o.User!.IsActive);

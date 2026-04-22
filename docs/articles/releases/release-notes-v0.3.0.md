@@ -145,17 +145,23 @@ public class OrderSchema : Schema
 #### `Many<T>` Aggregates (#195)
 
 ```csharp
-var totals = await db.Users()
-    .Select(u => (
-        u.UserName,
-        OrderTotal: u.Orders.Sum(o => o.Amount),
-        BiggestOrder: u.Orders.Max(o => o.Amount),
-        AverageOrder: u.Orders.Average(o => o.Amount)
-    ))
+var bigSpenders = await db.Users()
+    .Where(u => u.Orders.Sum(o => o.Total) > 1000m)
+    .Select(u => u.UserName)
+    .ExecuteFetchAllAsync();
+
+var premium = await db.Users()
+    .Where(u => u.Orders.Max(o => o.Total) >= 500m)
+    .Select(u => u.UserName)
+    .ExecuteFetchAllAsync();
+
+var aboveAverage = await db.Users()
+    .Where(u => u.Orders.Average(o => o.Total) > 100m)
+    .Select(u => u.UserName)
     .ExecuteFetchAllAsync();
 ```
 
-Both `Avg` and `Average` are accepted. Follows the existing `Count()` correlated-subquery pattern.
+Both `Avg` and `Average` are accepted. Follows the existing `Count()` correlated-subquery pattern. v0.3.0 supports these aggregates in `Where`/`Having`/comparison predicates; projecting them directly into a `Select` tuple is planned for a later release.
 
 #### New Query Terminals (#145)
 

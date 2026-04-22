@@ -290,12 +290,11 @@ db.Orders().Where(o => o.Tags.Any(t => t.Name == "urgent"));
 ```csharp
 db.Users().Where(u => u.Orders.Any(o => o.Total > 100));
 db.Users().Where(u => u.Orders.Count() > 5);
-db.Users().Select(u => (
-    u.UserName,
-    OrderTotal: u.Orders.Sum(o => o.Total),
-    BiggestOrder: u.Orders.Max(o => o.Total)
-));
+db.Users().Where(u => u.Orders.Sum(o => o.Total) > 1000);
+db.Users().Where(u => u.Orders.Max(o => o.Total) >= 300);
 ```
+
+`Sum`/`Min`/`Max`/`Avg`/`Average` on `Many<T>` compile to correlated scalar subqueries in predicate positions. Using them as a projected column in `Select` is not yet supported — use `Where` or `Having` instead.
 
 ### Aggregates
 
