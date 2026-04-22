@@ -35,8 +35,8 @@ results.Add(await Run("querying.md / llm.md — Many<T>.Average in Where clause"
 results.Add(await Run("querying.md / llm.md / release notes — window functions tuple (Rank/Sum-OVER/Lag)",
     () => WindowFunctions(db)));
 
-results.Add(await Run("querying.md — Sql.Raw<string> projection tuple",
-    () => SqlRawProjection(db)));
+results.Add(await Run("querying.md — Sql.Raw<bool> in Where clause",
+    () => SqlRawInWhere(db)));
 
 results.Add(await Run("CodeFixes README — Join with condition + Select tuple",
     () => JoinWithCondition(db)));
@@ -153,16 +153,14 @@ static async Task<string> WindowFunctions(AppDb db)
 }
 
 
-// docs/articles/querying.md — Sql.Raw inside a Select tuple
-static async Task<string> SqlRawProjection(AppDb db)
+// docs/articles/querying.md — Sql.Raw<bool> inside a Where clause (supported form)
+static async Task<string> SqlRawInWhere(AppDb db)
 {
-    var rows = await db.Orders()
-        .Select(o => (
-            o.OrderId,
-            Bucket: Sql.Raw<string>("CASE WHEN \"Total\" < 100 THEN 'small' ELSE 'large' END")
-        ))
+    var big = await db.Orders()
+        .Where(o => Sql.Raw<bool>("\"Total\" BETWEEN {0} AND {1}", 100m, 250m))
+        .Select(o => o.OrderId)
         .ExecuteFetchAllAsync();
-    return $"{rows.Count} rows; first = ({rows[0].OrderId}, {rows[0].Bucket})";
+    return $"{big.Count} orders with Total between 100 and 250 (first = {big[0]})";
 }
 
 

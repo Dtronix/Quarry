@@ -265,15 +265,14 @@ When the built-in operators and string methods are not enough, `Sql.Raw<T>()` le
 // Raw boolean expression in a Where clause
 db.Users().Where(u => Sql.Raw<bool>("\"Age\" > @p0", 18));
 
-// Raw expression in a Select projection
-db.Users().Select(u => (
-    u.UserName,
-    AgeGroup: Sql.Raw<string>("CASE WHEN \"Age\" < 18 THEN 'minor' ELSE 'adult' END")
-));
-
-// Multiple parameters
+// Multi-argument raw fragment
 db.Users().Where(u => Sql.Raw<bool>("\"Age\" BETWEEN @p0 AND @p1", 18, 65));
+
+// Custom function call
+db.Users().Where(u => Sql.Raw<bool>("custom_predicate({0})", u.UserId));
 ```
+
+`Sql.Raw<T>` is supported in predicate positions — `Where`, `Having`, and boolean subquery fragments. Using it in a `Select` projection is not yet supported and will silently render as an empty fragment.
 
 The generator emits QRY008 (warning) when `Sql.Raw` is used, as a reminder to verify that user input is not concatenated into the SQL string. Always pass dynamic values through the parameter placeholders. Placeholder mismatch (e.g., referencing `@p2` when only two arguments are provided) produces compile error QRY029.
 
