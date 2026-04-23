@@ -1187,5 +1187,41 @@ internal class CrossDialectSubqueryTests
         public decimal OrderTotal { get; set; }
     }
 
+    /// <summary>
+    /// Locks in current behavior: Many&lt;T&gt;.Sum/Min/Max/Avg in Select projects to a
+    /// non-nullable CLR type matching the existing Sql.* aggregate convention. Empty
+    /// nav collections (e.g., Charlie has no orders) emit SQL NULL which fails to read
+    /// into the non-nullable carrier — same trade-off the existing Where path takes.
+    /// Users wanting empty-safe semantics should filter the empty case
+    /// (e.g., <c>.Where(u =&gt; u.Orders.Any())</c>) before projecting.
+    /// </summary>
+    [Test]
+    public async Task Select_Many_Sum_OnEmptyNavigation_ThrowsAtRead()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var lt = Lite.Users()
+            .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
+            .Prepare();
+
+        // SQL renders correctly (no .Where filter); only the read fails on Charlie's NULL.
+        Assert.That(
+            lt.ToDiagnostics().Sql,
+            Is.EqualTo("SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\""));
+
+        // Reading SQL NULL into non-nullable decimal must throw — confirms empty-set caveat.
+        // Quarry wraps the underlying InvalidOperationException ("data is NULL at ordinal N")
+        // in a QuarryQueryException; we assert on message content rather than exception type
+        // so this test isn't coupled to the wrapping detail.
+        Exception? caught = null;
+        try { await lt.ExecuteFetchAllAsync(); }
+        catch (Exception ex) { caught = ex; }
+        Assert.That(caught, Is.Not.Null, "Expected an exception reading SQL NULL into non-nullable decimal");
+        Assert.That(caught!.Message + " " + (caught.InnerException?.Message ?? ""),
+            Does.Contain("NULL"),
+            "Exception should reference NULL data — locks in the empty-set caveat");
+    }
+
     #endregion
 }

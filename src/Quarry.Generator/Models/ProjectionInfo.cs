@@ -135,14 +135,16 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
             && JoinedEntityAlias == other.JoinedEntityAlias
             && EqualityHelpers.SequenceEqual(Columns, other.Columns)
             && EqualityHelpers.SequenceEqual(ProjectionParameters, other.ProjectionParameters)
-            && EqualityHelpers.SequenceEqual(SqlRawValidationErrors, other.SqlRawValidationErrors);
+            && EqualityHelpers.SequenceEqual(SqlRawValidationErrors, other.SqlRawValidationErrors)
+            && EqualityHelpers.SequenceEqual(LambdaParameterNames, other.LambdaParameterNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as ProjectionInfo);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count, JoinedEntityAlias);
+        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count, JoinedEntityAlias,
+            LambdaParameterNames?.Count ?? 0);
     }
 }
 
@@ -343,7 +345,7 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
             && ForeignKeyEntityName == other.ForeignKeyEntityName
             && IsEnum == other.IsEnum
             && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops)
-            && ReferenceEquals(SubqueryExpression, other.SubqueryExpression)
+            && EqualityComparer<IR.SqlExpr?>.Default.Equals(SubqueryExpression, other.SubqueryExpression)
             && OuterParameterName == other.OuterParameterName;
     }
 

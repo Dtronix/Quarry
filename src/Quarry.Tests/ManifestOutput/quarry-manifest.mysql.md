@@ -1048,6 +1048,14 @@ SELECT `t0`.`UserName`, `t1`.`Total`, (SELECT COUNT(*) FROM `orders` AS `sq0` WH
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `t0`.`UserName`, `t1`.`Total`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `t0`.`UserId`) AS `OrderTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `t0`.`UserName`, `t1`.`Total`, LAG(`t1`.`Total`, 1, ?) OVER (ORDER BY `t1`.`OrderDate`) AS `PrevTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
 ```
 
@@ -2354,6 +2362,14 @@ SELECT `UserName`, (SELECT AVG(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `UserName`, (SELECT MAX(`j0`.`AddressId`) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `MaxAddrId` FROM `users` WHERE EXISTS (SELECT 1 FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `users`.`UserId`)
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `UserName`, (SELECT MAX(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `MaxOrder` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)
 ```
 
@@ -2739,7 +2755,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 364 |
+| Total discovered | 366 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 69 |
-| Rendered | 295 |
+| Rendered | 297 |

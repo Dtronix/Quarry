@@ -769,6 +769,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.CteInnerChainNotAnalyzable,
         DiagnosticDescriptors.FromCteWithoutWith,
         DiagnosticDescriptors.DuplicateCteName,
+        DiagnosticDescriptors.ProjectionSubqueryUnresolved,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

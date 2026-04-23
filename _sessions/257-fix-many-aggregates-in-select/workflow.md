@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #257
 pr:
@@ -78,3 +78,5 @@ Codepath confirmed:
 | 1 | 2026-04-22 IMPLEMENT |  | Phases 1-3: ProjectedColumn.SubqueryExpression field, ProjectionAnalyzer detection of nav-aggregates, BuildProjection bind+render. SQLite repro test passes. 3243 tests green. |
 | 1 | 2026-04-22 IMPLEMENT |  | Phase 4: cross-dialect Select_Many_{Count,Sum,Min,Max,Average} + multi-aggregate repro + DTO + joined-context tests. 3250 tests green. |
 | 1 | 2026-04-23 IMPLEMENT |  | Phase 5: QRY073 sanity test (descriptor well-formed). End-to-end emission test deferred — requires constructing a source that compiles but has unresolvable navigation; non-trivial setup. 3251 tests green. |
+| 1 | 2026-04-23 REVIEW |  | Agent review pass: 23 findings (1 High, 3 Medium, 11 Low + positives). Critical: QRY073 was plumbed but NOT registered in s_deferredDescriptors → silently dropped. End-to-end emission test (deferred in Phase 5) would have caught it. |
+| 1 | 2026-04-23 REMEDIATE |  | All 5 A items + 2 B items addressed: QRY073 registration, equality fixes for ProjectedColumn/ProjectionInfo, joined Sum test, HasManyThrough Max test, empty-set assertion test, end-to-end QRY073 emission test (now exercises real bind failure via unregistered context entity). 3255 tests green. |
