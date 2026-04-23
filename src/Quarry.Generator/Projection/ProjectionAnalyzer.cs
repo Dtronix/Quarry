@@ -2338,10 +2338,13 @@ internal static class ProjectionAnalyzer
     ///
     /// Output is canonical: identifiers as <c>{Col}</c>, parameters as <c>@__proj{N}</c>, and
     /// boolean literals as <c>{@BOOLT}</c>/<c>{@BOOLF}</c> — all resolved to dialect-specific text
-    /// later by <see cref="SqlFormatting.QuoteSqlExpression"/>. This walker intentionally duplicates
-    /// a subset of <see cref="SqlExprRenderer"/>'s logic because its output is canonical rather than
-    /// dialect-rendered. Future consolidation would require <see cref="SqlExprRenderer"/> to support
-    /// a canonical-projection output mode — see issue-tracker follow-up.
+    /// later by <see cref="SqlFormatting.QuoteSqlExpression"/>. The binary-operator table is
+    /// shared with <see cref="SqlExprRenderer.GetSqlOperator"/> to prevent drift. The remaining
+    /// shape-level duplication (IN/LIKE/IS NULL/function-call/unary emission) is kept local
+    /// because those render paths in <see cref="SqlExprRenderer"/> also invoke dialect-sensitive
+    /// recursion that the canonical walker must not enter; full consolidation would require
+    /// <see cref="SqlExprRenderer"/> to grow a canonical-projection output mode with delegate
+    /// hooks for column resolution, captured-value accumulation, and literal rendering.
     /// </summary>
     private static string? RenderRawArgNode(
         SqlExpr node,
@@ -2374,7 +2377,7 @@ internal static class ProjectionAnalyzer
                 if (left == null) return null;
                 var right = RenderRawArgNode(bin.Right, projectionParams, resolveColumn, isStringColumn);
                 if (right == null) return null;
-                return $"({left} {GetRawBinaryOperator(bin.Operator)} {right})";
+                return $"({left} {SqlExprRenderer.GetSqlOperator(bin.Operator)} {right})";
             }
 
             case UnaryOpExpr unary:
@@ -2593,32 +2596,6 @@ internal static class ProjectionAnalyzer
         return column.ClrType == "string" || column.ClrType == "char";
     }
 
-    /// <summary>
-    /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Mirrors the mapping in
-    /// <see cref="SqlExprRenderer"/>. Throws on unknown operators rather than emitting a sentinel
-    /// string — silently emitting an unrecognized operator into SQL would reintroduce the
-    /// silent-wrong-SQL failure mode this PR fixes.
-    /// </summary>
-    private static string GetRawBinaryOperator(SqlBinaryOperator op) => op switch
-    {
-        SqlBinaryOperator.Equal => "=",
-        SqlBinaryOperator.NotEqual => "<>",
-        SqlBinaryOperator.LessThan => "<",
-        SqlBinaryOperator.GreaterThan => ">",
-        SqlBinaryOperator.LessThanOrEqual => "<=",
-        SqlBinaryOperator.GreaterThanOrEqual => ">=",
-        SqlBinaryOperator.And => "AND",
-        SqlBinaryOperator.Or => "OR",
-        SqlBinaryOperator.Add => "+",
-        SqlBinaryOperator.Subtract => "-",
-        SqlBinaryOperator.Multiply => "*",
-        SqlBinaryOperator.Divide => "/",
-        SqlBinaryOperator.Modulo => "%",
-        SqlBinaryOperator.BitwiseAnd => "&",
-        SqlBinaryOperator.BitwiseOr => "|",
-        SqlBinaryOperator.BitwiseXor => "^",
-        _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported SqlBinaryOperator in Sql.Raw projection arg."),
-    };
 
     // ─── End Sql.Raw in Select projection ──────────────────────────────────
 
