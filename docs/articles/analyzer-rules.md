@@ -90,12 +90,21 @@ No additional configuration is required. All QRA rules are enabled by default an
 |---|---|---|
 | QRY040 | Warning | SQL manifest write failure (see [SQL Manifest](sql-manifest.md)) |
 
-### Raw SQL Resolution (QRY041--QRY042)
+### Raw SQL Resolution (QRY041--QRY043)
 
 | Code | Severity | Description |
 |---|---|---|
 | QRY041 | Warning | `RawSqlAsync` literal SQL has an unresolvable column or un-aliased expression |
 | QRY042 | Info | `RawSqlAsync` call is convertible to a chain query (code fix available) |
+| QRY043 | Error | `RawSqlAsync<T>` / `RawSqlScalarAsync<T>` row entity `T` is not materializable — positional record, init-only property, abstract class, or interface. Project on a chain query with `Select(x => new Dto { ... })` for immutable shapes |
+
+### Project Setup (QRY044)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY044 | Warning | `[QuarryContext]` class's namespace is not listed in the MSBuild `<InterceptorsNamespaces>` property. Without it, C# 12 interceptors for that namespace are ignored and every terminal call fails with `CS9137`. The diagnostic message includes the exact csproj line to paste |
+
+Analyzer-only diagnostic (ships in `Quarry.Analyzers`); no code fix, because the target is the `.csproj`, not a source document. `Quarry.Generated` is auto-registered by the shipped `build/Quarry.targets` so consumers only need to list their own context namespaces.
 
 ### Migration (QRY050--QRY055)
 

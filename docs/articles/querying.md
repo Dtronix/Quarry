@@ -272,9 +272,21 @@ db.Users().Where(u => Sql.Raw<bool>("\"Age\" BETWEEN @p0 AND @p1", 18, 65));
 db.Users().Where(u => Sql.Raw<bool>("custom_predicate({0})", u.UserId));
 ```
 
-`Sql.Raw<T>` is supported in predicate positions — `Where`, `Having`, and boolean subquery fragments. Using it in a `Select` projection is not yet supported and will silently render as an empty fragment.
+`Sql.Raw<T>` is supported in predicate positions (`Where`, `Having`, boolean subquery fragments) and in `Select` projections — single-entity tuples/DTOs, joined projections, and single-column projections. Supported argument kinds inside a projection include column references, compile-time constants, captured runtime values, and IR expressions (e.g., `u.Price * 2`):
 
-The generator emits QRY008 (warning) when `Sql.Raw` is used, as a reminder to verify that user input is not concatenated into the SQL string. Always pass dynamic values through the parameter placeholders. Placeholder mismatch (e.g., referencing `@p2` when only two arguments are provided) produces compile error QRY029.
+```csharp
+// Single-column Sql.Raw projection
+db.Users().Select(u => Sql.Raw<string>("UPPER({0})", u.UserName));
+
+// Sql.Raw inside a tuple projection with a column ref and a captured value
+var cutoff = 100m;
+db.Orders().Select(o => (
+    o.OrderId,
+    Discounted: Sql.Raw<decimal>("{0} * 0.9", o.Total),
+    OverCutoff: Sql.Raw<bool>("{0} > @p0", o.Total, cutoff)));
+```
+
+The generator emits QRY008 (warning) when `Sql.Raw` is used, as a reminder to verify that user input is not concatenated into the SQL string. Always pass dynamic values through the parameter placeholders. Placeholder mismatch (e.g., referencing `@p2` when only two arguments are provided) produces compile error QRY029 — this now fires from Where/Having and Select projection positions alike.
 
 ## Conditional Branches
 

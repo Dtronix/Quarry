@@ -28,6 +28,8 @@ Enable interceptors by adding your context's namespace to `InterceptorsNamespace
 
 Replace `MyApp.Data` with the namespace containing your `QuarryContext` subclass. If your context has no namespace, use `Quarry.Generated`.
 
+Quarry's NuGet `build/Quarry.targets` auto-registers the generator's internal `Quarry.Generated` namespace, so you only need to list your own context namespaces. If you forget, the `QRY044` analyzer points at each `[QuarryContext]` class whose namespace is missing and prints the exact csproj line to paste.
+
 ### Optional: Quarry.Analyzers
 
 The `Quarry.Analyzers` package adds a set of compile-time analysis rules (the QRA series) that catch common mistakes and suggest improvements to your query code. These rules run alongside the generator during compilation and provide warnings, errors, and code fixes directly in your IDE.

@@ -241,4 +241,6 @@ For multiple contexts in different namespaces, add each one:
 </PropertyGroup>
 ```
 
-**If you forget this property or use the wrong namespace**, the interceptors will not activate. The code will still compile, but every query and modification call will hit the carrier base class methods, which throw `NotSupportedException` at runtime with a message like "Carrier method ... is not intercepted in this optimized chain." If you see this exception, check that `InterceptorsNamespaces` includes the namespace of your `QuarryContext` subclass.
+Quarry's NuGet `build/Quarry.targets` auto-registers the generator's internal `Quarry.Generated` namespace, so you only need to list your own context namespaces.
+
+**If you forget this property or use the wrong namespace**, the `QRY044` analyzer emits a warning at each `[QuarryContext]` class whose namespace is missing, with the exact csproj line to paste. If the warning is suppressed or ignored, the build then fails with `CS9137` (C# 12 interceptors for an unregistered namespace). Add the printed entry to resolve both.

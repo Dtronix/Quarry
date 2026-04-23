@@ -141,7 +141,8 @@ db.Users().Where(u => u.Orders.Count() > 5);                       // scalar COU
 db.Users().Where(u => u.Orders.Sum(o => o.Total) > 100);                        // correlated SUM subquery
 db.Users().Where(u => u.Orders.Max(o => o.Total) >= 300);                       // correlated MAX
 db.Users().Where(u => u.Orders.Average(o => o.Total) > 100);                    // alias: Avg
-// Note: Many<T> Sum/Min/Max/Avg are supported in Where/Having/comparisons only; not yet in Select projections.
+// Also supported in Select projections (tuples, DTOs, joined-context). QRY074 (error) surfaces unresolvable nav aggregates.
+db.Users().Select(u => (u.UserName, Orders: u.Orders.Count(), Total: u.Orders.Sum(o => o.Total)));
 
 // One<T> navigation (requires `!.` on nullable nav property)
 db.Orders().Where(o => o.User!.IsActive);
