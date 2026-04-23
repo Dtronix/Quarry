@@ -1370,12 +1370,20 @@ SELECT [UserId], 'fixed' AS [Literal] FROM [users]
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [UserId], CASE WHEN [IsActive] THEN 1 ELSE 0 END AS [Flag] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [UserId], CASE WHEN [UserId] > @p0 THEN 'high' ELSE 'low' END AS [Bucket] FROM [users]
 ```
 
 | Parameter | Type |
 |-----------|------|
-| `@p0` | `object` |
+| `@p0` | `int` |
 
 ---
 
@@ -2759,7 +2767,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 365 |
+| Total discovered | 366 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 68 |
-| Rendered | 297 |
+| Rendered | 298 |

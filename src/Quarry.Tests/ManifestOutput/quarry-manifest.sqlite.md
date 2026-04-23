@@ -2001,12 +2001,20 @@ SELECT "UserId", 'fixed' AS "Literal" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", CASE WHEN "IsActive" THEN 1 ELSE 0 END AS "Flag" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", CASE WHEN "UserId" > @p0 THEN 'high' ELSE 'low' END AS "Bucket" FROM "users"
 ```
 
 | Parameter | Type |
 |-----------|------|
-| `@p0` | `object` |
+| `@p0` | `int` |
 
 ---
 
@@ -2031,6 +2039,18 @@ SELECT "UserId", UPPER("UserName") AS "UserName", "IsActive" FROM "users"
 ```sql
 SELECT "UserId", bucket(("UserId" * 10)) AS "Scaled" FROM "users"
 ```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", coalesce("CreatedAt", @p0) AS "Stamp" FROM "users"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `DateTime` |
 
 ---
 
@@ -4142,7 +4162,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 620 |
+| Total discovered | 622 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 183 |
-| Rendered | 437 |
+| Rendered | 439 |

@@ -361,6 +361,47 @@ internal class CrossDialectMiscTests
             ss:     "SELECT [UserId], bucket(([UserId] * 10)) AS [Scaled] FROM [users]");
     }
 
+    [Test]
+    public async Task Select_SqlRaw_BooleanLiteralArg_DialectAware()
+    {
+        // Boolean literals inline: SqlServer uses 1/0 (no TRUE/FALSE keywords), others use TRUE/FALSE.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, Flag: Sql.Raw<bool>("CASE WHEN {0} THEN {1} ELSE {2} END", u.IsActive, true, false))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Flag: Sql.Raw<bool>("CASE WHEN {0} THEN {1} ELSE {2} END", u.IsActive, true, false))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Flag: Sql.Raw<bool>("CASE WHEN {0} THEN {1} ELSE {2} END", u.IsActive, true, false))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Flag: Sql.Raw<bool>("CASE WHEN {0} THEN {1} ELSE {2} END", u.IsActive, true, false))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", CASE WHEN \"IsActive\" THEN 1 ELSE 0 END AS \"Flag\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", CASE WHEN \"IsActive\" THEN TRUE ELSE FALSE END AS \"Flag\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, CASE WHEN `IsActive` THEN 1 ELSE 0 END AS `Flag` FROM `users`",
+            ss:     "SELECT [UserId], CASE WHEN [IsActive] THEN 1 ELSE 0 END AS [Flag] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_CapturedVariable_TypeInferredFromSemanticModel()
+    {
+        // Regression test for #256 review #4: captured-variable ClrType must come from the
+        // semantic model, not the SqlExprParser default of "object". A captured DateTime
+        // variable should surface in diagnostic parameters with TypeName == "DateTime", not
+        // "object" — which would otherwise misbind parameter types at runtime.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var since = new System.DateTime(2024, 1, 1);
+        var prepared = Lite.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
+        var diag = prepared.ToDiagnostics();
+
+        Assert.That(diag.Parameters, Has.Count.EqualTo(1), "one captured parameter expected");
+        var p = diag.Parameters[0];
+        Assert.That(p.TypeName, Is.EqualTo("DateTime"),
+            "captured DateTime must carry TypeName 'DateTime', not 'object' (#256 review finding #4)");
+    }
+
     #endregion
 
     #region Instance Field Capture

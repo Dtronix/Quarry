@@ -1558,6 +1558,16 @@ internal static class ProjectionAnalyzer
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, resultType, new[] { column });
             }
+
+            // Sql.Raw must fail loudly — see AnalyzeProjectedExpression for rationale. In the
+            // single-column path the fallback CreateFailed below already fires on unmatched
+            // invocations, but we emit a more specific message here.
+            if (methodName == "Raw")
+                return ProjectionInfo.CreateFailed(resultType,
+                    "Sql.Raw<T>(template, args...) in a projection requires a compile-time " +
+                    "string template with matching {0}/{1}/... placeholder/argument counts and " +
+                    "supported argument expressions (column references, compile-time constants, " +
+                    "captured locals/parameters, and simple IR expressions). See issue #256.");
         }
 
         // Check for string method calls on columns: u.UserName.Substring(0, 3), u.UserName.ToLower(), etc.
@@ -1721,6 +1731,15 @@ internal static class ProjectionAnalyzer
                     isValueType: true, // Aggregate results are always value types
                     readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
             }
+
+            // Sql.Raw specifically must fail loudly — the generic type-info fallback below would
+            // produce a ProjectedColumn with columnName="" and isAggregateFunction=false, which
+            // StripNonAggregateSqlExpressions nulls out, leaving SqlAssembler to emit an empty
+            // identifier. That exactly reproduces the #256 symptom the fix is meant to prevent.
+            // Returning null here causes the caller to report a failed projection with a specific
+            // error message rather than silently emitting wrong SQL.
+            if (methodName == "Raw")
+                return null;
         }
 
         // String method calls on columns: u.UserName.Substring(0, 3), u.UserName.ToLower()
@@ -2012,30 +2031,51 @@ internal static class ProjectionAnalyzer
         if (template == null)
             return (null, null);
 
-        // Validate placeholder/arg count using the same rules as RawCallExpr.
-        var renderedArgs = new string[arguments.Count - 1];
-        for (int i = 1; i < arguments.Count; i++)
-        {
-            var rendered = renderArg(arguments[i].Expression);
-            if (rendered == null)
-                return (null, null); // unsupported arg — bail out
-            renderedArgs[i - 1] = rendered;
-        }
-
-        // Validate template by constructing a RawCallExpr shell and invoking Validate().
-        // Use placeholder literals to drive the validation — the actual rendered values are
-        // substituted below in Substitute.
-        var shellArgs = new SqlExpr[renderedArgs.Length];
-        for (int i = 0; i < shellArgs.Length; i++)
-            shellArgs[i] = new SqlRawExpr(renderedArgs[i]);
-        var shell = new RawCallExpr(template, shellArgs);
-        if (shell.Validate() != null)
+        // Validate placeholder/arg count. Reuses RawCallExpr.Validate rules via a transient
+        // shell populated with empty placeholders; only the template text and argument count
+        // drive the validation, so shell contents need no semantic weight.
+        var argCount = arguments.Count - 1;
+        if (!IsRawTemplateValid(template, argCount))
             return (null, null);
 
-        // Resolve the generic type argument T from Sql.Raw<T>.
-        var clrType = TryExtractSqlRawTypeArg(invocation, semanticModel) ?? "object";
+        // Render each argument after validation succeeds (so we don't allocate ParameterInfo
+        // entries for a Raw call that turns out to be malformed).
+        var renderedArgs = new string[argCount];
+        for (int i = 0; i < argCount; i++)
+        {
+            var rendered = renderArg(arguments[i + 1].Expression);
+            if (rendered == null)
+                return (null, null); // unsupported arg — bail out
+            renderedArgs[i] = rendered;
+        }
+
+        // Resolve the generic type argument T from Sql.Raw<T>. If T cannot be resolved (e.g. a
+        // generated entity type not yet in the semantic model, or an ambiguous generic binding),
+        // fail the projection rather than falling back to "object" — "object" triggers the
+        // aggregate-type pattern-matcher in ChainAnalyzer.TryResolveAggregateTypeFromSql, which
+        // could mis-infer a CLR type by matching a SUM/MIN/MAX substring in the user's raw template.
+        var clrType = TryExtractSqlRawTypeArg(invocation, semanticModel);
+        if (clrType == null)
+            return (null, null);
 
         return (SubstituteTemplatePlaceholders(template, renderedArgs), clrType);
+    }
+
+    /// <summary>
+    /// Validates a Sql.Raw template against an argument count, mirroring the rules in
+    /// <see cref="RawCallExpr.Validate"/>: placeholders must be sequential starting at {0},
+    /// all referenced indices must be supplied, and no extra arguments may be present.
+    /// Returns true when the template is valid for the given argument count.
+    /// </summary>
+    private static bool IsRawTemplateValid(string template, int argCount)
+    {
+        // Build a transient RawCallExpr — only template text + argument count participate
+        // in validation; argument subtree contents are irrelevant, so empty placeholders are
+        // sufficient and we do not retain the shell beyond this call.
+        var empty = new SqlExpr[argCount];
+        for (int i = 0; i < argCount; i++)
+            empty[i] = new SqlRawExpr(string.Empty);
+        return new RawCallExpr(template, empty).Validate() == null;
     }
 
     /// <summary>
@@ -2114,10 +2154,18 @@ internal static class ProjectionAnalyzer
 
     /// <summary>
     /// Renders a single <c>Sql.Raw&lt;T&gt;</c> argument expression into canonical SQL text with
-    /// projection-layer placeholders. Parses via <see cref="SqlExprParser"/> and walks the resulting
-    /// tree, delegating column-reference resolution to <paramref name="resolveColumn"/>. Non-column
-    /// nodes (literals, captured vars, binary/unary ops, function calls, IS NULL, IN, LIKE, sub-raw)
-    /// render inline. Returns null for unsupported node kinds.
+    /// projection-layer placeholders.
+    ///
+    /// Fast-path: delegates to <see cref="ResolveScalarArgSql"/> for simple scalar args (compile-time
+    /// constants and directly-referenced captured locals/parameters). This path consults the semantic
+    /// model for authoritative CLR type info, so captured variables land in <see cref="ParameterInfo"/>
+    /// with the correct type (e.g. <c>int</c>) rather than the <see cref="SqlExprParser"/> default of
+    /// <c>object</c>. Column references and complex expressions fall through to the IR walker.
+    ///
+    /// Walker path: parses via <see cref="SqlExprParser"/> and walks the resulting tree, delegating
+    /// column-reference resolution to <paramref name="resolveColumn"/>. Non-column nodes (literals,
+    /// captured vars, binary/unary ops, function calls, IS NULL, IN, LIKE, sub-raw) render inline.
+    /// Returns null for unsupported node kinds.
     /// </summary>
     private static string? RenderRawArgToCanonical(
         ExpressionSyntax arg,
@@ -2126,6 +2174,15 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         Func<ColumnRefExpr, string?> resolveColumn)
     {
+        // Fast-path: scalar arg that ResolveScalarArgSql can handle with correct semantic-model
+        // type inference. Column refs (u.Xxx) and complex expressions drop through to the walker.
+        if (IsScalarArgCandidate(arg, lambdaParameterName))
+        {
+            var scalar = ResolveScalarArgSql(arg, semanticModel, projectionParams);
+            if (scalar != null)
+                return scalar;
+        }
+
         var lambdaParams = new HashSet<string> { lambdaParameterName };
         var parsed = SqlExprParser.Parse(arg, lambdaParams);
         return RenderRawArgNode(parsed, projectionParams, resolveColumn);
@@ -2143,8 +2200,75 @@ internal static class ProjectionAnalyzer
         HashSet<string> lambdaParameterNames,
         Func<ColumnRefExpr, string?> resolveColumn)
     {
+        if (IsScalarArgCandidateJoined(arg, lambdaParameterNames))
+        {
+            var scalar = ResolveScalarArgSql(arg, semanticModel, projectionParams);
+            if (scalar != null)
+                return scalar;
+        }
+
         var parsed = SqlExprParser.Parse(arg, lambdaParameterNames);
         return RenderRawArgNode(parsed, projectionParams, resolveColumn);
+    }
+
+    /// <summary>
+    /// Returns true when an argument expression is a candidate for <see cref="ResolveScalarArgSql"/>.
+    /// Specifically: an identifier that is not the lambda parameter, a non-boolean literal, or a
+    /// member-access chain that does not start with the lambda parameter. Excludes column references
+    /// so the walker can resolve them against the column lookup. Excludes boolean literals because
+    /// <see cref="SqlLikeHelpers.FormatConstantAsSqlLiteral"/> emits <c>TRUE</c>/<c>FALSE</c>
+    /// unconditionally — the walker's <see cref="FormatLiteralForProjection"/> is dialect-aware and
+    /// produces <c>1</c>/<c>0</c> for SqlServer.
+    /// </summary>
+    private static bool IsScalarArgCandidate(ExpressionSyntax arg, string lambdaParameterName)
+    {
+        if (arg is LiteralExpressionSyntax literal)
+            return !IsBooleanLiteral(literal);
+
+        if (arg is IdentifierNameSyntax id)
+            return id.Identifier.Text != lambdaParameterName;
+
+        if (arg is MemberAccessExpressionSyntax ma && !StartsWithParameter(ma, lambdaParameterName))
+            return true;
+
+        return false;
+    }
+
+    private static bool IsScalarArgCandidateJoined(ExpressionSyntax arg, HashSet<string> lambdaParameterNames)
+    {
+        if (arg is LiteralExpressionSyntax literal)
+            return !IsBooleanLiteral(literal);
+
+        if (arg is IdentifierNameSyntax id)
+            return !lambdaParameterNames.Contains(id.Identifier.Text);
+
+        if (arg is MemberAccessExpressionSyntax ma)
+        {
+            var root = UnwrapToRootIdentifier(ma);
+            return root == null || !lambdaParameterNames.Contains(root);
+        }
+
+        return false;
+    }
+
+    private static bool IsBooleanLiteral(LiteralExpressionSyntax literal)
+    {
+        var kind = literal.Kind();
+        return kind == SyntaxKind.TrueLiteralExpression || kind == SyntaxKind.FalseLiteralExpression;
+    }
+
+    private static bool StartsWithParameter(MemberAccessExpressionSyntax ma, string paramName)
+    {
+        var root = UnwrapToRootIdentifier(ma);
+        return root != null && root == paramName;
+    }
+
+    private static string? UnwrapToRootIdentifier(MemberAccessExpressionSyntax ma)
+    {
+        ExpressionSyntax current = ma;
+        while (current is MemberAccessExpressionSyntax inner)
+            current = inner.Expression;
+        return current is IdentifierNameSyntax id ? id.Identifier.Text : null;
     }
 
     /// <summary>
@@ -2152,6 +2276,13 @@ internal static class ProjectionAnalyzer
     /// tree. Uses a column-resolver delegate so the same walker serves single-entity and joined
     /// contexts. Returns null if any node in the tree is unsupported (subquery, navigation, nested
     /// raw, unresolved captured variables, etc.).
+    ///
+    /// Output is canonical: identifiers as <c>{Col}</c>, parameters as <c>@__proj{N}</c>, and
+    /// boolean literals as <c>{@BOOLT}</c>/<c>{@BOOLF}</c> — all resolved to dialect-specific text
+    /// later by <see cref="SqlFormatting.QuoteSqlExpression"/>. This walker intentionally duplicates
+    /// a subset of <see cref="SqlExprRenderer"/>'s logic because its output is canonical rather than
+    /// dialect-rendered. Future consolidation would require <see cref="SqlExprRenderer"/> to support
+    /// a canonical-projection output mode — see issue-tracker follow-up.
     /// </summary>
     private static string? RenderRawArgNode(
         SqlExpr node,
@@ -2171,6 +2302,13 @@ internal static class ProjectionAnalyzer
 
             case BinaryOpExpr bin:
             {
+                // Guard against silent string-concat-on-wrong-dialect: if an Add has a string-typed
+                // literal operand, the user likely means string concat, but emitting "a + b" is
+                // invalid on MySQL/SqlServer (which use CONCAT(a, b)). Bail here so the caller
+                // reports a loud failure; users who want concat should write it in the template.
+                if (bin.Operator == SqlBinaryOperator.Add && HasStringOperand(bin))
+                    return null;
+
                 var left = RenderRawArgNode(bin.Left, projectionParams, resolveColumn);
                 if (left == null) return null;
                 var right = RenderRawArgNode(bin.Right, projectionParams, resolveColumn);
@@ -2270,9 +2408,13 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Formats a <see cref="LiteralExpr"/> node as inline SQL text for projection-argument use.
+    /// Formats a <see cref="LiteralExpr"/> node as canonical SQL text for projection-argument use.
     /// Matches the conventions of <see cref="SqlExprRenderer"/> for string/char escaping and
-    /// NULL/boolean handling.
+    /// NULL handling. Booleans emit the canonical placeholder <c>{@BOOLT}</c>/<c>{@BOOLF}</c>
+    /// rather than a dialect-rendered literal because the projection analyzer runs at a fixed
+    /// discovery dialect — dialect-specific boolean rendering is deferred to
+    /// <see cref="SqlFormatting.QuoteSqlExpression"/>, which resolves the placeholder to
+    /// <c>TRUE</c>/<c>FALSE</c> on PostgreSQL and <c>1</c>/<c>0</c> elsewhere.
     /// </summary>
     private static string FormatLiteralForProjection(LiteralExpr literal)
     {
@@ -2282,9 +2424,8 @@ internal static class ProjectionAnalyzer
         switch (literal.ClrType)
         {
             case "bool":
-                return literal.SqlText == "TRUE" || literal.SqlText == "true" || literal.SqlText == "1"
-                    ? "TRUE"
-                    : "FALSE";
+                var isTrueish = literal.SqlText == "TRUE" || literal.SqlText == "true" || literal.SqlText == "1";
+                return isTrueish ? "{@BOOLT}" : "{@BOOLF}";
 
             case "string":
             case "char":
@@ -2326,6 +2467,23 @@ internal static class ProjectionAnalyzer
         projectionParams.Add(paramInfo);
         return placeholder;
     }
+
+    /// <summary>
+    /// Returns true if either operand of a binary expression is a string-typed literal or contains
+    /// one directly. Used to guard the <see cref="SqlBinaryOperator.Add"/> walker path from emitting
+    /// <c>+</c> for what is likely a string concatenation — invalid on MySQL/SqlServer.
+    /// </summary>
+    private static bool HasStringOperand(BinaryOpExpr bin)
+    {
+        return IsStringTypedNode(bin.Left) || IsStringTypedNode(bin.Right);
+    }
+
+    private static bool IsStringTypedNode(SqlExpr node) => node switch
+    {
+        LiteralExpr lit => lit.ClrType == "string" || lit.ClrType == "char",
+        CapturedValueExpr cap => cap.ClrType == "string" || cap.ClrType == "char",
+        _ => false
+    };
 
     /// <summary>
     /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Mirrors the mapping in
