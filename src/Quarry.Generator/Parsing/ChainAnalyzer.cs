@@ -2033,7 +2033,10 @@ internal static class ChainAnalyzer
                         if (registry.ByEntityName.TryGetValue(joinedEntityTypeNames[i], out var je))
                         {
                             joinedEntitiesForBind[lambdaParams[i]] = je;
-                            tableAliasesForBind[lambdaParams[i]] = je.TableName;
+                            // Joined queries qualify columns by t0/t1/... — match what the
+                            // outer SELECT/FROM emits so the subquery's correlation joins to
+                            // the right alias rather than the bare table name.
+                            tableAliasesForBind[lambdaParams[i]] = $"t{i}";
                         }
                     }
                     // Primary entity for binding is t0; ensure it points at the joined entry.

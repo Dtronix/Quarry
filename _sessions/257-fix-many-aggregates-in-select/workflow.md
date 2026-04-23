@@ -12,7 +12,7 @@ issue: #257
 pr:
 session: 1
 phases-total: 5
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 `Many<T>.Sum`, `Min`, `Max`, `Avg`/`Average` work in predicate positions (Where/Having/comparisons)
@@ -76,3 +76,4 @@ Codepath confirmed:
 |---|------------|-----------|---------|
 | 1 | 2026-04-22 INTAKE |  | Loaded issue #257, created worktree+branch, baseline 3242 tests green |
 | 1 | 2026-04-22 IMPLEMENT |  | Phases 1-3: ProjectedColumn.SubqueryExpression field, ProjectionAnalyzer detection of nav-aggregates, BuildProjection bind+render. SQLite repro test passes. 3243 tests green. |
+| 1 | 2026-04-22 IMPLEMENT |  | Phase 4: cross-dialect Select_Many_{Count,Sum,Min,Max,Average} + multi-aggregate repro + DTO + joined-context tests. 3250 tests green. |

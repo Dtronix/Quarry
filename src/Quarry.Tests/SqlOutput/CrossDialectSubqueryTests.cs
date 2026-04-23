@@ -947,21 +947,244 @@ internal class CrossDialectSubqueryTests
 
     #endregion
 
-    #region Issue #257 — Many<T>.Sum/Min/Max/Avg in Select projection (SQLite-only smoke test)
+    #region Issue #257 — Many<T>.Sum/Min/Max/Avg/Count in Select projection
 
     [Test]
-    public async Task Select_ManyAggregate_Sum_InTuple_Sqlite()
+    public async Task Select_Many_Count_InTuple()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.Users()
-            .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
+        var lt = Lite.Users().Select(u => (u.UserName, OrderCount: u.Orders.Count())).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserName, OrderCount: u.Orders.Count())).Prepare();
+        var my = My.Users().Select(u => (u.UserName, OrderCount: u.Orders.Count())).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserName, OrderCount: u.Orders.Count())).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderCount\" FROM \"users\"",
+            pg:     "SELECT \"UserName\", (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderCount\" FROM \"users\"",
+            mysql:  "SELECT `UserName`, (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderCount` FROM `users`",
+            ss:     "SELECT [UserName], (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderCount] FROM [users]");
+
+        // Alice 2, Bob 1, Charlie 0 — Count is safe to read even on empty sets (returns 0, never NULL).
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 1)));
+        Assert.That(results[2], Is.EqualTo(("Charlie", 0)));
+    }
+
+    [Test]
+    public async Task Select_Many_Sum_InTuple()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Filter Charlie out — Sum on empty sets returns NULL which can't read into non-nullable decimal.
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total))).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Alice: 250.00 + 75.50 = 325.50; Bob: 150.00.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 325.50m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    [Test]
+    public async Task Select_Many_Min_InTuple()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MinOrder: u.Orders.Min(o => o.Total))).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MinOrder: u.Orders.Min(o => o.Total))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MinOrder: u.Orders.Min(o => o.Total))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MinOrder: u.Orders.Min(o => o.Total))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT MIN(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"MinOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT MIN(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"MinOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT MIN(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `MinOrder` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT MIN([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [MinOrder] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Alice min: 75.50; Bob min: 150.00.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    [Test]
+    public async Task Select_Many_Max_InTuple()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MaxOrder: u.Orders.Max(o => o.Total))).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MaxOrder: u.Orders.Max(o => o.Total))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MaxOrder: u.Orders.Max(o => o.Total))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MaxOrder: u.Orders.Max(o => o.Total))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"MaxOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"MaxOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT MAX(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `MaxOrder` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT MAX([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [MaxOrder] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Alice max: 250.00; Bob max: 150.00.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    [Test]
+    public async Task Select_Many_Average_InTuple()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, AvgOrder: u.Orders.Average(o => o.Total))).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, AvgOrder: u.Orders.Average(o => o.Total))).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, AvgOrder: u.Orders.Average(o => o.Total))).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, AvgOrder: u.Orders.Average(o => o.Total))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"AvgOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"AvgOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT AVG(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `AvgOrder` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT AVG([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [AvgOrder] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        // Alice avg: (250.00 + 75.50) / 2 = 162.75; Bob avg: 150.00.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 162.75m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+    }
+
+    /// <summary>
+    /// Issue #257 exact repro: multiple navigation aggregates in one tuple Select.
+    /// Prior to the fix this emitted SELECT "UserName", "", "", "" with reader code
+    /// containing (?)r.GetValue(N) that didn't compile (CS0246 cascade).
+    /// </summary>
+    [Test]
+    public async Task Select_Many_MultipleAggregates_InTuple_Repro()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Any())
+            .Select(u => (
+                u.UserName,
+                OrderTotal:   u.Orders.Sum(o => o.Total),
+                BiggestOrder: u.Orders.Max(o => o.Total),
+                AverageOrder: u.Orders.Average(o => o.Total)))
+            .Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any())
+            .Select(u => (
+                u.UserName,
+                OrderTotal:   u.Orders.Sum(o => o.Total),
+                BiggestOrder: u.Orders.Max(o => o.Total),
+                AverageOrder: u.Orders.Average(o => o.Total)))
+            .Prepare();
+        var my = My.Users().Where(u => u.Orders.Any())
+            .Select(u => (
+                u.UserName,
+                OrderTotal:   u.Orders.Sum(o => o.Total),
+                BiggestOrder: u.Orders.Max(o => o.Total),
+                AverageOrder: u.Orders.Average(o => o.Total)))
+            .Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any())
+            .Select(u => (
+                u.UserName,
+                OrderTotal:   u.Orders.Sum(o => o.Total),
+                BiggestOrder: u.Orders.Max(o => o.Total),
+                AverageOrder: u.Orders.Average(o => o.Total)))
             .Prepare();
 
-        Assert.That(
-            lt.ToDiagnostics().Sql,
-            Is.EqualTo("SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\""));
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\", (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"BiggestOrder\", (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"AverageOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\", (SELECT MAX(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"BiggestOrder\", (SELECT AVG(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"AverageOrder\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal`, (SELECT MAX(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `BiggestOrder`, (SELECT AVG(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `AverageOrder` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal], (SELECT MAX([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [BiggestOrder], (SELECT AVG([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [AverageOrder] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo(("Alice", 325.50m, 250.00m, 162.75m)));
+        Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, 150.00m, 150.00m)));
+    }
+
+    [Test]
+    public async Task Select_Many_Sum_InDtoInitializer()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.Orders.Any())
+            .Select(u => new UserOrderTotalDto { Name = u.UserName, OrderTotal = u.Orders.Sum(o => o.Total) }).Prepare();
+        var pg = Pg.Users().Where(u => u.Orders.Any())
+            .Select(u => new UserOrderTotalDto { Name = u.UserName, OrderTotal = u.Orders.Sum(o => o.Total) }).Prepare();
+        var my = My.Users().Where(u => u.Orders.Any())
+            .Select(u => new UserOrderTotalDto { Name = u.UserName, OrderTotal = u.Orders.Sum(o => o.Total) }).Prepare();
+        var ss = Ss.Users().Where(u => u.Orders.Any())
+            .Select(u => new UserOrderTotalDto { Name = u.UserName, OrderTotal = u.Orders.Sum(o => o.Total) }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(),
+            pg.ToDiagnostics(),
+            my.ToDiagnostics(),
+            ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            pg:     "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE EXISTS (SELECT 1 FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\")",
+            mysql:  "SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal` FROM `users` WHERE EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`)",
+            ss:     "SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal] FROM [users] WHERE EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId])");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].Name, Is.EqualTo("Alice"));
+        Assert.That(results[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(results[1].Name, Is.EqualTo("Bob"));
+        Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
+    }
+
+    /// <summary>DTO carrier for <see cref="Select_Many_Sum_InDtoInitializer"/>.</summary>
+    public class UserOrderTotalDto
+    {
+        public string Name { get; set; } = "";
+        public decimal OrderTotal { get; set; }
     }
 
     #endregion
