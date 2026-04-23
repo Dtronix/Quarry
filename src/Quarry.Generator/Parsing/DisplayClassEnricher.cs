@@ -280,6 +280,13 @@ internal static class DisplayClassEnricher
     /// </summary>
     private static string? CheckRowEntityMaterializability(INamedTypeSymbol type)
     {
+        // Interfaces and abstract classes cannot be instantiated via `new T()`; CS0144
+        // would fire against the generated code with no hint of which row type is at fault.
+        if (type.TypeKind == TypeKind.Interface)
+            return "type is an interface and cannot be instantiated via 'new T()'";
+        if (type.IsAbstract)
+            return "type is abstract and cannot be instantiated via 'new T()'";
+
         // Structs always have an implicit parameterless constructor.
         var isStruct = type.TypeKind == TypeKind.Struct;
         if (!isStruct)

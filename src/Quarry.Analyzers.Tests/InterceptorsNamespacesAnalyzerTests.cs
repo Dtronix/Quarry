@@ -135,6 +135,27 @@ namespace MyApp.DataB
     }
 
     [Test]
+    public async Task EmitsQRY044_WhenInterceptorsNamespacesPropertyIsAbsent()
+    {
+        // Pass null (rather than an empty string) so TryGetValue returns false —
+        // simulates a consumer project that hasn't set <InterceptorsNamespaces> at all.
+        var source = @"
+using Quarry;
+
+namespace MyApp.Data
+{
+    [QuarryContext(Dialect = SqlDialect.SQLite)]
+    public partial class AppDb : QuarryContext
+    {
+    }
+}";
+
+        var diagnostics = await GetDiagnosticsAsync(source, interceptorsNamespaces: null);
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("MyApp.Data"));
+    }
+
+    [Test]
     public async Task NoDiagnostic_ForNonContextClass()
     {
         // Plain class without [QuarryContext] — should be ignored even if namespace is missing.
