@@ -532,4 +532,108 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Issue #257 — navigation aggregates in joined Select projection
+
+    [Test]
+    public async Task Select_Joined_Many_Sum_OnLeftTable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Join filters out Charlie automatically (no orders → no inner-join match), so Sum is safe.
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderTotal: u.Orders.Sum(x => x.Total))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderTotal: u.Orders.Sum(x => x.Total))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderTotal: u.Orders.Sum(x => x.Total))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderTotal: u.Orders.Sum(x => x.Total))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"OrderTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"OrderTotal\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `t0`.`UserId`) AS `OrderTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [t0].[UserId]) AS [OrderTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+
+        // Inner join: Alice/250 (sum 325.50), Alice/75.50 (sum 325.50), Bob/150 (sum 150).
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
+        Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
+        Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+    }
+
+    [Test]
+    public async Task Select_Joined_Many_Count_OnLeftTable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderCount: u.Orders.Count())).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderCount: u.Orders.Count())).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderCount: u.Orders.Count())).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, OrderCount: u.Orders.Count())).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"OrderCount\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT COUNT(*) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"OrderCount\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `t0`.`UserId`) AS `OrderCount` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [t0].[UserId]) AS [OrderCount] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+
+        // Inner join yields 3 rows: Alice/250 (count 2), Alice/75.50 (count 2), Bob/150 (count 1).
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
+    }
+
+    /// <summary>
+    /// Fills the matrix gap flagged in #257 review (row 10): HasManyThrough aggregate in a
+    /// joined-select context. Exercises <c>ResolveSubqueryTargetEntity</c>'s ThroughNavigation
+    /// branch under the joined `t0` alias path — previously only covered by HasMany+joined
+    /// and HasManyThrough+single-entity.
+    /// </summary>
+    [Test]
+    public async Task Select_Joined_HasManyThrough_Max_OnLeftTable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Alice→{Addr 1,2}, Bob→{Addr 1}, Charlie→{} (filtered by the inner join on orders).
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, MaxAddrId: u.Addresses.Max(a => a.AddressId))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, MaxAddrId: u.Addresses.Max(a => a.AddressId))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, MaxAddrId: u.Addresses.Max(a => a.AddressId))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, o.Total, MaxAddrId: u.Addresses.Max(a => a.AddressId))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT MAX(\"j0\".\"AddressId\") FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"MaxAddrId\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", (SELECT MAX(\"j0\".\"AddressId\") FROM \"user_addresses\" AS \"sq0\" INNER JOIN \"addresses\" AS \"j0\" ON \"sq0\".\"AddressId\" = \"j0\".\"AddressId\" WHERE \"sq0\".\"UserId\" = \"t0\".\"UserId\") AS \"MaxAddrId\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, (SELECT MAX(`j0`.`AddressId`) FROM `user_addresses` AS `sq0` INNER JOIN `addresses` AS `j0` ON `sq0`.`AddressId` = `j0`.`AddressId` WHERE `sq0`.`UserId` = `t0`.`UserId`) AS `MaxAddrId` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], (SELECT MAX([j0].[AddressId]) FROM [user_addresses] AS [sq0] INNER JOIN [addresses] AS [j0] ON [sq0].[AddressId] = [j0].[AddressId] WHERE [sq0].[UserId] = [t0].[UserId]) AS [MaxAddrId] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
+    }
+
+    #endregion
 }

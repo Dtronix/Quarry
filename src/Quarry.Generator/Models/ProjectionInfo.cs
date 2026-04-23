@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Quarry.Generators.IR;
 using Quarry.Generators.Translation;
 
 namespace Quarry.Generators.Models;
@@ -19,7 +20,8 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         ProjectionFailureReason failureReason = ProjectionFailureReason.None,
         string? customEntityReaderClass = null,
         string? joinedEntityAlias = null,
-        IReadOnlyList<Translation.ParameterInfo>? projectionParameters = null)
+        IReadOnlyList<Translation.ParameterInfo>? projectionParameters = null,
+        IReadOnlyList<string>? lambdaParameterNames = null)
     {
         Kind = kind;
         ResultTypeName = resultTypeName;
@@ -30,6 +32,7 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
         CustomEntityReaderClass = customEntityReaderClass;
         JoinedEntityAlias = joinedEntityAlias;
         ProjectionParameters = projectionParameters;
+        LambdaParameterNames = lambdaParameterNames;
     }
 
     /// <summary>
@@ -94,6 +97,15 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
     public IReadOnlyList<string>? SqlRawValidationErrors { get; init; }
 
     /// <summary>
+    /// Gets the lambda parameter names of the Select() in source order
+    /// (e.g., ["u"] for u =&gt; ..., ["u", "o"] for (u, o) =&gt; ...).
+    /// Used by BuildProjection to map a navigation-aggregate column's
+    /// <see cref="ProjectedColumn.OuterParameterName"/> to its owning entity (and table alias).
+    /// Null when no aggregate-subquery columns are present.
+    /// </summary>
+    public IReadOnlyList<string>? LambdaParameterNames { get; }
+
+    /// <summary>
     /// Creates a projection info for a failed analysis.
     /// </summary>
     public static ProjectionInfo CreateFailed(
@@ -123,14 +135,16 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
             && JoinedEntityAlias == other.JoinedEntityAlias
             && EqualityHelpers.SequenceEqual(Columns, other.Columns)
             && EqualityHelpers.SequenceEqual(ProjectionParameters, other.ProjectionParameters)
-            && EqualityHelpers.SequenceEqual(SqlRawValidationErrors, other.SqlRawValidationErrors);
+            && EqualityHelpers.SequenceEqual(SqlRawValidationErrors, other.SqlRawValidationErrors)
+            && EqualityHelpers.SequenceEqual(LambdaParameterNames, other.LambdaParameterNames);
     }
 
     public override bool Equals(object? obj) => Equals(obj as ProjectionInfo);
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count, JoinedEntityAlias);
+        return HashCode.Combine(Kind, ResultTypeName, IsOptimalPath, Columns.Count, JoinedEntityAlias,
+            LambdaParameterNames?.Count ?? 0);
     }
 }
 
@@ -157,7 +171,10 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         string? foreignKeyEntityName = null,
         bool isEnum = false,
         IReadOnlyList<string>? navigationHops = null,
-        bool isJoinNullable = false)
+        bool isJoinNullable = false,
+        SqlExpr? subqueryExpression = null,
+        string? outerParameterName = null,
+        DiagnosticLocation? subqueryInvocationLocation = null)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -177,6 +194,9 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         IsEnum = isEnum;
         NavigationHops = navigationHops;
         IsJoinNullable = isJoinNullable;
+        SubqueryExpression = subqueryExpression;
+        OuterParameterName = outerParameterName;
+        SubqueryInvocationLocation = subqueryInvocationLocation;
     }
 
     /// <summary>
@@ -289,6 +309,30 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
     /// </summary>
     public IReadOnlyList<string>? NavigationHops { get; init; }
 
+    /// <summary>
+    /// Unbound SubqueryExpr for navigation aggregates in Select projection
+    /// (e.g., u.Orders.Sum(o =&gt; o.Total)). Set by ProjectionAnalyzer when it
+    /// recognizes a navigation-aggregate invocation; consumed by BuildProjection
+    /// which binds and renders it into <see cref="SqlExpression"/>. Null for all
+    /// other column kinds.
+    /// </summary>
+    public SqlExpr? SubqueryExpression { get; init; }
+
+    /// <summary>
+    /// The lambda parameter name owning the navigation in <see cref="SubqueryExpression"/>
+    /// (e.g., "u" for u.Orders.Sum(...)). Used by BuildProjection to look up the
+    /// owning entity for binding. Null for non-subquery columns.
+    /// </summary>
+    public string? OuterParameterName { get; init; }
+
+    /// <summary>
+    /// Source location of the aggregate invocation (e.g., the <c>.Sum(...)</c> call) that
+    /// produced <see cref="SubqueryExpression"/>. Used by BuildProjection as the QRY074
+    /// emission site so the error squiggle points at the offending navigation aggregate
+    /// rather than the enclosing chain. Null for non-subquery columns.
+    /// </summary>
+    public DiagnosticLocation? SubqueryInvocationLocation { get; init; }
+
     public bool Equals(ProjectedColumn? other)
     {
         if (other is null) return false;
@@ -310,7 +354,10 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
             && IsForeignKey == other.IsForeignKey
             && ForeignKeyEntityName == other.ForeignKeyEntityName
             && IsEnum == other.IsEnum
-            && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops);
+            && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops)
+            && EqualityComparer<IR.SqlExpr?>.Default.Equals(SubqueryExpression, other.SubqueryExpression)
+            && OuterParameterName == other.OuterParameterName
+            && Nullable.Equals(SubqueryInvocationLocation, other.SubqueryInvocationLocation);
     }
 
     public override int GetHashCode()

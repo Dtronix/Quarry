@@ -134,10 +134,12 @@ internal static class ProjectionAnalyzer
 
         // Build per-parameter info with empty column lookups (no EntityInfo available)
         var perParamLookup = new Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)>(StringComparer.Ordinal);
+        var lambdaParamNames = new List<string>(entityCount);
         for (int i = 0; i < entityCount; i++)
         {
             var paramName = lambda.ParameterList.Parameters[i].Identifier.Text;
             perParamLookup[paramName] = (new Dictionary<string, ColumnInfo>(StringComparer.Ordinal), $"t{i}");
+            lambdaParamNames.Add(paramName);
         }
 
         var resultType = InferResultTypeFromSyntax(body);
@@ -163,7 +165,7 @@ internal static class ProjectionAnalyzer
             // ResultTypeName will be rebuilt during enrichment
         }
 
-        return AttachPendingSqlRawErrors(result);
+        return AttachLambdaParameterNames(AttachPendingSqlRawErrors(result), lambdaParamNames);
     }
 
     /// <summary>
@@ -212,7 +214,7 @@ internal static class ProjectionAnalyzer
 
         var resultType = InferResultTypeFromSyntax(body);
         var result = AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect);
-        return AttachPendingSqlRawErrors(result);
+        return AttachLambdaParameterNames(AttachPendingSqlRawErrors(result), new[] { paramName });
     }
 
     /// <summary>
@@ -377,8 +379,18 @@ internal static class ProjectionAnalyzer
         if (expression is MemberAccessExpressionSyntax memberAccess)
             return ResolveJoinedColumnWithPlaceholder(memberAccess, perParamLookup, propertyName, ordinal);
 
-        if (expression is InvocationExpressionSyntax invocation && IsAggregateCall(invocation))
-            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
+        if (expression is InvocationExpressionSyntax invocation)
+        {
+            if (IsAggregateCall(invocation))
+                return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
+
+            if (IsNavigationAggregateCall(invocation, perParamLookup.ContainsKey))
+            {
+                var navCol = TryParseNavigationAggregateColumn(
+                    invocation, perParamLookup.Keys, propertyName, ordinal, tableAlias: null);
+                if (navCol != null) return navCol;
+            }
+        }
 
         return null;
     }
@@ -507,11 +519,13 @@ internal static class ProjectionAnalyzer
 
         // Build per-parameter column lookups and alias map
         var perParamLookup = new Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)>(StringComparer.Ordinal);
+        var lambdaParamNames = new List<string>(entities.Count);
         for (int i = 0; i < entities.Count; i++)
         {
             var paramName = lambda.ParameterList.Parameters[i].Identifier.Text;
             var lookup = BuildColumnLookup(entities[i]);
             perParamLookup[paramName] = (lookup, $"t{i}");
+            lambdaParamNames.Add(paramName);
         }
 
         // Infer result type from the lambda body syntax
@@ -526,11 +540,11 @@ internal static class ProjectionAnalyzer
             var tupleTypeName = TypeClassification.BuildTupleTypeName(result.Columns);
             if (IsValidTupleTypeName(tupleTypeName) && !IsValidTupleTypeName(result.ResultTypeName))
             {
-                return new ProjectionInfo(result.Kind, tupleTypeName, result.Columns, result.IsOptimalPath, result.NonOptimalReason, result.FailureReason);
+                result = new ProjectionInfo(result.Kind, tupleTypeName, result.Columns, result.IsOptimalPath, result.NonOptimalReason, result.FailureReason);
             }
         }
 
-        return result;
+        return AttachLambdaParameterNames(result, lambdaParamNames);
     }
 
     /// <summary>
@@ -599,6 +613,26 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
+    /// Returns a clone of <paramref name="info"/> with <see cref="ProjectionInfo.LambdaParameterNames"/>
+    /// populated. Required by ChainAnalyzer.BuildProjection to bind any subquery columns
+    /// (it maps the SubqueryExpr's outer parameter name to its owning entity).
+    /// </summary>
+    private static ProjectionInfo AttachLambdaParameterNames(
+        ProjectionInfo info, IReadOnlyList<string> lambdaParameterNames)
+    {
+        if (lambdaParameterNames.Count == 0) return info;
+        return new ProjectionInfo(
+            info.Kind, info.ResultTypeName, info.Columns,
+            info.IsOptimalPath, info.NonOptimalReason, info.FailureReason,
+            info.CustomEntityReaderClass, info.JoinedEntityAlias,
+            info.ProjectionParameters,
+            lambdaParameterNames)
+        {
+            SqlRawValidationErrors = info.SqlRawValidationErrors,
+        };
+    }
+
+    /// <summary>
     /// Checks if an invocation is a Sql.* aggregate call.
     /// </summary>
     private static bool IsAggregateCall(InvocationExpressionSyntax invocation)
@@ -606,6 +640,125 @@ internal static class ProjectionAnalyzer
         return invocation.Expression is MemberAccessExpressionSyntax memberAccess &&
                memberAccess.Expression is IdentifierNameSyntax identifier &&
                identifier.Identifier.Text == "Sql";
+    }
+
+    /// <summary>
+    /// Returns true when the invocation is a navigation-rooted aggregate call —
+    /// i.e., <c>&lt;param&gt;.&lt;NavProp&gt;.{Sum|Min|Max|Avg|Average|Count}(...)</c>.
+    /// The receiver chain must bottom out on a known lambda parameter and traverse
+    /// at least one navigation property (otherwise it's a static <c>Sql.*</c> call
+    /// that <see cref="IsAggregateCall"/> already handles).
+    /// </summary>
+    private static bool IsNavigationAggregateCall(
+        InvocationExpressionSyntax invocation,
+        Func<string, bool> isKnownParameter)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax outer)
+            return false;
+        if (!IsNavigationAggregateMethodName(outer.Name.Identifier.Text))
+            return false;
+        // Receiver must be a member access (the navigation property), not a bare identifier.
+        if (outer.Expression is not MemberAccessExpressionSyntax)
+            return false;
+        var rootName = TryGetRootIdentifierName(outer.Expression);
+        return rootName != null && isKnownParameter(rootName);
+    }
+
+    private static bool IsNavigationAggregateMethodName(string name) =>
+        name is "Sum" or "Min" or "Max" or "Avg" or "Average" or "Count";
+
+    /// <summary>
+    /// Walks a member-access chain (also unwrapping null-forgiving operators) and
+    /// returns the identifier at its root, or null if the root is not an identifier.
+    /// </summary>
+    private static string? TryGetRootIdentifierName(ExpressionSyntax expression)
+    {
+        var current = expression;
+        while (true)
+        {
+            if (current is PostfixUnaryExpressionSyntax postfix &&
+                postfix.Kind() == SyntaxKind.SuppressNullableWarningExpression)
+                current = postfix.Operand;
+            else if (current is MemberAccessExpressionSyntax inner)
+                current = inner.Expression;
+            else
+                break;
+        }
+        return current is IdentifierNameSyntax id ? id.Identifier.Text : null;
+    }
+
+    /// <summary>
+    /// Builds a placeholder ProjectedColumn for a navigation-rooted aggregate
+    /// invocation. The unbound SubqueryExpr is parsed via SqlExprParser; binding
+    /// (correlation, table/alias) and rendering happen later in
+    /// ChainAnalyzer.BuildProjection where the entity registry is available.
+    /// If SqlExprParser produces something other than a SubqueryExpr — e.g. an
+    /// unexpected chain shape for a known aggregate method name — a synthetic
+    /// unresolved SubqueryExpr is still attached to the column so
+    /// <see cref="ChainAnalyzer"/> can surface QRY074 at the invocation site
+    /// rather than silently drop the column.
+    /// </summary>
+    private static ProjectedColumn? TryParseNavigationAggregateColumn(
+        InvocationExpressionSyntax invocation,
+        IEnumerable<string> knownParameters,
+        string propertyName,
+        int ordinal,
+        string? tableAlias)
+    {
+        var paramSet = new HashSet<string>(knownParameters, StringComparer.Ordinal);
+        var parsed = IR.SqlExprParser.Parse(invocation, paramSet);
+        var subquery = parsed as IR.SubqueryExpr ?? TrySynthesizeUnresolvedSubquery(invocation);
+        if (subquery == null)
+            return null;
+
+        return new ProjectedColumn(
+            propertyName: propertyName,
+            columnName: "",
+            clrType: "",
+            fullClrType: "",
+            isNullable: false,
+            ordinal: ordinal,
+            alias: propertyName,
+            isAggregateFunction: true,
+            isValueType: true,
+            tableAlias: tableAlias,
+            subqueryExpression: subquery,
+            outerParameterName: subquery.OuterParameterName,
+            subqueryInvocationLocation: DiagnosticLocation.FromSyntaxNode(invocation));
+    }
+
+    /// <summary>
+    /// Constructs an unresolved <see cref="IR.SubqueryExpr"/> directly from an
+    /// invocation's syntax shape when the parser can't. IsNavigationAggregateCall
+    /// has already validated the outer-member-access chain, so the root identifier
+    /// and navigation name are reachable from the syntax alone. The subquery is
+    /// unresolved on purpose — binding will fall through to the IsResolved check
+    /// in ChainAnalyzer and emit QRY074 pointing at the invocation.
+    /// </summary>
+    private static IR.SubqueryExpr? TrySynthesizeUnresolvedSubquery(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax outer) return null;
+        if (outer.Expression is not MemberAccessExpressionSyntax navAccess) return null;
+        var rootName = TryGetRootIdentifierName(navAccess.Expression);
+        if (rootName == null) return null;
+
+        var kind = outer.Name.Identifier.Text switch
+        {
+            "Count" => IR.SubqueryKind.Count,
+            "Sum" => IR.SubqueryKind.Sum,
+            "Min" => IR.SubqueryKind.Min,
+            "Max" => IR.SubqueryKind.Max,
+            "Avg" or "Average" => IR.SubqueryKind.Avg,
+            _ => (IR.SubqueryKind?)null,
+        };
+        if (kind is null) return null;
+
+        return new IR.SubqueryExpr(
+            outerParameterName: rootName,
+            navigationPropertyName: navAccess.Name.Identifier.Text,
+            subqueryKind: kind.Value,
+            predicate: null,
+            innerParameterName: null);
     }
 
     /// <summary>
@@ -671,6 +824,15 @@ internal static class ProjectionAnalyzer
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, aggregateClrType, new[] { column });
             }
+        }
+
+        // Navigation aggregate as the entire joined projection: (u, o) => u.Orders.Count()
+        if (IsNavigationAggregateCall(invocation, perParamLookup.ContainsKey))
+        {
+            var navCol = TryParseNavigationAggregateColumn(
+                invocation, perParamLookup.Keys, propertyName: "Value", ordinal: 0, tableAlias: null);
+            if (navCol != null)
+                return new ProjectionInfo(ProjectionKind.SingleColumn, resultType, new[] { navCol });
         }
 
         return ProjectionInfo.CreateFailed(resultType, "Unsupported invocation in joined projection");
@@ -755,9 +917,20 @@ internal static class ProjectionAnalyzer
         if (expression is MemberAccessExpressionSyntax memberAccess)
             return ResolveJoinedColumn(memberAccess, semanticModel, perParamLookup, propertyName, ordinal);
 
-        // Aggregate functions: Sql.Count(), Sql.Sum(u.Amount)
-        if (expression is InvocationExpressionSyntax invocation && IsAggregateCall(invocation))
-            return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
+        if (expression is InvocationExpressionSyntax invocation)
+        {
+            // Sql.* aggregates: Sql.Count(), Sql.Sum(u.Amount)
+            if (IsAggregateCall(invocation))
+                return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
+
+            // Navigation aggregates: u.Orders.Sum(o => o.Total), u.Addresses.Count()
+            if (IsNavigationAggregateCall(invocation, perParamLookup.ContainsKey))
+            {
+                var navCol = TryParseNavigationAggregateColumn(
+                    invocation, perParamLookup.Keys, propertyName, ordinal, tableAlias: null);
+                if (navCol != null) return navCol;
+            }
+        }
 
         return null;
     }
@@ -994,6 +1167,8 @@ internal static class ProjectionAnalyzer
                 projectionParameters: projectionParams);
         }
 
+        result = AttachLambdaParameterNames(result, new[] { lambdaParameterName });
+
         // Post-analysis fixup: If result type is still invalid and we have column info, derive from columns
         if (TypeClassification.IsUnresolvedTypeNameLenient(result.ResultTypeName) && result.Columns.Count > 0)
         {
@@ -1009,7 +1184,8 @@ internal static class ProjectionAnalyzer
                     result.IsOptimalPath,
                     result.NonOptimalReason,
                     result.FailureReason,
-                    projectionParameters: result.ProjectionParameters);
+                    projectionParameters: result.ProjectionParameters,
+                    lambdaParameterNames: result.LambdaParameterNames);
             }
         }
 
@@ -1027,7 +1203,8 @@ internal static class ProjectionAnalyzer
                     result.IsOptimalPath,
                     result.NonOptimalReason,
                     result.FailureReason,
-                    projectionParameters: result.ProjectionParameters);
+                    projectionParameters: result.ProjectionParameters,
+                    lambdaParameterNames: result.LambdaParameterNames);
             }
         }
 
@@ -1620,6 +1797,15 @@ internal static class ProjectionAnalyzer
                     "captured locals/parameters, and simple IR expressions). See issue #256.");
         }
 
+        // Navigation aggregate as the entire projection: u => u.Orders.Count()
+        if (IsNavigationAggregateCall(invocation, name => name == lambdaParameterName))
+        {
+            var navCol = TryParseNavigationAggregateColumn(
+                invocation, new[] { lambdaParameterName }, propertyName: "Value", ordinal: 0, tableAlias: null);
+            if (navCol != null)
+                return new ProjectionInfo(ProjectionKind.SingleColumn, resultType, new[] { navCol });
+        }
+
         // Check for string method calls on columns: u.UserName.Substring(0, 3), u.UserName.ToLower(), etc.
         var stringMethodResult = TryAnalyzeStringMethodProjection(invocation, columnLookup, lambdaParameterName, resultType, dialect);
         if (stringMethodResult != null)
@@ -1790,6 +1976,15 @@ internal static class ProjectionAnalyzer
             // error message rather than silently emitting wrong SQL.
             if (methodName == "Raw")
                 return null;
+        }
+
+        // Navigation aggregates: u.Orders.Sum(o => o.Total), u.Addresses.Count()
+        if (expression is InvocationExpressionSyntax navAggInvocation &&
+            IsNavigationAggregateCall(navAggInvocation, name => name == lambdaParameterName))
+        {
+            var navCol = TryParseNavigationAggregateColumn(
+                navAggInvocation, new[] { lambdaParameterName }, propertyName, ordinal, tableAlias: null);
+            if (navCol != null) return navCol;
         }
 
         // String method calls on columns: u.UserName.Substring(0, 3), u.UserName.ToLower()

@@ -538,11 +538,13 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 
 **Set operations (QRY070–072):** QRY070 (warn): INTERSECT ALL not supported on this dialect. QRY071 (warn): EXCEPT ALL not supported on this dialect. QRY072 (error): set operation projection mismatch (column count/type).
 
+**Projection subqueries (QRY074):** QRY074 (error): navigation aggregate (`Sum`/`Min`/`Max`/`Avg`/`Average`/`Count`) in a `Select` projection could not be resolved — the nav property does not exist on the outer entity, or its target entity is not registered on the context.
+
 **CTEs (QRY080–082):** QRY080 (error): CTE inner query not analyzable. QRY081 (error): `FromCte` without matching `With`. QRY082 (error): duplicate CTE name in chain.
 
 **Internal:** QRY900: generator error (stack trace surfaced).
 
-**Retired:** QRY073 (removed in v0.3.0 — cross-entity set-ops now supported).
+**Retired:** QRY073 (removed in v0.3.0 — cross-entity set-ops now supported). The ID is intentionally skipped; `#pragma warning disable QRY073` directives remain inert.
 
 **Analyzer (QRA series):** QRA101–106 (simplification), QRA201–205 (wasteful), QRA301–305 (performance), QRA401–402 (patterns), QRA501–502 (dialect). QRA502 (warn): FULL OUTER JOIN on SQLite/MySQL. QRA305 (info): mutable `static readonly` array in IN clause — generator inlines initializer at compile time but elements can be mutated at runtime; suggests `ImmutableArray<T>`. Code fixes: QRA101, QRA102, QRA201.
 

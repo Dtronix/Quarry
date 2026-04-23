@@ -1755,6 +1755,216 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
+    /// Resolves a navigation-aggregate column carrying an unbound <see cref="SubqueryExpr"/>
+    /// (set by ProjectionAnalyzer when it recognizes <c>u.Orders.Sum(o =&gt; o.Total)</c> etc.).
+    /// Binds the subquery against the owning entity, renders it to dialect SQL, and resolves
+    /// the aggregate's CLR result type from the selector. Returns the fully-populated column,
+    /// or null if binding fails (in which case <paramref name="diagnostics"/> receives QRY074).
+    /// </summary>
+    private static ProjectedColumn? ResolveProjectionSubqueryColumn(
+        ProjectedColumn col,
+        EntityRegistry registry,
+        SqlDialect dialect,
+        EntityInfo? primaryEntity,
+        IReadOnlyDictionary<string, EntityInfo>? joinedEntities,
+        IReadOnlyDictionary<string, string>? tableAliases,
+        string? primaryParameterName,
+        List<DiagnosticInfo>? diagnostics,
+        DiagnosticLocation location)
+    {
+        if (col.SubqueryExpression is not SubqueryExpr subquery || col.OuterParameterName == null)
+            return null;
+
+        // Prefer the aggregate invocation's own location so the diagnostic squiggle lands on
+        // the specific u.Nav.Sum(...) call rather than the enclosing Select/chain site.
+        var diagLocation = col.SubqueryInvocationLocation ?? location;
+
+        // Determine the outer entity that owns the navigation. For single-entity Select,
+        // primaryEntity is the only candidate; for joined Select, look up via the parameter map.
+        EntityInfo? outerEntity = null;
+        string? lambdaParamForBind = primaryParameterName;
+        if (primaryParameterName != null && col.OuterParameterName == primaryParameterName)
+        {
+            outerEntity = primaryEntity;
+        }
+        else if (joinedEntities != null && joinedEntities.TryGetValue(col.OuterParameterName, out var je))
+        {
+            outerEntity = je;
+            lambdaParamForBind = col.OuterParameterName;
+        }
+
+        if (outerEntity == null || lambdaParamForBind == null)
+        {
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
+            return null;
+        }
+
+        SqlExpr boundExpr;
+        try
+        {
+            boundExpr = SqlExprBinder.Bind(
+                subquery,
+                outerEntity,
+                dialect,
+                lambdaParamForBind,
+                joinedEntities: joinedEntities,
+                tableAliases: tableAliases,
+                inBooleanContext: false,
+                entityLookup: registry.ByEntityName);
+        }
+        catch (Exception ex)
+        {
+            // Bind resolves navigation failures by returning an unresolved SubqueryExpr
+            // (detected below via IsResolved), so a thrown exception here is a real defect
+            // in the binder — route it to QRY900 with the message and stack preserved so
+            // the root cause is surfaced rather than masked as "navigation unresolved".
+            if (diagnostics != null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.InternalError.Id,
+                    diagLocation,
+                    $"SqlExprBinder.Bind threw while resolving navigation-aggregate " +
+                    $"'{subquery.NavigationPropertyName}' on parameter '{subquery.OuterParameterName}': " +
+                    $"{ex.GetType().Name}: {ex.Message}"));
+            }
+            return null;
+        }
+
+        // SqlExprBinder.BindSubquery returns the original (unresolved) node when the
+        // navigation can't be resolved on the outer entity. Detect that and bail out.
+        if (boundExpr is SubqueryExpr boundSub && !boundSub.IsResolved)
+        {
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
+            return null;
+        }
+
+        var renderedSql = SqlExprRenderer.Render(boundExpr, dialect);
+        if (string.IsNullOrEmpty(renderedSql))
+        {
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
+            return null;
+        }
+
+        var resolvedType = ResolveSubqueryResultType(
+            subquery, outerEntity, registry, out var selectorTypeIsKnown);
+
+        // Min/Max without a resolvable selector type fall back to "object" / GetValue,
+        // which is a silent type-degradation mode (reader returns boxed object?). Surface
+        // it as QRY074 so the user either types the selector explicitly or picks Sum (which
+        // has a deterministic default).
+        if (!selectorTypeIsKnown
+            && (subquery.SubqueryKind == SubqueryKind.Min || subquery.SubqueryKind == SubqueryKind.Max))
+        {
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
+        }
+
+        return col with
+        {
+            ColumnName = "",
+            SqlExpression = renderedSql,
+            ClrType = resolvedType,
+            FullClrType = resolvedType,
+            IsAggregateFunction = true,
+            IsValueType = true,
+            ReaderMethodName = TypeClassification.GetReaderMethod(resolvedType),
+            Alias = col.PropertyName,
+            SubqueryExpression = null,
+            OuterParameterName = null,
+        };
+    }
+
+    private static void EmitProjectionSubqueryDiagnostic(
+        List<DiagnosticInfo>? diagnostics,
+        DiagnosticLocation location,
+        SubqueryExpr subquery)
+    {
+        if (diagnostics == null) return;
+        diagnostics.Add(new DiagnosticInfo(
+            DiagnosticDescriptors.ProjectionSubqueryUnresolved.Id,
+            location,
+            subquery.NavigationPropertyName,
+            subquery.OuterParameterName,
+            subquery.SubqueryKind.ToString()));
+    }
+
+    /// <summary>
+    /// Resolves the CLR result type of an aggregate subquery against its target entity's
+    /// column metadata. Falls back to per-aggregate defaults that mirror <c>Sql.cs</c>.
+    /// <paramref name="selectorTypeIsKnown"/> is true when the selector resolved to a
+    /// concrete column type; false when Count (no selector) or when the selector couldn't
+    /// be resolved and the method fell back to a per-aggregate default.
+    /// </summary>
+    private static string ResolveSubqueryResultType(
+        SubqueryExpr subquery,
+        EntityInfo outerEntity,
+        EntityRegistry registry,
+        out bool selectorTypeIsKnown)
+    {
+        if (subquery.SubqueryKind == SubqueryKind.Count)
+        {
+            selectorTypeIsKnown = true;
+            return "int";
+        }
+
+        var targetEntity = ResolveSubqueryTargetEntity(subquery, outerEntity, registry);
+        var selectorType = TryResolveSelectorClrType(subquery.Selector, targetEntity);
+        selectorTypeIsKnown = selectorType != null;
+
+        return subquery.SubqueryKind switch
+        {
+            SubqueryKind.Sum => selectorType ?? "decimal",
+            SubqueryKind.Min => selectorType ?? "object",
+            SubqueryKind.Max => selectorType ?? "object",
+            // Sql.Avg(int)/Sql.Avg(long) → double; Sql.Avg(decimal) → decimal; Sql.Avg(double) → double.
+            SubqueryKind.Avg => selectorType switch
+            {
+                "decimal" => "decimal",
+                "double" => "double",
+                _ => "double",
+            },
+            _ => selectorType ?? "object",
+        };
+    }
+
+    /// <summary>
+    /// Finds the target entity for a navigation-aggregate subquery. For HasManyThrough,
+    /// the selector resolves against the through-target entity (e.g., Address), not the
+    /// junction. For HasMany, the selector resolves against the directly related entity.
+    /// </summary>
+    private static EntityInfo? ResolveSubqueryTargetEntity(
+        SubqueryExpr subquery, EntityInfo outerEntity, EntityRegistry registry)
+    {
+        foreach (var tn in outerEntity.ThroughNavigations)
+        {
+            if (tn.PropertyName == subquery.NavigationPropertyName)
+                return registry.ByEntityName.TryGetValue(tn.TargetEntityName, out var t) ? t : null;
+        }
+        foreach (var nav in outerEntity.Navigations)
+        {
+            if (nav.PropertyName == subquery.NavigationPropertyName)
+                return registry.ByEntityName.TryGetValue(nav.RelatedEntityName, out var t) ? t : null;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Walks an unbound aggregate selector down to the leaf <see cref="ColumnRefExpr"/>
+    /// and looks up its CLR type in the target entity's columns. Returns null when the
+    /// selector is missing, isn't a column reference, or the property is not on the target.
+    /// </summary>
+    private static string? TryResolveSelectorClrType(SqlExpr? selector, EntityInfo? targetEntity)
+    {
+        if (selector == null || targetEntity == null) return null;
+        if (selector is not ColumnRefExpr colRef) return null;
+        foreach (var col in targetEntity.Columns)
+        {
+            if (col.PropertyName == colRef.PropertyName)
+                return col.ClrType;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Builds a SelectProjection from ProjectionInfo, enriching columns with entity metadata.
     /// During discovery, the source generator can't see its own generated entity types, so
     /// ProjectionInfo columns may have empty ClrType/ColumnName. We fix these by cross-referencing
@@ -1828,6 +2038,52 @@ internal static class ChainAnalyzer
             return false;
         }
 
+        // Build entity-info maps for any navigation-aggregate subquery columns. Lazily
+        // initialized so non-subquery projections pay no lookup cost.
+        EntityInfo? primaryEntityForBind = null;
+        Dictionary<string, EntityInfo>? joinedEntitiesForBind = null;
+        Dictionary<string, string>? tableAliasesForBind = null;
+        string? primaryParamForBind = null;
+        var hasSubqueryColumn = false;
+        if (projInfo.Columns != null)
+        {
+            foreach (var c in projInfo.Columns)
+            {
+                if (c.SubqueryExpression != null) { hasSubqueryColumn = true; break; }
+            }
+        }
+        if (hasSubqueryColumn)
+        {
+            // Single-entity primary: look up EntityInfo via the chain's entity ref.
+            if (entityRef != null && registry.ByEntityName.TryGetValue(entityRef.EntityName, out var primaryEi))
+                primaryEntityForBind = primaryEi;
+            var lambdaParams = projInfo.LambdaParameterNames;
+            if (lambdaParams != null && lambdaParams.Count > 0)
+            {
+                primaryParamForBind = lambdaParams[0];
+                if (isJoined && joinedEntityTypeNames != null)
+                {
+                    joinedEntitiesForBind = new Dictionary<string, EntityInfo>(StringComparer.Ordinal);
+                    tableAliasesForBind = new Dictionary<string, string>(StringComparer.Ordinal);
+                    var count = System.Math.Min(lambdaParams.Count, joinedEntityTypeNames.Count);
+                    for (int i = 0; i < count; i++)
+                    {
+                        if (registry.ByEntityName.TryGetValue(joinedEntityTypeNames[i], out var je))
+                        {
+                            joinedEntitiesForBind[lambdaParams[i]] = je;
+                            // Joined queries qualify columns by t0/t1/... — match what the
+                            // outer SELECT/FROM emits so the subquery's correlation joins to
+                            // the right alias rather than the bare table name.
+                            tableAliasesForBind[lambdaParams[i]] = $"t{i}";
+                        }
+                    }
+                    // Primary entity for binding is t0; ensure it points at the joined entry.
+                    if (joinedEntitiesForBind.TryGetValue(primaryParamForBind, out var firstJe))
+                        primaryEntityForBind = firstJe;
+                }
+            }
+        }
+
         var columns = new List<ProjectedColumn>();
         if (projInfo.Columns != null)
         {
@@ -1836,6 +2092,33 @@ internal static class ChainAnalyzer
                 // SqlExpression now uses canonical {identifier} placeholders — dialect
                 // quoting is deferred to render time (SqlFormatting.QuoteSqlExpression).
                 var col = rawCol;
+
+                // Navigation-aggregate subquery in projection (e.g., u.Orders.Sum(o => o.Total)).
+                // Bind correlation/table/alias against the owning entity, render to SQL, and
+                // resolve the aggregate's CLR result type. Issue #257.
+                if (col.SubqueryExpression != null)
+                {
+                    var resolvedSubCol = ResolveProjectionSubqueryColumn(
+                        col, registry, dialect,
+                        primaryEntityForBind, joinedEntitiesForBind, tableAliasesForBind,
+                        primaryParamForBind, diagnostics, executionSite.Location);
+                    if (resolvedSubCol != null)
+                    {
+                        columns.Add(resolvedSubCol);
+                        continue;
+                    }
+                    // Binding failed; QRY074 already emitted. Fall through to the existing
+                    // empty-column emit so downstream stages don't crash on a half-formed column.
+                    columns.Add(col with
+                    {
+                        ClrType = "object",
+                        FullClrType = "object",
+                        IsAggregateFunction = true,
+                        SubqueryExpression = null,
+                        OuterParameterName = null,
+                    });
+                    continue;
+                }
 
                 // Aggregate columns with unresolved type ("object"): resolve from the
                 // referenced entity column. During discovery, Min/Max default to "object"

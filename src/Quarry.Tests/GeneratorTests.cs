@@ -1389,6 +1389,82 @@ public partial class TestDbContext : QuarryContext
     }
 
     [Test]
+    public void DiagnosticDescriptors_QRY074_IsWellFormed()
+    {
+        // QRY074 fires when ChainAnalyzer.BuildProjection cannot bind a navigation-aggregate
+        // SubqueryExpr in Select projection (e.g., the navigation property doesn't exist on
+        // the outer entity). Issue #257 added this so the silent (?)r.GetValue(N) regression
+        // cannot recur. QRY073 is skipped — it was introduced and retired in v0.3.0.
+        var qry074 = DiagnosticDescriptors.ProjectionSubqueryUnresolved;
+
+        Assert.That(qry074.Id, Is.EqualTo("QRY074"));
+        Assert.That(qry074.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{0}"));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{1}"));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{2}"));
+    }
+
+    [Test]
+    public void Generator_WithUnresolvableNavigationAggregateInSelect_ReportsQRY074()
+    {
+        // ProductSchema declares a Many<VariantSchema> nav but the context does not register
+        // VariantSchema (no Variants() accessor). EntityRegistry.ByEntityName has no "Variant"
+        // entry, so SqlExprBinder.BindSubquery hits the "target entity not found" branch
+        // (BindSubquery line 430) and returns the unresolved SubqueryExpr. BuildProjection's
+        // IsResolved check then emits QRY074. This test would have failed before the
+        // s_deferredDescriptors registration fix from the #257 review.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class VariantSchema : Schema
+{
+    public static string Table => ""variants"";
+    public Key<int> VariantId => Identity();
+    public Ref<ProductSchema, int> ProductId => ForeignKey<ProductSchema, int>();
+    public Col<int> Stock { get; }
+}
+
+public class ProductSchema : Schema
+{
+    public static string Table => ""products"";
+    public Key<int> ProductId => Identity();
+    public Col<string> Name => Length(100);
+    public Many<VariantSchema> Variants => HasMany<VariantSchema>(v => v.ProductId);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Product> Products();
+    // Intentionally NO Variants() accessor — VariantSchema is referenced by the nav but
+    // not registered in the context, so EntityRegistry can't resolve the target entity.
+}
+
+public class Service
+{
+    public Task<System.Collections.Generic.IList<(string Name, int Total)>> Run(TestDbContext ctx)
+    {
+        return ctx.Products()
+            .Select(p => (p.Name, Total: p.Variants.Sum(v => v.Stock)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry074 = diagnostics.FirstOrDefault(d => d.Id == "QRY074");
+        Assert.That(qry074, Is.Not.Null,
+            "Should report QRY074 when a navigation-aggregate references an entity not registered in the context");
+        Assert.That(qry074!.GetMessage(), Does.Contain("Variants"));
+        Assert.That(qry074.GetMessage(), Does.Contain("Sum"));
+    }
+
+    [Test]
     public void DiagnosticDescriptors_SetOperation_IdsAreUnique()
     {
         // Verify all set operation diagnostic IDs are distinct from each other
