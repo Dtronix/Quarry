@@ -111,8 +111,8 @@ public class DialectTests
 
     [TestCase(SqlDialect.SQLite, 0, "@p0")]
     [TestCase(SqlDialect.SQLite, 5, "@p5")]
-    [TestCase(SqlDialect.PostgreSQL, 0, "@p0")]
-    [TestCase(SqlDialect.PostgreSQL, 5, "@p5")]
+    [TestCase(SqlDialect.PostgreSQL, 0, "$1")]
+    [TestCase(SqlDialect.PostgreSQL, 5, "$6")]
     [TestCase(SqlDialect.MySQL, 0, "@p0")]
     [TestCase(SqlDialect.MySQL, 5, "@p5")]
     [TestCase(SqlDialect.SqlServer, 0, "@p0")]
@@ -122,6 +122,31 @@ public class DialectTests
         var dialect = SqlDialectFactory.GetDialect(dialectType);
         var result = SqlFormatting.GetParameterName(dialect, index);
         Assert.That(result, Is.EqualTo(expected));
+    }
+
+    [TestCase(SqlDialect.SQLite)]
+    [TestCase(SqlDialect.PostgreSQL)]
+    [TestCase(SqlDialect.SqlServer)]
+    public void GetParameterName_MatchesFormatParameter_ForNamedDialects(SqlDialect dialectType)
+    {
+        var dialect = SqlDialectFactory.GetDialect(dialectType);
+        for (int i = 0; i < 10; i++)
+        {
+            Assert.That(
+                SqlFormatting.GetParameterName(dialect, i),
+                Is.EqualTo(SqlFormatting.FormatParameter(dialect, i)),
+                $"ParameterName must equal the SQL placeholder for named-binding dialects (index {i})");
+        }
+    }
+
+    [Test]
+    public void GetParameterName_IsUniquePerIndex_ForMySql()
+    {
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.MySQL);
+        var names = Enumerable.Range(0, 10)
+                              .Select(i => SqlFormatting.GetParameterName(dialect, i))
+                              .ToArray();
+        Assert.That(names.Distinct().Count(), Is.EqualTo(names.Length));
     }
 
     #endregion

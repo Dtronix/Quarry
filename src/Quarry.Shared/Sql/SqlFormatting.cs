@@ -72,9 +72,15 @@ internal static partial class SqlFormatting
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string GetParameterName(SqlDialect dialect, int index)
     {
-        // All dialects use @p0, @p1 for DbParameter.ParameterName,
-        // even MySQL which uses ? placeholders in SQL
-        return $"@p{index}";
+        // Must match the placeholder emitted by FormatParameter so providers
+        // that bind by name (Npgsql 10+, SQLite, SqlServer) find the parameter.
+        // MySQL uses positional `?` placeholders, so its name is arbitrary but
+        // must be unique across parameters on the command.
+        return dialect switch
+        {
+            SqlDialect.PostgreSQL => $"${index + 1}",
+            _ => $"@p{index}"
+        };
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
