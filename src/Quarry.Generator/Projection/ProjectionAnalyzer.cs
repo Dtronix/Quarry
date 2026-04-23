@@ -2451,8 +2451,10 @@ internal static class ProjectionAnalyzer
     /// Adds a <see cref="CapturedValueExpr"/> as a projection parameter, returning the local
     /// <c>@__proj{N}</c> placeholder that will later be remapped to a global parameter by
     /// <c>ChainAnalyzer.RemapProjectionParameters</c>. Returns null when no
-    /// <paramref name="projectionParams"/> list is available or when the captured value cannot be
-    /// extracted (missing symbol info).
+    /// <paramref name="projectionParams"/> list is available. Mirrors the ParameterInfo
+    /// construction in <c>SqlExprClauseTranslator.ExtractParametersCore</c> so captured-variable
+    /// metadata (static-field flag, expression path, field name/type) is populated consistently
+    /// across the Where-path and Select-projection paths.
     /// </summary>
     private static string? AddCapturedAsProjectionParameter(
         CapturedValueExpr captured,
@@ -2469,10 +2471,12 @@ internal static class ProjectionAnalyzer
             name: placeholder,
             clrType: captured.ClrType,
             valueExpression: captured.SyntaxText,
-            isCaptured: true)
+            isCaptured: true,
+            expressionPath: captured.ExpressionPath)
         {
             CapturedFieldName = captured.VariableName,
             CapturedFieldType = captured.ClrType,
+            IsStaticCapture = captured.IsStaticField,
         };
 
         projectionParams.Add(paramInfo);
