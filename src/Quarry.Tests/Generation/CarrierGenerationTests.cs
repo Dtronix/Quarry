@@ -3211,6 +3211,117 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_EntityInsert_EmitsDollarParameterNames_ForPostgreSQL()
+    {
+        // Regression guard for GH-258: on PostgreSQL, entity insert must assign
+        // ParameterName = "$N" so Npgsql 10 strict binding can match the $N SQL
+        // placeholder emitted by SqlFormatting.FormatParameter.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__p0.ParameterName = \"$1\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"$1\" to match the $1 SQL placeholder");
+        Assert.That(code, Does.Contain("__p1.ParameterName = \"$2\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"$2\" to match the $2 SQL placeholder");
+        Assert.That(code, Does.Not.Match("__p\\d+\\.ParameterName\\s*=\\s*\"@p\\d+\""),
+            "Entity insert on PostgreSQL must not emit @pN ParameterName — it would not bind on Npgsql 10");
+    }
+
+    [Test]
+    public void CarrierGeneration_EntityInsert_EmitsAtParameterNames_ForSQLite()
+    {
+        // Regression guard for GH-258: SQLite still uses @pN names (Microsoft.Data.Sqlite
+        // binds by name against @pN placeholders). Ensure the dialect-aware emission does
+        // not accidentally regress non-PostgreSQL paths.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.Users().Insert(new User { UserName = ""test"", IsActive = true }).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__p0.ParameterName = \"@p0\""),
+            "Entity insert on SQLite must assign ParameterName = \"@p0\"");
+        Assert.That(code, Does.Contain("__p1.ParameterName = \"@p1\""),
+            "Entity insert on SQLite must assign ParameterName = \"@p1\"");
+    }
+
+    [Test]
+    public void CarrierGeneration_BatchInsert_UsesDollarParameterNames_ForPostgreSQL()
+    {
+        // Regression guard for GH-258: batch insert on PostgreSQL must use
+        // ParameterNames.Dollar so each runtime-bound parameter matches the
+        // $N placeholder emitted by BatchInsertSqlBuilder for PostgreSQL.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        var users = new[] { new User { UserName = ""a"", IsActive = true } };
+        await db.Users().InsertBatch(u => (u.UserName, u.IsActive)).Values(users).ExecuteNonQueryAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("ParameterNames.Dollar(__paramIdx)"),
+            "Batch insert on PostgreSQL must use ParameterNames.Dollar for runtime parameter naming");
+        Assert.That(code, Does.Not.Contain("ParameterNames.AtP(__paramIdx)"),
+            "Batch insert on PostgreSQL must not fall back to ParameterNames.AtP");
+    }
+
+    [Test]
     public void CarrierGeneration_SelfContainedReader_EmitsReaderField()
     {
         // Phase 5: self-contained reader carriers emit a static readonly _reader field

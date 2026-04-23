@@ -182,7 +182,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Executes a raw SQL query and streams results as an async enumerable.
     /// </summary>
     /// <typeparam name="T">The result type.</typeparam>
-    /// <param name="sql">The SQL query to execute. Use @p0, @p1, etc. for parameter placeholders.</param>
+    /// <param name="sql">The SQL query to execute. Use <c>@p0</c>, <c>@p1</c>, etc. for parameter placeholders on every dialect, including PostgreSQL — Npgsql rewrites <c>@name</c> markers to native positional form internally, so the same SQL works across providers. Do not mix conventions by using native <c>$N</c> placeholders: the <c>DbParameter.ParameterName</c> assigned here is always <c>@pN</c>, and Npgsql 10 strict binding requires the placeholder and the name to agree.</param>
     /// <param name="parameters">Optional parameter values.</param>
     /// <returns>An async enumerable of results.</returns>
     /// <remarks>
@@ -262,7 +262,11 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
         command.CommandText = sql;
         command.CommandTimeout = (int)_defaultTimeout.TotalSeconds;
 
-        // Add parameters
+        // Add parameters. The @pN naming matches the documented RawSql convention
+        // (callers write @p0, @p1, ... in their SQL). Portable across dialects:
+        // SQLite/SqlServer bind by name; Npgsql translates @name to $N positional;
+        // MySqlConnector is positional and ignores the name. Do not switch this to
+        // dialect-aware $N — it would break users who follow the @pN contract on PG.
         for (int i = 0; i < parameters.Length; i++)
         {
             var param = command.CreateParameter();

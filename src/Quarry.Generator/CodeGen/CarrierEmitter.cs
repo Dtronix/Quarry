@@ -937,7 +937,7 @@ internal static class CarrierEmitter
             {
                 var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__c.Entity!", convertBool);
                 sb.AppendLine($"        var __p{i} = __cmd.CreateParameter();");
-                sb.AppendLine($"        __p{i}.ParameterName = \"@p{i}\";");
+                sb.AppendLine($"        __p{i}.ParameterName = \"{FormatParamName(chain.Dialect, i)}\";");
                 sb.AppendLine($"        __p{i}.Value = (object?){valueExpr} ?? DBNull.Value;");
                 if (needsIntType)
                     sb.AppendLine($"        __p{i}.DbType = System.Data.DbType.Int32;");
@@ -1267,8 +1267,10 @@ internal static class CarrierEmitter
 
     /// <summary>
     /// Formats a compile-time constant parameter name string (no shift).
+    /// Must match the placeholder emitted by SqlFormatting.FormatParameter so the
+    /// DbParameter binds to the right placeholder under strict providers (Npgsql 10+).
     /// </summary>
-    private static string FormatParamName(SqlDialect dialect, int index)
+    internal static string FormatParamName(SqlDialect dialect, int index)
     {
         return dialect switch
         {
@@ -1282,7 +1284,7 @@ internal static class CarrierEmitter
     /// Returns a C# expression that evaluates to the shifted parameter name at runtime.
     /// Uses ParameterNames.AtP/Dollar for zero-allocation lookup.
     /// </summary>
-    private static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, string shiftVar)
+    internal static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, string shiftVar)
     {
         if (dialect == SqlDialect.MySQL)
             return "\"?\"";
