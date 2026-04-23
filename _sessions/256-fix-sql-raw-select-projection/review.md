@@ -3,32 +3,32 @@
 ## Classifications
 | # | Section | Finding | Sev | Rec | Class | Action Taken |
 |---|---------|---------|-----|-----|-------|--------------|
-| 1 | Plan Compliance | QRY029 not emitted for projection-path Sql.Raw validation failure | medium | C | A | |
-| 2 | Plan Compliance | `IsStaticField` dropped in `AddCapturedAsProjectionParameter` | low | C | A | |
-| 3 | Plan Compliance | `NestedProperty` ignored in ResolveColumnRefToPlaceholder (matches sibling helpers) | low | D | D | |
-| 4 | Correctness | `RenderRawArgNode` emits raw text for any `SqlRawExpr` — unparseable C# (ternary, method calls) → C# source text in SQL | medium | A | A | |
-| 5 | Correctness | `TryExtractSqlRawTypeArg` ReturnType fallback for unresolved method symbol | low | D | D | |
-| 6 | Correctness | Dead bool detection branches in `FormatLiteralForProjection` (checks `"true"`/`"1"` but parser only emits `"TRUE"`/`"FALSE"`) | info | B | B | |
-| 7 | Correctness | `GetRawBinaryOperator` `_ => "?"` fallback emits MySQL placeholder for unknown operators | low | B | B | |
-| 8 | Correctness | `HasStringOperand` guard doesn't catch string-typed `ColumnRefExpr` (matches existing SqlExprRenderer TODO) | low | C | A | |
-| 9 | Correctness | `expressionPath` not forwarded in `AddCapturedAsProjectionParameter` | low | C | A | |
-| 10 | Security | No new injection surface | info | D | D | |
-| 11 | Test Quality | No negative tests for invalid Raw in projection (missing/extra args, non-const template, ternary, method invocation, etc.) | high | A | A | |
-| 12 | Test Quality | Shallow captured-var test (only asserts TypeName) | low | B | B | |
-| 13 | Test Quality | No SQLite boolean captured-var coverage | info | D | D | |
-| 14 | Test Quality | No joined multi-arg or joined captured-var test | medium | B | B | |
-| 15 | Test Quality | Operator table covered only for Multiply | low | D | D | |
-| 16 | Codebase | `RenderRawArgNode` duplicates `SqlExprRenderer` logic (operator table, IN/LIKE, IS NULL) | medium | C | A | |
-| 17 | Codebase | `AddCapturedAsProjectionParameter` and `ResolveScalarArgSql` are two paths building the same ParameterInfo | low | C | A | |
-| 18 | Codebase | `case "Raw" when semanticModel != null:` style inconsistent with single-entity path | info | D | D | |
-| 19 | Codebase | Helper placement / naming clean | info | D | D | |
-| 20 | Codebase | `IsRawTemplateValid` shell couples projection validation to Where-path IR shape | low | D | D | |
-| 21 | Codebase | Imports clean | info | D | D | |
-| 22 | Integration | `IsAggregateFunction: true` semantics verified for Sql.Raw | info | D | D | |
-| 23 | Integration | `{@BOOLT}/{@BOOLF}` additive, no collision | info | D | D | |
-| 24 | Integration | `RemapProjectionParameters` unchanged | info | D | D | |
-| 25 | Integration | Failure path degrades to runtime build (not silent) | info | D | D | |
-| 26 | Integration | No public API changes | info | D | D | |
+| 1 | Plan Compliance | QRY029 not emitted for projection-path Sql.Raw validation failure | medium | C | A | Thread-static `_pendingSqlRawErrors` accumulator in ProjectionAnalyzer; drained and attached to ProjectionInfo.SqlRawValidationErrors; PipelineOrchestrator emits QRY029 per entry at the Select call location. New `ProjectionFailureReason.SqlRawValidationError`. Three UsageSiteDiscoveryTests lock in the behavior. |
+| 2 | Plan Compliance | `IsStaticField` dropped in `AddCapturedAsProjectionParameter` | low | C | A | `IsStaticCapture = captured.IsStaticField` propagated, matching SqlExprClauseTranslator.cs:92. |
+| 3 | Plan Compliance | `NestedProperty` ignored in ResolveColumnRefToPlaceholder (matches sibling helpers) | low | D | D | No action — matches GetColumnSql/GetJoinedColumnSql pattern; untested edge case documented in review. |
+| 4 | Correctness | `RenderRawArgNode` emits raw text for any `SqlRawExpr` — unparseable C# (ternary, method calls) → C# source text in SQL | medium | A | A | `case SqlRawExpr: return null` — the parser's fallthrough text no longer leaks into SQL; projection degrades loudly. |
+| 5 | Correctness | `TryExtractSqlRawTypeArg` ReturnType fallback for unresolved method symbol | low | D | D | No action — narrow edge untested; existing null-guard on TypeKind.Error covers the common case. |
+| 6 | Correctness | Dead bool detection branches in `FormatLiteralForProjection` (checks `"true"`/`"1"` but parser only emits `"TRUE"`/`"FALSE"`) | info | B | B | Simplified to `literal.SqlText == "TRUE"` with a comment documenting the invariant. |
+| 7 | Correctness | `GetRawBinaryOperator` `_ => "?"` fallback emits MySQL placeholder for unknown operators | low | B | B | Shared operator table with `SqlExprRenderer.GetSqlOperator` (now internal) — both throw `ArgumentOutOfRangeException` on unknown operators. |
+| 8 | Correctness | `HasStringOperand` guard doesn't catch string-typed `ColumnRefExpr` (matches existing SqlExprRenderer TODO) | low | C | A | New `isStringColumn` delegate threaded alongside the column resolver; `IsStringColumnRef` / `IsJoinedStringColumnRef` consult the column lookup's ClrType. The guard now catches string-column Add operands in both single-entity and joined paths. |
+| 9 | Correctness | `expressionPath` not forwarded in `AddCapturedAsProjectionParameter` | low | C | A | `ExpressionPath = captured.ExpressionPath` propagated. |
+| 10 | Security | No new injection surface | info | D | D | No action required. |
+| 11 | Test Quality | No negative tests for invalid Raw in projection (missing/extra args, non-const template, ternary, method invocation, etc.) | high | A | A | Three new UsageSiteDiscoveryTests lock in QRY029 for Select-projection: too-many-args, too-few-args, non-sequential placeholders. Walker-null-return paths (ternary/method-invocation) still degrade to runtime build without a specific diagnostic; covered implicitly by Phase 1 walker fail-loud. |
+| 12 | Test Quality | Shallow captured-var test (only asserts TypeName) | low | B | B | Expanded to assert Name, Value (via round-trip), IsCollection, IsEnum; now runs `ExecuteFetchAllAsync` to verify the captured DateTime binds end-to-end. |
+| 13 | Test Quality | No SQLite boolean captured-var coverage | info | D | D | No action — existing dialect-aware literal test covers SQLite's 1/0 behavior. |
+| 14 | Test Quality | No joined multi-arg or joined captured-var test | medium | B | B | `Select_SqlRaw_Joined_MultipleArgs` (three args from two entities + literal) and `Select_SqlRaw_Joined_WithCapturedVariable` added. |
+| 15 | Test Quality | Operator table covered only for Multiply | low | D | D | No action — remaining operators shared with SqlExprRenderer which is exercised by the Where-path suite. |
+| 16 | Codebase | `RenderRawArgNode` duplicates `SqlExprRenderer` logic (operator table, IN/LIKE, IS NULL) | medium | C | A | Operator table consolidated (see #7). Remaining IN/LIKE/IS NULL/function-call/unary duplication documented in the walker's docstring as a tracked follow-up; full consolidation requires SqlExprRenderer to grow a canonical-projection output mode with delegate hooks. |
+| 17 | Codebase | `AddCapturedAsProjectionParameter` and `ResolveScalarArgSql` are two paths building the same ParameterInfo | low | C | A | Resolved jointly with #2/#9: AddCapturedAsProjectionParameter now populates the same ParameterInfo fields as SqlExprClauseTranslator's canonical path. Fast-path (ResolveScalarArgSql) remains preferred for simple scalar args; walker-path now matches for deep captures. |
+| 18 | Codebase | `case "Raw" when semanticModel != null:` style inconsistent with single-entity path | info | D | D | No action — defensive and load-bearing; single-entity path has non-null semanticModel by signature. |
+| 19 | Codebase | Helper placement / naming clean | info | D | D | No action required. |
+| 20 | Codebase | `IsRawTemplateValid` shell couples projection validation to Where-path IR shape | low | D | D | No action — now `GetRawTemplateValidationError` (renamed for Phase 4) with documented scope. |
+| 21 | Codebase | Imports clean | info | D | D | No action required. |
+| 22 | Integration | `IsAggregateFunction: true` semantics verified for Sql.Raw | info | D | D | No action required. |
+| 23 | Integration | `{@BOOLT}/{@BOOLF}` additive, no collision | info | D | D | No action required. |
+| 24 | Integration | `RemapProjectionParameters` unchanged | info | D | D | No action required. |
+| 25 | Integration | Failure path degrades to runtime build (not silent) | info | D | D | No action required. |
+| 26 | Integration | No public API changes | info | D | D | No action required. |
 
 ## Plan Compliance
 | Finding | Severity | Why It Matters |
