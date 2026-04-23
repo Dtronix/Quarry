@@ -179,6 +179,24 @@ internal static class PipelineOrchestrator
                 }
             }
 
+            // QRY029: Sql.Raw template placeholder mismatch inside a Select projection.
+            // The projection analyzer builds a transient RawCallExpr for validation in
+            // IsRawTemplateValid; failures are accumulated per projection as
+            // ProjectionInfo.SqlRawValidationErrors so the pipeline can emit them here.
+            // Attaches to the Select call's location (raw.Location) — less precise than the
+            // Where-path (which has the Sql.Raw site directly), but sufficient for the user
+            // to locate the bad template in the Select lambda.
+            if (raw.ProjectionInfo?.SqlRawValidationErrors is { Count: > 0 } projectionRawErrors)
+            {
+                foreach (var error in projectionRawErrors)
+                {
+                    diagnostics.Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.SqlRawPlaceholderMismatch.Id,
+                        raw.Location,
+                        error));
+                }
+            }
+
             // QRY070/QRY071: INTERSECT ALL / EXCEPT ALL not supported on non-PostgreSQL dialects
             if (raw.Kind == InterceptorKind.IntersectAll && site.Bound.Dialect != Sql.SqlDialect.PostgreSQL)
             {

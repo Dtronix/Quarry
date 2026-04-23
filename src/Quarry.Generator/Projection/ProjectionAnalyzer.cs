@@ -22,6 +22,49 @@ namespace Quarry.Generators.Projection;
 internal static class ProjectionAnalyzer
 {
     /// <summary>
+    /// Thread-static accumulator for Sql.Raw template validation errors encountered during
+    /// projection analysis. Mirrors the <see cref="PipelineErrorBag"/> pattern: the incremental
+    /// pipeline is single-threaded per compilation, so thread-static storage is safe.
+    ///
+    /// Projection-path Sql.Raw validation failures surface here because
+    /// <see cref="BuildSqlRawInfo"/> is reached via a deep chain of private static helpers that
+    /// cannot easily thread an out-parameter, and the failed projection itself degrades to a
+    /// runtime-build chain with no user-visible compile error. The list is drained at the
+    /// public entry points and attached to the resulting ProjectionInfo via
+    /// <see cref="ProjectionInfo.SqlRawValidationErrors"/>, so the pipeline can emit QRY029.
+    /// </summary>
+    [ThreadStatic]
+    private static List<string>? _pendingSqlRawErrors;
+
+    private static void RecordSqlRawValidationError(string message)
+    {
+        _pendingSqlRawErrors ??= new List<string>();
+        _pendingSqlRawErrors.Add(message);
+    }
+
+    private static IReadOnlyList<string>? DrainSqlRawValidationErrors()
+    {
+        var list = _pendingSqlRawErrors;
+        _pendingSqlRawErrors = null;
+        return list is { Count: > 0 } ? list : null;
+    }
+
+    private static ProjectionInfo AttachPendingSqlRawErrors(ProjectionInfo info)
+    {
+        var errors = DrainSqlRawValidationErrors();
+        if (errors == null)
+            return info;
+        return new ProjectionInfo(
+            info.Kind, info.ResultTypeName, info.Columns,
+            info.IsOptimalPath, info.NonOptimalReason, info.FailureReason,
+            info.CustomEntityReaderClass, info.JoinedEntityAlias,
+            projectionParameters: info.ProjectionParameters)
+        {
+            SqlRawValidationErrors = errors,
+        };
+    }
+
+    /// <summary>
     /// Analyzes a Select() invocation to extract projection information.
     /// </summary>
     /// <param name="invocation">The Select() invocation syntax.</param>
@@ -35,8 +78,10 @@ internal static class ProjectionAnalyzer
         EntityInfo entityInfo,
         SqlDialect dialect)
     {
+        DrainSqlRawValidationErrors(); // discard any stale errors from an earlier aborted call
         var columnLookup = BuildColumnLookup(entityInfo);
-        return AnalyzeCore(invocation, semanticModel, columnLookup, entityInfo.Columns, entityInfo.EntityName, dialect);
+        var result = AnalyzeCore(invocation, semanticModel, columnLookup, entityInfo.Columns, entityInfo.EntityName, dialect);
+        return AttachPendingSqlRawErrors(result);
     }
 
     /// <summary>
@@ -54,9 +99,11 @@ internal static class ProjectionAnalyzer
         ITypeSymbol entityType,
         SqlDialect dialect)
     {
+        DrainSqlRawValidationErrors(); // discard any stale errors from an earlier aborted call
         // Build column info from the type symbol's properties
         var (columns, columnLookup) = BuildColumnInfoFromTypeSymbol(entityType);
-        return AnalyzeCore(invocation, semanticModel, columnLookup, columns, entityType.Name, dialect);
+        var result = AnalyzeCore(invocation, semanticModel, columnLookup, columns, entityType.Name, dialect);
+        return AttachPendingSqlRawErrors(result);
     }
 
     /// <summary>
@@ -70,6 +117,7 @@ internal static class ProjectionAnalyzer
         SqlDialect dialect,
         SemanticModel? semanticModel = null)
     {
+        DrainSqlRawValidationErrors(); // discard any stale errors from an earlier aborted call
         if (invocation.ArgumentList.Arguments.Count == 0)
             return ProjectionInfo.CreateFailed("object", "Select() requires a lambda argument");
 
@@ -115,7 +163,7 @@ internal static class ProjectionAnalyzer
             // ResultTypeName will be rebuilt during enrichment
         }
 
-        return result;
+        return AttachPendingSqlRawErrors(result);
     }
 
     /// <summary>
@@ -128,6 +176,7 @@ internal static class ProjectionAnalyzer
         InvocationExpressionSyntax invocation,
         SqlDialect dialect)
     {
+        DrainSqlRawValidationErrors(); // discard any stale errors from an earlier aborted call
         if (invocation.ArgumentList.Arguments.Count == 0)
             return ProjectionInfo.CreateFailed("object", "Select() requires a lambda argument");
 
@@ -162,7 +211,8 @@ internal static class ProjectionAnalyzer
         };
 
         var resultType = InferResultTypeFromSyntax(body);
-        return AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect);
+        var result = AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect);
+        return AttachPendingSqlRawErrors(result);
     }
 
     /// <summary>
@@ -2034,10 +2084,15 @@ internal static class ProjectionAnalyzer
 
         // Validate placeholder/arg count. Reuses RawCallExpr.Validate rules via a transient
         // shell populated with empty placeholders; only the template text and argument count
-        // drive the validation, so shell contents need no semantic weight.
+        // drive the validation, so shell contents need no semantic weight. On failure, record
+        // the validation error for the thread-static accumulator so the pipeline can emit QRY029.
         var argCount = arguments.Count - 1;
-        if (!IsRawTemplateValid(template, argCount))
+        var validationError = GetRawTemplateValidationError(template, argCount);
+        if (validationError != null)
+        {
+            RecordSqlRawValidationError(validationError);
             return (null, null);
+        }
 
         // Render each argument after validation succeeds (so we don't allocate ParameterInfo
         // entries for a Raw call that turns out to be malformed).
@@ -2066,9 +2121,10 @@ internal static class ProjectionAnalyzer
     /// Validates a Sql.Raw template against an argument count, mirroring the rules in
     /// <see cref="RawCallExpr.Validate"/>: placeholders must be sequential starting at {0},
     /// all referenced indices must be supplied, and no extra arguments may be present.
-    /// Returns true when the template is valid for the given argument count.
+    /// Returns null when the template is valid for the given argument count, otherwise the
+    /// validation error message as produced by <see cref="RawCallExpr.Validate"/>.
     /// </summary>
-    private static bool IsRawTemplateValid(string template, int argCount)
+    private static string? GetRawTemplateValidationError(string template, int argCount)
     {
         // Build a transient RawCallExpr — only template text + argument count participate
         // in validation; argument subtree contents are irrelevant, so empty placeholders are
@@ -2076,7 +2132,7 @@ internal static class ProjectionAnalyzer
         var empty = new SqlExpr[argCount];
         for (int i = 0; i < argCount; i++)
             empty[i] = new SqlRawExpr(string.Empty);
-        return new RawCallExpr(template, empty).Validate() == null;
+        return new RawCallExpr(template, empty).Validate();
     }
 
     /// <summary>
