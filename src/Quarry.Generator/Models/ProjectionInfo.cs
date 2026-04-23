@@ -86,6 +86,14 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
     public IReadOnlyList<Translation.ParameterInfo>? ProjectionParameters { get; }
 
     /// <summary>
+    /// Gets Sql.Raw template validation errors encountered during projection analysis
+    /// (e.g. placeholder/argument count mismatch). When set, the pipeline emits a QRY029
+    /// diagnostic per entry, matching the Where-path behavior for invalid Sql.Raw templates.
+    /// Null when analysis encountered no Sql.Raw validation failures.
+    /// </summary>
+    public IReadOnlyList<string>? SqlRawValidationErrors { get; init; }
+
+    /// <summary>
     /// Creates a projection info for a failed analysis.
     /// </summary>
     public static ProjectionInfo CreateFailed(
@@ -114,7 +122,8 @@ internal sealed class ProjectionInfo : IEquatable<ProjectionInfo>
             && CustomEntityReaderClass == other.CustomEntityReaderClass
             && JoinedEntityAlias == other.JoinedEntityAlias
             && EqualityHelpers.SequenceEqual(Columns, other.Columns)
-            && EqualityHelpers.SequenceEqual(ProjectionParameters, other.ProjectionParameters);
+            && EqualityHelpers.SequenceEqual(ProjectionParameters, other.ProjectionParameters)
+            && EqualityHelpers.SequenceEqual(SqlRawValidationErrors, other.SqlRawValidationErrors);
     }
 
     public override bool Equals(object? obj) => Equals(obj as ProjectionInfo);
@@ -328,7 +337,15 @@ internal enum ProjectionFailureReason
     /// <summary>
     /// General analysis failure.
     /// </summary>
-    AnalysisFailed
+    AnalysisFailed,
+
+    /// <summary>
+    /// An Sql.Raw&lt;T&gt; call inside a Select projection failed template validation
+    /// (placeholder/argument count mismatch, etc.). The projection degrades to runtime build
+    /// and the pipeline emits a QRY029 diagnostic from
+    /// <see cref="ProjectionInfo.SqlRawValidationErrors"/>.
+    /// </summary>
+    SqlRawValidationError
 }
 
 /// <summary>

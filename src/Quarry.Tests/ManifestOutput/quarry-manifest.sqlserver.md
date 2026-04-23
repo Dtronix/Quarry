@@ -1040,6 +1040,26 @@ SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[Crea
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [t0].[UserName], CASE WHEN [t1].[UserId] > @p0 THEN 1 ELSE 0 END AS [Flag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [t0].[UserName], UPPER([t1].[Status]) AS [Upper] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
 ```
 
@@ -1105,6 +1125,14 @@ SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY [t0].[User
 
 ```sql
 SELECT [t0].[UserName], [t1].[Total], SUM([t1].[Total]) OVER (PARTITION BY [t0].[UserName]) AS [UserTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [t0].[UserName], concat_ws(':', [t0].[UserName], [t1].[Status]) AS [Tag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
 ```
 
 ---
@@ -1346,6 +1374,58 @@ SELECT [UserId], [UserName] FROM [users] ORDER BY [UserName] ASC, [CreatedAt] AS
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT UPPER([UserName]) FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], 'fixed' AS [Literal] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], CASE WHEN [IsActive] THEN 1 ELSE 0 END AS [Flag] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], CASE WHEN [UserId] > @p0 THEN 'high' ELSE 'low' END AS [Bucket] FROM [users]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], UPPER([UserName]) AS [Upper] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], UPPER([UserName]) AS [UserName], [IsActive] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [UserId], [UserName] FROM [users]
 ```
 
@@ -1371,6 +1451,30 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ```sql
 SELECT [UserId], [UserName], [IsActive] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], bucket(([UserId] * 10)) AS [Scaled] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], coalesce([UserId], 42) AS [Flag] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], coalesce([UserName], [Email]) AS [Tag] FROM [users]
 ```
 
 ---
@@ -2683,7 +2787,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 356 |
+| Total discovered | 368 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 68 |
-| Rendered | 288 |
+| Rendered | 300 |

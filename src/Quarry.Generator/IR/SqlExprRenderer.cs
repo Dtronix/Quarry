@@ -531,7 +531,14 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static string GetSqlOperator(SqlBinaryOperator op)
+    /// <summary>
+    /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Shared with the
+    /// Sql.Raw projection walker (<c>ProjectionAnalyzer.RenderRawArgNode</c>) so both paths
+    /// stay in sync as the operator enum evolves. Throws on unknown operators rather than
+    /// emitting a sentinel string — silently rendering an unrecognized operator into SQL
+    /// would reintroduce silent-wrong-SQL failure modes.
+    /// </summary>
+    internal static string GetSqlOperator(SqlBinaryOperator op)
     {
         return op switch
         {
@@ -551,7 +558,7 @@ internal static class SqlExprRenderer
             SqlBinaryOperator.BitwiseAnd => "&",
             SqlBinaryOperator.BitwiseOr => "|",
             SqlBinaryOperator.BitwiseXor => "^",
-            _ => "?"
+            _ => throw new System.ArgumentOutOfRangeException(nameof(op), op, "Unsupported SqlBinaryOperator."),
         };
     }
 }

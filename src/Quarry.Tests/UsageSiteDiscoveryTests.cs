@@ -832,6 +832,124 @@ public class Service
         Assert.That(qry029.Count, Is.EqualTo(0), "Valid template should not emit QRY029");
     }
 
+    [Test]
+    public void QRY029_InSelectProjection_TooManyArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // Template has {0} only, but two args are supplied — in a Select projection.
+        // Where-path QRY029 is exercised above; this verifies projection-path parity.
+        db.Users().Select(u => (u.UserId, Upper: Sql.Raw<string>(""UPPER({0})"", u.UserName, u.UserId)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0),
+            "Should emit QRY029 for too many arguments in Select-projection Sql.Raw (#256 review session 2 finding #1)");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("2 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_InSelectProjection_TooFewArguments_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // Template references {0} and {1} but only one arg is supplied.
+        db.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>(""coalesce({0}, {1})"", u.UserName)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0),
+            "Should emit QRY029 for too few arguments in Select-projection Sql.Raw (#256 review session 2 finding #1)");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("1 argument(s) were supplied"));
+    }
+
+    [Test]
+    public void QRY029_InSelectProjection_NonSequentialPlaceholders_EmitsDiagnostic()
+    {
+        var source = @"
+using Quarry;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public void Test(TestDbContext db)
+    {
+        // Template references {0} and {2} — skips {1}. Three args supplied to match the count.
+        db.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>(""f({0}, {2})"", u.UserName, u.UserId, u.UserName)))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+        var qry029 = diagnostics.Where(d => d.Id == "QRY029").ToList();
+        Assert.That(qry029.Count, Is.GreaterThan(0),
+            "Should emit QRY029 for non-sequential placeholders in Select-projection Sql.Raw (#256 review session 2 finding #1)");
+        Assert.That(qry029[0].GetMessage(), Does.Contain("{1} is missing"));
+    }
+
     #endregion
 
     #region .Trace() Chain Tracing (QRY034)

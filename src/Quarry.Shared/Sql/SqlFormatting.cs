@@ -285,7 +285,13 @@ internal static partial class SqlFormatting
     /// Resolves <c>{identifier}</c> placeholders in a canonical SQL expression to
     /// dialect-quoted identifiers.  Placeholders are produced by the projection
     /// analyzer during discovery; quoting is deferred to render time so that the
-    /// expression is dialect-agnostic until final SQL assembly.
+    /// expression is dialect-agnostic until final SQL assembly. Recognized forms:
+    /// <list type="bullet">
+    ///   <item><c>{identifier}</c> — dialect-quoted identifier</item>
+    ///   <item><c>{@N}</c> — dialect-specific parameter placeholder at index N + paramOffset</item>
+    ///   <item><c>{@BOOLT}</c> / <c>{@BOOLF}</c> — dialect-specific boolean literal
+    ///     (<c>TRUE</c>/<c>FALSE</c> on PostgreSQL, <c>1</c>/<c>0</c> elsewhere)</item>
+    /// </list>
     /// </summary>
     public static string? QuoteSqlExpression(string? sqlExpression, SqlDialect dialect, int paramOffset = 0)
     {
@@ -306,7 +312,15 @@ internal static partial class SqlFormatting
                 if (close > i + 1)
                 {
                     var identifier = sqlExpression.Substring(i + 1, close - i - 1);
-                    if (identifier.Length > 1 && identifier[0] == '@'
+                    if (identifier == "@BOOLT")
+                    {
+                        sb.Append(dialect == SqlDialect.PostgreSQL ? "TRUE" : "1");
+                    }
+                    else if (identifier == "@BOOLF")
+                    {
+                        sb.Append(dialect == SqlDialect.PostgreSQL ? "FALSE" : "0");
+                    }
+                    else if (identifier.Length > 1 && identifier[0] == '@'
                         && int.TryParse(identifier.Substring(1), out var paramIdx))
                     {
                         // {@N} → dialect-specific parameter placeholder
