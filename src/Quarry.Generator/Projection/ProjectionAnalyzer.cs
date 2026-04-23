@@ -1898,7 +1898,8 @@ internal static class ProjectionAnalyzer
             case "Raw":
                 return BuildSqlRawInfo(invocation, semanticModel, projectionParams,
                     arg => RenderRawArgToCanonical(arg, semanticModel, projectionParams, lambdaParameterName,
-                        colRef => ResolveColumnRefToPlaceholder(colRef, columnLookup, lambdaParameterName)));
+                        colRef => ResolveColumnRefToPlaceholder(colRef, columnLookup, lambdaParameterName),
+                        colRef => IsStringColumnRef(colRef, columnLookup, lambdaParameterName)));
         }
 
         return (null, null);
@@ -2172,7 +2173,8 @@ internal static class ProjectionAnalyzer
         SemanticModel semanticModel,
         List<ParameterInfo>? projectionParams,
         string lambdaParameterName,
-        Func<ColumnRefExpr, string?> resolveColumn)
+        Func<ColumnRefExpr, string?> resolveColumn,
+        Func<ColumnRefExpr, bool> isStringColumn)
     {
         // Fast-path: scalar arg that ResolveScalarArgSql can handle with correct semantic-model
         // type inference. Column refs (u.Xxx) and complex expressions drop through to the walker.
@@ -2185,7 +2187,7 @@ internal static class ProjectionAnalyzer
 
         var lambdaParams = new HashSet<string> { lambdaParameterName };
         var parsed = SqlExprParser.Parse(arg, lambdaParams);
-        return RenderRawArgNode(parsed, projectionParams, resolveColumn);
+        return RenderRawArgNode(parsed, projectionParams, resolveColumn, isStringColumn);
     }
 
     /// <summary>
@@ -2198,7 +2200,8 @@ internal static class ProjectionAnalyzer
         SemanticModel semanticModel,
         List<ParameterInfo>? projectionParams,
         HashSet<string> lambdaParameterNames,
-        Func<ColumnRefExpr, string?> resolveColumn)
+        Func<ColumnRefExpr, string?> resolveColumn,
+        Func<ColumnRefExpr, bool> isStringColumn)
     {
         if (IsScalarArgCandidateJoined(arg, lambdaParameterNames))
         {
@@ -2208,7 +2211,7 @@ internal static class ProjectionAnalyzer
         }
 
         var parsed = SqlExprParser.Parse(arg, lambdaParameterNames);
-        return RenderRawArgNode(parsed, projectionParams, resolveColumn);
+        return RenderRawArgNode(parsed, projectionParams, resolveColumn, isStringColumn);
     }
 
     /// <summary>
@@ -2287,7 +2290,8 @@ internal static class ProjectionAnalyzer
     private static string? RenderRawArgNode(
         SqlExpr node,
         List<ParameterInfo>? projectionParams,
-        Func<ColumnRefExpr, string?> resolveColumn)
+        Func<ColumnRefExpr, string?> resolveColumn,
+        Func<ColumnRefExpr, bool> isStringColumn)
     {
         switch (node)
         {
@@ -2302,23 +2306,24 @@ internal static class ProjectionAnalyzer
 
             case BinaryOpExpr bin:
             {
-                // Guard against silent string-concat-on-wrong-dialect: if an Add has a string-typed
-                // literal operand, the user likely means string concat, but emitting "a + b" is
-                // invalid on MySQL/SqlServer (which use CONCAT(a, b)). Bail here so the caller
-                // reports a loud failure; users who want concat should write it in the template.
-                if (bin.Operator == SqlBinaryOperator.Add && HasStringOperand(bin))
+                // Guard against silent string-concat-on-wrong-dialect: if an Add has any string-typed
+                // operand (literal, captured variable, or a string-typed column), the user likely
+                // means string concat, but emitting "a + b" is invalid on MySQL/SqlServer (which use
+                // CONCAT(a, b)). Bail here so the caller reports a loud failure; users who want
+                // concat should write it in the template.
+                if (bin.Operator == SqlBinaryOperator.Add && HasStringOperand(bin, isStringColumn))
                     return null;
 
-                var left = RenderRawArgNode(bin.Left, projectionParams, resolveColumn);
+                var left = RenderRawArgNode(bin.Left, projectionParams, resolveColumn, isStringColumn);
                 if (left == null) return null;
-                var right = RenderRawArgNode(bin.Right, projectionParams, resolveColumn);
+                var right = RenderRawArgNode(bin.Right, projectionParams, resolveColumn, isStringColumn);
                 if (right == null) return null;
                 return $"({left} {GetRawBinaryOperator(bin.Operator)} {right})";
             }
 
             case UnaryOpExpr unary:
             {
-                var operand = RenderRawArgNode(unary.Operand, projectionParams, resolveColumn);
+                var operand = RenderRawArgNode(unary.Operand, projectionParams, resolveColumn, isStringColumn);
                 if (operand == null) return null;
                 return unary.Operator switch
                 {
@@ -2333,7 +2338,7 @@ internal static class ProjectionAnalyzer
                 var parts = new string[func.Arguments.Count];
                 for (int i = 0; i < func.Arguments.Count; i++)
                 {
-                    var p = RenderRawArgNode(func.Arguments[i], projectionParams, resolveColumn);
+                    var p = RenderRawArgNode(func.Arguments[i], projectionParams, resolveColumn, isStringColumn);
                     if (p == null) return null;
                     parts[i] = p;
                 }
@@ -2342,19 +2347,19 @@ internal static class ProjectionAnalyzer
 
             case IsNullCheckExpr isNull:
             {
-                var operand = RenderRawArgNode(isNull.Operand, projectionParams, resolveColumn);
+                var operand = RenderRawArgNode(isNull.Operand, projectionParams, resolveColumn, isStringColumn);
                 if (operand == null) return null;
                 return isNull.IsNegated ? $"{operand} IS NOT NULL" : $"{operand} IS NULL";
             }
 
             case InExpr inExpr:
             {
-                var operand = RenderRawArgNode(inExpr.Operand, projectionParams, resolveColumn);
+                var operand = RenderRawArgNode(inExpr.Operand, projectionParams, resolveColumn, isStringColumn);
                 if (operand == null) return null;
                 var vals = new string[inExpr.Values.Count];
                 for (int i = 0; i < inExpr.Values.Count; i++)
                 {
-                    var v = RenderRawArgNode(inExpr.Values[i], projectionParams, resolveColumn);
+                    var v = RenderRawArgNode(inExpr.Values[i], projectionParams, resolveColumn, isStringColumn);
                     if (v == null) return null;
                     vals[i] = v;
                 }
@@ -2363,15 +2368,21 @@ internal static class ProjectionAnalyzer
 
             case LikeExpr like:
             {
-                var operand = RenderRawArgNode(like.Operand, projectionParams, resolveColumn);
+                var operand = RenderRawArgNode(like.Operand, projectionParams, resolveColumn, isStringColumn);
                 if (operand == null) return null;
-                var pattern = RenderRawArgNode(like.Pattern, projectionParams, resolveColumn);
+                var pattern = RenderRawArgNode(like.Pattern, projectionParams, resolveColumn, isStringColumn);
                 if (pattern == null) return null;
                 return $"{operand}{(like.IsNegated ? " NOT LIKE " : " LIKE ")}{pattern}";
             }
 
-            case SqlRawExpr raw:
-                return raw.SqlText;
+            // SqlRawExpr is the parser's "I couldn't translate this" sentinel. SqlExprParser emits
+            // it for C# ternaries, unknown invocations, array-creation without initializer, and
+            // anything else that doesn't map to a recognized IR node. Emitting the stored text
+            // verbatim into the SQL leaks C# source (e.g. `/* unsupported: C# ternary expression */`
+            // or `u.Foo(x)`), which is the exact silent-wrong-SQL failure mode this PR fixes.
+            // Bail instead; the caller reports a loud failure.
+            case SqlRawExpr:
+                return null;
 
             // Unsupported in projection-arg context: NavigationAccess, Subquery, RawCall (nested),
             // ParamSlot (parser never emits), ExprList. Caller will bail out.
@@ -2469,21 +2480,56 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Returns true if either operand of a binary expression is a string-typed literal or contains
-    /// one directly. Used to guard the <see cref="SqlBinaryOperator.Add"/> walker path from emitting
-    /// <c>+</c> for what is likely a string concatenation — invalid on MySQL/SqlServer.
+    /// Returns true if either operand of a binary expression is a string-typed literal, captured
+    /// variable, or column reference (as reported by <paramref name="isStringColumn"/>). Used to
+    /// guard the <see cref="SqlBinaryOperator.Add"/> walker path from emitting <c>+</c> for what
+    /// is likely a string concatenation — invalid on MySQL/SqlServer.
     /// </summary>
-    private static bool HasStringOperand(BinaryOpExpr bin)
+    private static bool HasStringOperand(BinaryOpExpr bin, Func<ColumnRefExpr, bool> isStringColumn)
     {
-        return IsStringTypedNode(bin.Left) || IsStringTypedNode(bin.Right);
+        return IsStringTypedNode(bin.Left, isStringColumn) || IsStringTypedNode(bin.Right, isStringColumn);
     }
 
-    private static bool IsStringTypedNode(SqlExpr node) => node switch
+    private static bool IsStringTypedNode(SqlExpr node, Func<ColumnRefExpr, bool> isStringColumn) => node switch
     {
         LiteralExpr lit => lit.ClrType == "string" || lit.ClrType == "char",
         CapturedValueExpr cap => cap.ClrType == "string" || cap.ClrType == "char",
+        ColumnRefExpr colRef => isStringColumn(colRef),
         _ => false
     };
+
+    /// <summary>
+    /// Returns true when a single-entity column reference resolves to a string- or char-typed column.
+    /// Used by the string-concat guard in <see cref="HasStringOperand"/>. References that don't
+    /// resolve (typo'd property, entity self-reference) are treated as non-string — the walker's
+    /// column resolver will fail loudly on its own path.
+    /// </summary>
+    private static bool IsStringColumnRef(
+        ColumnRefExpr colRef,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName)
+    {
+        if (colRef.ParameterName != lambdaParameterName)
+            return false;
+        if (!columnLookup.TryGetValue(colRef.PropertyName, out var column))
+            return false;
+        return column.ClrType == "string" || column.ClrType == "char";
+    }
+
+    /// <summary>
+    /// Joined counterpart to <see cref="IsStringColumnRef"/>. Looks up the column via the per-param
+    /// lookup keyed on the column ref's parameter name.
+    /// </summary>
+    private static bool IsJoinedStringColumnRef(
+        ColumnRefExpr colRef,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+    {
+        if (!perParamLookup.TryGetValue(colRef.ParameterName, out var info))
+            return false;
+        if (!info.Lookup.TryGetValue(colRef.PropertyName, out var column))
+            return false;
+        return column.ClrType == "string" || column.ClrType == "char";
+    }
 
     /// <summary>
     /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Mirrors the mapping in
@@ -2582,7 +2628,8 @@ internal static class ProjectionAnalyzer
                     var lambdaParamNames = new HashSet<string>(perParamLookup.Keys);
                     return BuildSqlRawInfo(invocation, semanticModel, projectionParams,
                         arg => RenderRawArgToCanonicalJoined(arg, semanticModel, projectionParams, lambdaParamNames,
-                            colRef => ResolveJoinedColumnRefToPlaceholder(colRef, perParamLookup)));
+                            colRef => ResolveJoinedColumnRefToPlaceholder(colRef, perParamLookup),
+                            colRef => IsJoinedStringColumnRef(colRef, perParamLookup)));
                 }
         }
 
