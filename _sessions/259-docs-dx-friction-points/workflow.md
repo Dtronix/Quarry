@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: REMEDIATE
+phase: REVIEW
 status: active
 issue: #259
 pr: #260
@@ -63,3 +63,4 @@ Add `IsNestedType` (bool) and `FullyQualifiedResultTypeName` (string) to `RawSql
 |---|------------|-----------|---------|
 | 1 | 2026-04-22 | - | INTAKE→DESIGN→PLAN: baseline green (3242 tests), design decisions recorded, plan.md approved. Auto-transition to IMPLEMENT. |
 | 2 | 2026-04-23 | - | Resume. Worktree had been pruned from disk; recreated at `../259-docs-dx-friction-points/` from `origin/259-docs-dx-friction-points`. PR #260 verified MERGEABLE/CLEAN, CI run 24820105388 SUCCESS. Branch 8 ahead, 0 behind origin/master — no rebase needed. Remediation already committed (`be224dd`, `25f0b5e`). REMEDIATE step 8: awaiting user finalize confirmation. |
+| 3 | 2026-04-23 | - | Back-step REMEDIATE → REVIEW at user request (declined finalize). Keep review.md + Decisions intact; re-run analysis pass over the full branch diff including remediation commits `be224dd` and `25f0b5e`. Classifications reset — rerun classification pass after. No targeted focus — general re-review. |
