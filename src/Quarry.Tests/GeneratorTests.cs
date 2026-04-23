@@ -1389,6 +1389,24 @@ public partial class TestDbContext : QuarryContext
     }
 
     [Test]
+    public void DiagnosticDescriptors_QRY073_IsWellFormed()
+    {
+        // QRY073 fires when ChainAnalyzer.BuildProjection cannot bind a navigation-aggregate
+        // SubqueryExpr in Select projection (e.g., the navigation property doesn't exist on
+        // the outer entity). Issue #257 added this so the silent (?)r.GetValue(N) regression
+        // cannot recur. End-to-end emission is exercised indirectly via the cross-dialect
+        // Select_Many_* tests (which would fail to compile if the bind path threw rather
+        // than fell through to the diagnostic + placeholder column).
+        var qry073 = DiagnosticDescriptors.ProjectionSubqueryUnresolved;
+
+        Assert.That(qry073.Id, Is.EqualTo("QRY073"));
+        Assert.That(qry073.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{0}"));
+        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{1}"));
+        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{2}"));
+    }
+
+    [Test]
     public void DiagnosticDescriptors_SetOperation_IdsAreUnique()
     {
         // Verify all set operation diagnostic IDs are distinct from each other
