@@ -29,6 +29,12 @@
     <PackageReference Include="Logsmith" Version="0.5.0" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- Ship build targets so the Quarry.Generated interceptors namespace
+       is registered automatically on consumer projects. -->
+  <ItemGroup>
+    <None Include="build\**" Pack="true" PackagePath="build\" />
+  </ItemGroup>
+
   <!-- Shared project (compiled into this assembly) -->
   <Import Project="..\Quarry.Shared\Quarry.Shared.projitems" Label="Shared" />
   <ItemGroup>
