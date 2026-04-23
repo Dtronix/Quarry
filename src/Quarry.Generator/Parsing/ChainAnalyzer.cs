@@ -1759,7 +1759,7 @@ internal static class ChainAnalyzer
     /// (set by ProjectionAnalyzer when it recognizes <c>u.Orders.Sum(o =&gt; o.Total)</c> etc.).
     /// Binds the subquery against the owning entity, renders it to dialect SQL, and resolves
     /// the aggregate's CLR result type from the selector. Returns the fully-populated column,
-    /// or null if binding fails (in which case <paramref name="diagnostics"/> receives QRY073).
+    /// or null if binding fails (in which case <paramref name="diagnostics"/> receives QRY074).
     /// </summary>
     private static ProjectedColumn? ResolveProjectionSubqueryColumn(
         ProjectedColumn col,
@@ -1774,6 +1774,10 @@ internal static class ChainAnalyzer
     {
         if (col.SubqueryExpression is not SubqueryExpr subquery || col.OuterParameterName == null)
             return null;
+
+        // Prefer the aggregate invocation's own location so the diagnostic squiggle lands on
+        // the specific u.Nav.Sum(...) call rather than the enclosing Select/chain site.
+        var diagLocation = col.SubqueryInvocationLocation ?? location;
 
         // Determine the outer entity that owns the navigation. For single-entity Select,
         // primaryEntity is the only candidate; for joined Select, look up via the parameter map.
@@ -1791,7 +1795,7 @@ internal static class ChainAnalyzer
 
         if (outerEntity == null || lambdaParamForBind == null)
         {
-            EmitProjectionSubqueryDiagnostic(diagnostics, location, subquery);
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
             return null;
         }
 
@@ -1808,9 +1812,21 @@ internal static class ChainAnalyzer
                 inBooleanContext: false,
                 entityLookup: registry.ByEntityName);
         }
-        catch
+        catch (Exception ex)
         {
-            EmitProjectionSubqueryDiagnostic(diagnostics, location, subquery);
+            // Bind resolves navigation failures by returning an unresolved SubqueryExpr
+            // (detected below via IsResolved), so a thrown exception here is a real defect
+            // in the binder — route it to QRY900 with the message and stack preserved so
+            // the root cause is surfaced rather than masked as "navigation unresolved".
+            if (diagnostics != null)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.InternalError.Id,
+                    diagLocation,
+                    $"SqlExprBinder.Bind threw while resolving navigation-aggregate " +
+                    $"'{subquery.NavigationPropertyName}' on parameter '{subquery.OuterParameterName}': " +
+                    $"{ex.GetType().Name}: {ex.Message}"));
+            }
             return null;
         }
 
@@ -1818,18 +1834,30 @@ internal static class ChainAnalyzer
         // navigation can't be resolved on the outer entity. Detect that and bail out.
         if (boundExpr is SubqueryExpr boundSub && !boundSub.IsResolved)
         {
-            EmitProjectionSubqueryDiagnostic(diagnostics, location, subquery);
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
             return null;
         }
 
         var renderedSql = SqlExprRenderer.Render(boundExpr, dialect);
         if (string.IsNullOrEmpty(renderedSql))
         {
-            EmitProjectionSubqueryDiagnostic(diagnostics, location, subquery);
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
             return null;
         }
 
-        var resolvedType = ResolveSubqueryResultType(subquery, outerEntity, registry);
+        var resolvedType = ResolveSubqueryResultType(
+            subquery, outerEntity, registry, out var selectorTypeIsKnown);
+
+        // Min/Max without a resolvable selector type fall back to "object" / GetValue,
+        // which is a silent type-degradation mode (reader returns boxed object?). Surface
+        // it as QRY074 so the user either types the selector explicitly or picks Sum (which
+        // has a deterministic default).
+        if (!selectorTypeIsKnown
+            && (subquery.SubqueryKind == SubqueryKind.Min || subquery.SubqueryKind == SubqueryKind.Max))
+        {
+            EmitProjectionSubqueryDiagnostic(diagnostics, diagLocation, subquery);
+        }
+
         return col with
         {
             ColumnName = "",
@@ -1862,15 +1890,25 @@ internal static class ChainAnalyzer
     /// <summary>
     /// Resolves the CLR result type of an aggregate subquery against its target entity's
     /// column metadata. Falls back to per-aggregate defaults that mirror <c>Sql.cs</c>.
+    /// <paramref name="selectorTypeIsKnown"/> is true when the selector resolved to a
+    /// concrete column type; false when Count (no selector) or when the selector couldn't
+    /// be resolved and the method fell back to a per-aggregate default.
     /// </summary>
     private static string ResolveSubqueryResultType(
-        SubqueryExpr subquery, EntityInfo outerEntity, EntityRegistry registry)
+        SubqueryExpr subquery,
+        EntityInfo outerEntity,
+        EntityRegistry registry,
+        out bool selectorTypeIsKnown)
     {
         if (subquery.SubqueryKind == SubqueryKind.Count)
+        {
+            selectorTypeIsKnown = true;
             return "int";
+        }
 
         var targetEntity = ResolveSubqueryTargetEntity(subquery, outerEntity, registry);
         var selectorType = TryResolveSelectorClrType(subquery.Selector, targetEntity);
+        selectorTypeIsKnown = selectorType != null;
 
         return subquery.SubqueryKind switch
         {
@@ -2069,7 +2107,7 @@ internal static class ChainAnalyzer
                         columns.Add(resolvedSubCol);
                         continue;
                     }
-                    // Binding failed; QRY073 already emitted. Fall through to the existing
+                    // Binding failed; QRY074 already emitted. Fall through to the existing
                     // empty-column emit so downstream stages don't crash on a half-formed column.
                     columns.Add(col with
                     {

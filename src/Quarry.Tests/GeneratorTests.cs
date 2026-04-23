@@ -1389,29 +1389,29 @@ public partial class TestDbContext : QuarryContext
     }
 
     [Test]
-    public void DiagnosticDescriptors_QRY073_IsWellFormed()
+    public void DiagnosticDescriptors_QRY074_IsWellFormed()
     {
-        // QRY073 fires when ChainAnalyzer.BuildProjection cannot bind a navigation-aggregate
+        // QRY074 fires when ChainAnalyzer.BuildProjection cannot bind a navigation-aggregate
         // SubqueryExpr in Select projection (e.g., the navigation property doesn't exist on
         // the outer entity). Issue #257 added this so the silent (?)r.GetValue(N) regression
-        // cannot recur.
-        var qry073 = DiagnosticDescriptors.ProjectionSubqueryUnresolved;
+        // cannot recur. QRY073 is skipped — it was introduced and retired in v0.3.0.
+        var qry074 = DiagnosticDescriptors.ProjectionSubqueryUnresolved;
 
-        Assert.That(qry073.Id, Is.EqualTo("QRY073"));
-        Assert.That(qry073.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
-        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{0}"));
-        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{1}"));
-        Assert.That(qry073.MessageFormat.ToString(), Does.Contain("{2}"));
+        Assert.That(qry074.Id, Is.EqualTo("QRY074"));
+        Assert.That(qry074.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{0}"));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{1}"));
+        Assert.That(qry074.MessageFormat.ToString(), Does.Contain("{2}"));
     }
 
     [Test]
-    public void Generator_WithUnresolvableNavigationAggregateInSelect_ReportsQRY073()
+    public void Generator_WithUnresolvableNavigationAggregateInSelect_ReportsQRY074()
     {
         // ProductSchema declares a Many<VariantSchema> nav but the context does not register
         // VariantSchema (no Variants() accessor). EntityRegistry.ByEntityName has no "Variant"
         // entry, so SqlExprBinder.BindSubquery hits the "target entity not found" branch
         // (BindSubquery line 430) and returns the unresolved SubqueryExpr. BuildProjection's
-        // IsResolved check then emits QRY073. This test would have failed before the
+        // IsResolved check then emits QRY074. This test would have failed before the
         // s_deferredDescriptors registration fix from the #257 review.
         var source = @"
 using Quarry;
@@ -1457,11 +1457,11 @@ public class Service
         var compilation = CreateCompilation(source);
         var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
 
-        var qry073 = diagnostics.FirstOrDefault(d => d.Id == "QRY073");
-        Assert.That(qry073, Is.Not.Null,
-            "Should report QRY073 when a navigation-aggregate references an entity not registered in the context");
-        Assert.That(qry073!.GetMessage(), Does.Contain("Variants"));
-        Assert.That(qry073.GetMessage(), Does.Contain("Sum"));
+        var qry074 = diagnostics.FirstOrDefault(d => d.Id == "QRY074");
+        Assert.That(qry074, Is.Not.Null,
+            "Should report QRY074 when a navigation-aggregate references an entity not registered in the context");
+        Assert.That(qry074!.GetMessage(), Does.Contain("Variants"));
+        Assert.That(qry074.GetMessage(), Does.Contain("Sum"));
     }
 
     [Test]

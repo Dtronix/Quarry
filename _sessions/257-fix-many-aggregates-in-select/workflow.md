@@ -9,8 +9,8 @@ base-branch: master
 phase: REMEDIATE
 status: active
 issue: #257
-pr:
-session: 1
+pr: #263
+session: 2
 phases-total: 5
 phases-complete: 5
 
@@ -71,6 +71,20 @@ Codepath confirmed:
   `col.SqlExpression` as a plain text fragment — so any fix must produce already-rendered SQL
   text (or extend SqlAssembler to invoke Bind+Render for SubqueryExpr columns).
 
+### 2026-04-23 — Rename QRY073 → QRY074 (post-re-review)
+The re-review flagged a regression the first review missed: QRY073 was introduced and
+retired in v0.3.0 (released 2026-04-21), and release notes explicitly told users to
+remove `#pragma warning disable QRY073` directives. Reusing the ID means anyone who
+ignored that guidance would silently suppress the new Error-severity diagnostic —
+precisely the silent-failure mode this PR was filed to eliminate. Final call:
+- New descriptor becomes **QRY074** (next unused ID; QRY074–079 are all unused).
+- Existing v0.3.0 retirement docs (release-notes-v0.3.0.md, analyzer-rules.md,
+  llm.md, src/Quarry.Generator/llm.md) kept intact — QRY073 remains historically
+  retired.
+- Updated docs mark QRY073 as "intentionally skipped" so lingering pragmas stay inert.
+- Descriptor XML-doc records the rationale in source so future additions don't reach
+  back for QRY073.
+
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
@@ -80,3 +94,7 @@ Codepath confirmed:
 | 1 | 2026-04-23 IMPLEMENT |  | Phase 5: QRY073 sanity test (descriptor well-formed). End-to-end emission test deferred — requires constructing a source that compiles but has unresolvable navigation; non-trivial setup. 3251 tests green. |
 | 1 | 2026-04-23 REVIEW |  | Agent review pass: 23 findings (1 High, 3 Medium, 11 Low + positives). Critical: QRY073 was plumbed but NOT registered in s_deferredDescriptors → silently dropped. End-to-end emission test (deferred in Phase 5) would have caught it. |
 | 1 | 2026-04-23 REMEDIATE |  | All 5 A items + 2 B items addressed: QRY073 registration, equality fixes for ProjectedColumn/ProjectionInfo, joined Sum test, HasManyThrough Max test, empty-set assertion test, end-to-end QRY073 emission test (now exercises real bind failure via unregistered context entity). 3255 tests green. |
+| 2 | 2026-04-23 REMEDIATE |  | Resumed. Recreated worktree from origin/257-fix-many-aggregates-in-select (HEAD 6c83165). PR #263 already open, mergeable, CI build green. Branch 4 ahead of master, 0 behind — rebase is a no-op. Ready to finalize. |
+| 2 | 2026-04-23 REVIEW |  | User back-stepped from REMEDIATE/finalize prompt to REVIEW. Full re-analysis requested; Decisions and phases-complete preserved. review.md to be overwritten with fresh agent pass over all 4 commits of the post-remediation branch state. |
+| 2 | 2026-04-23 REVIEW |  | Re-review delivered 18 findings (0 High, 2 Medium, 16 Low). Critical: QRY073 is a retired ID from v0.3.0 — reusing it silently suppresses the new Error diagnostic for anyone who kept `#pragma warning disable QRY073`. User overrode 6 C-recs to A; final classification 8A/0B/0C/10D. |
+| 2 | 2026-04-23 REMEDIATE |  | All 8 A items addressed: QRY073→QRY074 rename (code + tests + analyzer-rules.md + llm.md + generator llm.md); narrow bare catch in ResolveProjectionSubqueryColumn (QRY900 on unexpected throws); per-invocation DiagnosticLocation plumbed via ProjectedColumn.SubqueryInvocationLocation; synthesized unresolved SubqueryExpr fallback in TryParseNavigationAggregateColumn; Min/Max unresolved-selector emits QRY074; Select_Many_Sum_OnEmptyNavigation assertion hardened to exception type; added Select_Joined_HasManyThrough_Max_OnLeftTable. All 3256 tests green (+1 from new joined-through test). |

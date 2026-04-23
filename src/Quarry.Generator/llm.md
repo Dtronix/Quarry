@@ -437,12 +437,13 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY070 | Warning | `IntersectAll` not supported on this dialect |
 | QRY071 | Warning | `ExceptAll` not supported on this dialect |
 | QRY072 | Error | Set operation projection mismatch |
+| QRY074 | Error | Navigation aggregate in `Select` projection unresolved |
 | QRY080 | Error | CTE inner query not analyzable |
 | QRY081 | Error | `FromCte` without matching `With` |
 | QRY082 | Error | Duplicate CTE name in chain |
 | QRY900 | Error | Internal generator error (pipeline exception) |
 
-QRY073 was introduced then retired in v0.3.0 when cross-entity set operations became supported; `#pragma warning disable QRY073` directives should be removed.
+QRY073 was introduced then retired in v0.3.0 when cross-entity set operations became supported; `#pragma warning disable QRY073` directives should be removed. The ID is intentionally skipped so those pragmas remain inert.
 
 ## Key Design Decisions
 

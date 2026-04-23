@@ -173,7 +173,8 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         IReadOnlyList<string>? navigationHops = null,
         bool isJoinNullable = false,
         SqlExpr? subqueryExpression = null,
-        string? outerParameterName = null)
+        string? outerParameterName = null,
+        DiagnosticLocation? subqueryInvocationLocation = null)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -195,6 +196,7 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         IsJoinNullable = isJoinNullable;
         SubqueryExpression = subqueryExpression;
         OuterParameterName = outerParameterName;
+        SubqueryInvocationLocation = subqueryInvocationLocation;
     }
 
     /// <summary>
@@ -323,6 +325,14 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
     /// </summary>
     public string? OuterParameterName { get; init; }
 
+    /// <summary>
+    /// Source location of the aggregate invocation (e.g., the <c>.Sum(...)</c> call) that
+    /// produced <see cref="SubqueryExpression"/>. Used by BuildProjection as the QRY074
+    /// emission site so the error squiggle points at the offending navigation aggregate
+    /// rather than the enclosing chain. Null for non-subquery columns.
+    /// </summary>
+    public DiagnosticLocation? SubqueryInvocationLocation { get; init; }
+
     public bool Equals(ProjectedColumn? other)
     {
         if (other is null) return false;
@@ -346,7 +356,8 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
             && IsEnum == other.IsEnum
             && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops)
             && EqualityComparer<IR.SqlExpr?>.Default.Equals(SubqueryExpression, other.SubqueryExpression)
-            && OuterParameterName == other.OuterParameterName;
+            && OuterParameterName == other.OuterParameterName
+            && Nullable.Equals(SubqueryInvocationLocation, other.SubqueryInvocationLocation);
     }
 
     public override int GetHashCode()

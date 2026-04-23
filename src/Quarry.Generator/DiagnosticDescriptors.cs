@@ -751,11 +751,14 @@ internal static class DiagnosticDescriptors
         description: "All operands of a UNION/INTERSECT/EXCEPT must project the same number of columns.");
 
     /// <summary>
-    /// QRY073: Navigation aggregate in Select projection could not be bound.
+    /// QRY074: Navigation aggregate in Select projection could not be bound.
     /// Severity: Error
+    /// Note: QRY073 was introduced and retired in v0.3.0 (cross-entity set-ops).
+    /// This diagnostic intentionally skips that ID to preserve existing
+    /// `#pragma warning disable QRY073` semantics from the v0.3.0 migration.
     /// </summary>
     public static readonly DiagnosticDescriptor ProjectionSubqueryUnresolved = new(
-        id: "QRY073",
+        id: "QRY074",
         title: "Navigation aggregate in projection could not be resolved",
         messageFormat: "Navigation property '{0}' on parameter '{1}' could not be resolved for aggregate '{2}' in Select projection. Verify the navigation exists on the source entity and that the chain is built in a single fluent expression.",
         category: Category,

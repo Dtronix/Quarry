@@ -1211,16 +1211,17 @@ internal class CrossDialectSubqueryTests
             Is.EqualTo("SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\""));
 
         // Reading SQL NULL into non-nullable decimal must throw — confirms empty-set caveat.
-        // Quarry wraps the underlying InvalidOperationException ("data is NULL at ordinal N")
-        // in a QuarryQueryException; we assert on message content rather than exception type
-        // so this test isn't coupled to the wrapping detail.
+        // We assert on exception *type* (QuarryQueryException wrapping a provider exception,
+        // or the raw provider exception) rather than message wording, so the test doesn't
+        // break when a driver changes its error text.
         Exception? caught = null;
         try { await lt.ExecuteFetchAllAsync(); }
         catch (Exception ex) { caught = ex; }
         Assert.That(caught, Is.Not.Null, "Expected an exception reading SQL NULL into non-nullable decimal");
-        Assert.That(caught!.Message + " " + (caught.InnerException?.Message ?? ""),
-            Does.Contain("NULL"),
-            "Exception should reference NULL data — locks in the empty-set caveat");
+        Assert.That(caught, Is.InstanceOf<QuarryQueryException>()
+            .Or.InstanceOf<InvalidOperationException>()
+            .Or.InstanceOf<InvalidCastException>(),
+            $"Expected a read-time exception wrapping the NULL-into-non-nullable failure. Got: {caught!.GetType().FullName}");
     }
 
     #endregion

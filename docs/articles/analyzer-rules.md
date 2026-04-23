@@ -127,7 +127,13 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY071 | Warning | `ExceptAll` not supported on this dialect (e.g., SQLite) |
 | QRY072 | Error | Set operation projection mismatch (column count or type) |
 
-QRY073 was introduced in v0.3.0 for cross-entity set-ops and retired in the same release when cross-entity support landed. Remove any `#pragma warning disable QRY073` directives.
+QRY073 was introduced in v0.3.0 for cross-entity set-ops and retired in the same release when cross-entity support landed. Remove any `#pragma warning disable QRY073` directives. The ID is intentionally skipped going forward so those pragmas keep their warning-free meaning.
+
+### Projection Subqueries (QRY074)
+
+| Code | Severity | Description |
+|---|---|---|
+| QRY074 | Error | Navigation aggregate (`Sum`/`Min`/`Max`/`Avg`/`Average`/`Count`) in a `Select` projection could not be resolved — the navigation property does not exist on the outer entity or its target entity is not registered on the context |
 
 ### Common Table Expressions (QRY080--QRY082)
 

@@ -692,7 +692,11 @@ internal static class ProjectionAnalyzer
     /// invocation. The unbound SubqueryExpr is parsed via SqlExprParser; binding
     /// (correlation, table/alias) and rendering happen later in
     /// ChainAnalyzer.BuildProjection where the entity registry is available.
-    /// Returns null if SqlExprParser produces something other than a SubqueryExpr.
+    /// If SqlExprParser produces something other than a SubqueryExpr — e.g. an
+    /// unexpected chain shape for a known aggregate method name — a synthetic
+    /// unresolved SubqueryExpr is still attached to the column so
+    /// <see cref="ChainAnalyzer"/> can surface QRY074 at the invocation site
+    /// rather than silently drop the column.
     /// </summary>
     private static ProjectedColumn? TryParseNavigationAggregateColumn(
         InvocationExpressionSyntax invocation,
@@ -703,7 +707,8 @@ internal static class ProjectionAnalyzer
     {
         var paramSet = new HashSet<string>(knownParameters, StringComparer.Ordinal);
         var parsed = IR.SqlExprParser.Parse(invocation, paramSet);
-        if (parsed is not IR.SubqueryExpr subquery)
+        var subquery = parsed as IR.SubqueryExpr ?? TrySynthesizeUnresolvedSubquery(invocation);
+        if (subquery == null)
             return null;
 
         return new ProjectedColumn(
@@ -718,7 +723,42 @@ internal static class ProjectionAnalyzer
             isValueType: true,
             tableAlias: tableAlias,
             subqueryExpression: subquery,
-            outerParameterName: subquery.OuterParameterName);
+            outerParameterName: subquery.OuterParameterName,
+            subqueryInvocationLocation: DiagnosticLocation.FromSyntaxNode(invocation));
+    }
+
+    /// <summary>
+    /// Constructs an unresolved <see cref="IR.SubqueryExpr"/> directly from an
+    /// invocation's syntax shape when the parser can't. IsNavigationAggregateCall
+    /// has already validated the outer-member-access chain, so the root identifier
+    /// and navigation name are reachable from the syntax alone. The subquery is
+    /// unresolved on purpose — binding will fall through to the IsResolved check
+    /// in ChainAnalyzer and emit QRY074 pointing at the invocation.
+    /// </summary>
+    private static IR.SubqueryExpr? TrySynthesizeUnresolvedSubquery(InvocationExpressionSyntax invocation)
+    {
+        if (invocation.Expression is not MemberAccessExpressionSyntax outer) return null;
+        if (outer.Expression is not MemberAccessExpressionSyntax navAccess) return null;
+        var rootName = TryGetRootIdentifierName(navAccess.Expression);
+        if (rootName == null) return null;
+
+        var kind = outer.Name.Identifier.Text switch
+        {
+            "Count" => IR.SubqueryKind.Count,
+            "Sum" => IR.SubqueryKind.Sum,
+            "Min" => IR.SubqueryKind.Min,
+            "Max" => IR.SubqueryKind.Max,
+            "Avg" or "Average" => IR.SubqueryKind.Avg,
+            _ => (IR.SubqueryKind?)null,
+        };
+        if (kind is null) return null;
+
+        return new IR.SubqueryExpr(
+            outerParameterName: rootName,
+            navigationPropertyName: navAccess.Name.Identifier.Text,
+            subqueryKind: kind.Value,
+            predicate: null,
+            innerParameterName: null);
     }
 
     /// <summary>
