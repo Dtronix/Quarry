@@ -197,6 +197,46 @@ internal class CrossDialectMiscTests
             ss:     "SELECT [UserId], UPPER([UserName]) AS [Upper] FROM [users]");
     }
 
+    [Test]
+    public async Task Select_SqlRaw_Joined_WithColumnReference()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, Upper: Sql.Raw<string>("UPPER({0})", o.Status))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, Upper: Sql.Raw<string>("UPPER({0})", o.Status))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, Upper: Sql.Raw<string>("UPPER({0})", o.Status))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, Upper: Sql.Raw<string>("UPPER({0})", o.Status))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", UPPER(\"t1\".\"Status\") AS \"Upper\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", UPPER(\"t1\".\"Status\") AS \"Upper\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, UPPER(`t1`.`Status`) AS `Upper` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], UPPER([t1].[Status]) AS [Upper] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_SingleColumn()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => Sql.Raw<string>("UPPER({0})", u.UserName)).Prepare();
+        var pg = Pg.Users().Select(u => Sql.Raw<string>("UPPER({0})", u.UserName)).Prepare();
+        var my = My.Users().Select(u => Sql.Raw<string>("UPPER({0})", u.UserName)).Prepare();
+        var ss = Ss.Users().Select(u => Sql.Raw<string>("UPPER({0})", u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT UPPER(\"UserName\") FROM \"users\"",
+            pg:     "SELECT UPPER(\"UserName\") FROM \"users\"",
+            mysql:  "SELECT UPPER(`UserName`) FROM `users`",
+            ss:     "SELECT UPPER([UserName]) FROM [users]");
+    }
+
     #endregion
 
     #region Instance Field Capture

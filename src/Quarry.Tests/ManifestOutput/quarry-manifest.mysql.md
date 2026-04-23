@@ -1032,6 +1032,14 @@ SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`Crea
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `t0`.`UserName`, UPPER(`t1`.`Status`) AS `Upper` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
 ```
 
@@ -1331,6 +1339,14 @@ SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC
 
 ```sql
 SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC, `CreatedAt` ASC
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT UPPER(`UserName`) FROM `users`
 ```
 
 ---
@@ -2691,7 +2707,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 357 |
+| Total discovered | 359 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 68 |
-| Rendered | 289 |
+| Rendered | 291 |

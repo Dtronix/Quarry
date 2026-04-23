@@ -2418,9 +2418,42 @@ internal static class ProjectionAnalyzer
                     return columnSql != null ? ($"MAX({columnSql})", clrType) : (null, null);
                 }
                 break;
+
+            case "Raw" when semanticModel != null:
+                {
+                    var lambdaParamNames = new HashSet<string>(perParamLookup.Keys);
+                    return BuildSqlRawInfo(invocation, semanticModel, projectionParams,
+                        arg => RenderRawArgToCanonicalJoined(arg, semanticModel, projectionParams, lambdaParamNames,
+                            colRef => ResolveJoinedColumnRefToPlaceholder(colRef, perParamLookup)));
+                }
         }
 
         return (null, null);
+    }
+
+    /// <summary>
+    /// Resolves a <see cref="ColumnRefExpr"/> from a joined projection context to a canonical
+    /// <c>{alias}.{ColumnName}</c> placeholder. Mirrors <see cref="GetJoinedColumnSql"/> behavior:
+    /// when the property is not in the lookup for that parameter, the property name itself is used
+    /// so downstream enrichment can rewrite it.
+    /// </summary>
+    private static string? ResolveJoinedColumnRefToPlaceholder(
+        ColumnRefExpr colRef,
+        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup)
+    {
+        // Ignore bare lambda parameter references (entity self-reference) — SqlExprParser emits a
+        // ColumnRef with ParameterName == PropertyName for these, and they are not column references.
+        if (colRef.ParameterName == colRef.PropertyName)
+            return null;
+
+        if (!perParamLookup.TryGetValue(colRef.ParameterName, out var info))
+            return null;
+
+        var columnPart = info.Lookup.TryGetValue(colRef.PropertyName, out var column)
+            ? column.ColumnName
+            : colRef.PropertyName;
+
+        return $"{{{info.Alias}}}.{{{columnPart}}}";
     }
 
     /// <summary>
