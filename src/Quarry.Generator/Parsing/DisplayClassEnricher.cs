@@ -249,8 +249,7 @@ internal static class DisplayClassEnricher
                     rawSqlTypeInfo.HasCancellationToken,
                     rawSqlTypeInfo.ScalarReaderMethod,
                     sqlLiteral,
-                    rawSqlTypeInfo.IsNestedType,
-                    rawSqlTypeInfo.FullyQualifiedResultTypeName);
+                    rawSqlTypeInfo.IsNestedType);
             }
 
             site.RawSqlTypeInfo = rawSqlTypeInfo;
@@ -372,8 +371,7 @@ internal static class DisplayClassEnricher
             typeInfo.HasCancellationToken,
             typeInfo.ScalarReaderMethod,
             typeInfo.SqlLiteral,
-            typeInfo.IsNestedType,
-            typeInfo.FullyQualifiedResultTypeName);
+            typeInfo.IsNestedType);
     }
 
     /// <summary>

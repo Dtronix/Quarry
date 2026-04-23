@@ -1,90 +1,126 @@
-# Review: #259
+# Review: #260
 
 ## Classifications
 
 | # | Section | Finding (one line) | Sev | Rec | Class | Action Taken |
 |---|---------|---------------------|-----|-----|-------|--------------|
-| 1 | Plan Compliance | `RawCallSite.EntityNamespace` field from plan was not added; Phase 2 filters by `RawSqlTypeInfo.IsNestedType` instead | Info | D | D | Dismissed: functionally equivalent outcome. |
-| 2 | Plan Compliance | Analyzer not registered "alongside `QuarryQueryAnalyzer`"; ships as a standalone `[DiagnosticAnalyzer]` class | Info | D | D | Dismissed: Roslyn discovery works identically. |
-| 3 | Correctness | `CheckRowEntityMaterializability` does not reject abstract classes or interfaces used as `T` | Minor | B | B | Fixed in `be224dd` — abstract class + interface rejection added to `CheckRowEntityMaterializability`; docs updated in `25f0b5e`. |
-| 4 | Correctness | QRY043 suppression covers both the interceptor and the struct emission (positive observation) | Info | D | D | Positive observation, no action. |
-| 5 | Test Quality | No test for nested row type taking the struct-reader fallback branch | Minor | B | B | Fixed in `be224dd` — added nested-row struct-reader test covering `SanitizeForIdentifier` + FQN struct emission. |
-| 6 | Test Quality | Namespace-level-row regression does not assert the `using Rows;` directive is emitted | Minor | B | B | Fixed in `be224dd` — regression now asserts the `using TestApp.Rows;` directive. |
-| 7 | Test Quality | QRY044 with `build_property.InterceptorsNamespaces` explicitly null is not directly tested | Minor | B | B | Fixed in `be224dd` — added explicit-null property test pinning null/empty convergence. |
-| 8 | Codebase Consistency | QRY044 uses `Category = "QuarryAnalyzer"` while neighboring QRY042 uses `"QuarryMigration"` | Info | D | D | Defensible: analyzer-emitted, not migration-related. |
-| 9 | Integration | Nested-type FQN emission uses Roslyn `global::`-prefixed names (positive observation) | Info | D | D | Positive observation, no action. |
+| 1 | Plan Compliance | `RawSqlTypeInfo.FullyQualifiedResultTypeName` is written but never read | Minor | B | B | Removed `FullyQualifiedResultTypeName` from `RawSqlTypeInfo` (ctor param, property, `Equals`) and its two call-site passes in `UsageSiteDiscovery`. |
+| 2 | Plan Compliance | `RawCallSite.EntityNamespace` plan field not added; filter via `IsNestedType` instead | Info | D | D | Dismissed: functionally equivalent; carried from prior review. |
+| 3 | Plan Compliance | Analyzer is standalone rather than "alongside `QuarryQueryAnalyzer`" | Info | D | D | Dismissed: Roslyn discovery is attribute-based. |
+| 4 | Correctness | `HasQuarryContextAttributeSyntactic` misses `AliasQualifiedNameSyntax` (`[global::...]`) — QRY044 silently skipped | Minor | A | A | Added `AliasQualifiedNameSyntax` branch in the attribute-name switch so `[global::QuarryContextAttribute]` and extern-alias forms pass the syntactic pre-filter. |
+| 5 | Correctness | QRY043 fires for entity (registered) types since they land in `RawSqlTypeKind.Dto` | Info | D | D | Dismissed: by design — the shape check is correct for entities too. |
+| 6 | Correctness | QRY043 suppresses both interceptor and struct emission (positive observation) | Info | D | D | Positive observation, no action. |
+| 7 | Test Quality | QRY044 `AliasQualifiedNameSyntax` attribute form is untested | Minor | B | B | Added `EmitsQRY044_WhenAttributeUsesAliasQualifiedName` covering `[global::QuarryContextAttribute]`. |
+| 8 | Test Quality | Struct row types with init-only properties not tested against QRY043 | Minor | B | B | Added `RawSqlAsync_StructRowWithInitOnlyProperty_EmitsQRY043` pinning the property-loop path on structs. |
+| 9 | Test Quality | `RawSqlScalarAsync<T>` threaded through QRY043 suppression paths but never exercised in tests | Minor | B | B | Added `RawSqlScalarAsync_DoesNotEmitQRY043_AndEmitsInterceptor_WhenMixedWithFailingRawSqlAsync` exercising the scalar branch in `PipelineOrchestrator` + `FileEmitter`. |
+| 10 | Test Quality | Packaging (`Quarry.targets`) unverified by automated tests (by design) | Info | D | D | Dismissed: documented tradeoff in plan.md. |
+| 11 | Codebase Consistency | QRY044 `Category = "QuarryAnalyzer"` vs neighboring QRY042 `"QuarryMigration"` | Info | D | D | Dismissed: defensible — analyzer-emitted, not migration-related. |
+| 12 | Integration | QRY043 is Error — replaces `CS7036`/`CS8852` with a clearer message (positive observation) | Info | D | D | Positive observation, no action. |
+| 13 | Integration | `Quarry.targets` package path matches NuGet convention (positive observation) | Info | D | D | Positive observation, no action. |
 
 ## Plan Compliance
 
-The plan specified adding an `EntityNamespace` (string?) field to `RawCallSite` and wiring `FileEmitter` to consume that directly (plan.md lines 82, 116-121). The actual Phase 2 implementation skipped that field — `RawCallSite` only gained `MaterializabilityError` (`src/Quarry.Generator/IR/RawCallSite.cs:237-240`). Instead, `FileEmitter.Emit()` (`src/Quarry.Generator/CodeGen/FileEmitter.cs:92-97`) filters out nested sites by `s.RawSqlTypeInfo?.IsNestedType != true` and still runs the old `GetNamespaceFromTypeName` path. Functionally equivalent, but it drifts from the plan's "resolve the actual namespace from the Roslyn symbol and store it" approach.
+The branch delivers all five planned phases — QRY043 (`DiagnosticDescriptors.cs:558-574`, `DisplayClassEnricher.cs:263-269`, `PipelineOrchestrator.cs:133-145`), nested row types (`UsageSiteDiscovery.cs:4015-4094`, `FileEmitter.cs:91-94, 269-274`), `Quarry.targets` (`src/Quarry/build/Quarry.targets`, `Quarry.csproj:32-35`), QRY044 (`AnalyzerDiagnosticDescriptors.cs:216-232`, `InterceptorsNamespacesAnalyzer.cs`), and the docs (`llm.md`, `src/Quarry.Generator/README.md`, `src/Quarry.Generator/llm.md`). Decisions in workflow.md are honored: diagnostic IDs are QRY043 (generator-side) and QRY044 (analyzer-side), skipping the already-used QRY042. The remediation commits (`be224dd`, `25f0b5e`) extend `CheckRowEntityMaterializability` to reject interfaces and abstract classes with updated diagnostic docs — a true superset of the plan.
 
-Plan also specified registering the analyzer alongside `QuarryQueryAnalyzer` (plan.md line 234); actual impl ships `InterceptorsNamespacesAnalyzer` as an independent `[DiagnosticAnalyzer]` class (`src/Quarry.Analyzers/InterceptorsNamespacesAnalyzer.cs:20-21`). Roslyn discovery works on attribute, so this is benign. It is placed at the assembly root (next to `QuarryQueryAnalyzer.cs`, `RawSqlMigrationAnalyzer.cs`) rather than under `Rules/` — consistent with how the other top-level analyzer classes are organized.
+There is modest drift from the plan's mechanical sketch:
+1. Plan said add `RawCallSite.EntityNamespace` and use it to drive `FileEmitter.Emit()`'s `entityNamespaces` (plan.md:82, 116-121). Implementation instead filters by `RawSqlTypeInfo.IsNestedType` and retains `InterceptorCodeGenerator.GetNamespaceFromTypeName` (`FileEmitter.cs:91-97`). Functionally identical.
+2. Plan specified branching in `RawSqlBodyEmitter` on `IsNestedType` between `ResultTypeName` and `FullyQualifiedResultTypeName` (plan.md:125-129). Implementation collapses the branch by always storing the final display form (FQN for nested, short for not) in `ResultTypeName` at discovery (`UsageSiteDiscovery.cs:4023`). Consequence: `FullyQualifiedResultTypeName` is set and persisted in state but never consumed by any emitter — it is dead on the read side (grep shows only assignments in `RawSqlTypeInfo.cs:28`, `UsageSiteDiscovery.cs:4036, 4093`, and `DisplayClassEnricher.cs:253, 376`; no reads). Minor bookkeeping noise and incremental-cache surface for no benefit.
+3. Plan said register QRY044 "alongside `QuarryQueryAnalyzer`" (plan.md:234). Implementation ships as an independent `[DiagnosticAnalyzer]`-attributed class (`InterceptorsNamespacesAnalyzer.cs:20`). Roslyn discovery works identically; this is stylistic drift only.
+
+No scope creep beyond the design decisions.
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| `RawCallSite.EntityNamespace` field from plan was not added; Phase 2 instead filters by `RawSqlTypeInfo.IsNestedType` in `FileEmitter.cs:92-97` | Info | Plan drift. Outcome is equivalent for the RawSql path, but a future maintainer reading plan.md will not find the promised field. |
-| Analyzer not registered "alongside `QuarryQueryAnalyzer`"; ships as standalone class with `[DiagnosticAnalyzer]` | Info | Works identically for consumers; discrepancy with plan text only. |
+| `RawSqlTypeInfo.FullyQualifiedResultTypeName` is written but never read — `RawSqlBodyEmitter` always consumes `ResultTypeName` which already carries the final form (`RawSqlTypeInfo.cs:79`, grep confirms zero readers) | Minor | Dead data on an `IEquatable<T>` model participates in incremental cache comparisons and clutters the public-surface ctor; either consume it in emitters per the plan or drop it from the type. |
+| Plan called for a `RawCallSite.EntityNamespace` field; implementation filters via `RawSqlTypeInfo.IsNestedType` in `FileEmitter.cs:91-94` | Info | Equivalent outcome; future maintainers reading plan.md will not find the promised field. |
+| Analyzer is standalone rather than "alongside `QuarryQueryAnalyzer`" (`InterceptorsNamespacesAnalyzer.cs:20-21`) | Info | Discovery works via `[DiagnosticAnalyzer]` attribute, so functionally equivalent. |
 
 ## Correctness
 
-- `CheckRowEntityMaterializability` (`DisplayClassEnricher.cs:281-314`): the struct branch skips the constructor check. Safe — C# requires a public parameterless constructor on a struct regardless of declared visibility (the implicit one always exists as public). `typeArgSymbol.TypeKind == TypeKind.TypeParameter || TypeKind.Error` is filtered out earlier at line 211, so generics/errors cannot reach this method. However, the check does not reject abstract classes or interfaces — if a user were able to pass an abstract class as `T`, `CheckRowEntityMaterializability` would see a public parameterless ctor and approve, and `new T()` would then fail downstream with `CS0144`. Unlikely in practice because `RawSqlAsync<T>` is generic without a `new()` constraint but also without special handling.
-- `RawSqlTypeInfo.Equals`: includes all new fields. `GetHashCode` (`RawSqlTypeInfo.cs:99`) omits `FullyQualifiedResultTypeName`, which is acceptable since it is derived-correlated with `ResultTypeName` and including it would not materially change distribution.
-- `FileEmitter.SanitizeForIdentifier` (`FileEmitter.cs:888-901`): for inputs beginning with `global::`, strips the prefix, then replaces every non-alphanumeric/underscore. For the nested-type FQNs produced by `ResolveRawSqlTypeInfo` the first character is always a letter (the root namespace), so leading-digit identifiers are not possible in practice. Empty input returns the original empty string unchanged (early return at 890-891); but callers only reach this with a non-empty `ResultTypeName`, so this is not exercisable.
-- `InterceptorsNamespacesAnalyzer.HasQuarryContextAttributeSyntactic` (`InterceptorsNamespacesAnalyzer.cs:72-89`): matches `QuarryContext`/`QuarryContextAttribute`, walking `QualifiedNameSyntax` to its `Right`. Catches `[QuarryContext]`, `[Quarry.QuarryContext]`, `[global::Quarry.QuarryContext]`. It does NOT guard against attributes with `AliasQualifiedNameSyntax` (e.g., `using Foo = Quarry.QuarryContextAttribute; [Foo]`) — rare but the semantic-level check at line 44 catches it. Assembly-level `[assembly: QuarryContext]` is irrelevant here because the analyzer only registers for `SyntaxKind.ClassDeclaration`.
-- QRY043 suppression (`FileEmitter.cs:505-510`): suppresses the interceptor method itself. Struct emission is also gated by `site.MaterializabilityError == null` at `FileEmitter.cs:246`, so the `file struct IRowReader<T>` is not emitted either. Consistent.
-- `PipelineOrchestrator.CollectTranslatedDiagnostics` (`PipelineOrchestrator.cs:136-145`): reports QRY043 using `raw.ResultTypeName ?? raw.EntityTypeName`. For RawSql sites `resultTypeName == entityTypeName` (`UsageSiteDiscovery.cs:3989-3990`), so both render the same FQN.
+`CheckRowEntityMaterializability` (`DisplayClassEnricher.cs:281-314`) covers the documented cases: interface, abstract class, missing parameterless ctor, init-only property. The struct branch correctly skips the ctor check (C# always synthesizes a public parameterless ctor for structs). The property walk also excludes `IsStatic` and `IsIndexer`, which is correct.
+
+However, the check is scoped only to `RawSqlTypeKind.Dto` (`DisplayClassEnricher.cs:263`), and `ResolveRawSqlTypeInfo` classifies *every* non-scalar type as `Dto` — including registered entity types. That is correct for QRY043 coverage (entities are also materialized via `new T()`), but it means entity-type errors (abstract entity with `[QuarryContext]` registry entry) will also trigger QRY043, which may be the first-ever QRY043 a user sees from a code path they were not reaching via RawSql. No tests exercise this combination. Low likelihood in practice.
+
+`RawSqlTypeInfo.GetHashCode` (`RawSqlTypeInfo.cs:99`) includes `IsNestedType` but omits `FullyQualifiedResultTypeName` — acceptable because when `IsNestedType` is true, `ResultTypeName` already equals the FQN (via `displayName` at `UsageSiteDiscovery.cs:4023`), so the two fields are correlated and both redundant in the hash. `Equals` (`:90-91`) correctly includes both.
+
+`FileEmitter.SanitizeForIdentifier` (`:884-900`) strips the leading `global::` before sanitizing. Inputs only originate from `ResolveRawSqlTypeInfo` where the FQN starts with a namespace segment (always a letter), so leading-digit outputs are impossible in practice. The empty-string guard returns early, which is harmless (the caller guards structName emission behind a non-empty `ResultTypeName`).
+
+QRY043 suppression is complete: both the interceptor body (`FileEmitter.cs:505-510`) and the struct reader (`:246`) are gated by `site.MaterializabilityError == null`. No "half-emitted" state where one appears without the other.
+
+`InterceptorsNamespacesAnalyzer.HasQuarryContextAttributeSyntactic` (`:72-89`) matches `QuarryContext` / `QuarryContextAttribute` across `QualifiedNameSyntax` and `SimpleNameSyntax`. An attribute written via `AliasQualifiedNameSyntax` (`[global::Quarry.QuarryContextAttribute]`) or a C# `using` alias (`using Ctx = Quarry.QuarryContextAttribute; [Ctx]`) is not matched syntactically — but the follow-up semantic check at `:44` catches the semantic-alias case by examining `AttributeClass.Name`. The `global::`-qualified case decomposes into `AliasQualifiedNameSyntax` wrapping a `QualifiedNameSyntax`; the syntactic pre-filter falls through to `_ => null` and returns false, causing the diagnostic to be missed on that exact spelling. Rare but reachable.
+
+`PipelineOrchestrator.CollectTranslatedDiagnostics` (`:136-145`) reports QRY043 using `raw.ResultTypeName ?? raw.EntityTypeName`. These are equal for RawSql sites (both set to the same `ToFullyQualifiedDisplayString` result at `UsageSiteDiscovery.cs:3999-4001`). The fallback is defensive and harmless.
+
+`PipelineOrchestrator` emits QRY043 via `continue`, ensuring no further QRY0xx diagnostic fires for the same site. This matches the pattern used by QRY031 immediately above. Good.
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| `CheckRowEntityMaterializability` does not reject abstract classes or interfaces used as `T` | Minor | Unlikely in practice (most users supply concrete DTOs), but if it occurs the user will see a downstream CS0144 against generated code rather than a clear QRY043. |
-| QRY043 suppression covers both the interceptor and the struct emission (`FileEmitter.cs:246` and `:508-510`) | Info | Positive observation — no "half-emitted" state. |
+| `HasQuarryContextAttributeSyntactic` pre-filter does not handle `AliasQualifiedNameSyntax` (e.g. `[global::Quarry.QuarryContextAttribute]`), causing the syntactic fast-path to fail and the analyzer to skip the class entirely (`InterceptorsNamespacesAnalyzer.cs:72-89`) | Minor | A user who writes the attribute with an explicit `global::` alias will silently not get QRY044, defeating the analyzer's purpose for that call site. |
+| QRY043 is also raised for entity (registered) types that fail the shape check because they land in `RawSqlTypeKind.Dto` (`DisplayClassEnricher.cs:263`) | Info | Benign — the shape check is correct for entities too — but not covered by a test; entity-authors who make their entity abstract will see QRY043 on every RawSqlAsync. |
+| QRY043 suppresses both interceptor and struct emission (`FileEmitter.cs:246, 505-510`) — positive observation | Info | Avoids "half-emitted" shape where one appears without the other. |
 
 ## Security
 
-No new runtime surface. `build_property.InterceptorsNamespaces` is read by the analyzer and echoed back into the compiler-time warning message as the literal `<InterceptorsNamespaces>$(InterceptorsNamespaces);{1}</InterceptorsNamespaces>` template (`AnalyzerDiagnosticDescriptors.cs:226-228`); only the namespace symbol name (not the raw property value) is interpolated, so malformed MSBuild values cannot escape into a misleading message.
+The analyzer reads `build_property.InterceptorsNamespaces` from `GlobalOptions` (`InterceptorsNamespacesAnalyzer.cs:56-58`) and does not echo the raw MSBuild value into the diagnostic message — only the symbol-derived `namespaceName` is interpolated (`:65-68`), so a malicious or malformed property value cannot inject escaped characters into the warning message. `Quarry.targets` is a trivial property-setter with no custom `<Exec>` or `<Import>`. No new dependencies are introduced. No runtime changes.
 
 No concerns.
 
 ## Test Quality
 
-Phase 1/2/4 tests cover the intended happy-path and failure-mode triggers:
-- QRY043: positional record (`RawSqlGeneratorPipelineTests.cs:381-431`), init-only (`:433-479`), plain-class negative (`:481-524`). Severity and message contents are asserted.
-- Nested row type: positive compile + FQN emission (`:256-316`); regression confirming namespace-level types still use short name + `using` (`:318-375`).
-- QRY044: opted-in, missing, global namespace, multiple-contexts-mixed, non-context (`InterceptorsNamespacesAnalyzerTests.cs:50-151`).
+Phase 1/2/4 are well tested. `RawSqlGeneratorPipelineTests.cs` adds:
+- Nested row type positive compile (`:256-316`)
+- Nested row type struct-reader fallback with `SELECT Id*2, Name` (`:320-375`) — covers `SanitizeForIdentifier` + FQN struct emission
+- Namespace-level row regression asserting `using TestApp.Rows;` (`:377-434`)
+- QRY043 positional record (`:438-488`), init-only (`:490-536`), abstract class (`:538-582`), interface (`:584-628`), plain-class negative (`:630-672`)
+
+`InterceptorsNamespacesAnalyzerTests.cs` covers: opted-in negative, opted-out, global namespace (skipped), multiple contexts with mixed opt-in, explicit-null property, non-context class. All six cases pass clear assertions on severity and message contents.
 
 Gaps:
-- Nested row type + struct-reader fallback is not tested: the nested test SQL `"SELECT Id, Name FROM users"` resolves via `RawSqlColumnResolver` and emits a static lambda; `SanitizeForIdentifier` and the `file struct RawSqlReader_TestApp_Host_NestedRow_0` path never run. A test with an unresolvable SQL (e.g. `"SELECT id*2 FROM users"`) on a nested row type would close this.
-- The "namespace-level row still uses short name" assertion (`RawSqlGeneratorPipelineTests.cs:371-374`) checks for `new UserRow()` and absence of `global::TestApp.Rows.UserRow`. Correct for the happy-path but it does not verify that a `using TestApp.Rows;` directive is emitted. A grep for the `using` would complete the regression guarantee.
-- QRY044 when `build_property.InterceptorsNamespaces` is entirely absent (null, not empty) combined with a `[QuarryContext]` class is not tested. Production code at `InterceptorsNamespacesAnalyzer.cs:57-62` treats null identically to empty, which is correct — but a test asserting "null + context in `MyApp.Data` → QRY044" would pin the behavior.
+- No test for `CheckRowEntityMaterializability` with a struct that has `init`-only properties. Structs skip the ctor branch (`DisplayClassEnricher.cs:297`) so the property loop is the only path. A `struct { int Id { get; init; } }` would exercise the init-only path on structs — currently untested.
+- `RawSqlScalarAsync<T>` path for QRY043 is enumerated in `PipelineOrchestrator.cs:137` and `FileEmitter.cs:508` but only `RawSqlAsync<T>` is exercised in tests. Scalars skip the materializability check entirely (`DisplayClassEnricher.cs:263`) so no diagnostic should be reached via `RawSqlScalarAsync<UserRow>`; this implicit contract is not asserted.
+- QRY044 with `AliasQualifiedNameSyntax` attribute form (`[global::Quarry.QuarryContextAttribute]`) is not tested — this ties to the Correctness finding above and would have caught the gap.
+- `Quarry.targets` itself is declared untestable in plan.md:188-193 ("Packaging is difficult to unit-test"). No E2E verification that the file lands in the nupkg or that `InterceptorsNamespaces` resolves as expected in a downstream consumer. Reasonable tradeoff.
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| No test for nested row type taking the struct-reader fallback branch | Minor | `SanitizeForIdentifier` and `EmitRowReaderStruct` with an FQN `ResultTypeName` are untested; a regression could ship silently. |
-| Namespace-level-row regression does not assert the `using Rows;` directive is emitted | Minor | Currently confirms the short name is used but not that the namespace is imported; a bug that forgot the `using` would still pass this test. |
-| QRY044 with `build_property.InterceptorsNamespaces` explicitly null is not directly tested | Minor | Covered indirectly (null and empty converge at line 57-62), but an explicit test would pin the contract. |
+| QRY044 `AliasQualifiedNameSyntax` attribute form (`[global::Quarry.QuarryContextAttribute]`) is untested | Minor | The correctness gap above would be caught by a test asserting the diagnostic fires on the global-prefixed attribute spelling. |
+| Struct row types with init-only properties are not tested against QRY043 | Minor | Structs skip the ctor branch, so the property-only path is not pinned; a regression that lost the property loop would silently pass existing tests. |
+| `RawSqlScalarAsync<T>` is threaded through QRY043 suppression paths but never exercised end-to-end in tests | Minor | Scalars don't hit `CheckRowEntityMaterializability`, but the explicit `Kind is RawSqlAsync or RawSqlScalarAsync` branch in `PipelineOrchestrator.cs:137` is dead unless tested. |
+| Packaging (`Quarry.targets`) is unverified by automated tests — by design | Info | Plan explicitly scopes this as manual verification; documented tradeoff. |
 
 ## Codebase Consistency
 
-- `CheckRowEntityMaterializability` is a new method; no earlier equivalent in the repo (DTO projection validation at the chain level lives in `ProjectionAnalyzer`, which looks at projection lambdas, not row-type materializability). No reusable utility existed to share.
-- `RawSqlTypeInfo.IsNestedType`/`FullyQualifiedResultTypeName` are used only by the RawSql emitter — correct scoping. Other emitters (`ClauseBodyEmitter`, `JoinBodyEmitter`, etc.) work off `EntityTypeName` from `TranslatedCallSite`, which is already FQN-capable via `ToFullyQualifiedDisplayString()`. No lurking inconsistency.
-- `DiagnosticDescriptors.RowEntityNotMaterializable` (`DiagnosticDescriptors.cs:564-576`) matches the style of the existing QRY0xx entries: `id`, `title`, `messageFormat` with argument placeholders, `category = "Quarry"`, severity, and a description that restates the remediation. Placement in a grouped region (`// ─── RawSql row-shape diagnostics (QRY043) ───`) matches the file's organization convention.
-- `AnalyzerDiagnosticDescriptors.InterceptorsNamespaceMissing` (`AnalyzerDiagnosticDescriptors.cs:223-232`) is placed under the `Category = "QuarryAnalyzer"` (same as the QRA rules) rather than the `MigrationCategory = "QuarryMigration"` used for QRY042. That categorization is defensible (analyzer-emitted, not migration-related) but inconsistent with QRY042, the immediate neighbor — both are QRY-prefixed in the analyzer assembly and could reasonably share a category.
+`DiagnosticDescriptors.RowEntityNotMaterializable` (`DiagnosticDescriptors.cs:558-574`) matches existing descriptor styling: grouped region header (`// ─── RawSql row-shape diagnostics (QRY043) ───`), `Category = "Quarry"`, `DiagnosticSeverity.Error`, and a `description` that restates the remediation. Placement between QRY041 and QRY060-65 (navigation join) is natural.
+
+`AnalyzerDiagnosticDescriptors.InterceptorsNamespaceMissing` (`:216-232`) uses `Category` (= `"QuarryAnalyzer"` per the file header) while neighboring QRY042 (`RawSqlConvertibleToChain`, lines 204-214) uses `MigrationCategory` = `"QuarryMigration"`. That is defensible (QRY044 is not migration-related) but inconsistent with the file's immediate neighbor; the file mixes the two categories by intent.
+
+`InterceptorsNamespacesAnalyzer` lives at the assembly root next to `QuarryQueryAnalyzer.cs` and `RawSqlMigrationAnalyzer.cs` rather than under `Rules/`, consistent with how the other top-level `[DiagnosticAnalyzer]` classes are placed. `internal sealed class : DiagnosticAnalyzer` matches sibling modifiers.
+
+`RawSqlTypeInfo` ctor uses the existing "all args optional with defaults" pattern (`:16-20`); call sites that don't care about the new fields compile unchanged. `RawCallSite.MaterializabilityError` is deliberately excluded from `Equals`/`GetHashCode` (comment at `:237-240`), matching the mutable-enrichment-field convention already used by `RawSqlTypeInfo`, `DisplayClassName`, and `EnrichmentInvocation`. All three `With*` copy methods propagate the new field (`:306, 371, 439`) — good.
+
+`FileEmitter.SanitizeForIdentifier` is a private static helper added to `FileEmitter` — no pre-existing sanitizer utility existed that could be reused. A similar identifier-derivation helper exists in other emitters for struct naming but for different domains; duplication is minimal.
+
+`llm.md` and `src/Quarry.Generator/README.md`/`llm.md` all updated with QRY043 and QRY044 entries, consistent with how prior diagnostics are documented (table rows + inline prose).
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| QRY044 uses `Category = "QuarryAnalyzer"` while neighboring QRY042 uses `"QuarryMigration"` | Info | Both live in `Quarry.Analyzers` but fall under different IDE rule-set groupings. Users filtering by category may miss one. |
+| QRY044 uses `Category = "QuarryAnalyzer"` while the immediately adjacent QRY042 uses `Category = "QuarryMigration"` (`AnalyzerDiagnosticDescriptors.cs:204, 224`) | Info | Consumers filtering analyzer diagnostics by category in their IDE rule-set may see the two rules in different groupings despite living in the same file. |
 
 ## Integration / Breaking Changes
 
-- `RawSqlTypeInfo` ctor: both new parameters (`isNestedType`, `fullyQualifiedResultTypeName`) are optional with defaults. All existing call sites compile unchanged. Verified in `PatchWithColumnMetadata` (`DisplayClassEnricher.cs:361-369`) and the scalar/DTO callers in `UsageSiteDiscovery.cs:4029-4036, 4087-4093` — all pass the new args explicitly.
-- `RawCallSite`: added mutable `MaterializabilityError` property. Excluded from `Equals`/`GetHashCode` (`RawCallSite.cs:237-240` comment confirms), consistent with other mutable enrichment fields like `RawSqlTypeInfo` and `DisplayClassName`. All three `With*` copy methods propagate it (`RawCallSite.cs:306, 371, 439`).
-- `Quarry.targets`: uses `<InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Generated</InterceptorsNamespaces>` (`src/Quarry/build/Quarry.targets:12`). NuGet imports package `.targets` *after* the consuming project's `<PropertyGroup>`, so a consumer that already sets `<InterceptorsNamespaces>MyApp.Data</InterceptorsNamespaces>` ends up with `MyApp.Data;Quarry.Generated`. No override risk. Existing sample/test projects all use the `$(InterceptorsNamespaces);` prefix pattern (`src/Samples/*/*.csproj`, `src/Quarry.Tests/Quarry.Tests.csproj:11`), so everything composes.
-- QRY044 severity is `Warning` on a condition that would otherwise surface as CS9137 error. This does not clutter output — the CS9137 would fire once per namespace per build; QRY044 fires once per context class per build (typically 1-2). QRY044 is also emitted earlier (IDE authoring time) rather than only at compile time, which is the explicit design goal.
-- `Quarry.Generator.props` adds `InterceptorsNamespaces` as a `CompilerVisibleProperty` (`build/Quarry.Generator.props:7`). Existing consumers of this props file (all Quarry consumers, since `Quarry.Generator` is a PackageReference) see the property surface to analyzers with no action required.
+- `RawSqlTypeInfo` ctor gains two optional parameters (`isNestedType`, `fullyQualifiedResultTypeName`) with defaults (`RawSqlTypeInfo.cs:16-20`). All internal call sites pass them explicitly; external callers (there are none — type is `internal`) would compile unchanged.
+- `RawCallSite.MaterializabilityError` is a new mutable property excluded from equality, preserving incremental-cache stability.
+- `TranslatedCallSite.MaterializabilityError` surfaces `Bound.Raw.MaterializabilityError` through the existing indirection pattern (`:85`). Consistent with neighboring passthroughs.
+- `Quarry.targets` uses the `$(InterceptorsNamespaces);Quarry.Generated` append pattern. NuGet imports package `.targets` after consumer `<PropertyGroup>` elements, so a consumer that sets `<InterceptorsNamespaces>MyApp.Data</InterceptorsNamespaces>` lands on `MyApp.Data;Quarry.Generated`. In-repo test projects already use `$(InterceptorsNamespaces);` prefix (`src/Samples/*/*.csproj`, `src/Quarry.Tests/Quarry.Tests.csproj:11`), so composition works.
+- `Quarry.Generator.props` adds `InterceptorsNamespaces` as a `CompilerVisibleProperty` (`:5`). Existing consumers of the props file (all Quarry consumers) see the new surface with no action required.
+- QRY044 severity is `Warning` on a condition that would eventually surface as `CS9137` (Error) — this is an early surfacing, not a new build-breaker. Warning is the right level because a `Directory.Build.props` the analyzer cannot see could legitimately set `InterceptorsNamespaces`.
+- QRY043 severity is `Error` — breaking for code that currently hits `CS7036`/`CS8852` at compile time. Behavior net-better: users get a Quarry-level diagnostic at the RawSqlAsync call site rather than two Roslyn errors inside generated code. No users see a pass-to-fail regression because those code paths never compiled.
+- `FullyQualifiedResultTypeName` added to the `IEquatable<RawSqlTypeInfo>` identity set (`:91`). Because it's always equal to `ResultTypeName` when `IsNestedType` is true and defaults to `ResultTypeName` otherwise, it does not practically widen the cache key.
 
 | Finding | Severity | Why It Matters |
 |---|---|---|
-| Nested-type FQN emission assumes the FQN includes `global::` prefix (`RawSqlBodyEmitter.cs:57, 59`). `typeSymbol.ToFullyQualifiedDisplayString()` in Roslyn returns `global::`-prefixed names, so `new global::Outer.Row()` is emitted for nested types — legal C# syntax. | Info | Positive observation — no parsing issues. |
+| QRY043 is `Error` — by design, and replaces `CS7036`/`CS8852` with a clearer message (`DiagnosticDescriptors.cs:568`) | Info | Positive — no existing code could have compiled in these shapes, so there is no silent-break scenario. |
+| `Quarry.targets` package path `build\` matches NuGet convention; no conflict with the existing `Quarry.Generator.props` packaged under `build\` of a separate package (`Quarry.csproj:32-35`, `Quarry.Generator.csproj:36-38`) | Info | Positive observation — the two packages each own their own build asset. |
 
 ## Issues Created
 

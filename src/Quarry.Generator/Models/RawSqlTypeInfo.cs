@@ -15,8 +15,7 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
         bool hasCancellationToken = false,
         string? scalarReaderMethod = null,
         string? sqlLiteral = null,
-        bool isNestedType = false,
-        string? fullyQualifiedResultTypeName = null)
+        bool isNestedType = false)
     {
         ResultTypeName = resultTypeName;
         TypeKind = typeKind;
@@ -25,7 +24,6 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
         ScalarReaderMethod = scalarReaderMethod;
         SqlLiteral = sqlLiteral;
         IsNestedType = isNestedType;
-        FullyQualifiedResultTypeName = fullyQualifiedResultTypeName ?? resultTypeName;
     }
 
     /// <summary>
@@ -71,13 +69,6 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
     /// </summary>
     public bool IsNestedType { get; }
 
-    /// <summary>
-    /// The <c>global::</c>-prefixed fully qualified name of the result type. Always
-    /// resolves to a valid C# type reference regardless of <c>using</c> directives.
-    /// Falls back to <see cref="ResultTypeName"/> when not separately supplied.
-    /// </summary>
-    public string FullyQualifiedResultTypeName { get; }
-
     public bool Equals(RawSqlTypeInfo? other)
     {
         if (other is null) return false;
@@ -88,7 +79,6 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
             && ScalarReaderMethod == other.ScalarReaderMethod
             && SqlLiteral == other.SqlLiteral
             && IsNestedType == other.IsNestedType
-            && FullyQualifiedResultTypeName == other.FullyQualifiedResultTypeName
             && EqualityHelpers.SequenceEqual(Properties, other.Properties);
     }
 

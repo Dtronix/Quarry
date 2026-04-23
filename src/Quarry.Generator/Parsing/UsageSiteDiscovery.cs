@@ -4032,8 +4032,7 @@ internal static class UsageSiteDiscovery
                 System.Array.Empty<RawSqlPropertyInfo>(),
                 hasCancellationToken,
                 scalarReaderMethod,
-                isNestedType: false,
-                fullyQualifiedResultTypeName: typeName);
+                isNestedType: false);
         }
 
         // T is a class/struct with properties — enumerate public settable properties
@@ -4089,8 +4088,7 @@ internal static class UsageSiteDiscovery
             RawSqlTypeKind.Dto,
             properties,
             hasCancellationToken,
-            isNestedType: isNestedType,
-            fullyQualifiedResultTypeName: typeName);
+            isNestedType: isNestedType);
     }
 
     /// <summary>

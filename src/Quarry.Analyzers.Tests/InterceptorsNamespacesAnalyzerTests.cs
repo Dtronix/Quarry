@@ -156,6 +156,31 @@ namespace MyApp.Data
     }
 
     [Test]
+    public async Task EmitsQRY044_WhenAttributeUsesAliasQualifiedName()
+    {
+        // `[global::QuarryContextAttribute]` decomposes into AliasQualifiedNameSyntax at the
+        // attribute's top-level name, which the syntactic pre-filter must handle explicitly —
+        // otherwise the analyzer silently skips the class and the diagnostic never fires.
+        // This also covers extern-alias-qualified attribute forms.
+        var source = @"
+using Quarry;
+using QuarryContextAttribute = Quarry.QuarryContextAttribute;
+
+namespace MyApp.Data
+{
+    [global::QuarryContextAttribute(Dialect = SqlDialect.SQLite)]
+    public partial class AppDb : QuarryContext
+    {
+    }
+}";
+
+        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated");
+        Assert.That(diagnostics, Has.Length.EqualTo(1));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("AppDb"));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("MyApp.Data"));
+    }
+
+    [Test]
     public async Task NoDiagnostic_ForNonContextClass()
     {
         // Plain class without [QuarryContext] — should be ignored even if namespace is missing.

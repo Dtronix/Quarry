@@ -630,6 +630,107 @@ public class Service
     }
 
     [Test]
+    public void RawSqlAsync_StructRowWithInitOnlyProperty_EmitsQRY043()
+    {
+        // Structs skip the ctor branch in CheckRowEntityMaterializability (C# always
+        // synthesizes a public parameterless ctor). Pin that the property-loop path
+        // still rejects an init-only property on a struct row type.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public struct UserRow
+{
+    public int Id { get; init; }
+    public string Name { get; init; }
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should fire for a struct row with init-only properties");
+        Assert.That(qry043!.GetMessage(), Does.Contain("init-only"));
+    }
+
+    [Test]
+    public void RawSqlScalarAsync_DoesNotEmitQRY043_AndEmitsInterceptor_WhenMixedWithFailingRawSqlAsync()
+    {
+        // Pins the `Kind is RawSqlAsync or RawSqlScalarAsync` branch in
+        // PipelineOrchestrator.CollectTranslatedDiagnostics and FileEmitter for the
+        // scalar case: a failing RawSqlAsync<UserRow> must emit QRY043 exactly once
+        // while the sibling RawSqlScalarAsync<int> still produces a valid interceptor
+        // (scalars skip the materializability check entirely).
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public sealed record UserRow(int Id, string Name);
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+        var count = await db.RawSqlScalarAsync<int>(""SELECT COUNT(*) FROM users"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043s = diagnostics.Where(d => d.Id == "QRY043").ToList();
+        Assert.That(qry043s, Has.Count.EqualTo(1),
+            "QRY043 should fire once for the failing RawSqlAsync<UserRow> and not for the RawSqlScalarAsync<int>");
+        Assert.That(qry043s[0].GetMessage(), Does.Contain("UserRow"));
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should still generate an interceptors file for the scalar call");
+        Assert.That(code, Does.Contain("RawSqlScalarAsyncWithConverter"),
+            "Scalar interceptor must still emit despite the sibling QRY043");
+    }
+
+    [Test]
     public void RawSqlAsync_PlainClassRow_DoesNotEmitQRY043()
     {
         var source = @"

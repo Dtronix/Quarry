@@ -78,6 +78,7 @@ internal sealed class InterceptorsNamespacesAnalyzer : DiagnosticAnalyzer
                 var name = attr.Name switch
                 {
                     QualifiedNameSyntax q => q.Right.Identifier.Text,
+                    AliasQualifiedNameSyntax a => a.Name.Identifier.Text,
                     SimpleNameSyntax s => s.Identifier.Text,
                     _ => null
                 };
