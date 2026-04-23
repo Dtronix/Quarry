@@ -10,7 +10,7 @@ phase: REMEDIATE
 status: active
 issue: #258
 pr: #261
-session: 1
+session: 2
 phases-total: 2
 phases-complete: 2
 
@@ -44,6 +44,7 @@ Test baseline at workflow start: 3242 tests pass (Quarry.Tests 2938, Quarry.Migr
   - `CarrierGeneration_EntityInsert_EmitsAtParameterNames_ForSQLite`
   - `CarrierGeneration_BatchInsert_UsesDollarParameterNames_ForPostgreSQL`
   These cover the generator sites that the helper-level `GetParameterName_MatchesFormatParameter_ForNamedDialects` invariant does not reach (the generator never goes through `SqlFormatting.GetParameterName`).
+- **2026-04-23 — Session-2 second-opinion REVIEW:** Full 6-section re-analysis produced 23 findings (0 High, 1 Medium, 1 Low, 21 Info). Agent independently confirmed every session-1 High/Medium issue is addressed in commit `06e25fe` (CarrierEmitter routing, TerminalBodyEmitter dialect switch, BundleCommand template bump, three generator snapshot tests). All 23 findings classified D — no new actionable items. Session-1 review archived at `review-session1.md`; session-2 review in `review.md`.
 
 ## Suspend State
 
@@ -51,3 +52,5 @@ Test baseline at workflow start: 3242 tests pass (Quarry.Tests 2938, Quarry.Migr
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-22 | | INTAKE: loaded issue #258, created worktree and branch, baseline tests all green. |
+| 2 | 2026-04-23 | | Resume: worktree recreated from origin/258-fix-migration-history-bind-mismatch. REMEDIATE state confirmed — all A/B findings addressed, branch based on origin/master tip (d16d125), CI run 24815555252 succeeded. Awaiting merge confirmation. |
+| 3 | 2026-04-23 | | Back-step REMEDIATE → REVIEW at user request for a second-opinion sweep (full re-analysis across all 6 sections). Prior review archived as review-session1.md; A/B fixes and decisions preserved. |
