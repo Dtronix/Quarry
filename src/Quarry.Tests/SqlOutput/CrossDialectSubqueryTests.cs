@@ -946,4 +946,23 @@ internal class CrossDialectSubqueryTests
     }
 
     #endregion
+
+    #region Issue #257 — Many<T>.Sum/Min/Max/Avg in Select projection (SQLite-only smoke test)
+
+    [Test]
+    public async Task Select_ManyAggregate_Sum_InTuple_Sqlite()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        var lt = Lite.Users()
+            .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
+            .Prepare();
+
+        Assert.That(
+            lt.ToDiagnostics().Sql,
+            Is.EqualTo("SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\""));
+    }
+
+    #endregion
 }
