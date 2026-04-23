@@ -86,8 +86,11 @@ internal sealed class FileEmitter
         sb.AppendLine("using Quarry.Logging;");
         sb.AppendLine("using LogLevel = Quarry.Logging.LogLevel;");
 
-        // Collect all unique entity type namespaces
+        // Collect all unique entity type namespaces. Nested-entity sites emit their type
+        // via the FQN form of RawSqlTypeInfo.ResultTypeName, so they don't need (and can't
+        // use — would produce `using <EnclosingType>;` which fails CS0138) a using directive.
         var entityNamespaces = _sites
+            .Where(s => s.RawSqlTypeInfo?.IsNestedType != true)
             .Select(s => InterceptorCodeGenerator.GetNamespaceFromTypeName(s.EntityTypeName))
             .Where(ns => !string.IsNullOrEmpty(ns) && ns != "Quarry" && ns != "System")
             .Distinct()
@@ -266,8 +269,10 @@ internal sealed class FileEmitter
                         }
                     }
 
-                    // Fall back to struct-based reader
-                    var structName = $"RawSqlReader_{site.RawSqlTypeInfo.ResultTypeName}_{rawSqlStructIndex}";
+                    // Fall back to struct-based reader.
+                    // Nested-type ResultTypeName is an FQN like `global::MyApp.Outer.Row`, which
+                    // isn't a valid C# identifier. Sanitize so the struct name compiles.
+                    var structName = $"RawSqlReader_{SanitizeForIdentifier(site.RawSqlTypeInfo.ResultTypeName)}_{rawSqlStructIndex}";
                     rawSqlStructNames[site.UniqueId] = structName;
                     RawSqlBodyEmitter.EmitRowReaderStruct(sb, site.RawSqlTypeInfo, structName);
                     rawSqlStructIndex++;
@@ -873,6 +878,26 @@ internal sealed class FileEmitter
         }
 
         sb.AppendLine();
+    }
+
+    /// <summary>
+    /// Replaces characters that are illegal in a C# identifier (dots, angle brackets, colons
+    /// from global:: prefixes, commas from generic arguments, whitespace) with underscores.
+    /// Used when embedding a fully qualified type name into a generated struct identifier.
+    /// </summary>
+    private static string SanitizeForIdentifier(string name)
+    {
+        if (string.IsNullOrEmpty(name))
+            return name;
+        var trimmed = name.StartsWith("global::", StringComparison.Ordinal)
+            ? name.Substring("global::".Length)
+            : name;
+        var sb = new StringBuilder(trimmed.Length);
+        foreach (var c in trimmed)
+        {
+            sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+        }
+        return sb.ToString();
     }
 
     /// <summary>

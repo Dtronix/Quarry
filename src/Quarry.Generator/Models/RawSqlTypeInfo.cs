@@ -14,7 +14,9 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
         IReadOnlyList<RawSqlPropertyInfo> properties,
         bool hasCancellationToken = false,
         string? scalarReaderMethod = null,
-        string? sqlLiteral = null)
+        string? sqlLiteral = null,
+        bool isNestedType = false,
+        string? fullyQualifiedResultTypeName = null)
     {
         ResultTypeName = resultTypeName;
         TypeKind = typeKind;
@@ -22,10 +24,15 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
         HasCancellationToken = hasCancellationToken;
         ScalarReaderMethod = scalarReaderMethod;
         SqlLiteral = sqlLiteral;
+        IsNestedType = isNestedType;
+        FullyQualifiedResultTypeName = fullyQualifiedResultTypeName ?? resultTypeName;
     }
 
     /// <summary>
-    /// The fully qualified result type name (e.g., "UserDto", "int", "string").
+    /// The display name used for type references in generated interceptor code.
+    /// For nested types this is the fully qualified name (with <c>global::</c> prefix)
+    /// so references resolve without a <c>using</c> directive; for all other types
+    /// this is the minimally qualified name.
     /// </summary>
     public string ResultTypeName { get; }
 
@@ -56,6 +63,21 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
     /// </summary>
     public string? SqlLiteral { get; }
 
+    /// <summary>
+    /// True when the result type is declared inside an enclosing type (i.e., has a
+    /// non-null <see cref="ITypeSymbol.ContainingType"/>). Emitters branch on this to
+    /// use the FQN form of the type so references work without a <c>using</c> directive,
+    /// and to skip collecting the bad "using &lt;EnclosingType&gt;;" directive.
+    /// </summary>
+    public bool IsNestedType { get; }
+
+    /// <summary>
+    /// The <c>global::</c>-prefixed fully qualified name of the result type. Always
+    /// resolves to a valid C# type reference regardless of <c>using</c> directives.
+    /// Falls back to <see cref="ResultTypeName"/> when not separately supplied.
+    /// </summary>
+    public string FullyQualifiedResultTypeName { get; }
+
     public bool Equals(RawSqlTypeInfo? other)
     {
         if (other is null) return false;
@@ -65,6 +87,8 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
             && HasCancellationToken == other.HasCancellationToken
             && ScalarReaderMethod == other.ScalarReaderMethod
             && SqlLiteral == other.SqlLiteral
+            && IsNestedType == other.IsNestedType
+            && FullyQualifiedResultTypeName == other.FullyQualifiedResultTypeName
             && EqualityHelpers.SequenceEqual(Properties, other.Properties);
     }
 
@@ -72,7 +96,7 @@ internal sealed class RawSqlTypeInfo : IEquatable<RawSqlTypeInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(ResultTypeName, TypeKind, HasCancellationToken, Properties.Count, SqlLiteral);
+        return HashCode.Combine(ResultTypeName, TypeKind, HasCancellationToken, Properties.Count, SqlLiteral, IsNestedType);
     }
 }
 

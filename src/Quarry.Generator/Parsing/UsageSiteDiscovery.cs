@@ -4016,6 +4016,11 @@ internal static class UsageSiteDiscovery
     {
         var typeName = typeSymbol.ToFullyQualifiedDisplayString();
         var shortName = typeSymbol.ToMinimallyQualifiedDisplayString();
+        var isNestedType = typeSymbol.ContainingType != null;
+
+        // For nested types, use the FQN in generated code so references resolve without
+        // a `using <EnclosingType>;` directive (which the compiler rejects as CS0138).
+        var displayName = isNestedType ? typeName : shortName;
 
         // Check if T is a scalar type
         if (IsScalarType(typeSymbol))
@@ -4026,7 +4031,9 @@ internal static class UsageSiteDiscovery
                 RawSqlTypeKind.Scalar,
                 System.Array.Empty<RawSqlPropertyInfo>(),
                 hasCancellationToken,
-                scalarReaderMethod);
+                scalarReaderMethod,
+                isNestedType: false,
+                fullyQualifiedResultTypeName: typeName);
         }
 
         // T is a class/struct with properties — enumerate public settable properties
@@ -4077,7 +4084,13 @@ internal static class UsageSiteDiscovery
                 referencedEntityName: referencedEntityName));
         }
 
-        return new RawSqlTypeInfo(shortName, RawSqlTypeKind.Dto, properties, hasCancellationToken);
+        return new RawSqlTypeInfo(
+            displayName,
+            RawSqlTypeKind.Dto,
+            properties,
+            hasCancellationToken,
+            isNestedType: isNestedType,
+            fullyQualifiedResultTypeName: typeName);
     }
 
     /// <summary>

@@ -250,6 +250,132 @@ public class Service
 
     #endregion
 
+    #region Nested Row Types
+
+    [Test]
+    public void RawSqlAsync_NestedRowType_CompilesAndEmitsFullyQualifiedReferences()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Host
+{
+    // Row type is nested inside Host. Without the Phase 2 fix the generator
+    // would emit `using TestApp.Host;` which the compiler rejects (CS0138).
+    public sealed class NestedRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = """";
+    }
+
+    public static async Task Run(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<NestedRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        // No QRY043 — this is a valid shape; just nested.
+        Assert.That(diagnostics.Any(d => d.Id == "QRY043"), Is.False,
+            "Nested row type with valid shape should not raise QRY043");
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Interceptor file should be generated");
+
+        // Generator must NOT emit a `using` whose target is actually a type. Before the fix
+        // it emitted `using TestApp.Host;` (CS0138). The interceptor now lives inside
+        // `namespace TestApp.Host { ... }`, so the bad import appears only as a top-level
+        // using declaration — grep only the top-of-file block, ignoring the namespace line.
+        var usingBlockEnd = code!.IndexOf("\nnamespace ", StringComparison.Ordinal);
+        var usingBlock = usingBlockEnd > 0 ? code.Substring(0, usingBlockEnd) : code;
+        Assert.That(usingBlock, Does.Not.Contain("using TestApp.Host;"),
+            "Must not emit a using directive for an enclosing type (would be CS0138)");
+
+        // Generated body must reference the row type via its FQN so it resolves without a using.
+        Assert.That(code, Does.Contain("global::TestApp.Host.NestedRow"),
+            "Generated body should reference the nested row type via its fully qualified name");
+    }
+
+    [Test]
+    public void RawSqlAsync_NamespaceLevelRowType_StillUsesShortName()
+    {
+        // Regression: the non-nested path should keep emitting a short type reference
+        // and a `using` for the row type's namespace.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp.Rows
+{
+    public sealed class UserRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = """";
+    }
+}
+
+namespace TestApp
+{
+    public class UserSchema : Schema
+    {
+        public static string Table => ""users"";
+        public Key<int> UserId => Identity();
+    }
+
+    [QuarryContext(Dialect = SqlDialect.SQLite)]
+    public partial class TestDbContext : QuarryContext
+    {
+        public partial IEntityAccessor<User> Users();
+    }
+
+    public class Service
+    {
+        public async Task Test(TestDbContext db)
+        {
+            var rows = await db.RawSqlAsync<TestApp.Rows.UserRow>(""SELECT Id, Name FROM users"");
+            foreach (var r in rows) { _ = r; }
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        Assert.That(diagnostics.Any(d => d.Id == "QRY043"), Is.False);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null);
+
+        // Non-nested row: body references the type via its short name — no `global::`
+        // prefix, because that form is reserved for the nested-type fallback.
+        Assert.That(code, Does.Contain("new UserRow()"),
+            "Namespace-level row types should be referenced by their short name");
+        Assert.That(code, Does.Not.Contain("global::TestApp.Rows.UserRow"),
+            "Non-nested types should not use the FQN form");
+    }
+
+    #endregion
+
     #region Row Entity Materializability (QRY043)
 
     [Test]
