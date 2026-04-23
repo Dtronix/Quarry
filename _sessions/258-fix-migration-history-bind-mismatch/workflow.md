@@ -12,7 +12,7 @@ issue: #258
 pr:
 session: 1
 phases-total: 2
-phases-complete: 0
+phases-complete: 2
 
 ## Problem Statement
 `Quarry.Migration.MigrationRunner.InsertHistoryRowAsync` fails with PostgreSQL error `08P01: bind message supplies 0 parameters, but prepared statement "" requires 8` on Npgsql 10 + PostgreSQL 17. The user-supplied migration DDL runs successfully, but recording the history row afterwards fails, breaking the whole migration pipeline.
