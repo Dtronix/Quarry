@@ -467,7 +467,7 @@ internal static class BundleCommand
 
         // Database provider packages
         sb.AppendLine("    <PackageReference Include=\"Microsoft.Data.Sqlite\" Version=\"9.*\" />");
-        sb.AppendLine("    <PackageReference Include=\"Npgsql\" Version=\"9.*\" />");
+        sb.AppendLine("    <PackageReference Include=\"Npgsql\" Version=\"10.*\" />");
         sb.AppendLine("    <PackageReference Include=\"MySqlConnector\" Version=\"2.*\" />");
         sb.AppendLine("    <PackageReference Include=\"Microsoft.Data.SqlClient\" Version=\"6.*\" />");
         sb.AppendLine("  </ItemGroup>");

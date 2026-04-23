@@ -576,12 +576,20 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        {");
         sb.AppendLine($"            var __entity = __entities[__row];");
 
+        // Pick the dialect-appropriate ParameterName lookup so the name matches the
+        // placeholder that BatchInsertSqlBuilder emits via SqlFormatting.FormatParameter.
+        // Required by Npgsql 10 strict name binding ($1/$2/...). MySQL uses positional
+        // '?' and accepts any unique name; AtP keeps names unique.
+        var paramNameExpr = chain.Dialect == SqlDialect.PostgreSQL
+            ? "Quarry.Internal.ParameterNames.Dollar(__paramIdx)"
+            : "Quarry.Internal.ParameterNames.AtP(__paramIdx)";
+
         for (int i = 0; i < insertInfo.Columns.Count; i++)
         {
             var (valueExpr, needsIntType) = TerminalEmitHelpers.GetInsertColumnBinding(insertInfo.Columns[i], "__entity", convertBool);
             sb.AppendLine($"            {{");
             sb.AppendLine($"                var __p = __cmd.CreateParameter();");
-            sb.AppendLine($"                __p.ParameterName = Quarry.Internal.ParameterNames.AtP(__paramIdx);");
+            sb.AppendLine($"                __p.ParameterName = {paramNameExpr};");
             sb.AppendLine($"                __p.Value = (object?){valueExpr} ?? DBNull.Value;");
             if (needsIntType)
                 sb.AppendLine($"                __p.DbType = System.Data.DbType.Int32;");

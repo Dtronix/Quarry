@@ -28,7 +28,7 @@
     <PackageReference Include="Microsoft.NET.StringTools" Version="17.*" ExcludeAssets="runtime" PrivateAssets="all" />
     <!-- Database providers for scaffold command -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="9.*" />
-    <PackageReference Include="Npgsql" Version="9.*" />
+    <PackageReference Include="Npgsql" Version="10.*" />
     <PackageReference Include="MySqlConnector" Version="2.*" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.*" />
   </ItemGroup>
