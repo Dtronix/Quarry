@@ -1040,6 +1040,18 @@ SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[Crea
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [t0].[UserName], CASE WHEN [t1].[UserId] > @p0 THEN 1 ELSE 0 END AS [Flag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [t0].[UserName], UPPER([t1].[Status]) AS [Upper] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
 ```
 
@@ -1113,6 +1125,14 @@ SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY [t0].[User
 
 ```sql
 SELECT [t0].[UserName], [t1].[Total], SUM([t1].[Total]) OVER (PARTITION BY [t0].[UserName]) AS [UserTotal] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [t0].[UserName], concat_ws(':', [t0].[UserName], [t1].[Status]) AS [Tag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]
 ```
 
 ---
@@ -2767,7 +2787,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 366 |
+| Total discovered | 368 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 68 |
-| Rendered | 298 |
+| Rendered | 300 |

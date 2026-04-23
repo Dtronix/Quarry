@@ -1575,7 +1575,27 @@ SELECT "t0"."UserName", "t1"."Total", SUM("t1"."Total") OVER (PARTITION BY "t0".
 ### Users().Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", CASE WHEN "t1"."UserId" > @p0 THEN 1 ELSE 0 END AS "Flag" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t0"."UserName", UPPER("t1"."Status") AS "Upper" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", concat_ws(':', "t0"."UserName", "t1"."Status") AS "Tag" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
 ---
@@ -4162,7 +4182,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 622 |
+| Total discovered | 624 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 183 |
-| Rendered | 439 |
+| Rendered | 441 |

@@ -389,6 +389,8 @@ internal class CrossDialectMiscTests
         // semantic model, not the SqlExprParser default of "object". A captured DateTime
         // variable should surface in diagnostic parameters with TypeName == "DateTime", not
         // "object" — which would otherwise misbind parameter types at runtime.
+        // Also verifies the parameter carries the captured value end-to-end by executing
+        // the query (review session 2 finding #12).
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, _, _, _) = t;
 
@@ -398,8 +400,74 @@ internal class CrossDialectMiscTests
 
         Assert.That(diag.Parameters, Has.Count.EqualTo(1), "one captured parameter expected");
         var p = diag.Parameters[0];
+        Assert.That(p.Name, Is.EqualTo("@p0"), "parameter should be named @p0 after projection-param remapping");
         Assert.That(p.TypeName, Is.EqualTo("DateTime"),
             "captured DateTime must carry TypeName 'DateTime', not 'object' (#256 review finding #4)");
+        Assert.That(p.Value, Is.EqualTo(since),
+            "captured value must round-trip to the parameter binder (#256 review session 2 finding #12)");
+        Assert.That(p.IsCollection, Is.False);
+        Assert.That(p.IsEnum, Is.False);
+
+        // Runtime execution — the coalesce-DateTime parameter must bind correctly through
+        // the captured-variable path. If IsStaticCapture were true when it should be false,
+        // UnsafeAccessor would throw MissingFieldException here.
+        var results = await prepared.ExecuteFetchAllAsync();
+        Assert.That(results, Is.Not.Null);
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_Joined_MultipleArgs()
+    {
+        // Regression test for #256 review session 2 finding #14: joined projections must
+        // support multi-arg Sql.Raw where args come from different joined entities. Exercises
+        // ResolveJoinedColumnRefToPlaceholder for two distinct lambda parameter names.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Tag: Sql.Raw<string>("concat_ws({0}, {1}, {2})", ":", u.UserName, o.Status))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Tag: Sql.Raw<string>("concat_ws({0}, {1}, {2})", ":", u.UserName, o.Status))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Tag: Sql.Raw<string>("concat_ws({0}, {1}, {2})", ":", u.UserName, o.Status))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Tag: Sql.Raw<string>("concat_ws({0}, {1}, {2})", ":", u.UserName, o.Status))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", concat_ws(':', \"t0\".\"UserName\", \"t1\".\"Status\") AS \"Tag\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", concat_ws(':', \"t0\".\"UserName\", \"t1\".\"Status\") AS \"Tag\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, concat_ws(':', `t0`.`UserName`, `t1`.`Status`) AS `Tag` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], concat_ws(':', [t0].[UserName], [t1].[Status]) AS [Tag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_Joined_WithCapturedVariable()
+    {
+        // Regression test for #256 review session 2 finding #14: joined projections must
+        // support captured variables in Sql.Raw args. Exercises IsScalarArgCandidateJoined
+        // and the fast-path delegation for captured scalars in the joined context.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var threshold = 100;
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Flag: Sql.Raw<int>("CASE WHEN {0} > {1} THEN 1 ELSE 0 END", o.UserId.Id, threshold))).Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Flag: Sql.Raw<int>("CASE WHEN {0} > {1} THEN 1 ELSE 0 END", o.UserId.Id, threshold))).Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Flag: Sql.Raw<int>("CASE WHEN {0} > {1} THEN 1 ELSE 0 END", o.UserId.Id, threshold))).Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Select((u, o) => (u.UserName, Flag: Sql.Raw<int>("CASE WHEN {0} > {1} THEN 1 ELSE 0 END", o.UserId.Id, threshold))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", CASE WHEN \"t1\".\"UserId\" > @p0 THEN 1 ELSE 0 END AS \"Flag\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", CASE WHEN \"t1\".\"UserId\" > $1 THEN 1 ELSE 0 END AS \"Flag\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, CASE WHEN `t1`.`UserId` > ? THEN 1 ELSE 0 END AS `Flag` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
+            ss:     "SELECT [t0].[UserName], CASE WHEN [t1].[UserId] > @p0 THEN 1 ELSE 0 END AS [Flag] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
     }
 
     #endregion
