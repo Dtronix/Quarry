@@ -4,13 +4,13 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #256
 pr:
 session: 1
 phases-total: 3
-phases-complete: 2
+phases-complete: 3
 ## Problem Statement
 `Sql.Raw<T>` used inside a `Select` tuple projection silently emits an empty string literal (`""`) in the generated SQL. No diagnostic, no build warning, no runtime error — just wrong SQL. Every existing test and converter fallback uses `Sql.Raw` in predicate positions (Where / Having) only.
 

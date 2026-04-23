@@ -1362,7 +1362,35 @@ SELECT UPPER([UserName]) FROM [users]
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [UserId], 'fixed' AS [Literal] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], CASE WHEN [UserId] > @p0 THEN 'high' ELSE 'low' END AS [Bucket] FROM [users]
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [UserId], UPPER([UserName]) AS [Upper] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], UPPER([UserName]) AS [UserName], [IsActive] FROM [users]
 ```
 
 ---
@@ -1395,6 +1423,30 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ```sql
 SELECT [UserId], [UserName], [IsActive] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], bucket(([UserId] * 10)) AS [Scaled] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], coalesce([UserId], 42) AS [Flag] FROM [users]
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [UserId], coalesce([UserName], [Email]) AS [Tag] FROM [users]
 ```
 
 ---
@@ -2707,7 +2759,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 359 |
+| Total discovered | 365 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 68 |
-| Rendered | 291 |
+| Rendered | 297 |

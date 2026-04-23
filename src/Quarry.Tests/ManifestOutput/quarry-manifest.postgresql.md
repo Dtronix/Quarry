@@ -1407,7 +1407,59 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", 'fixed' AS "Literal" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", CASE WHEN "UserId" > $1 THEN 'high' ELSE 'low' END AS "Bucket" FROM "users"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", UPPER("UserName") AS "Upper" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", UPPER("UserName") AS "UserName", "IsActive" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", bucket(("UserId" * 10)) AS "Scaled" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", coalesce("UserId", 42) AS "Flag" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", coalesce("UserName", "Email") AS "Tag" FROM "users"
 ```
 
 ---
@@ -2736,7 +2788,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 364 |
+| Total discovered | 370 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 70 |
-| Rendered | 294 |
+| Rendered | 300 |

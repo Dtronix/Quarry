@@ -237,6 +237,130 @@ internal class CrossDialectMiscTests
             ss:     "SELECT UPPER([UserName]) FROM [users]");
     }
 
+    [Test]
+    public async Task Select_SqlRaw_MultipleColumnReferences()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>("coalesce({0}, {1})", u.UserName, u.Email))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>("coalesce({0}, {1})", u.UserName, u.Email))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>("coalesce({0}, {1})", u.UserName, u.Email))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Tag: Sql.Raw<string>("coalesce({0}, {1})", u.UserName, u.Email))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", coalesce(\"UserName\", \"Email\") AS \"Tag\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", coalesce(\"UserName\", \"Email\") AS \"Tag\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, coalesce(`UserName`, `Email`) AS `Tag` FROM `users`",
+            ss:     "SELECT [UserId], coalesce([UserName], [Email]) AS [Tag] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_WithCapturedVariable()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var threshold = 10;
+        var lt = Lite.Users().Select(u => (u.UserId, Bucket: Sql.Raw<string>("CASE WHEN {0} > {1} THEN 'high' ELSE 'low' END", u.UserId, threshold))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Bucket: Sql.Raw<string>("CASE WHEN {0} > {1} THEN 'high' ELSE 'low' END", u.UserId, threshold))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Bucket: Sql.Raw<string>("CASE WHEN {0} > {1} THEN 'high' ELSE 'low' END", u.UserId, threshold))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Bucket: Sql.Raw<string>("CASE WHEN {0} > {1} THEN 'high' ELSE 'low' END", u.UserId, threshold))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", CASE WHEN \"UserId\" > @p0 THEN 'high' ELSE 'low' END AS \"Bucket\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", CASE WHEN \"UserId\" > $1 THEN 'high' ELSE 'low' END AS \"Bucket\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, CASE WHEN `UserId` > ? THEN 'high' ELSE 'low' END AS `Bucket` FROM `users`",
+            ss:     "SELECT [UserId], CASE WHEN [UserId] > @p0 THEN 'high' ELSE 'low' END AS [Bucket] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_WithLiteralParameter()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, Flag: Sql.Raw<int>("coalesce({0}, {1})", u.UserId, 42))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Flag: Sql.Raw<int>("coalesce({0}, {1})", u.UserId, 42))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Flag: Sql.Raw<int>("coalesce({0}, {1})", u.UserId, 42))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Flag: Sql.Raw<int>("coalesce({0}, {1})", u.UserId, 42))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", coalesce(\"UserId\", 42) AS \"Flag\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", coalesce(\"UserId\", 42) AS \"Flag\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, coalesce(`UserId`, 42) AS `Flag` FROM `users`",
+            ss:     "SELECT [UserId], coalesce([UserId], 42) AS [Flag] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_NoPlaceholders()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, Literal: Sql.Raw<string>("'fixed'"))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Literal: Sql.Raw<string>("'fixed'"))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Literal: Sql.Raw<string>("'fixed'"))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Literal: Sql.Raw<string>("'fixed'"))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", 'fixed' AS \"Literal\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", 'fixed' AS \"Literal\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, 'fixed' AS `Literal` FROM `users`",
+            ss:     "SELECT [UserId], 'fixed' AS [Literal] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_InDtoInitializer()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = Sql.Raw<string>("UPPER({0})", u.UserName), IsActive = u.IsActive }).Prepare();
+        var pg = Pg.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = Sql.Raw<string>("UPPER({0})", u.UserName), IsActive = u.IsActive }).Prepare();
+        var my = My.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = Sql.Raw<string>("UPPER({0})", u.UserName), IsActive = u.IsActive }).Prepare();
+        var ss = Ss.Users().Select(u => new UserSummaryDto { UserId = u.UserId, UserName = Sql.Raw<string>("UPPER({0})", u.UserName), IsActive = u.IsActive }).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", UPPER(\"UserName\") AS \"UserName\", \"IsActive\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", UPPER(\"UserName\") AS \"UserName\", \"IsActive\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, UPPER(`UserName`) AS `UserName`, `IsActive` FROM `users`",
+            ss:     "SELECT [UserId], UPPER([UserName]) AS [UserName], [IsActive] FROM [users]");
+    }
+
+    [Test]
+    public async Task Select_SqlRaw_BinaryOpArg()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Arg is a binary op on a column: u.UserId * 10
+        // Exercises the IR-based argument rendering — SqlExprParser builds a BinaryOpExpr tree
+        // and the projection walker emits "("UserId" * 10)" in canonical form.
+        var lt = Lite.Users().Select(u => (u.UserId, Scaled: Sql.Raw<int>("bucket({0})", u.UserId * 10))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Scaled: Sql.Raw<int>("bucket({0})", u.UserId * 10))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Scaled: Sql.Raw<int>("bucket({0})", u.UserId * 10))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Scaled: Sql.Raw<int>("bucket({0})", u.UserId * 10))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", bucket((\"UserId\" * 10)) AS \"Scaled\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", bucket((\"UserId\" * 10)) AS \"Scaled\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, bucket((`UserId` * 10)) AS `Scaled` FROM `users`",
+            ss:     "SELECT [UserId], bucket(([UserId] * 10)) AS [Scaled] FROM [users]");
+    }
+
     #endregion
 
     #region Instance Field Capture
