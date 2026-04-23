@@ -5,6 +5,7 @@ using System.Linq;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Sql;
 using Quarry;
@@ -1874,6 +1875,11 @@ internal static class ProjectionAnalyzer
                     return columnSql != null ? ($"MAX({columnSql})", clrType) : (null, null);
                 }
                 break;
+
+            case "Raw":
+                return BuildSqlRawInfo(invocation, semanticModel, projectionParams,
+                    arg => RenderRawArgToCanonical(arg, semanticModel, projectionParams, lambdaParameterName,
+                        colRef => ResolveColumnRefToPlaceholder(colRef, columnLookup, lambdaParameterName)));
         }
 
         return (null, null);
@@ -1973,6 +1979,380 @@ internal static class ProjectionAnalyzer
 
         return null;
     }
+
+    // ─── Sql.Raw in Select projection ───────────────────────────────────
+
+    /// <summary>
+    /// Builds the canonical projection SqlExpression for a <c>Sql.Raw&lt;T&gt;(template, args...)</c>
+    /// call. Returns (finalSql, clrType) on success or (null, null) on failure (unsupported template
+    /// form, placeholder/arg mismatch, or one or more unrenderable args).
+    ///
+    /// The returned SqlExpression uses canonical placeholder conventions shared with aggregate and
+    /// window function projections: <c>{ColumnName}</c> for column references and <c>@__proj{N}</c>
+    /// for captured runtime variables. Dialect resolution and global parameter remapping happen later
+    /// in the pipeline (<see cref="SqlFormatting.QuoteSqlExpression"/> and
+    /// <c>ChainAnalyzer.RemapProjectionParameters</c>).
+    ///
+    /// The caller provides a <paramref name="renderArg"/> delegate that resolves each non-template
+    /// argument to its canonical SQL text. This indirection allows single-entity and joined callers
+    /// to reuse the same template-substitution logic with their own column-resolver strategies.
+    /// </summary>
+    private static (string? SqlExpression, string? ClrType) BuildSqlRawInfo(
+        InvocationExpressionSyntax invocation,
+        SemanticModel semanticModel,
+        List<ParameterInfo>? projectionParams,
+        Func<ExpressionSyntax, string?> renderArg)
+    {
+        var arguments = invocation.ArgumentList.Arguments;
+        if (arguments.Count < 1)
+            return (null, null);
+
+        // Template must be a compile-time string (string literal or string-valued const field).
+        var template = TryExtractConstString(arguments[0].Expression, semanticModel);
+        if (template == null)
+            return (null, null);
+
+        // Validate placeholder/arg count using the same rules as RawCallExpr.
+        var renderedArgs = new string[arguments.Count - 1];
+        for (int i = 1; i < arguments.Count; i++)
+        {
+            var rendered = renderArg(arguments[i].Expression);
+            if (rendered == null)
+                return (null, null); // unsupported arg — bail out
+            renderedArgs[i - 1] = rendered;
+        }
+
+        // Validate template by constructing a RawCallExpr shell and invoking Validate().
+        // Use placeholder literals to drive the validation — the actual rendered values are
+        // substituted below in Substitute.
+        var shellArgs = new SqlExpr[renderedArgs.Length];
+        for (int i = 0; i < shellArgs.Length; i++)
+            shellArgs[i] = new SqlRawExpr(renderedArgs[i]);
+        var shell = new RawCallExpr(template, shellArgs);
+        if (shell.Validate() != null)
+            return (null, null);
+
+        // Resolve the generic type argument T from Sql.Raw<T>.
+        var clrType = TryExtractSqlRawTypeArg(invocation, semanticModel) ?? "object";
+
+        return (SubstituteTemplatePlaceholders(template, renderedArgs), clrType);
+    }
+
+    /// <summary>
+    /// Substitutes <c>{0}, {1}, ...</c> indexed placeholders in <paramref name="template"/> with
+    /// the corresponding canonical SQL text from <paramref name="renderedArgs"/>. Non-placeholder
+    /// text is passed through verbatim (including any literal <c>{identifier}</c> placeholders that
+    /// refer to columns — those are resolved later by <see cref="SqlFormatting.QuoteSqlExpression"/>).
+    /// </summary>
+    private static string SubstituteTemplatePlaceholders(string template, string[] renderedArgs)
+    {
+        var sb = new System.Text.StringBuilder(template.Length + 32);
+        int pos = 0;
+        while (pos < template.Length)
+        {
+            if (template[pos] == '{')
+            {
+                int numStart = pos + 1;
+                int numEnd = numStart;
+                while (numEnd < template.Length && template[numEnd] >= '0' && template[numEnd] <= '9')
+                    numEnd++;
+                if (numEnd > numStart && numEnd < template.Length && template[numEnd] == '}'
+                    && int.TryParse(template.Substring(numStart, numEnd - numStart), out int argIdx)
+                    && argIdx >= 0 && argIdx < renderedArgs.Length)
+                {
+                    sb.Append(renderedArgs[argIdx]);
+                    pos = numEnd + 1;
+                    continue;
+                }
+            }
+            sb.Append(template[pos]);
+            pos++;
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Extracts a compile-time string constant from an expression. Handles string literals and
+    /// string-valued constants. Returns null for runtime expressions, non-string types, or when no
+    /// semantic model is available and the expression isn't a literal.
+    /// </summary>
+    private static string? TryExtractConstString(ExpressionSyntax expr, SemanticModel? semanticModel)
+    {
+        if (expr is LiteralExpressionSyntax literal && literal.Kind() == SyntaxKind.StringLiteralExpression)
+            return literal.Token.ValueText;
+
+        if (semanticModel == null)
+            return null;
+
+        var constValue = semanticModel.GetConstantValue(expr);
+        return constValue.HasValue && constValue.Value is string s ? s : null;
+    }
+
+    /// <summary>
+    /// Extracts the generic type argument <c>T</c> from a <c>Sql.Raw&lt;T&gt;(...)</c> invocation.
+    /// Returns null when the invocation is not generic or the type cannot be resolved.
+    /// </summary>
+    private static string? TryExtractSqlRawTypeArg(InvocationExpressionSyntax invocation, SemanticModel semanticModel)
+    {
+        if (invocation.Expression is MemberAccessExpressionSyntax memberAccess
+            && memberAccess.Name is GenericNameSyntax generic
+            && generic.TypeArgumentList.Arguments.Count == 1)
+        {
+            var typeArg = generic.TypeArgumentList.Arguments[0];
+            var typeInfo = semanticModel.GetTypeInfo(typeArg);
+            if (typeInfo.Type != null && typeInfo.Type.TypeKind != TypeKind.Error)
+                return GetSimpleTypeName(typeInfo.Type);
+        }
+
+        // Fallback: resolve the method symbol's return type
+        var methodSymbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+        if (methodSymbol?.ReturnType != null && methodSymbol.ReturnType.TypeKind != TypeKind.Error)
+            return GetSimpleTypeName(methodSymbol.ReturnType);
+
+        return null;
+    }
+
+    /// <summary>
+    /// Renders a single <c>Sql.Raw&lt;T&gt;</c> argument expression into canonical SQL text with
+    /// projection-layer placeholders. Parses via <see cref="SqlExprParser"/> and walks the resulting
+    /// tree, delegating column-reference resolution to <paramref name="resolveColumn"/>. Non-column
+    /// nodes (literals, captured vars, binary/unary ops, function calls, IS NULL, IN, LIKE, sub-raw)
+    /// render inline. Returns null for unsupported node kinds.
+    /// </summary>
+    private static string? RenderRawArgToCanonical(
+        ExpressionSyntax arg,
+        SemanticModel semanticModel,
+        List<ParameterInfo>? projectionParams,
+        string lambdaParameterName,
+        Func<ColumnRefExpr, string?> resolveColumn)
+    {
+        var lambdaParams = new HashSet<string> { lambdaParameterName };
+        var parsed = SqlExprParser.Parse(arg, lambdaParams);
+        return RenderRawArgNode(parsed, projectionParams, resolveColumn);
+    }
+
+    /// <summary>
+    /// Shared entry point for joined contexts. Accepts a set of lambda parameter names (one per
+    /// joined entity) and uses the caller-supplied column resolver to translate
+    /// <see cref="ColumnRefExpr"/> nodes to <c>{alias}.{ColumnName}</c> form.
+    /// </summary>
+    private static string? RenderRawArgToCanonicalJoined(
+        ExpressionSyntax arg,
+        SemanticModel semanticModel,
+        List<ParameterInfo>? projectionParams,
+        HashSet<string> lambdaParameterNames,
+        Func<ColumnRefExpr, string?> resolveColumn)
+    {
+        var parsed = SqlExprParser.Parse(arg, lambdaParameterNames);
+        return RenderRawArgNode(parsed, projectionParams, resolveColumn);
+    }
+
+    /// <summary>
+    /// Recursive walker that emits canonical SQL text for a parsed <see cref="SqlExpr"/> argument
+    /// tree. Uses a column-resolver delegate so the same walker serves single-entity and joined
+    /// contexts. Returns null if any node in the tree is unsupported (subquery, navigation, nested
+    /// raw, unresolved captured variables, etc.).
+    /// </summary>
+    private static string? RenderRawArgNode(
+        SqlExpr node,
+        List<ParameterInfo>? projectionParams,
+        Func<ColumnRefExpr, string?> resolveColumn)
+    {
+        switch (node)
+        {
+            case ColumnRefExpr colRef:
+                return resolveColumn(colRef);
+
+            case LiteralExpr literal:
+                return FormatLiteralForProjection(literal);
+
+            case CapturedValueExpr captured:
+                return AddCapturedAsProjectionParameter(captured, projectionParams);
+
+            case BinaryOpExpr bin:
+            {
+                var left = RenderRawArgNode(bin.Left, projectionParams, resolveColumn);
+                if (left == null) return null;
+                var right = RenderRawArgNode(bin.Right, projectionParams, resolveColumn);
+                if (right == null) return null;
+                return $"({left} {GetRawBinaryOperator(bin.Operator)} {right})";
+            }
+
+            case UnaryOpExpr unary:
+            {
+                var operand = RenderRawArgNode(unary.Operand, projectionParams, resolveColumn);
+                if (operand == null) return null;
+                return unary.Operator switch
+                {
+                    SqlUnaryOperator.Not => $"NOT ({operand})",
+                    SqlUnaryOperator.Negate => $"-{operand}",
+                    _ => null
+                };
+            }
+
+            case FunctionCallExpr func:
+            {
+                var parts = new string[func.Arguments.Count];
+                for (int i = 0; i < func.Arguments.Count; i++)
+                {
+                    var p = RenderRawArgNode(func.Arguments[i], projectionParams, resolveColumn);
+                    if (p == null) return null;
+                    parts[i] = p;
+                }
+                return $"{func.FunctionName}({string.Join(", ", parts)})";
+            }
+
+            case IsNullCheckExpr isNull:
+            {
+                var operand = RenderRawArgNode(isNull.Operand, projectionParams, resolveColumn);
+                if (operand == null) return null;
+                return isNull.IsNegated ? $"{operand} IS NOT NULL" : $"{operand} IS NULL";
+            }
+
+            case InExpr inExpr:
+            {
+                var operand = RenderRawArgNode(inExpr.Operand, projectionParams, resolveColumn);
+                if (operand == null) return null;
+                var vals = new string[inExpr.Values.Count];
+                for (int i = 0; i < inExpr.Values.Count; i++)
+                {
+                    var v = RenderRawArgNode(inExpr.Values[i], projectionParams, resolveColumn);
+                    if (v == null) return null;
+                    vals[i] = v;
+                }
+                return $"{operand}{(inExpr.IsNegated ? " NOT IN " : " IN ")}({string.Join(", ", vals)})";
+            }
+
+            case LikeExpr like:
+            {
+                var operand = RenderRawArgNode(like.Operand, projectionParams, resolveColumn);
+                if (operand == null) return null;
+                var pattern = RenderRawArgNode(like.Pattern, projectionParams, resolveColumn);
+                if (pattern == null) return null;
+                return $"{operand}{(like.IsNegated ? " NOT LIKE " : " LIKE ")}{pattern}";
+            }
+
+            case SqlRawExpr raw:
+                return raw.SqlText;
+
+            // Unsupported in projection-arg context: NavigationAccess, Subquery, RawCall (nested),
+            // ParamSlot (parser never emits), ExprList. Caller will bail out.
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a <see cref="ColumnRefExpr"/> from a single-entity projection context to a canonical
+    /// <c>{ColumnName}</c> placeholder. Mirrors <see cref="GetColumnSql"/> behavior: when the property
+    /// is not in the column lookup, the property name itself is used as the placeholder so downstream
+    /// enrichment can rewrite it.
+    /// </summary>
+    private static string? ResolveColumnRefToPlaceholder(
+        ColumnRefExpr colRef,
+        Dictionary<string, ColumnInfo> columnLookup,
+        string lambdaParameterName)
+    {
+        // Ignore bare lambda parameter references (entity self-reference), which produce a ColumnRef
+        // with ParameterName == PropertyName in SqlExprParser. These are not column references.
+        if (colRef.ParameterName == colRef.PropertyName)
+            return null;
+
+        if (colRef.ParameterName != lambdaParameterName)
+            return null;
+
+        if (columnLookup.TryGetValue(colRef.PropertyName, out var column))
+            return WrapIdentifier(column.ColumnName);
+
+        // Fallback: use property name as column name. Enrichment rewrites with the correct DB name
+        // if the entity type resolves later in the pipeline.
+        return WrapIdentifier(colRef.PropertyName);
+    }
+
+    /// <summary>
+    /// Formats a <see cref="LiteralExpr"/> node as inline SQL text for projection-argument use.
+    /// Matches the conventions of <see cref="SqlExprRenderer"/> for string/char escaping and
+    /// NULL/boolean handling.
+    /// </summary>
+    private static string FormatLiteralForProjection(LiteralExpr literal)
+    {
+        if (literal.IsNull)
+            return "NULL";
+
+        switch (literal.ClrType)
+        {
+            case "bool":
+                return literal.SqlText == "TRUE" || literal.SqlText == "true" || literal.SqlText == "1"
+                    ? "TRUE"
+                    : "FALSE";
+
+            case "string":
+            case "char":
+                return $"'{literal.SqlText.Replace("'", "''")}'";
+
+            default:
+                return literal.SqlText;
+        }
+    }
+
+    /// <summary>
+    /// Adds a <see cref="CapturedValueExpr"/> as a projection parameter, returning the local
+    /// <c>@__proj{N}</c> placeholder that will later be remapped to a global parameter by
+    /// <c>ChainAnalyzer.RemapProjectionParameters</c>. Returns null when no
+    /// <paramref name="projectionParams"/> list is available or when the captured value cannot be
+    /// extracted (missing symbol info).
+    /// </summary>
+    private static string? AddCapturedAsProjectionParameter(
+        CapturedValueExpr captured,
+        List<ParameterInfo>? projectionParams)
+    {
+        if (projectionParams == null)
+            return null;
+
+        var localIndex = projectionParams.Count;
+        var placeholder = $"@__proj{localIndex}";
+
+        var paramInfo = new ParameterInfo(
+            index: localIndex,
+            name: placeholder,
+            clrType: captured.ClrType,
+            valueExpression: captured.SyntaxText,
+            isCaptured: true)
+        {
+            CapturedFieldName = captured.VariableName,
+            CapturedFieldType = captured.ClrType,
+        };
+
+        projectionParams.Add(paramInfo);
+        return placeholder;
+    }
+
+    /// <summary>
+    /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Mirrors the mapping in
+    /// <see cref="SqlExprRenderer"/>.
+    /// </summary>
+    private static string GetRawBinaryOperator(SqlBinaryOperator op) => op switch
+    {
+        SqlBinaryOperator.Equal => "=",
+        SqlBinaryOperator.NotEqual => "<>",
+        SqlBinaryOperator.LessThan => "<",
+        SqlBinaryOperator.GreaterThan => ">",
+        SqlBinaryOperator.LessThanOrEqual => "<=",
+        SqlBinaryOperator.GreaterThanOrEqual => ">=",
+        SqlBinaryOperator.And => "AND",
+        SqlBinaryOperator.Or => "OR",
+        SqlBinaryOperator.Add => "+",
+        SqlBinaryOperator.Subtract => "-",
+        SqlBinaryOperator.Multiply => "*",
+        SqlBinaryOperator.Divide => "/",
+        SqlBinaryOperator.Modulo => "%",
+        SqlBinaryOperator.BitwiseAnd => "&",
+        SqlBinaryOperator.BitwiseOr => "|",
+        SqlBinaryOperator.BitwiseXor => "^",
+        _ => "?"
+    };
+
+    // ─── End Sql.Raw in Select projection ──────────────────────────────────
 
     /// <summary>
     /// Gets the SQL expression and CLR type for an aggregate function in a joined context.

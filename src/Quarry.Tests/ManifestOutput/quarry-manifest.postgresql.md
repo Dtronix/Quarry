@@ -1399,6 +1399,14 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", UPPER("UserName") AS "Upper" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserName" FROM "users"
 ```
 
@@ -2712,7 +2720,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 361 |
+| Total discovered | 362 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 70 |
-| Rendered | 291 |
+| Rendered | 292 |

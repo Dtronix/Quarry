@@ -175,6 +175,30 @@ internal class CrossDialectMiscTests
 
     #endregion
 
+    #region Sql.Raw in Select projection
+
+    [Test]
+    public async Task Select_SqlRaw_WithColumnReference()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, Upper: Sql.Raw<string>("UPPER({0})", u.UserName))).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, Upper: Sql.Raw<string>("UPPER({0})", u.UserName))).Prepare();
+        var my = My.Users().Select(u => (u.UserId, Upper: Sql.Raw<string>("UPPER({0})", u.UserName))).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, Upper: Sql.Raw<string>("UPPER({0})", u.UserName))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", UPPER(\"UserName\") AS \"Upper\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", UPPER(\"UserName\") AS \"Upper\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, UPPER(`UserName`) AS `Upper` FROM `users`",
+            ss:     "SELECT [UserId], UPPER([UserName]) AS [Upper] FROM [users]");
+    }
+
+    #endregion
+
     #region Instance Field Capture
 
     private int _instanceUserId = 1;

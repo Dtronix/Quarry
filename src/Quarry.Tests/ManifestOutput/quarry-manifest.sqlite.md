@@ -1985,6 +1985,14 @@ SELECT "UserId", "UserName", "IsActive" FROM "users"
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", UPPER("UserName") AS "Upper" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserName" FROM "users"
 ```
 
@@ -4066,7 +4074,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 611 |
+| Total discovered | 612 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 183 |
-| Rendered | 428 |
+| Rendered | 429 |
