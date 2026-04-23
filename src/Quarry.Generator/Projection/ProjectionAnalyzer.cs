@@ -2435,8 +2435,10 @@ internal static class ProjectionAnalyzer
         switch (literal.ClrType)
         {
             case "bool":
-                var isTrueish = literal.SqlText == "TRUE" || literal.SqlText == "true" || literal.SqlText == "1";
-                return isTrueish ? "{@BOOLT}" : "{@BOOLF}";
+                // SqlExprParser.ParseLiteral emits exactly "TRUE" / "FALSE" for bool literals
+                // (SqlExprParser.cs:270-274). Any other casing implies the LiteralExpr came from
+                // a non-parser source — treat as false to avoid silently emitting the wrong dialect.
+                return literal.SqlText == "TRUE" ? "{@BOOLT}" : "{@BOOLF}";
 
             case "string":
             case "char":
@@ -2537,7 +2539,9 @@ internal static class ProjectionAnalyzer
 
     /// <summary>
     /// Returns the SQL operator text for a <see cref="SqlBinaryOperator"/>. Mirrors the mapping in
-    /// <see cref="SqlExprRenderer"/>.
+    /// <see cref="SqlExprRenderer"/>. Throws on unknown operators rather than emitting a sentinel
+    /// string — silently emitting an unrecognized operator into SQL would reintroduce the
+    /// silent-wrong-SQL failure mode this PR fixes.
     /// </summary>
     private static string GetRawBinaryOperator(SqlBinaryOperator op) => op switch
     {
@@ -2557,7 +2561,7 @@ internal static class ProjectionAnalyzer
         SqlBinaryOperator.BitwiseAnd => "&",
         SqlBinaryOperator.BitwiseOr => "|",
         SqlBinaryOperator.BitwiseXor => "^",
-        _ => "?"
+        _ => throw new ArgumentOutOfRangeException(nameof(op), op, "Unsupported SqlBinaryOperator in Sql.Raw projection arg."),
     };
 
     // ─── End Sql.Raw in Select projection ──────────────────────────────────
