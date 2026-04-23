@@ -240,13 +240,13 @@ await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 
 **Reader strategy:** When the SQL argument is a string literal the shared SQL parser can resolve, the generator emits a static lambda with hardcoded ordinals (one-time `GetOrdinal` lookup eliminated). Otherwise falls back to a `file struct IRowReader<T>` — `GetName` called once per result set, no per-row lambda or closure allocation. Column matching is case-insensitive (`ToLowerInvariant`).
 
-**Row entity shape:** `RawSqlAsync<T>` and `RawSqlScalarAsync<T>` materialize rows by calling `new T()` and assigning each column to a public settable property. `T` must therefore have:
+**Row entity shape:** `RawSqlAsync<T>` and `RawSqlScalarAsync<T>` materialize rows by calling `new T()` and assigning each column to a public settable property. `T` must therefore be a concrete (non-abstract, non-interface) class or struct with:
 - a public parameterless constructor, and
 - public `get; set;` properties (not `init`-only).
 
-Positional records and init-only properties are rejected at compile time with QRY043. For immutable result shapes, project on a chain query (`Select(x => new Dto { ... })`) — the immutability comes from the projection, not from the row type. Nested row types (declared inside an enclosing class) are supported; the generator emits their fully qualified names in the generated interceptor.
+Positional records, init-only properties, abstract classes, and interfaces are rejected at compile time with QRY043. For immutable result shapes, project on a chain query (`Select(x => new Dto { ... })`) — the immutability comes from the projection, not from the row type. Nested row types (declared inside an enclosing class) are supported; the generator emits their fully qualified names in the generated interceptor.
 
-**Diagnostics:** QRY031 (error) — unresolvable generic `T`. QRY041 (warn) — unresolvable column in literal SQL. QRY042 (info + code fix) — RawSqlAsync convertible to chain API. QRY043 (error) — row entity type not materializable (no parameterless ctor / init-only properties).
+**Diagnostics:** QRY031 (error) — unresolvable generic `T`. QRY041 (warn) — unresolvable column in literal SQL. QRY042 (info + code fix) — RawSqlAsync convertible to chain API. QRY043 (error) — row entity type not materializable (no parameterless ctor, init-only property, abstract class, or interface).
 
 **Error propagation:** On the buffered multi-row path, `ReadAsync` errors propagate as raw `DbException` (not wrapped in `QuarryQueryException`). Connection-open failures still wrap.
 

@@ -485,7 +485,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY029 | Sql.Raw placeholder mismatch |
 | QRY032 | Query chain not analyzable |
 | QRY031 | Unresolvable `RawSqlAsync<T>` generic type parameter |
-| QRY043 | Row entity type is not materializable (no parameterless ctor / init-only properties) |
+| QRY043 | Row entity type is not materializable (no parameterless ctor, init-only property, abstract class, or interface) |
 | QRY033 | Forked query chain (multiple terminals on same builder variable) |
 | QRY035 | PreparedQuery escapes method scope |
 | QRY036 | PreparedQuery has no terminals |
@@ -560,7 +560,7 @@ await db.RawSqlScalarAsync<int>("SELECT COUNT(*) FROM users");
 await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 ```
 
-Diagnostics: `QRY031` (unresolvable generic `T`), `QRY041` (unresolvable column in literal SQL), `QRY042` (Raw SQL convertible to chain — info + code fix), `QRY043` (row entity type is not materializable).
+Diagnostics: `QRY031` (unresolvable generic `T`), `QRY041` (unresolvable column in literal SQL), `QRY042` (Raw SQL convertible to chain — info + code fix), `QRY043` (row entity type not materializable — no parameterless ctor, init-only property, abstract class, or interface).
 
 ---
 
