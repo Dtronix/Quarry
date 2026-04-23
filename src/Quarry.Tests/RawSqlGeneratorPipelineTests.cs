@@ -250,6 +250,155 @@ public class Service
 
     #endregion
 
+    #region Row Entity Materializability (QRY043)
+
+    [Test]
+    public void RawSqlAsync_PositionalRecordRowType_EmitsQRY043_AndSuppressesInterceptor()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Positional record — the generator can't call `new UserRow()` because the
+// only accessible constructor takes positional parameters.
+public sealed record UserRow(int Id, string Name);
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should be emitted for a positional record row type");
+        Assert.That(qry043!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry043.GetMessage(), Does.Contain("UserRow"));
+        Assert.That(qry043.GetMessage(), Does.Contain("parameterless"));
+
+        var code = GetInterceptorsCode(result);
+        if (code != null)
+        {
+            Assert.That(code, Does.Not.Contain("RawSqlReader_UserRow"),
+                "Should not generate an interceptor struct for an un-materializable row type");
+        }
+    }
+
+    [Test]
+    public void RawSqlAsync_InitOnlyProperties_EmitsQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Class with init-only properties — the generator would emit `item.Id = ...`
+// assignments that don't compile outside an object initializer (CS8852).
+public sealed class UserRow
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = """";
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should be emitted for init-only row properties");
+        Assert.That(qry043!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry043.GetMessage(), Does.Contain("init-only"));
+    }
+
+    [Test]
+    public void RawSqlAsync_PlainClassRow_DoesNotEmitQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Plain class with parameterless ctor and public settable properties — valid.
+public sealed class UserRow
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = """";
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Null, "QRY043 should not fire for valid plain-class row types");
+    }
+
+    #endregion
+
     #region Both Overloads Detected
 
     [Test]

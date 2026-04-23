@@ -234,6 +234,11 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
     // Not part of Equals/GetHashCode — computed after Collect() to avoid cache instability.
     public RawSqlTypeInfo? RawSqlTypeInfo { get; set; }
 
+    // Set by DisplayClassEnricher when the RawSql<T> row type cannot be materialized
+    // by the source generator (no parameterless ctor, init-only properties, etc.).
+    // Reported as QRY043 by PipelineOrchestrator; suppresses interceptor emission.
+    public string? MaterializabilityError { get; set; }
+
     // Transient: lambda syntax for deferred batch enrichment. Not part of Equals/GetHashCode.
     public LambdaExpressionSyntax? EnrichmentLambda { get; set; }
 
@@ -298,6 +303,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
         copy.EnrichmentInvocation = EnrichmentInvocation;
         return copy;
@@ -362,6 +368,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
         copy.EnrichmentInvocation = EnrichmentInvocation;
         return copy;
@@ -429,6 +436,7 @@ internal sealed class RawCallSite : IEquatable<RawCallSite>
         copy.CapturedVariableTypes = CapturedVariableTypes;
         copy.CaptureKind = CaptureKind;
         copy.RawSqlTypeInfo = RawSqlTypeInfo;
+        copy.MaterializabilityError = MaterializabilityError;
         copy.EnrichmentLambda = EnrichmentLambda;
         copy.EnrichmentInvocation = EnrichmentInvocation;
         return copy;

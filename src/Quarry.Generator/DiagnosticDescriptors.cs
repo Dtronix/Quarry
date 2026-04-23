@@ -555,6 +555,26 @@ internal static class DiagnosticDescriptors
                      "arithmetic, etc.) without an AS alias. The generator cannot determine the result " +
                      "column name at compile time and falls back to runtime ordinal discovery.");
 
+    // ─── RawSql row-shape diagnostics (QRY043) ─────────────────────────
+
+    /// <summary>
+    /// QRY043: RawSqlAsync row entity type is not materializable by the source generator.
+    /// Severity: Error
+    /// </summary>
+    public static readonly DiagnosticDescriptor RowEntityNotMaterializable = new(
+        id: "QRY043",
+        title: "Row entity type is not materializable",
+        messageFormat: "Row entity type '{0}' cannot be materialized by the source generator: {1}. "
+                     + "RawSqlAsync<T> requires T to be a class or struct with a public parameterless constructor "
+                     + "and public get/set properties. Positional records and init-only properties are not supported — "
+                     + "for immutable results, project on a chain query via Select(x => new MyDto {{ ... }}).",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "The source-generated row reader calls 'new T()' and assigns each column to a public settable property. " +
+                     "Positional records lack a parameterless constructor, and init-only properties cannot be assigned from " +
+                     "generated code outside an object initializer.");
+
     // ─── Navigation join diagnostics (QRY060–QRY065) ──────────────────
 
     /// <summary>

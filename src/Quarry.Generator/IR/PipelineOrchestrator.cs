@@ -130,6 +130,20 @@ internal static class PipelineOrchestrator
                 continue;
             }
 
+            // QRY043: RawSqlAsync row entity type is not materializable (positional record,
+            // init-only property, no parameterless constructor). Reported as Error so consumers
+            // see the real problem instead of a CS7036/CS8852 against the generated interceptor.
+            if (raw.MaterializabilityError != null
+                && raw.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.RowEntityNotMaterializable.Id,
+                    raw.Location,
+                    raw.ResultTypeName ?? raw.EntityTypeName,
+                    raw.MaterializabilityError));
+                continue;
+            }
+
             // QRY001: query not analyzable (parameter receiver, variable receiver, etc.)
             // Lambda inner chain sites are expected to be non-analyzable (their receiver
             // is a lambda parameter) and are handled by ChainAnalyzer's recursive analysis.

@@ -239,7 +239,8 @@ internal sealed class FileEmitter
                 if (site.Kind == InterceptorKind.RawSqlAsync
                     && site.RawSqlTypeInfo != null
                     && site.RawSqlTypeInfo.TypeKind != RawSqlTypeKind.Scalar
-                    && site.RawSqlTypeInfo.Properties.Count > 0)
+                    && site.RawSqlTypeInfo.Properties.Count > 0
+                    && site.MaterializabilityError == null)
                 {
                     // Try compile-time column resolution first
                     if (site.RawSqlTypeInfo.SqlLiteral != null)
@@ -494,6 +495,13 @@ internal sealed class FileEmitter
     {
         // Trace sites are compile-time-only signals — no interceptor generated
         if (site.Kind == InterceptorKind.Trace)
+            return;
+
+        // QRY043: row entity type is not materializable. The diagnostic is already reported
+        // by PipelineOrchestrator; suppress emission so the user sees QRY043 rather than
+        // CS7036/CS8852 against generated code that can never compile.
+        if (site.MaterializabilityError != null
+            && site.Kind is InterceptorKind.RawSqlAsync or InterceptorKind.RawSqlScalarAsync)
             return;
 
         // Check if this site belongs to a carrier-optimized chain
