@@ -6,11 +6,11 @@
 |---|---------|---------------------|-----|-----|-------|--------------|
 | 1 | Plan Compliance | `RawCallSite.EntityNamespace` field from plan was not added; Phase 2 filters by `RawSqlTypeInfo.IsNestedType` instead | Info | D | D | Dismissed: functionally equivalent outcome. |
 | 2 | Plan Compliance | Analyzer not registered "alongside `QuarryQueryAnalyzer`"; ships as a standalone `[DiagnosticAnalyzer]` class | Info | D | D | Dismissed: Roslyn discovery works identically. |
-| 3 | Correctness | `CheckRowEntityMaterializability` does not reject abstract classes or interfaces used as `T` | Minor | B | B | |
+| 3 | Correctness | `CheckRowEntityMaterializability` does not reject abstract classes or interfaces used as `T` | Minor | B | B | Fixed in `be224dd` — abstract class + interface rejection added to `CheckRowEntityMaterializability`; docs updated in `25f0b5e`. |
 | 4 | Correctness | QRY043 suppression covers both the interceptor and the struct emission (positive observation) | Info | D | D | Positive observation, no action. |
-| 5 | Test Quality | No test for nested row type taking the struct-reader fallback branch | Minor | B | B | |
-| 6 | Test Quality | Namespace-level-row regression does not assert the `using Rows;` directive is emitted | Minor | B | B | |
-| 7 | Test Quality | QRY044 with `build_property.InterceptorsNamespaces` explicitly null is not directly tested | Minor | B | B | |
+| 5 | Test Quality | No test for nested row type taking the struct-reader fallback branch | Minor | B | B | Fixed in `be224dd` — added nested-row struct-reader test covering `SanitizeForIdentifier` + FQN struct emission. |
+| 6 | Test Quality | Namespace-level-row regression does not assert the `using Rows;` directive is emitted | Minor | B | B | Fixed in `be224dd` — regression now asserts the `using TestApp.Rows;` directive. |
+| 7 | Test Quality | QRY044 with `build_property.InterceptorsNamespaces` explicitly null is not directly tested | Minor | B | B | Fixed in `be224dd` — added explicit-null property test pinning null/empty convergence. |
 | 8 | Codebase Consistency | QRY044 uses `Category = "QuarryAnalyzer"` while neighboring QRY042 uses `"QuarryMigration"` | Info | D | D | Defensible: analyzer-emitted, not migration-related. |
 | 9 | Integration | Nested-type FQN emission uses Roslyn `global::`-prefixed names (positive observation) | Info | D | D | Positive observation, no action. |
 

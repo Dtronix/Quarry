@@ -10,7 +10,7 @@ phase: REMEDIATE
 status: active
 issue: #259
 pr: #260
-session: 1
+session: 2
 phases-total: 5
 phases-complete: 5
 
@@ -62,3 +62,4 @@ Add `IsNestedType` (bool) and `FullyQualifiedResultTypeName` (string) to `RawSql
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-22 | - | INTAKE→DESIGN→PLAN: baseline green (3242 tests), design decisions recorded, plan.md approved. Auto-transition to IMPLEMENT. |
+| 2 | 2026-04-23 | - | Resume. Worktree had been pruned from disk; recreated at `../259-docs-dx-friction-points/` from `origin/259-docs-dx-friction-points`. PR #260 verified MERGEABLE/CLEAN, CI run 24820105388 SUCCESS. Branch 8 ahead, 0 behind origin/master — no rebase needed. Remediation already committed (`be224dd`, `25f0b5e`). REMEDIATE step 8: awaiting user finalize confirmation. |
