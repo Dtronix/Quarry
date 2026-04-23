@@ -4,11 +4,11 @@ platform: github
 remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 ## State
-phase: REMEDIATE
+phase: REVIEW
 status: active
 issue: #256
 pr: #262
-session: 1
+session: 2
 phases-total: 3
 phases-complete: 3
 ## Problem Statement
@@ -33,3 +33,4 @@ Reference locations (from issue):
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-22 INTAKE | 2026-04-22 DESIGN | Loaded issue #256, created worktree, baseline tests green (3242 passing) |
+| 2 | 2026-04-23 REMEDIATE | 2026-04-23 REVIEW | Resumed PR #262; worktree recreated from origin; local + CI green on d583c1f. User declined FINALIZE and chose "go back to REVIEW" for a fresh full re-analysis. Archived prior review.md → review-session1.md. |
