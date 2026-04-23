@@ -485,6 +485,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY029 | Sql.Raw placeholder mismatch |
 | QRY032 | Query chain not analyzable |
 | QRY031 | Unresolvable `RawSqlAsync<T>` generic type parameter |
+| QRY043 | Row entity type is not materializable (no parameterless ctor / init-only properties) |
 | QRY033 | Forked query chain (multiple terminals on same builder variable) |
 | QRY035 | PreparedQuery escapes method scope |
 | QRY036 | PreparedQuery has no terminals |
@@ -508,6 +509,7 @@ public Col<Money> Price => Mapped<MoneyMapping>();
 | QRY023 | Subquery FK-to-PK correlation ambiguous |
 | QRY028 | Redundant unique constraint (column + index) |
 | QRY034 | .Trace() requires QUARRY_TRACE define |
+| QRY044 | `[QuarryContext]` namespace missing from `<InterceptorsNamespaces>` |
 | QRY040 | SQL manifest write failure |
 | QRY041 | RawSqlAsync column expression without alias |
 | QRY050 | Schema changed since last migration snapshot |
@@ -558,7 +560,7 @@ await db.RawSqlScalarAsync<int>("SELECT COUNT(*) FROM users");
 await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 ```
 
-Diagnostics: `QRY031` (unresolvable generic `T`), `QRY041` (unresolvable column in literal SQL), `QRY042` (Raw SQL convertible to chain — info + code fix).
+Diagnostics: `QRY031` (unresolvable generic `T`), `QRY041` (unresolvable column in literal SQL), `QRY042` (Raw SQL convertible to chain — info + code fix), `QRY043` (row entity type is not materializable).
 
 ---
 

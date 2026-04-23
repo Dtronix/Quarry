@@ -427,6 +427,8 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 | QRY040 | Warning | SQL manifest write failure |
 | QRY041 | Warning | RawSqlAsync column expression without alias (falls back to runtime ordinal discovery) |
 | QRY042 | Info | RawSqlAsync convertible to chain query (code fix available) |
+| QRY043 | Error | Row entity type not materializable (no parameterless ctor / init-only properties) |
+| QRY044 | Warning | `[QuarryContext]` namespace missing from `<InterceptorsNamespaces>` |
 | QRY050-055 | Mixed | Migration diagnostics |
 | QRY060 | Error | No FK column for `One<T>` navigation |
 | QRY061 | Error | Ambiguous FK for `One<T>` navigation |
