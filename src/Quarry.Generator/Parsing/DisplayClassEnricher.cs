@@ -248,14 +248,75 @@ internal static class DisplayClassEnricher
                     rawSqlTypeInfo.Properties,
                     rawSqlTypeInfo.HasCancellationToken,
                     rawSqlTypeInfo.ScalarReaderMethod,
-                    sqlLiteral);
+                    sqlLiteral,
+                    rawSqlTypeInfo.IsNestedType);
             }
 
             site.RawSqlTypeInfo = rawSqlTypeInfo;
 
+            // Materializability check (QRY043): the row reader calls `new T()` and assigns each
+            // column to a public settable property. Positional records have no parameterless
+            // constructor; init-only properties are rejected by the C# compiler when assigned
+            // outside an object initializer. Only check DTO row types — scalars and entity types
+            // in the registry have their own code paths.
+            if (rawSqlTypeInfo.TypeKind == RawSqlTypeKind.Dto
+                && typeArgSymbol is INamedTypeSymbol namedType)
+            {
+                var materializabilityError = CheckRowEntityMaterializability(namedType);
+                if (materializabilityError != null)
+                    site.MaterializabilityError = materializabilityError;
+            }
+
             // Clear transient reference — no longer needed after enrichment
             site.EnrichmentInvocation = null;
         }
+    }
+
+    /// <summary>
+    /// Returns null if the type can be materialized by the source-generated row reader,
+    /// or a human-readable reason why not. Verifies the type has a public parameterless
+    /// constructor and that no public settable property is init-only.
+    /// </summary>
+    private static string? CheckRowEntityMaterializability(INamedTypeSymbol type)
+    {
+        // Interfaces and abstract classes cannot be instantiated via `new T()`; CS0144
+        // would fire against the generated code with no hint of which row type is at fault.
+        if (type.TypeKind == TypeKind.Interface)
+            return "type is an interface and cannot be instantiated via 'new T()'";
+        if (type.IsAbstract)
+            return "type is abstract and cannot be instantiated via 'new T()'";
+
+        // Structs always have an implicit parameterless constructor.
+        var isStruct = type.TypeKind == TypeKind.Struct;
+        if (!isStruct)
+        {
+            var hasParameterlessCtor = false;
+            foreach (var ctor in type.InstanceConstructors)
+            {
+                if (ctor.Parameters.Length == 0
+                    && ctor.DeclaredAccessibility == Accessibility.Public)
+                {
+                    hasParameterlessCtor = true;
+                    break;
+                }
+            }
+            if (!hasParameterlessCtor)
+                return "no accessible parameterless constructor (positional records are not supported)";
+        }
+
+        foreach (var member in type.GetMembers())
+        {
+            if (member is not IPropertySymbol prop)
+                continue;
+            if (prop.DeclaredAccessibility != Accessibility.Public)
+                continue;
+            if (prop.IsStatic || prop.IsIndexer)
+                continue;
+            if (prop.SetMethod is { IsInitOnly: true })
+                return $"property '{prop.Name}' is init-only and cannot be assigned by the generated reader";
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -308,7 +369,9 @@ internal static class DisplayClassEnricher
             typeInfo.TypeKind,
             newProperties,
             typeInfo.HasCancellationToken,
-            typeInfo.ScalarReaderMethod);
+            typeInfo.ScalarReaderMethod,
+            typeInfo.SqlLiteral,
+            typeInfo.IsNestedType);
     }
 
     /// <summary>

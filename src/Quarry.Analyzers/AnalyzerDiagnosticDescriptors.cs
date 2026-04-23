@@ -213,4 +213,21 @@ internal static class AnalyzerDiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: "The SQL in this RawSqlAsync call uses only constructs that Quarry chain queries support. Consider replacing it with a chain query for type safety and compile-time checking.");
+
+    // ── QRY044: Project Setup ──
+
+    /// <summary>
+    /// QRY044: QuarryContext namespace is not opted into the MSBuild InterceptorsNamespaces property.
+    /// Severity: Warning. Emitted at the context class identifier.
+    /// </summary>
+    public static readonly DiagnosticDescriptor InterceptorsNamespaceMissing = new(
+        id: "QRY044",
+        title: "QuarryContext namespace not opted into InterceptorsNamespaces",
+        messageFormat: "QuarryContext subclass '{0}' is in namespace '{1}' which is not listed in "
+                     + "<InterceptorsNamespaces>; add "
+                     + "<InterceptorsNamespaces>$(InterceptorsNamespaces);{1}</InterceptorsNamespaces> to your .csproj",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "Without the opt-in, the build will fail with CS9137. This analyzer surfaces the gap earlier with the exact project-file edit.");
 }

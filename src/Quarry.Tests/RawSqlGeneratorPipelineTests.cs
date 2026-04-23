@@ -250,6 +250,533 @@ public class Service
 
     #endregion
 
+    #region Nested Row Types
+
+    [Test]
+    public void RawSqlAsync_NestedRowType_CompilesAndEmitsFullyQualifiedReferences()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Host
+{
+    // Row type is nested inside Host. Without the Phase 2 fix the generator
+    // would emit `using TestApp.Host;` which the compiler rejects (CS0138).
+    public sealed class NestedRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = """";
+    }
+
+    public static async Task Run(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<NestedRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        // No QRY043 — this is a valid shape; just nested.
+        Assert.That(diagnostics.Any(d => d.Id == "QRY043"), Is.False,
+            "Nested row type with valid shape should not raise QRY043");
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Interceptor file should be generated");
+
+        // Generator must NOT emit a `using` whose target is actually a type. Before the fix
+        // it emitted `using TestApp.Host;` (CS0138). The interceptor now lives inside
+        // `namespace TestApp.Host { ... }`, so the bad import appears only as a top-level
+        // using declaration — grep only the top-of-file block, ignoring the namespace line.
+        var usingBlockEnd = code!.IndexOf("\nnamespace ", StringComparison.Ordinal);
+        var usingBlock = usingBlockEnd > 0 ? code.Substring(0, usingBlockEnd) : code;
+        Assert.That(usingBlock, Does.Not.Contain("using TestApp.Host;"),
+            "Must not emit a using directive for an enclosing type (would be CS0138)");
+
+        // Generated body must reference the row type via its FQN so it resolves without a using.
+        Assert.That(code, Does.Contain("global::TestApp.Host.NestedRow"),
+            "Generated body should reference the nested row type via its fully qualified name");
+    }
+
+    [Test]
+    public void RawSqlAsync_NamespaceLevelRowType_StillUsesShortName()
+    {
+        // Regression: the non-nested path should keep emitting a short type reference
+        // and a `using` for the row type's namespace.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp.Rows
+{
+    public sealed class UserRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = """";
+    }
+}
+
+namespace TestApp
+{
+    public class UserSchema : Schema
+    {
+        public static string Table => ""users"";
+        public Key<int> UserId => Identity();
+    }
+
+    [QuarryContext(Dialect = SqlDialect.SQLite)]
+    public partial class TestDbContext : QuarryContext
+    {
+        public partial IEntityAccessor<User> Users();
+    }
+
+    public class Service
+    {
+        public async Task Test(TestDbContext db)
+        {
+            var rows = await db.RawSqlAsync<TestApp.Rows.UserRow>(""SELECT Id, Name FROM users"");
+            foreach (var r in rows) { _ = r; }
+        }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        Assert.That(diagnostics.Any(d => d.Id == "QRY043"), Is.False);
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null);
+
+        // Non-nested row: body references the type via its short name — no `global::`
+        // prefix, because that form is reserved for the nested-type fallback.
+        Assert.That(code, Does.Contain("new UserRow()"),
+            "Namespace-level row types should be referenced by their short name");
+        Assert.That(code, Does.Not.Contain("global::TestApp.Rows.UserRow"),
+            "Non-nested types should not use the FQN form");
+        // The short name only resolves when the containing namespace is imported.
+        Assert.That(code, Does.Contain("using TestApp.Rows;"),
+            "Namespace-level row types must also emit a using directive for their namespace");
+    }
+
+    [Test]
+    public void RawSqlAsync_NestedRowType_WithUnresolvableSql_EmitsSanitizedStructIdentifier()
+    {
+        // Exercises the struct-reader fallback path: the SQL expression is not a simple
+        // column list, so the compile-time resolver bails and the generator falls back
+        // to `file struct RawSqlReader_<sanitized>_<index>`. For a nested type the
+        // ResultTypeName is a `global::`-prefixed FQN, which is not a valid identifier —
+        // SanitizeForIdentifier must strip the prefix and replace dots/colons with _.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Host
+{
+    public sealed class NestedRow
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = """";
+    }
+
+    public static async Task Run(TestDbContext db)
+    {
+        // Expression without AS alias — the compile-time column resolver can't match
+        // this to NestedRow.Id, so the generator falls back to the struct reader.
+        var rows = await db.RawSqlAsync<NestedRow>(""SELECT Id*2, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (_, result) = RunGeneratorWithDiagnostics(compilation);
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null);
+
+        // Struct identifier must be valid C# — no `::` or `.` or angle brackets.
+        Assert.That(code, Does.Match(@"file struct RawSqlReader_TestApp_Host_NestedRow_\d+\b"),
+            "Sanitized struct identifier must use underscores in place of namespace separators");
+
+        // And the struct's IRowReader<T> parameter uses the FQN so it resolves without a using.
+        Assert.That(code, Does.Contain("IRowReader<global::TestApp.Host.NestedRow>"),
+            "Struct reader interface should use the FQN for the nested row type");
+    }
+
+    #endregion
+
+    #region Row Entity Materializability (QRY043)
+
+    [Test]
+    public void RawSqlAsync_PositionalRecordRowType_EmitsQRY043_AndSuppressesInterceptor()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Positional record — the generator can't call `new UserRow()` because the
+// only accessible constructor takes positional parameters.
+public sealed record UserRow(int Id, string Name);
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should be emitted for a positional record row type");
+        Assert.That(qry043!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry043.GetMessage(), Does.Contain("UserRow"));
+        Assert.That(qry043.GetMessage(), Does.Contain("parameterless"));
+
+        var code = GetInterceptorsCode(result);
+        if (code != null)
+        {
+            Assert.That(code, Does.Not.Contain("RawSqlReader_UserRow"),
+                "Should not generate an interceptor struct for an un-materializable row type");
+        }
+    }
+
+    [Test]
+    public void RawSqlAsync_InitOnlyProperties_EmitsQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Class with init-only properties — the generator would emit `item.Id = ...`
+// assignments that don't compile outside an object initializer (CS8852).
+public sealed class UserRow
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = """";
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should be emitted for init-only row properties");
+        Assert.That(qry043!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry043.GetMessage(), Does.Contain("init-only"));
+    }
+
+    [Test]
+    public void RawSqlAsync_AbstractClassRowType_EmitsQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public abstract class UserRow
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = """";
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should fire for an abstract row type");
+        Assert.That(qry043!.GetMessage(), Does.Contain("abstract"));
+    }
+
+    [Test]
+    public void RawSqlAsync_InterfaceRowType_EmitsQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public interface IUserRow
+{
+    int Id { get; set; }
+    string Name { get; set; }
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<IUserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should fire for an interface row type");
+        Assert.That(qry043!.GetMessage(), Does.Contain("interface"));
+    }
+
+    [Test]
+    public void RawSqlAsync_StructRowWithInitOnlyProperty_EmitsQRY043()
+    {
+        // Structs skip the ctor branch in CheckRowEntityMaterializability (C# always
+        // synthesizes a public parameterless ctor). Pin that the property-loop path
+        // still rejects an init-only property on a struct row type.
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public struct UserRow
+{
+    public int Id { get; init; }
+    public string Name { get; init; }
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Not.Null, "QRY043 should fire for a struct row with init-only properties");
+        Assert.That(qry043!.GetMessage(), Does.Contain("init-only"));
+    }
+
+    [Test]
+    public void RawSqlScalarAsync_DoesNotEmitQRY043_AndEmitsInterceptor_WhenMixedWithFailingRawSqlAsync()
+    {
+        // Pins the `Kind is RawSqlAsync or RawSqlScalarAsync` branch in
+        // PipelineOrchestrator.CollectTranslatedDiagnostics and FileEmitter for the
+        // scalar case: a failing RawSqlAsync<UserRow> must emit QRY043 exactly once
+        // while the sibling RawSqlScalarAsync<int> still produces a valid interceptor
+        // (scalars skip the materializability check entirely).
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public sealed record UserRow(int Id, string Name);
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+        var count = await db.RawSqlScalarAsync<int>(""SELECT COUNT(*) FROM users"");
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, result) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043s = diagnostics.Where(d => d.Id == "QRY043").ToList();
+        Assert.That(qry043s, Has.Count.EqualTo(1),
+            "QRY043 should fire once for the failing RawSqlAsync<UserRow> and not for the RawSqlScalarAsync<int>");
+        Assert.That(qry043s[0].GetMessage(), Does.Contain("UserRow"));
+
+        var code = GetInterceptorsCode(result);
+        Assert.That(code, Is.Not.Null, "Should still generate an interceptors file for the scalar call");
+        Assert.That(code, Does.Contain("RawSqlScalarAsyncWithConverter"),
+            "Scalar interceptor must still emit despite the sibling QRY043");
+    }
+
+    [Test]
+    public void RawSqlAsync_PlainClassRow_DoesNotEmitQRY043()
+    {
+        var source = @"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+// Plain class with parameterless ctor and public settable properties — valid.
+public sealed class UserRow
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = """";
+}
+
+public class UserSchema : Schema
+{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Service
+{
+    public async Task Test(TestDbContext db)
+    {
+        var rows = await db.RawSqlAsync<UserRow>(""SELECT Id, Name FROM users"");
+        foreach (var r in rows) { _ = r; }
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (diagnostics, _) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry043 = diagnostics.FirstOrDefault(d => d.Id == "QRY043");
+        Assert.That(qry043, Is.Null, "QRY043 should not fire for valid plain-class row types");
+    }
+
+    #endregion
+
     #region Both Overloads Detected
 
     [Test]

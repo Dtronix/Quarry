@@ -1,0 +1,14 @@
+<Project>
+  <!--
+    Quarry emits generic interceptor helpers into the Quarry.Generated namespace
+    regardless of where the consumer's QuarryContext subclass lives. Auto-register
+    that namespace via <InterceptorsNamespaces> so consumers don't have to discover
+    it via the CS9137 compiler error.
+
+    Consumers must still add the namespace(s) of their own QuarryContext subclasses;
+    QRY044 (Quarry.Analyzers) surfaces that gap at authoring time.
+  -->
+  <PropertyGroup>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Generated</InterceptorsNamespaces>
+  </PropertyGroup>
+</Project>

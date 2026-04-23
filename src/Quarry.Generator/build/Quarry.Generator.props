@@ -2,5 +2,8 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="QuarrySqlManifestPath" />
     <CompilerVisibleProperty Include="ProjectDir" />
+    <!-- Exposed so the QRY044 analyzer can validate that the consumer's
+         QuarryContext namespace is opted into the interceptors feature. -->
+    <CompilerVisibleProperty Include="InterceptorsNamespaces" />
   </ItemGroup>
 </Project>

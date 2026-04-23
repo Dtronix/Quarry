@@ -96,10 +96,13 @@ Multiple contexts with different dialects can coexist. Generator resolves contex
 services.AddScoped(_ => new AppDb(new SqliteConnection(cs), ownsConnection: true));
 ```
 
-**InterceptorsNamespaces:** Consumer `.csproj` must add the context's namespace to `InterceptorsNamespaces`. The generator emits interceptors into the context's namespace (or `Quarry.Generated` if the context has no namespace):
+**InterceptorsNamespaces:** C# 12 requires every namespace that emits interceptors to be opted into the MSBuild `InterceptorsNamespaces` property. Quarry's NuGet package auto-registers `Quarry.Generated` (used for generic helpers) via `build/Quarry.targets`. Consumers must also add the namespace of each `QuarryContext` subclass:
 ```xml
-<InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
+<PropertyGroup>
+  <InterceptorsNamespaces>$(InterceptorsNamespaces);MyApp.Data</InterceptorsNamespaces>
+</PropertyGroup>
 ```
+If missing, analyzer QRY044 surfaces the exact line to paste before the build fails with `CS9137`.
 
 ### Querying
 
@@ -237,7 +240,13 @@ await db.RawSqlNonQueryAsync("DELETE FROM logs WHERE date < @p0", cutoff);
 
 **Reader strategy:** When the SQL argument is a string literal the shared SQL parser can resolve, the generator emits a static lambda with hardcoded ordinals (one-time `GetOrdinal` lookup eliminated). Otherwise falls back to a `file struct IRowReader<T>` — `GetName` called once per result set, no per-row lambda or closure allocation. Column matching is case-insensitive (`ToLowerInvariant`).
 
-**Diagnostics:** QRY031 (error) — unresolvable generic `T`. QRY041 (warn) — unresolvable column in literal SQL. QRY042 (info + code fix) — RawSqlAsync convertible to chain API.
+**Row entity shape:** `RawSqlAsync<T>` and `RawSqlScalarAsync<T>` materialize rows by calling `new T()` and assigning each column to a public settable property. `T` must therefore be a concrete (non-abstract, non-interface) class or struct with:
+- a public parameterless constructor, and
+- public `get; set;` properties (not `init`-only).
+
+Positional records, init-only properties, abstract classes, and interfaces are rejected at compile time with QRY043. For immutable result shapes, project on a chain query (`Select(x => new Dto { ... })`) — the immutability comes from the projection, not from the row type. Nested row types (declared inside an enclosing class) are supported; the generator emits their fully qualified names in the generated interceptor.
+
+**Diagnostics:** QRY031 (error) — unresolvable generic `T`. QRY041 (warn) — unresolvable column in literal SQL. QRY042 (info + code fix) — RawSqlAsync convertible to chain API. QRY043 (error) — row entity type not materializable (no parameterless ctor, init-only property, abstract class, or interface).
 
 **Error propagation:** On the buffered multi-row path, `ReadAsync` errors propagate as raw `DbException` (not wrapped in `QuarryQueryException`). Connection-open failures still wrap.
 
