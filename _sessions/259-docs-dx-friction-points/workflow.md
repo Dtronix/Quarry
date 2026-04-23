@@ -12,7 +12,7 @@ issue: #259
 pr:
 session: 1
 phases-total: 5
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 Issue #259 reports three DX/docs friction points hit while adopting Quarry 0.3.0 in a .NET 10 / PostgreSQL 17 project. None are blocking bugs — each has a workaround — but each cost time because `llm.md` doesn't warn the author and the failure modes are cryptic Roslyn errors rather than Quarry diagnostics.
