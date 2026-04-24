@@ -24,7 +24,7 @@ namespace Quarry.Tests.Integration;
 /// </remarks>
 [TestFixture]
 [Category("NpgsqlIntegration")]
-internal class PostgresIntegrationTests
+public class PostgresIntegrationTests
 {
     [Test]
     public async Task EntityInsert_OnPostgreSQL_ExecutesSuccessfully()
@@ -97,16 +97,16 @@ internal class PostgresIntegrationTests
     [Test]
     public async Task WhereInCollection_OnPostgreSQL_ExecutesSuccessfully()
     {
-        // Covers TerminalEmitHelpers.EmitCollectionPartsPopulation: expands
-        // a .NET collection into N `$N` placeholders at runtime. Each
-        // generated parameter goes through the same "ParameterName = \"\""
-        // path the generator emits for PostgreSQL; if that regressed back
-        // to Dollar() or AtP(), Npgsql would drop the parameters and the
-        // query would return zero rows (or throw 08P01).
+        // Covers TerminalEmitHelpers.EmitCollectionPartsPopulation combined
+        // with CarrierEmitter's collection-parameter binding loop. The
+        // collection is passed as a method argument so it is NOT
+        // constant-folded to literal SQL — the generator must emit the
+        // runtime-expansion path that builds __colNParts at runtime and
+        // binds one DbParameter per element.
         await using var t = await QueryTestHarness.CreateAsync();
         var (_, Pg, _, _) = t;
 
-        var wantedIds = new[] { 1, 3 };
+        var wantedIds = BuildWantedIds();
 
         var names = await Pg.Users()
             .Where(u => wantedIds.Contains(u.UserId))
@@ -117,4 +117,11 @@ internal class PostgresIntegrationTests
         Assert.That(names, Does.Contain("Alice"));
         Assert.That(names, Does.Contain("Charlie"));
     }
+
+    // Returning the array through a method call prevents the SqlExprAnnotator
+    // constant-inlining pass from recognising the array initialiser — the
+    // generator emits the runtime collection-expansion code path, which is
+    // the code path GH-258 actually surfaces on real Npgsql. A local
+    // `new[] { 1, 3 }` array would be folded to `IN (1, 3)` literals.
+    private static int[] BuildWantedIds() => new[] { 1, 3 };
 }

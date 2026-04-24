@@ -3290,6 +3290,83 @@ public static class Queries
     }
 
     [Test]
+    public void CarrierGeneration_WhereInCollection_EmitsEmptyParameterName_ForPostgreSQL()
+    {
+        // Regression guard for GH-258 (redux, review #4): the collection
+        // expansion loop at CarrierEmitter.cs:690 must assign
+        // `__pc.ParameterName = ""` on PostgreSQL. Pre-fix it assigned
+        // `__col{i}Parts[__bi]` — a runtime `$N` string — which is the
+        // v0.3.1/0.3.2 "C" configuration (non-empty name + $N SQL) that
+        // Npgsql rejects with 08P01. The dynamic nature of this code path
+        // means the PG integration test alone cannot guard the generator's
+        // source output; this string-match check catches the exact
+        // emission regression.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int[] ids)
+    {
+        var results = await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__pc.ParameterName = \"\""),
+            "Collection-parameter expansion on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Not.Contain("__pc.ParameterName = __col"),
+            "Collection-parameter expansion on PostgreSQL must NOT reuse __colNParts (a $N string array) as ParameterName — that is the v0.3.1/0.3.2 bug");
+    }
+
+    [Test]
+    public void CarrierGeneration_WhereInCollection_UsesPartsArray_ForSQLite()
+    {
+        // Companion guard: SQLite/SqlServer still bind collection parameters
+        // by name, so `__pc.ParameterName = __col{i}Parts[__bi]` is the
+        // correct behaviour for named-binding dialects — the fix for GH-258
+        // must not over-reach and regress non-PG paths.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int[] ids)
+    {
+        var results = await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__pc.ParameterName = __col"),
+            "Collection-parameter expansion on SQLite must still use __colNParts for ParameterName (named-binding dialect)");
+    }
+
+    [Test]
     public void CarrierGeneration_BatchInsert_UsesEmptyParameterNames_ForPostgreSQL()
     {
         // Regression guard for GH-258 (redux): batch insert on PostgreSQL

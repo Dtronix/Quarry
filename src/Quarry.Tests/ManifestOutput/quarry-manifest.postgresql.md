@@ -2112,8 +2112,12 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
-SELECT "UserName" FROM "users" WHERE "UserId" IN (1, 3)
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
 
 ---
 

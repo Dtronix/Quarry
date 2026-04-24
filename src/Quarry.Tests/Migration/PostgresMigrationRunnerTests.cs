@@ -51,7 +51,14 @@ public class PostgresMigrationRunnerTests
                 drop.CommandText = $"DROP SCHEMA IF EXISTS \"{_schema}\" CASCADE;";
                 await drop.ExecuteNonQueryAsync();
             }
-            catch { /* best-effort */ }
+            catch (Exception ex)
+            {
+                // Best-effort: we don't let teardown noise mask the test
+                // result. Writing to TestContext lets a developer diagnose
+                // orphan-schema accumulation in a long-running shared
+                // container without failing the test run itself.
+                TestContext.Out.WriteLine($"[PostgresMigrationRunnerTests] DROP SCHEMA {_schema} failed: {ex.GetType().Name}: {ex.Message}");
+            }
         }
         await _connection.DisposeAsync();
     }

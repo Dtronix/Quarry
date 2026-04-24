@@ -683,11 +683,21 @@ internal static class CarrierEmitter
             if (param.IsCollection)
             {
                 // Collection parameters are expanded into N individual DbParameters.
-                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts
+                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts.
+                //
+                // On PostgreSQL __colNParts holds "$N" strings for SQL text
+                // assembly — they must NOT be reused as ParameterName, because
+                // any non-empty name flips Npgsql into named-lookup mode and
+                // causes the 08P01 bind-count failure (GH-258). On all other
+                // dialects __colNParts already holds the correct per-parameter
+                // name ("@pN" / "?") so assigning it is safe.
                 sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
-                sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
+                if (chain.Dialect == SqlDialect.PostgreSQL)
+                    sb.AppendLine($"{indent}    __pc.ParameterName = \"\";");
+                else
+                    sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
                 sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
                 sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
                 sb.AppendLine($"{indent}}}");

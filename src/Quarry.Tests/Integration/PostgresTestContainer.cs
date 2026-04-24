@@ -39,6 +39,7 @@ internal static class PostgresTestContainer
     private static readonly SemaphoreSlim _baselineLock = new(1, 1);
     private static PostgreSqlContainer? _container;
     private static bool _baselineReady;
+    private static string? _dockerUnavailableReason;
 
     /// <summary>
     /// Returns a connection string pointing at the shared container. Starts
@@ -58,24 +59,70 @@ internal static class PostgresTestContainer
     /// </summary>
     public static async Task<PostgreSqlContainer> GetContainerAsync()
     {
+        if (_dockerUnavailableReason is not null)
+            Assert.Ignore(_dockerUnavailableReason);
+
         if (_container is not null)
             return _container;
 
         await _containerLock.WaitAsync();
         try
         {
+            if (_dockerUnavailableReason is not null)
+                Assert.Ignore(_dockerUnavailableReason);
+
             if (_container is null)
             {
-                var container = new PostgreSqlBuilder("postgres:17-alpine").Build();
-                await container.StartAsync();
-                _container = container;
+                try
+                {
+                    var container = new PostgreSqlBuilder("postgres:17-alpine").Build();
+                    await container.StartAsync();
+                    _container = container;
+                }
+                catch (Exception ex) when (IsDockerUnavailable(ex))
+                {
+                    // Cache the reason so later test attempts don't each pay
+                    // the full container-probe timeout, and so the developer
+                    // sees a single clear message across the run.
+                    _dockerUnavailableReason =
+                        "Docker is not available on this machine — PG-backed tests cannot run. " +
+                        "Install Docker Desktop (Windows/macOS) or a Docker engine (Linux) to run " +
+                        "the Quarry test suite. " +
+                        $"Underlying error: {ex.GetType().Name}: {ex.Message}";
+                    Assert.Ignore(_dockerUnavailableReason);
+                }
             }
-            return _container;
+            return _container!;
         }
         finally
         {
             _containerLock.Release();
         }
+    }
+
+    /// <summary>
+    /// Heuristic for "Docker is not installed / not running" — Testcontainers
+    /// surfaces a handful of different exception types depending on which
+    /// probe failed. The common signals: exception type from the ducktyped
+    /// Docker client (Docker.DotNet), or a message mentioning the Docker
+    /// endpoint / daemon not being reachable.
+    /// </summary>
+    private static bool IsDockerUnavailable(Exception ex)
+    {
+        for (var cur = ex; cur is not null; cur = cur.InnerException!)
+        {
+            var typeName = cur.GetType().FullName ?? "";
+            var message = cur.Message ?? "";
+            if (typeName.Contains("Docker", StringComparison.Ordinal) ||
+                typeName.Contains("Testcontainers", StringComparison.Ordinal))
+                return true;
+            if (message.Contains("docker", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("daemon", StringComparison.OrdinalIgnoreCase) ||
+                message.Contains("named pipe", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (cur.InnerException is null) break;
+        }
+        return false;
     }
 
     /// <summary>
@@ -98,12 +145,32 @@ internal static class PostgresTestContainer
             await using var conn = new NpgsqlConnection(cs);
             await conn.OpenAsync();
 
-            // Drop-and-recreate keeps EnsureBaselineAsync robust against a
-            // half-initialised schema left by a previous aborted process.
-            await ExecAsync(conn, $"DROP SCHEMA IF EXISTS \"{BaselineSchemaName}\" CASCADE;");
-            await ExecAsync(conn, $"CREATE SCHEMA \"{BaselineSchemaName}\";");
-            await CreateSchemaObjectsAsync(conn, BaselineSchemaName);
-            await SeedDataAsync(conn, BaselineSchemaName);
+            // Use a PostgreSQL advisory lock to make the baseline setup
+            // safe across concurrent test processes sharing one container.
+            // The magic number is arbitrary but must be stable across
+            // processes; any int64 will do. `pg_advisory_lock` blocks until
+            // we hold the lock; `pg_advisory_unlock` releases it at the end.
+            // Any other process entering EnsureBaselineAsync concurrently
+            // will wait here and then observe the ready schema.
+            const long BaselineLockKey = 0x51554152_52595445L; // 'QUARRYTE'
+            await ExecAsync(conn, $"SELECT pg_advisory_lock({BaselineLockKey});");
+            try
+            {
+                // Probe whether the baseline is already populated — if the
+                // `users` table exists in the baseline schema another process
+                // already ran setup and seed; don't repeat the work.
+                var alreadyReady = await TableExistsAsync(conn, BaselineSchemaName, "users");
+                if (!alreadyReady)
+                {
+                    await ExecAsync(conn, $"CREATE SCHEMA IF NOT EXISTS \"{BaselineSchemaName}\";");
+                    await CreateSchemaObjectsAsync(conn, BaselineSchemaName);
+                    await SeedDataAsync(conn, BaselineSchemaName);
+                }
+            }
+            finally
+            {
+                await ExecAsync(conn, $"SELECT pg_advisory_unlock({BaselineLockKey});");
+            }
 
             _baselineReady = true;
         }
@@ -111,6 +178,17 @@ internal static class PostgresTestContainer
         {
             _baselineLock.Release();
         }
+    }
+
+    private static async Task<bool> TableExistsAsync(NpgsqlConnection conn, string schema, string table)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText =
+            "SELECT 1 FROM information_schema.tables WHERE table_schema = @schema AND table_name = @table";
+        var p1 = cmd.CreateParameter(); p1.ParameterName = "schema"; p1.Value = schema; cmd.Parameters.Add(p1);
+        var p2 = cmd.CreateParameter(); p2.ParameterName = "table";  p2.Value = table;  cmd.Parameters.Add(p2);
+        var result = await cmd.ExecuteScalarAsync();
+        return result is not null && result is not DBNull;
     }
 
     /// <summary>

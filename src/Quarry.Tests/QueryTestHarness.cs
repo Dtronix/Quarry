@@ -76,49 +76,84 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// </param>
     public static async Task<QueryTestHarness> CreateAsync(bool useOwnPgSchema = false)
     {
-        var sqliteConnection = new SqliteConnection("Data Source=:memory:");
-        await sqliteConnection.OpenAsync();
+        // Track every opened resource so a partial-setup throw can roll
+        // them all back — previously a transient PG connection refusal or
+        // a mid-setup DDL failure would leak the SQLite + Npgsql + mock
+        // connections for the rest of the process.
+        SqliteConnection? sqliteConnection = null;
+        MockDbConnection? mockConnection = null;
+        NpgsqlConnection? npgsqlConnection = null;
+        NpgsqlTransaction? npgsqlTransaction = null;
+        string? ownedSchema = null;
 
-        // FK enforcement is off by default so DELETE tests don't need to worry about
-        // dependent-row ordering.  Tests that specifically verify FK behavior can enable
-        // it via SqlAsync("PRAGMA foreign_keys = ON").
-        await using (var pragma = sqliteConnection.CreateCommand())
+        try
         {
-            pragma.CommandText = "PRAGMA foreign_keys = OFF";
-            await pragma.ExecuteNonQueryAsync();
+            sqliteConnection = new SqliteConnection("Data Source=:memory:");
+            await sqliteConnection.OpenAsync();
+
+            // FK enforcement is off by default so DELETE tests don't need to worry about
+            // dependent-row ordering.  Tests that specifically verify FK behavior can enable
+            // it via SqlAsync("PRAGMA foreign_keys = ON").
+            await using (var pragma = sqliteConnection.CreateCommand())
+            {
+                pragma.CommandText = "PRAGMA foreign_keys = OFF";
+                await pragma.ExecuteNonQueryAsync();
+            }
+
+            mockConnection = new MockDbConnection();
+
+            // PG setup — ensure baseline first (no-op after the first harness).
+            await PostgresTestContainer.EnsureBaselineAsync();
+            var cs = await PostgresTestContainer.GetConnectionStringAsync();
+            npgsqlConnection = new NpgsqlConnection(cs);
+            await npgsqlConnection.OpenAsync();
+
+            if (useOwnPgSchema)
+            {
+                ownedSchema = await PostgresTestContainer.CreateOwnedSchemaAsync(npgsqlConnection);
+                await SetSearchPathAsync(npgsqlConnection, ownedSchema);
+            }
+            else
+            {
+                await SetSearchPathAsync(npgsqlConnection, PostgresTestContainer.BaselineSchemaName);
+                npgsqlTransaction = (NpgsqlTransaction)await npgsqlConnection.BeginTransactionAsync();
+            }
+
+            var harness = new QueryTestHarness(
+                sqliteConnection, mockConnection, npgsqlConnection, npgsqlTransaction, ownedSchema);
+
+            await harness.CreateSchema();
+            await harness.SeedData();
+
+            return harness;
         }
-
-        var mockConnection = new MockDbConnection();
-
-        // PG setup — ensure baseline first (no-op after the first harness).
-        await PostgresTestContainer.EnsureBaselineAsync();
-        var cs = await PostgresTestContainer.GetConnectionStringAsync();
-        var npgsqlConnection = new NpgsqlConnection(cs);
-        await npgsqlConnection.OpenAsync();
-
-        NpgsqlTransaction? npgsqlTransaction;
-        string? ownedSchema;
-
-        if (useOwnPgSchema)
+        catch
         {
-            ownedSchema = await PostgresTestContainer.CreateOwnedSchemaAsync(npgsqlConnection);
-            await SetSearchPathAsync(npgsqlConnection, ownedSchema);
-            npgsqlTransaction = null;
+            // Best-effort unwind — preserve the original exception but don't
+            // leak connections. Each dispose is wrapped because an error in
+            // an earlier step is more informative than a cascade in teardown.
+            if (npgsqlTransaction is not null)
+            {
+                try { await npgsqlTransaction.RollbackAsync(); } catch { }
+                try { await npgsqlTransaction.DisposeAsync(); } catch { }
+            }
+            if (ownedSchema is not null && npgsqlConnection?.State == System.Data.ConnectionState.Open)
+            {
+                try
+                {
+                    await using var drop = npgsqlConnection.CreateCommand();
+                    drop.CommandText = $"DROP SCHEMA IF EXISTS \"{ownedSchema}\" CASCADE;";
+                    await drop.ExecuteNonQueryAsync();
+                }
+                catch { }
+            }
+            if (npgsqlConnection is not null)
+                try { await npgsqlConnection.DisposeAsync(); } catch { }
+            mockConnection?.Dispose();
+            if (sqliteConnection is not null)
+                try { await sqliteConnection.DisposeAsync(); } catch { }
+            throw;
         }
-        else
-        {
-            await SetSearchPathAsync(npgsqlConnection, PostgresTestContainer.BaselineSchemaName);
-            npgsqlTransaction = (NpgsqlTransaction)await npgsqlConnection.BeginTransactionAsync();
-            ownedSchema = null;
-        }
-
-        var harness = new QueryTestHarness(
-            sqliteConnection, mockConnection, npgsqlConnection, npgsqlTransaction, ownedSchema);
-
-        await harness.CreateSchema();
-        await harness.SeedData();
-
-        return harness;
     }
 
     private static async Task SetSearchPathAsync(NpgsqlConnection conn, string schema)
