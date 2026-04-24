@@ -3211,11 +3211,14 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_EntityInsert_EmitsDollarParameterNames_ForPostgreSQL()
+    public void CarrierGeneration_EntityInsert_EmitsEmptyParameterNames_ForPostgreSQL()
     {
-        // Regression guard for GH-258: on PostgreSQL, entity insert must assign
-        // ParameterName = "$N" so Npgsql 10 strict binding can match the $N SQL
-        // placeholder emitted by SqlFormatting.FormatParameter.
+        // Regression guard for GH-258 (redux): on PostgreSQL, entity insert
+        // must assign ParameterName = "" so Npgsql 10 stays on its native
+        // positional-binding path against the $N SQL placeholders. Any non-
+        // empty name (whether @pN or $N) flips Npgsql into name-lookup mode
+        // and ships the Bind frame with zero values — reproducing the v0.3.0
+        // and v0.3.1/v0.3.2 failure modes respectively.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
@@ -3240,12 +3243,14 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("__p0.ParameterName = \"$1\""),
-            "Entity insert on PostgreSQL must assign ParameterName = \"$1\" to match the $1 SQL placeholder");
-        Assert.That(code, Does.Contain("__p1.ParameterName = \"$2\""),
-            "Entity insert on PostgreSQL must assign ParameterName = \"$2\" to match the $2 SQL placeholder");
+        Assert.That(code, Does.Contain("__p0.ParameterName = \"\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Contain("__p1.ParameterName = \"\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Not.Match("__p\\d+\\.ParameterName\\s*=\\s*\"\\$\\d+\""),
+            "Entity insert on PostgreSQL must not emit $N ParameterName — it would fail to bind on Npgsql 10 (v0.3.1/0.3.2 bug)");
         Assert.That(code, Does.Not.Match("__p\\d+\\.ParameterName\\s*=\\s*\"@p\\d+\""),
-            "Entity insert on PostgreSQL must not emit @pN ParameterName — it would not bind on Npgsql 10");
+            "Entity insert on PostgreSQL must not emit @pN ParameterName — it would fail to bind on Npgsql 10 (v0.3.0 bug)");
     }
 
     [Test]
@@ -3285,11 +3290,14 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_BatchInsert_UsesDollarParameterNames_ForPostgreSQL()
+    public void CarrierGeneration_BatchInsert_UsesEmptyParameterNames_ForPostgreSQL()
     {
-        // Regression guard for GH-258: batch insert on PostgreSQL must use
-        // ParameterNames.Dollar so each runtime-bound parameter matches the
-        // $N placeholder emitted by BatchInsertSqlBuilder for PostgreSQL.
+        // Regression guard for GH-258 (redux): batch insert on PostgreSQL
+        // must assign ParameterName = "" so Npgsql stays on native positional
+        // binding against the $N placeholders that BatchInsertSqlBuilder
+        // emits. PR #261 used ParameterNames.Dollar here, which is the
+        // broken v0.3.1/v0.3.2 state — Npgsql rejects that configuration
+        // with 08P01 bind-count mismatch.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
@@ -3315,10 +3323,12 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("ParameterNames.Dollar(__paramIdx)"),
-            "Batch insert on PostgreSQL must use ParameterNames.Dollar for runtime parameter naming");
+        Assert.That(code, Does.Contain("__p.ParameterName = \"\""),
+            "Batch insert on PostgreSQL must assign ParameterName = \"\" (empty) for native positional binding");
+        Assert.That(code, Does.Not.Contain("ParameterNames.Dollar(__paramIdx)"),
+            "Batch insert on PostgreSQL must not use ParameterNames.Dollar for ParameterName — that was the broken v0.3.1/0.3.2 state");
         Assert.That(code, Does.Not.Contain("ParameterNames.AtP(__paramIdx)"),
-            "Batch insert on PostgreSQL must not fall back to ParameterNames.AtP");
+            "Batch insert on PostgreSQL must not fall back to ParameterNames.AtP either — only the empty-string literal");
     }
 
     [Test]

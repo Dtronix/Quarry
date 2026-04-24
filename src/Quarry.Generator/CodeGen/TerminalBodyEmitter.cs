@@ -576,12 +576,16 @@ internal static class TerminalBodyEmitter
         sb.AppendLine("        {");
         sb.AppendLine($"            var __entity = __entities[__row];");
 
-        // Pick the dialect-appropriate ParameterName lookup so the name matches the
-        // placeholder that BatchInsertSqlBuilder emits via SqlFormatting.FormatParameter.
-        // Required by Npgsql 10 strict name binding ($1/$2/...). MySQL uses positional
-        // '?' and accepts any unique name; AtP keeps names unique.
+        // PostgreSQL: empty ParameterName keeps Npgsql on its native positional
+        // binding path against the $N placeholders that BatchInsertSqlBuilder
+        // emits — any non-empty name flips Npgsql into name-lookup mode and
+        // ships the Bind frame with zero values (GH-258).
+        // SQLite / SqlServer bind by name against @pN placeholders, so AtP
+        // returns a zero-allocation "@pN" string.
+        // MySQL uses positional `?` and accepts any unique name; AtP keeps
+        // names unique.
         var paramNameExpr = chain.Dialect == SqlDialect.PostgreSQL
-            ? "Quarry.Internal.ParameterNames.Dollar(__paramIdx)"
+            ? "\"\""
             : "Quarry.Internal.ParameterNames.AtP(__paramIdx)";
 
         for (int i = 0; i < insertInfo.Columns.Count; i++)

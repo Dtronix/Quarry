@@ -707,13 +707,16 @@ internal static class TerminalEmitHelpers
 
     /// <summary>
     /// Returns a C# expression for a shifted parameter name at runtime, using the specified shift variable.
+    /// PostgreSQL reports an empty name because Quarry binds PG parameters positionally
+    /// with no <c>DbParameter.ParameterName</c>; see
+    /// <see cref="CarrierEmitter.FormatParamName"/> for rationale.
     /// </summary>
     private static string EmitDiagParamNameExprWithVar(SqlDialect dialect, int originalIndex, string shiftVar)
     {
         return dialect switch
         {
+            SqlDialect.PostgreSQL => "\"\"",
             SqlDialect.MySQL => "\"?\"",
-            SqlDialect.PostgreSQL => $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})",
             _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})"
         };
     }
