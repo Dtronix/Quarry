@@ -17,9 +17,24 @@ namespace Quarry.Analyzers;
 /// fails the build with CS9137. QRY044 surfaces the exact missing entry at authoring
 /// time so authors can act on it before running a build.
 /// </summary>
+/// <remarks>
+/// Roslyn's editorconfig key-value parser treats <c>;</c> (and <c>#</c>) inside a value
+/// as an inline-comment marker, silently truncating the value at the first such character.
+/// That breaks a direct read of <c>build_property.InterceptorsNamespaces</c> whenever the
+/// evaluated MSBuild value contains more than one namespace — which is the normal case
+/// once <c>Quarry.targets</c> appends <c>Quarry.Generated</c>. To work around this the
+/// analyzer prefers the Quarry-exposed <c>QuarryInterceptorsNamespaces</c> property
+/// whose value is a <c>|</c>-delimited form of the same list (set by <c>Quarry.targets</c>
+/// and <c>Quarry.Generator.props</c>). It falls back to the raw <c>InterceptorsNamespaces</c>
+/// property only when the alt form is absent (e.g. consumer pinned to an older Quarry
+/// version that didn't expose it).
+/// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 internal sealed class InterceptorsNamespacesAnalyzer : DiagnosticAnalyzer
 {
+    private const string PipeDelimitedPropertyKey = "build_property.QuarryInterceptorsNamespaces";
+    private const string SemicolonDelimitedPropertyKey = "build_property.InterceptorsNamespaces";
+
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } =
         ImmutableArray.Create(AnalyzerDiagnosticDescriptors.InterceptorsNamespaceMissing);
 
@@ -52,12 +67,7 @@ internal sealed class InterceptorsNamespacesAnalyzer : DiagnosticAnalyzer
             return;
 
         var namespaceName = containingNamespace.ToDisplayString();
-
-        var options = context.Options.AnalyzerConfigOptionsProvider.GlobalOptions;
-        if (!options.TryGetValue("build_property.InterceptorsNamespaces", out var configured))
-            configured = string.Empty;
-
-        var opted = SplitNamespaces(configured);
+        var opted = ReadOptedNamespaces(context.Options.AnalyzerConfigOptionsProvider.GlobalOptions);
         if (opted.Contains(namespaceName))
             return;
 
@@ -67,6 +77,29 @@ internal sealed class InterceptorsNamespacesAnalyzer : DiagnosticAnalyzer
             identifier.GetLocation(),
             symbol.Name,
             namespaceName));
+    }
+
+    private static HashSet<string> ReadOptedNamespaces(AnalyzerConfigOptions options)
+    {
+        // Prefer the pipe-delimited alt property. Roslyn's editorconfig key-value regex
+        // truncates values at the first `;`, so the raw `InterceptorsNamespaces` value
+        // can be read wrong when it contains multiple entries. `|` is never a legal C#
+        // namespace character, so the `;` → `|` substitution is lossless.
+        if (options.TryGetValue(PipeDelimitedPropertyKey, out var pipeValue) &&
+            !string.IsNullOrWhiteSpace(pipeValue))
+        {
+            return SplitNamespaces(pipeValue, '|');
+        }
+
+        // Legacy path: consumer without a Quarry version new enough to expose the alt
+        // property. Will under-read when the value has multiple entries, but that's
+        // what we're hardening against, not a guarantee we provide.
+        if (options.TryGetValue(SemicolonDelimitedPropertyKey, out var semiValue))
+        {
+            return SplitNamespaces(semiValue, ';');
+        }
+
+        return new HashSet<string>(StringComparer.Ordinal);
     }
 
     private static bool HasQuarryContextAttributeSyntactic(ClassDeclarationSyntax classDecl)
@@ -101,12 +134,12 @@ internal sealed class InterceptorsNamespacesAnalyzer : DiagnosticAnalyzer
         return false;
     }
 
-    private static HashSet<string> SplitNamespaces(string value)
+    private static HashSet<string> SplitNamespaces(string? value, char separator)
     {
         var set = new HashSet<string>(StringComparer.Ordinal);
         if (string.IsNullOrWhiteSpace(value))
             return set;
-        foreach (var part in value.Split(';'))
+        foreach (var part in value!.Split(separator))
         {
             var trimmed = part.Trim();
             if (trimmed.Length > 0)

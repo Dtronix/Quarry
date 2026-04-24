@@ -2,8 +2,40 @@
   <ItemGroup>
     <CompilerVisibleProperty Include="QuarrySqlManifestPath" />
     <CompilerVisibleProperty Include="ProjectDir" />
-    <!-- Exposed so the QRY044 analyzer can validate that the consumer's
-         QuarryContext namespace is opted into the interceptors feature. -->
     <CompilerVisibleProperty Include="InterceptorsNamespaces" />
+    <CompilerVisibleProperty Include="QuarryInterceptorsNamespaces" />
   </ItemGroup>
+
+  <!-- QuarryInterceptorsNamespaces is a pipe-delimited mirror of InterceptorsNamespaces
+       exposed to analyzers so the QRY044 analyzer can validate that the consumer's
+       QuarryContext namespace is opted into the interceptors feature.
+
+       Roslyn's editorconfig key-value regex truncates values at the first `;` (it
+       treats `;…` as an inline comment), so reading the raw `InterceptorsNamespaces`
+       property back from `build_property.*` fails the moment the list has more than
+       one entry. `|` isn't a legal C# namespace character, so the `;` → `|`
+       substitution is lossless and survives Roslyn's parser intact. The analyzer
+       prefers this property and falls back to the raw one only when this one is
+       absent.
+
+       Computed in a target (not a top-level PropertyGroup) so the `.Replace` is
+       deferred until after every upstream .props / csproj / .targets contribution
+       to $(InterceptorsNamespaces) has folded in. `GenerateMSBuildEditorConfigFileCore`
+       is an internal Roslyn SDK target in Microsoft.Managed.Core.targets; the
+       editorconfig file isn't Public MSBuild contract so the name could change in a
+       future SDK. If that happens QRY044 will silently fall back to the legacy path
+       (i.e. revert to the original bug shape on the affected inputs). Low likelihood
+       — the target has existed since .NET 5 and is widely depended on by source
+       generator ecosystems — but worth noting in case diagnostics regress after an
+       SDK upgrade.
+
+       Mirrored in Quarry.targets so consumers who install Quarry without Quarry.Generator
+       still get the alt property; the two targets compute identical values from
+       identical inputs. -->
+  <Target Name="_QuarryComputeInterceptorsNamespaces"
+          BeforeTargets="GenerateMSBuildEditorConfigFileCore">
+    <PropertyGroup>
+      <QuarryInterceptorsNamespaces>$(InterceptorsNamespaces.Replace(';', '|'))</QuarryInterceptorsNamespaces>
+    </PropertyGroup>
+  </Target>
 </Project>

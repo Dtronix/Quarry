@@ -11,7 +11,9 @@ namespace Quarry.Analyzers.Tests;
 public class InterceptorsNamespacesAnalyzerTests
 {
     private static async Task<ImmutableArray<Diagnostic>> GetDiagnosticsAsync(
-        string source, string? interceptorsNamespaces)
+        string source,
+        string? interceptorsNamespaces,
+        string? quarryInterceptorsNamespaces = null)
     {
         var syntaxTree = CSharpSyntaxTree.ParseText(source);
 
@@ -37,7 +39,7 @@ public class InterceptorsNamespacesAnalyzerTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
         var analyzer = new InterceptorsNamespacesAnalyzer();
-        var options = new InterceptorsAnalyzerOptions(interceptorsNamespaces);
+        var options = new InterceptorsAnalyzerOptions(interceptorsNamespaces, quarryInterceptorsNamespaces);
         var compilationWithAnalyzers = compilation.WithAnalyzers(
             ImmutableArray.Create<DiagnosticAnalyzer>(analyzer),
             new AnalyzerOptions(ImmutableArray<AdditionalText>.Empty, options));
@@ -46,10 +48,7 @@ public class InterceptorsNamespacesAnalyzerTests
         return diagnostics.Where(d => d.Id == "QRY044").ToImmutableArray();
     }
 
-    [Test]
-    public async Task NoDiagnostic_WhenContextNamespaceIsOptedIn()
-    {
-        var source = @"
+    private const string SingleContextSource = @"
 using Quarry;
 
 namespace MyApp.Data
@@ -60,32 +59,122 @@ namespace MyApp.Data
     }
 }";
 
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated;MyApp.Data");
-        Assert.That(diagnostics, Is.Empty);
+    // ── Pipe-delimited (preferred) property ──
+
+    [Test]
+    public async Task NoDiagnostic_WhenPipeValueContainsTargetNamespace()
+    {
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "MyApp.Data|Quarry.Generated");
+        Assert.That(d, Is.Empty);
     }
 
     [Test]
-    public async Task EmitsQRY044_WhenContextNamespaceMissing()
+    public async Task NoDiagnostic_WhenPipeValueHasLeadingPipeFromEmptyUpstream()
     {
-        var source = @"
-using Quarry;
-
-namespace MyApp.Data
-{
-    [QuarryContext(Dialect = SqlDialect.SQLite)]
-    public partial class AppDb : QuarryContext
-    {
+        // Reproduces the issue #264 failure shape: the raw `InterceptorsNamespaces`
+        // ends up `;MyApp.Data;Quarry.Generated` when the consumer writes
+        // `$(InterceptorsNamespaces);MyApp.Data` with an empty upstream, and the
+        // alt property is the `|`-substituted form `|MyApp.Data|Quarry.Generated`.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "|MyApp.Data|Quarry.Generated");
+        Assert.That(d, Is.Empty);
     }
-}";
 
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated");
-        Assert.That(diagnostics, Has.Length.EqualTo(1));
-        var d = diagnostics[0];
-        Assert.That(d.Severity, Is.EqualTo(DiagnosticSeverity.Warning));
-        var message = d.GetMessage();
-        Assert.That(message, Does.Contain("AppDb"));
-        Assert.That(message, Does.Contain("MyApp.Data"));
-        Assert.That(message, Does.Contain("<InterceptorsNamespaces>"));
+    [Test]
+    public async Task NoDiagnostic_WhenPipeValueHasTargetNotLast()
+    {
+        // Issue #264 row 2: upstream packages contribute earlier entries, so the
+        // target namespace sits in the middle of a 3+ entry list.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Logsmith.Generated|MyApp.Data|Quarry.Generated");
+        Assert.That(d, Is.Empty);
+    }
+
+    [Test]
+    public async Task NoDiagnostic_WhenPipeValueHasDuplicateEntries()
+    {
+        // Issue #264 row 3: consumer manually wrote `Quarry.Generated` and then
+        // `Quarry.targets` auto-appended it again.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Logsmith.Generated|Quarry.Generated|MyApp.Data|Quarry.Generated");
+        Assert.That(d, Is.Empty);
+    }
+
+    [Test]
+    public async Task EmitsQRY044_WhenPipeValueLacksTarget()
+    {
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Quarry.Generated");
+        Assert.That(d, Has.Length.EqualTo(1));
+        Assert.That(d[0].GetMessage(), Does.Contain("MyApp.Data"));
+    }
+
+    // ── Legacy fallback (semicolon-delimited, only property available) ──
+
+    [Test]
+    public async Task LegacyFallback_NoDiagnostic_WhenTargetPresent()
+    {
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: "MyApp.Data;Quarry.Generated",
+            quarryInterceptorsNamespaces: null);
+        Assert.That(d, Is.Empty);
+    }
+
+    [Test]
+    public async Task LegacyFallback_EmitsQRY044_WhenTargetAbsent()
+    {
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: "Quarry.Generated",
+            quarryInterceptorsNamespaces: null);
+        Assert.That(d, Has.Length.EqualTo(1));
+        Assert.That(d[0].GetMessage(), Does.Contain("MyApp.Data"));
+    }
+
+    [Test]
+    public async Task PipeValueWinsOverLegacyWhenBothAreSet()
+    {
+        // Simulates the case where both properties are exposed (standard config).
+        // The pipe property has the target; the semicolon property is truncated
+        // (what Roslyn's parser would give us for `;MyApp.Data;Quarry.Generated`).
+        // The analyzer must trust the pipe property and not fire.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: "",
+            quarryInterceptorsNamespaces: "|MyApp.Data|Quarry.Generated");
+        Assert.That(d, Is.Empty);
+    }
+
+    [Test]
+    public async Task EmptyPipeValueFallsBackToLegacyProperty()
+    {
+        // Edge case: the pipe property is exposed but evaluates to the empty string
+        // (e.g. `$(InterceptorsNamespaces.Replace(';','|'))` on an upstream-empty
+        // InterceptorsNamespaces). The analyzer should NOT treat the empty pipe
+        // property as "authoritative, no namespaces opted in" — it should fall
+        // through to the semicolon property so consumers who set InterceptorsNamespaces
+        // but haven't picked up a Quarry version that populates the pipe property
+        // still get a working check.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: "MyApp.Data;Quarry.Generated",
+            quarryInterceptorsNamespaces: "");
+        Assert.That(d, Is.Empty);
+    }
+
+    // ── Unchanged behavior (existing coverage) ──
+
+    [Test]
+    public async Task EmitsQRY044_WhenNeitherPropertySet()
+    {
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: null);
+        Assert.That(d, Has.Length.EqualTo(1));
+        Assert.That(d[0].GetMessage(), Does.Contain("MyApp.Data"));
     }
 
     [Test]
@@ -101,7 +190,9 @@ public partial class AppDb : QuarryContext
 {
 }";
 
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated");
+        var diagnostics = await GetDiagnosticsAsync(source,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Quarry.Generated");
         Assert.That(diagnostics, Is.Empty);
     }
 
@@ -128,31 +219,12 @@ namespace MyApp.DataB
 }";
 
         // Only DataA is opted in.
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated;MyApp.DataA");
+        var diagnostics = await GetDiagnosticsAsync(source,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Quarry.Generated|MyApp.DataA");
         Assert.That(diagnostics, Has.Length.EqualTo(1));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("AppDbB"));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("MyApp.DataB"));
-    }
-
-    [Test]
-    public async Task EmitsQRY044_WhenInterceptorsNamespacesPropertyIsAbsent()
-    {
-        // Pass null (rather than an empty string) so TryGetValue returns false —
-        // simulates a consumer project that hasn't set <InterceptorsNamespaces> at all.
-        var source = @"
-using Quarry;
-
-namespace MyApp.Data
-{
-    [QuarryContext(Dialect = SqlDialect.SQLite)]
-    public partial class AppDb : QuarryContext
-    {
-    }
-}";
-
-        var diagnostics = await GetDiagnosticsAsync(source, interceptorsNamespaces: null);
-        Assert.That(diagnostics, Has.Length.EqualTo(1));
-        Assert.That(diagnostics[0].GetMessage(), Does.Contain("MyApp.Data"));
     }
 
     [Test]
@@ -174,7 +246,9 @@ namespace MyApp.Data
     }
 }";
 
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated");
+        var diagnostics = await GetDiagnosticsAsync(source,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Quarry.Generated");
         Assert.That(diagnostics, Has.Length.EqualTo(1));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("AppDb"));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("MyApp.Data"));
@@ -192,17 +266,19 @@ namespace MyApp.Data
     }
 }";
 
-        var diagnostics = await GetDiagnosticsAsync(source, "Quarry.Generated");
+        var diagnostics = await GetDiagnosticsAsync(source,
+            interceptorsNamespaces: null,
+            quarryInterceptorsNamespaces: "Quarry.Generated");
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // ── Test harness for injecting a synthetic InterceptorsNamespaces MSBuild value ──
+    // ── Test harness for injecting synthetic MSBuild property values ──
 
     private sealed class InterceptorsAnalyzerOptions : AnalyzerConfigOptionsProvider
     {
-        public InterceptorsAnalyzerOptions(string? interceptorsNamespaces)
+        public InterceptorsAnalyzerOptions(string? interceptorsNamespaces, string? quarryInterceptorsNamespaces)
         {
-            GlobalOptions = new Options(interceptorsNamespaces);
+            GlobalOptions = new Options(interceptorsNamespaces, quarryInterceptorsNamespaces);
         }
 
         public override AnalyzerConfigOptions GlobalOptions { get; }
@@ -214,21 +290,28 @@ namespace MyApp.Data
         private sealed class Options : AnalyzerConfigOptions
         {
             private readonly string? _interceptorsNamespaces;
+            private readonly string? _quarryInterceptorsNamespaces;
 
-            public Options(string? interceptorsNamespaces)
+            public Options(string? interceptorsNamespaces, string? quarryInterceptorsNamespaces)
             {
                 _interceptorsNamespaces = interceptorsNamespaces;
+                _quarryInterceptorsNamespaces = quarryInterceptorsNamespaces;
             }
 
             public override bool TryGetValue(string key, [NotNullWhen(true)] out string? value)
             {
-                if (key == "build_property.InterceptorsNamespaces" && _interceptorsNamespaces != null)
+                switch (key)
                 {
-                    value = _interceptorsNamespaces;
-                    return true;
+                    case "build_property.InterceptorsNamespaces" when _interceptorsNamespaces != null:
+                        value = _interceptorsNamespaces;
+                        return true;
+                    case "build_property.QuarryInterceptorsNamespaces" when _quarryInterceptorsNamespaces != null:
+                        value = _quarryInterceptorsNamespaces;
+                        return true;
+                    default:
+                        value = null;
+                        return false;
                 }
-                value = null;
-                return false;
             }
         }
     }

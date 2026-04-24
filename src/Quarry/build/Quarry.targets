@@ -11,4 +11,35 @@
   <PropertyGroup>
     <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Generated</InterceptorsNamespaces>
   </PropertyGroup>
+
+  <!--
+    Expose a pipe-delimited copy of InterceptorsNamespaces to the QRY044 analyzer.
+    Background: Roslyn's editorconfig key-value parser treats `;` inside a value as
+    an inline-comment marker and truncates the captured value at the first `;`, so
+    reading the raw `InterceptorsNamespaces` via `build_property.*` under-reads any
+    multi-entry list. `|` is never a legal C# namespace character, so the `;` → `|`
+    substitution is lossless. `Quarry.Generator.props` declares the same alt property
+    for consumers who reference Quarry.Generator directly; this target makes sure
+    every consumer of the Quarry package gets it regardless of Quarry.Generator
+    reference shape.
+
+    Declared as a Target (not a top-level PropertyGroup) so the `.Replace` expansion
+    is deferred until after all upstream contributions to $(InterceptorsNamespaces)
+    have been folded in by MSBuild.
+
+    Target-name dependency: `GenerateMSBuildEditorConfigFileCore` lives in
+    Microsoft.Managed.Core.targets and is an internal Roslyn SDK target. If a future
+    .NET SDK renames it, QRY044 silently falls back to the legacy (buggy) path.
+    Existed since .NET 5 and is widely used by source-generator ecosystems, so
+    likelihood is low, but worth noting if diagnostics regress after an SDK upgrade.
+  -->
+  <ItemGroup>
+    <CompilerVisibleProperty Include="QuarryInterceptorsNamespaces" />
+  </ItemGroup>
+  <Target Name="_QuarryComputeInterceptorsNamespacesFromTargets"
+          BeforeTargets="GenerateMSBuildEditorConfigFileCore">
+    <PropertyGroup>
+      <QuarryInterceptorsNamespaces>$(InterceptorsNamespaces.Replace(';', '|'))</QuarryInterceptorsNamespaces>
+    </PropertyGroup>
+  </Target>
 </Project>
