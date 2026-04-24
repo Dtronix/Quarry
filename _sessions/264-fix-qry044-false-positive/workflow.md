@@ -12,7 +12,7 @@ issue: #264
 pr:
 session: 1
 phases-total: 3
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 QRY044 (`InterceptorsNamespacesAnalyzer`) reports false positives when the fully-evaluated `<InterceptorsNamespaces>` MSBuild property seen by the analyzer contains the target `QuarryContext` namespace but is shaped unusually — e.g. contains a leading `;` (empty segment from `$(InterceptorsNamespaces);X` append when upstream was empty), contains three or more entries with the target not last, or contains duplicate entries (notably `Quarry.Generated` appearing twice when `build/Quarry.targets` auto-appends and the consumer also wrote it explicitly).
