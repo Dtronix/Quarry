@@ -521,13 +521,19 @@ public static class MigrationRunner
         cmd.CommandText = $@"INSERT INTO {HistoryTable} (version, name, applied_at, checksum, execution_time_ms, applied_by, started_at, status)
             VALUES ({SqlFormatting.FormatParameter(dialect, 0)}, {SqlFormatting.FormatParameter(dialect, 1)}, {SqlFormatting.FormatParameter(dialect, 2)}, {SqlFormatting.FormatParameter(dialect, 3)}, {SqlFormatting.FormatParameter(dialect, 4)}, {SqlFormatting.FormatParameter(dialect, 5)}, {SqlFormatting.FormatParameter(dialect, 6)}, {SqlFormatting.FormatParameter(dialect, 7)});";
 
+        // Pass DateTime (not a string). On SQLite the TEXT `applied_at` /
+        // `started_at` columns accept either; on PostgreSQL the columns are
+        // TIMESTAMP and require the provider to bind a real DateTime value
+        // so Npgsql can send the correct wire type. SqlServer / MySQL
+        // behave like PostgreSQL here (DATETIME / TIMESTAMP).
+        var now = DateTime.UtcNow;
         AddParameter(cmd, dialect, 0, version);
         AddParameter(cmd, dialect, 1, name);
-        AddParameter(cmd, dialect, 2, DateTime.UtcNow.ToString("o"));
+        AddParameter(cmd, dialect, 2, now);
         AddParameter(cmd, dialect, 3, checksum);
         AddParameter(cmd, dialect, 4, executionTimeMs);
         AddParameter(cmd, dialect, 5, $"{Environment.MachineName}/{Environment.UserName}");
-        AddParameter(cmd, dialect, 6, DateTime.UtcNow.ToString("o"));
+        AddParameter(cmd, dialect, 6, now);
         AddParameter(cmd, dialect, 7, status);
 
         ApplyCommandTimeout(cmd, options);

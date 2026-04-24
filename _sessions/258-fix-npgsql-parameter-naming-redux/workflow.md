@@ -12,7 +12,7 @@ issue: #258 (closed by #261 in v0.3.1; customer report shows v0.3.2 still broken
 pr:
 session: 1
 phases-total: 8
-phases-complete: 4
+phases-complete: 7
 
 ## Problem Statement
 PR #261 (merged 2026-04-23, shipped in v0.3.1 and v0.3.2) claimed to close #258 but the same `08P01: bind message supplies 0 parameters, but prepared statement "" requires 8` reproduces against v0.3.2 on Npgsql 10 + PostgreSQL 17. A customer decompiled `Quarry.dll` 0.3.2 and confirmed `InsertHistoryRowAsync` is byte-identical to 0.3.1.
@@ -62,3 +62,5 @@ Any existing test that fails when switched to real PG must be triaged as part of
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-24 | | INTAKE completed — worktree created, baseline tests green (3303/3303); problem traced to PR #261's false name-binding premise + mock-only PG test infrastructure |
+| 2 | 2026-04-24 | 2026-04-24 | DESIGN + PLAN + IMPLEMENT phases 1–3: Testcontainers helper, probe regression tests, SqlFormatting.GetParameterName fix, generator emission fixes. Tests green (2990 Quarry.Tests + 201 Migration.Tests + 117 Analyzers.Tests). |
+| 3 | 2026-04-24 | 2026-04-24 | IMPLEMENT phases 4–7: QueryTestHarness.Pg upgraded to real Npgsql (transactional default + own-schema opt-out) + PG DDL port; 4 focused integration tests (Insert/InsertBatch/WHERE-IN/MigrationRunner); MigrationRunner DateTime bug fixed (was passing ISO strings to TIMESTAMP columns). Phase 6 + 7 absorbed — MigrationRunner lives in Quarry not Quarry.Migration so no cross-project dedup needed; no cross-dialect triage surfaced beyond the DateTime fix. Tests: 2994 + 201 + 117 = 3312. |
