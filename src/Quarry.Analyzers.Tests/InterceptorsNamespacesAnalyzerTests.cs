@@ -149,6 +149,22 @@ namespace MyApp.Data
         Assert.That(d, Is.Empty);
     }
 
+    [Test]
+    public async Task EmptyPipeValueFallsBackToLegacyProperty()
+    {
+        // Edge case: the pipe property is exposed but evaluates to the empty string
+        // (e.g. `$(InterceptorsNamespaces.Replace(';','|'))` on an upstream-empty
+        // InterceptorsNamespaces). The analyzer should NOT treat the empty pipe
+        // property as "authoritative, no namespaces opted in" — it should fall
+        // through to the semicolon property so consumers who set InterceptorsNamespaces
+        // but haven't picked up a Quarry version that populates the pipe property
+        // still get a working check.
+        var d = await GetDiagnosticsAsync(SingleContextSource,
+            interceptorsNamespaces: "MyApp.Data;Quarry.Generated",
+            quarryInterceptorsNamespaces: "");
+        Assert.That(d, Is.Empty);
+    }
+
     // ── Unchanged behavior (existing coverage) ──
 
     [Test]

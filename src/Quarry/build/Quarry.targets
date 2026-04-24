@@ -26,6 +26,12 @@
     Declared as a Target (not a top-level PropertyGroup) so the `.Replace` expansion
     is deferred until after all upstream contributions to $(InterceptorsNamespaces)
     have been folded in by MSBuild.
+
+    Target-name dependency: `GenerateMSBuildEditorConfigFileCore` lives in
+    Microsoft.Managed.Core.targets and is an internal Roslyn SDK target. If a future
+    .NET SDK renames it, QRY044 silently falls back to the legacy (buggy) path.
+    Existed since .NET 5 and is widely used by source-generator ecosystems, so
+    likelihood is low, but worth noting if diagnostics regress after an SDK upgrade.
   -->
   <ItemGroup>
     <CompilerVisibleProperty Include="QuarryInterceptorsNamespaces" />
