@@ -3,7 +3,27 @@
     <CompilerVisibleProperty Include="QuarrySqlManifestPath" />
     <CompilerVisibleProperty Include="ProjectDir" />
     <!-- Exposed so the QRY044 analyzer can validate that the consumer's
-         QuarryContext namespace is opted into the interceptors feature. -->
+         QuarryContext namespace is opted into the interceptors feature.
+
+         Roslyn's editorconfig key-value regex truncates values at the first
+         `;` (it treats `;…` as an inline comment), so reading the raw
+         `InterceptorsNamespaces` property back from `build_property.*` fails
+         the moment the list has more than one entry. `QuarryInterceptorsNamespaces`
+         is the same list with `;` replaced by `|` — `|` isn't a legal C#
+         namespace character, so the substitution is lossless and survives
+         Roslyn's parser intact. The analyzer prefers this property and falls
+         back to the raw one only when this one is absent.
+
+         The property is computed in a target (below) rather than a PropertyGroup
+         so its evaluation is deferred until after every upstream .props / csproj /
+         .targets contribution to $(InterceptorsNamespaces) has been folded in. -->
     <CompilerVisibleProperty Include="InterceptorsNamespaces" />
+    <CompilerVisibleProperty Include="QuarryInterceptorsNamespaces" />
   </ItemGroup>
+  <Target Name="_QuarryComputeInterceptorsNamespaces"
+          BeforeTargets="GenerateMSBuildEditorConfigFileCore">
+    <PropertyGroup>
+      <QuarryInterceptorsNamespaces>$(InterceptorsNamespaces.Replace(';', '|'))</QuarryInterceptorsNamespaces>
+    </PropertyGroup>
+  </Target>
 </Project>
