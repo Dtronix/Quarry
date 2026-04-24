@@ -1,5 +1,7 @@
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Quarry.Internal;
+using Quarry.Tests.Integration;
 using Quarry.Tests.Samples;
 using Pg = Quarry.Tests.Samples.Pg;
 using My = Quarry.Tests.Samples.My;
@@ -11,17 +13,23 @@ namespace Quarry.Tests;
 /// <summary>
 /// Self-contained, disposable test harness that provides all dialect contexts and database connections.
 /// Lite is backed by a real SQLite in-memory connection (SQL verification + execution).
-/// Pg, My, Ss are on MockDbConnection (SQL verification only).
+/// Pg is backed by a real Npgsql connection to a shared PostgreSQL 17 container
+/// (SQL verification + execution). My and Ss are on MockDbConnection
+/// (SQL verification only — out of scope for the real-provider migration that
+/// motivated Pg moving off the mock).
 /// Each test creates its own harness — no shared mutable state, fully parallelizable.
 /// </summary>
 internal sealed class QueryTestHarness : IAsyncDisposable
 {
     private readonly SqliteConnection _sqliteConnection;
+    private readonly NpgsqlConnection _npgsqlConnection;
+    private readonly NpgsqlTransaction? _npgsqlTransaction;
+    private readonly string? _ownedPgSchema;
 
     /// <summary>SQLite context on a real in-memory connection (SQL verification + execution).</summary>
     public TestDbContext Lite { get; }
 
-    /// <summary>PostgreSQL context on MockDbConnection (SQL verification only).</summary>
+    /// <summary>PostgreSQL context on a real <see cref="NpgsqlConnection"/> attached to the shared Testcontainers PG 17 container (SQL verification + execution).</summary>
     public Pg.PgDb Pg { get; }
 
     /// <summary>MySQL context on MockDbConnection (SQL verification only).</summary>
@@ -30,38 +38,94 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// <summary>SQL Server context on MockDbConnection (SQL verification only).</summary>
     public Ss.SsDb Ss { get; }
 
-    /// <summary>The shared MockDbConnection backing Pg/My/Ss — exposed for tests that inspect executed SQL.</summary>
+    /// <summary>The shared MockDbConnection backing My/Ss — exposed for tests that inspect executed SQL.</summary>
     public MockDbConnection MockConnection { get; }
 
-    private QueryTestHarness(SqliteConnection sqliteConnection, MockDbConnection mockConnection)
+    private QueryTestHarness(
+        SqliteConnection sqliteConnection,
+        MockDbConnection mockConnection,
+        NpgsqlConnection npgsqlConnection,
+        NpgsqlTransaction? npgsqlTransaction,
+        string? ownedPgSchema)
     {
         _sqliteConnection = sqliteConnection;
         MockConnection = mockConnection;
+        _npgsqlConnection = npgsqlConnection;
+        _npgsqlTransaction = npgsqlTransaction;
+        _ownedPgSchema = ownedPgSchema;
         Lite = new TestDbContext(sqliteConnection);
-        Pg = new Pg.PgDb(mockConnection);
+        Pg = new Pg.PgDb(npgsqlConnection);
         My = new My.MyDb(mockConnection);
         Ss = new Ss.SsDb(mockConnection);
     }
 
     /// <summary>
-    /// Creates a fresh harness with an isolated SQLite in-memory database, seeded with default schema and data.
+    /// Creates a fresh harness with an isolated SQLite in-memory database and a
+    /// PG connection to the shared container, both seeded with the default
+    /// schema and data.
     /// </summary>
-    public static async Task<QueryTestHarness> CreateAsync()
+    /// <param name="useOwnPgSchema">
+    /// When <c>false</c> (default), the PG connection sets <c>search_path</c>
+    /// to the shared <c>quarry_test</c> baseline schema and wraps the test in
+    /// a transaction that rolls back on dispose — near-zero per-test overhead.
+    /// When <c>true</c>, a uniquely-named PG schema is created with its own
+    /// DDL + seed, <c>search_path</c> is set to that schema, and it is
+    /// dropped on dispose. Use this for tests that issue their own
+    /// <c>BEGIN</c>/<c>COMMIT</c> (e.g. <see cref="Quarry.Migration.MigrationRunner"/>
+    /// tests), or that depend on COMMIT-visible state.
+    /// </param>
+    public static async Task<QueryTestHarness> CreateAsync(bool useOwnPgSchema = false)
     {
         var sqliteConnection = new SqliteConnection("Data Source=:memory:");
         await sqliteConnection.OpenAsync();
 
-        var mockConnection = new MockDbConnection();
-        var harness = new QueryTestHarness(sqliteConnection, mockConnection);
-
         // FK enforcement is off by default so DELETE tests don't need to worry about
         // dependent-row ordering.  Tests that specifically verify FK behavior can enable
         // it via SqlAsync("PRAGMA foreign_keys = ON").
-        await harness.SqlAsync("PRAGMA foreign_keys = OFF");
+        await using (var pragma = sqliteConnection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA foreign_keys = OFF";
+            await pragma.ExecuteNonQueryAsync();
+        }
+
+        var mockConnection = new MockDbConnection();
+
+        // PG setup — ensure baseline first (no-op after the first harness).
+        await PostgresTestContainer.EnsureBaselineAsync();
+        var cs = await PostgresTestContainer.GetConnectionStringAsync();
+        var npgsqlConnection = new NpgsqlConnection(cs);
+        await npgsqlConnection.OpenAsync();
+
+        NpgsqlTransaction? npgsqlTransaction;
+        string? ownedSchema;
+
+        if (useOwnPgSchema)
+        {
+            ownedSchema = await PostgresTestContainer.CreateOwnedSchemaAsync(npgsqlConnection);
+            await SetSearchPathAsync(npgsqlConnection, ownedSchema);
+            npgsqlTransaction = null;
+        }
+        else
+        {
+            await SetSearchPathAsync(npgsqlConnection, PostgresTestContainer.BaselineSchemaName);
+            npgsqlTransaction = (NpgsqlTransaction)await npgsqlConnection.BeginTransactionAsync();
+            ownedSchema = null;
+        }
+
+        var harness = new QueryTestHarness(
+            sqliteConnection, mockConnection, npgsqlConnection, npgsqlTransaction, ownedSchema);
+
         await harness.CreateSchema();
         await harness.SeedData();
 
         return harness;
+    }
+
+    private static async Task SetSearchPathAsync(NpgsqlConnection conn, string schema)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"SET search_path TO \"{schema}\";";
+        await cmd.ExecuteNonQueryAsync();
     }
 
     /// <summary>
@@ -120,7 +184,32 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     {
         Ss.Dispose();
         My.Dispose();
+
+        // PG teardown. For the transactional path, ROLLBACK discards any
+        // changes the test made. For the owned-schema path, DROP SCHEMA
+        // CASCADE wipes the schema entirely. We run teardown on the raw
+        // connection rather than through Pg.Dispose because Pg's dispose
+        // only disposes the context wrapper — the connection it was handed
+        // is ours to manage.
         Pg.Dispose();
+        if (_npgsqlTransaction is not null)
+        {
+            try { await _npgsqlTransaction.RollbackAsync(); }
+            catch { /* connection may already be closed; ignore */ }
+            await _npgsqlTransaction.DisposeAsync();
+        }
+        if (_ownedPgSchema is not null && _npgsqlConnection.State == System.Data.ConnectionState.Open)
+        {
+            try
+            {
+                await using var drop = _npgsqlConnection.CreateCommand();
+                drop.CommandText = $"DROP SCHEMA IF EXISTS \"{_ownedPgSchema}\" CASCADE;";
+                await drop.ExecuteNonQueryAsync();
+            }
+            catch { /* best-effort; avoids masking the test's own failure */ }
+        }
+        await _npgsqlConnection.DisposeAsync();
+
         Lite.Dispose();
         MockConnection.Dispose();
         await _sqliteConnection.DisposeAsync();

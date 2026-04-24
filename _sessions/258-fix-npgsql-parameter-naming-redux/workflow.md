@@ -12,7 +12,7 @@ issue: #258 (closed by #261 in v0.3.1; customer report shows v0.3.2 still broken
 pr:
 session: 1
 phases-total: 8
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 PR #261 (merged 2026-04-23, shipped in v0.3.1 and v0.3.2) claimed to close #258 but the same `08P01: bind message supplies 0 parameters, but prepared statement "" requires 8` reproduces against v0.3.2 on Npgsql 10 + PostgreSQL 17. A customer decompiled `Quarry.dll` 0.3.2 and confirmed `InsertHistoryRowAsync` is byte-identical to 0.3.1.
