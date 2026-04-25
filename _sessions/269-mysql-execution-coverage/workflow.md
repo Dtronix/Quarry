@@ -12,7 +12,7 @@ issue: #269
 pr:
 session: 1
 phases-total: 5
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 Mirror the PostgreSQL execution coverage that PR #266 (issue #258) added to the MySQL provider so that `My`-targeted CrossDialect tests run end-to-end against a real MySqlConnector + Testcontainers MySQL container instead of `MockDbConnection`. The current mock-only coverage hides the same class of generator-emitted parameter-binding regressions on MySQL that #258 surfaced on PostgreSQL.

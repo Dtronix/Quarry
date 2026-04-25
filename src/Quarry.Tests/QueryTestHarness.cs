@@ -145,7 +145,19 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             // MySQL setup — ensure baseline first (no-op after the first harness).
             await MySqlTestContainer.EnsureBaselineAsync();
             var myCs = await MySqlTestContainer.GetConnectionStringAsync();
-            mysqlConnection = new MySqlConnection(myCs);
+            // IgnoreCommandTransaction=True so Quarry-emitted DbCommands
+            // (which don't set DbCommand.Transaction) execute against the
+            // connection's active transaction. MySqlConnector otherwise
+            // throws "The transaction associated with this command is not
+            // the connection's active transaction"; Npgsql/Sqlite are more
+            // permissive. Production consumers who attach Quarry to a
+            // pooled connection-with-transaction will hit the same need;
+            // this option is the documented MySqlConnector accommodation.
+            var myCsBuilder = new MySqlConnectionStringBuilder(myCs)
+            {
+                IgnoreCommandTransaction = true,
+            };
+            mysqlConnection = new MySqlConnection(myCsBuilder.ConnectionString);
             await mysqlConnection.OpenAsync();
 
             if (useOwnMyDatabase)

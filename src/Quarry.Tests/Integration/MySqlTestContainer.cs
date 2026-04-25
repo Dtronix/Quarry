@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using MySqlConnector;
@@ -75,8 +76,23 @@ internal static class MySqlTestContainer
             {
                 try
                 {
+                    // Grant the Testcontainers-created application user
+                    // full server privileges so per-test CREATE DATABASE
+                    // works for the useOwnMyDatabase opt-out and for
+                    // MySqlMigrationRunnerTests. The default Testcontainers
+                    // MySQL user is scoped to MYSQL_DATABASE only, which
+                    // would block any CREATE DATABASE call. The
+                    // mysql:8.4 entrypoint runs /docker-entrypoint-initdb.d
+                    // *.sql files after the database is bootstrapped, and
+                    // before the readiness probe returns. Test-only
+                    // container, so there is no security concern.
+                    var grantSql = Encoding.UTF8.GetBytes(
+                        "GRANT ALL PRIVILEGES ON *.* TO 'mysql'@'%' WITH GRANT OPTION;\n" +
+                        "FLUSH PRIVILEGES;\n");
+
                     var container = new MySqlBuilder("mysql:8.4")
                         .WithDatabase(BaselineDatabaseName)
+                        .WithResourceMapping(grantSql, "/docker-entrypoint-initdb.d/01-grant-all.sql")
                         .Build();
                     await container.StartAsync();
                     _container = container;

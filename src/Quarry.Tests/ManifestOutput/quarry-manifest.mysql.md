@@ -90,6 +90,44 @@ SELECT `AccountName`, `Balance`, `credit_limit` FROM `accounts` WHERE `AccountNa
 
 ---
 
+### Addresses().Insert().ExecuteScalarAsync()
+
+```sql
+INSERT INTO `addresses` (`City`, `Street`, `ZipCode`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string?` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT `City` FROM `addresses` WHERE `AddressId` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT `Street` FROM `addresses` WHERE `AddressId` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -2042,6 +2080,18 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 ---
 
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Where(...).Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2780,6 +2830,33 @@ SELECT `UserName`, `Email` FROM `users` WHERE (`Email` IS NOT NULL) AND (`IsActi
 
 ---
 
+### Warehouses().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO `warehouses` (`WarehouseName`, `Region`) VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+
+---
+
+### Warehouses().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `WarehouseName` FROM `warehouses` WHERE `WarehouseName` = ? OR `WarehouseName` = ? OR `WarehouseName` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string` |
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2867,7 +2944,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 379 |
+| Total discovered | 385 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 69 |
-| Rendered | 310 |
+| Rendered | 316 |
