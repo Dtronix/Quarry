@@ -6,10 +6,10 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #270
-pr:
+pr: #276
 session: 1
 phases-total: 5
 phases-complete: 5
