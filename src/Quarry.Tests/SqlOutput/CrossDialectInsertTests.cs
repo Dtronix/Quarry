@@ -17,10 +17,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -53,10 +53,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -125,10 +125,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -157,10 +157,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -193,10 +193,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
-        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = default }).Prepare();
+        var lt= Lite.Users().Insert(new User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Users().Insert(new Pg.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Users().Insert(new My.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Users().Insert(new Ss.User { UserName = "x", IsActive = true, CreatedAt = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -225,10 +225,10 @@ internal class CrossDialectInsertTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
-        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = default }).Prepare();
+        var lt= Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", OrderDate = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
