@@ -429,16 +429,21 @@ internal static class MsSqlTestContainer
     ///   <item><description><c>Col&lt;bool&gt;</c> columns use <c>BIT</c>. Default values are <c>1</c>/<c>0</c>, not <c>TRUE</c>/<c>FALSE</c>.</description></item>
     ///   <item><description><c>Col&lt;DateTime&gt;</c> uses <c>DATETIME2</c>; <c>Col&lt;DateTimeOffset&gt;</c> uses <c>DATETIMEOFFSET</c>.</description></item>
     ///   <item><description>Identifiers are square-bracket quoted to match the SqlServer manifest's emission shape.</description></item>
+    ///   <item><description>NVARCHAR columns use <c>COLLATE SQL_Latin1_General_CP1_CS_AS</c> to opt into case-sensitive comparison. SQL Server containers default to <c>SQL_Latin1_General_CP1_CI_AS</c> (case-insensitive), where SQLite, PostgreSQL, and MySQL all compare strings case-sensitively. Without this collation override, tests like <c>Where_ContainsRuntimeCollection</c> that depend on case-sensitive non-matches (lowercase predicates against PascalCase seed data) fail on Ss while passing on every other dialect.</description></item>
     ///   <item><description>FOREIGN KEY constraints from the SQLite source are intentionally omitted, mirroring the PG port: SQLite does not enforce FKs by default, and the test suite would otherwise need to re-order delete/mutate operations.</description></item>
     ///   <item><description>Computed column on <c>products.DiscountedPrice</c> uses <c>AS (...) PERSISTED</c> — SQL Server's analogue of PG's <c>GENERATED ALWAYS AS (...) STORED</c>.</description></item>
     /// </list>
     /// </remarks>
     private static async Task CreateSchemaObjectsAsync(SqlConnection conn, string schema)
     {
+        // CS_AS = case-sensitive, accent-sensitive. Mirrors the default
+        // string-comparison semantics of SQLite, PostgreSQL, and MySQL.
+        const string CS = "COLLATE SQL_Latin1_General_CP1_CS_AS";
+
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[users] (
             [UserId] INT IDENTITY(1,1) PRIMARY KEY,
-            [UserName] NVARCHAR(MAX) NOT NULL,
-            [Email] NVARCHAR(MAX) NULL,
+            [UserName] NVARCHAR(MAX) {CS} NOT NULL,
+            [Email] NVARCHAR(MAX) {CS} NULL,
             [IsActive] BIT NOT NULL DEFAULT 1,
             [CreatedAt] DATETIME2 NOT NULL,
             [LastLogin] DATETIME2 NULL
@@ -448,16 +453,16 @@ internal static class MsSqlTestContainer
             [OrderId] INT IDENTITY(1,1) PRIMARY KEY,
             [UserId] INT NOT NULL,
             [Total] DECIMAL(18, 2) NOT NULL,
-            [Status] NVARCHAR(MAX) NOT NULL,
+            [Status] NVARCHAR(MAX) {CS} NOT NULL,
             [Priority] INT NOT NULL DEFAULT 1,
             [OrderDate] DATETIME2 NOT NULL,
-            [Notes] NVARCHAR(MAX) NULL
+            [Notes] NVARCHAR(MAX) {CS} NULL
         )");
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[order_items] (
             [OrderItemId] INT IDENTITY(1,1) PRIMARY KEY,
             [OrderId] INT NOT NULL,
-            [ProductName] NVARCHAR(MAX) NOT NULL,
+            [ProductName] NVARCHAR(MAX) {CS} NOT NULL,
             [Quantity] INT NOT NULL,
             [UnitPrice] DECIMAL(18, 2) NOT NULL,
             [LineTotal] DECIMAL(18, 2) NOT NULL
@@ -466,7 +471,7 @@ internal static class MsSqlTestContainer
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[accounts] (
             [AccountId] INT IDENTITY(1,1) PRIMARY KEY,
             [UserId] INT NOT NULL,
-            [AccountName] NVARCHAR(MAX) NOT NULL,
+            [AccountName] NVARCHAR(MAX) {CS} NOT NULL,
             [Balance] DECIMAL(18, 2) NOT NULL,
             [credit_limit] DECIMAL(18, 2) NOT NULL DEFAULT 0,
             [IsActive] BIT NOT NULL DEFAULT 1
@@ -474,16 +479,16 @@ internal static class MsSqlTestContainer
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[events] (
             [EventId] INT IDENTITY(1,1) PRIMARY KEY,
-            [EventName] NVARCHAR(MAX) NOT NULL,
+            [EventName] NVARCHAR(MAX) {CS} NOT NULL,
             [ScheduledAt] DATETIMEOFFSET NOT NULL,
             [CancelledAt] DATETIMEOFFSET NULL
         )");
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[addresses] (
             [AddressId] INT IDENTITY(1,1) PRIMARY KEY,
-            [City] NVARCHAR(MAX) NOT NULL,
-            [Street] NVARCHAR(MAX) NOT NULL,
-            [ZipCode] NVARCHAR(MAX) NULL
+            [City] NVARCHAR(MAX) {CS} NOT NULL,
+            [Street] NVARCHAR(MAX) {CS} NOT NULL,
+            [ZipCode] NVARCHAR(MAX) {CS} NULL
         )");
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[user_addresses] (
@@ -494,8 +499,8 @@ internal static class MsSqlTestContainer
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[warehouses] (
             [WarehouseId] INT IDENTITY(1,1) PRIMARY KEY,
-            [WarehouseName] NVARCHAR(MAX) NOT NULL,
-            [Region] NVARCHAR(MAX) NOT NULL
+            [WarehouseName] NVARCHAR(MAX) {CS} NOT NULL,
+            [Region] NVARCHAR(MAX) {CS} NOT NULL
         )");
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[shipments] (
@@ -508,9 +513,9 @@ internal static class MsSqlTestContainer
 
         await ExecAsync(conn, $@"CREATE TABLE [{schema}].[products] (
             [ProductId] INT IDENTITY(1,1) PRIMARY KEY,
-            [ProductName] NVARCHAR(MAX) NOT NULL,
+            [ProductName] NVARCHAR(MAX) {CS} NOT NULL,
             [Price] DECIMAL(18, 2) NOT NULL,
-            [Description] NVARCHAR(MAX) NULL,
+            [Description] NVARCHAR(MAX) {CS} NULL,
             [DiscountedPrice] AS ([Price] * 0.9) PERSISTED
         )");
 
