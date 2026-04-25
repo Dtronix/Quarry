@@ -27,7 +27,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [IsActive]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1)");
     }
 
     [Test]
@@ -47,7 +47,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\") VALUES (@p0) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\") VALUES ($1) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`) VALUES (?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName]) VALUES (@p0) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName]) OUTPUT INSERTED.[UserId] VALUES (@p0)");
     }
 
     #endregion
@@ -74,7 +74,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)");
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2));
@@ -106,7 +106,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"CreatedAt\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"CreatedAt\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `CreatedAt`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [CreatedAt]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1)");
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(3));
@@ -139,7 +139,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -172,7 +172,7 @@ internal class CrossDialectBatchInsertTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES (@p0, @p1) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\") VALUES ($1, $2) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [IsActive]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1)");
     }
 
     [Test]

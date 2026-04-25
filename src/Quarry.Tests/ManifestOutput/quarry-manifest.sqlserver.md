@@ -15,7 +15,7 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 ### Accounts().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[AccountId]
+INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2)
 ```
 
 | Parameter | Type |
@@ -29,7 +29,7 @@ INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) VALUES (@p0, @p1, @p
 ### Accounts().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[AccountId]
+INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2, @p3, @p4)
 ```
 
 | Parameter | Type |
@@ -98,10 +98,48 @@ SELECT [AccountName], [Balance], [credit_limit] FROM [accounts] WHERE [AccountNa
 
 ---
 
+### Addresses().Insert().ExecuteScalarAsync()
+
+```sql
+INSERT INTO [addresses] ([City], [Street], [ZipCode]) OUTPUT INSERTED.[AddressId] VALUES (@p0, @p1, @p2)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string?` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT [City] FROM [addresses] WHERE [AddressId] = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT [Street] FROM [addresses] WHERE [AddressId] = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [order_items] ([OrderId], [ProductName], [Quantity], [UnitPrice], [LineTotal]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderItemId]
+INSERT INTO [order_items] ([OrderId], [ProductName], [Quantity], [UnitPrice], [LineTotal]) OUTPUT INSERTED.[OrderItemId] VALUES (@p0, @p1, @p2, @p3, @p4)
 ```
 
 | Parameter | Type |
@@ -197,7 +235,7 @@ SELECT [j0].[UserName], COUNT(*) AS [Item2] FROM [orders] AS [t0] INNER JOIN [us
 ### Orders().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1, @p2, @p3) OUTPUT INSERTED.[OrderId]
+INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) OUTPUT INSERTED.[OrderId] VALUES (@p0, @p1, @p2, @p3)
 ```
 
 | Parameter | Type |
@@ -212,7 +250,7 @@ INSERT INTO [orders] ([UserId], [Total], [Status], [OrderDate]) VALUES (@p0, @p1
 ### Orders().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [orders] ([UserId], [Total], [Status], [Priority], [OrderDate]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderId]
+INSERT INTO [orders] ([UserId], [Total], [Status], [Priority], [OrderDate]) OUTPUT INSERTED.[OrderId] VALUES (@p0, @p1, @p2, @p3, @p4)
 ```
 
 | Parameter | Type |
@@ -910,7 +948,7 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [order
 ### Users().Insert().Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]
+INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)
 ```
 
 | Parameter | Type |
@@ -924,7 +962,7 @@ INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2)
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [users] ([UserName]) VALUES (@p0), ...
+INSERT INTO [users] ([UserName]) OUTPUT INSERTED.[UserId] VALUES (@p0), ...
 ```
 
 | Parameter | Type |
@@ -936,7 +974,7 @@ INSERT INTO [users] ([UserName]) VALUES (@p0), ...
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [users] ([UserName], [CreatedAt]) VALUES (@p0, @p1), ...
+INSERT INTO [users] ([UserName], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1), ...
 ```
 
 | Parameter | Type |
@@ -949,7 +987,7 @@ INSERT INTO [users] ([UserName], [CreatedAt]) VALUES (@p0, @p1), ...
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1), ...
+INSERT INTO [users] ([UserName], [IsActive]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1), ...
 ```
 
 | Parameter | Type |
@@ -962,7 +1000,7 @@ INSERT INTO [users] ([UserName], [IsActive]) VALUES (@p0, @p1), ...
 ### Users().InsertBatch(...).Values(...).Prepare().ToDiagnostics()
 
 ```sql
-INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2), ...
+INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2), ...
 ```
 
 | Parameter | Type |
@@ -2050,6 +2088,18 @@ SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM 
 
 ---
 
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [UserName] FROM [users] WHERE [UserId] IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Where(...).Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2788,6 +2838,33 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 ---
 
+### Warehouses().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO [warehouses] ([WarehouseName], [Region]) VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+
+---
+
+### Warehouses().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [WarehouseName] FROM [warehouses] WHERE [WarehouseName] = @p0 OR [WarehouseName] = @p1 OR [WarehouseName] = @p2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string` |
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2867,7 +2944,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 379 |
+| Total discovered | 385 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 69 |
-| Rendered | 310 |
+| Rendered | 316 |

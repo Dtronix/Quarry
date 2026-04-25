@@ -40,7 +40,7 @@ internal class CrossDialectTypeMappingTests
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES ($1, $2, $3, $4, $5) RETURNING \"AccountId\"",
             mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`, `credit_limit`, `IsActive`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[AccountId]");
+            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2, @p3, @p4)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -69,7 +69,7 @@ internal class CrossDialectTypeMappingTests
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES (@p0, @p1, @p2) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES ($1, $2, $3) RETURNING \"AccountId\"",
             mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[AccountId]");
+            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));

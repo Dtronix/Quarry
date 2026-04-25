@@ -50,17 +50,6 @@ internal static class MsSqlTestContainer
     /// </summary>
     private const string BaselineApplockResource = "quarry_test_baseline";
 
-    /// <summary>
-    /// Fixed list of tables created by <see cref="CreateSchemaObjectsAsync"/>,
-    /// in dependency-free order. Used by owned-schema teardown to drop tables
-    /// before the schema (SQL Server has no <c>DROP SCHEMA CASCADE</c>).
-    /// </summary>
-    private static readonly string[] _allTables =
-    [
-        "shipments", "user_addresses", "addresses", "warehouses",
-        "products", "events", "accounts", "order_items", "orders", "users",
-    ];
-
     private static readonly SemaphoreSlim _containerLock = new(1, 1);
     private static readonly SemaphoreSlim _baselineLock = new(1, 1);
     private static MsSqlContainer? _container;
@@ -265,22 +254,22 @@ internal static class MsSqlTestContainer
     }
 
     /// <summary>
-    /// Tears down a schema previously created by <see cref="CreateOwnedSchemaAsync"/>:
-    /// drops all known tables in the schema, then the schema, then the
-    /// database user, then the server-level login. Each step is wrapped so a
-    /// best-effort failure (lingering connection, etc.) doesn't mask the
-    /// caller's own exception.
+    /// Tears down a schema previously created by <see cref="CreateOwnedSchemaAsync"/>
+    /// or <see cref="CreateEmptySchemaAsync"/>: dynamically enumerates and
+    /// drops every table and view in the schema (SQL Server has no
+    /// <c>DROP SCHEMA CASCADE</c>), then the schema, then the database user,
+    /// then the server-level login. Each step is wrapped so a best-effort
+    /// failure (lingering connection, etc.) doesn't mask the caller's own
+    /// exception.
     /// </summary>
+    /// <remarks>
+    /// Tables are enumerated rather than hardcoded because tests that build
+    /// their own DDL on top of an empty owned schema (the migration-runner
+    /// test, for example) create tables outside the harness's known set.
+    /// </remarks>
     public static async Task DropOwnedSchemaAsync(SqlConnection saConnection, OwnedSchemaInfo info)
     {
-        // Tables first — SQL Server rejects DROP SCHEMA on a non-empty schema
-        // and has no CASCADE.
-        foreach (var table in _allTables)
-        {
-            try { await ExecAsync(saConnection, $"DROP TABLE IF EXISTS [{info.Schema}].[{table}]"); }
-            catch { /* best-effort */ }
-        }
-        try { await ExecAsync(saConnection, $"DROP VIEW IF EXISTS [{info.Schema}].[Order]"); } catch { }
+        try { await DropAllObjectsInSchemaAsync(saConnection, info.Schema); } catch { }
         try { await ExecAsync(saConnection, $"DROP SCHEMA IF EXISTS [{info.Schema}]"); } catch { }
         try { await ExecAsync(saConnection, $"DROP USER IF EXISTS [{info.User}]"); } catch { }
         // DROP LOGIN can fail if there's still an open connection authenticated
@@ -289,6 +278,53 @@ internal static class MsSqlTestContainer
         // hammer.
         try { SqlConnection.ClearAllPools(); } catch { }
         try { await ExecAsync(saConnection, $"DROP LOGIN [{info.User}]"); } catch { }
+    }
+
+    /// <summary>
+    /// Provisions a uniquely-named empty schema + dedicated login (no DDL,
+    /// no seed). Used by migration-runner tests that need a clean canvas to
+    /// run their own DDL. Pair with <see cref="DropOwnedSchemaAsync"/> for
+    /// teardown.
+    /// </summary>
+    public static async Task<OwnedSchemaInfo> CreateEmptySchemaAsync(SqlConnection saConnection)
+    {
+        var schema = "migtest_" + Guid.NewGuid().ToString("N").Substring(0, 10);
+        var user = schema + "_u";
+        var password = TestUserPassword;
+
+        await ProvisionLoginAndUserAsync(saConnection, user, password, schema);
+        await ExecAsync(saConnection, $"CREATE SCHEMA [{schema}] AUTHORIZATION [{user}]");
+
+        return new OwnedSchemaInfo(schema, user, password);
+    }
+
+    private static async Task DropAllObjectsInSchemaAsync(SqlConnection conn, string schema)
+    {
+        // Drop FKs first to avoid dependency-order failures on tables that
+        // reference each other. The migration runner doesn't create FKs in
+        // any current test, but this keeps the helper robust.
+        await using (var dropFks = conn.CreateCommand())
+        {
+            dropFks.CommandText = $@"
+                DECLARE @sql NVARCHAR(MAX) = N'';
+                SELECT @sql = @sql + N'ALTER TABLE [{schema}].[' + OBJECT_NAME(parent_object_id) + N'] DROP CONSTRAINT [' + name + N']; '
+                FROM sys.foreign_keys WHERE schema_id = SCHEMA_ID('{schema}');
+                IF LEN(@sql) > 0 EXEC sp_executesql @sql;";
+            await dropFks.ExecuteNonQueryAsync();
+        }
+
+        // Views before tables — views can reference tables we're about to
+        // drop. Then tables. The dynamic SQL builds a single batch so we
+        // don't pay round-trips per object.
+        await using var dropAll = conn.CreateCommand();
+        dropAll.CommandText = $@"
+            DECLARE @sql NVARCHAR(MAX) = N'';
+            SELECT @sql = @sql + N'DROP VIEW [{schema}].[' + name + N']; '
+                FROM sys.views WHERE schema_id = SCHEMA_ID('{schema}');
+            SELECT @sql = @sql + N'DROP TABLE [{schema}].[' + name + N']; '
+                FROM sys.tables WHERE schema_id = SCHEMA_ID('{schema}');
+            IF LEN(@sql) > 0 EXEC sp_executesql @sql;";
+        await dropAll.ExecuteNonQueryAsync();
     }
 
     /// <summary>

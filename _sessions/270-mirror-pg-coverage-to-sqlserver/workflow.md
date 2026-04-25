@@ -12,7 +12,7 @@ issue: #270
 pr:
 session: 1
 phases-total: 5
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 Issue #270: Mirror PG execution coverage to SQL Server.
@@ -42,6 +42,12 @@ If `Cte_TwoChainedWiths_DistinctDtos_CapturedParams` fires the chained-With disp
 
 ### 2026-04-25 — Microsoft.Data.SqlClient version
 Already referenced at `6.*` in `Quarry.Tests.csproj`. Issue mentions 5.* — keep current 6.*; no downgrade.
+
+### 2026-04-25 — Phase 3 surfaced generator bug: OUTPUT clause placement on SQL Server
+`SqlAssembler.RenderInsertSql` and `RenderBatchInsertSql` emitted `INSERT INTO ... VALUES (...) OUTPUT INSERTED.[Id]` for SQL Server, which fails at runtime with `Incorrect syntax near 'OUTPUT'`. SQL Server requires the OUTPUT clause to precede the VALUES clause. Fixed both render paths; for batch insert the OUTPUT is folded into the prefix and the trailing returning suffix is suppressed for SqlServer. 18 cross-dialect test assertions updated to match the corrected emit; the SqlServer manifest regenerated automatically. The fix is direct because it only affects SqlServer code paths — PG/Lite/MySQL behavior is unchanged.
+
+### 2026-04-25 — Phase 3 wiring choice: raw `BEGIN TRANSACTION` instead of SqlConnection.BeginTransaction()
+SqlClient requires every `SqlCommand` to have its `Transaction` property assigned when the connection has an open `SqlTransaction`. Quarry's `QueryExecutor` builds DbCommands generically and does not assign that property, so `SqlConnection.BeginTransaction()` makes every test fail with that validation error. Workaround: open a server-side transaction via `BEGIN TRANSACTION` SQL command and roll back via `ROLLBACK TRANSACTION` SQL command. SqlClient's client-side check is bypassed because no `SqlTransaction` object exists. Server-side semantics are unchanged.
 
 ## Suspend State
 

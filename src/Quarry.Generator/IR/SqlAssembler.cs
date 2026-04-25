@@ -111,13 +111,16 @@ internal static class SqlAssembler
             }
         }
 
-        // Build batch insert metadata
+        // Build batch insert metadata. SQL Server's OUTPUT clause is folded
+        // into the prefix in RenderBatchInsertSql (the OUTPUT must precede
+        // VALUES on SQL Server, not follow the row tuples), so the suffix
+        // is empty for that dialect.
         string? batchReturningSuffix = null;
         int batchColumnsPerRow = 0;
         if (plan.Kind == QueryKind.BatchInsert && insertInfo != null)
         {
             batchColumnsPerRow = insertInfo.Columns.Count;
-            if (needsIdentityReturning && insertInfo.IdentityColumnName != null)
+            if (needsIdentityReturning && insertInfo.IdentityColumnName != null && dialect != SqlDialect.SqlServer)
             {
                 batchReturningSuffix = RenderReturningSuffix(dialect, insertInfo.IdentityColumnName);
             }
@@ -883,7 +886,21 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(", ");
                 sb.Append(plan.InsertColumns[i].QuotedColumnName);
             }
-            sb.Append(") VALUES (");
+            sb.Append(')');
+
+            // SQL Server's OUTPUT clause is positionally distinct from
+            // SQLite/PG's RETURNING and MySQL's separate SELECT — it lives
+            // between the column list and the VALUES clause:
+            //   INSERT INTO tbl (cols) OUTPUT INSERTED.[Id] VALUES (params)
+            // Putting it after the VALUES clause produces "Incorrect syntax
+            // near 'OUTPUT'" at runtime.
+            if (dialect == SqlDialect.SqlServer && insertInfo?.IdentityColumnName != null)
+            {
+                sb.Append(" OUTPUT INSERTED.");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName));
+            }
+
+            sb.Append(" VALUES (");
             for (int i = 0; i < plan.InsertColumns.Count; i++)
             {
                 if (i > 0) sb.Append(", ");
@@ -892,19 +909,16 @@ internal static class SqlAssembler
             sb.Append(')');
         }
 
-        // RETURNING clause for identity column
-        if (insertInfo?.QuotedIdentityColumnName != null)
+        // RETURNING / LAST_INSERT_ID suffix for non-SqlServer dialects.
+        // SqlServer was handled inline above.
+        if (insertInfo?.IdentityColumnName != null)
         {
             switch (dialect)
             {
                 case SqlDialect.SQLite:
                 case SqlDialect.PostgreSQL:
                     sb.Append(" RETURNING ");
-                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName!));
-                    break;
-                case SqlDialect.SqlServer:
-                    sb.Append(" OUTPUT INSERTED.");
-                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName!));
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName));
                     break;
                 case SqlDialect.MySQL:
                     sb.Append("; SELECT LAST_INSERT_ID()");
@@ -920,6 +934,12 @@ internal static class SqlAssembler
     /// so only the prefix (INSERT INTO table (columns) VALUES ) is rendered.
     /// The runtime BatchInsertSqlBuilder expands the row template per entity.
     /// </summary>
+    /// <remarks>
+    /// SQL Server's <c>OUTPUT INSERTED.[Id]</c> clause must precede <c>VALUES</c>,
+    /// so for that dialect we fold the OUTPUT into the prefix and skip the
+    /// trailing returning suffix. Other dialects still emit RETURNING /
+    /// LAST_INSERT_ID() as a suffix appended after the row tuples.
+    /// </remarks>
     private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
     {
         var sb = new StringBuilder();
@@ -935,7 +955,15 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(", ");
                 sb.Append(plan.InsertColumns[i].QuotedColumnName);
             }
-            sb.Append(") VALUES ");
+            sb.Append(')');
+
+            if (dialect == SqlDialect.SqlServer && insertInfo?.IdentityColumnName != null)
+            {
+                sb.Append(" OUTPUT INSERTED.");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, insertInfo.IdentityColumnName));
+            }
+
+            sb.Append(" VALUES ");
         }
 
         // The SQL prefix ends here — runtime will append (param, param), (param, param), ...
