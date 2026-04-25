@@ -44,6 +44,7 @@
     <PackageReference Include="Npgsql" Version="10.*" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
     <PackageReference Include="Testcontainers.MySql" Version="4.*" />
+    <PackageReference Include="Testcontainers.MsSql" Version="4.*" />
     <PackageReference Include="MySqlConnector" Version="2.*" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.*" />
   </ItemGroup>
