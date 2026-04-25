@@ -106,6 +106,27 @@ public class CarrierStructuralKeyTests
     }
 
     [Test]
+    public void DifferentVariableTypes_DoNotMerge()
+    {
+        var keyA = BuildKey(new[]
+        {
+            MakeExtractor("orderCutoff", "decimal", DisplayClassA, 0),
+            MakeExtractor("activeFilter", "bool", DisplayClassA, 1),
+        });
+        var keyB = BuildKey(new[]
+        {
+            MakeExtractor("orderCutoff", "int", DisplayClassA, 0),
+            MakeExtractor("activeFilter", "bool", DisplayClassA, 1),
+        });
+
+        Assert.That(keyA.Equals(keyB), Is.False,
+            "Carriers whose extractors share name + display class but differ in CLR type "
+            + "(decimal vs int) must produce distinct dedup keys; the carrier P0 field "
+            + "type and the [UnsafeAccessor] return type both depend on it, so a merge "
+            + "would emit an extractor with the wrong return signature for the second site.");
+    }
+
+    [Test]
     public void IdenticalCarriers_DoMerge()
     {
         var extractors = new[]

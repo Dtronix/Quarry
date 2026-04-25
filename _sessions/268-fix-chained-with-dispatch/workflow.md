@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #268
 pr:
@@ -36,4 +36,4 @@ PR #266 worked around this by renaming the captured variable in the failing test
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE     |           | Loaded issue #268, created worktree, ran baseline (1 env-related failure + 506 Docker-skipped). |
+| 1 | INTAKE     | IMPLEMENT | Loaded issue #268, created worktree. INTAKE baseline: 1 env-related TearDown failure + 506 Docker-skipped (env-only — Docker unavailable on dev box). DESIGN traced full dispatch path; bug latent in current main. PLAN approved 4 items / 3 commits. IMPLEMENT shipped Phase 1 (CarrierStructuralKey internal + 3 unit tests + doc), Phase 2 (2 generator-pipeline regression tests), Phase 3 (workaround revert). All 3001+117+201 tests green at end of IMPLEMENT — Docker-dependent tests now actually executing on this run. |

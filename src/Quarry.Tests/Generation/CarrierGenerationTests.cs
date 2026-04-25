@@ -3697,6 +3697,82 @@ public static class Queries
 
     // ── Chained-With dispatch (issue #268) ───────────────────────────────
 
+    /// <summary>
+    /// For every <c>With_*</c> interceptor body in <paramref name="code"/>, asserts that
+    /// each <c>Chain_N.__ExtractVar_X_K(__target)</c> reference resolves to an extractor
+    /// declaration <c>Name = "X"</c> on that exact <c>Chain_N</c> carrier. The historic #268
+    /// bug was a generated interceptor that referenced an extractor method which did not
+    /// exist on the carrier it dispatched to — emitted text was syntactically clean but
+    /// failed at <c>.Prepare()</c> with <see cref="System.MissingFieldException"/>. This
+    /// helper catches that exact mis-dispatch shape.
+    /// </summary>
+    private static void AssertEveryDispatchArrowResolves(string code)
+    {
+        // Match every interceptor body that references a Chain_N extractor. Body brace
+        // matching is shallow (no nested braces in real interceptors), so a non-greedy
+        // `\{[\s\S]*?\}` works against the emitted format.
+        var bodyPattern = @"public static [\w<>?., ]+? (?<name>\w+_[\w]+)\([^)]*\)\s*\{(?<body>[\s\S]*?)\n\s*\}";
+        var bodyRegex = new System.Text.RegularExpressions.Regex(bodyPattern, System.Text.RegularExpressions.RegexOptions.Multiline);
+        var carrierExtractors = ParseCarrierExtractors(code);
+
+        var dispatchCalls = 0;
+        foreach (System.Text.RegularExpressions.Match m in bodyRegex.Matches(code))
+        {
+            var body = m.Groups["body"].Value;
+            var calls = System.Text.RegularExpressions.Regex.Matches(
+                body, @"(?<carrier>Chain_\d+)\.__ExtractVar_(?<var>\w+?)_\d+\(\s*__target\s*\)");
+            foreach (System.Text.RegularExpressions.Match c in calls)
+            {
+                dispatchCalls++;
+                var carrier = c.Groups["carrier"].Value;
+                var varName = c.Groups["var"].Value;
+                Assert.That(carrierExtractors.ContainsKey(carrier), Is.True,
+                    $"Interceptor {m.Groups["name"].Value} dispatches to {carrier} but no such carrier class is emitted.");
+                Assert.That(carrierExtractors[carrier], Does.Contain(varName),
+                    $"Interceptor {m.Groups["name"].Value} extracts '{varName}' off {carrier}, "
+                    + $"but {carrier} only owns extractors: [{string.Join(", ", carrierExtractors[carrier])}]. "
+                    + "This is the #268 mis-dispatch shape: interceptor routes to a carrier "
+                    + "whose [UnsafeAccessor] would read a foreign closure field at .Prepare().");
+            }
+        }
+
+        Assert.That(dispatchCalls, Is.GreaterThan(0),
+            "No Chain_N.__ExtractVar_*_*(__target) dispatch calls found in emitted code — "
+            + "test fixture sources should produce captured-variable extractors.");
+    }
+
+    private static Dictionary<string, HashSet<string>> ParseCarrierExtractors(string code)
+    {
+        // Each Chain_N block looks like:
+        //   file sealed class Chain_N : ...
+        //   {
+        //       ...
+        //       [UnsafeAccessor(UnsafeAccessorKind.Field, Name = "varX")]
+        //       internal extern static ref ... __ExtractVar_varX_K(...);
+        //       ...
+        //   }
+        // Build a map: carrier name → set of variable names that carrier owns.
+        var result = new Dictionary<string, HashSet<string>>();
+        var carrierBlocks = System.Text.RegularExpressions.Regex.Matches(
+            code, @"file sealed class (Chain_\d+)[^{]*\{(?<body>[\s\S]*?)^\}",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        foreach (System.Text.RegularExpressions.Match block in carrierBlocks)
+        {
+            var carrier = block.Groups[1].Value;
+            var body = block.Groups["body"].Value;
+            var owned = new HashSet<string>();
+            foreach (System.Text.RegularExpressions.Match e in System.Text.RegularExpressions.Regex.Matches(
+                body, @"Name = ""(?<var>[^""]+)""\)\][\s\S]*?__ExtractVar_(?<varB>\w+?)_\d+\("))
+            {
+                // Both groups should match — accept the second (extractor method name) as
+                // the authoritative name since that's what the dispatch arrow references.
+                owned.Add(e.Groups["varB"].Value);
+            }
+            result[carrier] = owned;
+        }
+        return result;
+    }
+
     [Test]
     public void ChainedWith_SameShapeDifferentNames_DispatchToOwnClosure()
     {
@@ -3766,27 +3842,10 @@ public static class Queries
         Assert.That(code, Does.Contain("__ExtractVar_enabled_1"),
             "MethodB's second-clause extractor 'enabled' must appear.");
 
-        // Each carrier emitting an extractor for variable X must also declare its
-        // [UnsafeAccessorType] against the SAME display class — otherwise the
-        // extractor would target a foreign closure. We verify by walking each
-        // Chain_N declaration and asserting the extractor name and the next
-        // UnsafeAccessorType reference together encode a consistent display class.
-        var carrierBlocks = System.Text.RegularExpressions.Regex.Matches(
-            code, @"file sealed class (Chain_\d+).*?^\}", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Multiline);
-        Assert.That(carrierBlocks.Count, Is.GreaterThanOrEqualTo(2),
-            "Both methods must produce their own carrier (no shape-collapse merge).");
-
-        var orderCutoffCarriers = new List<string>();
-        var orderTotalCarriers = new List<string>();
-        foreach (System.Text.RegularExpressions.Match block in carrierBlocks)
-        {
-            var carrierName = block.Groups[1].Value;
-            if (block.Value.Contains("__ExtractVar_orderCutoff_0"))
-                orderCutoffCarriers.Add(carrierName);
-            if (block.Value.Contains("__ExtractVar_orderTotal_0"))
-                orderTotalCarriers.Add(carrierName);
-        }
-
+        // The two methods must NOT collapse into one shared carrier.
+        var carrierExtractors = ParseCarrierExtractors(code);
+        var orderCutoffCarriers = carrierExtractors.Where(kv => kv.Value.Contains("orderCutoff")).Select(kv => kv.Key).ToList();
+        var orderTotalCarriers = carrierExtractors.Where(kv => kv.Value.Contains("orderTotal")).Select(kv => kv.Key).ToList();
         Assert.That(orderCutoffCarriers, Is.Not.Empty,
             "Some emitted carrier must own MethodA's orderCutoff extractor.");
         Assert.That(orderTotalCarriers, Is.Not.Empty,
@@ -3795,77 +3854,55 @@ public static class Queries
             "MethodA and MethodB must not share a single carrier — same-shape closures with "
             + "differently-named captures must dispatch to DISTINCT Chain_N classes.");
 
-        // Each carrier owning orderCutoff must reference MethodA's display class.
-        foreach (var carrier in orderCutoffCarriers)
-        {
-            var pattern = $@"file sealed class {carrier}\b.*?^\}}";
-            var block = System.Text.RegularExpressions.Regex.Match(code, pattern,
-                System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Multiline).Value;
-            // The display class for the orderCutoff extractor should match the body of MethodA.
-            var displayClassMatch = System.Text.RegularExpressions.Regex.Match(
-                block, @"\[UnsafeAccessorType\(""([^""]*<>c__DisplayClass[^""]*)""\)\] object target\);[^[]*?\[UnsafeAccessor\(UnsafeAccessorKind\.Field, Name = ""orderCutoff""\)",
-                System.Text.RegularExpressions.RegexOptions.Singleline);
-            // Either the orderCutoff extractor immediately follows another extractor
-            // (matched above) or it is the first extractor — handle both by also
-            // looking up the orderCutoff line directly.
-            var direct = System.Text.RegularExpressions.Regex.Match(
-                block, @"\[UnsafeAccessor\(UnsafeAccessorKind\.Field, Name = ""orderCutoff""\)\][\s\S]*?\[UnsafeAccessorType\(""([^""]+)""\)\]");
-            Assert.That(direct.Success, Is.True,
-                $"Carrier {carrier} must declare an [UnsafeAccessorType] alongside its orderCutoff extractor.");
-            var orderCutoffDisplayClass = direct.Groups[1].Value;
-            Assert.That(orderCutoffDisplayClass, Does.Not.Contain("orderTotal"),
-                $"Carrier {carrier} owns orderCutoff but its display class reference looks foreign: {orderCutoffDisplayClass}");
-        }
+        // Dispatch-arrow consistency: every interceptor body's Chain_N.__ExtractVar_X
+        // reference must point at an extractor X that actually lives on Chain_N.
+        // This is the assertion that catches the historic PR #266 mis-dispatch shape:
+        // a carrier whose interceptor body referenced an extractor from a foreign
+        // closure type. Without it, the carrier-set check above only catches a full
+        // merge — not a "two carriers, but interceptor body routes to the wrong one".
+        AssertEveryDispatchArrowResolves(code);
     }
 
     [Test]
-    public void ChainedWith_TwoVsThreeWiths_DoNotShareCarrier()
+    public void ChainedWith_SameNamesDifferentMethods_DispatchByDisplayClass()
     {
-        // Boundary: a 2-chained-With method and a 3-chained-With method captured
-        // matching prefix variables (orderCutoff, activeFilter) must not share a
-        // carrier even though the first two clauses look shape-identical. This
-        // covers the original #258/#266 observation that the 2-With case — not
-        // the 3-With one — was the case that mis-dispatched.
+        // Stronger pressure on the dedup invariant: two methods whose chained-With
+        // closures capture IDENTICALLY-named variables of identical types — only the
+        // host method (and therefore the compiler's <>c__DisplayClass) differs. If
+        // the dedup were ever relaxed to types-only (or names-only), this test would
+        // fail because both chains would collapse into a single carrier whose
+        // [UnsafeAccessorType] points at one method's display class — at runtime the
+        // other method's call site would fault. Keeping DisplayClassName in the dedup
+        // key is the precise contract this test pins.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.SQLite)]
 public partial class TestDbContext : QuarryContext
 {
     public partial IEntityAccessor<User> Users();
     public partial IEntityAccessor<Order> Orders();
-    public partial IEntityAccessor<OrderItem> OrderItems();
-}
-
-public class OrderItemSchema : Schema
-{
-    public static string Table => ""order_items"";
-    public Key<int> OrderItemId => Identity();
-    public Col<int> OrderId { get; }
-    public Col<int> Quantity { get; }
 }
 
 public static class Queries
 {
-    public static async Task TwoChained(TestDbContext db)
+    public static async Task MethodA(TestDbContext db)
     {
-        decimal orderCutoff = 100m;
-        bool activeFilter = true;
+        decimal cutoff = 100m;
+        bool flag = true;
         await db
-            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
-            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
+            .With<Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<User>(users => users.Where(u => u.IsActive == flag))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .ExecuteFetchAllAsync();
     }
 
-    public static async Task ThreeChained(TestDbContext db)
+    public static async Task MethodB(TestDbContext db)
     {
-        decimal orderCutoff = 100m;
-        bool activeFilter = true;
-        int qtyFilter = 1;
+        decimal cutoff = 200m;
+        bool flag = false;
         await db
-            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
-            .With<User>(users => users.Where(u => u.IsActive == activeFilter))
-            .With<OrderItem>(items => items.Where(oi => oi.Quantity > qtyFilter))
+            .With<Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<User>(users => users.Where(u => u.IsActive == flag))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .ExecuteFetchAllAsync();
@@ -3885,30 +3922,24 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null);
         var code = interceptorsTree!.GetText().ToString();
 
-        // The 3-chained method has a unique extractor name ('qtyFilter') that must
-        // appear in exactly one carrier. The 2-chained method does not, so its
-        // carrier is identified by absence of qtyFilter alongside presence of
-        // orderCutoff + activeFilter.
-        var carrierBlocks = System.Text.RegularExpressions.Regex.Matches(
-            code, @"file sealed class (Chain_\d+).*?^\}", System.Text.RegularExpressions.RegexOptions.Singleline | System.Text.RegularExpressions.RegexOptions.Multiline);
-        var twoChainedCarriers = new List<string>();
-        var threeChainedCarriers = new List<string>();
-        foreach (System.Text.RegularExpressions.Match block in carrierBlocks)
-        {
-            var hasOrderCutoff = block.Value.Contains("__ExtractVar_orderCutoff_0");
-            var hasActiveFilter = block.Value.Contains("__ExtractVar_activeFilter_1");
-            var hasQtyFilter = block.Value.Contains("__ExtractVar_qtyFilter_2");
-            if (hasOrderCutoff && hasActiveFilter && hasQtyFilter)
-                threeChainedCarriers.Add(block.Groups[1].Value);
-            else if (hasOrderCutoff && hasActiveFilter && !hasQtyFilter)
-                twoChainedCarriers.Add(block.Groups[1].Value);
-        }
+        // Both methods capture decimal 'cutoff' + bool 'flag'. Each method's chain
+        // must own a DIFFERENT [UnsafeAccessorType], so the emitted code must
+        // reference at least two distinct <>c__DisplayClass type strings for the
+        // 'cutoff' extractor.
+        var cutoffDisplayClasses = new HashSet<string>(System.StringComparer.Ordinal);
+        var displayClassRegex = new System.Text.RegularExpressions.Regex(
+            @"\[UnsafeAccessor\(UnsafeAccessorKind\.Field, Name = ""cutoff""\)\][\s\S]*?\[UnsafeAccessorType\(""(?<dc>[^""]+)""\)\]");
+        foreach (System.Text.RegularExpressions.Match m in displayClassRegex.Matches(code))
+            cutoffDisplayClasses.Add(m.Groups["dc"].Value);
 
-        Assert.That(twoChainedCarriers, Is.Not.Empty,
-            "TwoChained method must emit a carrier with orderCutoff + activeFilter and no qtyFilter.");
-        Assert.That(threeChainedCarriers, Is.Not.Empty,
-            "ThreeChained method must emit a carrier with all three extractors.");
-        Assert.That(twoChainedCarriers.Intersect(threeChainedCarriers), Is.Empty,
-            "TwoChained and ThreeChained must not collapse to the same carrier (different field/SQL shapes — but the dedup must also continue to honor display-class identity even if a future change makes the SQL/fields incidentally match).");
+        Assert.That(cutoffDisplayClasses.Count, Is.GreaterThanOrEqualTo(2),
+            "Two methods that each capture a 'cutoff' decimal must yield carriers whose "
+            + $"[UnsafeAccessorType] references at least two distinct compiler-generated "
+            + $"display classes. Found: [{string.Join(", ", cutoffDisplayClasses)}]. "
+            + "Collapsing to a single display class would mean one method's interceptor "
+            + "reads from the other method's closure — exactly the #268 mis-dispatch.");
+
+        // And the dispatch arrows must still all resolve.
+        AssertEveryDispatchArrowResolves(code);
     }
 }
