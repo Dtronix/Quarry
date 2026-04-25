@@ -34,6 +34,10 @@ internal class CrossDialectAggregateTests
         var results = await lt.ExecuteFetchAllAsync();
         var shipped = results.First(r => r.Item1 == "Shipped");
         Assert.That(shipped.Item2, Is.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgShipped = pgResults.First(r => r.Item1 == "Shipped");
+        Assert.That(pgShipped.Item2, Is.EqualTo(2));
     }
 
     #endregion
@@ -62,6 +66,9 @@ internal class CrossDialectAggregateTests
         // No status has count > 5 with only 3 orders — 0 rows returned
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -92,6 +99,11 @@ internal class CrossDialectAggregateTests
         var shipped = results.First(r => r.Item1 == "Shipped");
         Assert.That(shipped.Item2, Is.EqualTo(2));
         Assert.That(shipped.Item3, Is.EqualTo(400.00m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgShipped = pgResults.First(r => r.Item1 == "Shipped");
+        Assert.That(pgShipped.Item2, Is.EqualTo(2));
+        Assert.That(pgShipped.Item3, Is.EqualTo(400.00m).Within(0.01m));
     }
 
     #endregion
@@ -121,6 +133,10 @@ internal class CrossDialectAggregateTests
         var results = await lt.ExecuteFetchAllAsync();
         var shipped = results.First(r => r.Item1 == "Shipped");
         Assert.That(shipped.Item2, Is.EqualTo(200.00m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgShipped = pgResults.First(r => r.Item1 == "Shipped");
+        Assert.That(pgShipped.Item2, Is.EqualTo(200.00m).Within(0.01m));
     }
 
     [Test]
@@ -146,6 +162,10 @@ internal class CrossDialectAggregateTests
         var results = await lt.ExecuteFetchAllAsync();
         var shipped = results.First(r => r.Item1 == "Shipped");
         Assert.That(shipped.Item2, Is.EqualTo(150.00m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgShipped = pgResults.First(r => r.Item1 == "Shipped");
+        Assert.That(pgShipped.Item2, Is.EqualTo(150.00m).Within(0.01m));
     }
 
     [Test]
@@ -171,6 +191,10 @@ internal class CrossDialectAggregateTests
         var results = await lt.ExecuteFetchAllAsync();
         var shipped = results.First(r => r.Item1 == "Shipped");
         Assert.That(shipped.Item2, Is.EqualTo(250.00m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgShipped = pgResults.First(r => r.Item1 == "Shipped");
+        Assert.That(pgShipped.Item2, Is.EqualTo(250.00m).Within(0.01m));
     }
 
     [Test]
@@ -197,6 +221,11 @@ internal class CrossDialectAggregateTests
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].Item1, Is.EqualTo("Shipped"));
         Assert.That(results[0].Item2, Is.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].Item1, Is.EqualTo("Shipped"));
+        Assert.That(pgResults[0].Item2, Is.EqualTo(2));
     }
 
     #endregion

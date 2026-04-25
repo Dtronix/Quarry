@@ -4,6 +4,22 @@
 
 ## PgDb
 
+### Accounts().Insert().ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "accounts" ("UserId", "AccountName", "Balance", "credit_limit", "IsActive") VALUES ($1, $2, $3, $4, $5)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `string` |
+| `@p2` | `Quarry.Tests.Samples.Money` |
+| `@p3` | `Quarry.Tests.Samples.Money` |
+| `@p4` | `bool` |
+
+---
+
 ### Accounts().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -90,6 +106,44 @@ SELECT "AccountName", "Balance", "credit_limit" FROM "accounts" WHERE "AccountNa
 
 ---
 
+### Addresses().Insert().ExecuteScalarAsync()
+
+```sql
+INSERT INTO "addresses" ("City", "Street", "ZipCode") VALUES ($1, $2, $3) RETURNING "AddressId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string?` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT "City" FROM "addresses" WHERE "AddressId" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Addresses().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT "Street" FROM "addresses" WHERE "AddressId" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -106,11 +160,31 @@ INSERT INTO "order_items" ("OrderId", "ProductName", "Quantity", "UnitPrice", "L
 
 ---
 
+### OrderItems().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."ProductName", "j1"."UserName" FROM "order_items" AS "t0" INNER JOIN "orders" AS "j0" ON "t0"."OrderId" = "j0"."OrderId" INNER JOIN "users" AS "j1" ON "j0"."UserId" = "j1"."UserId"
+```
+
+---
+
 ### OrderItems().Select(...).ToDiagnostics()
 
 ```sql
 SELECT "t0"."ProductName", "j1"."UserName" FROM "order_items" AS "t0" INNER JOIN "orders" AS "j0" ON "t0"."OrderId" = "j0"."OrderId" INNER JOIN "users" AS "j1" ON "j0"."UserId" = "j1"."UserId"
 ```
+
+---
+
+### OrderItems().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "order_items" SET "LineTotal" = $1 WHERE "OrderItemId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
 
 ---
 
@@ -151,6 +225,30 @@ UPDATE "order_items" SET "LineTotal" = (("LineTotal" - "UnitPrice") + $1) WHERE 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `object` |
+
+---
+
+### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 1
+```
+
+---
+
+### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "LineTotal" FROM "order_items" WHERE "OrderItemId" = 2
+```
+
+---
+
+### OrderItems().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "LineTotal", "Quantity" FROM "order_items" WHERE "OrderItemId" = 3
+```
 
 ---
 
@@ -390,6 +488,22 @@ SELECT "OrderId", NTILE($1) OVER (ORDER BY "OrderDate") AS "Grp" FROM "orders"
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int` |
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "OrderId", "Total", LAG("Total", 1) OVER (ORDER BY "Total") AS "PrevTotal" FROM "orders"
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."OrderId", "j0"."UserName" FROM "orders" AS "t0" INNER JOIN "users" AS "j0" ON "t0"."UserId" = "j0"."UserId" WHERE "j0"."IsActive" = TRUE
+```
 
 ---
 
@@ -896,6 +1010,14 @@ SELECT DISTINCT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLog
 
 ---
 
+### Users().Distinct(...).Select(...).Users()
+
+```sql
+SELECT DISTINCT "UserId", "UserName" FROM "users"
+```
+
+---
+
 ### Users().Distinct(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1198,6 +1320,14 @@ SELECT "t0"."UserName", "t1"."Total", "t1"."Status" FROM "users" AS "t0" INNER J
 
 ---
 
+### Users().Join(...).Where(...).OrderBy(...).Limit(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 100 AND "t0"."IsActive" = TRUE ORDER BY "t1"."Total" DESC LIMIT 10
+```
+
+---
+
 ### Users().Join(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1416,6 +1546,34 @@ SELECT "UserId", "UserName" FROM "users" ORDER BY "UserName" ASC, "CreatedAt" AS
 
 ---
 
+### Users().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", coalesce("CreatedAt", $1) AS "Stamp" FROM "users"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `DateTime` |
+
+---
+
+### Users().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderCount" FROM "users"
+```
+
+---
+
+### Users().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal" FROM "users"
+```
+
+---
+
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1548,10 +1706,26 @@ SELECT UPPER("UserName") FROM "users"
 
 ---
 
+### Users().Select(...).Union(...).Except(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE EXCEPT SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
 ### Users().Select(...).Union(...).OrderBy(...).Limit(...).Prepare().ToDiagnostics()
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" UNION SELECT "ProductId", "ProductName" FROM "products" ORDER BY "UserName" ASC LIMIT 3
+```
+
+---
+
+### Users().Select(...).Union(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" UNION SELECT DISTINCT "UserId", "UserName" FROM "users"
 ```
 
 ---
@@ -1588,11 +1762,98 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Update().Set(...).Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1, "IsActive" = FALSE WHERE "UserId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
 ### Users().Update().Set(...).Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
 UPDATE "users" SET "UserName" = 'x', "IsActive" = FALSE WHERE "UserId" = 1
 ```
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1 WHERE "UserId" = $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `int` |
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1 WHERE "UserId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `object` |
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1, "Email" = $2 WHERE "UserId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1, "IsActive" = $2 WHERE "UserId" = 2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `bool` |
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1, "IsActive" = FALSE WHERE "UserId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Users().Update().Set(...).Where(...).ExecuteNonQueryAsync()
+
+```sql
+UPDATE "users" SET "UserName" = $1, "IsActive" = FALSE WHERE "UserId" = 2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -1771,6 +2032,30 @@ SELECT "UserName", "Email" FROM "users" WHERE "Email" IS NOT NULL AND "UserName"
 
 ```sql
 SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = TRUE AND EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Total" > 500)) ORDER BY "UserName" ASC
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 999
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchSingleOrDefaultAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "IsActive" = TRUE
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchSingleOrDefaultAsync()
+
+```sql
+SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM "users" WHERE "UserId" = 999
 ```
 
 ---
@@ -2071,6 +2356,58 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 ---
 
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = 2
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName", "Email" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 1
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 2
+```
+
+---
+
 ### Users().Where(...).Select(...).Limit(...).Offset(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2083,6 +2420,346 @@ SELECT "UserName", "Email" FROM "users" WHERE "IsActive" = TRUE LIMIT 10 OFFSET 
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE LIMIT 5
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE AND EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT AVG("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 160
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" = 'paid')) >= 1
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Total" > $1)) > 0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Total" > 100)) > 2
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") = 0
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 5
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MAX("sq0"."OrderDate") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `DateTime` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MAX("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT MIN("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") < 100
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") = 0 OR NOT (EXISTS (SELECT 1 FROM "orders" AS "sq1" WHERE "sq1"."UserId" = "users"."UserId"))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") > 200
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Notes" IS NOT NULL AND ("sq0"."Total" > $1)))
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Notes" IS NOT NULL))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Notes" IS NULL))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" = 'paid'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" LIKE '%' || $1 || '%'))
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" LIKE '%hipp%'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" LIKE '%ped'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Status" LIKE 'P%'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Total" > $1))
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ("sq0"."Total" > 100))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND ("sq1"."UnitPrice" > 50))))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (NOT EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND NOT ("sq1"."Quantity" > 0))))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AND EXISTS (SELECT 1 FROM "orders" AS "sq1" WHERE "sq1"."UserId" = "users"."UserId" AND ("sq1"."Total" > 100))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") OR "IsActive" = TRUE
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE NOT (EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId"))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND NOT ("sq0"."Status" = $1))
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE NOT EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND NOT ("sq0"."Status" = 'paid'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int?[]` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId" AND ("j0"."City" = 'Portland'))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "user_addresses" AS "sq0" INNER JOIN "addresses" AS "j0" ON "sq0"."AddressId" = "j0"."AddressId" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT AVG("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "AvgOrder" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT MAX("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "MaxOrder" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT MIN("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "MinOrder" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal", (SELECT MAX("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "BiggestOrder", (SELECT AVG("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "AverageOrder" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId")
 ```
 
 ---
@@ -2565,18 +3242,6 @@ SELECT "UserId", "UserName" FROM "users" WHERE (SELECT COUNT(*) FROM "orders" AS
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
-SELECT "UserId", "UserName", "IsActive" FROM "users" WHERE "UserName" LIKE '%' || $1 || '%'
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Users().Where(...).Select(...).ToDiagnostics()
-
-```sql
 SELECT "UserName" FROM "users" WHERE "UserId" <= $1 AND "UserId" IN ({__COL_P1__})
 ```
 
@@ -2708,12 +3373,28 @@ SELECT * FROM (SELECT "UserId", "UserName" FROM "users" WHERE "UserId" >= $1 UNI
 ### Users().Where(...).Select(...).Users()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "IsActive" = TRUE
+```
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE "UserId" <= $1
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Users()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE "UserId" = 1
+```
 
 ---
 
@@ -2809,6 +3490,45 @@ SELECT "UserName", "Email" FROM "users" WHERE ("Email" IS NOT NULL) AND ("IsActi
 
 ---
 
+### Warehouses().InsertBatch(...).Values(...).ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "warehouses" ("WarehouseName", "Region") VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+
+---
+
+### Warehouses().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "WarehouseName" FROM "warehouses" WHERE "WarehouseName" = $1 OR "WarehouseName" = $2 OR "WarehouseName" = $3
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `string` |
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > $1) SELECT "OrderId", "Total" FROM "Order"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2896,7 +3616,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 384 |
+| Total discovered | 478 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 71 |
-| Rendered | 313 |
+| Consolidated (deduped) | 88 |
+| Rendered | 390 |

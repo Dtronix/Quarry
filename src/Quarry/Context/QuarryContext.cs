@@ -182,7 +182,7 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
     /// Executes a raw SQL query and streams results as an async enumerable.
     /// </summary>
     /// <typeparam name="T">The result type.</typeparam>
-    /// <param name="sql">The SQL query to execute. Use <c>@p0</c>, <c>@p1</c>, etc. for parameter placeholders on every dialect, including PostgreSQL — Npgsql rewrites <c>@name</c> markers to native positional form internally, so the same SQL works across providers. Do not mix conventions by using native <c>$N</c> placeholders: the <c>DbParameter.ParameterName</c> assigned here is always <c>@pN</c>, and Npgsql 10 strict binding requires the placeholder and the name to agree.</param>
+    /// <param name="sql">The SQL query to execute. Use <c>@p0</c>, <c>@p1</c>, etc. for parameter placeholders on every dialect, including PostgreSQL — Npgsql rewrites <c>@name</c> markers to native positional form internally, so the same SQL works across providers. Do not mix conventions by using native <c>$N</c> placeholders here: <c>DbParameter.ParameterName</c> is assigned <c>@pN</c>, which puts Npgsql into named-binding mode; <c>$N</c> placeholders in the CommandText would then find no <c>@name</c> markers to match and Npgsql would send the Bind frame with zero values (<c>08P01</c>). Chain-API queries on PostgreSQL take a different path — they emit <c>$N</c> CommandText with an empty <c>ParameterName</c>, which keeps Npgsql on its native positional-binding path.</param>
     /// <param name="parameters">Optional parameter values.</param>
     /// <returns>An async enumerable of results.</returns>
     /// <remarks>
@@ -264,9 +264,17 @@ public abstract class QuarryContext : IAsyncDisposable, IDisposable
 
         // Add parameters. The @pN naming matches the documented RawSql convention
         // (callers write @p0, @p1, ... in their SQL). Portable across dialects:
-        // SQLite/SqlServer bind by name; Npgsql translates @name to $N positional;
-        // MySqlConnector is positional and ignores the name. Do not switch this to
-        // dialect-aware $N — it would break users who follow the @pN contract on PG.
+        // SQLite/SqlServer bind by name; Npgsql rewrites @name placeholders to
+        // native positional form internally when it sees them in CommandText;
+        // MySqlConnector is positional and ignores the name.
+        //
+        // This is a different code path from the chain API: the chain generator
+        // emits $N CommandText + empty ParameterName on PG so Npgsql stays on
+        // its fastest native-positional path with no rewrite. Here the user owns
+        // the CommandText and we don't know what convention they used, so we
+        // bind @pN names and rely on Npgsql's rewrite. Mixing — @pN in the SQL
+        // with no name on the parameter, or $N in the SQL with @pN name — would
+        // flip Npgsql into the wrong mode and drop the parameters (08P01).
         for (int i = 0; i < parameters.Length; i++)
         {
             var param = command.CreateParameter();

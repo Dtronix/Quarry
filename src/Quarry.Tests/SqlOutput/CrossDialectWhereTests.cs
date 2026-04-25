@@ -35,6 +35,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -60,6 +65,10 @@ internal class CrossDialectWhereTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -90,6 +99,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
+        Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -116,6 +130,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -145,6 +164,10 @@ internal class CrossDialectWhereTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -171,6 +194,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -201,6 +229,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -226,6 +259,10 @@ internal class CrossDialectWhereTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -256,6 +293,11 @@ internal class CrossDialectWhereTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -286,6 +328,15 @@ internal class CrossDialectWhereTests
         Assert.That(results[1].UserId, Is.EqualTo(2));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[1].IsActive, Is.True);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].UserId, Is.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(pgResults[0].IsActive, Is.True);
+        Assert.That(pgResults[1].UserId, Is.EqualTo(2));
+        Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(pgResults[1].IsActive, Is.True);
     }
 
     #endregion

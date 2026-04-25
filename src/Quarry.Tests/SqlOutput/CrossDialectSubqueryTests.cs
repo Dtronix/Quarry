@@ -37,6 +37,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -64,6 +70,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pg2 = Pg.Users().Where(u => !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -96,6 +107,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -122,6 +139,10 @@ internal class CrossDialectSubqueryTests
         // No orders have status 'paid' (they're 'Shipped' and 'Pending')
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -154,6 +175,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.All(o => o.Status == "paid")).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -184,6 +210,10 @@ internal class CrossDialectSubqueryTests
         // Max orders per user is 2 (Alice), nobody has > 5
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Count() > 5).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -211,6 +241,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Count() == 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -237,6 +272,10 @@ internal class CrossDialectSubqueryTests
         // Alice has 1 order > 100 (250), Bob has 1 (150) — neither > 2
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Count(o => o.Total > 100) > 2).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -263,6 +302,10 @@ internal class CrossDialectSubqueryTests
         // No orders have status 'paid'
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Count(o => o.Status == "paid") >= 1).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -293,6 +336,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Count(o => o.Total > minTotal) > 0).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -324,6 +373,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Sum(o => o.Total) > 200).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -351,6 +405,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Sum(o => o.Total) == 0 || !u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -382,6 +441,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Min(o => o.Total) < 100).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -413,6 +477,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Max(o => o.Total) > 200).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -441,6 +510,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Max(o => o.OrderDate) > cutoff).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -472,6 +546,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Average(o => o.Total) > 160).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -504,6 +583,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any(i => i.UnitPrice > 50))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -532,6 +616,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Items.All(i => i.Quantity > 0))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -564,6 +654,10 @@ internal class CrossDialectSubqueryTests
         // Alice (250 > 100), Bob (150 > 100)
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Total > minAmount)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -593,6 +687,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.All(o => o.Status == status)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -625,6 +724,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.IsActive && u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -650,6 +755,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -681,6 +792,10 @@ internal class CrossDialectSubqueryTests
         // Alice: orders=yes → true. Bob: orders=yes → true. Charlie: orders=no, active=no → false.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any() || u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -707,6 +822,10 @@ internal class CrossDialectSubqueryTests
         // Has any order AND has an order > 100: Alice (250), Bob (150)
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any() && u.Orders.Any(o => o.Total > 100)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -735,6 +854,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Items.Any())).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -763,6 +888,10 @@ internal class CrossDialectSubqueryTests
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains("hipp"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -790,6 +919,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Status.StartsWith("P"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -818,6 +952,10 @@ internal class CrossDialectSubqueryTests
         // 'Shipped' ends with 'ped' — Alice (order 1) and Bob (order 3) have Shipped orders
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Status.EndsWith("ped"))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -849,6 +987,10 @@ internal class CrossDialectSubqueryTests
         // 'Shipped' contains 'hipp' — Alice (order 1) and Bob (order 3) have Shipped orders
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Status.Contains(search))).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     private static string GetSubquerySearchValue() => "hipp";
@@ -884,6 +1026,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Notes == null)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -912,6 +1060,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Notes != null)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -943,6 +1096,11 @@ internal class CrossDialectSubqueryTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any(o => o.Notes != null && o.Total > minTotal)).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -976,6 +1134,13 @@ internal class CrossDialectSubqueryTests
         Assert.That(results[0], Is.EqualTo(("Alice", 2)));
         Assert.That(results[1], Is.EqualTo(("Bob", 1)));
         Assert.That(results[2], Is.EqualTo(("Charlie", 0)));
+
+        var pg2 = Pg.Users().Select(u => (u.UserName, OrderCount: u.Orders.Count())).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 1)));
+        Assert.That(pgResults[2], Is.EqualTo(("Charlie", 0)));
     }
 
     [Test]
@@ -1005,6 +1170,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 325.50m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total))).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 325.50m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -1033,6 +1204,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MinOrder: u.Orders.Min(o => o.Total))).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -1061,6 +1238,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, MaxOrder: u.Orders.Max(o => o.Total))).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -1089,6 +1272,12 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 162.75m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any()).Select(u => (u.UserName, AvgOrder: u.Orders.Average(o => o.Total))).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 162.75m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     /// <summary>
@@ -1145,6 +1334,17 @@ internal class CrossDialectSubqueryTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 325.50m, 250.00m, 162.75m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, 150.00m, 150.00m)));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any())
+            .Select(u => (u.UserName,
+                OrderTotal: u.Orders.Sum(o => o.Total),
+                BiggestOrder: u.Orders.Max(o => o.Total),
+                AverageOrder: u.Orders.Average(o => o.Total)))
+            .Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 325.50m, 250.00m, 162.75m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m, 150.00m, 150.00m)));
     }
 
     [Test]
@@ -1178,6 +1378,15 @@ internal class CrossDialectSubqueryTests
         Assert.That(results[0].OrderTotal, Is.EqualTo(325.50m));
         Assert.That(results[1].Name, Is.EqualTo("Bob"));
         Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
+
+        var pg2 = Pg.Users().Where(u => u.Orders.Any())
+            .Select(u => new UserOrderTotalDto { Name = u.UserName, OrderTotal = u.Orders.Sum(o => o.Total) }).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].Name, Is.EqualTo("Alice"));
+        Assert.That(pgResults[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(pgResults[1].Name, Is.EqualTo("Bob"));
+        Assert.That(pgResults[1].OrderTotal, Is.EqualTo(150.00m));
     }
 
     /// <summary>DTO carrier for <see cref="Select_Many_Sum_InDtoInitializer"/>.</summary>
@@ -1199,7 +1408,7 @@ internal class CrossDialectSubqueryTests
     public async Task Select_Many_Sum_OnEmptyNavigation_ThrowsAtRead()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var lt = Lite.Users()
             .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
@@ -1222,6 +1431,17 @@ internal class CrossDialectSubqueryTests
             .Or.InstanceOf<InvalidOperationException>()
             .Or.InstanceOf<InvalidCastException>(),
             $"Expected a read-time exception wrapping the NULL-into-non-nullable failure. Got: {caught!.GetType().FullName}");
+
+        var pg2 = Pg.Users()
+            .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
+            .Prepare();
+        Exception? pgCaught = null;
+        try { await pg2.ExecuteFetchAllAsync(); }
+        catch (Exception ex) { pgCaught = ex; }
+        Assert.That(pgCaught, Is.Not.Null);
+        Assert.That(pgCaught, Is.InstanceOf<QuarryQueryException>()
+            .Or.InstanceOf<InvalidOperationException>()
+            .Or.InstanceOf<InvalidCastException>());
     }
 
     #endregion

@@ -72,13 +72,21 @@ internal static partial class SqlFormatting
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string GetParameterName(SqlDialect dialect, int index)
     {
-        // Must match the placeholder emitted by FormatParameter so providers
-        // that bind by name (Npgsql 10+, SQLite, SqlServer) find the parameter.
-        // MySQL uses positional `?` placeholders, so its name is arbitrary but
-        // must be unique across parameters on the command.
+        // SQLite and SqlServer bind by name — the name must match the `@pN`
+        // placeholder emitted by FormatParameter.
+        // PostgreSQL uses native positional `$N` placeholders; Npgsql chooses
+        // between named and positional binding modes based on whether any
+        // parameter has a ParameterName set — NOT based on what CommandText
+        // contains. Setting any non-empty name puts Npgsql into named-lookup
+        // mode, which fails to match the `$N` placeholders and ships the
+        // Bind frame with zero values (`08P01` on PG). Empty name keeps
+        // Npgsql on the native positional path, which is also the fastest.
+        // MySQL uses positional `?` placeholders and ignores ParameterName,
+        // but ADO.NET requires unique names within a DbCommand so we give
+        // each parameter a distinct `@pN` anyway.
         return dialect switch
         {
-            SqlDialect.PostgreSQL => $"${index + 1}",
+            SqlDialect.PostgreSQL => string.Empty,
             _ => $"@p{index}"
         };
     }

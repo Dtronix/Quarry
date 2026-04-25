@@ -32,6 +32,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -56,6 +59,9 @@ internal class CrossDialectUpdateTests
         // Seed has 2 active users (Alice, Bob)
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -83,6 +89,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -110,6 +119,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -139,6 +151,9 @@ internal class CrossDialectUpdateTests
         // UserId 5 doesn't exist in seed data — 0 rows affected
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(0));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(0));
     }
 
     #endregion
@@ -166,6 +181,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -190,6 +208,9 @@ internal class CrossDialectUpdateTests
         // 2 active users in seed
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -217,6 +238,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -244,6 +268,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -272,6 +299,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -296,6 +326,9 @@ internal class CrossDialectUpdateTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -333,13 +366,26 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("fromDto"));
+
+        var pgSource = new Pg.User { UserName = "fromDto" };
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = pgSource.UserName)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("fromDto"));
     }
 
     [Test]
     public async Task Update_SetAction_CapturedWithLiteral_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var name = "updated";
         var affected = await Lite.Users().Update()
@@ -355,13 +401,26 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(user.UserName, Is.EqualTo("updated"));
         Assert.That(user.IsActive, Is.False);
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => { u.UserName = name; u.IsActive = false; })
+            .Where(u => u.UserId == 2)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 2)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser.UserName, Is.EqualTo("updated"));
+        Assert.That(pgUser.IsActive, Is.False);
     }
 
     [Test]
     public async Task Update_SetAction_MultipleCapturedVars_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var name = "multiCap";
         var active = false;
@@ -377,6 +436,19 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(user.UserName, Is.EqualTo("multiCap"));
         Assert.That(user.IsActive, Is.False);
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => { u.UserName = name; u.IsActive = active; })
+            .Where(u => u.UserId == 2)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 2)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser.UserName, Is.EqualTo("multiCap"));
+        Assert.That(pgUser.IsActive, Is.False);
     }
 
     #endregion
@@ -414,13 +486,25 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("HelloWorld"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = a + b)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("HelloWorld"));
     }
 
     [Test]
     public async Task Update_SetAction_MethodCallOnCapture_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var name = "hello";
         var affected = await Lite.Users().Update()
@@ -434,6 +518,18 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("HELLO"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = name.ToUpper())
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("HELLO"));
     }
 
     [Test]
@@ -465,13 +561,25 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("Alias"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = useAlias ? "Alias" : "Real")
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("Alias"));
     }
 
     [Test]
     public async Task Update_SetAction_BlockLambda_ComputedAndSimpleCapture()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var first = "Jane";
         var last = "Doe";
@@ -488,13 +596,26 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(user.UserName, Is.EqualTo("JaneDoe"));
         Assert.That(user.Email, Is.EqualTo("jane@test.com"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => { u.UserName = first + last; u.Email = email; })
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => (u.UserName, u.Email))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser.UserName, Is.EqualTo("JaneDoe"));
+        Assert.That(pgUser.Email, Is.EqualTo("jane@test.com"));
     }
 
     [Test]
     public async Task Update_SetAction_BlockLambda_InlinedConstantAndComputed()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var first = "Updated";
         var last = "User";
@@ -510,6 +631,19 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(user.UserName, Is.EqualTo("UpdatedUser"));
         Assert.That(user.IsActive, Is.False);
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => { u.UserName = first + last; u.IsActive = false; })
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser.UserName, Is.EqualTo("UpdatedUser"));
+        Assert.That(pgUser.IsActive, Is.False);
     }
 
     [Test]
@@ -544,13 +678,25 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("Admin_User"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = prefix + suffix)
+            .Where(u => u.UserId == targetId)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 2)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("Admin_User"));
     }
 
     [Test]
     public async Task Update_SetAction_ChainedSet_FirstComputed()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var first = "Chain";
         var last = "Test";
@@ -567,13 +713,27 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(user.UserName, Is.EqualTo("ChainTest"));
         Assert.That(user.IsActive, Is.False);
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = first + last)
+            .Set(u => u.IsActive = false)
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => (u.UserName, u.IsActive))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser.UserName, Is.EqualTo("ChainTest"));
+        Assert.That(pgUser.IsActive, Is.False);
     }
 
     [Test]
     public async Task Update_SetAction_DecimalArithmetic_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var qty = 5;
         var price = 99.50m;
@@ -588,13 +748,25 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(lineTotal, Is.EqualTo(497.50m));
+
+        var pgAffected = await Pg.OrderItems().Update()
+            .Set(o => o.LineTotal = qty * price)
+            .Where(o => o.OrderItemId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgLineTotal = await Pg.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgLineTotal, Is.EqualTo(497.50m));
     }
 
     [Test]
     public async Task Update_SetAction_MethodChainOnCapture_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var name = "  trimmed  ";
         var affected = await Lite.Users().Update()
@@ -608,13 +780,25 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("trimmed"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = name.Trim())
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("trimmed"));
     }
 
     [Test]
     public async Task Update_SetAction_NullCoalescing_ExecuteCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         string? maybeNull = null;
         var affected = await Lite.Users().Update()
@@ -628,6 +812,18 @@ internal class CrossDialectUpdateTests
             .Select(u => u.UserName)
             .ExecuteFetchFirstAsync();
         Assert.That(user, Is.EqualTo("fallback"));
+
+        var pgAffected = await Pg.Users().Update()
+            .Set(u => u.UserName = maybeNull ?? "fallback")
+            .Where(u => u.UserId == 1)
+            .ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgUser = await Pg.Users()
+            .Where(u => u.UserId == 1)
+            .Select(u => u.UserName)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgUser, Is.EqualTo("fallback"));
     }
 
     #endregion
@@ -663,6 +859,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(lineTotal, Is.EqualTo(250.00m));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgLineTotal = await Pg.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgLineTotal, Is.EqualTo(250.00m));
     }
 
     [Test]
@@ -696,6 +901,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(lineTotal, Is.EqualTo(85.50m));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgLineTotal = await Pg.OrderItems()
+            .Where(o => o.OrderItemId == 2)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgLineTotal, Is.EqualTo(85.50m));
     }
 
     [Test]
@@ -730,6 +944,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(lineTotal, Is.EqualTo(1125.00m));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgLineTotal = await Pg.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgLineTotal, Is.EqualTo(1125.00m));
     }
 
     [Test]
@@ -762,6 +985,16 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(result.LineTotal, Is.EqualTo(150.00m));
         Assert.That(result.Quantity, Is.EqualTo(0));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
+
+        var pgResult = await Pg.OrderItems()
+            .Where(o => o.OrderItemId == 3)
+            .Select(o => (o.LineTotal, o.Quantity))
+            .ExecuteFetchFirstAsync();
+        Assert.That(pgResult.LineTotal, Is.EqualTo(150.00m));
+        Assert.That(pgResult.Quantity, Is.EqualTo(0));
     }
 
     #endregion

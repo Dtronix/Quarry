@@ -42,6 +42,7 @@
     <PackageReference Include="Microsoft.NET.StringTools" Version="17.*" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
     <PackageReference Include="Npgsql" Version="10.*" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
     <PackageReference Include="MySqlConnector" Version="2.*" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.*" />
   </ItemGroup>

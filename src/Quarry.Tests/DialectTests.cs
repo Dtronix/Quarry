@@ -111,8 +111,8 @@ public class DialectTests
 
     [TestCase(SqlDialect.SQLite, 0, "@p0")]
     [TestCase(SqlDialect.SQLite, 5, "@p5")]
-    [TestCase(SqlDialect.PostgreSQL, 0, "$1")]
-    [TestCase(SqlDialect.PostgreSQL, 5, "$6")]
+    [TestCase(SqlDialect.PostgreSQL, 0, "")]
+    [TestCase(SqlDialect.PostgreSQL, 5, "")]
     [TestCase(SqlDialect.MySQL, 0, "@p0")]
     [TestCase(SqlDialect.MySQL, 5, "@p5")]
     [TestCase(SqlDialect.SqlServer, 0, "@p0")]
@@ -125,7 +125,6 @@ public class DialectTests
     }
 
     [TestCase(SqlDialect.SQLite)]
-    [TestCase(SqlDialect.PostgreSQL)]
     [TestCase(SqlDialect.SqlServer)]
     public void GetParameterName_MatchesFormatParameter_ForNamedDialects(SqlDialect dialectType)
     {
@@ -136,6 +135,24 @@ public class DialectTests
                 SqlFormatting.GetParameterName(dialect, i),
                 Is.EqualTo(SqlFormatting.FormatParameter(dialect, i)),
                 $"ParameterName must equal the SQL placeholder for named-binding dialects (index {i})");
+        }
+    }
+
+    [Test]
+    public void GetParameterName_IsAlwaysEmpty_ForPostgreSQL()
+    {
+        // Regression guard for GH-258 redux: PostgreSQL must return an empty
+        // ParameterName so Npgsql stays on the native positional-binding path.
+        // Any non-empty name flips Npgsql into named-lookup mode against the
+        // $N CommandText, which fails with 08P01 `bind message supplies 0
+        // parameters`.
+        var dialect = SqlDialectFactory.GetDialect(SqlDialect.PostgreSQL);
+        for (int i = 0; i < 10; i++)
+        {
+            Assert.That(
+                SqlFormatting.GetParameterName(dialect, i),
+                Is.EqualTo(string.Empty),
+                $"PostgreSQL ParameterName must be empty (index {i})");
         }
     }
 

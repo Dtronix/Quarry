@@ -36,6 +36,13 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(byRowNum[0].OrderId, Is.EqualTo(1));
         Assert.That(byRowNum[1].OrderId, Is.EqualTo(2));
         Assert.That(byRowNum[2].OrderId, Is.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        var pgByRowNum = pgResults.OrderBy(r => r.RowNum).ToList();
+        Assert.That(pgByRowNum[0].OrderId, Is.EqualTo(1));
+        Assert.That(pgByRowNum[1].OrderId, Is.EqualTo(2));
+        Assert.That(pgByRowNum[2].OrderId, Is.EqualTo(3));
     }
 
     [Test]
@@ -81,6 +88,10 @@ internal class CrossDialectWindowFunctionTests
         var results = await lt.ExecuteFetchAllAsync();
         var order1 = results.First(r => r.OrderId == 1); // Total=250
         Assert.That(order1.DRnk, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgOrder1 = pgResults.First(r => r.OrderId == 1);
+        Assert.That(pgOrder1.DRnk, Is.EqualTo(1));
     }
 
     [Test]
@@ -236,6 +247,12 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(order1.RunSum, Is.EqualTo(400.00m).Within(0.01m));
         var order3 = results.First(r => r.OrderId == 3); // Shipped
         Assert.That(order3.RunSum, Is.EqualTo(400.00m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgOrder1 = pgResults.First(r => r.OrderId == 1);
+        Assert.That(pgOrder1.RunSum, Is.EqualTo(400.00m).Within(0.01m));
+        var pgOrder3 = pgResults.First(r => r.OrderId == 3);
+        Assert.That(pgOrder3.RunSum, Is.EqualTo(400.00m).Within(0.01m));
     }
 
     [Test]
@@ -263,6 +280,12 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(order1.Cnt, Is.EqualTo(2));
         var order2 = results.First(r => r.OrderId == 2); // Pending
         Assert.That(order2.Cnt, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgOrder1 = pgResults.First(r => r.OrderId == 1);
+        Assert.That(pgOrder1.Cnt, Is.EqualTo(2));
+        var pgOrder2 = pgResults.First(r => r.OrderId == 2);
+        Assert.That(pgOrder2.Cnt, Is.EqualTo(1));
     }
 
     #endregion
@@ -355,6 +378,9 @@ internal class CrossDialectWindowFunctionTests
         // Alice has 2 orders (250, 75.50), Bob has 1 (150)
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -380,6 +406,10 @@ internal class CrossDialectWindowFunctionTests
         var results = await lt.ExecuteFetchAllAsync();
         var alice1 = results.First(r => r.UserName == "Alice" && r.Total == 250.00m);
         Assert.That(alice1.UserTotal, Is.EqualTo(325.50m).Within(0.01m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgAlice1 = pgResults.First(r => r.UserName == "Alice" && r.Total == 250.00m);
+        Assert.That(pgAlice1.UserTotal, Is.EqualTo(325.50m).Within(0.01m));
     }
 
     [Test]
@@ -513,7 +543,7 @@ internal class CrossDialectWindowFunctionTests
     public async Task WindowFunction_Lag_NullableDto_Execution()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         // LAG with a DTO that has decimal? PrevTotal — the generated reader must emit
         // an IsDBNull guard so the first row (where LAG returns NULL) reads as null.
@@ -540,6 +570,20 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(byTotal[1].PrevTotal, Is.EqualTo(75.50m));
         // Third row: LAG returns previous Total (150.00)
         Assert.That(byTotal[2].PrevTotal, Is.EqualTo(150.00m));
+
+        var pg2 = Pg.Orders().Where(o => true).Select(o => new OrderLagDto
+        {
+            OrderId = o.OrderId,
+            Total = o.Total,
+            PrevTotal = Sql.Lag(o.Total, 1, over => over.OrderBy(o.Total))
+        }).Prepare();
+        var pgResults = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        var pgByTotal = pgResults.OrderBy(r => r.Total).ToList();
+        Assert.That(pgByTotal[0].PrevTotal, Is.Null);
+        Assert.That(pgByTotal[0].Total, Is.EqualTo(75.50m));
+        Assert.That(pgByTotal[1].PrevTotal, Is.EqualTo(75.50m));
+        Assert.That(pgByTotal[2].PrevTotal, Is.EqualTo(150.00m));
     }
 
     #endregion
@@ -747,6 +791,12 @@ internal class CrossDialectWindowFunctionTests
         var byRowNum = results.OrderBy(r => r.RowNum).ToList();
         Assert.That(byRowNum[0].Total, Is.EqualTo(150.00m));
         Assert.That(byRowNum[1].Total, Is.EqualTo(250.00m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        var pgByRowNum = pgResults.OrderBy(r => r.RowNum).ToList();
+        Assert.That(pgByRowNum[0].Total, Is.EqualTo(150.00m));
+        Assert.That(pgByRowNum[1].Total, Is.EqualTo(250.00m));
     }
 
     [Test]
@@ -773,6 +823,10 @@ internal class CrossDialectWindowFunctionTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results.All(r => r.RowNum == 1), Is.True);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults.All(r => r.RowNum == 1), Is.True);
     }
 
     #endregion
@@ -802,6 +856,9 @@ internal class CrossDialectWindowFunctionTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -827,6 +884,10 @@ internal class CrossDialectWindowFunctionTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results.Select(r => r.Grp).All(g => g >= 1 && g <= 3), Is.True);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults.Select(r => r.Grp).All(g => g >= 1 && g <= 3), Is.True);
     }
 
     [Test]

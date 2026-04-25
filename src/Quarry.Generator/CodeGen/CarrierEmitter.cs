@@ -683,11 +683,21 @@ internal static class CarrierEmitter
             if (param.IsCollection)
             {
                 // Collection parameters are expanded into N individual DbParameters.
-                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts
+                // Preamble already declared: __col{i}, __col{i}Len, __col{i}Parts.
+                //
+                // On PostgreSQL __colNParts holds "$N" strings for SQL text
+                // assembly — they must NOT be reused as ParameterName, because
+                // any non-empty name flips Npgsql into named-lookup mode and
+                // causes the 08P01 bind-count failure (GH-258). On all other
+                // dialects __colNParts already holds the correct per-parameter
+                // name ("@pN" / "?") so assigning it is safe.
                 sb.AppendLine($"{indent}for (int __bi = 0; __bi < __col{i}Len; __bi++)");
                 sb.AppendLine($"{indent}{{");
                 sb.AppendLine($"{indent}    var __pc = __cmd.CreateParameter();");
-                sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
+                if (chain.Dialect == SqlDialect.PostgreSQL)
+                    sb.AppendLine($"{indent}    __pc.ParameterName = \"\";");
+                else
+                    sb.AppendLine($"{indent}    __pc.ParameterName = __col{i}Parts[__bi];");
                 sb.AppendLine($"{indent}    __pc.Value = (object?)__col{i}[__bi] ?? DBNull.Value;");
                 sb.AppendLine($"{indent}    __cmd.Parameters.Add(__pc);");
                 sb.AppendLine($"{indent}}}");
@@ -1267,31 +1277,36 @@ internal static class CarrierEmitter
 
     /// <summary>
     /// Formats a compile-time constant parameter name string (no shift).
-    /// Must match the placeholder emitted by SqlFormatting.FormatParameter so the
-    /// DbParameter binds to the right placeholder under strict providers (Npgsql 10+).
+    /// PostgreSQL returns the empty string so Npgsql stays on its native
+    /// positional-binding path against the `$N` placeholders — see
+    /// <see cref="Quarry.Shared.Sql.SqlFormatting.GetParameterName"/> for the
+    /// full rationale (this is the generator-side counterpart).
     /// </summary>
     internal static string FormatParamName(SqlDialect dialect, int index)
     {
         return dialect switch
         {
-            SqlDialect.PostgreSQL => $"${index + 1}",
+            SqlDialect.PostgreSQL => string.Empty,
             SqlDialect.MySQL => "?",
             _ => $"@p{index}"
         };
     }
 
     /// <summary>
-    /// Returns a C# expression that evaluates to the shifted parameter name at runtime.
-    /// Uses ParameterNames.AtP/Dollar for zero-allocation lookup.
+    /// Returns a C# expression that evaluates to the parameter name string at
+    /// runtime. For PostgreSQL this is always the empty-string literal (native
+    /// positional binding, see <see cref="FormatParamName"/>); SQLite/SqlServer
+    /// use <c>ParameterNames.AtP</c> for a zero-allocation lookup; MySQL uses
+    /// the literal `?` placeholder string.
     /// </summary>
     internal static string EmitParamNameExpr(SqlDialect dialect, int originalIndex, string shiftVar)
     {
-        if (dialect == SqlDialect.MySQL)
-            return "\"?\"";
-
-        return dialect == SqlDialect.PostgreSQL
-            ? $"Quarry.Internal.ParameterNames.Dollar({originalIndex} + {shiftVar})"
-            : $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})";
+        return dialect switch
+        {
+            SqlDialect.PostgreSQL => "\"\"",
+            SqlDialect.MySQL => "\"?\"",
+            _ => $"Quarry.Internal.ParameterNames.AtP({originalIndex} + {shiftVar})"
+        };
     }
 
     /// <summary>

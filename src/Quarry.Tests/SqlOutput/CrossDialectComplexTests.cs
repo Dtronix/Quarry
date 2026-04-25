@@ -36,6 +36,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0)); // All seeded users have UserId <= 3
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -64,6 +67,10 @@ internal class CrossDialectComplexTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1)); // Alice: has email + active
         Assert.That(results[0], Is.EqualTo(("Alice", (string?)"alice@test.com")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", (string?)"alice@test.com")));
     }
 
     [Test]
@@ -87,6 +94,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -114,6 +124,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2)); // Alice and Bob are active
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -141,6 +154,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0)); // Offset 20 skips all 2 active users
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -164,6 +180,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2)); // Alice and Bob
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -191,6 +210,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2)); // Order 1 (250) and Order 3 (150)
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -218,6 +240,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3)); // Alice's 2 orders + Bob's 1 order (both active)
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -241,6 +266,9 @@ internal class CrossDialectComplexTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3)); // All 3 orders have Total > 50
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion

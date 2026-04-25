@@ -32,6 +32,9 @@ internal class CrossDialectInsertTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -59,6 +62,9 @@ internal class CrossDialectInsertTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -86,6 +92,9 @@ internal class CrossDialectInsertTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -113,6 +122,9 @@ internal class CrossDialectInsertTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -136,6 +148,9 @@ internal class CrossDialectInsertTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -163,6 +178,9 @@ internal class CrossDialectInsertTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     [Test]
@@ -186,6 +204,9 @@ internal class CrossDialectInsertTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     #endregion

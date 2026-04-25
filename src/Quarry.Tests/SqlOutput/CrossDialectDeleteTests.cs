@@ -32,6 +32,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -55,6 +58,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(0));
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(0));
     }
 
     #endregion
@@ -82,6 +88,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2)); // Alice and Bob are active
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
     }
 
     [Test]
@@ -105,6 +114,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1)); // Only Charlie is inactive
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -132,6 +144,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(1)); // Alice: UserId=1, IsActive=true
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -162,6 +177,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(2)); // Alice (1) and Bob (2)
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -189,6 +207,9 @@ internal class CrossDialectDeleteTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(0)); // No order with ID 42
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(0));
     }
 
     #endregion

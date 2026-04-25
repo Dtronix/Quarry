@@ -207,6 +207,16 @@ internal class CrossDialectNavigationJoinTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Alice")));
         Assert.That(results[2], Is.EqualTo((3, "Bob")));
+
+        var pgResults = await Pg.Orders().Where(o => o.User!.IsActive)
+            .Select(o => (o.OrderId, o.User!.UserName)).Prepare()
+            .ExecuteFetchAllAsync()
+            .SortedByAsync(r => r.OrderId);
+
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Alice")));
+        Assert.That(pgResults[2], Is.EqualTo((3, "Bob")));
     }
 
     #endregion
@@ -287,6 +297,11 @@ internal class CrossDialectNavigationJoinTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 2)));
         Assert.That(results[1], Is.EqualTo(("Bob", 1)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 1)));
     }
 
     #endregion
@@ -317,6 +332,10 @@ internal class CrossDialectNavigationJoinTests
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo(("Alice", 2)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
     }
 
     #endregion
@@ -327,7 +346,7 @@ internal class CrossDialectNavigationJoinTests
     public async Task NavigationJoin_DeepChain_ExecutesCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         // OrderItem → Order → User (two hops) in Select, executed against SQLite
         var results = await Lite.OrderItems()
@@ -337,6 +356,20 @@ internal class CrossDialectNavigationJoinTests
         Assert.That(results[0], Is.EqualTo(("Widget", "Alice")));
         Assert.That(results[1], Is.EqualTo(("Gadget", "Alice")));
         Assert.That(results[2], Is.EqualTo(("Widget", "Bob")));
+
+        // Sort by (ProductName, UserName) since this projection has no ID column;
+        // SQLite happens to return insertion order ((Widget,Alice),(Gadget,Alice),
+        // (Widget,Bob)) but PG makes no such guarantee. Pg-expected values are in
+        // alphabetic-tuple order; lite-expected values stay in insertion order.
+        var pgResults = await Pg.OrderItems()
+            .Select(i => (i.ProductName, i.Order!.User!.UserName)).Prepare()
+            .ExecuteFetchAllAsync()
+            .SortedByAsync(r => (r.ProductName, r.UserName));
+
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Gadget", "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo(("Widget", "Alice")));
+        Assert.That(pgResults[2], Is.EqualTo(("Widget", "Bob")));
     }
 
     #endregion

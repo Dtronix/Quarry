@@ -3211,11 +3211,14 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_EntityInsert_EmitsDollarParameterNames_ForPostgreSQL()
+    public void CarrierGeneration_EntityInsert_EmitsEmptyParameterNames_ForPostgreSQL()
     {
-        // Regression guard for GH-258: on PostgreSQL, entity insert must assign
-        // ParameterName = "$N" so Npgsql 10 strict binding can match the $N SQL
-        // placeholder emitted by SqlFormatting.FormatParameter.
+        // Regression guard for GH-258 (redux): on PostgreSQL, entity insert
+        // must assign ParameterName = "" so Npgsql 10 stays on its native
+        // positional-binding path against the $N SQL placeholders. Any non-
+        // empty name (whether @pN or $N) flips Npgsql into name-lookup mode
+        // and ships the Bind frame with zero values — reproducing the v0.3.0
+        // and v0.3.1/v0.3.2 failure modes respectively.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
@@ -3240,12 +3243,14 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("__p0.ParameterName = \"$1\""),
-            "Entity insert on PostgreSQL must assign ParameterName = \"$1\" to match the $1 SQL placeholder");
-        Assert.That(code, Does.Contain("__p1.ParameterName = \"$2\""),
-            "Entity insert on PostgreSQL must assign ParameterName = \"$2\" to match the $2 SQL placeholder");
+        Assert.That(code, Does.Contain("__p0.ParameterName = \"\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Contain("__p1.ParameterName = \"\""),
+            "Entity insert on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Not.Match("__p\\d+\\.ParameterName\\s*=\\s*\"\\$\\d+\""),
+            "Entity insert on PostgreSQL must not emit $N ParameterName — it would fail to bind on Npgsql 10 (v0.3.1/0.3.2 bug)");
         Assert.That(code, Does.Not.Match("__p\\d+\\.ParameterName\\s*=\\s*\"@p\\d+\""),
-            "Entity insert on PostgreSQL must not emit @pN ParameterName — it would not bind on Npgsql 10");
+            "Entity insert on PostgreSQL must not emit @pN ParameterName — it would fail to bind on Npgsql 10 (v0.3.0 bug)");
     }
 
     [Test]
@@ -3285,11 +3290,91 @@ public static class Queries
     }
 
     [Test]
-    public void CarrierGeneration_BatchInsert_UsesDollarParameterNames_ForPostgreSQL()
+    public void CarrierGeneration_WhereInCollection_EmitsEmptyParameterName_ForPostgreSQL()
     {
-        // Regression guard for GH-258: batch insert on PostgreSQL must use
-        // ParameterNames.Dollar so each runtime-bound parameter matches the
-        // $N placeholder emitted by BatchInsertSqlBuilder for PostgreSQL.
+        // Regression guard for GH-258 (redux, review #4): the collection
+        // expansion loop at CarrierEmitter.cs:690 must assign
+        // `__pc.ParameterName = ""` on PostgreSQL. Pre-fix it assigned
+        // `__col{i}Parts[__bi]` — a runtime `$N` string — which is the
+        // v0.3.1/0.3.2 "C" configuration (non-empty name + $N SQL) that
+        // Npgsql rejects with 08P01. The dynamic nature of this code path
+        // means the PG integration test alone cannot guard the generator's
+        // source output; this string-match check catches the exact
+        // emission regression.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int[] ids)
+    {
+        var results = await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__pc.ParameterName = \"\""),
+            "Collection-parameter expansion on PostgreSQL must assign ParameterName = \"\" (empty)");
+        Assert.That(code, Does.Not.Contain("__pc.ParameterName = __col"),
+            "Collection-parameter expansion on PostgreSQL must NOT reuse __colNParts (a $N string array) as ParameterName — that is the v0.3.1/0.3.2 bug");
+    }
+
+    [Test]
+    public void CarrierGeneration_WhereInCollection_UsesPartsArray_ForSQLite()
+    {
+        // Companion guard: SQLite/SqlServer still bind collection parameters
+        // by name, so `__pc.ParameterName = __col{i}Parts[__bi]` is the
+        // correct behaviour for named-binding dialects — the fix for GH-258
+        // must not over-reach and regress non-PG paths.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db, int[] ids)
+    {
+        var results = await db.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("__pc.ParameterName = __col"),
+            "Collection-parameter expansion on SQLite must still use __colNParts for ParameterName (named-binding dialect)");
+    }
+
+    [Test]
+    public void CarrierGeneration_BatchInsert_UsesEmptyParameterNames_ForPostgreSQL()
+    {
+        // Regression guard for GH-258 (redux): batch insert on PostgreSQL
+        // must assign ParameterName = "" so Npgsql stays on native positional
+        // binding against the $N placeholders that BatchInsertSqlBuilder
+        // emits. PR #261 used ParameterNames.Dollar here, which is the
+        // broken v0.3.1/v0.3.2 state — Npgsql rejects that configuration
+        // with 08P01 bind-count mismatch.
         var source = SharedSchema + @"
 [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
 public partial class TestDbContext : QuarryContext
@@ -3315,10 +3400,12 @@ public static class Queries
         Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
 
         var code = interceptorsTree!.GetText().ToString();
-        Assert.That(code, Does.Contain("ParameterNames.Dollar(__paramIdx)"),
-            "Batch insert on PostgreSQL must use ParameterNames.Dollar for runtime parameter naming");
+        Assert.That(code, Does.Contain("__p.ParameterName = \"\""),
+            "Batch insert on PostgreSQL must assign ParameterName = \"\" (empty) for native positional binding");
+        Assert.That(code, Does.Not.Contain("ParameterNames.Dollar(__paramIdx)"),
+            "Batch insert on PostgreSQL must not use ParameterNames.Dollar for ParameterName — that was the broken v0.3.1/0.3.2 state");
         Assert.That(code, Does.Not.Contain("ParameterNames.AtP(__paramIdx)"),
-            "Batch insert on PostgreSQL must not fall back to ParameterNames.AtP");
+            "Batch insert on PostgreSQL must not fall back to ParameterNames.AtP either — only the empty-string literal");
     }
 
     [Test]
