@@ -148,7 +148,7 @@ internal static class MsSqlTestContainer
     /// </summary>
     private static bool IsDockerUnavailable(Exception ex)
     {
-        for (var cur = ex; cur is not null; cur = cur.InnerException!)
+        for (var cur = (Exception?)ex; cur is not null; cur = cur.InnerException)
         {
             var typeName = cur.GetType().FullName ?? "";
             var message = cur.Message ?? "";
@@ -159,7 +159,6 @@ internal static class MsSqlTestContainer
                 message.Contains("daemon", StringComparison.OrdinalIgnoreCase) ||
                 message.Contains("named pipe", StringComparison.OrdinalIgnoreCase))
                 return true;
-            if (cur.InnerException is null) break;
         }
         return false;
     }
@@ -196,22 +195,33 @@ internal static class MsSqlTestContainer
             await AcquireApplockAsync(conn, BaselineApplockResource);
             try
             {
-                // Probe: is the schema already populated by a concurrent
-                // process?
-                var alreadyReady = await SchemaHasUsersTableAsync(conn, BaselineSchemaName);
+                // Probe the LAST seeded table (`shipments`) rather than the
+                // first (`users`). If the previous process crashed
+                // mid-provisioning the schema and some early tables would
+                // exist, but `shipments` would not — re-running the seed
+                // would fail with "table already exists". The narrower
+                // "shipments + rows present" check forces partial-state
+                // detection, then we drop everything and re-run.
+                var alreadyReady = await SchemaHasSeededTableAsync(conn, BaselineSchemaName, "shipments");
                 if (!alreadyReady)
                 {
                     await ProvisionLoginAndUserAsync(conn, TestUserName, TestUserPassword, BaselineSchemaName);
-                    await ExecAsync(conn, $"CREATE SCHEMA [{BaselineSchemaName}] AUTHORIZATION [{TestUserName}]");
+                    // CREATE SCHEMA must be the only statement in its batch,
+                    // and SQL Server has no `CREATE SCHEMA IF NOT EXISTS`.
+                    // Wrap in dynamic SQL via EXEC() and gate with sys.schemas
+                    // probe so a partial-baseline retry doesn't fail with
+                    // "schema already exists".
+                    await ExecAsync(conn, $@"
+                        IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = '{BaselineSchemaName}')
+                            EXEC('CREATE SCHEMA [{BaselineSchemaName}] AUTHORIZATION [{TestUserName}]')");
+                    // If a partial-baseline existed, drop any objects in the
+                    // schema before recreating — narrower than dropping the
+                    // schema (which would also drop the user mapping).
+                    await DropAllObjectsInSchemaAsync(conn, BaselineSchemaName);
                     await CreateSchemaObjectsAsync(conn, BaselineSchemaName);
                     await SeedDataAsync(conn, BaselineSchemaName);
                 }
-                else
-                {
-                    // Another process did the work but our static state still
-                    // says not-ready. The login + user already exist; nothing
-                    // to do but mark ready.
-                }
+                // else: another process did the work; nothing to do here.
             }
             finally
             {
@@ -272,11 +282,21 @@ internal static class MsSqlTestContainer
         try { await DropAllObjectsInSchemaAsync(saConnection, info.Schema); } catch { }
         try { await ExecAsync(saConnection, $"DROP SCHEMA IF EXISTS [{info.Schema}]"); } catch { }
         try { await ExecAsync(saConnection, $"DROP USER IF EXISTS [{info.User}]"); } catch { }
-        // DROP LOGIN can fail if there's still an open connection authenticated
-        // as this login. Force-close any pooled connections for that user
-        // first; SqlConnection.ClearAllPools is the blunt-but-effective
-        // hammer.
-        try { SqlConnection.ClearAllPools(); } catch { }
+        // DROP LOGIN fails if any connection authenticated as this login is
+        // still in the SqlClient pool. ClearPool(connection) is keyed by the
+        // connection's connection string, so we need a SqlConnection
+        // instantiated from the per-harness user's connection string —
+        // SqlConnection's constructor doesn't open the connection, so this
+        // is cheap and does not authenticate. Avoids
+        // SqlConnection.ClearAllPools() which would evict every other live
+        // harness's pool entries (the shared quarry_test_user pool, etc.).
+        try
+        {
+            var cs = await GetOwnedSchemaConnectionStringAsync(info);
+            await using var probe = new SqlConnection(cs);
+            SqlConnection.ClearPool(probe);
+        }
+        catch { /* best-effort */ }
         try { await ExecAsync(saConnection, $"DROP LOGIN [{info.User}]"); } catch { }
     }
 
@@ -393,19 +413,28 @@ internal static class MsSqlTestContainer
         catch { /* best-effort; closing the connection releases session locks */ }
     }
 
-    private static async Task<bool> SchemaHasUsersTableAsync(SqlConnection conn, string schema)
+    /// <summary>
+    /// Returns true iff <paramref name="schema"/> contains a table called
+    /// <paramref name="table"/> AND that table has at least one row. Probing
+    /// the last-seeded table (rather than the first) tightens the readiness
+    /// signal: a half-finished baseline (schema + early tables exist, later
+    /// tables don't) returns false here and triggers a clean re-provision.
+    /// </summary>
+    private static async Task<bool> SchemaHasSeededTableAsync(SqlConnection conn, string schema, string table)
     {
         await using var cmd = conn.CreateCommand();
-        cmd.CommandText = @"
-            SELECT 1 FROM sys.tables t
-            JOIN sys.schemas s ON s.schema_id = t.schema_id
-            WHERE s.name = @s AND t.name = 'users'";
-        var p = cmd.CreateParameter();
-        p.ParameterName = "@s";
-        p.Value = schema;
-        cmd.Parameters.Add(p);
+        cmd.CommandText = $@"
+            IF EXISTS (
+                SELECT 1 FROM sys.tables t
+                JOIN sys.schemas s ON s.schema_id = t.schema_id
+                WHERE s.name = @s AND t.name = @t)
+                SELECT CASE WHEN EXISTS(SELECT 1 FROM [{schema}].[{table}]) THEN 1 ELSE 0 END
+            ELSE
+                SELECT 0";
+        var ps = cmd.CreateParameter(); ps.ParameterName = "@s"; ps.Value = schema; cmd.Parameters.Add(ps);
+        var pt = cmd.CreateParameter(); pt.ParameterName = "@t"; pt.Value = table; cmd.Parameters.Add(pt);
         var result = await cmd.ExecuteScalarAsync();
-        return result is not null && result is not DBNull;
+        return result is int i && i == 1;
     }
 
     private static async Task ExecAsync(SqlConnection conn, string sql)
