@@ -497,10 +497,10 @@ internal class CrossDialectCompositionTests
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"__d\".\"__c0\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"__c0\", \"t1\".\"Total\" AS \"__o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"__d\" ORDER BY \"__d\".\"__o0\" ASC LIMIT 20",
-            pg:     "SELECT \"__d\".\"__c0\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"__c0\", \"t1\".\"Total\" AS \"__o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"__d\" ORDER BY \"__d\".\"__o0\" ASC LIMIT 20",
-            mysql:  "SELECT `__d`.`__c0` FROM (SELECT DISTINCT `t0`.`UserName` AS `__c0`, `t1`.`Total` AS `__o0` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0) AS `__d` ORDER BY `__d`.`__o0` ASC LIMIT 20",
-            ss:     "SELECT [__d].[__c0] FROM (SELECT DISTINCT [t0].[UserName] AS [__c0], [t1].[Total] AS [__o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [__d] ORDER BY [__d].[__o0] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
+            sqlite: "SELECT \"d\".\"UserName\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"UserName\", \"t1\".\"Total\" AS \"_o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"d\" ORDER BY \"d\".\"_o0\" ASC LIMIT 20",
+            pg:     "SELECT \"d\".\"UserName\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"UserName\", \"t1\".\"Total\" AS \"_o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"d\" ORDER BY \"d\".\"_o0\" ASC LIMIT 20",
+            mysql:  "SELECT `d`.`UserName` FROM (SELECT DISTINCT `t0`.`UserName` AS `UserName`, `t1`.`Total` AS `_o0` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0) AS `d` ORDER BY `d`.`_o0` ASC LIMIT 20",
+            ss:     "SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
 
         // Seed has 3 orders across 2 users (Alice: 250.00, 75.50; Bob: 150.00).
         // The wrap places DISTINCT over (UserName, Total), so the inner relation has
