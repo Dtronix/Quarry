@@ -6,8 +6,8 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: REMEDIATE
-status: active
+phase: IMPLEMENT
+status: suspended
 issue: #258 (closed by #261 in v0.3.1; customer report shows v0.3.2 still broken)
 pr: 266
 session: 1
@@ -58,9 +58,26 @@ Any existing test that fails when switched to real PG must be triaged as part of
 
 ## Suspend State
 
+**Current phase:** IMPLEMENT (Phase 9 — Pg execution parity on CrossDialect tests). PR #266 is already open and CI-green on Phases 1–8 + REMEDIATE; Phase 9 is an expansion, not a blocker for that PR.
+
+**In progress:** Mirroring `await lt.ExecuteXxxAsync()` blocks with `await pg.ExecuteXxxAsync()` (identical assertions) across ~25 `src/Quarry.Tests/SqlOutput/CrossDialect*Tests.cs` files. File 1 of ~25 (`CrossDialectOrderByTests.cs`) is edited — 4 tests mirrored.
+
+**Immediate next step:** Fix the NUMERIC DDL bug in `PostgresTestContainer.CreateSchemaObjectsAsync` — decimal-backed columns (orders.Total, order_items.UnitPrice/LineTotal, accounts.Balance/credit_limit, products.Price/DiscountedPrice) must be `NUMERIC(18, 2)` not `DOUBLE PRECISION`. Npgsql refuses `GetDecimal` on `double precision`. See `handoff.md` for the exact column list.
+
+**WIP commit hash:** `6e82f31` — amend on first real commit next session.
+
+**Test status:** PR #266 CI green. Locally, `CrossDialectOrderByTests.OrderBy_Joined_RightTableColumn` fails on Pg with `System.InvalidCastException: Reading as 'System.Decimal' is not supported for fields having DataTypeName 'double precision'`. Three sibling OrderBy tests pass on Pg.
+
+**Unrecorded context:**
+- User directive for Phase 9: "Mirror Lite exactly — same assertions on both (Recommended)" + "None — attempt all, triage failures" for exclusions + "Pick the smallest file first".
+- Handoff triggered after discovering DDL bug and before fix landed.
+- Risk list for Phase 9 (see handoff.md §Known Issues): DateTime TEXT→DateTime materialization may break similarly to decimal; row-order assertions may flake without explicit ORDER BY; Col&lt;bool&gt; IsActive untested on real Npgsql.
+
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-24 | | INTAKE completed — worktree created, baseline tests green (3303/3303); problem traced to PR #261's false name-binding premise + mock-only PG test infrastructure |
 | 2 | 2026-04-24 | 2026-04-24 | DESIGN + PLAN + IMPLEMENT phases 1–3: Testcontainers helper, probe regression tests, SqlFormatting.GetParameterName fix, generator emission fixes. Tests green (2990 Quarry.Tests + 201 Migration.Tests + 117 Analyzers.Tests). |
 | 3 | 2026-04-24 | 2026-04-24 | IMPLEMENT phases 4–7: QueryTestHarness.Pg upgraded to real Npgsql (transactional default + own-schema opt-out) + PG DDL port; 4 focused integration tests (Insert/InsertBatch/WHERE-IN/MigrationRunner); MigrationRunner DateTime bug fixed (was passing ISO strings to TIMESTAMP columns). Phase 6 + 7 absorbed — MigrationRunner lives in Quarry not Quarry.Migration so no cross-project dedup needed; no cross-dialect triage surfaced beyond the DateTime fix. Tests: 2994 + 201 + 117 = 3312. |
+| 4 | 2026-04-24 | 2026-04-24 | Phase 8 doc cleanup + REVIEW (agent analysis, 25 findings) + REMEDIATE (9 A findings addressed, including critical collection-path bug at CarrierEmitter.cs:690 that the original REVIEW agent surfaced). PR #266 created on origin/master, CI green in 2m6s. Tests: 2996 + 201 + 117 = 3314. |
+| 5 | 2026-04-24 | 2026-04-24 | Phase 9 started: mirror Pg execution in all CrossDialect*Tests (user directive "mirror Lite exactly"). File 1/25 (OrderByTests) 4 tests mirrored, 3 pass on Pg; Joined fails on decimal/DOUBLE PRECISION mismatch. Handoff triggered — next session to fix DDL to NUMERIC(18,2) and continue rollout. |

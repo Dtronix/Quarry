@@ -35,6 +35,12 @@ internal class CrossDialectOrderByTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
         Assert.That(results[2], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
+        Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -62,6 +68,12 @@ internal class CrossDialectOrderByTests
         Assert.That(results[0], Is.EqualTo((3, "Charlie")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
         Assert.That(results[2], Is.EqualTo((1, "Alice")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo((3, "Charlie")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
+        Assert.That(pgResults[2], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -92,6 +104,12 @@ internal class CrossDialectOrderByTests
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
         Assert.That(results[2], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
+        Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -124,6 +142,12 @@ internal class CrossDialectOrderByTests
         Assert.That(results[0], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
         Assert.That(results[2], Is.EqualTo(("Alice", 250.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
+        Assert.That(pgResults[2], Is.EqualTo(("Alice", 250.00m)));
     }
 
     #endregion
