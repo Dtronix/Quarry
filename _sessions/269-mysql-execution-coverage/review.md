@@ -6,7 +6,7 @@ Branch `269-mysql-execution-coverage` mirrors PR #266's PostgreSQL execution-cov
 
 | # | Section | Finding (one line) | Sev | Rec | Class | Action Taken |
 |---|---------|---------------------|-----|-----|-------|--------------|
-Applied: 1→A, 2→A, 3→A, 4→A, 5→A (user-overridden from Rec C). Final: 5A / 0B / 0C / 4D.
+Applied: 1→A, 2→A, 3→A, 4→A, 5→A (user-overridden from Rec C). Then a 10th finding surfaced in the architectural discussion of the `NO_BACKSLASH_ESCAPES` test-container pin — re-evaluated as a latent generator bug, filed as issue #273, classified C. Final: 5A / 0B / 1C / 4D.
 
 | # | Section | Finding (one line) | Sev | Rec | Class | Action Taken |
 |---|---------|---------------------|-----|-----|-------|--------------|
@@ -19,6 +19,7 @@ Applied: 1→A, 2→A, 3→A, 4→A, 5→A (user-overridden from Rec C). Final: 
 | 7 | Security | Init script grants `ALL PRIVILEGES ON *.* WITH GRANT OPTION` to `mysql@%` — test-only ephemeral container | info | D | D |  |
 | 8 | Plan Compliance | Plan said the rename targeted PG callers in CteTests + NavigationJoinTests + SelectTests; rename + new `SortedByAsync` callers verified across all sites | info | D | D |  |
 | 9 | Correctness | `MySqlMigrationRunnerTests.TearDown` correctly null-checks `_connection` and `_database` before access; pattern is more defensive than the PG twin which still NREs locally | info | D | D |  |
+| 10 | Plan Compliance | Test-container `--sql-mode=...,NO_BACKSLASH_ESCAPES` is masking a generator-level defect: Quarry-emitted `LIKE '...\_...' ESCAPE '\'` is not portable to default-mode MySQL; consumer servers without `NO_BACKSLASH_ESCAPES` would hit 1064 | medium | B | C | Filed as **#273** (SqlDialectConfig refactor + LIKE-emit fix). PR #271 ships the test-container mitigation as a stop-gap; the proper generator fix lands in the follow-up. Reclassified from B (mitigation in this PR) to C (deferred to dedicated issue with full design discussion) |
 
 ## Plan Compliance
 

@@ -72,8 +72,16 @@ None. Test-only change. No production source code under `src/Quarry/**` is modif
 - `QueryTestHarness.CreateAsync` adds an optional parameter `useOwnMyDatabase = false`. Existing callers compile without change.
 - `PgRowOrderExtensions` renamed to `RowOrderExtensions` (internal class in `Quarry.Tests`). No external consumers.
 
+## Known Limitation / Follow-up: #273
+
+The `--sql-mode=...,NO_BACKSLASH_ESCAPES` flag pinned on the test container in `MySqlTestContainer.GetContainerAsync` is a **stop-gap**, not the proper fix. It papers over a genuine generator-level defect: Quarry's `LIKE` emit produces `'%foo\_bar%' ESCAPE '\'` for all four dialects, but that SQL is **not portable to default-mode MySQL** (where backslash is a string-escape character). A real consumer running stock MySQL 8 without `NO_BACKSLASH_ESCAPES` set in their `sql_mode` would hit a 1064 syntax error on any `Contains` / `StartsWith` / `EndsWith` query against text data with LIKE metacharacters.
+
+The proper fix is filed as **#273** — replace the flat `SqlDialect` enum threaded through the generator with a `SqlDialectConfig` carrier mirroring per-context flags from `QuarryContextAttribute`, and use that structure to emit MySQL-portable `LIKE` SQL regardless of `sql_mode`. Issue #273 includes the full design space (three options for the LIKE-emit fix, four phases for landing the structural refactor) and identifies the broader extensibility opportunity (`MySqlAnsiQuotes`, `PgStandardConformingStrings`, etc.) that the same carrier addresses.
+
+This PR ships test-only coverage so MySQL execution gaps are visible going forward; the generator fix in #273 is what removes the 1064 hazard for production consumers and lets the test-container `NO_BACKSLASH_ESCAPES` pin be removed.
+
 ## Review findings
 
-One REVIEW pass on this branch produced 9 findings: 5 low (asymmetric mirror gaps, all upgraded to Class A and addressed in commit `4ba1622`), 4 info (compliance confirmations / non-issues, all Class D). No critical or high-severity findings. Final classification: 5A / 0B / 0C / 4D.
+One REVIEW pass on this branch produced 9 initial findings, plus a 10th finding surfaced during the architectural discussion of the test-container `sql_mode` pin: 5 low (asymmetric mirror gaps, all upgraded to Class A and addressed in commit `4ba1622`), 1 medium (the latent generator bug, deferred to issue #273 as Class C), 4 info (compliance confirmations / non-issues, all Class D). No critical or high-severity findings. Final classification: 5A / 0B / 1C / 4D.
 
 Tests are green at 3319/3319 across all three test projects (`Quarry.Tests` 3001, `Quarry.Analyzers.Tests` 117, `Quarry.Migration.Tests` 201).
