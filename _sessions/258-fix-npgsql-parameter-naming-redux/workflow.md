@@ -7,11 +7,11 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: #258 (closed by #261 in v0.3.1; customer report shows v0.3.2 still broken)
 pr: 266
-session: 1
-phases-total: 8
+session: 2
+phases-total: 9
 phases-complete: 8
 
 ## Problem Statement
@@ -81,3 +81,4 @@ Any existing test that fails when switched to real PG must be triaged as part of
 | 3 | 2026-04-24 | 2026-04-24 | IMPLEMENT phases 4–7: QueryTestHarness.Pg upgraded to real Npgsql (transactional default + own-schema opt-out) + PG DDL port; 4 focused integration tests (Insert/InsertBatch/WHERE-IN/MigrationRunner); MigrationRunner DateTime bug fixed (was passing ISO strings to TIMESTAMP columns). Phase 6 + 7 absorbed — MigrationRunner lives in Quarry not Quarry.Migration so no cross-project dedup needed; no cross-dialect triage surfaced beyond the DateTime fix. Tests: 2994 + 201 + 117 = 3312. |
 | 4 | 2026-04-24 | 2026-04-24 | Phase 8 doc cleanup + REVIEW (agent analysis, 25 findings) + REMEDIATE (9 A findings addressed, including critical collection-path bug at CarrierEmitter.cs:690 that the original REVIEW agent surfaced). PR #266 created on origin/master, CI green in 2m6s. Tests: 2996 + 201 + 117 = 3314. |
 | 5 | 2026-04-24 | 2026-04-24 | Phase 9 started: mirror Pg execution in all CrossDialect*Tests (user directive "mirror Lite exactly"). File 1/25 (OrderByTests) 4 tests mirrored, 3 pass on Pg; Joined fails on decimal/DOUBLE PRECISION mismatch. Handoff triggered — next session to fix DDL to NUMERIC(18,2) and continue rollout. |
+| 2 | 2026-04-24 | | Resume Phase 9: fixing NUMERIC DDL bug, then mirroring Pg execution across remaining CrossDialect*Tests files smallest-first. Prior WIP commit hash is 3611294 (suspend state recorded 6e82f31 in error — to amend on first real commit). |
