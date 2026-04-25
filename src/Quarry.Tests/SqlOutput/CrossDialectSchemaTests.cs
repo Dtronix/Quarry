@@ -88,6 +88,10 @@ internal class CrossDialectSchemaTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0], Is.EqualTo("Alice"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
     }
 
     #endregion
@@ -171,6 +175,9 @@ internal class CrossDialectSchemaTests
 
         var affected = await lt.ExecuteNonQueryAsync();
         Assert.That(affected, Is.EqualTo(3)); // All 3 seeded users
+
+        var pgAffected = await pg.ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(3));
     }
 
     #endregion

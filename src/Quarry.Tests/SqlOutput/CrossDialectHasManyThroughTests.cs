@@ -42,7 +42,7 @@ internal class CrossDialectHasManyThroughTests
     public async Task HasManyThrough_Any_ExecutesCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         // Alice → Portland, Seattle; Bob → Portland; Charlie → none
         var results = await Lite.Users().Where(u => u.Addresses.Any(a => a.City == "Portland"))
@@ -51,13 +51,20 @@ internal class CrossDialectHasManyThroughTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo("Alice"));
         Assert.That(results[1], Is.EqualTo("Bob"));
+
+        var pgResults = await Pg.Users().Where(u => u.Addresses.Any(a => a.City == "Portland"))
+            .Select(u => u.UserName).Prepare().ExecuteFetchAllAsync();
+
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
+        Assert.That(pgResults[1], Is.EqualTo("Bob"));
     }
 
     [Test]
     public async Task HasManyThrough_Any_NoPredicate_ExecutesCorrectly()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         // Alice → Portland, Seattle; Bob → Portland; Charlie → none
         var results = await Lite.Users().Where(u => u.Addresses.Any())
@@ -66,6 +73,13 @@ internal class CrossDialectHasManyThroughTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo("Alice"));
         Assert.That(results[1], Is.EqualTo("Bob"));
+
+        var pgResults = await Pg.Users().Where(u => u.Addresses.Any())
+            .Select(u => u.UserName).Prepare().ExecuteFetchAllAsync();
+
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
+        Assert.That(pgResults[1], Is.EqualTo("Bob"));
     }
 
     #endregion
@@ -96,6 +110,10 @@ internal class CrossDialectHasManyThroughTests
         var results = await lite.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo("Alice"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
     }
 
     [Test]
@@ -186,6 +204,11 @@ internal class CrossDialectHasManyThroughTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 2)));
         Assert.That(results[1], Is.EqualTo(("Bob", 1)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 1)));
     }
 
     #endregion

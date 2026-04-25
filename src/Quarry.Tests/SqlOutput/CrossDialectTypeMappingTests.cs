@@ -44,6 +44,9 @@ internal class CrossDialectTypeMappingTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     [Test]
@@ -67,6 +70,9 @@ internal class CrossDialectTypeMappingTests
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
+
+        var pgNewId = await pg.ExecuteScalarAsync<int>();
+        Assert.That(pgNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -96,6 +102,11 @@ internal class CrossDialectTypeMappingTests
         Assert.That(results, Has.Count.EqualTo(3));
         var savings = results.First(r => r.AccountId == 1);
         Assert.That(savings.Balance, Is.EqualTo(new Money(1000.50m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        var pgSavings = pgResults.First(r => r.AccountId == 1);
+        Assert.That(pgSavings.Balance, Is.EqualTo(new Money(1000.50m)));
     }
 
     [Test]
@@ -122,6 +133,12 @@ internal class CrossDialectTypeMappingTests
         Assert.That(results[0].AccountName, Is.EqualTo("Savings"));
         Assert.That(results[0].Balance, Is.EqualTo(new Money(1000.50m)));
         Assert.That(results[0].CreditLimit, Is.EqualTo(new Money(5000.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].AccountName, Is.EqualTo("Savings"));
+        Assert.That(pgResults[0].Balance, Is.EqualTo(new Money(1000.50m)));
+        Assert.That(pgResults[0].CreditLimit, Is.EqualTo(new Money(5000.00m)));
     }
 
     #endregion
@@ -150,6 +167,10 @@ internal class CrossDialectTypeMappingTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results.All(r => r.AccountName is "Savings" or "Checking"), Is.True);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults.All(r => r.AccountName is "Savings" or "Checking"), Is.True);
     }
 
     #endregion
@@ -167,6 +188,16 @@ internal class CrossDialectTypeMappingTests
 
         // INSERT setup (Lite-only)
         await Lite.Accounts().Insert(new Account
+        {
+            UserId = 2,
+            AccountName = "RoundTrip",
+            Balance = money,
+            CreditLimit = creditLimit,
+            IsActive = true
+        }).ExecuteNonQueryAsync();
+
+        // INSERT setup (Pg)
+        await Pg.Accounts().Insert(new Pg.Account
         {
             UserId = 2,
             AccountName = "RoundTrip",
@@ -193,6 +224,11 @@ internal class CrossDialectTypeMappingTests
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].Balance, Is.EqualTo(money));
         Assert.That(results[0].CreditLimit, Is.EqualTo(creditLimit));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].Balance, Is.EqualTo(money));
+        Assert.That(pgResults[0].CreditLimit, Is.EqualTo(creditLimit));
     }
 
     #endregion

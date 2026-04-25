@@ -32,6 +32,9 @@ internal class CrossDialectMiscTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0)); // "john" matches no seeded users
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -59,6 +62,9 @@ internal class CrossDialectMiscTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0)); // "JOHN" matches no seeded users
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -86,6 +92,9 @@ internal class CrossDialectMiscTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0)); // "john" matches no seeded users
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -392,7 +401,7 @@ internal class CrossDialectMiscTests
         // Also verifies the parameter carries the captured value end-to-end by executing
         // the query (review session 2 finding #12).
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var since = new System.DateTime(2024, 1, 1);
         var prepared = Lite.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
@@ -413,6 +422,10 @@ internal class CrossDialectMiscTests
         // UnsafeAccessor would throw MissingFieldException here.
         var results = await prepared.ExecuteFetchAllAsync();
         Assert.That(results, Is.Not.Null);
+
+        var pgPrepared = Pg.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
+        var pgResults = await pgPrepared.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Is.Not.Null);
     }
 
     [Test]
@@ -501,6 +514,10 @@ internal class CrossDialectMiscTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserId, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserId, Is.EqualTo(1));
     }
 
     #endregion

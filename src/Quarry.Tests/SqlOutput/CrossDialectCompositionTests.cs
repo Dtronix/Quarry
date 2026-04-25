@@ -61,6 +61,11 @@ internal class CrossDialectCompositionTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, "Shipped")));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m, "Shipped")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, "Shipped")));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m, "Shipped")));
     }
 
     #endregion
@@ -105,6 +110,9 @@ internal class CrossDialectCompositionTests
         // No users have orders > 500 in seed data — 0 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -149,6 +157,9 @@ internal class CrossDialectCompositionTests
         // Seed: Widget UnitPrice=125 (>50) and Gadget UnitPrice=75.50 (>50), Widget UnitPrice=50 (NOT >50) — 2 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -193,6 +204,9 @@ internal class CrossDialectCompositionTests
         // Seed: Alice has Shipped+Pending, Bob has Shipped — case-sensitive "shipped" vs "Shipped" means 0 matches
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -241,6 +255,9 @@ internal class CrossDialectCompositionTests
         // No seed users have "john" in UserName — 0 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -282,6 +299,9 @@ internal class CrossDialectCompositionTests
         // Case-sensitive: seed has "Shipped", "Pending" — lowercase "shipped"/"pending" match 0
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -322,6 +342,9 @@ internal class CrossDialectCompositionTests
         // Seed: Bob has 1 Urgent order, nobody has >2 — 0 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -370,6 +393,9 @@ internal class CrossDialectCompositionTests
         // Seed: only 3 orders total, no status group has >5 — 0 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -422,6 +448,13 @@ internal class CrossDialectCompositionTests
         // Seed: Alice has 2 orders, Bob has 1 — DISTINCT UserName gives Alice, Bob — 2 results
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        // Pg execution intentionally not mirrored: PostgreSQL rejects this query with
+        // 42P10 because the ORDER BY expression (o.Total) is not part of the
+        // SELECT DISTINCT projection (u.UserName). SQLite tolerates this. The SQL-text
+        // assertion above already verifies the generator emits the same SQL on both
+        // dialects; running it on Pg would require either projecting o.Total into the
+        // SELECT list (changing test intent) or wrapping the query in a subquery.
     }
 
     #endregion
@@ -463,6 +496,10 @@ internal class CrossDialectCompositionTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -491,6 +528,9 @@ internal class CrossDialectCompositionTests
         // Seed: Shipped=(250+150)/2=200, Pending=75.50 — 2 groups
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -514,6 +554,9 @@ internal class CrossDialectCompositionTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -537,6 +580,9 @@ internal class CrossDialectCompositionTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -563,6 +609,11 @@ internal class CrossDialectCompositionTests
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].Item1, Is.EqualTo("Shipped"));
         Assert.That(results[0].Item2, Is.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].Item1, Is.EqualTo("Shipped"));
+        Assert.That(pgResults[0].Item2, Is.EqualTo(2));
     }
 
     #endregion
@@ -594,6 +645,9 @@ internal class CrossDialectCompositionTests
         // Case-sensitive: seed has "Shipped", "Pending" — lowercase values match 0
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -685,6 +739,15 @@ internal class CrossDialectCompositionTests
         // Verify execution
         var results = await prepared.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgPrepared = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > 100 && u.IsActive)
+            .OrderBy((u, o) => o.Total, Direction.Descending)
+            .Limit(10)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+        var pgResults = await pgPrepared.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -745,6 +808,10 @@ internal class CrossDialectCompositionTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].OrderId, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -783,6 +850,11 @@ internal class CrossDialectCompositionTests
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results[0].Total, Is.LessThanOrEqualTo(results[1].Total));
         Assert.That(results[1].Total, Is.LessThanOrEqualTo(results[2].Total));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].Total, Is.LessThanOrEqualTo(pgResults[1].Total));
+        Assert.That(pgResults[1].Total, Is.LessThanOrEqualTo(pgResults[2].Total));
     }
 
     [Test]
@@ -820,6 +892,9 @@ internal class CrossDialectCompositionTests
         // Seed: 2 active users, 1 inactive
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -856,6 +931,9 @@ internal class CrossDialectCompositionTests
         // Seed: Order1(250), Order2(75.50), Order3(150) — 2 > 100
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -902,6 +980,9 @@ internal class CrossDialectCompositionTests
         Assert.That(results1, Has.Count.EqualTo(1));
         Assert.That(results2, Has.Count.EqualTo(1));
         Assert.That(results1[0].OrderId, Is.EqualTo(results2[0].OrderId));
+
+        var pgResults1 = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults1, Has.Count.EqualTo(1));
     }
 
     #endregion

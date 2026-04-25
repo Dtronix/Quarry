@@ -35,6 +35,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     #endregion
@@ -65,6 +71,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -90,6 +102,11 @@ internal class CrossDialectJoinTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     #endregion
@@ -117,6 +134,9 @@ internal class CrossDialectJoinTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -151,6 +171,15 @@ internal class CrossDialectJoinTests
         Assert.That(results[1].Amount, Is.EqualTo(75.50m));
         Assert.That(results[2].Name, Is.EqualTo("Bob"));
         Assert.That(results[2].Amount, Is.EqualTo(150.00m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].Name, Is.EqualTo("Alice"));
+        Assert.That(pgResults[0].Amount, Is.EqualTo(250.00m));
+        Assert.That(pgResults[1].Name, Is.EqualTo("Alice"));
+        Assert.That(pgResults[1].Amount, Is.EqualTo(75.50m));
+        Assert.That(pgResults[2].Name, Is.EqualTo("Bob"));
+        Assert.That(pgResults[2].Amount, Is.EqualTo(150.00m));
     }
 
     [Test]
@@ -177,6 +206,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0].User, Is.EqualTo("Alice"));
         Assert.That(results[0].Amount, Is.EqualTo(250.00m));
         Assert.That(results[0].Product, Is.Not.Null);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].User, Is.EqualTo("Alice"));
+        Assert.That(pgResults[0].Amount, Is.EqualTo(250.00m));
+        Assert.That(pgResults[0].Product, Is.Not.Null);
     }
 
     #endregion
@@ -207,6 +242,11 @@ internal class CrossDialectJoinTests
         Assert.That(results, Has.Count.EqualTo(4));
         Assert.That(results.Count(r => r == "Alice"), Is.EqualTo(2));
         Assert.That(results.Count(r => r == "Charlie"), Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(4));
+        Assert.That(pgResults.Count(r => r == "Alice"), Is.EqualTo(2));
+        Assert.That(pgResults.Count(r => r == "Charlie"), Is.EqualTo(1));
     }
 
     [Test]
@@ -232,6 +272,10 @@ internal class CrossDialectJoinTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
         Assert.That(results.Any(r => r.Item1 == "Charlie"), Is.False);
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults.Any(r => r.Item1 == "Charlie"), Is.False);
     }
 
     #endregion
@@ -285,6 +329,9 @@ internal class CrossDialectJoinTests
         // Seed: 3 order items, each in a different order
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -316,6 +363,9 @@ internal class CrossDialectJoinTests
         // Total = 5
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(5));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(5));
     }
 
     #endregion
@@ -356,6 +406,11 @@ internal class CrossDialectJoinTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -392,6 +447,11 @@ internal class CrossDialectJoinTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m)));
     }
 
     #endregion
@@ -427,6 +487,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -453,6 +519,9 @@ internal class CrossDialectJoinTests
         // Execution: all 3 users have UserId >= 1, but Charlie has no orders → 3 rows
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -505,6 +574,9 @@ internal class CrossDialectJoinTests
         // Cross join: 3 users × 3 orders = 9 rows
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(9));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(9));
     }
 
     [Test]
@@ -529,6 +601,9 @@ internal class CrossDialectJoinTests
         // 3 users × 2 orders with Total > 100 = 6 rows
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(6));
     }
 
     #endregion
@@ -565,6 +640,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
     }
 
     [Test]
@@ -596,6 +677,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 2)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
     }
 
     /// <summary>
@@ -633,6 +720,12 @@ internal class CrossDialectJoinTests
         Assert.That(results[0], Is.EqualTo(("Alice", 250.00m, 2)));
         Assert.That(results[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(results[2], Is.EqualTo(("Bob", 150.00m, 1)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(pgResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(pgResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
     }
 
     #endregion

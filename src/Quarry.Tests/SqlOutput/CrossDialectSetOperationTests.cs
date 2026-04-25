@@ -33,6 +33,9 @@ internal class CrossDialectSetOperationTests
         // Alice(active), Bob(active), Charlie(inactive) → active = Alice, Bob. UserId=1 = Alice.
         // UNION removes duplicates so Alice appears once → 2 results (Alice, Bob)
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -57,6 +60,9 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // UNION ALL keeps duplicates: active=Alice,Bob + UserId=1=Alice → 3 results
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -86,6 +92,10 @@ internal class CrossDialectSetOperationTests
         // INTERSECT: rows in both sets. Active=Alice,Bob. UserId=1=Alice. Intersection=Alice → 1 result
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
     }
 
     [Test]
@@ -111,6 +121,10 @@ internal class CrossDialectSetOperationTests
         // EXCEPT: active minus UserId=1. Active=Alice,Bob. Minus Alice → Bob only → 1 result
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Bob"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Bob"));
     }
 
     #endregion
@@ -143,6 +157,9 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // Active=Alice(1),Bob(2). UserId=3=Charlie. UNION → 3 unique results
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -181,6 +198,12 @@ internal class CrossDialectSetOperationTests
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
     }
 
     [Test]
@@ -214,6 +237,11 @@ internal class CrossDialectSetOperationTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
     }
 
     #endregion
@@ -242,6 +270,13 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)))
+            .Except(Pg.Users().Where(u => u.UserId == 1).Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -279,6 +314,9 @@ internal class CrossDialectSetOperationTests
         // All users: (1,Alice), (2,Bob), (3,Charlie). UNION with UserId=3: same set.
         // Post-union WHERE UserId <= 2: (1,Alice), (2,Bob) → 2 results
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -354,6 +392,9 @@ internal class CrossDialectSetOperationTests
         // UserId >= 2: (2,Bob), (3,Charlie). UserId <= 3: (1,Alice), (2,Bob), (3,Charlie).
         // UNION: (1,Alice), (2,Bob), (3,Charlie) → 3 results
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -392,6 +433,10 @@ internal class CrossDialectSetOperationTests
         // UNION: all 3 users. Post-union WHERE UserId == 2: (2,Bob) → 1 result
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Bob"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Bob"));
     }
 
     [Test]
@@ -430,6 +475,11 @@ internal class CrossDialectSetOperationTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Charlie"));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Charlie"));
+        Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
     }
 
     [Test]
@@ -486,6 +536,12 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // All 3 users from both sides, UNION removes duplicates → 3 results
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName))
+            .Union(Pg.Users().Distinct().Select(u => (u.UserId, u.UserName)))
+            .Prepare();
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -557,6 +613,19 @@ internal class CrossDialectSetOperationTests
             (2, "Gadget"),
             (1, "Widget"),
         }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgValues = pgResults.OrderBy(r => r.UserName).ToList();
+        Assert.That(pgValues, Has.Count.EqualTo(6));
+        Assert.That(pgValues, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]
@@ -600,6 +669,19 @@ internal class CrossDialectSetOperationTests
             (2, "Gadget"),
             (1, "Widget"),
         }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgValues = pgResults.OrderBy(r => r.UserName).ToList();
+        Assert.That(pgValues, Has.Count.EqualTo(6));
+        Assert.That(pgValues, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (2, "Gadget"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]
@@ -632,6 +714,9 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         // Same IDs (1,2,3) but different names → no exact row matches → 0 results
         Assert.That(results, Has.Count.EqualTo(0));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -666,6 +751,15 @@ internal class CrossDialectSetOperationTests
         // Verify the surviving rows are the user rows (positional reader, not product rows).
         var values = results.OrderBy(r => r.UserName).ToList();
         Assert.That(values, Is.EqualTo(new[]
+        {
+            (1, "Alice"),
+            (2, "Bob"),
+            (3, "Charlie"),
+        }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgValues = pgResults.OrderBy(r => r.UserName).ToList();
+        Assert.That(pgValues, Is.EqualTo(new[]
         {
             (1, "Alice"),
             (2, "Bob"),
@@ -745,6 +839,16 @@ internal class CrossDialectSetOperationTests
             (3, "Doohickey"),
             (1, "Widget"),
         }));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        var pgValues = pgResults.OrderBy(r => r.UserName).ToList();
+        Assert.That(pgValues, Is.EqualTo(new[]
+        {
+            (2, "Bob"),
+            (3, "Charlie"),
+            (3, "Doohickey"),
+            (1, "Widget"),
+        }));
     }
 
     [Test]
@@ -780,6 +884,12 @@ internal class CrossDialectSetOperationTests
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[2].UserName, Is.EqualTo("Charlie"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
     }
 
     #endregion
@@ -807,6 +917,9 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -830,6 +943,9 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
     }
 
     [Test]
@@ -854,6 +970,10 @@ internal class CrossDialectSetOperationTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
     }
 
     [Test]
@@ -879,6 +999,10 @@ internal class CrossDialectSetOperationTests
         // EXCEPT: active users minus UserId=1(Alice) → Bob only
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0].UserName, Is.EqualTo("Bob"));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0].UserName, Is.EqualTo("Bob"));
     }
 
     #endregion
@@ -918,6 +1042,9 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders x 2 sides (UNION ALL keeps dupes)
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(6));
     }
 
     [Test]
@@ -954,6 +1081,9 @@ internal class CrossDialectSetOperationTests
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders (all > 0) + 3 orders
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(6));
     }
 
     #endregion

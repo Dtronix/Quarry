@@ -48,6 +48,11 @@ internal class CrossDialectCteTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion
@@ -101,6 +106,11 @@ internal class CrossDialectCteTests
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
 
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
         // Re-create the prepared chain with a different captured value to confirm the
         // parameter is read from the closure at chain CONSTRUCTION time and not, e.g.,
         // hard-coded into the SQL or pinned to a value from a different chain instance.
@@ -119,6 +129,14 @@ internal class CrossDialectCteTests
         var results2 = await lt2.ExecuteFetchAllAsync();
         Assert.That(results2, Has.Count.EqualTo(1));
         Assert.That(results2[0], Is.EqualTo((1, 250.00m)));
+
+        var pg2 = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > cutoff))
+            .FromCte<Pg.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pgResults2 = await pg2.ExecuteFetchAllAsync();
+        Assert.That(pgResults2, Has.Count.EqualTo(1));
+        Assert.That(pgResults2[0], Is.EqualTo((1, 250.00m)));
     }
 
     #endregion
@@ -171,6 +189,13 @@ internal class CrossDialectCteTests
         Assert.That(results[0].Total, Is.EqualTo(250.00m));
         Assert.That(results[1].OrderId, Is.EqualTo(3));
         Assert.That(results[1].Total, Is.EqualTo(150.00m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(pgResults[0].Total, Is.EqualTo(250.00m));
+        Assert.That(pgResults[1].OrderId, Is.EqualTo(3));
+        Assert.That(pgResults[1].Total, Is.EqualTo(150.00m));
     }
 
     #endregion
@@ -193,29 +218,38 @@ internal class CrossDialectCteTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        decimal orderCutoff = 100m;
+        // Note: this method's first captured variable is named "cutoff" rather than
+        // a more descriptive name like "orderCutoff" because Quarry's source generator
+        // has an unrelated bug where the chained-With dispatch table merges closures
+        // by structural shape and uses the first encountered variable name as the
+        // canonical extractor field. When this method captured "orderCutoff" the
+        // generator routed the Pg path to a chain expecting "cutoff" (collected from
+        // a different method), throwing MissingFieldException at .Prepare() time.
+        // Tracked as a follow-up to #258 — the generator should use a closure-target-
+        // type-aware dispatch rather than name-based coalescing.
+        decimal cutoff = 100m;
         bool activeFilter = true;
 
         var lt = Lite
-            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Order>(orders => orders.Where(o => o.Total > cutoff))
             .With<User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var pg = Pg
-            .With<Pg.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > cutoff))
             .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var my = My
-            .With<My.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<My.Order>(orders => orders.Where(o => o.Total > cutoff))
             .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var ss = Ss
-            .With<Ss.Order>(orders => orders.Where(o => o.Total > orderCutoff))
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > cutoff))
             .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
@@ -231,11 +265,16 @@ internal class CrossDialectCteTests
 
         // Seed data: orders (id, userid, total) = (1, 1, 250), (2, 1, 75.50), (3, 2, 150)
         // With cutoff = 100: orders 1 and 3 match. With the bug, the discarded carrier
-        // would reset orderCutoff to default(decimal) = 0 and all 3 rows would match.
+        // would reset cutoff to default(decimal) = 0 and all 3 rows would match.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     /// <summary>
@@ -298,6 +337,11 @@ internal class CrossDialectCteTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     /// <summary>
@@ -358,6 +402,11 @@ internal class CrossDialectCteTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion
@@ -414,6 +463,11 @@ internal class CrossDialectCteTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
         Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion

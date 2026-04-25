@@ -43,6 +43,10 @@ internal class CrossDialectNullableValueTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -95,6 +99,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -120,6 +129,10 @@ internal class CrossDialectNullableValueTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -151,6 +164,10 @@ internal class CrossDialectNullableValueTests
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(1));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -232,6 +249,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((2, "Bob")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -263,6 +285,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -318,6 +345,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, "Alice")));
         Assert.That(results[1], Is.EqualTo((3, "Charlie")));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -350,7 +382,7 @@ internal class CrossDialectNullableValueTests
         // The column (UserId) is the first column — tests that the carrier emits
         // IReadOnlyList<int?> and the cast/binding work at runtime.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, _, _, _) = t;
+        var (Lite, Pg, _, _) = t;
 
         var ids = new List<int?> { 1, 3 };
         var results = await Lite.Users()
@@ -362,6 +394,16 @@ internal class CrossDialectNullableValueTests
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo("Alice"));
         Assert.That(results[1], Is.EqualTo("Charlie"));
+
+        var pgResults = await Pg.Users()
+            .Where(u => ids.Contains(u.UserId))
+            .Select(u => u.UserName)
+            .Prepare()
+            .ExecuteFetchAllAsync();
+
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo("Alice"));
+        Assert.That(pgResults[1], Is.EqualTo("Charlie"));
     }
 
     #endregion
