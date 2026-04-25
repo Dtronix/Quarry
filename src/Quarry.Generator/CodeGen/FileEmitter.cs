@@ -913,8 +913,18 @@ internal sealed class FileEmitter
     /// <summary>
     /// Structural key for carrier class deduplication. Two carriers with the same key
     /// produce identical class text (modulo class name) and can share a single definition.
+    /// <para>
+    /// The <c>_extractors</c> component is load-bearing: <see cref="Models.CapturedVariableExtractor"/>
+    /// equality covers <c>VariableName</c>, <c>DisplayClassName</c>, <c>VariableType</c>,
+    /// <c>CaptureKind</c>, and <c>IsStaticField</c>. Two carriers whose closures share the
+    /// same parameter shape but differ in any of those bits MUST NOT merge — relaxing this
+    /// to a types-only key would re-introduce issue #268, where a chained-<c>With&lt;&gt;</c>
+    /// site dispatched to a carrier whose <c>[UnsafeAccessor]</c> extractor referenced a
+    /// field name from a different method's closure, throwing <see cref="System.MissingFieldException"/>
+    /// at <c>.Prepare()</c> time. <c>CarrierStructuralKeyTests</c> pins this invariant.
+    /// </para>
     /// </summary>
-    private readonly struct CarrierStructuralKey : IEquatable<CarrierStructuralKey>
+    internal readonly struct CarrierStructuralKey : IEquatable<CarrierStructuralKey>
     {
         private readonly IReadOnlyList<CarrierField> _fields;
         private readonly string? _maskType;
@@ -926,7 +936,7 @@ internal sealed class FileEmitter
         private readonly string[] _interfaces;
         private readonly int _hashCode;
 
-        private CarrierStructuralKey(
+        internal CarrierStructuralKey(
             IReadOnlyList<CarrierField> fields,
             string? maskType,
             int maskBitCount,
