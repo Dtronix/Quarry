@@ -447,6 +447,14 @@ SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`
 
 ---
 
+### Orders().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT `OrderId`, `Total`, LAG(`Total`, 1) OVER (ORDER BY `Total`) AS `PrevTotal` FROM `orders`
+```
+
+---
+
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1457,6 +1465,14 @@ SELECT `UserId`, `UserName` FROM `users` ORDER BY `UserName` ASC, `CreatedAt` AS
 
 ---
 
+### Users().Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal` FROM `users`
+```
+
+---
+
 ### Users().Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1828,6 +1844,30 @@ SELECT `UserName`, `Email` FROM `users` WHERE `Email` IS NOT NULL AND `UserName`
 
 ```sql
 SELECT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1 AND EXISTS (SELECT 1 FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Total` > 500)) ORDER BY `UserName` ASC
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 999
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchSingleOrDefaultAsync()
+
+```sql
+SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `IsActive` = 1
+```
+
+---
+
+### Users().Where(...).Prepare().ExecuteFetchSingleOrDefaultAsync()
+
+```sql
+SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM `users` WHERE `UserId` = 999
 ```
 
 ---
@@ -3280,7 +3320,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 424 |
+| Total discovered | 429 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 70 |
-| Rendered | 354 |
+| Rendered | 359 |

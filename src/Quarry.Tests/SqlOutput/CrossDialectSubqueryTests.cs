@@ -1603,7 +1603,7 @@ internal class CrossDialectSubqueryTests
     public async Task Select_Many_Sum_OnEmptyNavigation_ThrowsAtRead()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         var lt = Lite.Users()
             .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
@@ -1635,6 +1635,17 @@ internal class CrossDialectSubqueryTests
         catch (Exception ex) { pgCaught = ex; }
         Assert.That(pgCaught, Is.Not.Null);
         Assert.That(pgCaught, Is.InstanceOf<QuarryQueryException>()
+            .Or.InstanceOf<InvalidOperationException>()
+            .Or.InstanceOf<InvalidCastException>());
+
+        var my2 = My.Users()
+            .Select(u => (u.UserName, OrderTotal: u.Orders.Sum(o => o.Total)))
+            .Prepare();
+        Exception? myCaught = null;
+        try { await my2.ExecuteFetchAllAsync(); }
+        catch (Exception ex) { myCaught = ex; }
+        Assert.That(myCaught, Is.Not.Null);
+        Assert.That(myCaught, Is.InstanceOf<QuarryQueryException>()
             .Or.InstanceOf<InvalidOperationException>()
             .Or.InstanceOf<InvalidCastException>());
     }

@@ -835,7 +835,7 @@ internal class CrossDialectSelectTests
     public async Task NoSelect_ExecuteFetchFirstOrDefaultAsync_ReturnsNullForNoMatch()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
         var result = await lt.ExecuteFetchFirstOrDefaultAsync();
@@ -844,6 +844,10 @@ internal class CrossDialectSelectTests
         var pg = Pg.Users().Where(u => u.UserId == 999).Prepare();
         var pgResult = await pg.ExecuteFetchFirstOrDefaultAsync();
         Assert.That(pgResult, Is.Null);
+
+        var my = My.Users().Where(u => u.UserId == 999).Prepare();
+        var myResult = await my.ExecuteFetchFirstOrDefaultAsync();
+        Assert.That(myResult, Is.Null);
     }
 
     [Test]
@@ -920,7 +924,7 @@ internal class CrossDialectSelectTests
     public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ReturnsNullForNoMatch()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
         var result = await lt.ExecuteFetchSingleOrDefaultAsync();
@@ -929,13 +933,17 @@ internal class CrossDialectSelectTests
         var pg = Pg.Users().Where(u => u.UserId == 999).Prepare();
         var pgResult = await pg.ExecuteFetchSingleOrDefaultAsync();
         Assert.That(pgResult, Is.Null);
+
+        var my = My.Users().Where(u => u.UserId == 999).Prepare();
+        var myResult = await my.ExecuteFetchSingleOrDefaultAsync();
+        Assert.That(myResult, Is.Null);
     }
 
     [Test]
     public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ThrowsOnMultipleRows()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         // IsActive matches 2 rows (Alice + Bob) — SingleOrDefault must throw
         var lt = Lite.Users().Where(u => u.IsActive).Prepare();
@@ -953,6 +961,17 @@ internal class CrossDialectSelectTests
         try
         {
             await pg.ExecuteFetchSingleOrDefaultAsync();
+            Assert.Fail("Expected InvalidOperationException for multiple rows");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert.That(ex.Message, Does.Contain("more than one element"));
+        }
+
+        var my = My.Users().Where(u => u.IsActive).Prepare();
+        try
+        {
+            await my.ExecuteFetchSingleOrDefaultAsync();
             Assert.Fail("Expected InvalidOperationException for multiple rows");
         }
         catch (InvalidOperationException ex)

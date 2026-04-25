@@ -573,7 +573,7 @@ internal class CrossDialectWindowFunctionTests
     public async Task WindowFunction_Lag_NullableDto_Execution()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         // LAG with a DTO that has decimal? PrevTotal — the generated reader must emit
         // an IsDBNull guard so the first row (where LAG returns NULL) reads as null.
@@ -614,6 +614,20 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(pgByTotal[0].Total, Is.EqualTo(75.50m));
         Assert.That(pgByTotal[1].PrevTotal, Is.EqualTo(75.50m));
         Assert.That(pgByTotal[2].PrevTotal, Is.EqualTo(150.00m));
+
+        var my2 = My.Orders().Where(o => true).Select(o => new OrderLagDto
+        {
+            OrderId = o.OrderId,
+            Total = o.Total,
+            PrevTotal = Sql.Lag(o.Total, 1, over => over.OrderBy(o.Total))
+        }).Prepare();
+        var myResults = await my2.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        var myByTotal = myResults.OrderBy(r => r.Total).ToList();
+        Assert.That(myByTotal[0].PrevTotal, Is.Null);
+        Assert.That(myByTotal[0].Total, Is.EqualTo(75.50m));
+        Assert.That(myByTotal[1].PrevTotal, Is.EqualTo(75.50m));
+        Assert.That(myByTotal[2].PrevTotal, Is.EqualTo(150.00m));
     }
 
     #endregion
