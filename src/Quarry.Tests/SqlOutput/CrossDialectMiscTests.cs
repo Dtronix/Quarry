@@ -35,6 +35,9 @@ internal class CrossDialectMiscTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(0));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -65,6 +68,9 @@ internal class CrossDialectMiscTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(0));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -95,6 +101,9 @@ internal class CrossDialectMiscTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(0));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -518,6 +527,10 @@ internal class CrossDialectMiscTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
     }
 
     #endregion

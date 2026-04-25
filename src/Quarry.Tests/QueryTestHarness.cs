@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using MySqlConnector;
 using Npgsql;
 using Quarry.Internal;
 using Quarry.Tests.Integration;
@@ -14,9 +15,10 @@ namespace Quarry.Tests;
 /// Self-contained, disposable test harness that provides all dialect contexts and database connections.
 /// Lite is backed by a real SQLite in-memory connection (SQL verification + execution).
 /// Pg is backed by a real Npgsql connection to a shared PostgreSQL 17 container
-/// (SQL verification + execution). My and Ss are on MockDbConnection
-/// (SQL verification only — out of scope for the real-provider migration that
-/// motivated Pg moving off the mock).
+/// (SQL verification + execution). My is backed by a real MySqlConnector connection
+/// to a shared MySQL 8.4 container (SQL verification + execution). Ss is on
+/// MockDbConnection (SQL verification only — out of scope for the real-provider
+/// migration that motivated Pg and My moving off the mock).
 /// Each test creates its own harness — no shared mutable state, fully parallelizable.
 /// </summary>
 internal sealed class QueryTestHarness : IAsyncDisposable
@@ -25,6 +27,9 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     private readonly NpgsqlConnection _npgsqlConnection;
     private readonly NpgsqlTransaction? _npgsqlTransaction;
     private readonly string? _ownedPgSchema;
+    private readonly MySqlConnection _mysqlConnection;
+    private readonly MySqlTransaction? _mysqlTransaction;
+    private readonly string? _ownedMyDatabase;
 
     /// <summary>SQLite context on a real in-memory connection (SQL verification + execution).</summary>
     public TestDbContext Lite { get; }
@@ -32,13 +37,13 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// <summary>PostgreSQL context on a real <see cref="NpgsqlConnection"/> attached to the shared Testcontainers PG 17 container (SQL verification + execution).</summary>
     public Pg.PgDb Pg { get; }
 
-    /// <summary>MySQL context on MockDbConnection (SQL verification only).</summary>
+    /// <summary>MySQL context on a real <see cref="MySqlConnection"/> attached to the shared Testcontainers MySQL 8.4 container (SQL verification + execution).</summary>
     public My.MyDb My { get; }
 
     /// <summary>SQL Server context on MockDbConnection (SQL verification only).</summary>
     public Ss.SsDb Ss { get; }
 
-    /// <summary>The shared MockDbConnection backing My/Ss — exposed for tests that inspect executed SQL.</summary>
+    /// <summary>The shared MockDbConnection backing Ss — exposed for tests that inspect executed SQL.</summary>
     public MockDbConnection MockConnection { get; }
 
     private QueryTestHarness(
@@ -46,23 +51,29 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         MockDbConnection mockConnection,
         NpgsqlConnection npgsqlConnection,
         NpgsqlTransaction? npgsqlTransaction,
-        string? ownedPgSchema)
+        string? ownedPgSchema,
+        MySqlConnection mysqlConnection,
+        MySqlTransaction? mysqlTransaction,
+        string? ownedMyDatabase)
     {
         _sqliteConnection = sqliteConnection;
         MockConnection = mockConnection;
         _npgsqlConnection = npgsqlConnection;
         _npgsqlTransaction = npgsqlTransaction;
         _ownedPgSchema = ownedPgSchema;
+        _mysqlConnection = mysqlConnection;
+        _mysqlTransaction = mysqlTransaction;
+        _ownedMyDatabase = ownedMyDatabase;
         Lite = new TestDbContext(sqliteConnection);
         Pg = new Pg.PgDb(npgsqlConnection);
-        My = new My.MyDb(mockConnection);
+        My = new My.MyDb(mysqlConnection);
         Ss = new Ss.SsDb(mockConnection);
     }
 
     /// <summary>
-    /// Creates a fresh harness with an isolated SQLite in-memory database and a
-    /// PG connection to the shared container, both seeded with the default
-    /// schema and data.
+    /// Creates a fresh harness with an isolated SQLite in-memory database and
+    /// PG + MySQL connections to the shared containers, all seeded with the
+    /// default schema and data.
     /// </summary>
     /// <param name="useOwnPgSchema">
     /// When <c>false</c> (default), the PG connection sets <c>search_path</c>
@@ -74,7 +85,16 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// <c>BEGIN</c>/<c>COMMIT</c> (e.g. <see cref="Quarry.Migration.MigrationRunner"/>
     /// tests), or that depend on COMMIT-visible state.
     /// </param>
-    public static async Task<QueryTestHarness> CreateAsync(bool useOwnPgSchema = false)
+    /// <param name="useOwnMyDatabase">
+    /// MySQL parallel of <paramref name="useOwnPgSchema"/>. When <c>false</c>
+    /// (default), the MySQL connection switches to the shared <c>quarry_test</c>
+    /// baseline database and wraps the test in a transaction that rolls back
+    /// on dispose. When <c>true</c>, a uniquely-named database is created with
+    /// its own DDL + seed and dropped on dispose.
+    /// </param>
+    public static async Task<QueryTestHarness> CreateAsync(
+        bool useOwnPgSchema = false,
+        bool useOwnMyDatabase = false)
     {
         // Track every opened resource so a partial-setup throw can roll
         // them all back — previously a transient PG connection refusal or
@@ -84,7 +104,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         MockDbConnection? mockConnection = null;
         NpgsqlConnection? npgsqlConnection = null;
         NpgsqlTransaction? npgsqlTransaction = null;
-        string? ownedSchema = null;
+        string? ownedPgSchema = null;
+        MySqlConnection? mysqlConnection = null;
+        MySqlTransaction? mysqlTransaction = null;
+        string? ownedMyDatabase = null;
 
         try
         {
@@ -104,23 +127,53 @@ internal sealed class QueryTestHarness : IAsyncDisposable
 
             // PG setup — ensure baseline first (no-op after the first harness).
             await PostgresTestContainer.EnsureBaselineAsync();
-            var cs = await PostgresTestContainer.GetConnectionStringAsync();
-            npgsqlConnection = new NpgsqlConnection(cs);
+            var pgCs = await PostgresTestContainer.GetConnectionStringAsync();
+            npgsqlConnection = new NpgsqlConnection(pgCs);
             await npgsqlConnection.OpenAsync();
 
             if (useOwnPgSchema)
             {
-                ownedSchema = await PostgresTestContainer.CreateOwnedSchemaAsync(npgsqlConnection);
-                await SetSearchPathAsync(npgsqlConnection, ownedSchema);
+                ownedPgSchema = await PostgresTestContainer.CreateOwnedSchemaAsync(npgsqlConnection);
+                await SetPgSearchPathAsync(npgsqlConnection, ownedPgSchema);
             }
             else
             {
-                await SetSearchPathAsync(npgsqlConnection, PostgresTestContainer.BaselineSchemaName);
+                await SetPgSearchPathAsync(npgsqlConnection, PostgresTestContainer.BaselineSchemaName);
                 npgsqlTransaction = (NpgsqlTransaction)await npgsqlConnection.BeginTransactionAsync();
             }
 
+            // MySQL setup — ensure baseline first (no-op after the first harness).
+            await MySqlTestContainer.EnsureBaselineAsync();
+            var myCs = await MySqlTestContainer.GetConnectionStringAsync();
+            // IgnoreCommandTransaction=True so Quarry-emitted DbCommands
+            // (which don't set DbCommand.Transaction) execute against the
+            // connection's active transaction. MySqlConnector otherwise
+            // throws "The transaction associated with this command is not
+            // the connection's active transaction"; Npgsql/Sqlite are more
+            // permissive. Production consumers who attach Quarry to a
+            // pooled connection-with-transaction will hit the same need;
+            // this option is the documented MySqlConnector accommodation.
+            var myCsBuilder = new MySqlConnectionStringBuilder(myCs)
+            {
+                IgnoreCommandTransaction = true,
+            };
+            mysqlConnection = new MySqlConnection(myCsBuilder.ConnectionString);
+            await mysqlConnection.OpenAsync();
+
+            if (useOwnMyDatabase)
+            {
+                ownedMyDatabase = await MySqlTestContainer.CreateOwnedDatabaseAsync(mysqlConnection);
+            }
+            else
+            {
+                await SetMyDatabaseAsync(mysqlConnection, MySqlTestContainer.BaselineDatabaseName);
+                mysqlTransaction = (MySqlTransaction)await mysqlConnection.BeginTransactionAsync();
+            }
+
             var harness = new QueryTestHarness(
-                sqliteConnection, mockConnection, npgsqlConnection, npgsqlTransaction, ownedSchema);
+                sqliteConnection, mockConnection,
+                npgsqlConnection, npgsqlTransaction, ownedPgSchema,
+                mysqlConnection, mysqlTransaction, ownedMyDatabase);
 
             await harness.CreateSchema();
             await harness.SeedData();
@@ -132,17 +185,34 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             // Best-effort unwind — preserve the original exception but don't
             // leak connections. Each dispose is wrapped because an error in
             // an earlier step is more informative than a cascade in teardown.
+            if (mysqlTransaction is not null)
+            {
+                try { await mysqlTransaction.RollbackAsync(); } catch { }
+                try { await mysqlTransaction.DisposeAsync(); } catch { }
+            }
+            if (ownedMyDatabase is not null && mysqlConnection?.State == System.Data.ConnectionState.Open)
+            {
+                try
+                {
+                    await using var drop = mysqlConnection.CreateCommand();
+                    drop.CommandText = $"DROP DATABASE IF EXISTS `{ownedMyDatabase}`;";
+                    await drop.ExecuteNonQueryAsync();
+                }
+                catch { }
+            }
+            if (mysqlConnection is not null)
+                try { await mysqlConnection.DisposeAsync(); } catch { }
             if (npgsqlTransaction is not null)
             {
                 try { await npgsqlTransaction.RollbackAsync(); } catch { }
                 try { await npgsqlTransaction.DisposeAsync(); } catch { }
             }
-            if (ownedSchema is not null && npgsqlConnection?.State == System.Data.ConnectionState.Open)
+            if (ownedPgSchema is not null && npgsqlConnection?.State == System.Data.ConnectionState.Open)
             {
                 try
                 {
                     await using var drop = npgsqlConnection.CreateCommand();
-                    drop.CommandText = $"DROP SCHEMA IF EXISTS \"{ownedSchema}\" CASCADE;";
+                    drop.CommandText = $"DROP SCHEMA IF EXISTS \"{ownedPgSchema}\" CASCADE;";
                     await drop.ExecuteNonQueryAsync();
                 }
                 catch { }
@@ -156,10 +226,17 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         }
     }
 
-    private static async Task SetSearchPathAsync(NpgsqlConnection conn, string schema)
+    private static async Task SetPgSearchPathAsync(NpgsqlConnection conn, string schema)
     {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = $"SET search_path TO \"{schema}\";";
+        await cmd.ExecuteNonQueryAsync();
+    }
+
+    private static async Task SetMyDatabaseAsync(MySqlConnection conn, string database)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = $"USE `{database}`;";
         await cmd.ExecuteNonQueryAsync();
     }
 
@@ -218,7 +295,29 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Ss.Dispose();
+
+        // MySQL teardown. Mirrors the PG teardown ordering and rationale —
+        // ROLLBACK for the transactional path, DROP DATABASE for the owned
+        // path. Run on the raw connection rather than through My.Dispose
+        // because My's dispose only disposes the context wrapper.
         My.Dispose();
+        if (_mysqlTransaction is not null)
+        {
+            try { await _mysqlTransaction.RollbackAsync(); }
+            catch { /* connection may already be closed; ignore */ }
+            await _mysqlTransaction.DisposeAsync();
+        }
+        if (_ownedMyDatabase is not null && _mysqlConnection.State == System.Data.ConnectionState.Open)
+        {
+            try
+            {
+                await using var drop = _mysqlConnection.CreateCommand();
+                drop.CommandText = $"DROP DATABASE IF EXISTS `{_ownedMyDatabase}`;";
+                await drop.ExecuteNonQueryAsync();
+            }
+            catch { /* best-effort; avoids masking the test's own failure */ }
+        }
+        await _mysqlConnection.DisposeAsync();
 
         // PG teardown. For the transactional path, ROLLBACK discards any
         // changes the test made. For the owned-schema path, DROP SCHEMA

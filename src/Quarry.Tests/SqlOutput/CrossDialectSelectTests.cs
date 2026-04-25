@@ -41,6 +41,12 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[2], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -73,6 +79,12 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice", true)));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob", true)));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie", false)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo((1, "Alice", true)));
+        Assert.That(myResults[1], Is.EqualTo((2, "Bob", true)));
+        Assert.That(myResults[2], Is.EqualTo((3, "Charlie", false)));
     }
 
     #endregion
@@ -116,6 +128,15 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[1].Name, Is.EqualTo("Bob"));
         Assert.That(pgResults[2].Id, Is.EqualTo(3));
         Assert.That(pgResults[2].Name, Is.EqualTo("Charlie"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].Id, Is.EqualTo(1));
+        Assert.That(myResults[0].Name, Is.EqualTo("Alice"));
+        Assert.That(myResults[1].Id, Is.EqualTo(2));
+        Assert.That(myResults[1].Name, Is.EqualTo("Bob"));
+        Assert.That(myResults[2].Id, Is.EqualTo(3));
+        Assert.That(myResults[2].Name, Is.EqualTo("Charlie"));
     }
 
     [Test]
@@ -152,6 +173,14 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0].Active, Is.True);
         Assert.That(pgResults[2].Id, Is.EqualTo(3));
         Assert.That(pgResults[2].Active, Is.False);
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].Id, Is.EqualTo(1));
+        Assert.That(myResults[0].Name, Is.EqualTo("Alice"));
+        Assert.That(myResults[0].Active, Is.True);
+        Assert.That(myResults[2].Id, Is.EqualTo(3));
+        Assert.That(myResults[2].Active, Is.False);
     }
 
     #endregion
@@ -206,6 +235,21 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserId, Is.EqualTo(3));
         Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(pgResults[2].IsActive, Is.False);
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
+        Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(myResults[0].IsActive, Is.True);
+
+        Assert.That(myResults[1].UserId, Is.EqualTo(2));
+        Assert.That(myResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(myResults[1].IsActive, Is.True);
+
+        Assert.That(myResults[2].UserId, Is.EqualTo(3));
+        Assert.That(myResults[2].UserName, Is.EqualTo("Charlie"));
+        Assert.That(myResults[2].IsActive, Is.False);
     }
 
     [Test]
@@ -250,6 +294,18 @@ internal class CrossDialectSelectTests
 
         Assert.That(pgResults[2].UserId, Is.EqualTo(3));
         Assert.That(pgResults[2].Email, Is.EqualTo("charlie@test.com"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
+        Assert.That(myResults[0].Email, Is.EqualTo("alice@test.com"));
+
+        Assert.That(myResults[1].UserId, Is.EqualTo(2));
+        Assert.That(myResults[1].Email, Is.Null);
+
+        Assert.That(myResults[2].UserId, Is.EqualTo(3));
+        Assert.That(myResults[2].Email, Is.EqualTo("charlie@test.com"));
     }
 
     #endregion
@@ -300,6 +356,19 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserId, Is.EqualTo(3));
         Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(pgResults[2].IsActive, Is.False);
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
+        Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(myResults[0].Email, Is.EqualTo("alice@test.com"));
+        Assert.That(myResults[0].IsActive, Is.True);
+        Assert.That(myResults[1].UserId, Is.EqualTo(2));
+        Assert.That(myResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(myResults[1].Email, Is.Null);
+        Assert.That(myResults[2].UserId, Is.EqualTo(3));
+        Assert.That(myResults[2].UserName, Is.EqualTo("Charlie"));
+        Assert.That(myResults[2].IsActive, Is.False);
     }
 
     [Test]
@@ -340,6 +409,16 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[1].Total, Is.EqualTo(75.50m));
         Assert.That(pgResults[2].OrderId, Is.EqualTo(3));
         Assert.That(pgResults[2].Total, Is.EqualTo(150.00m));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(myResults[0].Total, Is.EqualTo(250.00m));
+        Assert.That(myResults[0].Status, Is.EqualTo("Shipped"));
+        Assert.That(myResults[1].OrderId, Is.EqualTo(2));
+        Assert.That(myResults[1].Total, Is.EqualTo(75.50m));
+        Assert.That(myResults[2].OrderId, Is.EqualTo(3));
+        Assert.That(myResults[2].Total, Is.EqualTo(150.00m));
     }
 
     [Test]
@@ -384,6 +463,17 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[2].UserId, Is.EqualTo(3));
         Assert.That(pgResults[2].UserName, Is.EqualTo("Charlie"));
         Assert.That(pgResults[2].IsActive, Is.False);
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
+        Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(myResults[0].IsActive, Is.True);
+        Assert.That(myResults[1].UserId, Is.EqualTo(2));
+        Assert.That(myResults[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(myResults[2].UserId, Is.EqualTo(3));
+        Assert.That(myResults[2].UserName, Is.EqualTo("Charlie"));
+        Assert.That(myResults[2].IsActive, Is.False);
     }
 
     #endregion
@@ -420,6 +510,12 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((2, 75.50m)));
         Assert.That(pgResults[2], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((2, 75.50m)));
+        Assert.That(myResults[2], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion
@@ -454,6 +550,11 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -486,6 +587,12 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(pgResults[1], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[2], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[2], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -520,6 +627,11 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -554,6 +666,11 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -589,6 +706,11 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((2, "Bob")));
         Assert.That(pgResults[1], Is.EqualTo((3, "Charlie")));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((2, "Bob")));
+        Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     #endregion
@@ -627,6 +749,13 @@ internal class CrossDialectSelectTests
         Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
         Assert.That(pgResults[1].UserId, Is.EqualTo(2));
         Assert.That(pgResults[1].UserName, Is.EqualTo("Bob"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
+        Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(myResults[1].UserId, Is.EqualTo(2));
+        Assert.That(myResults[1].UserName, Is.EqualTo("Bob"));
     }
 
     [Test]
@@ -659,6 +788,12 @@ internal class CrossDialectSelectTests
         Assert.That(pgResult.UserName, Is.EqualTo("Alice"));
         Assert.That(pgResult.Email, Is.EqualTo("alice@test.com"));
         Assert.That(pgResult.IsActive, Is.True);
+
+        var myResult = await my.ExecuteFetchFirstAsync();
+        Assert.That(myResult.UserId, Is.EqualTo(1));
+        Assert.That(myResult.UserName, Is.EqualTo("Alice"));
+        Assert.That(myResult.Email, Is.EqualTo("alice@test.com"));
+        Assert.That(myResult.IsActive, Is.True);
     }
 
     [Test]
@@ -689,13 +824,18 @@ internal class CrossDialectSelectTests
         Assert.That(pgResult, Is.Not.Null);
         Assert.That(pgResult!.UserId, Is.EqualTo(1));
         Assert.That(pgResult.UserName, Is.EqualTo("Alice"));
+
+        var myResult = await my.ExecuteFetchFirstOrDefaultAsync();
+        Assert.That(myResult, Is.Not.Null);
+        Assert.That(myResult!.UserId, Is.EqualTo(1));
+        Assert.That(myResult.UserName, Is.EqualTo("Alice"));
     }
 
     [Test]
     public async Task NoSelect_ExecuteFetchFirstOrDefaultAsync_ReturnsNullForNoMatch()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
         var result = await lt.ExecuteFetchFirstOrDefaultAsync();
@@ -704,6 +844,10 @@ internal class CrossDialectSelectTests
         var pg = Pg.Users().Where(u => u.UserId == 999).Prepare();
         var pgResult = await pg.ExecuteFetchFirstOrDefaultAsync();
         Assert.That(pgResult, Is.Null);
+
+        var my = My.Users().Where(u => u.UserId == 999).Prepare();
+        var myResult = await my.ExecuteFetchFirstOrDefaultAsync();
+        Assert.That(myResult, Is.Null);
     }
 
     [Test]
@@ -734,6 +878,11 @@ internal class CrossDialectSelectTests
         Assert.That(pgResult.UserId, Is.EqualTo(2));
         Assert.That(pgResult.UserName, Is.EqualTo("Bob"));
         Assert.That(pgResult.Email, Is.Null);
+
+        var myResult = await my.ExecuteFetchSingleAsync();
+        Assert.That(myResult.UserId, Is.EqualTo(2));
+        Assert.That(myResult.UserName, Is.EqualTo("Bob"));
+        Assert.That(myResult.Email, Is.Null);
     }
 
     [Test]
@@ -764,13 +913,18 @@ internal class CrossDialectSelectTests
         Assert.That(pgResult, Is.Not.Null);
         Assert.That(pgResult!.UserId, Is.EqualTo(2));
         Assert.That(pgResult.UserName, Is.EqualTo("Bob"));
+
+        var myResult = await my.ExecuteFetchSingleOrDefaultAsync();
+        Assert.That(myResult, Is.Not.Null);
+        Assert.That(myResult!.UserId, Is.EqualTo(2));
+        Assert.That(myResult.UserName, Is.EqualTo("Bob"));
     }
 
     [Test]
     public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ReturnsNullForNoMatch()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         var lt = Lite.Users().Where(u => u.UserId == 999).Prepare();
         var result = await lt.ExecuteFetchSingleOrDefaultAsync();
@@ -779,13 +933,17 @@ internal class CrossDialectSelectTests
         var pg = Pg.Users().Where(u => u.UserId == 999).Prepare();
         var pgResult = await pg.ExecuteFetchSingleOrDefaultAsync();
         Assert.That(pgResult, Is.Null);
+
+        var my = My.Users().Where(u => u.UserId == 999).Prepare();
+        var myResult = await my.ExecuteFetchSingleOrDefaultAsync();
+        Assert.That(myResult, Is.Null);
     }
 
     [Test]
     public async Task NoSelect_ExecuteFetchSingleOrDefaultAsync_ThrowsOnMultipleRows()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, My, _) = t;
 
         // IsActive matches 2 rows (Alice + Bob) — SingleOrDefault must throw
         var lt = Lite.Users().Where(u => u.IsActive).Prepare();
@@ -803,6 +961,17 @@ internal class CrossDialectSelectTests
         try
         {
             await pg.ExecuteFetchSingleOrDefaultAsync();
+            Assert.Fail("Expected InvalidOperationException for multiple rows");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert.That(ex.Message, Does.Contain("more than one element"));
+        }
+
+        var my = My.Users().Where(u => u.IsActive).Prepare();
+        try
+        {
+            await my.ExecuteFetchSingleOrDefaultAsync();
             Assert.Fail("Expected InvalidOperationException for multiple rows");
         }
         catch (InvalidOperationException ex)
@@ -835,6 +1004,9 @@ internal class CrossDialectSelectTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
     }
 
     #endregion

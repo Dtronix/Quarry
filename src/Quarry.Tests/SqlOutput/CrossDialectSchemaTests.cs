@@ -92,6 +92,10 @@ internal class CrossDialectSchemaTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0], Is.EqualTo("Alice"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0], Is.EqualTo("Alice"));
     }
 
     #endregion
@@ -178,6 +182,9 @@ internal class CrossDialectSchemaTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(3));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(3));
     }
 
     #endregion
