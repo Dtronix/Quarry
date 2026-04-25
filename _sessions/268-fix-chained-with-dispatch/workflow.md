@@ -12,7 +12,7 @@ issue: #268
 pr:
 session: 1
 phases-total: 3
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 Source generator: chained-`With<>` dispatch resolves the wrong closure-field extractor when two `.With<>(...)` lambdas in the same compilation unit have the same closure structural shape but capture differently-named variables. The generator merges call sites by structural shape and uses the first encountered variable name as the canonical extractor field, so one call site is dispatched to a Chain_N whose `__ExtractVar_*` reads a field that does not exist on the actual closure target type — `MissingFieldException` at `.Prepare()`.

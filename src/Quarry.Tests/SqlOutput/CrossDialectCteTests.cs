@@ -218,39 +218,29 @@ internal class CrossDialectCteTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        // Note: this method's first captured variable is named "cutoff" rather than
-        // a more descriptive name like "orderCutoff" because Quarry's source generator
-        // has an unrelated bug where the chained-With dispatch table merges closures
-        // by structural shape and uses the first encountered variable name as the
-        // canonical extractor field. When this method captured "orderCutoff" the
-        // generator routed the Pg path to a chain expecting "cutoff" (collected from
-        // a different method), throwing MissingFieldException at .Prepare() time.
-        // Tracked as #268 — once the generator uses closure-target-type-aware
-        // dispatch instead of name-based coalescing, restore the descriptive
-        // "orderCutoff" name here.
-        decimal cutoff = 100m;
+        decimal orderCutoff = 100m;
         bool activeFilter = true;
 
         var lt = Lite
-            .With<Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<Order>(orders => orders.Where(o => o.Total > orderCutoff))
             .With<User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var pg = Pg
-            .With<Pg.Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<Pg.Order>(orders => orders.Where(o => o.Total > orderCutoff))
             .With<Pg.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Pg.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var my = My
-            .With<My.Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<My.Order>(orders => orders.Where(o => o.Total > orderCutoff))
             .With<My.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<My.Order>()
             .Select(o => (o.OrderId, o.Total))
             .Prepare();
         var ss = Ss
-            .With<Ss.Order>(orders => orders.Where(o => o.Total > cutoff))
+            .With<Ss.Order>(orders => orders.Where(o => o.Total > orderCutoff))
             .With<Ss.User>(users => users.Where(u => u.IsActive == activeFilter))
             .FromCte<Ss.Order>()
             .Select(o => (o.OrderId, o.Total))
@@ -265,8 +255,8 @@ internal class CrossDialectCteTests
             ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0), [User] AS (SELECT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = @p1) SELECT [OrderId], [Total] FROM [Order]");
 
         // Seed data: orders (id, userid, total) = (1, 1, 250), (2, 1, 75.50), (3, 2, 150)
-        // With cutoff = 100: orders 1 and 3 match. With the bug, the discarded carrier
-        // would reset cutoff to default(decimal) = 0 and all 3 rows would match.
+        // With orderCutoff = 100: orders 1 and 3 match. With the bug, the discarded carrier
+        // would reset orderCutoff to default(decimal) = 0 and all 3 rows would match.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0], Is.EqualTo((1, 250.00m)));
