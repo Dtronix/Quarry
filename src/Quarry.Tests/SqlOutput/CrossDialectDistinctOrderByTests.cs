@@ -472,4 +472,59 @@ internal class CrossDialectDistinctOrderByTests
     }
 
     #endregion
+
+    #region Conditional ORDER BY: per-mask wrap-vs-flat dispatch
+
+    [Test]
+    public async Task Distinct_ConditionalOrderByOnNonProjected_PerMaskDispatch_FlatWhenInactive_WrapWhenActive()
+    {
+        // Conditional reassignment of the chain produces a 2-mask plan. The wrap should
+        // fire only on the mask where the OrderBy is active and references a non-projected
+        // column. The other mask emits the flat DISTINCT form. This guards the
+        // MayNeedDistinctOrderByWrap → canBatch=false fallback in Assemble: when at least
+        // one mask can need the wrap, the dispatch must use per-mask single rendering
+        // rather than the batch fast path.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, _, _, _) = t;
+
+        // Single-entity chain — projection is u.UserName, ORDER BY references u.Email which
+        // is not in projection. The conditional reassignment makes ORDER BY active only when
+        // the runtime predicate is true, exercising both mask variants in the carrier.
+        IQueryBuilder<User, string> lt = Lite.Users().Where(u => u.IsActive).Distinct().Select(u => u.UserName);
+        if (DateTime.UtcNow.Year > 2000)
+            lt = lt.OrderBy(u => u.Email);
+
+        var diag = lt.Prepare().ToDiagnostics();
+        Assert.That(diag.SqlVariants, Has.Count.EqualTo(2),
+            "conditional OrderBy should produce 2 mask variants");
+
+        // mask=0 → OrderBy inactive: flat DISTINCT, no wrap
+        var maskFlat = diag.SqlVariants[0];
+        Assert.That(maskFlat.Sql, Does.StartWith("SELECT DISTINCT \"UserName\""),
+            "mask=0 should emit flat DISTINCT (no derived-table wrap)");
+        Assert.That(maskFlat.Sql, Does.Not.Contain("FROM (SELECT DISTINCT"),
+            "mask=0 must not be wrapped");
+        Assert.That(maskFlat.Sql, Does.Not.Contain("ORDER BY"),
+            "mask=0 must not have ORDER BY");
+
+        // mask=1 → OrderBy active: wrap fires, ORDER BY uses inner-alias _o0
+        var maskWrap = diag.SqlVariants[1];
+        Assert.That(maskWrap.Sql, Does.StartWith("SELECT \"d\".\"UserName\" FROM (SELECT DISTINCT"),
+            "mask=1 should emit the derived-table wrap");
+        Assert.That(maskWrap.Sql, Does.Contain("\"Email\" AS \"_o0\""),
+            "mask=1 inner SELECT must include the non-projected ORDER BY column with _o0 alias");
+        Assert.That(maskWrap.Sql, Does.EndWith("ORDER BY \"d\".\"_o0\" ASC"),
+            "mask=1 outer ORDER BY must reference the inner alias");
+    }
+
+    #endregion
+
+    // GROUP BY + HAVING + Distinct + OrderBy(non-projected) is unreachable in Quarry
+    // chains: after GroupBy(g).Select(g_or_aggregates), only the GROUP BY key columns and
+    // aggregates are in the projection. OrderBy on any non-aggregate, non-grouped column
+    // can't bind (the identifier is no longer available in the post-GROUP BY scope).
+    // Therefore the wrap path's GROUP BY/HAVING blocks are not exercisable through the
+    // chain API for the wrap-firing case. They are exercised through the flat path by
+    // many existing CrossDialect* tests, and the wrap shares the same AppendGroupByAndHaving
+    // helper — so divergence between flat and wrap is structurally impossible.
 }

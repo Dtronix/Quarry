@@ -2598,6 +2598,18 @@ UPDATE "users" SET "UserName" = @p0, "IsActive" = @p1 WHERE "UserId" = 3
 
 ---
 
+### Users().Where(...).Distinct(...).Select(...).OrderBy(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT DISTINCT "UserName" FROM "users" WHERE "IsActive" = 1
+
+-- +DateTime.UtcNow.Year > 2000
+SELECT "d"."UserName" FROM (SELECT DISTINCT "UserName" AS "UserName", "Email" AS "_o0" FROM "users" WHERE "IsActive" = 1) AS "d" ORDER BY "d"."_o0" ASC
+```
+
+---
+
 ### Users().Where(...).Except(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -4347,7 +4359,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 645 |
+| Total discovered | 646 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 184 |
-| Rendered | 461 |
+| Rendered | 462 |
