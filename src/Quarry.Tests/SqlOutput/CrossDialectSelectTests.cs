@@ -374,7 +374,7 @@ internal class CrossDialectSelectTests
 
         // PG does not guarantee row order without an explicit ORDER BY (SQLite happens to
         // preserve insertion order). Sort by UserId to match the Lite assertion shape.
-        var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.UserId).ToList();
+        var pgResults = await pg.ExecuteFetchAllAsync().SortedByAsync(r => r.UserId);
         Assert.That(pgResults, Has.Count.EqualTo(3));
         Assert.That(pgResults[0].UserId, Is.EqualTo(1));
         Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
