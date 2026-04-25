@@ -51,6 +51,7 @@ The customer-facing symptom (via decompile of the shipped v0.3.2 binary) was `In
   - `Select_Distinct`: PG does not guarantee insertion-order return without ORDER BY; sort `pgResults` by `UserId` before assertions.
   - `Join_Distinct_OrderBy_Limit`: PG rejects DISTINCT with ORDER BY on a non-projected column (`42P10`); SQLite tolerates. Pg execution intentionally not mirrored — SQL-text assertion still verifies the generator emits the same SQL on both dialects. Tracked as **#267** (re-enable Pg mirror once the generator emits PG-portable SQL for this shape).
   - `Cte_TwoChainedWiths_DistinctDtos_CapturedParams`: workaround for an unrelated Quarry source-generator bug in chained-With dispatch (closure-shape merging picks the first encountered variable name as the canonical extractor field, causing `MissingFieldException` at `.Prepare()` time when a different test in the same compilation unit used a different name). Renamed `orderCutoff` → `cutoff` so the closure shape matches the expected chain. Tracked as **#268** (revert the rename once the generator uses closure-target-type-aware dispatch).
+- **(Phase 9 REMEDIATE) Row-order assertion hazard swept across 11 sites.** The Phase 9 review pass surfaced that 11 cross-dialect tests asserted on `pgResults[N]` indexed positions without an explicit `ORDER BY` in the chain. PG does not guarantee row order from a base scan or join without ORDER BY; the suite was passing only because PG happened to return small-table sequential-scan results in heap order. A planner change (statistics, parallel scan, hash join chosen for a CTE) would have surfaced as flake. Fix: new `src/Quarry.Tests/PgRowOrderExtensions.cs` exposes `Task<List<T>>.SortedByAsync(keySelector)`, which materialises and sorts before assertion. The helper is an extension on `Task<List<T>>` (not on `PreparedQuery<T>`) so the Quarry chain analyzer (QRY036) still sees `.ExecuteFetchAllAsync()` as the literal terminal at the end of the prepared chain. Applied at `CrossDialectSelectTests.Select_Distinct` (replaces the inline sort), 3 sites in `CrossDialectNavigationJoinTests` (Where, GroupBy, DeepChain), and 7 sites in `CrossDialectCteTests`. SQLite assertions stay positional (Lite's incidental insertion-order is the reference shape); only the PG side runs through the helper.
 
 ## Migration Steps
 
@@ -74,4 +75,12 @@ None. Consumer-facing public API is unchanged. `RawSqlAsync` contract (`@pN` pla
 
 ## Review findings
 
-See `_sessions/258-fix-npgsql-parameter-naming-redux/review.md` for the complete classification table from session 1's REVIEW pass (25 findings: 9 A / 16 D after upgrading all C items to A per the owner's request). Phase 9 was added in session 2 after that review and has not been re-reviewed; tests are green at 3314 / 3314 and triage decisions are documented inline.
+Two REVIEW passes covered this branch:
+
+- **Session 1 review (phases 1-8):** 25 findings classified 9 A / 16 D after upgrading all C items to A per the owner's request. All A items addressed in commit `325d9a4`. Captured in git history at the session-1 review.md state.
+- **Session 2 review (Phase 9):** focused review pass over the diff `2767e77..HEAD` produced 24 findings: 1 medium (A), 1 low (B), 22 info (D). Both action items addressed in commit `c986f90`:
+  - **#4 (medium, A):** Pg-execute assertions relied on positional row order without ORDER BY at 11 sites — latent flake hazard. Resolved by introducing `Task<List<T>>.SortedByAsync(keySelector)` and applying at all flagged sites (see "(Phase 9 REMEDIATE)" entry above).
+  - **#13 (low, B):** sort-then-assert pattern was not abstracted into a shared helper. Resolved as part of #4's remediation; the helper centralises the rationale comment in one place.
+  - The 22 info findings are confirmation findings (e.g., "SQL Type mapping aligns with SqlTypeMapper", "no silent skips", "no production code modified", "test isolation preserved") — no action required.
+
+Final classification table lives in `_sessions/258-fix-npgsql-parameter-naming-redux/review.md`. Tests are green at 3314 / 3314 and CI passes on the latest commit.
