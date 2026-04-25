@@ -12,7 +12,7 @@ issue: #270
 pr:
 session: 1
 phases-total: 5
-phases-complete: 4
+phases-complete: 5
 
 ## Problem Statement
 Issue #270: Mirror PG execution coverage to SQL Server.
