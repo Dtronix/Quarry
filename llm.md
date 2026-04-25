@@ -621,3 +621,13 @@ dotnet build
 dotnet test src/Quarry.Tests
 dotnet test src/Quarry.Analyzers.Tests
 ```
+
+### Release Notes Workflow
+
+Per-version release notes live in `docs/articles/releases/release-notes-vX.Y.Z.md`, written when a new release is tagged via the `llm-release.md` skill. Between tags, contributors accumulate notes in **`docs/articles/releases/release-notes-next.md`** (the staging file).
+
+**For a PR that needs a release-notes entry** (any user-visible change — fix, feature, behavior change, breaking change, perf): append the entry to the appropriate section in `release-notes-next.md`. The file uses the same Highlights / Breaking Changes / New Features / Performance / Architecture / Bug Fixes / Documentation & Tooling / Migration Guide / Stats / Full Changelog skeleton as `release-notes-vX.Y.Z.md` (Appendix in `llm-release.md`). Empty sections are omitted from the seed; PRs add sections as needed. PR descriptions remain the source of truth — `release-notes-next.md` is a curated, edited summary, not a verbatim copy.
+
+**For a PR that doesn't need an entry** (internal refactor with no behavior change, test-only, build/CI tweak): leave `release-notes-next.md` untouched.
+
+**At release time** the `llm-release.md` skill reads `release-notes-next.md`, merges and refines its content into the new `release-notes-vX.Y.Z.md`, then **deletes** `release-notes-next.md` and stages the deletion into the `Release vX.Y.Z` commit. The next PR that needs an entry recreates the file from the same skeleton.
