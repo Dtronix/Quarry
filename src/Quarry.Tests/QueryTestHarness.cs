@@ -1,3 +1,4 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.Data.Sqlite;
 using MySqlConnector;
 using Npgsql;
@@ -16,9 +17,9 @@ namespace Quarry.Tests;
 /// Lite is backed by a real SQLite in-memory connection (SQL verification + execution).
 /// Pg is backed by a real Npgsql connection to a shared PostgreSQL 17 container
 /// (SQL verification + execution). My is backed by a real MySqlConnector connection
-/// to a shared MySQL 8.4 container (SQL verification + execution). Ss is on
-/// MockDbConnection (SQL verification only — out of scope for the real-provider
-/// migration that motivated Pg and My moving off the mock).
+/// to a shared MySQL 8.4 container (SQL verification + execution). Ss is backed by
+/// a real Microsoft.Data.SqlClient connection to a shared SQL Server 2022 container
+/// (SQL verification + execution).
 /// Each test creates its own harness — no shared mutable state, fully parallelizable.
 /// </summary>
 internal sealed class QueryTestHarness : IAsyncDisposable
@@ -30,6 +31,9 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     private readonly MySqlConnection _mysqlConnection;
     private readonly MySqlTransaction? _mysqlTransaction;
     private readonly string? _ownedMyDatabase;
+    private readonly SqlConnection _sqlConnection;
+    private readonly bool _sqlInTransaction;
+    private readonly MsSqlTestContainer.OwnedSchemaInfo? _ownedSsSchema;
 
     /// <summary>SQLite context on a real in-memory connection (SQL verification + execution).</summary>
     public TestDbContext Lite { get; }
@@ -40,10 +44,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// <summary>MySQL context on a real <see cref="MySqlConnection"/> attached to the shared Testcontainers MySQL 8.4 container (SQL verification + execution).</summary>
     public My.MyDb My { get; }
 
-    /// <summary>SQL Server context on MockDbConnection (SQL verification only).</summary>
+    /// <summary>SQL Server context on a real <see cref="SqlConnection"/> attached to the shared Testcontainers SQL Server 2022 container (SQL verification + execution).</summary>
     public Ss.SsDb Ss { get; }
 
-    /// <summary>The shared MockDbConnection backing Ss — exposed for tests that inspect executed SQL.</summary>
+    /// <summary>The shared MockDbConnection backing the schema-qualified contexts (<see cref="Samples.SchemaPg.SchemaPgDb"/>, <see cref="Samples.SchemaMy.SchemaMyDb"/>, <see cref="Samples.SchemaSs.SchemaSsDb"/>) — exposed for tests that inspect executed SQL.</summary>
     public MockDbConnection MockConnection { get; }
 
     private QueryTestHarness(
@@ -54,7 +58,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         string? ownedPgSchema,
         MySqlConnection mysqlConnection,
         MySqlTransaction? mysqlTransaction,
-        string? ownedMyDatabase)
+        string? ownedMyDatabase,
+        SqlConnection sqlConnection,
+        bool sqlInTransaction,
+        MsSqlTestContainer.OwnedSchemaInfo? ownedSsSchema)
     {
         _sqliteConnection = sqliteConnection;
         MockConnection = mockConnection;
@@ -64,16 +71,19 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         _mysqlConnection = mysqlConnection;
         _mysqlTransaction = mysqlTransaction;
         _ownedMyDatabase = ownedMyDatabase;
+        _sqlConnection = sqlConnection;
+        _sqlInTransaction = sqlInTransaction;
+        _ownedSsSchema = ownedSsSchema;
         Lite = new TestDbContext(sqliteConnection);
         Pg = new Pg.PgDb(npgsqlConnection);
         My = new My.MyDb(mysqlConnection);
-        Ss = new Ss.SsDb(mockConnection);
+        Ss = new Ss.SsDb(sqlConnection);
     }
 
     /// <summary>
     /// Creates a fresh harness with an isolated SQLite in-memory database and
-    /// PG + MySQL connections to the shared containers, all seeded with the
-    /// default schema and data.
+    /// real connections to the shared PG, MySQL, and SQL Server containers,
+    /// all seeded with the default schema and data.
     /// </summary>
     /// <param name="useOwnPgSchema">
     /// When <c>false</c> (default), the PG connection sets <c>search_path</c>
@@ -92,9 +102,21 @@ internal sealed class QueryTestHarness : IAsyncDisposable
     /// on dispose. When <c>true</c>, a uniquely-named database is created with
     /// its own DDL + seed and dropped on dispose.
     /// </param>
+    /// <param name="useOwnSsSchema">
+    /// When <c>false</c> (default), the SQL Server connection authenticates
+    /// as the shared <c>quarry_test_user</c> (whose default schema is
+    /// <c>quarry_test</c>) and wraps the test in a transaction that rolls
+    /// back on dispose. When <c>true</c>, a uniquely-named SQL Server
+    /// schema + per-harness login is provisioned; the connection
+    /// authenticates as that login (default schema points at the new schema)
+    /// and the schema/login are dropped on dispose. Use for tests that
+    /// issue their own <c>BEGIN</c>/<c>COMMIT</c> on Ss, or that depend on
+    /// COMMIT-visible state.
+    /// </param>
     public static async Task<QueryTestHarness> CreateAsync(
         bool useOwnPgSchema = false,
-        bool useOwnMyDatabase = false)
+        bool useOwnMyDatabase = false,
+        bool useOwnSsSchema = false)
     {
         // Track every opened resource so a partial-setup throw can roll
         // them all back — previously a transient PG connection refusal or
@@ -108,6 +130,10 @@ internal sealed class QueryTestHarness : IAsyncDisposable
         MySqlConnection? mysqlConnection = null;
         MySqlTransaction? mysqlTransaction = null;
         string? ownedMyDatabase = null;
+        SqlConnection? sqlConnection = null;
+        var sqlInTransaction = false;
+        MsSqlTestContainer.OwnedSchemaInfo? ownedSsSchema = null;
+        SqlConnection? saSetupConnection = null;
 
         try
         {
@@ -170,13 +196,58 @@ internal sealed class QueryTestHarness : IAsyncDisposable
                 mysqlTransaction = (MySqlTransaction)await mysqlConnection.BeginTransactionAsync();
             }
 
+            // SQL Server setup — ensure baseline (no-op after the first
+            // harness). Owned-schema path provisions the schema + login
+            // through an sa-authenticated setup connection that we close
+            // before opening the test connection, so the per-harness login
+            // we just created has time to settle.
+            await MsSqlTestContainer.EnsureBaselineAsync();
+            string ssCs;
+            if (useOwnSsSchema)
+            {
+                var saCs = await MsSqlTestContainer.GetSaConnectionStringAsync();
+                saSetupConnection = new SqlConnection(saCs);
+                await saSetupConnection.OpenAsync();
+                ownedSsSchema = await MsSqlTestContainer.CreateOwnedSchemaAsync(saSetupConnection);
+                ssCs = await MsSqlTestContainer.GetOwnedSchemaConnectionStringAsync(ownedSsSchema.Value);
+            }
+            else
+            {
+                ssCs = await MsSqlTestContainer.GetUserConnectionStringAsync();
+            }
+            sqlConnection = new SqlConnection(ssCs);
+            await sqlConnection.OpenAsync();
+
+            if (!useOwnSsSchema)
+            {
+                // Why raw `BEGIN TRANSACTION` instead of
+                // SqlConnection.BeginTransaction(): SqlClient requires every
+                // SqlCommand executed against a connection with an open
+                // SqlTransaction to have its `Transaction` property
+                // explicitly assigned. Quarry's QueryExecutor builds
+                // DbCommand instances generically and does not assign that
+                // property, which makes BeginTransaction() incompatible.
+                // Issuing `BEGIN TRANSACTION` via raw SQL starts a
+                // server-side transaction without producing a SqlTransaction
+                // object, so SqlClient's client-side check is bypassed; the
+                // server-side transactional semantics are unchanged.
+                await using var beginCmd = sqlConnection.CreateCommand();
+                beginCmd.CommandText = "BEGIN TRANSACTION";
+                await beginCmd.ExecuteNonQueryAsync();
+                sqlInTransaction = true;
+            }
+
             var harness = new QueryTestHarness(
                 sqliteConnection, mockConnection,
                 npgsqlConnection, npgsqlTransaction, ownedPgSchema,
-                mysqlConnection, mysqlTransaction, ownedMyDatabase);
+                mysqlConnection, mysqlTransaction, ownedMyDatabase,
+                sqlConnection, sqlInTransaction, ownedSsSchema);
 
             await harness.CreateSchema();
             await harness.SeedData();
+
+            if (saSetupConnection is not null)
+                await saSetupConnection.DisposeAsync();
 
             return harness;
         }
@@ -185,6 +256,24 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             // Best-effort unwind — preserve the original exception but don't
             // leak connections. Each dispose is wrapped because an error in
             // an earlier step is more informative than a cascade in teardown.
+            if (sqlInTransaction && sqlConnection?.State == System.Data.ConnectionState.Open)
+            {
+                try
+                {
+                    await using var rollbackCmd = sqlConnection.CreateCommand();
+                    rollbackCmd.CommandText = "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION";
+                    await rollbackCmd.ExecuteNonQueryAsync();
+                }
+                catch { }
+            }
+            if (sqlConnection is not null)
+                try { await sqlConnection.DisposeAsync(); } catch { }
+            if (ownedSsSchema is not null && saSetupConnection?.State == System.Data.ConnectionState.Open)
+            {
+                try { await MsSqlTestContainer.DropOwnedSchemaAsync(saSetupConnection, ownedSsSchema.Value); } catch { }
+            }
+            if (saSetupConnection is not null)
+                try { await saSetupConnection.DisposeAsync(); } catch { }
             if (mysqlTransaction is not null)
             {
                 try { await mysqlTransaction.RollbackAsync(); } catch { }
@@ -294,7 +383,41 @@ internal sealed class QueryTestHarness : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // SQL Server teardown. Transactional path: ROLLBACK via raw SQL
+        // discards any changes the test made — symmetrical with the
+        // BEGIN TRANSACTION raw-SQL approach taken in CreateAsync.
+        // Owned-schema path: DROP TABLE/VIEW/SCHEMA/USER/LOGIN through an
+        // sa-authenticated cleanup connection (the user-authenticated test
+        // connection cannot drop its own login). Same context-vs-connection
+        // rule as PG: Ss.Dispose() only disposes the wrapper; the connection
+        // lifecycle is ours. Wrapper dispose runs AFTER the rollback so the
+        // ordering matches PG's teardown.
+        if (_sqlInTransaction && _sqlConnection.State == System.Data.ConnectionState.Open)
+        {
+            try
+            {
+                await using var rollbackCmd = _sqlConnection.CreateCommand();
+                rollbackCmd.CommandText = "IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION";
+                await rollbackCmd.ExecuteNonQueryAsync();
+            }
+            catch { /* best-effort; connection may already be closed */ }
+        }
         Ss.Dispose();
+        // Close the test connection BEFORE dropping the owned-schema login,
+        // otherwise DROP LOGIN errors with "Cannot drop the login ... it has
+        // open connection(s)".
+        await _sqlConnection.DisposeAsync();
+        if (_ownedSsSchema is not null)
+        {
+            try
+            {
+                var saCs = await MsSqlTestContainer.GetSaConnectionStringAsync();
+                await using var saConn = new SqlConnection(saCs);
+                await saConn.OpenAsync();
+                await MsSqlTestContainer.DropOwnedSchemaAsync(saConn, _ownedSsSchema.Value);
+            }
+            catch { /* best-effort; avoids masking the test's own failure */ }
+        }
 
         // MySQL teardown. Mirrors the PG teardown ordering and rationale —
         // ROLLBACK for the transactional path, DROP DATABASE for the owned

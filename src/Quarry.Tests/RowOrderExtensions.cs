@@ -3,13 +3,13 @@ namespace Quarry.Tests;
 /// <summary>
 /// Helpers for asserting against query results in cross-dialect mirror tests
 /// where SQLite's incidental insertion-order return shape would otherwise
-/// force the test to also assert positionally on the PG / MySQL side.
-/// PostgreSQL and MySQL InnoDB do not guarantee row order without an
-/// explicit <c>ORDER BY</c>, so a passing <c>pgResults[0]</c> /
-/// <c>myResults[0]</c> assertion today can flake tomorrow after a planner
-/// change (statistics refresh, parallel scan, hash join chosen for a CTE).
-/// Sort the materialised list in C# with a stable key so the test is
-/// provider-independent.
+/// force the test to also assert positionally on the real-provider side.
+/// PostgreSQL, MySQL InnoDB, and SQL Server do not guarantee row order
+/// without an explicit <c>ORDER BY</c>, so a passing <c>pgResults[0]</c> /
+/// <c>myResults[0]</c> / <c>ssResults[0]</c> assertion today can flake
+/// tomorrow after a planner change (statistics refresh, parallel scan,
+/// hash join chosen for a CTE). Sort the materialised list in C# with a
+/// stable key so the test is provider-independent.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -26,9 +26,9 @@ namespace Quarry.Tests;
 /// </para>
 /// <para>
 /// SQLite assertions stay positional (we accept the asymmetry — Lite's
-/// incidental insertion-order is the reference shape and PG's / MySQL's
-/// sorted shape mirrors it); only the PG and MySQL sides run through this
-/// helper.
+/// incidental insertion-order is the reference shape and PG's / MySQL's /
+/// SQL Server's sorted shape mirrors it); only the real-provider sides
+/// (PG, MySQL, SQL Server) run through this helper.
 /// </para>
 /// </remarks>
 internal static class RowOrderExtensions

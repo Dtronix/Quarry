@@ -71,6 +71,11 @@ internal class CrossDialectCompositionTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, "Shipped")));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m, "Shipped")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, "Shipped")));
+        Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m, "Shipped")));
     }
 
     #endregion
@@ -121,6 +126,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -171,6 +179,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -221,6 +232,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -275,6 +289,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -322,6 +339,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -368,6 +388,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -422,6 +445,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -483,6 +509,8 @@ internal class CrossDialectCompositionTests
         // SELECT list (changing test intent) or wrapping the query in a subquery.
         // Tracked as #267 — once the generator emits PG-portable SQL for this shape,
         // re-enable the Pg execution mirror here.
+
+        // ss execution skipped — same #267 reason as pg.
     }
 
     #endregion
@@ -532,6 +560,10 @@ internal class CrossDialectCompositionTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -566,6 +598,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -595,6 +630,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -624,6 +662,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -660,6 +701,11 @@ internal class CrossDialectCompositionTests
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].Item1, Is.EqualTo("Shipped"));
         Assert.That(myResults[0].Item2, Is.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].Item1, Is.EqualTo("Shipped"));
+        Assert.That(ssResults[0].Item2, Is.EqualTo(2));
     }
 
     #endregion
@@ -697,6 +743,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     [Test]
@@ -806,6 +855,15 @@ internal class CrossDialectCompositionTests
             .Prepare();
         var myResults = await myPrepared.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssPrepared = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Where((u, o) => o.Total > 100 && u.IsActive)
+            .OrderBy((u, o) => o.Total, Direction.Descending)
+            .Limit(10)
+            .Select((u, o) => (u.UserName, o.Total))
+            .Prepare();
+        var ssResults = await ssPrepared.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     #endregion
@@ -874,6 +932,10 @@ internal class CrossDialectCompositionTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -922,6 +984,11 @@ internal class CrossDialectCompositionTests
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults[0].Total, Is.LessThanOrEqualTo(myResults[1].Total));
         Assert.That(myResults[1].Total, Is.LessThanOrEqualTo(myResults[2].Total));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0].Total, Is.LessThanOrEqualTo(ssResults[1].Total));
+        Assert.That(ssResults[1].Total, Is.LessThanOrEqualTo(ssResults[2].Total));
     }
 
     [Test]
@@ -965,6 +1032,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -1007,6 +1077,9 @@ internal class CrossDialectCompositionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
     }
 
     [Test]
@@ -1059,6 +1132,9 @@ internal class CrossDialectCompositionTests
 
         var myResults1 = await my.ExecuteFetchAllAsync();
         Assert.That(myResults1, Has.Count.EqualTo(1));
+
+        var ssResults1 = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults1, Has.Count.EqualTo(1));
     }
 
     #endregion

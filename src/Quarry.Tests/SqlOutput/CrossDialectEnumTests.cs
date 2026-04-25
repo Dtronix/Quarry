@@ -44,6 +44,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((3, 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((3, 150.00m)));
     }
 
     [Test]
@@ -81,6 +85,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -120,6 +128,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -157,6 +169,9 @@ internal class CrossDialectEnumTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
     }
 
     #endregion
@@ -181,7 +196,7 @@ internal class CrossDialectEnumTests
             sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[UserId]");
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -191,6 +206,9 @@ internal class CrossDialectEnumTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -203,10 +221,10 @@ internal class CrossDialectEnumTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        var lt = Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).Prepare();
-        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).Prepare();
-        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).Prepare();
-        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = default }).Prepare();
+        var lt = Lite.Orders().Insert(new Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var pg = Pg.Orders().Insert(new Pg.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var my = My.Orders().Insert(new My.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = new DateTime(2024, 1, 1) }).Prepare();
+        var ss = Ss.Orders().Insert(new Ss.Order { UserId = 1, Total = 0m, Status = "x", Priority = OrderPriority.Urgent, OrderDate = new DateTime(2024, 1, 1) }).Prepare();
 
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
@@ -214,7 +232,7 @@ internal class CrossDialectEnumTests
             sqlite: "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"OrderId\"",
             pg:     "INSERT INTO \"orders\" (\"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\") VALUES ($1, $2, $3, $4, $5) RETURNING \"OrderId\"",
             mysql:  "INSERT INTO `orders` (`UserId`, `Total`, `Status`, `Priority`, `OrderDate`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [Priority], [OrderDate]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[OrderId]");
+            ss:     "INSERT INTO [orders] ([UserId], [Total], [Status], [Priority], [OrderDate]) OUTPUT INSERTED.[OrderId] VALUES (@p0, @p1, @p2, @p3, @p4)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -224,6 +242,9 @@ internal class CrossDialectEnumTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -257,6 +278,9 @@ internal class CrossDialectEnumTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion

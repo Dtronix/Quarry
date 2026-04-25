@@ -47,6 +47,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     #endregion
@@ -89,6 +95,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -124,6 +136,11 @@ internal class CrossDialectJoinTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     #endregion
@@ -157,6 +174,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -209,6 +229,15 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[1].Amount, Is.EqualTo(75.50m));
         Assert.That(myResults[2].Name, Is.EqualTo("Bob"));
         Assert.That(myResults[2].Amount, Is.EqualTo(150.00m));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0].Name, Is.EqualTo("Alice"));
+        Assert.That(ssResults[0].Amount, Is.EqualTo(250.00m));
+        Assert.That(ssResults[1].Name, Is.EqualTo("Alice"));
+        Assert.That(ssResults[1].Amount, Is.EqualTo(75.50m));
+        Assert.That(ssResults[2].Name, Is.EqualTo("Bob"));
+        Assert.That(ssResults[2].Amount, Is.EqualTo(150.00m));
     }
 
     [Test]
@@ -247,6 +276,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0].User, Is.EqualTo("Alice"));
         Assert.That(myResults[0].Amount, Is.EqualTo(250.00m));
         Assert.That(myResults[0].Product, Is.Not.Null);
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0].User, Is.EqualTo("Alice"));
+        Assert.That(ssResults[0].Amount, Is.EqualTo(250.00m));
+        Assert.That(ssResults[0].Product, Is.Not.Null);
     }
 
     #endregion
@@ -287,6 +322,11 @@ internal class CrossDialectJoinTests
         Assert.That(myResults, Has.Count.EqualTo(4));
         Assert.That(myResults.Count(r => r == "Alice"), Is.EqualTo(2));
         Assert.That(myResults.Count(r => r == "Charlie"), Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(4));
+        Assert.That(ssResults.Count(r => r == "Alice"), Is.EqualTo(2));
+        Assert.That(ssResults.Count(r => r == "Charlie"), Is.EqualTo(1));
     }
 
     [Test]
@@ -320,6 +360,10 @@ internal class CrossDialectJoinTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults.Any(r => r.Item1 == "Charlie"), Is.False);
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults.Any(r => r.Item1 == "Charlie"), Is.False);
     }
 
     #endregion
@@ -379,6 +423,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -416,6 +463,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(5));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(5));
     }
 
     #endregion
@@ -466,6 +516,11 @@ internal class CrossDialectJoinTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Bob", 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -512,6 +567,11 @@ internal class CrossDialectJoinTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m)));
     }
 
     #endregion
@@ -559,6 +619,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m)));
     }
 
     [Test]
@@ -591,6 +657,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
@@ -649,6 +718,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(9));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(9));
     }
 
     [Test]
@@ -679,6 +751,9 @@ internal class CrossDialectJoinTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
     }
 
     #endregion
@@ -727,6 +802,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 325.50m)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 325.50m)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 150.00m)));
     }
 
     [Test]
@@ -770,6 +851,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
     }
 
     /// <summary>
@@ -819,6 +906,12 @@ internal class CrossDialectJoinTests
         Assert.That(myResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
         Assert.That(myResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
         Assert.That(myResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0], Is.EqualTo(("Alice", 250.00m, 2)));
+        Assert.That(ssResults[1], Is.EqualTo(("Alice", 75.50m, 2)));
+        Assert.That(ssResults[2], Is.EqualTo(("Bob", 150.00m, 1)));
     }
 
     #endregion

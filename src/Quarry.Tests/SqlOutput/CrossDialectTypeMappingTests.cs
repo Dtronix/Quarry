@@ -40,7 +40,7 @@ internal class CrossDialectTypeMappingTests
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES (@p0, @p1, @p2, @p3, @p4) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\", \"credit_limit\", \"IsActive\") VALUES ($1, $2, $3, $4, $5) RETURNING \"AccountId\"",
             mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`, `credit_limit`, `IsActive`) VALUES (?, ?, ?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) VALUES (@p0, @p1, @p2, @p3, @p4) OUTPUT INSERTED.[AccountId]");
+            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance], [credit_limit], [IsActive]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2, @p3, @p4)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -50,6 +50,9 @@ internal class CrossDialectTypeMappingTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     [Test]
@@ -69,7 +72,7 @@ internal class CrossDialectTypeMappingTests
             sqlite: "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES (@p0, @p1, @p2) RETURNING \"AccountId\"",
             pg:     "INSERT INTO \"accounts\" (\"UserId\", \"AccountName\", \"Balance\") VALUES ($1, $2, $3) RETURNING \"AccountId\"",
             mysql:  "INSERT INTO `accounts` (`UserId`, `AccountName`, `Balance`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
-            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) VALUES (@p0, @p1, @p2) OUTPUT INSERTED.[AccountId]");
+            ss:     "INSERT INTO [accounts] ([UserId], [AccountName], [Balance]) OUTPUT INSERTED.[AccountId] VALUES (@p0, @p1, @p2)");
 
         var newId = await lt.ExecuteScalarAsync<int>();
         Assert.That(newId, Is.GreaterThan(0));
@@ -79,6 +82,9 @@ internal class CrossDialectTypeMappingTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -118,6 +124,11 @@ internal class CrossDialectTypeMappingTests
         Assert.That(myResults, Has.Count.EqualTo(3));
         var mySavings = myResults.First(r => r.AccountId == 1);
         Assert.That(mySavings.Balance, Is.EqualTo(new Money(1000.50m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        var ssSavings = ssResults.First(r => r.AccountId == 1);
+        Assert.That(ssSavings.Balance, Is.EqualTo(new Money(1000.50m)));
     }
 
     [Test]
@@ -156,6 +167,12 @@ internal class CrossDialectTypeMappingTests
         Assert.That(myResults[0].AccountName, Is.EqualTo("Savings"));
         Assert.That(myResults[0].Balance, Is.EqualTo(new Money(1000.50m)));
         Assert.That(myResults[0].CreditLimit, Is.EqualTo(new Money(5000.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].AccountName, Is.EqualTo("Savings"));
+        Assert.That(ssResults[0].Balance, Is.EqualTo(new Money(1000.50m)));
+        Assert.That(ssResults[0].CreditLimit, Is.EqualTo(new Money(5000.00m)));
     }
 
     #endregion
@@ -192,6 +209,10 @@ internal class CrossDialectTypeMappingTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults.All(r => r.AccountName is "Savings" or "Checking"), Is.True);
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults.All(r => r.AccountName is "Savings" or "Checking"), Is.True);
     }
 
     #endregion
@@ -237,6 +258,16 @@ internal class CrossDialectTypeMappingTests
             IsActive = true
         }).ExecuteNonQueryAsync();
 
+        // INSERT setup (Ss)
+        await Ss.Accounts().Insert(new Ss.Account
+        {
+            UserId = 2,
+            AccountName = "RoundTrip",
+            Balance = money,
+            CreditLimit = creditLimit,
+            IsActive = true
+        }).ExecuteNonQueryAsync();
+
         // SELECT: cross-dialect SQL assertion
         var lt = Lite.Accounts().Where(a => a.AccountName == "RoundTrip").Select(a => (a.AccountName, a.Balance, a.CreditLimit)).Prepare();
         var pg = Pg.Accounts().Where(a => a.AccountName == "RoundTrip").Select(a => (a.AccountName, a.Balance, a.CreditLimit)).Prepare();
@@ -265,6 +296,11 @@ internal class CrossDialectTypeMappingTests
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].Balance, Is.EqualTo(money));
         Assert.That(myResults[0].CreditLimit, Is.EqualTo(creditLimit));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].Balance, Is.EqualTo(money));
+        Assert.That(ssResults[0].CreditLimit, Is.EqualTo(creditLimit));
     }
 
     #endregion

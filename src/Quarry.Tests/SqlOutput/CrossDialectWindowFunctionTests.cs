@@ -50,6 +50,12 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(myByRowNum[0].OrderId, Is.EqualTo(1));
         Assert.That(myByRowNum[1].OrderId, Is.EqualTo(2));
         Assert.That(myByRowNum[2].OrderId, Is.EqualTo(3));
+
+        // ss execution skipped — see #274. SQL Server returns ROW_NUMBER()
+        // as BIGINT; SqlDataReader.GetInt32 does not auto-narrow, so the
+        // generator-emitted reader throws InvalidCastException. The fix
+        // belongs in the generator (cast-in-SQL or read-with-GetInt64).
+        // SQL-string assertion above already covers the emit shape on Ss.
     }
 
     [Test]
@@ -103,6 +109,10 @@ internal class CrossDialectWindowFunctionTests
         var myResults = await my.ExecuteFetchAllAsync();
         var myOrder1 = myResults.First(r => r.OrderId == 1);
         Assert.That(myOrder1.DRnk, Is.EqualTo(1));
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // window-function projections). SQL-string assertion above already
+        // covers the emit shape on Ss.
     }
 
     [Test]
@@ -270,6 +280,12 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(myOrder1.RunSum, Is.EqualTo(400.00m).Within(0.01m));
         var myOrder3 = myResults.First(r => r.OrderId == 3);
         Assert.That(myOrder3.RunSum, Is.EqualTo(400.00m).Within(0.01m));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssOrder1 = ssResults.First(r => r.OrderId == 1);
+        Assert.That(ssOrder1.RunSum, Is.EqualTo(400.00m).Within(0.01m));
+        var ssOrder3 = ssResults.First(r => r.OrderId == 3);
+        Assert.That(ssOrder3.RunSum, Is.EqualTo(400.00m).Within(0.01m));
     }
 
     [Test]
@@ -309,6 +325,12 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(myOrder1.Cnt, Is.EqualTo(2));
         var myOrder2 = myResults.First(r => r.OrderId == 2);
         Assert.That(myOrder2.Cnt, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssOrder1 = ssResults.First(r => r.OrderId == 1);
+        Assert.That(ssOrder1.Cnt, Is.EqualTo(2));
+        var ssOrder2 = ssResults.First(r => r.OrderId == 2);
+        Assert.That(ssOrder2.Cnt, Is.EqualTo(1));
     }
 
     #endregion
@@ -407,6 +429,10 @@ internal class CrossDialectWindowFunctionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // window-function projections). SQL-string assertion above already
+        // covers the emit shape on Ss.
     }
 
     [Test]
@@ -440,6 +466,10 @@ internal class CrossDialectWindowFunctionTests
         var myResults = await my.ExecuteFetchAllAsync();
         var myAlice1 = myResults.First(r => r.UserName == "Alice" && r.Total == 250.00m);
         Assert.That(myAlice1.UserTotal, Is.EqualTo(325.50m).Within(0.01m));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        var ssAlice1 = ssResults.First(r => r.UserName == "Alice" && r.Total == 250.00m);
+        Assert.That(ssAlice1.UserTotal, Is.EqualTo(325.50m).Within(0.01m));
     }
 
     [Test]
@@ -573,7 +603,7 @@ internal class CrossDialectWindowFunctionTests
     public async Task WindowFunction_Lag_NullableDto_Execution()
     {
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, My, _) = t;
+        var (Lite, Pg, My, Ss) = t;
 
         // LAG with a DTO that has decimal? PrevTotal — the generated reader must emit
         // an IsDBNull guard so the first row (where LAG returns NULL) reads as null.
@@ -628,6 +658,20 @@ internal class CrossDialectWindowFunctionTests
         Assert.That(myByTotal[0].Total, Is.EqualTo(75.50m));
         Assert.That(myByTotal[1].PrevTotal, Is.EqualTo(75.50m));
         Assert.That(myByTotal[2].PrevTotal, Is.EqualTo(150.00m));
+
+        var ss2 = Ss.Orders().Where(o => true).Select(o => new OrderLagDto
+        {
+            OrderId = o.OrderId,
+            Total = o.Total,
+            PrevTotal = Sql.Lag(o.Total, 1, over => over.OrderBy(o.Total))
+        }).Prepare();
+        var ssResults = await ss2.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        var ssByTotal = ssResults.OrderBy(r => r.Total).ToList();
+        Assert.That(ssByTotal[0].PrevTotal, Is.Null);
+        Assert.That(ssByTotal[0].Total, Is.EqualTo(75.50m));
+        Assert.That(ssByTotal[1].PrevTotal, Is.EqualTo(75.50m));
+        Assert.That(ssByTotal[2].PrevTotal, Is.EqualTo(150.00m));
     }
 
     #endregion
@@ -847,6 +891,11 @@ internal class CrossDialectWindowFunctionTests
         var myByRowNum = myResults.OrderBy(r => r.RowNum).ToList();
         Assert.That(myByRowNum[0].Total, Is.EqualTo(150.00m));
         Assert.That(myByRowNum[1].Total, Is.EqualTo(250.00m));
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // window-function projections). SQL-string assertion above already
+        // covers the emit shape on Ss.
+
     }
 
     [Test]
@@ -881,6 +930,10 @@ internal class CrossDialectWindowFunctionTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults.All(r => r.RowNum == 1), Is.True);
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // window-function projections). SQL-string assertion above already
+        // covers the emit shape on Ss.
     }
 
     #endregion
@@ -916,6 +969,10 @@ internal class CrossDialectWindowFunctionTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // NTILE(...) projection). SQL-string assertion above already
+        // covers the emit shape on Ss.
     }
 
     [Test]
@@ -949,6 +1006,10 @@ internal class CrossDialectWindowFunctionTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
         Assert.That(myResults.Select(r => r.Grp).All(g => g >= 1 && g <= 3), Is.True);
+
+        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
+        // NTILE(...) projection). SQL-string assertion above already
+        // covers the emit shape on Ss.
     }
 
     [Test]

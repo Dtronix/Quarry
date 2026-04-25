@@ -38,6 +38,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -68,6 +71,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(2));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -101,6 +107,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -134,6 +143,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -169,6 +181,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(0));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(0));
     }
 
     #endregion
@@ -202,6 +217,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -232,6 +250,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(2));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -265,6 +286,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -298,6 +322,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -332,6 +359,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -362,6 +392,9 @@ internal class CrossDialectUpdateTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -904,6 +937,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(pgLineTotal, Is.EqualTo(250.00m));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
+
+        var ssLineTotal = await Ss.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(ssLineTotal, Is.EqualTo(250.00m));
     }
 
     [Test]
@@ -949,6 +991,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(pgLineTotal, Is.EqualTo(85.50m));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
+
+        var ssLineTotal = await Ss.OrderItems()
+            .Where(o => o.OrderItemId == 2)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(ssLineTotal, Is.EqualTo(85.50m));
     }
 
     [Test]
@@ -995,6 +1046,15 @@ internal class CrossDialectUpdateTests
             .Select(o => o.LineTotal)
             .ExecuteFetchFirstAsync();
         Assert.That(pgLineTotal, Is.EqualTo(1125.00m));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
+
+        var ssLineTotal = await Ss.OrderItems()
+            .Where(o => o.OrderItemId == 1)
+            .Select(o => o.LineTotal)
+            .ExecuteFetchFirstAsync();
+        Assert.That(ssLineTotal, Is.EqualTo(1125.00m));
     }
 
     [Test]
@@ -1040,6 +1100,16 @@ internal class CrossDialectUpdateTests
             .ExecuteFetchFirstAsync();
         Assert.That(pgResult.LineTotal, Is.EqualTo(150.00m));
         Assert.That(pgResult.Quantity, Is.EqualTo(0));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
+
+        var ssResult = await Ss.OrderItems()
+            .Where(o => o.OrderItemId == 3)
+            .Select(o => (o.LineTotal, o.Quantity))
+            .ExecuteFetchFirstAsync();
+        Assert.That(ssResult.LineTotal, Is.EqualTo(150.00m));
+        Assert.That(ssResult.Quantity, Is.EqualTo(0));
     }
 
     #endregion
