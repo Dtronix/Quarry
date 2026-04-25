@@ -12,7 +12,7 @@ issue: #270
 pr:
 session: 1
 phases-total: 5
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 Issue #270: Mirror PG execution coverage to SQL Server.
@@ -48,6 +48,15 @@ Already referenced at `6.*` in `Quarry.Tests.csproj`. Issue mentions 5.* — kee
 
 ### 2026-04-25 — Phase 3 wiring choice: raw `BEGIN TRANSACTION` instead of SqlConnection.BeginTransaction()
 SqlClient requires every `SqlCommand` to have its `Transaction` property assigned when the connection has an open `SqlTransaction`. Quarry's `QueryExecutor` builds DbCommands generically and does not assign that property, so `SqlConnection.BeginTransaction()` makes every test fail with that validation error. Workaround: open a server-side transaction via `BEGIN TRANSACTION` SQL command and roll back via `ROLLBACK TRANSACTION` SQL command. SqlClient's client-side check is bypassed because no `SqlTransaction` object exists. Server-side semantics are unchanged.
+
+### 2026-04-25 — Phase 4 surfaced 19 Ss-only failures in 3 categories
+After the bulk mirror, 19 tests fail on the Ss execution path. Categorisation (each goes into its own Phase-5 commit):
+
+1. **SqlDateTime overflow (7 tests)** — Tests use `CreatedAt = default` / `OrderDate = default` (DateTime.MinValue = `0001-01-01`). Microsoft.Data.SqlClient binds `DateTime` parameters as `DATETIME` (range 1753-9999) by default, regardless of column type. The DATETIME2 column would accept the value, but the parameter rejects it before reaching the column. Affected: `Insert_SingleUser`, `Insert_SingleOrder`, `ExecuteScalarAsync_SingleUser_ReturnsIdentity`, `ExecuteScalarAsync_SingleOrder_ReturnsIdentity`, `ExecuteNonQueryAsync_SingleUser`, `ExecuteNonQueryAsync_SingleOrder`, `Insert_WithEnumColumn`. **Fix plan:** replace `default` with a valid DateTime literal (e.g. `new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc)`) — works for all four dialects; the test's intent (insert with arbitrary timestamp value) is preserved.
+
+2. **Int64 → Int32 cast (9 tests)** — SQL Server's window functions (`ROW_NUMBER`, `DENSE_RANK`, `NTILE`, `COUNT()` over partition) return `BIGINT`. Quarry's reader emits `GetInt32(i)` based on the projection's declared type, which `Microsoft.Data.SqlClient.SqlDataReader.GetInt32` rejects on a BIGINT column (no auto-narrow). Npgsql's GetInt32 silently narrows from BIGINT, which is why PG passes today. Affected: `WindowFunction_DenseRank_OrderByDescending`, `WindowFunction_Joined_RowNumber`, `WindowFunction_MixedTypePartitionBy`, `WindowFunction_Ntile_ConstVariable`, `WindowFunction_Ntile_Variable`, `WindowFunction_RowNumber_OrderBy`, `WindowFunction_WithWhereClause`, `UnionAll_WithVariableWindowFunctionArg`, `UnionAll_WithVariableWindowFunctionArg_ParamOffset`. **Fix plan:** open a follow-up issue for the generator-side narrow; in this PR, skip Ss execute on these 9 sites with a comment referencing the new issue.
+
+3. **Case-sensitive vs case-insensitive collation (3 tests)** — SQL Server's default container collation is `SQL_Latin1_General_CP1_CI_AS` (case-INSENSITIVE), where Lite/Pg/MySQL default to case-SENSITIVE comparison. Tests assert `Count == 0` for lowercase-vs-PascalCase mismatches, which fail on Ss because `'pending'` matches `'Pending'`. Affected: `Where_ContainsRuntimeCollection`, `Where_Any_And_All_MultipleSubqueries`, `Join_Where_InClause`. **Fix plan:** change `MsSqlTestContainer.CreateSchemaObjectsAsync` to declare NVARCHAR columns with `COLLATE SQL_Latin1_General_CP1_CS_AS` (case-sensitive). Restores parity with the other dialects without changing the SQL the generator emits.
 
 ## Suspend State
 

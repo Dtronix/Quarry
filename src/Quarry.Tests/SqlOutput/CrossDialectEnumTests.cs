@@ -44,6 +44,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((3, 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((3, 150.00m)));
     }
 
     [Test]
@@ -81,6 +85,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -120,6 +128,10 @@ internal class CrossDialectEnumTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -157,6 +169,9 @@ internal class CrossDialectEnumTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
     }
 
     #endregion
@@ -191,6 +206,9 @@ internal class CrossDialectEnumTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -224,6 +242,9 @@ internal class CrossDialectEnumTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -257,6 +278,9 @@ internal class CrossDialectEnumTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion

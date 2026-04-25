@@ -51,6 +51,10 @@ internal class CrossDialectNullableValueTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
     }
 
     [Test]
@@ -113,6 +117,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -146,6 +155,10 @@ internal class CrossDialectNullableValueTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((2, "Bob")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((2, "Bob")));
     }
 
     #endregion
@@ -185,6 +198,10 @@ internal class CrossDialectNullableValueTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
     }
 
     #endregion
@@ -276,6 +293,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((2, "Bob")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ssResults[1], Is.EqualTo((2, "Bob")));
     }
 
     [Test]
@@ -317,6 +339,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]
@@ -382,6 +409,11 @@ internal class CrossDialectNullableValueTests
         Assert.That(myResults, Has.Count.EqualTo(2));
         Assert.That(myResults[0], Is.EqualTo((1, "Alice")));
         Assert.That(myResults[1], Is.EqualTo((3, "Charlie")));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ssResults[1], Is.EqualTo((3, "Charlie")));
     }
 
     [Test]

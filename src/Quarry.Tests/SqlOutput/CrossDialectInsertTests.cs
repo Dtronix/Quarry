@@ -38,6 +38,9 @@ internal class CrossDialectInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -71,6 +74,9 @@ internal class CrossDialectInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -104,6 +110,9 @@ internal class CrossDialectInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -137,6 +146,9 @@ internal class CrossDialectInsertTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -166,6 +178,9 @@ internal class CrossDialectInsertTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(1));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -199,6 +214,9 @@ internal class CrossDialectInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     [Test]
@@ -228,6 +246,9 @@ internal class CrossDialectInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion

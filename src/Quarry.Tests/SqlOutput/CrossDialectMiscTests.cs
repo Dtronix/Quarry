@@ -38,6 +38,9 @@ internal class CrossDialectMiscTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -71,6 +74,9 @@ internal class CrossDialectMiscTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -104,6 +110,9 @@ internal class CrossDialectMiscTests
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(0));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(0));
     }
 
     #endregion
@@ -410,7 +419,7 @@ internal class CrossDialectMiscTests
         // Also verifies the parameter carries the captured value end-to-end by executing
         // the query (review session 2 finding #12).
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, _, _) = t;
+        var (Lite, Pg, _, Ss) = t;
 
         var since = new System.DateTime(2024, 1, 1);
         var prepared = Lite.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
@@ -435,6 +444,10 @@ internal class CrossDialectMiscTests
         var pgPrepared = Pg.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
         var pgResults = await pgPrepared.ExecuteFetchAllAsync();
         Assert.That(pgResults, Is.Not.Null);
+
+        var ssPrepared = Ss.Users().Select(u => (u.UserId, Stamp: Sql.Raw<System.DateTime>("coalesce({0}, {1})", u.CreatedAt, since))).Prepare();
+        var ssResults = await ssPrepared.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Is.Not.Null);
     }
 
     [Test]
@@ -531,6 +544,10 @@ internal class CrossDialectMiscTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(1));
         Assert.That(myResults[0].UserId, Is.EqualTo(1));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0].UserId, Is.EqualTo(1));
     }
 
     #endregion

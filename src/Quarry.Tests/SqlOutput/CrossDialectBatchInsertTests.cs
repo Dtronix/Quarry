@@ -84,6 +84,9 @@ internal class CrossDialectBatchInsertTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(2));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(2));
     }
 
     [Test]
@@ -116,6 +119,9 @@ internal class CrossDialectBatchInsertTests
 
         var myAffected = await my.ExecuteNonQueryAsync();
         Assert.That(myAffected, Is.EqualTo(3));
+
+        var ssAffected = await ss.ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(3));
     }
 
     #endregion
@@ -149,6 +155,9 @@ internal class CrossDialectBatchInsertTests
 
         var myNewId = await my.ExecuteScalarAsync<int>();
         Assert.That(myNewId, Is.GreaterThan(0));
+
+        var ssNewId = await ss.ExecuteScalarAsync<int>();
+        Assert.That(ssNewId, Is.GreaterThan(0));
     }
 
     #endregion
