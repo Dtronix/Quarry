@@ -68,7 +68,14 @@ internal static class SqlAssembler
             insertInfo = new Models.InsertInfo(insertInfo.Columns, null, null, null);
         }
         var maxParamCount = 0;
-        if (plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete)
+        // The DISTINCT + ORDER BY-on-non-projected-column wrap restructures the SELECT
+        // shape entirely (outer SELECT around inner SELECT), so it doesn't share the
+        // batch path's prefix/middle/suffix decomposition. When the plan can need the
+        // wrap on any mask, fall back to per-mask single rendering.
+        var canBatch = plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete;
+        if (canBatch && plan.Kind == QueryKind.Select && MayNeedDistinctOrderByWrap(plan, dialect))
+            canBatch = false;
+        if (canBatch)
         {
             // Batch rendering: pre-render shared segments once and assemble per mask
             if (plan.Kind == QueryKind.Select)
@@ -164,6 +171,14 @@ internal static class SqlAssembler
 
     private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset = 0)
     {
+        // DISTINCT + ORDER BY on a non-projected column: wrap in a derived table so the
+        // ORDER BY columns appear in the inner SELECT list. PG/SS reject the flat form
+        // (42P10 / equivalent); SQLite/MySQL accept it but with implementation-defined
+        // semantics. Unifying on the wrap gives all four dialects the same standard-SQL
+        // semantic. See #267.
+        if (NeedsDistinctOrderByWrap(plan, mask, dialect))
+            return RenderSelectSqlWithDistinctOrderByWrap(plan, mask, dialect, paramBaseOffset);
+
         var sb = new StringBuilder();
         var paramIndex = paramBaseOffset;
 
@@ -1318,6 +1333,331 @@ internal static class SqlAssembler
         // which has access to full type information.
         // Return null to signal the emitter should generate the reader.
         return null;
+    }
+
+    /// <summary>
+    /// Renders a single projection column's SQL reference string (without an AS-alias
+    /// suffix) using the same shape as <see cref="AppendSelectColumns"/>. Used for
+    /// DISTINCT + ORDER BY wrap detection: the rendered ORDER BY expression is compared
+    /// against the set of rendered projection-column references via string equality.
+    /// </summary>
+    private static string RenderProjectionColumnRef(ProjectedColumn col, SqlDialect dialect)
+    {
+        if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
+            return SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset: 0)!;
+        if (col.TableAlias != null)
+            return SqlFormatting.QuoteIdentifier(dialect, col.TableAlias) + "." + SqlFormatting.QuoteIdentifier(dialect, col.ColumnName);
+        return SqlFormatting.QuoteIdentifier(dialect, col.ColumnName);
+    }
+
+    /// <summary>
+    /// Returns the alias to emit for an inner-projection column inside the wrap. Aggregate
+    /// columns with an existing alias keep it; everything else gets <c>__c{index}</c>.
+    /// </summary>
+    private static string GetInnerProjectionAlias(ProjectedColumn col, int index)
+    {
+        if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.Alias))
+            return col.Alias!;
+        return "__c" + index;
+    }
+
+    /// <summary>
+    /// Returns true when this mask emits SQL that combines DISTINCT with an ORDER BY whose
+    /// expression is not in the SELECT projection — the construct PG rejects with 42P10
+    /// and that SQL Server rejects under standard rules. SQLite and MySQL tolerate the
+    /// flat form but with implementation-defined row selection. The wrap restructures the
+    /// query so the ORDER BY columns are part of the inner SELECT list.
+    /// </summary>
+    private static bool NeedsDistinctOrderByWrap(QueryPlan plan, int mask, SqlDialect dialect)
+    {
+        if (!plan.IsDistinct) return false;
+        if (plan.SetOperations.Count > 0) return false;
+        if (plan.Projection == null || plan.Projection.Columns.Count == 0) return false;
+        if (plan.OrderTerms.Count == 0) return false;
+
+        var hasActive = false;
+        foreach (var t in plan.OrderTerms)
+        {
+            if (t.BitIndex == null || (mask & (1 << t.BitIndex.Value)) != 0)
+            {
+                hasActive = true;
+                break;
+            }
+        }
+        if (!hasActive) return false;
+
+        var projColumnSqls = new HashSet<string>();
+        foreach (var c in plan.Projection.Columns)
+            projColumnSqls.Add(RenderProjectionColumnRef(c, dialect));
+
+        foreach (var t in plan.OrderTerms)
+        {
+            if (t.BitIndex != null && (mask & (1 << t.BitIndex.Value)) == 0) continue;
+            var rendered = SqlExprRenderer.Render(t.Expression, dialect, parameterBaseIndex: 0);
+            if (!projColumnSqls.Contains(rendered)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Conservative variant of <see cref="NeedsDistinctOrderByWrap"/> that ignores the
+    /// mask. Returns true if any ORDER BY term's expression is non-projected — used by
+    /// the batch dispatch in <see cref="Assemble"/> to decide whether to bypass the
+    /// batch fast path.
+    /// </summary>
+    private static bool MayNeedDistinctOrderByWrap(QueryPlan plan, SqlDialect dialect)
+    {
+        if (!plan.IsDistinct) return false;
+        if (plan.SetOperations.Count > 0) return false;
+        if (plan.Projection == null || plan.Projection.Columns.Count == 0) return false;
+        if (plan.OrderTerms.Count == 0) return false;
+
+        var projColumnSqls = new HashSet<string>();
+        foreach (var c in plan.Projection.Columns)
+            projColumnSqls.Add(RenderProjectionColumnRef(c, dialect));
+
+        foreach (var t in plan.OrderTerms)
+        {
+            var rendered = SqlExprRenderer.Render(t.Expression, dialect, parameterBaseIndex: 0);
+            if (!projColumnSqls.Contains(rendered)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Renders a SELECT with DISTINCT + ORDER BY-on-non-projected-column as a derived-table
+    /// wrap. Inner SELECT carries DISTINCT, the original projection (with explicit aliases),
+    /// and the ORDER BY expressions that aren't in the projection (aliased <c>__o{i}</c>).
+    /// Outer SELECT projects the original columns from the inner aliases and applies the
+    /// ORDER BY (referencing inner aliases) plus pagination. CTE prefix is emitted at the
+    /// outer level. Set operations are not supported here — the caller's
+    /// <see cref="NeedsDistinctOrderByWrap"/> already excludes them.
+    /// </summary>
+    private static AssembledSqlVariant RenderSelectSqlWithDistinctOrderByWrap(
+        QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset)
+    {
+        var sb = new StringBuilder();
+        var paramIndex = paramBaseOffset;
+
+        // CTE prefix (same logic as RenderSelectSql)
+        if (plan.CteDefinitions.Count > 0)
+        {
+            sb.Append("WITH ");
+            for (int i = 0; i < plan.CteDefinitions.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                var cte = plan.CteDefinitions[i];
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, cte.Name));
+                sb.Append(" AS (");
+                if (cte.InnerPlan != null)
+                {
+                    System.Diagnostics.Debug.Assert(
+                        cte.InnerPlan.PossibleMasks.Count <= 1,
+                        $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0.");
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    sb.Append(rebased.Sql);
+                }
+                else
+                {
+                    sb.Append(cte.InnerSql);
+                }
+                sb.Append(')');
+                paramIndex += cte.InnerParameters.Count;
+            }
+            sb.Append(' ');
+        }
+
+        // Decide outer-ORDER-BY alias for each active term: reuse the projection's
+        // inner alias if the ORDER BY expression matches a projection column,
+        // otherwise generate a fresh __o{i} alias and add the expression to the
+        // inner SELECT list.
+        var activeOrderTerms = GetActiveTerms(plan.OrderTerms, mask);
+        var projColIndexBySql = new Dictionary<string, int>();
+        for (int i = 0; i < plan.Projection.Columns.Count; i++)
+            projColIndexBySql[RenderProjectionColumnRef(plan.Projection.Columns[i], dialect)] = i;
+
+        var extraOrderExprs = new List<(SqlExpr Expr, string Alias)>();
+        var outerOrderByAliases = new List<string>(activeOrderTerms.Count);
+        var nextO = 0;
+        foreach (var term in activeOrderTerms)
+        {
+            var rendered = SqlExprRenderer.Render(term.Expression, dialect, parameterBaseIndex: 0);
+            if (projColIndexBySql.TryGetValue(rendered, out var projIdx))
+            {
+                outerOrderByAliases.Add(GetInnerProjectionAlias(plan.Projection.Columns[projIdx], projIdx));
+            }
+            else
+            {
+                var alias = "__o" + nextO++;
+                extraOrderExprs.Add((term.Expression, alias));
+                outerOrderByAliases.Add(alias);
+            }
+        }
+
+        // Outer SELECT: project from inner aliases.
+        sb.Append("SELECT ");
+        for (int i = 0; i < plan.Projection.Columns.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__d"));
+            sb.Append('.');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, GetInnerProjectionAlias(plan.Projection.Columns[i], i)));
+        }
+        sb.Append(" FROM (");
+
+        // Inner SELECT DISTINCT: original projection + extra ORDER BY columns.
+        sb.Append("SELECT DISTINCT ");
+        for (int i = 0; i < plan.Projection.Columns.Count; i++)
+        {
+            if (i > 0) sb.Append(", ");
+            var col = plan.Projection.Columns[i];
+            if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
+            {
+                sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramIndex));
+            }
+            else
+            {
+                if (col.TableAlias != null)
+                {
+                    sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias));
+                    sb.Append('.');
+                }
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.ColumnName));
+            }
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, GetInnerProjectionAlias(col, i)));
+        }
+        foreach (var (expr, alias) in extraOrderExprs)
+        {
+            sb.Append(", ");
+            sb.Append(SqlExprRenderer.Render(expr, dialect, paramIndex));
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
+        }
+
+        // FROM
+        sb.Append(" FROM ");
+        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        if (plan.Joins.Count > 0 || plan.ImplicitJoins.Count > 0)
+        {
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, "t0"));
+        }
+
+        // Explicit JOINs
+        for (int i = 0; i < plan.Joins.Count; i++)
+        {
+            var join = plan.Joins[i];
+            sb.Append(' ');
+            sb.Append(GetJoinKeyword(join.Kind));
+            sb.Append(' ');
+            AppendTableRef(sb, dialect, join.Table);
+            var alias = join.Table.Alias ?? $"t{i + 1}";
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
+            if (join.OnCondition != null)
+            {
+                sb.Append(" ON ");
+                var paramsBefore = CountParameters(join.OnCondition);
+                sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        // Implicit JOINs
+        for (int i = 0; i < plan.ImplicitJoins.Count; i++)
+        {
+            var ij = plan.ImplicitJoins[i];
+            sb.Append(' ');
+            sb.Append(ij.JoinKind == JoinClauseKind.Left ? "LEFT JOIN" : "INNER JOIN");
+            sb.Append(' ');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetTableName));
+            sb.Append(" AS ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            sb.Append(" ON ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.SourceAlias));
+            sb.Append('.');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.FkColumnName));
+            sb.Append(" = ");
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetAlias));
+            sb.Append('.');
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, ij.TargetPkColumnName));
+        }
+
+        // WHERE — same mask-aware param-offset logic as the flat path
+        var activeWhereSet = new HashSet<WhereTerm>(GetActiveTerms(plan.WhereTerms, mask));
+        var nonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
+        var whereParamOffset = paramIndex;
+        foreach (var w in plan.WhereTerms)
+        {
+            var termParamCount = CountParameters(w.Condition);
+            if (activeWhereSet.Contains(w) && !IsTrivialTrueCondition(w.Condition))
+                nonTrivialActive.Add((w, whereParamOffset));
+            whereParamOffset += termParamCount;
+        }
+        if (nonTrivialActive.Count > 0)
+        {
+            sb.Append(" WHERE ");
+            for (int i = 0; i < nonTrivialActive.Count; i++)
+            {
+                if (i > 0) sb.Append(" AND ");
+                var (w, termOffset) = nonTrivialActive[i];
+                if (nonTrivialActive.Count > 1) sb.Append('(');
+                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                if (nonTrivialActive.Count > 1) sb.Append(')');
+            }
+        }
+        paramIndex = whereParamOffset;
+
+        // GROUP BY
+        if (plan.GroupByExprs.Count > 0)
+        {
+            sb.Append(" GROUP BY ");
+            for (int i = 0; i < plan.GroupByExprs.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                var paramsBefore = CountParameters(plan.GroupByExprs[i]);
+                sb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        // HAVING
+        if (plan.HavingExprs.Count > 0)
+        {
+            sb.Append(" HAVING ");
+            for (int i = 0; i < plan.HavingExprs.Count; i++)
+            {
+                if (i > 0) sb.Append(" AND ");
+                var paramsBefore = CountParameters(plan.HavingExprs[i]);
+                sb.Append(RenderWhereCondition(plan.HavingExprs[i], dialect, paramIndex));
+                paramIndex += paramsBefore;
+            }
+        }
+
+        // Close inner, name the derived table, then outer ORDER BY + pagination
+        sb.Append(") AS ");
+        sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__d"));
+
+        if (outerOrderByAliases.Count > 0)
+        {
+            sb.Append(" ORDER BY ");
+            for (int i = 0; i < activeOrderTerms.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, "__d"));
+                sb.Append('.');
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, outerOrderByAliases[i]));
+                sb.Append(activeOrderTerms[i].IsDescending ? " DESC" : " ASC");
+            }
+        }
+
+        AppendPagination(sb, plan, dialect, hasOrderBy: outerOrderByAliases.Count > 0, ref paramIndex);
+
+        var totalPlanParams = paramBaseOffset + plan.Parameters.Count;
+        paramIndex = Math.Max(paramIndex, totalPlanParams);
+
+        return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
     #endregion

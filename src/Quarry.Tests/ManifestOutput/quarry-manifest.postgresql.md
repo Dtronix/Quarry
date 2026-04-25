@@ -1307,7 +1307,31 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 ### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Limit(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT DISTINCT "t0"."UserName" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0 ORDER BY "t1"."Total" ASC LIMIT 20
+SELECT "__d"."__c0" FROM (SELECT DISTINCT "t0"."UserName" AS "__c0", "t1"."Total" AS "__o0" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0) AS "__d" ORDER BY "__d"."__o0" ASC LIMIT 20
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "__d"."__c0" FROM (SELECT DISTINCT "t0"."UserName" AS "__c0", "t1"."Total" AS "__o0" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0) AS "__d" ORDER BY "__d"."__o0" ASC
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "__d"."__c0" FROM (SELECT DISTINCT "t0"."UserName" AS "__c0", "t1"."Total" AS "__o0" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0) AS "__d" ORDER BY "__d"."__o0" DESC
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "__d"."__c0", "__d"."__c1" FROM (SELECT DISTINCT "t0"."UserName" AS "__c0", "t0"."Email" AS "__c1", "t1"."Total" AS "__o0" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0) AS "__d" ORDER BY "__d"."__o0" ASC
 ```
 
 ---
@@ -1324,6 +1348,14 @@ SELECT "t0"."UserName", "t1"."Total", "t1"."Status" FROM "users" AS "t0" INNER J
 
 ```sql
 SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 100 AND "t0"."IsActive" = TRUE ORDER BY "t1"."Total" DESC LIMIT 10
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).ThenBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "__d"."__c0" FROM (SELECT DISTINCT "t0"."UserName" AS "__c0", "t1"."Total" AS "__o0" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t1"."Total" > 0) AS "__d" ORDER BY "__d"."__c0" ASC, "__d"."__o0" ASC
 ```
 
 ---
@@ -2017,6 +2049,14 @@ SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int` |
+
+---
+
+### Users().Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT DISTINCT "UserName" FROM "users" WHERE "IsActive" = TRUE ORDER BY "UserName" ASC
+```
 
 ---
 
@@ -3616,7 +3656,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 478 |
+| Total discovered | 483 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 88 |
-| Rendered | 390 |
+| Rendered | 395 |
