@@ -455,6 +455,8 @@ internal class CrossDialectCompositionTests
         // assertion above already verifies the generator emits the same SQL on both
         // dialects; running it on Pg would require either projecting o.Total into the
         // SELECT list (changing test intent) or wrapping the query in a subquery.
+        // Tracked as #267 — once the generator emits PG-portable SQL for this shape,
+        // re-enable the Pg execution mirror here.
     }
 
     #endregion

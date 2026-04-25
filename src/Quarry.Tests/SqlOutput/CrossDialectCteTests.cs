@@ -225,8 +225,9 @@ internal class CrossDialectCteTests
         // canonical extractor field. When this method captured "orderCutoff" the
         // generator routed the Pg path to a chain expecting "cutoff" (collected from
         // a different method), throwing MissingFieldException at .Prepare() time.
-        // Tracked as a follow-up to #258 — the generator should use a closure-target-
-        // type-aware dispatch rather than name-based coalescing.
+        // Tracked as #268 — once the generator uses closure-target-type-aware
+        // dispatch instead of name-based coalescing, restore the descriptive
+        // "orderCutoff" name here.
         decimal cutoff = 100m;
         bool activeFilter = true;
 
