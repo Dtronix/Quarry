@@ -1274,7 +1274,44 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS
 ### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Limit(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT DISTINCT [t0].[UserName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0 ORDER BY [t1].[Total] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], ([t1].[Total] + @p1) AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > @p0) AS [d] ORDER BY [d].[_o0] ASC
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+| `@p1` | `decimal` |
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] ASC
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] DESC
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName], [d].[Email] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t0].[Email] AS [Email], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] ASC
 ```
 
 ---
@@ -1291,6 +1328,14 @@ SELECT [t0].[UserName], [t1].[Total], [t1].[Status] FROM [users] AS [t0] INNER J
 
 ```sql
 SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 100 AND [t0].[IsActive] = 1 ORDER BY [t1].[Total] DESC OFFSET 0 ROWS FETCH NEXT 10 ROWS ONLY
+```
+
+---
+
+### Users().Join(...).Where(...).OrderBy(...).ThenBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[UserName] ASC, [d].[_o0] ASC
 ```
 
 ---
@@ -1884,6 +1929,30 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] INNER JOIN [orders] AS
 
 ---
 
+### Users().Where(...).OrderBy(...).Distinct(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT DISTINCT [UserId], [UserName], [Email], [IsActive], [CreatedAt], [LastLogin] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserName] ASC
+```
+
+---
+
+### Users().Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT DISTINCT [UserName] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserName] ASC
+```
+
+---
+
+### Users().Where(...).OrderBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT [d].[UserName], [d].[OrderCount] FROM (SELECT DISTINCT [UserName] AS [UserName], (SELECT COUNT(*) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderCount], [Email] AS [_o0] FROM [users] WHERE [IsActive] = 1) AS [d] ORDER BY [d].[_o0] ASC
+```
+
+---
+
 ### Users().Where(...).OrderBy(...).Limit(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1896,6 +1965,14 @@ SELECT [UserName], [Email] FROM [users] WHERE [Email] IS NOT NULL AND [UserName]
 
 ```sql
 SELECT [UserName], [Email] FROM [users] WHERE [IsActive] = 1 AND EXISTS (SELECT 1 FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId] AND ([sq0].[Total] > 500)) ORDER BY [UserName] ASC
+```
+
+---
+
+### Users().Where(...).OrderBy(...).ThenBy(...).Distinct(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT DISTINCT [UserName], [Email] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserName] ASC, [Email] ASC
 ```
 
 ---
@@ -3428,7 +3505,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 443 |
+| Total discovered | 452 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 72 |
-| Rendered | 371 |
+| Rendered | 380 |

@@ -116,6 +116,17 @@ git show --stat --name-only <sha>
 
 Do not analyze diffs in this phase beyond file lists — Phase 2 classification uses file paths + PR body + commit message, not full diff contents, unless a specific change is ambiguous.
 
+**Staging file (`release-notes-next.md`).** Contributors accumulate per-PR release notes between tags in `docs/articles/releases/release-notes-next.md` (see `llm.md` § Release Notes Workflow). Read it now if it exists:
+
+```bash
+test -f docs/articles/releases/release-notes-next.md \
+  && cat docs/articles/releases/release-notes-next.md
+```
+
+The staging file is a **curated input**, not the final body. Treat each entry as the contributor's intended framing for that PR — useful for capturing rationale, before/after snippets, and migration notes that may not be obvious from the PR body alone — but still verify it against the actual PR / commit set before promoting it into the new release-notes file. If the staging file references a PR that doesn't appear in the `$PREV_TAG..HEAD` PR list, flag it (likely a stale entry or an off-tree merge); don't drop it silently. If a PR in the range has no matching staging entry, that's normal — most PRs don't write to the staging file.
+
+If the staging file is **absent**, that's the post-release default state (see Phase 3.5). Proceed without it.
+
 ---
 
 ## Phase 2: Propose (rich approval, in place)
@@ -156,6 +167,8 @@ Classify each change as `needs-doc-update` (list target docs + one-line proposed
 ### 2.3 Assemble draft release notes
 
 Build the release notes skeleton using the Appendix template. Keep the Full Changelog exhaustive (every PR + every meaningful PR-less commit). PR-less commits that fit a thematic section go inline with their short SHA in place of `(#N)`; the rest collect under a `### Direct commits` subsection at the end of Full Changelog.
+
+**Seed from `release-notes-next.md`.** When the staging file exists (collected in Phase 1), use its sections as the starting point for the corresponding sections of the draft — Highlights bullets, Breaking Changes entries, Bug Fixes prose, Migration Guide steps, etc. Treat its content as a curated draft from contributors, not as a verbatim copy: tighten wording, deduplicate, reorder for narrative flow, fix anything stale, and align section structure with the Appendix template. PRs in `$PREV_TAG..HEAD` that don't appear in the staging file still need entries — derive them from the PR body / commit message as usual. PRs that appear in both should reconcile to one final entry per PR.
 
 ### 2.4 Present the proposal
 
@@ -246,13 +259,23 @@ Stage these changes:
 git add Directory.Build.props docs/articles/releases/
 ```
 
-### 3.4 Combined diff review
+### 3.4 Consume the staging file
+
+If `docs/articles/releases/release-notes-next.md` exists, the consolidated `release-notes-vX.Y.Z.md` from Phase 3.1 already absorbed its content. Delete the staging file and stage the deletion so it lands in the same `Release vX.Y.Z` commit:
+
+```bash
+git rm docs/articles/releases/release-notes-next.md
+```
+
+The next PR that needs a release-notes entry will recreate the file from the Appendix skeleton (see `llm.md` § Release Notes Workflow). If the staging file did not exist (no PRs added entries between tags), skip this step.
+
+### 3.5 Combined diff review
 
 Show the full staged diff (or a summary with `git diff --staged --stat` if very large, plus per-file diffs on request). This is the single consolidated review gate for both documentation edits and the version bump.
 
 Ask explicit confirmation. On "make changes" requests, edit in place, re-stage, re-show. On explicit approval:
 
-### 3.5 Commit
+### 3.6 Commit
 
 ```bash
 git commit -m "Release vX.Y.Z"

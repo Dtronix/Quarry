@@ -489,28 +489,37 @@ internal class CrossDialectCompositionTests
                 .Select((u, o) => u.UserName)
                 .Prepare();
 
+        // The generator emits a derived-table wrap when DISTINCT combines with an
+        // ORDER BY that references a non-projected column — this is the only PG/SS-
+        // portable form of this construct (PG returns 42P10 for the flat shape) and
+        // is applied uniformly across all dialects so that semantics are identical
+        // everywhere. See #267.
         QueryTestHarness.AssertDialects(
             lt.ToDiagnostics(), pg.ToDiagnostics(),
             my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
-            pg:     "SELECT DISTINCT \"t0\".\"UserName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0 ORDER BY \"t1\".\"Total\" ASC LIMIT 20",
-            mysql:  "SELECT DISTINCT `t0`.`UserName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0 ORDER BY `t1`.`Total` ASC LIMIT 20",
-            ss:     "SELECT DISTINCT [t0].[UserName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0 ORDER BY [t1].[Total] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
+            sqlite: "SELECT \"d\".\"UserName\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"UserName\", \"t1\".\"Total\" AS \"_o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"d\" ORDER BY \"d\".\"_o0\" ASC LIMIT 20",
+            pg:     "SELECT \"d\".\"UserName\" FROM (SELECT DISTINCT \"t0\".\"UserName\" AS \"UserName\", \"t1\".\"Total\" AS \"_o0\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" WHERE \"t1\".\"Total\" > 0) AS \"d\" ORDER BY \"d\".\"_o0\" ASC LIMIT 20",
+            mysql:  "SELECT `d`.`UserName` FROM (SELECT DISTINCT `t0`.`UserName` AS `UserName`, `t1`.`Total` AS `_o0` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 0) AS `d` ORDER BY `d`.`_o0` ASC LIMIT 20",
+            ss:     "SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], [t1].[Total] AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > 0) AS [d] ORDER BY [d].[_o0] ASC OFFSET 0 ROWS FETCH NEXT 20 ROWS ONLY");
 
-        // Seed: Alice has 2 orders, Bob has 1 — DISTINCT UserName gives Alice, Bob — 2 results
+        // Seed has 3 orders across 2 users (Alice: 250.00, 75.50; Bob: 150.00).
+        // The wrap places DISTINCT over (UserName, Total), so the inner relation has
+        // 3 distinct rows; the outer projects UserName ordered by Total ASC, giving
+        // (Alice, 75.50), (Bob, 150.00), (Alice, 250.00) → 3 rows.
         var results = await lt.ExecuteFetchAllAsync();
-        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results, Has.Count.EqualTo(3));
 
-        // Pg execution intentionally not mirrored: PostgreSQL rejects this query with
-        // 42P10 because the ORDER BY expression (o.Total) is not part of the
-        // SELECT DISTINCT projection (u.UserName). SQLite tolerates this. The SQL-text
-        // assertion above already verifies the generator emits the same SQL on both
-        // dialects; running it on Pg would require either projecting o.Total into the
-        // SELECT list (changing test intent) or wrapping the query in a subquery.
-        // Tracked as #267 — once the generator emits PG-portable SQL for this shape,
-        // re-enable the Pg execution mirror here.
+        // PG/MY/SS execute mirrors: prior to #267 PG failed at runtime with 42P10 and
+        // SQL Server rejected under standard rules. The wrap is now portable on all
+        // four dialects, so all three return the same 3 rows as SQLite.
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
 
-        // ss execution skipped — same #267 reason as pg.
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
     }
 
     #endregion
