@@ -53,6 +53,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion
@@ -111,6 +116,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
 
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
+
         // Re-create the prepared chain with a different captured value to confirm the
         // parameter is read from the closure at chain CONSTRUCTION time and not, e.g.,
         // hard-coded into the SQL or pinned to a value from a different chain instance.
@@ -137,6 +147,14 @@ internal class CrossDialectCteTests
         var pgResults2 = await pg2.ExecuteFetchAllAsync();
         Assert.That(pgResults2, Has.Count.EqualTo(1));
         Assert.That(pgResults2[0], Is.EqualTo((1, 250.00m)));
+
+        var my2 = My.With<My.Order>(orders => orders.Where(o => o.Total > cutoff))
+            .FromCte<My.Order>()
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var myResults2 = await my2.ExecuteFetchAllAsync();
+        Assert.That(myResults2, Has.Count.EqualTo(1));
+        Assert.That(myResults2[0], Is.EqualTo((1, 250.00m)));
     }
 
     #endregion
@@ -196,6 +214,13 @@ internal class CrossDialectCteTests
         Assert.That(pgResults[0].Total, Is.EqualTo(250.00m));
         Assert.That(pgResults[1].OrderId, Is.EqualTo(3));
         Assert.That(pgResults[1].Total, Is.EqualTo(150.00m));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(myResults[0].Total, Is.EqualTo(250.00m));
+        Assert.That(myResults[1].OrderId, Is.EqualTo(3));
+        Assert.That(myResults[1].Total, Is.EqualTo(150.00m));
     }
 
     #endregion
@@ -276,6 +301,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     /// <summary>
@@ -343,6 +373,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     /// <summary>
@@ -408,6 +443,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion
@@ -469,6 +509,11 @@ internal class CrossDialectCteTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
         Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.OrderId);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
     }
 
     #endregion

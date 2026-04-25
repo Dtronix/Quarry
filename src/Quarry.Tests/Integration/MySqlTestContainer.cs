@@ -90,9 +90,37 @@ internal static class MySqlTestContainer
                         "GRANT ALL PRIVILEGES ON *.* TO 'mysql'@'%' WITH GRANT OPTION;\n" +
                         "FLUSH PRIVILEGES;\n");
 
+                    // Server-wide sql_mode and collation pinning. Two
+                    // departures from the default mysql:8.4 server config:
+                    //
+                    //   * NO_BACKSLASH_ESCAPES added to sql_mode so backslash
+                    //     in string literals is taken literally instead of
+                    //     as an escape character. Quarry's generator emits
+                    //     the same SQL (LIKE '%foo\_bar%' ESCAPE '\') for
+                    //     PG / SQLite / SqlServer / MySQL — those three
+                    //     other dialects always treat `'\'` as a literal
+                    //     backslash. MySQL's default backslash-escape
+                    //     handling otherwise fires a 1064 syntax error
+                    //     when the generator emits the standard ANSI
+                    //     pattern. The other sql_mode flags are the MySQL
+                    //     8.4 defaults preserved verbatim so we don't
+                    //     accidentally relax STRICT or ONLY_FULL_GROUP_BY.
+                    //
+                    //   * collation-server pinned to utf8mb4_bin so string
+                    //     comparisons (`WHERE col = 'shipped'`,
+                    //     `IN ('a', 'b', 'c')`) are case-sensitive. The
+                    //     mysql:8.4 default is utf8mb4_0900_ai_ci which is
+                    //     case-INsensitive — making PG / SQLite / SqlServer
+                    //     return 0 rows for case-mismatched literals while
+                    //     MySQL would return matches. utf8mb4_bin gives
+                    //     cross-dialect parity.
                     var container = new MySqlBuilder("mysql:8.4")
                         .WithDatabase(BaselineDatabaseName)
                         .WithResourceMapping(grantSql, "/docker-entrypoint-initdb.d/01-grant-all.sql")
+                        .WithCommand(
+                            "--character-set-server=utf8mb4",
+                            "--collation-server=utf8mb4_bin",
+                            "--sql-mode=ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION,NO_BACKSLASH_ESCAPES")
                         .Build();
                     await container.StartAsync();
                     _container = container;

@@ -40,6 +40,10 @@ internal class CrossDialectEnumTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0], Is.EqualTo((3, 150.00m)));
     }
 
     [Test]
@@ -73,6 +77,10 @@ internal class CrossDialectEnumTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -108,6 +116,10 @@ internal class CrossDialectEnumTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
     }
 
     [Test]
@@ -142,6 +154,9 @@ internal class CrossDialectEnumTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
     }
 
     #endregion
@@ -173,6 +188,9 @@ internal class CrossDialectEnumTests
 
         var pgNewId = await pg.ExecuteScalarAsync<int>();
         Assert.That(pgNewId, Is.GreaterThan(0));
+
+        var myNewId = await my.ExecuteScalarAsync<int>();
+        Assert.That(myNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -203,6 +221,9 @@ internal class CrossDialectEnumTests
 
         var pgNewId = await pg.ExecuteScalarAsync<int>();
         Assert.That(pgNewId, Is.GreaterThan(0));
+
+        var myNewId = await my.ExecuteScalarAsync<int>();
+        Assert.That(myNewId, Is.GreaterThan(0));
     }
 
     #endregion
@@ -233,6 +254,9 @@ internal class CrossDialectEnumTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion

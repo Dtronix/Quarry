@@ -35,6 +35,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -62,6 +65,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(2));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -92,6 +98,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -122,6 +131,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -154,6 +166,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(0));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(0));
     }
 
     #endregion
@@ -184,6 +199,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -211,6 +229,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(2));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -241,6 +262,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -271,6 +295,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -302,6 +329,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -329,6 +359,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -863,6 +896,9 @@ internal class CrossDialectUpdateTests
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
 
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
+
         var pgLineTotal = await Pg.OrderItems()
             .Where(o => o.OrderItemId == 1)
             .Select(o => o.LineTotal)
@@ -904,6 +940,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
 
         var pgLineTotal = await Pg.OrderItems()
             .Where(o => o.OrderItemId == 2)
@@ -948,6 +987,9 @@ internal class CrossDialectUpdateTests
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
 
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
+
         var pgLineTotal = await Pg.OrderItems()
             .Where(o => o.OrderItemId == 1)
             .Select(o => o.LineTotal)
@@ -988,6 +1030,9 @@ internal class CrossDialectUpdateTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
 
         var pgResult = await Pg.OrderItems()
             .Where(o => o.OrderItemId == 3)

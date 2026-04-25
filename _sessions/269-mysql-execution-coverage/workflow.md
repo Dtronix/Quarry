@@ -12,7 +12,7 @@ issue: #269
 pr:
 session: 1
 phases-total: 5
-phases-complete: 2
+phases-complete: 5
 
 ## Problem Statement
 Mirror the PostgreSQL execution coverage that PR #266 (issue #258) added to the MySQL provider so that `My`-targeted CrossDialect tests run end-to-end against a real MySqlConnector + Testcontainers MySQL container instead of `MockDbConnection`. The current mock-only coverage hides the same class of generator-emitted parameter-binding regressions on MySQL that #258 surfaced on PostgreSQL.
@@ -45,7 +45,12 @@ MySQL has no schema-as-namespace concept. Mirror the PG pattern with database su
 Direct analogue of PG's `pg_advisory_lock` for the once-per-process DDL+seed step. `SELECT GET_LOCK('quarry_test_baseline', 60)` blocks concurrent NUnit processes sharing one container; `RELEASE_LOCK` releases it after the baseline-ready check + DDL.
 
 ### 2026-04-25 — Container image and pinning
-`mysql:8.4` (LTS). Default Linux image has `lower_case_table_names=0` (case-sensitive identifiers), which matches the case-sensitive identifiers Quarry emits. Default character set on 8.4 is `utf8mb4`. No additional command-line args needed for Phase 1 — revisit if the test-container surface flakes on Windows-host path semantics.
+`mysql:8.4` (LTS). Default Linux image has `lower_case_table_names=0` (case-sensitive identifiers), which matches the case-sensitive identifiers Quarry emits.
+
+**Two server-config departures from defaults pinned in `WithCommand`:**
+
+- `--collation-server=utf8mb4_bin` (default is `utf8mb4_0900_ai_ci`). MySQL's default collation is case-insensitive, which makes `WHERE col = 'shipped'` match a row with `Status = 'Shipped'`. PG / SQLite / SqlServer are case-sensitive. Pinning `utf8mb4_bin` gives cross-dialect parity. Surfaced by `Join_Where_InClause`, `Where_Any_And_All_MultipleSubqueries`, `Where_ContainsRuntimeCollection` failing on My with the seed data's mixed case.
+- `--sql-mode=...,NO_BACKSLASH_ESCAPES`. MySQL's default sql_mode treats backslash as a string-escape character, so `'\'` is a parse error. PG (with default `standard_conforming_strings`) / SQLite / SqlServer all treat `'\'` as a literal backslash. Quarry's generator emits the same SQL `LIKE '%foo\_bar%' ESCAPE '\'` for all dialects; without `NO_BACKSLASH_ESCAPES`, MySQL throws 1064. The other sql_mode flags (`ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,...`) are the MySQL 8.4 defaults preserved verbatim. Surfaced by `Where_Contains_LiteralWithMetaChars_InlinesWithEscape` and `Where_Contains_QualifiedConstField_WithMetaChars_EscapesPattern`.
 
 ### 2026-04-25 — DDL dialect specifics
 - Identifier quoting: backticks `` ` `` (MySQL native).
@@ -57,6 +62,12 @@ Direct analogue of PG's `pg_advisory_lock` for the once-per-process DDL+seed ste
 
 ### 2026-04-25 — `View "Order"`
 MySQL views with mixed-case names: identifier case is preserved with `lower_case_table_names=0`. Emit ``CREATE VIEW \`Order\` AS SELECT * FROM \`orders\`;`` (mirrors PG's `"Order"` view).
+
+### 2026-04-25 — `IgnoreCommandTransaction=True` on MySQL connection string
+MySqlConnector enforces that `DbCommand.Transaction` match the connection's active transaction. Quarry-emitted DbCommands don't set `Transaction`, so the harness's `BEGIN`/`ROLLBACK` envelope would otherwise reject every command. Npgsql / Microsoft.Data.Sqlite are more permissive on this point. Set `IgnoreCommandTransaction=True` via `MySqlConnectionStringBuilder` when opening the harness connection.
+
+### 2026-04-25 — Init-script GRANT ALL for the application user
+Testcontainers.MySql provisions the `mysql` application user with privileges scoped to MYSQL_DATABASE only — no global CREATE DATABASE. Per-test database creation (useOwnMyDatabase opt-out, `MySqlMigrationRunnerTests`) needs broader privileges. Add a `/docker-entrypoint-initdb.d/01-grant-all.sql` init script via `WithResourceMapping` that grants the user `ALL PRIVILEGES ON *.* WITH GRANT OPTION`. Test-only container; no security concern.
 
 ## Suspend State
 

@@ -114,6 +114,10 @@ internal class CrossDialectHasManyThroughTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0], Is.EqualTo("Alice"));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0], Is.EqualTo("Alice"));
     }
 
     [Test]
@@ -209,6 +213,11 @@ internal class CrossDialectHasManyThroughTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
         Assert.That(pgResults[1], Is.EqualTo(("Bob", 1)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(myResults[1], Is.EqualTo(("Bob", 1)));
     }
 
     #endregion

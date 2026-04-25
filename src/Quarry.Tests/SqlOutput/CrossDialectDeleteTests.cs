@@ -35,6 +35,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     [Test]
@@ -61,6 +64,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(0));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(0));
     }
 
     #endregion
@@ -91,6 +97,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(2));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
     }
 
     [Test]
@@ -117,6 +126,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -147,6 +159,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(1));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(1));
     }
 
     #endregion
@@ -180,6 +195,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(2));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
     }
 
     #endregion
@@ -210,6 +228,9 @@ internal class CrossDialectDeleteTests
 
         var pgAffected = await pg.ExecuteNonQueryAsync();
         Assert.That(pgAffected, Is.EqualTo(0));
+
+        var myAffected = await my.ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(0));
     }
 
     #endregion

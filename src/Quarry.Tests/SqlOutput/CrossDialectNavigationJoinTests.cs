@@ -302,6 +302,11 @@ internal class CrossDialectNavigationJoinTests
         Assert.That(pgResults, Has.Count.EqualTo(2));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
         Assert.That(pgResults[1], Is.EqualTo(("Bob", 1)));
+
+        var myResults = await my.ExecuteFetchAllAsync().SortedByAsync(r => r.UserName);
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo(("Alice", 2)));
+        Assert.That(myResults[1], Is.EqualTo(("Bob", 1)));
     }
 
     #endregion
@@ -336,6 +341,10 @@ internal class CrossDialectNavigationJoinTests
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(1));
         Assert.That(pgResults[0], Is.EqualTo(("Alice", 2)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0], Is.EqualTo(("Alice", 2)));
     }
 
     #endregion
