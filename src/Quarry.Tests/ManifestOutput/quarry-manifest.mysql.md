@@ -1518,7 +1518,39 @@ SELECT `UserId`, `UserName` FROM `users` EXCEPT SELECT `ProductId`, `ProductName
 ### Users().Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `UserId` FROM `users`
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users`
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `UserName` FROM `users`
+```
+
+---
+
+### Users().Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT `UserName` FROM `users`
+```
+
+---
+
+### Users().Select(...).ExecuteScalarAsync()
+
+```sql
+SELECT COUNT(*) FROM `users`
 ```
 
 ---
@@ -1744,6 +1776,14 @@ SELECT `UserName`, (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` 
 
 ```sql
 SELECT `UserName`, `UserId` FROM `users`
+```
+
+---
+
+### Users().Select(...).ToAsyncEnumerable()
+
+```sql
+SELECT `UserName` FROM `users`
 ```
 
 ---
@@ -2359,6 +2399,18 @@ SELECT `UserName` FROM `users` WHERE `UserId` <= ? AND `UserId` IN ({__COL_P1__}
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `UserName` FROM `users` WHERE `UserId` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__})
 ```
 
@@ -2404,6 +2456,14 @@ SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` >= 
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` = -999
+```
 
 ---
 
@@ -3561,7 +3621,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 457 |
+| Total discovered | 475 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 74 |
-| Rendered | 383 |
+| Consolidated (deduped) | 85 |
+| Rendered | 390 |
