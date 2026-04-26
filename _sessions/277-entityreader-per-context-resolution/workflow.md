@@ -12,7 +12,7 @@ issue: #277
 pr:
 session: 1
 phases-total: 6
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 
@@ -90,3 +90,4 @@ After both layers:
 | 1 | DESIGN | PLAN | Explored generator surface — confirmed FQN flows from `[EntityReader]` attribute through SchemaParser → EntityInfo → EntityRef → ProjectionInfo → SelectProjection. Identified two codegen seams (`CollectEntityReaderInstances` + `GenerateReaderDelegate`) and `CarrierEmitter`'s TOut binding. Locked direction: per-context reader resolution becomes default — no IR changes, no Compilation threading, no new diagnostics. PR scope includes Phase 10 conversion. |
 | 1 | PLAN | IMPLEMENT | Wrote 6-phase plan in plan.md (Layer 1 → generator codegen → tests → Phase 10 conversion → manifest verification → docs). User approved. |
 | 1 | IMPLEMENT P1 | IMPLEMENT P1 | Phase 1 complete — added `src/Quarry.Tests/Samples/PerContextProductReaders.cs` with `Pg`/`My`/`Ss` Product partials adding `DisplayLabel` plus per-context `ProductReader` classes mirroring the global one. Build clean (8 pre-existing warnings). Tests: 3340/3340 passing (count unchanged; per-context readers are dead code until Phase 2). |
+| 1 | IMPLEMENT P2 | IMPLEMENT P2 | Phase 2 complete — added `string? contextNamespace` parameter to `InterceptorCodeGenerator.CollectEntityReaderInstances` + `ReaderCodeGenerator.GenerateReaderDelegate`; introduced `InterceptorCodeGenerator.ResolvePerContextReaderFqn` for the `<contextNamespace>.<simpleName>` rewrite. Updated callers `FileEmitter.cs:365` (passes `_contextNamespace`) and `QuarryGenerator.cs:605` (passes `group.ContextNamespace`). Verified via canary test that PgDb interceptor now emits `IQueryBuilder<Pg.Product, Pg.Product>` with `_entityReader_Quarry_Tests_Samples_Pg_ProductReader.Read(r)` and `ExecuteCarrierWithCommandAsync<Pg.Product>`; canary executed end-to-end on PG/My/Ss containers and was removed (Phase 4 will land proper coverage). No IR changes, no Compilation threading, no new diagnostics — TOut already binds to per-context entity at the projection-analysis layer; the per-context reader rewrite is sufficient. Tests: 3340/3340 passing. |

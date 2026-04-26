@@ -602,7 +602,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
                 && projInfo != null && projInfo.Kind != ProjectionKind.Unknown)
             {
                 var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
-                assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType);
+                assembled.ReaderDelegateCode = Projection.ReaderCodeGenerator.GenerateReaderDelegate(projInfo, entityType, group.ContextNamespace);
             }
 
             // Resolve joined table infos
