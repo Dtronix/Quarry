@@ -1363,19 +1363,10 @@ public partial class TestDbContext : QuarryContext
 
     #region Set Operation Diagnostics (QRY070/QRY071)
 
-    // Note: IntersectAll/ExceptAll diagnostic tests require the full generator pipeline to
-    // discover default interface method calls. The current test infrastructure cannot fully
-    // resolve these during source generation. The diagnostic code in PipelineOrchestrator is
-    // verified by code review. To properly test, a runtime integration test with the
-    // compiled test harness would be needed (IntersectAll/ExceptAll call on a real context).
-
     [Test]
     public void DiagnosticDescriptors_QRY070_QRY071_HaveUniqueIds()
     {
         // Verify QRY070/QRY071 descriptors have correct, unique IDs and Error severity.
-        // Full chain-level testing of these diagnostics requires the runtime test harness
-        // because the generator test compilation can't resolve default interface method calls
-        // (IntersectAll/ExceptAll) through the partial method chain.
         var qry070 = DiagnosticDescriptors.IntersectAllNotSupported;
         var qry071 = DiagnosticDescriptors.ExceptAllNotSupported;
 
@@ -1386,6 +1377,136 @@ public partial class TestDbContext : QuarryContext
         Assert.That(qry071.DefaultSeverity, Is.EqualTo(Microsoft.CodeAnalysis.DiagnosticSeverity.Error));
         Assert.That(qry070.MessageFormat.ToString(), Does.Contain("{0}"));
         Assert.That(qry071.MessageFormat.ToString(), Does.Contain("{0}"));
+    }
+
+    private static string SetOperationSource(string dialect, string operation) => $@"
+using Quarry;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}}
+
+public class ProductSchema : Schema
+{{
+    public static string Table => ""products"";
+    public Key<int> ProductId => Identity();
+    public Col<string> ProductName => Length(100);
+}}
+
+[QuarryContext(Dialect = SqlDialect.{dialect})]
+public partial class TestDb : QuarryContext
+{{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Product> Products();
+}}
+
+public class Service
+{{
+    public Task<IList<(int, string)>> Run(TestDb db)
+    {{
+        return db.Users().Select(u => (u.UserId, u.UserName))
+            .{operation}(db.Products().Select(p => (p.ProductId, p.ProductName)))
+            .ExecuteFetchAllAsync();
+    }}
+}}";
+
+    [Test]
+    public void Generator_SqliteIntersectAll_ReportsQRY070_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("SQLite", "IntersectAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry070 = diagnostics.FirstOrDefault(d => d.Id == "QRY070");
+        Assert.That(qry070, Is.Not.Null, "QRY070 should fire on SQLite IntersectAll");
+        Assert.That(qry070!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry070.GetMessage(), Does.Contain("SQLite"));
+    }
+
+    [Test]
+    public void Generator_MysqlIntersectAll_ReportsQRY070_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("MySQL", "IntersectAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry070 = diagnostics.FirstOrDefault(d => d.Id == "QRY070");
+        Assert.That(qry070, Is.Not.Null, "QRY070 should fire on MySQL IntersectAll");
+        Assert.That(qry070!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry070.GetMessage(), Does.Contain("MySQL"));
+    }
+
+    [Test]
+    public void Generator_SqlServerIntersectAll_ReportsQRY070_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("SqlServer", "IntersectAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry070 = diagnostics.FirstOrDefault(d => d.Id == "QRY070");
+        Assert.That(qry070, Is.Not.Null, "QRY070 should fire on SqlServer IntersectAll");
+        Assert.That(qry070!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry070.GetMessage(), Does.Contain("SqlServer"));
+    }
+
+    [Test]
+    public void Generator_PostgresIntersectAll_NoQRY070()
+    {
+        var compilation = CreateCompilation(SetOperationSource("PostgreSQL", "IntersectAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        Assert.That(diagnostics.Where(d => d.Id == "QRY070"), Is.Empty,
+            "QRY070 must not fire on PostgreSQL — it is the only dialect that supports IntersectAll");
+    }
+
+    [Test]
+    public void Generator_SqliteExceptAll_ReportsQRY071_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("SQLite", "ExceptAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry071 = diagnostics.FirstOrDefault(d => d.Id == "QRY071");
+        Assert.That(qry071, Is.Not.Null, "QRY071 should fire on SQLite ExceptAll");
+        Assert.That(qry071!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry071.GetMessage(), Does.Contain("SQLite"));
+    }
+
+    [Test]
+    public void Generator_MysqlExceptAll_ReportsQRY071_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("MySQL", "ExceptAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry071 = diagnostics.FirstOrDefault(d => d.Id == "QRY071");
+        Assert.That(qry071, Is.Not.Null, "QRY071 should fire on MySQL ExceptAll");
+        Assert.That(qry071!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry071.GetMessage(), Does.Contain("MySQL"));
+    }
+
+    [Test]
+    public void Generator_SqlServerExceptAll_ReportsQRY071_AsError()
+    {
+        var compilation = CreateCompilation(SetOperationSource("SqlServer", "ExceptAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry071 = diagnostics.FirstOrDefault(d => d.Id == "QRY071");
+        Assert.That(qry071, Is.Not.Null, "QRY071 should fire on SqlServer ExceptAll");
+        Assert.That(qry071!.Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qry071.GetMessage(), Does.Contain("SqlServer"));
+    }
+
+    [Test]
+    public void Generator_PostgresExceptAll_NoQRY071()
+    {
+        var compilation = CreateCompilation(SetOperationSource("PostgreSQL", "ExceptAll"));
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        Assert.That(diagnostics.Where(d => d.Id == "QRY071"), Is.Empty,
+            "QRY071 must not fire on PostgreSQL — it is the only dialect that supports ExceptAll");
     }
 
     [Test]
