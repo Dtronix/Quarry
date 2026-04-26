@@ -69,6 +69,12 @@ public class MoneyMapping : TypeMapping<Money, decimal>
 
 Dialect-aware: implement `IDialectAwareTypeMapping` for `GetSqlTypeName(dialect)` and `ConfigureParameter(dialect, param)`.
 
+### EntityReader
+
+Annotate a schema with `[EntityReader(typeof(MyReader))]` to route every `Select(p => p)` identity projection for that entity through a custom `EntityReader<T>` instead of the default ordinal-based materializer. The reader's `Read(DbDataReader)` method owns the materialization — useful for setting non-column properties (e.g. `DisplayLabel`) or applying entity-level transformations.
+
+**Per-context resolution.** Quarry emits one entity class per `QuarryContext` (in the context's namespace), so `App.Pg.Product` and `App.My.Product` are distinct CLR types even when generated from the same schema. The `[EntityReader]` attribute resolves to a *simple-name* reference, and the generator looks the reader up at `<contextNamespace>.<readerSimpleName>` for every interceptor it emits. When schema and context share a namespace, this resolves to the same class as the schema-namespace declaration — so single-context consumers see no change. When a schema is referenced by multiple contexts in different namespaces, each context expects its own reader class at its own namespace, e.g. `App.Pg.MyReader : EntityReader<App.Pg.Product>` and `App.My.MyReader : EntityReader<App.My.Product>`. A missing or mis-declared per-context reader surfaces as an ordinary C# compile error against the generated interceptor reference — no analyzer rule, no fallback.
+
 ### Context
 
 ```csharp
