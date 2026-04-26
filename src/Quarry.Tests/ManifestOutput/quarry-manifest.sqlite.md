@@ -1821,22 +1821,6 @@ SELECT "t0"."UserName", "t1"."Priority" FROM "users" AS "t0" LEFT JOIN "orders" 
 ### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -1861,6 +1845,14 @@ SELECT "t0"."UserName", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS 
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -1874,7 +1866,7 @@ SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priorit
 
 ---
 
-### Users().LeftJoin(...).Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+### Users().LeftJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
 SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 0
@@ -4359,7 +4351,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 642 |
+| Total discovered | 640 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 180 |
-| Rendered | 462 |
+| Consolidated (deduped) | 179 |
+| Rendered | 461 |

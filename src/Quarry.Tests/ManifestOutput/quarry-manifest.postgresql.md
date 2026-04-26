@@ -1462,6 +1462,30 @@ SELECT "t0"."UserName", "t1"."Total", "t1"."Status" FROM "users" AS "t0" INNER J
 
 ---
 
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."OrderId" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Priority" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1473,7 +1497,31 @@ SELECT "t0"."UserName" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = FALSE
 ```
 
 ---
@@ -3779,7 +3827,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 500 |
+| Total discovered | 504 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 94 |
-| Rendered | 406 |
+| Consolidated (deduped) | 92 |
+| Rendered | 412 |

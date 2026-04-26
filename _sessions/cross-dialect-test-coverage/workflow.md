@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 2
 phases-total: 12
-phases-complete: 6
+phases-complete: 7
 
 ## Problem Statement
 
@@ -107,3 +107,4 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 | 1 | IMPLEMENT P4 | IMPLEMENT (suspended) | Suspended after Phase 4 to preserve cache. Track A complete; Track B 1/9 done. handoff.md has the per-phase resumption guide. |
 | 2 | IMPLEMENT (resume) | IMPLEMENT P5 | Resumed from suspend. Verified baseline 3358/3358. Phase 5 complete — converted CollectionScalarIntegrationTests.cs (7 SQLite-only) → 7 cross-dialect execution tests appended to CrossDialectWhereTests.cs in a new "Collection + scalar — runtime parameter mixing (4-dialect execution)" region. Deleted original. Tests: 3030/3030 in Quarry.Tests (count unchanged, but each new test runs on 4× dialects). |
 | 2 | IMPLEMENT P6 | IMPLEMENT P6 | Phase 6 complete — JoinedCarrierIntegrationTests.cs was already 4-dialect (the plan's premise was wrong). Reduced phase to deduplicate + relocate: 4 of 8 tests were exact duplicates of existing CrossDialectJoinTests.cs (TwoTable/ThreeTable/FourTable basic + PreJoinWhere). Moved the 4 unique tests (captured-param Where after join, 5-table, 6-table joins, 3-table COUNT terminal) into CrossDialectJoinTests.cs as new regions. Deleted Integration file. Tests: 3026/3026 (-4 from dedup as expected). |
+| 2 | IMPLEMENT P7 | IMPLEMENT P7 | Phase 7 complete — JoinNullableIntegrationTests.cs had 8 tests: 6 SQLite-only execution (LEFT JOIN null materialization for decimal / multi-column / WhereOnLeft / entity / int / enum) + 2 already-cross-dialect (RightJoin + FullOuterJoin SQL+metadata, both fully redundant with existing RightJoin_Select / FullOuterJoin_OnClause + JoinNullableProjectionTests RightJoin_LeftSideColumnsJoinNullable / FullOuterJoin_BothSidesJoinNullable). Converted the 6 SQLite-only tests to 4-dialect Prepare+AssertDialects+ExecuteFetchAllAsync in a new "Left Join — null materialization (4-dialect execution)" region of JoinNullableProjectionTests.cs. Deleted the 2 redundant tests + the original file. Tests: 3024/3024 (-8 deleted +6 added = -2 net). |
