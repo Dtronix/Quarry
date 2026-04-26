@@ -961,14 +961,6 @@ SELECT DISTINCT `UserName`, `Email` FROM `users` WHERE `IsActive` = 1
 
 ---
 
-### Users().FullOuterJoin(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` FULL OUTER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`
-```
-
----
-
 ### Users().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -3397,7 +3389,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 438 |
+| Total discovered | 436 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 70 |
-| Rendered | 368 |
+| Consolidated (deduped) | 69 |
+| Rendered | 367 |

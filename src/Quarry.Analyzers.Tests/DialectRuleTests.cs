@@ -101,17 +101,32 @@ public class DialectRuleTests
         Assert.That(diagnostics, Is.Empty);
     }
 
-    // -- QRA502: SuboptimalForDialectRule --
+    // -- QRA502 (Warning) / QRA503 (Error): SuboptimalForDialectRule --
 
     [Test]
-    public void QRA502_SqliteRightJoin_Reports()
+    public void QRA502_MysqlRightJoin_Reports()
     {
+        // MySQL fully supports RIGHT JOIN, but its query planner is suboptimal — perf hint only.
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.RightJoin, methodName: "RightJoin");
+        var context = CreateContext(site, GenSqlDialect.MySQL);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA502"));
+        Assert.That(diagnostics[0].Severity, Is.EqualTo(DiagnosticSeverity.Warning));
+        Assert.That(diagnostics[0].GetMessage(), Does.Contain("RIGHT JOIN"));
+    }
+
+    [Test]
+    public void QRA502_SqliteRightJoin_NoReport()
+    {
+        // SQLite ≥ 3.39 (June 2022) supports RIGHT JOIN. Microsoft.Data.Sqlite 10.0.3
+        // ships SQLite 3.49.1, so the legacy "unsupported" hint no longer applies.
         var rule = new SuboptimalForDialectRule();
         var site = CreateSite(InterceptorKind.RightJoin, methodName: "RightJoin");
         var context = CreateContext(site, GenSqlDialect.SQLite);
         var diagnostics = rule.Analyze(context).ToList();
-        Assert.That(diagnostics, Has.Count.EqualTo(1));
-        Assert.That(diagnostics[0].GetMessage(), Does.Contain("RIGHT JOIN"));
+        Assert.That(diagnostics, Is.Empty);
     }
 
     [Test]
@@ -125,29 +140,32 @@ public class DialectRuleTests
     }
 
     [Test]
-    public void QRA502_SqliteFullOuterJoin_Reports()
+    public void QRA503_MysqlFullOuterJoin_Reports()
     {
-        var rule = new SuboptimalForDialectRule();
-        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
-        var context = CreateContext(site, GenSqlDialect.SQLite);
-        var diagnostics = rule.Analyze(context).ToList();
-        Assert.That(diagnostics, Has.Count.EqualTo(1));
-        Assert.That(diagnostics[0].GetMessage(), Does.Contain("FULL OUTER JOIN"));
-    }
-
-    [Test]
-    public void QRA502_MysqlFullOuterJoin_Reports()
-    {
+        // MySQL has never supported FULL OUTER JOIN — generated SQL is rejected at parse time.
         var rule = new SuboptimalForDialectRule();
         var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
         var context = CreateContext(site, GenSqlDialect.MySQL);
         var diagnostics = rule.Analyze(context).ToList();
         Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA503"));
+        Assert.That(diagnostics[0].Severity, Is.EqualTo(DiagnosticSeverity.Error));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("FULL OUTER JOIN"));
     }
 
     [Test]
-    public void QRA502_PostgresFullOuterJoin_NoReport()
+    public void QRA503_SqliteFullOuterJoin_NoReport()
+    {
+        // SQLite ≥ 3.39 supports FULL OUTER JOIN; Microsoft.Data.Sqlite 10.0.3 ships 3.49.1.
+        var rule = new SuboptimalForDialectRule();
+        var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
+        var context = CreateContext(site, GenSqlDialect.SQLite);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public void QRA503_PostgresFullOuterJoin_NoReport()
     {
         var rule = new SuboptimalForDialectRule();
         var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
@@ -157,7 +175,7 @@ public class DialectRuleTests
     }
 
     [Test]
-    public void QRA502_SqlServerFullOuterJoin_NoReport()
+    public void QRA503_SqlServerFullOuterJoin_NoReport()
     {
         var rule = new SuboptimalForDialectRule();
         var site = CreateSite(InterceptorKind.FullOuterJoin, methodName: "FullOuterJoin");
@@ -167,10 +185,10 @@ public class DialectRuleTests
     }
 
     [Test]
-    public void QRA502_SqlServerOffsetWithoutOrderBy_Reports()
+    public void QRA503_SqlServerOffsetWithoutOrderBy_Reports()
     {
+        // SQL Server rejects OFFSET/FETCH without ORDER BY at parse time.
         var rule = new SuboptimalForDialectRule();
-        // Build syntax: db.Offset(10).ExecuteFetchAllAsync()
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { db.Offset(10).ExecuteFetchAllAsync(); } }");
         var compilation = CSharpCompilation.Create("Test",
             new[] { tree },
@@ -178,21 +196,21 @@ public class DialectRuleTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var semanticModel = compilation.GetSemanticModel(tree);
         var invocations = tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
-        // The outermost invocation (ExecuteFetchAllAsync) is first in pre-order traversal
         var executionInvocation = invocations.First();
 
         var site = CreateSite(InterceptorKind.ExecuteFetchAll, methodName: "ExecuteFetchAllAsync");
         var context = CreateContextWithSyntax(site, GenSqlDialect.SqlServer, executionInvocation, semanticModel);
         var diagnostics = rule.Analyze(context).ToList();
         Assert.That(diagnostics, Has.Count.EqualTo(1));
+        Assert.That(diagnostics[0].Id, Is.EqualTo("QRA503"));
+        Assert.That(diagnostics[0].Severity, Is.EqualTo(DiagnosticSeverity.Error));
         Assert.That(diagnostics[0].GetMessage(), Does.Contain("ORDER BY"));
     }
 
     [Test]
-    public void QRA502_SqlServerOffsetWithOrderBy_NoReport()
+    public void QRA503_SqlServerOffsetWithOrderBy_NoReport()
     {
         var rule = new SuboptimalForDialectRule();
-        // Build syntax: db.OrderBy(x).Offset(10).ExecuteFetchAllAsync()
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { db.OrderBy(x).Offset(10).ExecuteFetchAllAsync(); } }");
         var compilation = CSharpCompilation.Create("Test",
             new[] { tree },
@@ -200,7 +218,6 @@ public class DialectRuleTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var semanticModel = compilation.GetSemanticModel(tree);
         var invocations = tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
-        // The outermost invocation (ExecuteFetchAllAsync) is first in pre-order traversal
         var executionInvocation = invocations.First();
 
         var site = CreateSite(InterceptorKind.ExecuteFetchAll, methodName: "ExecuteFetchAllAsync");
@@ -210,10 +227,10 @@ public class DialectRuleTests
     }
 
     [Test]
-    public void QRA502_SqliteOffsetWithoutOrderBy_NoReport()
+    public void QRA503_SqliteOffsetWithoutOrderBy_NoReport()
     {
+        // SQLite supports OFFSET without ORDER BY — no diagnostic expected.
         var rule = new SuboptimalForDialectRule();
-        // SQLite supports OFFSET without ORDER BY -- no diagnostic expected
         var tree = CSharpSyntaxTree.ParseText("class C { void M() { db.Offset(10).ExecuteFetchAllAsync(); } }");
         var compilation = CSharpCompilation.Create("Test",
             new[] { tree },
@@ -221,7 +238,6 @@ public class DialectRuleTests
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var semanticModel = compilation.GetSemanticModel(tree);
         var invocations = tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>().ToList();
-        // The outermost invocation (ExecuteFetchAllAsync) is first in pre-order traversal
         var executionInvocation = invocations.First();
 
         var site = CreateSite(InterceptorKind.ExecuteFetchAll, methodName: "ExecuteFetchAllAsync");

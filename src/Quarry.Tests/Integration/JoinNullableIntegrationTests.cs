@@ -184,25 +184,24 @@ internal class JoinNullableIntegrationTests
     [Test]
     public async Task FullOuterJoin_SqlVerification_BothSidesMarkedJoinNullable()
     {
+        // MySQL is intentionally excluded — QRA503 prevents FULL OUTER JOIN from compiling
+        // against a MySQL context.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, My, Ss) = t;
+        var (Lite, Pg, _, Ss) = t;
 
         var lt = Lite.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total)).Prepare();
         var pg = Pg.Users().FullOuterJoin<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total)).Prepare();
-        var my = My.Users().FullOuterJoin<My.Order>((u, o) => u.UserId == o.UserId.Id)
-            .Select((u, o) => (u.UserName, o.Total)).Prepare();
         var ss = Ss.Users().FullOuterJoin<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
             .Select((u, o) => (u.UserName, o.Total)).Prepare();
 
-        QueryTestHarness.AssertDialects(
-            lt.ToDiagnostics(), pg.ToDiagnostics(),
-            my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` FULL OUTER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+        Assert.That(lt.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\""));
+        Assert.That(pg.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\""));
+        Assert.That(ss.ToDiagnostics().Sql, Is.EqualTo(
+            "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]"));
 
         // Verify projection: both sides should be join-nullable
         var diag = lt.ToDiagnostics();

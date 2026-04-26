@@ -7,7 +7,10 @@ using Quarry.Generators.Sql;
 namespace Quarry.Analyzers.Rules.Dialect;
 
 /// <summary>
-/// QRA502: Detects features that are suboptimal or unsupported for the target dialect.
+/// QRA502 (Warning) and QRA503 (Error) — dialect feature checks.
+///
+/// QRA502: feature is suboptimal but valid SQL — the dialect will execute it.
+/// QRA503: feature produces SQL the dialect cannot execute (capability gap).
 /// </summary>
 internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
 {
@@ -22,6 +25,8 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
     };
 
     public string RuleId => "QRA502";
+
+    // Primary descriptor for SupportedDiagnostics metadata; the rule also emits QRA503.
     public DiagnosticDescriptor Descriptor => AnalyzerDiagnosticDescriptors.SuboptimalForDialect;
 
     public IEnumerable<Diagnostic> Analyze(QueryAnalysisContext context)
@@ -32,43 +37,28 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
         if (dialect == null)
             yield break;
 
-        // SQLite: RIGHT JOIN not supported
-        if (dialect == SqlDialect.SQLite && site.Kind == InterceptorKind.RightJoin)
-        {
-            yield return Diagnostic.Create(
-                Descriptor,
-                context.InvocationSyntax.GetLocation(),
-                "SQLite does not support RIGHT JOIN; consider restructuring as LEFT JOIN");
-        }
-
-        // MySQL: RIGHT JOIN has limited optimization
+        // MySQL: RIGHT JOIN executes but the optimizer's plan is suboptimal.
+        // Capability is intact, so this stays QRA502 Warning (perf hint).
         if (dialect == SqlDialect.MySQL && site.Kind == InterceptorKind.RightJoin)
         {
             yield return Diagnostic.Create(
-                Descriptor,
+                AnalyzerDiagnosticDescriptors.SuboptimalForDialect,
                 context.InvocationSyntax.GetLocation(),
                 "MySQL has limited RIGHT JOIN optimization; consider restructuring as LEFT JOIN");
         }
 
-        // SQLite: FULL OUTER JOIN not supported
-        if (dialect == SqlDialect.SQLite && site.Kind == InterceptorKind.FullOuterJoin)
-        {
-            yield return Diagnostic.Create(
-                Descriptor,
-                context.InvocationSyntax.GetLocation(),
-                "SQLite does not support FULL OUTER JOIN; consider using UNION of two LEFT JOINs with swapped table order");
-        }
-
-        // MySQL: FULL OUTER JOIN not supported
+        // MySQL: FULL OUTER JOIN is not supported by any MySQL version.
+        // The generator emits "FULL OUTER JOIN" verbatim; MySQL rejects it at parse time.
         if (dialect == SqlDialect.MySQL && site.Kind == InterceptorKind.FullOuterJoin)
         {
             yield return Diagnostic.Create(
-                Descriptor,
+                AnalyzerDiagnosticDescriptors.UnsupportedForDialect,
                 context.InvocationSyntax.GetLocation(),
                 "MySQL does not support FULL OUTER JOIN; consider using UNION of LEFT JOIN and RIGHT JOIN");
         }
 
-        // SQL Server: OFFSET/FETCH requires ORDER BY -- produces invalid SQL without it
+        // SQL Server: OFFSET/FETCH without ORDER BY is rejected at parse time.
+        // The generator emits invalid SQL on this combination, so this is QRA503 Error.
         if (dialect == SqlDialect.SqlServer && IsExecutionSite(site.Kind))
         {
             bool hasOffset = false;
@@ -92,7 +82,7 @@ internal sealed class SuboptimalForDialectRule : IQueryAnalysisRule
             if (hasOffset && !hasOrderBy)
             {
                 yield return Diagnostic.Create(
-                    Descriptor,
+                    AnalyzerDiagnosticDescriptors.UnsupportedForDialect,
                     context.InvocationSyntax.GetLocation(),
                     "SQL Server OFFSET/FETCH requires ORDER BY; add OrderBy() to avoid invalid SQL");
             }

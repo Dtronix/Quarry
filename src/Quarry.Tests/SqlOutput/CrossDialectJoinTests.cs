@@ -669,21 +669,25 @@ internal class CrossDialectJoinTests
     [Test]
     public async Task FullOuterJoin_OnClause()
     {
+        // MySQL is intentionally excluded: it has no FULL OUTER JOIN support, and the
+        // analyzer (QRA503) makes a `My.…FullOuterJoin(…)` call site fail compilation —
+        // see DialectRuleTests.QRA503_MysqlFullOuterJoin_Reports.
         await using var t = await QueryTestHarness.CreateAsync();
-        var (Lite, Pg, My, Ss) = t;
+        var (Lite, Pg, _, Ss) = t;
 
         var lt = Lite.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
         var pg = Pg.Users().FullOuterJoin<Pg.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
-        var my = My.Users().FullOuterJoin<My.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
         var ss = Ss.Users().FullOuterJoin<Ss.Order>((u, o) => u.UserId == o.UserId.Id).Select((u, o) => (u.UserName, o.Total)).Prepare();
 
-        QueryTestHarness.AssertDialects(
-            lt.ToDiagnostics(), pg.ToDiagnostics(),
-            my.ToDiagnostics(), ss.ToDiagnostics(),
-            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
-            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` FULL OUTER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+        var litDiag = lt.ToDiagnostics();
+        var pgDiag = pg.ToDiagnostics();
+        var ssDiag = ss.ToDiagnostics();
+        Assert.That(litDiag.Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\""));
+        Assert.That(pgDiag.Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\" FROM \"users\" AS \"t0\" FULL OUTER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\""));
+        Assert.That(ssDiag.Sql, Is.EqualTo(
+            "SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] FULL OUTER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]"));
     }
 
     #endregion

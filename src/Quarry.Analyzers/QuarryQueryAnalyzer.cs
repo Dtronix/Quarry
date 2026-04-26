@@ -69,7 +69,8 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         AnalyzerDiagnosticDescriptors.QueryInsideLoop,
         AnalyzerDiagnosticDescriptors.MultipleQueriesSameTable,
         AnalyzerDiagnosticDescriptors.DialectOptimization,
-        AnalyzerDiagnosticDescriptors.SuboptimalForDialect);
+        AnalyzerDiagnosticDescriptors.SuboptimalForDialect,
+        AnalyzerDiagnosticDescriptors.UnsupportedForDialect);
 
     public override void Initialize(AnalysisContext context)
     {
