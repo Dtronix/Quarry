@@ -925,6 +925,265 @@ public static class Queries
 
     #endregion
 
+    #region Per-Context EntityReader Resolution (#277)
+
+    [Test]
+    public void Generator_PerContextEntityReader_RewritesFqnPerContext()
+    {
+        // Schema lives in App.Schemas. PgDb lives in App.Pg, MyDb lives in App.My.
+        // The schema-level [EntityReader(typeof(ProductReader))] resolves to
+        // App.Schemas.ProductReader. Per-context resolution rewrites that to
+        // App.Pg.ProductReader for PgDb and App.My.ProductReader for MyDb.
+        var source = @"
+using Quarry;
+using System.Data.Common;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace App.Schemas
+{
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [EntityReader(typeof(ProductReader))]
+    public class ProductSchema : Schema
+    {
+        public static string Table => ""products"";
+        public Key<int> ProductId => Identity();
+    }
+}
+
+namespace App.Pg
+{
+    public partial class Product
+    {
+        public string DisplayLabel { get; set; } = """";
+    }
+
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+    public partial class PgDb : QuarryContext
+    {
+        public partial IEntityAccessor<Product> Products();
+    }
+}
+
+namespace App.My
+{
+    public partial class Product
+    {
+        public string DisplayLabel { get; set; } = """";
+    }
+
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [QuarryContext(Dialect = SqlDialect.MySQL)]
+    public partial class MyDb : QuarryContext
+    {
+        public partial IEntityAccessor<Product> Products();
+    }
+}
+
+namespace App.Queries
+{
+    public static class Q
+    {
+        public static async Task UsePg(App.Pg.PgDb db) =>
+            await db.Products().Select(p => p).ExecuteFetchAllAsync();
+
+        public static async Task UseMy(App.My.MyDb db) =>
+            await db.Products().Select(p => p).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var pgInterceptors = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains("PgDb.Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(pgInterceptors, Is.Not.Null, "Should generate PgDb interceptor file");
+        var pgCode = pgInterceptors!.GetText().ToString();
+
+        Assert.That(pgCode, Does.Contain("_entityReader_App_Pg_ProductReader"),
+            "PgDb should reference per-context App.Pg.ProductReader, not App.Schemas.ProductReader");
+        Assert.That(pgCode, Does.Contain("App.Pg.ProductReader _entityReader_App_Pg_ProductReader"),
+            "PgDb cached field should be typed as App.Pg.ProductReader");
+        Assert.That(pgCode, Does.Not.Contain("_entityReader_App_Schemas_ProductReader"),
+            "PgDb must not reference the schema-namespace reader");
+
+        var myInterceptors = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains("MyDb.Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(myInterceptors, Is.Not.Null, "Should generate MyDb interceptor file");
+        var myCode = myInterceptors!.GetText().ToString();
+
+        Assert.That(myCode, Does.Contain("_entityReader_App_My_ProductReader"),
+            "MyDb should reference per-context App.My.ProductReader");
+        Assert.That(myCode, Does.Contain("App.My.ProductReader _entityReader_App_My_ProductReader"),
+            "MyDb cached field should be typed as App.My.ProductReader");
+        Assert.That(myCode, Does.Not.Contain("_entityReader_App_Schemas_ProductReader"),
+            "MyDb must not reference the schema-namespace reader");
+    }
+
+    [Test]
+    public void Generator_PerContextEntityReader_PreservesSchemaNamespaceWhenContextShares()
+    {
+        // When context lives in the same namespace as the schema, the per-context
+        // FQN equals the schema-namespace FQN — preserves the existing single-context
+        // behavior with no functional change.
+        var source = @"
+using Quarry;
+using System.Data.Common;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace App;
+
+public class ProductReader : EntityReader<Product>
+{
+    public override Product Read(DbDataReader reader) => new Product
+    {
+        ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+    };
+}
+
+[EntityReader(typeof(ProductReader))]
+public class ProductSchema : Schema
+{
+    public static string Table => ""products"";
+    public Key<int> ProductId => Identity();
+}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Product> Products();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db) =>
+        await db.Products().Select(p => p).ExecuteFetchAllAsync();
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptors = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptors, Is.Not.Null, "Should generate interceptors file");
+        var code = interceptors!.GetText().ToString();
+
+        Assert.That(code, Does.Contain("_entityReader_App_ProductReader"),
+            "Single-context-same-namespace should reference App.ProductReader (schema-namespace FQN)");
+        Assert.That(code, Does.Contain("App.ProductReader _entityReader_App_ProductReader"),
+            "Cached field should be typed as App.ProductReader");
+    }
+
+    [Test]
+    public void Generator_PerContextEntityReader_DeduplicatesCachedField()
+    {
+        // Multiple call sites against the same per-context schema in the same file
+        // must produce exactly one cached reader field, not one per call site.
+        var source = @"
+using Quarry;
+using System.Data.Common;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace App.Schemas
+{
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [EntityReader(typeof(ProductReader))]
+    public class ProductSchema : Schema
+    {
+        public static string Table => ""products"";
+        public Key<int> ProductId => Identity();
+    }
+}
+
+namespace App.Pg
+{
+    public partial class Product { }
+
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+    public partial class PgDb : QuarryContext
+    {
+        public partial IEntityAccessor<Product> Products();
+    }
+}
+
+namespace App.Queries
+{
+    public static class Q
+    {
+        public static async Task A(App.Pg.PgDb db) =>
+            await db.Products().Select(p => p).ExecuteFetchAllAsync();
+
+        public static async Task B(App.Pg.PgDb db) =>
+            await db.Products().Select(p => p).ExecuteFetchFirstAsync();
+
+        public static async Task C(App.Pg.PgDb db) =>
+            await db.Products().Where(p => p.ProductId > 0).Select(p => p).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var pgInterceptors = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains("PgDb.Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(pgInterceptors, Is.Not.Null, "Should generate PgDb interceptor file");
+        var code = pgInterceptors!.GetText().ToString();
+
+        // Count occurrences of the cached-field declaration. Single private static readonly
+        // declaration is emitted in the Cached Fields region; the field name is referenced
+        // multiple times (once per Read call), so we look for the declaration line specifically.
+        var declarationCount = System.Text.RegularExpressions.Regex.Matches(
+            code,
+            @"private static readonly App\.Pg\.ProductReader _entityReader_App_Pg_ProductReader = new\(\);")
+            .Count;
+        Assert.That(declarationCount, Is.EqualTo(1),
+            "Cached reader field should be declared exactly once across multiple call sites");
+    }
+
+    #endregion
+
     #region IQueryBuilder<T> interceptor limitation
 
     [Test]
