@@ -176,11 +176,15 @@ INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES (@p0, @p
 
 ---
 
-### Events().Select(...).ExecuteFetchAllAsync()
+### Events().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
-SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events"
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = @p0
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -4351,7 +4355,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 640 |
+| Total discovered | 641 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 179 |
+| Consolidated (deduped) | 180 |
 | Rendered | 461 |

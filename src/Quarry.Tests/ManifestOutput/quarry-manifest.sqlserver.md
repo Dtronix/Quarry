@@ -152,6 +152,44 @@ SELECT [Street] FROM [addresses] WHERE [AddressId] = @p0
 
 ---
 
+### Events().Insert().ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO [events] ([EventName], [ScheduledAt], [CancelledAt]) VALUES (@p0, @p1, @p2)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTimeOffset` |
+| `@p2` | `DateTimeOffset` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [EventId], [EventName], [ScheduledAt], [CancelledAt] FROM [events] WHERE [EventName] = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT [EventId], [EventName], [ScheduledAt], [CancelledAt] FROM [events] WHERE [EventName] = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -3639,7 +3677,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 469 |
+| Total discovered | 475 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 76 |
-| Rendered | 393 |
+| Consolidated (deduped) | 79 |
+| Rendered | 396 |

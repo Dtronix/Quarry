@@ -144,6 +144,44 @@ SELECT "Street" FROM "addresses" WHERE "AddressId" = $1
 
 ---
 
+### Events().Insert().ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES ($1, $2, $3)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTimeOffset` |
+| `@p2` | `DateTimeOffset` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -3827,7 +3865,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 504 |
+| Total discovered | 510 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 92 |
-| Rendered | 412 |
+| Consolidated (deduped) | 95 |
+| Rendered | 415 |
