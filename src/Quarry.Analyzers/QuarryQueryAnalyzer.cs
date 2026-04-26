@@ -47,7 +47,8 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         new MultipleQueriesSameTableRule(),
         // QRA5xx: Dialect
         new DialectOptimizationRule(),
-        new SuboptimalForDialectRule());
+        new SuboptimalForDialectRule(),
+        new UnsupportedForDialectRule());
 
     public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics { get; } = ImmutableArray.Create(
         AnalyzerDiagnosticDescriptors.CountComparedToZero,

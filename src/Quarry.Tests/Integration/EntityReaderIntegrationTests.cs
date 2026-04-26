@@ -9,6 +9,13 @@ namespace Quarry.Tests.Integration;
 /// Verifies that entities annotated with [EntityReader] are materialized via the custom reader
 /// instead of the auto-generated ordinal-based reader.
 /// </summary>
+/// <remarks>
+/// Intentionally NOT migrated to <c>SqlOutput/CrossDialectEntityReaderTests.cs</c> — see
+/// issue <c>#277</c> (Generator: [EntityReader] reader class resolves only in schema's namespace).
+/// The cross-dialect conversion is blocked on a generator-level fix that's orthogonal to the
+/// PR which migrated the rest of the Integration/* files. Once #277 lands, this file moves to
+/// SqlOutput/ and gains 4-dialect coverage.
+/// </remarks>
 [TestFixture]
 internal class EntityReaderIntegrationTests
 {

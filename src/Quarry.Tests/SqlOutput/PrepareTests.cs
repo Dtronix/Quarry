@@ -686,6 +686,11 @@ internal class PrepareTests
             pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
             mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
             ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(2));
     }
 
     #endregion

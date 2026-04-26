@@ -454,6 +454,11 @@ internal partial class CrossDialectLoggingTests
     {
         // For each dialect, build a context around a fresh CLOSED connection. Quarry's
         // EnsureConnectionOpenAsync should log "opened" when the runtime opens it.
+        //
+        // NOTE: These connections bypass the harness's transaction-rollback isolation —
+        // each connects to the container's default DB/schema directly. Keep these tests
+        // limited to "SELECT 1"; any INSERT/UPDATE/DELETE here would leak state across
+        // shared containers between tests.
         _logger.Clear();
         await using (var conn = new SqliteConnection("Data Source=:memory:"))
         {
@@ -534,6 +539,9 @@ internal partial class CrossDialectLoggingTests
     public async Task ClosedConnection_Dispose_LogsClosed()
     {
         // Open a fresh connection per dialect, do work, dispose — verify the close is logged.
+        //
+        // NOTE: Same un-isolated connections as ClosedConnection_LogsOpened. Keep limited
+        // to "SELECT 1" to avoid cross-test state leakage on the shared containers.
         _logger.Clear();
         var liteConn = new SqliteConnection("Data Source=:memory:");
         var liteDb = new TestDbContext(liteConn);
@@ -689,8 +697,9 @@ internal partial class CrossDialectLoggingTests
     [Test]
     public async Task SensitiveColumn_LogsRedactedValue()
     {
-        // Sensitive-redaction code path runs in QuarryContext before SQL is built;
-        // verifying on SQLite alone is sufficient. Pg/My/Ss baselines do not seed widgets.
+        // SQLite-only — provider-independent path, see class docstring.
+        // Sensitive-redaction runs in QuarryContext before SQL is built (ParameterLog.BoundSensitive
+        // emits regardless of provider), so single-dialect verification is sufficient.
         await using var conn = new SqliteConnection("Data Source=:memory:");
         await conn.OpenAsync();
         await CreateAndSeedWidgetsAsync(conn);
@@ -710,6 +719,7 @@ internal partial class CrossDialectLoggingTests
     [Test]
     public async Task SensitiveColumn_DoesNotLeakValueAtAnyLevel()
     {
+        // SQLite-only — provider-independent path, see class docstring.
         await using var conn = new SqliteConnection("Data Source=:memory:");
         await conn.OpenAsync();
         await CreateAndSeedWidgetsAsync(conn);
@@ -726,6 +736,7 @@ internal partial class CrossDialectLoggingTests
     [Test]
     public async Task InsertSensitiveColumn_LogsRedactedValue()
     {
+        // SQLite-only — provider-independent path, see class docstring.
         await using var conn = new SqliteConnection("Data Source=:memory:");
         await conn.OpenAsync();
         await CreateAndSeedWidgetsAsync(conn);
@@ -1040,6 +1051,54 @@ internal partial class CrossDialectLoggingTests
             Assert.That(_logger.Entries.Where(e => e.Category == "Quarry.Query"), Is.Not.Empty, "Ss: Debug query still works");
         }
         finally { ResetLogger(); }
+    }
+
+    #endregion
+
+    #region RawSql Parameter-Name Convention
+
+    [Test]
+    public async Task RawSql_ParameterName_IsAlwaysAtPN_AcrossDialects()
+    {
+        // The RawSql runtime always assigns `param.ParameterName = "@pN"` (see
+        // QuarryContext.RawSqlScalarAsyncWithConverter, QuarryContext.cs:469). Every supported
+        // provider accepts that named-parameter form: SQLite/SqlClient natively, Npgsql by
+        // rewriting "@name" markers to positional internally, MySqlConnector via its named-
+        // parameter mode. If the runtime convention ever changes (e.g., switching to native
+        // positional binding on Npgsql 11+), this test pins the contract — every dialect
+        // logs the parameter under the literal `@p0` name. Lives here (not in
+        // CrossDialectRawSqlTests) because it depends on the singleton recording logger that
+        // requires this fixture's [NonParallelizable] guard.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        _logger.Clear();
+        await Lite.RawSqlScalarAsync<int>(
+            "SELECT COUNT(*) FROM \"users\" WHERE \"UserId\" = @p0", 1);
+        Assert.That(
+            _logger.Entries.Any(e => e.Category == "Quarry.Parameters" && e.Message.Contains("@p0")),
+            Is.True, "Lite should log parameter as @p0");
+
+        _logger.Clear();
+        await Pg.RawSqlScalarAsync<int>(
+            "SELECT COUNT(*) FROM \"users\" WHERE \"UserId\" = @p0", 1);
+        Assert.That(
+            _logger.Entries.Any(e => e.Category == "Quarry.Parameters" && e.Message.Contains("@p0")),
+            Is.True, "Pg should log parameter as @p0 (Npgsql rewrites @name to positional internally)");
+
+        _logger.Clear();
+        await My.RawSqlScalarAsync<int>(
+            "SELECT COUNT(*) FROM `users` WHERE `UserId` = @p0", 1);
+        Assert.That(
+            _logger.Entries.Any(e => e.Category == "Quarry.Parameters" && e.Message.Contains("@p0")),
+            Is.True, "My should log parameter as @p0");
+
+        _logger.Clear();
+        await Ss.RawSqlScalarAsync<int>(
+            "SELECT COUNT(*) FROM [users] WHERE [UserId] = @p0", 1);
+        Assert.That(
+            _logger.Entries.Any(e => e.Category == "Quarry.Parameters" && e.Message.Contains("@p0")),
+            Is.True, "Ss should log parameter as @p0");
     }
 
     #endregion
