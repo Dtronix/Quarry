@@ -3779,7 +3779,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 504 |
+| Total discovered | 500 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 98 |
+| Consolidated (deduped) | 94 |
 | Rendered | 406 |

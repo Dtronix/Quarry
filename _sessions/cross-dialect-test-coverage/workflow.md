@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 2
 phases-total: 12
-phases-complete: 5
+phases-complete: 6
 
 ## Problem Statement
 
@@ -106,3 +106,4 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 | 1 | IMPLEMENT P4 | IMPLEMENT P4 | Phase 4 complete — converted ContainsIntegrationTests.cs to 7 cross-dialect tests in CrossDialectWhereTests (4 SELECT) + CrossDialectDeleteTests (3 DELETE). Exercise the runtime collection-expansion path (List<int>, IEnumerable<int>) on all 4 dialects. Original Integration file deleted. Tests: 3358/3358 (count unchanged: 7 deleted + 7 added; each new test runs on 4× dialects). |
 | 1 | IMPLEMENT P4 | IMPLEMENT (suspended) | Suspended after Phase 4 to preserve cache. Track A complete; Track B 1/9 done. handoff.md has the per-phase resumption guide. |
 | 2 | IMPLEMENT (resume) | IMPLEMENT P5 | Resumed from suspend. Verified baseline 3358/3358. Phase 5 complete — converted CollectionScalarIntegrationTests.cs (7 SQLite-only) → 7 cross-dialect execution tests appended to CrossDialectWhereTests.cs in a new "Collection + scalar — runtime parameter mixing (4-dialect execution)" region. Deleted original. Tests: 3030/3030 in Quarry.Tests (count unchanged, but each new test runs on 4× dialects). |
+| 2 | IMPLEMENT P6 | IMPLEMENT P6 | Phase 6 complete — JoinedCarrierIntegrationTests.cs was already 4-dialect (the plan's premise was wrong). Reduced phase to deduplicate + relocate: 4 of 8 tests were exact duplicates of existing CrossDialectJoinTests.cs (TwoTable/ThreeTable/FourTable basic + PreJoinWhere). Moved the 4 unique tests (captured-param Where after join, 5-table, 6-table joins, 3-table COUNT terminal) into CrossDialectJoinTests.cs as new regions. Deleted Integration file. Tests: 3026/3026 (-4 from dedup as expected). |

@@ -11,8 +11,9 @@
 
 ## Completions (This Session)
 
-**Track B (Phase 5):**
+**Track B (Phases 5–6):**
 - Phase 5: Converted `Integration/CollectionScalarIntegrationTests.cs` (7 SQLite-only tests for runtime collection + scalar parameter mixing) → 7 cross-dialect execution tests appended to `SqlOutput/CrossDialectWhereTests.cs` in a new "Collection + scalar — runtime parameter mixing (4-dialect execution)" region. Skipped Prepare+AssertDialects per Phase 4 precedent — SQL-shape coverage already lives in `CollectionParameterCollisionTests.cs` (regression #140). Original Integration file deleted. Source-generator regenerated `ManifestOutput/quarry-manifest.{mysql,postgresql,sqlserver}.md`. Tests: 3030/3030 in Quarry.Tests (count unchanged; each new test now exercises 4 dialects).
+- Phase 6: `Integration/JoinedCarrierIntegrationTests.cs` was already a 4-dialect file (the plan's "convert single-dialect" framing was wrong). Reduced phase to **deduplicate + relocate**: 4 of 8 tests were exact duplicates of existing `CrossDialectJoinTests.cs` cases (TwoTable basic / PreJoinWhere / ThreeTable / FourTable). Moved the 4 unique tests into `CrossDialectJoinTests.cs` as new regions: `Join_WithWhere_CapturedParam_OnRightTable` (captures `minTotal` instead of constant-folding `100`), `Join_FiveTable_Select`, `Join_SixTable_Select`, `Join_ThreeTable_ScalarAggregate_Count` (uses `Sql.Count()` + `ExecuteScalarAsync<int>()`). Deleted Integration file. Tests: 3026/3026 (-4 from dedup as expected — net 4 fewer NUnit methods).
 
 ## Previous Session Completions
 
@@ -26,15 +27,15 @@
 
 ## Progress
 
-- 5 / 12 plan phases complete.
+- 6 / 12 plan phases complete.
 - Track A (analyzer / generator hardening): **complete**.
-- Track B (test conversion): 2 / 9 phases done.
+- Track B (test conversion): 3 / 9 phases done.
 
 ## Current State
 
-- Branch: `cross-dialect-test-coverage`, 5 commits ahead of `master`.
+- Branch: `cross-dialect-test-coverage`, 6 commits ahead of `master`.
 - Working tree: clean.
-- Tests: 3358 / 3358 passing (Quarry.Analyzers.Tests 127, Quarry.Migration.Tests 201, Quarry.Tests 3030).
+- Tests: 3354 / 3354 passing (Quarry.Analyzers.Tests 127, Quarry.Migration.Tests 201, Quarry.Tests 3026 — Phase 6 dedup removed 4 NUnit methods).
 - No pre-existing failures from baseline.
 
 ## Known Issues / Bugs
@@ -61,15 +62,14 @@ None. Plan is locked.
 
 ## Next Work (Priority Order)
 
-Resume mid-IMPLEMENT. The remaining 7 phases (6–12) are sequential per the plan. Each is mechanical:
+Resume mid-IMPLEMENT. The remaining 6 phases (7–12) are sequential per the plan. **Important learning from Phase 6**: the plan's "convert SQLite-only → 4-dialect" framing may not apply to all Integration files — some are already 4-dialect and need only deduplication + relocation. Read the source first.
 
-1. **Phase 6** — Convert `Integration/JoinedCarrierIntegrationTests.cs` (219 lines, ~8 tests; 2-table inner joins, tuple/entity projections, COUNT terminal). Target: extend `SqlOutput/CrossDialectJoinTests.cs`. Delete original.
-2. **Phase 7** — Convert `Integration/JoinNullableIntegrationTests.cs` (212 lines, ~6 tests; LEFT JOIN nullable propagation). Target: extend `SqlOutput/JoinNullableProjectionTests.cs`. Delete original. *Highest dialect-divergence payoff.*
-3. **Phase 8** — Convert `Integration/DateTimeOffsetIntegrationTests.cs` (78 lines, ~3 tests). Target: extend `SqlOutput/CrossDialectTypeMappingTests.cs`. **Caveat**: PG coerces incoming DateTimeOffset to UTC; MySQL stores DATETIME without offset; SQL Server has native datetimeoffset. May need tolerance comparison or UTC-only seed. Pilot one test before committing the assertion shape. Delete original.
-4. **Phase 9** — Convert `Integration/PrepareIntegrationTests.cs` (222 lines, ~8 tests; Prepare single + multi-terminal). Target: extend `SqlOutput/PrepareTests.cs`. Delete original.
-5. **Phase 10** — Convert `Integration/EntityReaderIntegrationTests.cs` (236 lines, ~15 tests; custom EntityReader materialization). Target: new `SqlOutput/CrossDialectEntityReaderTests.cs`. ProductSchema already has `[EntityReader(typeof(ProductReader))]` so the harness gives 4-dialect coverage for free. Replace the test's custom `_db = new TestDbContext(_connection)` setup with `QueryTestHarness.CreateAsync()`. Delete original.
-6. **Phase 11** — Convert `Integration/RawSqlIntegrationTests.cs` (328 lines, ~15 tests). Target: new `SqlOutput/CrossDialectRawSqlTests.cs`. **Caveat**: each dialect needs its own SQL string with the correct parameter syntax (`@p0` for Lite/Ss, `$1` for Pg, `?` for MySQL). Verbatim pattern: four different SQL strings, four `RawSqlAsync` calls, four identical assertion blocks. Delete original.
-7. **Phase 12** — Convert `Integration/LoggingIntegrationTests.cs` (760 lines, ~30 tests; Logsmith abstraction, Sensitive() redaction, opId correlation, slow-query Warning). Target: new `SqlOutput/CrossDialectLoggingTests.cs`. **Caveat**: `LogsmithOutput.Logger` is process-wide; mark `[NonParallelizable]`. Pattern: `_logger.Clear()` between each dialect's execution; assert log shape per dialect. Check whether `RecordingLogsmithLogger.Clear()` exists — add it if needed (file at `Integration/RecordingLogsmithLogger.cs`). Delete original.
+1. **Phase 7** — Convert `Integration/JoinNullableIntegrationTests.cs` (212 lines, ~6 tests; LEFT JOIN nullable propagation). Target: extend `SqlOutput/JoinNullableProjectionTests.cs`. Delete original. *Highest dialect-divergence payoff.*
+2. **Phase 8** — Convert `Integration/DateTimeOffsetIntegrationTests.cs` (78 lines, ~3 tests). Target: extend `SqlOutput/CrossDialectTypeMappingTests.cs`. **Caveat**: PG coerces incoming DateTimeOffset to UTC; MySQL stores DATETIME without offset; SQL Server has native datetimeoffset. May need tolerance comparison or UTC-only seed. Pilot one test before committing the assertion shape. Delete original.
+3. **Phase 9** — Convert `Integration/PrepareIntegrationTests.cs` (222 lines, ~8 tests; Prepare single + multi-terminal). Target: extend `SqlOutput/PrepareTests.cs`. Delete original.
+4. **Phase 10** — Convert `Integration/EntityReaderIntegrationTests.cs` (236 lines, ~15 tests; custom EntityReader materialization). Target: new `SqlOutput/CrossDialectEntityReaderTests.cs`. ProductSchema already has `[EntityReader(typeof(ProductReader))]` so the harness gives 4-dialect coverage for free. Replace the test's custom `_db = new TestDbContext(_connection)` setup with `QueryTestHarness.CreateAsync()`. Delete original.
+5. **Phase 11** — Convert `Integration/RawSqlIntegrationTests.cs` (328 lines, ~15 tests). Target: new `SqlOutput/CrossDialectRawSqlTests.cs`. **Caveat**: each dialect needs its own SQL string with the correct parameter syntax (`@p0` for Lite/Ss, `$1` for Pg, `?` for MySQL). Verbatim pattern: four different SQL strings, four `RawSqlAsync` calls, four identical assertion blocks. Delete original.
+6. **Phase 12** — Convert `Integration/LoggingIntegrationTests.cs` (760 lines, ~30 tests; Logsmith abstraction, Sensitive() redaction, opId correlation, slow-query Warning). Target: new `SqlOutput/CrossDialectLoggingTests.cs`. **Caveat**: `LogsmithOutput.Logger` is process-wide; mark `[NonParallelizable]`. Pattern: `_logger.Clear()` between each dialect's execution; assert log shape per dialect. Check whether `RecordingLogsmithLogger.Clear()` exists — add it if needed (file at `Integration/RecordingLogsmithLogger.cs`). Delete original.
 
 After Phase 12: REVIEW (delegate the 6-section diff analysis to an agent producing `review.md`, then classify findings on the main context), REMEDIATE, REBASE on `origin/master`, open PR, FINALIZE.
 

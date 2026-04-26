@@ -4359,7 +4359,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 646 |
+| Total discovered | 642 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 184 |
+| Consolidated (deduped) | 180 |
 | Rendered | 462 |
