@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 12
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 
@@ -101,3 +101,4 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 | 1 | IMPLEMENT P1 | IMPLEMENT P1 | Phase 1 complete — added QRA503 (Error) descriptor; SuboptimalForDialectRule emits QRA502 (perf) for MySQL RIGHT JOIN, QRA503 (capability) for MySQL FULL OUTER + SqlServer OFFSET-no-ORDERBY; removed stale SQLite rules; updated DialectRuleTests; pruned MySQL clause from CrossDialectJoinTests.FullOuterJoin_OnClause + JoinNullableIntegrationTests.FullOuterJoin_SqlVerification. Tests: 3341/3341 (was 3340 — net +1 test). |
 | 1 | IMPLEMENT P2 | IMPLEMENT P2 | Phase 2 complete — added 9 full-pipeline analyzer integration tests via AnalyzerTestHelper covering MySQL/PG/Ss/SQLite × FULL OUTER JOIN and SqlServer × OFFSET (with/without ORDER BY) plus three negative dialects. Tests: 3350/3350 (Analyzers 127). |
 | 1 | IMPLEMENT P3 | IMPLEMENT P3 | Phase 3 complete — added 8 full-pipeline generator integration tests for QRY070/QRY071 covering INTERSECT ALL and EXCEPT ALL across 4 dialects. **Discovered + fixed silent diagnostic drop**: QuarryGenerator.s_deferredDescriptors was missing IntersectAllNotSupported/ExceptAllNotSupported/SetOperationProjectionMismatch — GetDescriptorById returned null and the diagnostics were dropped at QuarryGenerator.cs:524. Removed the obsolete "cannot test these" note. Tests: 3358/3358 (Quarry.Tests +8). |
+| 1 | IMPLEMENT P4 | IMPLEMENT P4 | Phase 4 complete — converted ContainsIntegrationTests.cs to 7 cross-dialect tests in CrossDialectWhereTests (4 SELECT) + CrossDialectDeleteTests (3 DELETE). Exercise the runtime collection-expansion path (List<int>, IEnumerable<int>) on all 4 dialects. Original Integration file deleted. Tests: 3358/3358 (count unchanged: 7 deleted + 7 added; each new test runs on 4× dialects). |

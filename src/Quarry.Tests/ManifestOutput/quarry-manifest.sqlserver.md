@@ -905,6 +905,18 @@ DELETE FROM [users]
 
 ---
 
+### Users().Delete().Where(...).ExecuteNonQueryAsync()
+
+```sql
+DELETE FROM [users] WHERE [UserId] IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1453,6 +1465,14 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] RIGHT JOIN [orders] AS
 
 ```sql
 SELECT [UserId], [UserName] FROM [users] EXCEPT SELECT [ProductId], [ProductName] FROM [products]
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT [UserName] FROM [users]
 ```
 
 ---
@@ -3505,7 +3525,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 452 |
+| Total discovered | 462 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 72 |
-| Rendered | 380 |
+| Consolidated (deduped) | 80 |
+| Rendered | 382 |
