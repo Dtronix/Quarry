@@ -245,4 +245,150 @@ public class DialectRuleTests
         var diagnostics = rule.Analyze(context).ToList();
         Assert.That(diagnostics, Is.Empty);
     }
+
+    // -- QRA503 full-pipeline integration tests --
+    //
+    // The unit tests above hand the rule a synthetic RawCallSite. These pipeline tests
+    // run the full analyzer against real C# source so that any regression in
+    // UsageSiteDiscovery, ContextParser, or QuarryQueryAnalyzer wiring is also caught.
+
+    private static string FullOuterJoinSource(string dialect) => $@"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}}
+
+public class OrderSchema : Schema
+{{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
+    public Col<decimal> Total => Precision(18, 2);
+}}
+
+[QuarryContext(Dialect = SqlDialect.{dialect})]
+public partial class TestDb : QuarryContext
+{{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}}
+
+public class Service
+{{
+    public IJoinedQueryBuilder<User, Order> Build(TestDb db)
+    {{
+        return db.Users().FullOuterJoin<Order>((u, o) => u.UserId == o.UserId.Id);
+    }}
+}}";
+
+    private static string OffsetSource(string dialect, bool withOrderBy) => $@"
+using Quarry;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}}
+
+[QuarryContext(Dialect = SqlDialect.{dialect})]
+public partial class TestDb : QuarryContext
+{{
+    public partial IEntityAccessor<User> Users();
+}}
+
+public class Service
+{{
+    public Task<IList<string>> Run(TestDb db)
+    {{
+        return db.Users()
+            .Where(u => true)
+            .Select(u => u.UserName)
+            {(withOrderBy ? ".OrderBy(u => u)" : string.Empty)}
+            .Offset(10)
+            .ExecuteFetchAllAsync();
+    }}
+}}";
+
+    [Test]
+    public async Task QRA503_Pipeline_MysqlFullOuterJoin_EmitsError()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(FullOuterJoinSource("MySQL"));
+        var qra503 = diags.Where(d => d.Id == "QRA503").ToList();
+        Assert.That(qra503, Has.Count.EqualTo(1), "QRA503 should fire once on MySQL FULL OUTER JOIN");
+        Assert.That(qra503[0].Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qra503[0].GetMessage(), Does.Contain("MySQL"));
+        Assert.That(qra503[0].GetMessage(), Does.Contain("FULL OUTER JOIN"));
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_PostgresFullOuterJoin_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(FullOuterJoinSource("PostgreSQL"));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_SqlServerFullOuterJoin_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(FullOuterJoinSource("SqlServer"));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_SqliteFullOuterJoin_NoDiagnostic()
+    {
+        // SQLite ≥ 3.39 supports FULL OUTER JOIN; the rule is intentionally absent.
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(FullOuterJoinSource("SQLite"));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_SqlServerOffsetWithoutOrderBy_EmitsError()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(OffsetSource("SqlServer", withOrderBy: false));
+        var qra503 = diags.Where(d => d.Id == "QRA503").ToList();
+        Assert.That(qra503, Has.Count.EqualTo(1), "QRA503 should fire once on SqlServer OFFSET without ORDER BY");
+        Assert.That(qra503[0].Severity, Is.EqualTo(DiagnosticSeverity.Error));
+        Assert.That(qra503[0].GetMessage(), Does.Contain("ORDER BY"));
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_SqlServerOffsetWithOrderBy_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(OffsetSource("SqlServer", withOrderBy: true));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_SqliteOffsetWithoutOrderBy_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(OffsetSource("SQLite", withOrderBy: false));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_PostgresOffsetWithoutOrderBy_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(OffsetSource("PostgreSQL", withOrderBy: false));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
+
+    [Test]
+    public async Task QRA503_Pipeline_MysqlOffsetWithoutOrderBy_NoDiagnostic()
+    {
+        var diags = await AnalyzerTestHelper.GetAnalyzerDiagnosticsAsync(OffsetSource("MySQL", withOrderBy: false));
+        Assert.That(diags.Where(d => d.Id == "QRA503"), Is.Empty);
+    }
 }

@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 12
-phases-complete: 1
+phases-complete: 2
 
 ## Problem Statement
 
@@ -99,3 +99,4 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 | 1 | DESIGN | PLAN | Verified SQLite 3.49.1 supports RIGHT/FULL OUTER via empirical probe. Locked rule decisions, conversion pattern, file mapping. User approved. |
 | 1 | PLAN | IMPLEMENT | Wrote 12-phase plan in plan.md (Track A: phases 1–3 hardening; Track B: phases 4–12 conversion). User approved. |
 | 1 | IMPLEMENT P1 | IMPLEMENT P1 | Phase 1 complete — added QRA503 (Error) descriptor; SuboptimalForDialectRule emits QRA502 (perf) for MySQL RIGHT JOIN, QRA503 (capability) for MySQL FULL OUTER + SqlServer OFFSET-no-ORDERBY; removed stale SQLite rules; updated DialectRuleTests; pruned MySQL clause from CrossDialectJoinTests.FullOuterJoin_OnClause + JoinNullableIntegrationTests.FullOuterJoin_SqlVerification. Tests: 3341/3341 (was 3340 — net +1 test). |
+| 1 | IMPLEMENT P2 | IMPLEMENT P2 | Phase 2 complete — added 9 full-pipeline analyzer integration tests via AnalyzerTestHelper covering MySQL/PG/Ss/SQLite × FULL OUTER JOIN and SqlServer × OFFSET (with/without ORDER BY) plus three negative dialects. Tests: 3350/3350 (Analyzers 127). |
