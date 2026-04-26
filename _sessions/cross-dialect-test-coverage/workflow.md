@@ -10,9 +10,9 @@ phase: IMPLEMENT
 status: active
 issue: discussion
 pr:
-session: 1
+session: 2
 phases-total: 12
-phases-complete: 4
+phases-complete: 5
 
 ## Problem Statement
 
@@ -91,6 +91,8 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 
 ## Suspend State
 
+(none — workflow active)
+
 ## Session Log
 
 | # | Phase Start | Phase End | Summary |
@@ -102,3 +104,5 @@ not supported) have no end-to-end pipeline tests — only descriptor-existence t
 | 1 | IMPLEMENT P2 | IMPLEMENT P2 | Phase 2 complete — added 9 full-pipeline analyzer integration tests via AnalyzerTestHelper covering MySQL/PG/Ss/SQLite × FULL OUTER JOIN and SqlServer × OFFSET (with/without ORDER BY) plus three negative dialects. Tests: 3350/3350 (Analyzers 127). |
 | 1 | IMPLEMENT P3 | IMPLEMENT P3 | Phase 3 complete — added 8 full-pipeline generator integration tests for QRY070/QRY071 covering INTERSECT ALL and EXCEPT ALL across 4 dialects. **Discovered + fixed silent diagnostic drop**: QuarryGenerator.s_deferredDescriptors was missing IntersectAllNotSupported/ExceptAllNotSupported/SetOperationProjectionMismatch — GetDescriptorById returned null and the diagnostics were dropped at QuarryGenerator.cs:524. Removed the obsolete "cannot test these" note. Tests: 3358/3358 (Quarry.Tests +8). |
 | 1 | IMPLEMENT P4 | IMPLEMENT P4 | Phase 4 complete — converted ContainsIntegrationTests.cs to 7 cross-dialect tests in CrossDialectWhereTests (4 SELECT) + CrossDialectDeleteTests (3 DELETE). Exercise the runtime collection-expansion path (List<int>, IEnumerable<int>) on all 4 dialects. Original Integration file deleted. Tests: 3358/3358 (count unchanged: 7 deleted + 7 added; each new test runs on 4× dialects). |
+| 1 | IMPLEMENT P4 | IMPLEMENT (suspended) | Suspended after Phase 4 to preserve cache. Track A complete; Track B 1/9 done. handoff.md has the per-phase resumption guide. |
+| 2 | IMPLEMENT (resume) | IMPLEMENT P5 | Resumed from suspend. Verified baseline 3358/3358. Phase 5 complete — converted CollectionScalarIntegrationTests.cs (7 SQLite-only) → 7 cross-dialect execution tests appended to CrossDialectWhereTests.cs in a new "Collection + scalar — runtime parameter mixing (4-dialect execution)" region. Deleted original. Tests: 3030/3030 in Quarry.Tests (count unchanged, but each new test runs on 4× dialects). |

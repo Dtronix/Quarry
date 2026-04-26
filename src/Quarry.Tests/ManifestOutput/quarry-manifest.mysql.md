@@ -2260,12 +2260,78 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT `UserName` FROM `users` WHERE `UserId` <= ? AND `UserId` IN ({__COL_P1__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__})
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` <= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` >= ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` > ? LIMIT ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -3409,7 +3475,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 446 |
+| Total discovered | 453 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 77 |
-| Rendered | 369 |
+| Consolidated (deduped) | 79 |
+| Rendered | 374 |

@@ -2456,12 +2456,64 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT "UserName" FROM "users" WHERE "UserId" <= $1 AND "UserId" IN ({__COL_P1__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" <= $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" >= $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
 
 ---
 
@@ -2502,6 +2554,20 @@ SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 1
 ```sql
 SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 2
 ```
+
+---
+
+### Users().Where(...).Select(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > $2 LIMIT $3
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -3713,7 +3779,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 497 |
+| Total discovered | 504 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 96 |
-| Rendered | 401 |
+| Consolidated (deduped) | 98 |
+| Rendered | 406 |
