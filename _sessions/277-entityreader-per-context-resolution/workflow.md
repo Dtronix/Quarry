@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #277
 pr:
@@ -95,3 +95,5 @@ After both layers:
 | 1 | IMPLEMENT P4 | IMPLEMENT P4 | Phase 4 complete — converted `Integration/EntityReaderIntegrationTests.cs` (9 SQLite-only tests) → `SqlOutput/CrossDialectEntityReaderTests.cs` (8 cross-dialect tests in 4 regions: identity projection runs custom reader, tuple/single-column projections do NOT, ExecuteFetchFirst/OrDefault run custom reader, round-trip Insert+Select runs custom reader on materialization). Each test exercises Lite/Pg/My/Ss against the existing QueryTestHarness fixtures. Dropped the duplicate `Select_IdentityWithWhere_UsesCustomReader` (functionally identical to `Select_IdentityProjection_UsesCustomReader`). Closes the deferred Phase 10 from cross-dialect-test-coverage. Deleted original Integration file. Tests: 3342/3342 passing (3025 → 3024 in Quarry.Tests, net −1: -9 deleted + 8 added; each new test runs on 4× dialects). |
 | 1 | IMPLEMENT P5 | IMPLEMENT P5 | Phase 5 verification folded into Phase 4 commit — manifest deltas verified: `quarry-manifest.sqlite.md` -1 entry (deleted Integration tests), `{postgresql,mysql,sqlserver}.md` +86 lines each (new Products() chains from Pg/My/Ss execution). All deltas correct consequences of test conversion. |
 | 1 | IMPLEMENT P6 | IMPLEMENT P6 | Phase 6 complete — added "EntityReader" prose section to `llm.md` after Custom Type Mapping. Documents the attribute usage and the per-context resolution rule: simple-name lookup at `<contextNamespace>.<readerSimpleName>`, single-context-same-namespace consumers see no change, multi-context-different-namespace consumers must provide per-context reader classes, missing/mis-declared per-context readers surface as ordinary C# compile errors. Tests: 3342/3342 passing. |
+| 1 | IMPLEMENT | REVIEW | All 6 phases complete. Auto-transitioned to REVIEW. |
+| 1 | REVIEW | REMEDIATE | Delegated 6-section analysis to Explore agent. Result: zero actionable findings across Plan Compliance / Correctness / Security / Test Quality / Codebase Consistency / Integration. All sections "No concerns." Wrote `review.md`. Skipped classification per workflow rules — auto-transition to REMEDIATE (no-op). |
