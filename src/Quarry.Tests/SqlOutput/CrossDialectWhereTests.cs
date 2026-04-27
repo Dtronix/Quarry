@@ -442,4 +442,313 @@ internal class CrossDialectWhereTests
     }
 
     #endregion
+
+    #region Collection .Contains() — runtime expansion (4-dialect execution)
+
+    // These exercise the runtime collection-expansion path (where the collection
+    // is captured at call time and expanded to one parameter per element). They
+    // complement the existing CrossDialectDeleteTests "Contains (IN clause)"
+    // section, which uses a static readonly array that gets constant-inlined.
+
+    [Test]
+    public async Task Where_ListContains_FiltersCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 1, 3 };
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(2));
+        Assert.That(lt, Does.Contain("Alice"));
+        Assert.That(lt, Does.Contain("Charlie"));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows, Does.Contain("Alice"));
+        Assert.That(pgRows, Does.Contain("Charlie"));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows, Does.Contain("Alice"));
+        Assert.That(myRows, Does.Contain("Charlie"));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows, Does.Contain("Alice"));
+        Assert.That(ssRows, Does.Contain("Charlie"));
+    }
+
+    [Test]
+    public async Task Where_EnumerableContains_FiltersCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var sources = new[] { new { Id = 1 }, new { Id = 3 } };
+        IEnumerable<int> ids = sources.Select(s => s.Id);
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(2));
+        Assert.That(lt, Does.Contain("Alice"));
+        Assert.That(lt, Does.Contain("Charlie"));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows, Does.Contain("Alice"));
+        Assert.That(pgRows, Does.Contain("Charlie"));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows, Does.Contain("Alice"));
+        Assert.That(myRows, Does.Contain("Charlie"));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows, Does.Contain("Alice"));
+        Assert.That(ssRows, Does.Contain("Charlie"));
+    }
+
+    [Test]
+    public async Task Where_EmptyListContains_ReturnsNoRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int>();
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(0));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(0));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(0));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Where_EmptyEnumerableContains_ReturnsNoRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        IEnumerable<int> ids = Enumerable.Empty<int>();
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(0));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(0));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(0));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(0));
+    }
+
+    #endregion
+
+    #region Collection + scalar — runtime parameter mixing (4-dialect execution)
+
+    // SQL-shape verification for parameter index shifting across the four dialects
+    // already lives in CollectionParameterCollisionTests.cs (regression #140). The
+    // tests below exercise the corresponding execution paths on all four dialects —
+    // confirming row-count correctness when collection IN-expansion is mixed with
+    // scalar predicates, pagination, and varying collection sizes.
+
+    [Test]
+    public async Task Where_CollectionPlusScalar_ReturnsCorrectRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 1, 2, 3 };
+        var minId = 1;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId >= minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(3));
+        Assert.That(lt, Does.Contain("Alice"));
+        Assert.That(lt, Does.Contain("Bob"));
+        Assert.That(lt, Does.Contain("Charlie"));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId >= minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(3));
+        Assert.That(pgRows, Does.Contain("Alice"));
+        Assert.That(pgRows, Does.Contain("Bob"));
+        Assert.That(pgRows, Does.Contain("Charlie"));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId >= minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(3));
+        Assert.That(myRows, Does.Contain("Alice"));
+        Assert.That(myRows, Does.Contain("Bob"));
+        Assert.That(myRows, Does.Contain("Charlie"));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId >= minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(3));
+        Assert.That(ssRows, Does.Contain("Alice"));
+        Assert.That(ssRows, Does.Contain("Bob"));
+        Assert.That(ssRows, Does.Contain("Charlie"));
+    }
+
+    [Test]
+    public async Task Where_CollectionPlusScalar_FiltersCorrectly()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 1, 2, 3 };
+        var maxId = 2;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId <= maxId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(2));
+        Assert.That(lt, Does.Contain("Alice"));
+        Assert.That(lt, Does.Contain("Bob"));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId <= maxId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows, Does.Contain("Alice"));
+        Assert.That(pgRows, Does.Contain("Bob"));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId <= maxId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows, Does.Contain("Alice"));
+        Assert.That(myRows, Does.Contain("Bob"));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId <= maxId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows, Does.Contain("Alice"));
+        Assert.That(ssRows, Does.Contain("Bob"));
+    }
+
+    [Test]
+    public async Task Where_ScalarPlusCollection_ReturnsCorrectRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Scalar appears before the collection in the predicate
+        var ids = new List<int> { 1, 2, 3 };
+        var maxId = 2;
+
+        var lt = await Lite.Users().Where(u => u.UserId <= maxId && ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(2));
+        Assert.That(lt, Does.Contain("Alice"));
+        Assert.That(lt, Does.Contain("Bob"));
+
+        var pgRows = await Pg.Users().Where(u => u.UserId <= maxId && ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows, Does.Contain("Alice"));
+        Assert.That(pgRows, Does.Contain("Bob"));
+
+        var myRows = await My.Users().Where(u => u.UserId <= maxId && ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows, Does.Contain("Alice"));
+        Assert.That(myRows, Does.Contain("Bob"));
+
+        var ssRows = await Ss.Users().Where(u => u.UserId <= maxId && ids.Contains(u.UserId)).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows, Does.Contain("Alice"));
+        Assert.That(ssRows, Does.Contain("Bob"));
+    }
+
+    [Test]
+    public async Task Where_EmptyCollectionPlusScalar_ReturnsNoRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int>();
+        var minId = 0;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(0));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(0));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(0));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Where_SingleElementCollectionPlusScalar_ReturnsCorrectRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 1 };
+        var minId = 0;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(1));
+        Assert.That(lt[0], Is.EqualTo("Alice"));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(1));
+        Assert.That(pgRows[0], Is.EqualTo("Alice"));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(1));
+        Assert.That(myRows[0], Is.EqualTo("Alice"));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(1));
+        Assert.That(ssRows[0], Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task Where_CollectionPlusScalar_WithPagination_ReturnsCorrectRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 1, 2, 3 };
+        var minId = 0;
+        var limit = 1;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).Limit(limit).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(1));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).Limit(limit).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(1));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).Limit(limit).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(1));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).Limit(limit).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Where_LargeCollectionPlusScalar_ReturnsCorrectRows()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Large collection — ensures shift arithmetic works for many elements on every dialect
+        var ids = Enumerable.Range(1, 100).ToList();
+        var minId = 0;
+
+        var lt = await Lite.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(lt, Has.Count.EqualTo(3));
+
+        var pgRows = await Pg.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(3));
+
+        var myRows = await My.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(3));
+
+        var ssRows = await Ss.Users().Where(u => ids.Contains(u.UserId) && u.UserId > minId).Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(3));
+    }
+
+    #endregion
 }

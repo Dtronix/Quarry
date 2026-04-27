@@ -176,11 +176,15 @@ INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES (@p0, @p
 
 ---
 
-### Events().Select(...).ExecuteFetchAllAsync()
+### Events().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
-SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events"
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = @p0
 ```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
 
 ---
 
@@ -1821,22 +1825,6 @@ SELECT "t0"."UserName", "t1"."Priority" FROM "users" AS "t0" LEFT JOIN "orders" 
 ### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
-```
-
----
-
-### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -1861,6 +1849,14 @@ SELECT "t0"."UserName", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS 
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
 ```
 
@@ -1874,7 +1870,7 @@ SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priorit
 
 ---
 
-### Users().LeftJoin(...).Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
+### Users().LeftJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
 SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = 0
@@ -4359,7 +4355,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 646 |
+| Total discovered | 639 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 184 |
-| Rendered | 462 |
+| Consolidated (deduped) | 178 |
+| Rendered | 461 |

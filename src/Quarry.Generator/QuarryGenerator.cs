@@ -771,6 +771,12 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.FromCteWithoutWith,
         DiagnosticDescriptors.DuplicateCteName,
         DiagnosticDescriptors.ProjectionSubqueryUnresolved,
+        // Set-operation diagnostics emitted by PipelineOrchestrator. Without these
+        // entries, GetDescriptorById would return null and the diagnostics would be
+        // silently dropped at QuarryGenerator.cs:524.
+        DiagnosticDescriptors.IntersectAllNotSupported,
+        DiagnosticDescriptors.ExceptAllNotSupported,
+        DiagnosticDescriptors.SetOperationProjectionMismatch,
     }.ToDictionary(d => d.Id);
 
     private static DiagnosticDescriptor? GetDescriptorById(string id) =>

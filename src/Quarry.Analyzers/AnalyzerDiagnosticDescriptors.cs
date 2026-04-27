@@ -199,7 +199,16 @@ internal static class AnalyzerDiagnosticDescriptors
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
-        description: "This query uses a feature that is suboptimal or unsupported for the target SQL dialect.");
+        description: "This query uses a feature that is suboptimal for the target SQL dialect; the SQL is still valid and will execute.");
+
+    public static readonly DiagnosticDescriptor UnsupportedForDialect = new(
+        id: "QRA503",
+        title: "Unsupported for dialect",
+        messageFormat: "{0}",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "This query uses a feature the target SQL dialect cannot execute. The generated SQL will be rejected at runtime.");
 
     // ── QRY0xx: Migration ──
 

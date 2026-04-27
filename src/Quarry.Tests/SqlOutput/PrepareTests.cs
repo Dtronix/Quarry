@@ -494,4 +494,204 @@ internal class PrepareTests
     }
 
     #endregion
+
+    #region Prepare — 4-dialect execution
+
+    // The tests above mostly verify SQL-shape parity. The tests below verify that a
+    // Prepared chain actually executes correctly on all four dialects — covering the
+    // single-terminal collapse path, the multi-terminal path, and Delete/Update/
+    // BatchInsert non-query terminals.
+
+    [Test]
+    public async Task Prepare_SingleTerminal_FetchAll_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1");
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        Assert.That(ltRows, Has.Count.EqualTo(2));
+        Assert.That(ltRows[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ltRows[1], Is.EqualTo((2, "Bob")));
+
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows[0], Is.EqualTo((1, "Alice")));
+        Assert.That(pgRows[1], Is.EqualTo((2, "Bob")));
+
+        var myRows = await my.ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows[0], Is.EqualTo((1, "Alice")));
+        Assert.That(myRows[1], Is.EqualTo((2, "Bob")));
+
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows[0], Is.EqualTo((1, "Alice")));
+        Assert.That(ssRows[1], Is.EqualTo((2, "Bob")));
+    }
+
+    [Test]
+    public async Task Prepare_SingleTerminal_FetchFirst_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\"",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\"",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users`",
+            ss:     "SELECT [UserId], [UserName] FROM [users]");
+
+        Assert.That(await lt.ExecuteFetchFirstAsync(), Is.EqualTo((1, "Alice")));
+        Assert.That(await pg.ExecuteFetchFirstAsync(), Is.EqualTo((1, "Alice")));
+        Assert.That(await my.ExecuteFetchFirstAsync(), Is.EqualTo((1, "Alice")));
+        Assert.That(await ss.ExecuteFetchFirstAsync(), Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Prepare_MultiTerminal_DiagnosticsThenFetchAll_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var pg = Pg.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var my = My.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+        var ss = Ss.Users().Where(u => u.IsActive).Select(u => (u.UserId, u.UserName)).Prepare();
+
+        // Two terminals on each prepared chain: ToDiagnostics + ExecuteFetchAll.
+        // Both must produce stable, correct output without re-preparing.
+        var ltDiag = lt.ToDiagnostics();
+        var pgDiag = pg.ToDiagnostics();
+        var myDiag = my.ToDiagnostics();
+        var ssDiag = ss.ToDiagnostics();
+
+        QueryTestHarness.AssertDialects(
+            ltDiag, pgDiag, myDiag, ssDiag,
+            sqlite: "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = 1",
+            pg:     "SELECT \"UserId\", \"UserName\" FROM \"users\" WHERE \"IsActive\" = TRUE",
+            mysql:  "SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1",
+            ss:     "SELECT [UserId], [UserName] FROM [users] WHERE [IsActive] = 1");
+
+        var ltRows = await lt.ExecuteFetchAllAsync();
+        Assert.That(ltRows, Has.Count.EqualTo(2));
+        Assert.That(ltRows[0], Is.EqualTo((1, "Alice")));
+
+        var pgRows = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgRows, Has.Count.EqualTo(2));
+        Assert.That(pgRows[0], Is.EqualTo((1, "Alice")));
+
+        var myRows = await my.ExecuteFetchAllAsync();
+        Assert.That(myRows, Has.Count.EqualTo(2));
+        Assert.That(myRows[0], Is.EqualTo((1, "Alice")));
+
+        var ssRows = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssRows, Has.Count.EqualTo(2));
+        Assert.That(ssRows[0], Is.EqualTo((1, "Alice")));
+    }
+
+    [Test]
+    public async Task Prepare_Delete_NoMatch_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Delete().Where(u => u.UserId == 999).Prepare();
+        var pg = Pg.Users().Delete().Where(u => u.UserId == 999).Prepare();
+        var my = My.Users().Delete().Where(u => u.UserId == 999).Prepare();
+        var ss = Ss.Users().Delete().Where(u => u.UserId == 999).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "DELETE FROM \"users\" WHERE \"UserId\" = 999",
+            pg:     "DELETE FROM \"users\" WHERE \"UserId\" = 999",
+            mysql:  "DELETE FROM `users` WHERE `UserId` = 999",
+            ss:     "DELETE FROM [users] WHERE [UserId] = 999");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Prepare_Update_NoMatch_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Update().Set(u => u.UserName = "Updated").Where(u => u.UserId == 999).Prepare();
+        var pg = Pg.Users().Update().Set(u => u.UserName = "Updated").Where(u => u.UserId == 999).Prepare();
+        var my = My.Users().Update().Set(u => u.UserName = "Updated").Where(u => u.UserId == 999).Prepare();
+        var ss = Ss.Users().Update().Set(u => u.UserName = "Updated").Where(u => u.UserId == 999).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "UPDATE \"users\" SET \"UserName\" = 'Updated' WHERE \"UserId\" = 999",
+            pg:     "UPDATE \"users\" SET \"UserName\" = 'Updated' WHERE \"UserId\" = 999",
+            mysql:  "UPDATE `users` SET `UserName` = 'Updated' WHERE `UserId` = 999",
+            ss:     "UPDATE [users] SET [UserName] = 'Updated' WHERE [UserId] = 999");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(0));
+    }
+
+    [Test]
+    public async Task Prepare_BatchInsert_4Dialect()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var litePayload = new List<User>
+        {
+            new() { UserName = "PrepBatch1", IsActive = true, CreatedAt = DateTime.UtcNow },
+            new() { UserName = "PrepBatch2", IsActive = false, CreatedAt = DateTime.UtcNow }
+        };
+
+        var lt = Lite.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt)).Values(litePayload).Prepare();
+        var pg = Pg.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(litePayload.Select(u => new Pg.User { UserName = u.UserName, IsActive = u.IsActive, CreatedAt = u.CreatedAt })).Prepare();
+        var my = My.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(litePayload.Select(u => new My.User { UserName = u.UserName, IsActive = u.IsActive, CreatedAt = u.CreatedAt })).Prepare();
+        var ss = Ss.Users().InsertBatch(u => (u.UserName, u.IsActive, u.CreatedAt))
+            .Values(litePayload.Select(u => new Ss.User { UserName = u.UserName, IsActive = u.IsActive, CreatedAt = u.CreatedAt })).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES (@p0, @p1, @p2) RETURNING \"UserId\"",
+            pg:     "INSERT INTO \"users\" (\"UserName\", \"IsActive\", \"CreatedAt\") VALUES ($1, $2, $3) RETURNING \"UserId\"",
+            mysql:  "INSERT INTO `users` (`UserName`, `IsActive`, `CreatedAt`) VALUES (?, ?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [users] ([UserName], [IsActive], [CreatedAt]) OUTPUT INSERTED.[UserId] VALUES (@p0, @p1, @p2)");
+
+        Assert.That(await lt.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await my.ExecuteNonQueryAsync(), Is.EqualTo(2));
+        Assert.That(await ss.ExecuteNonQueryAsync(), Is.EqualTo(2));
+    }
+
+    #endregion
 }

@@ -304,4 +304,132 @@ internal class CrossDialectTypeMappingTests
     }
 
     #endregion
+
+    #region DateTimeOffset Round-Trip Tests
+
+    // Storage semantics for DateTimeOffset diverge per dialect:
+    //   - SQLite  (TEXT)            : preserves the offset literally
+    //   - Postgres (TIMESTAMPTZ)    : normalizes to UTC; reads back as offset +00:00 but the UTC instant is preserved
+    //   - MySQL   (DATETIME)        : drops offset entirely; the stored value has no timezone information
+    //   - SQL Server (DATETIMEOFFSET): preserves offset natively
+    //
+    // To keep cross-dialect assertions simple, the insert+round-trip tests below use
+    // UTC-zero offsets — that makes the round-trip identical on every dialect. Tests
+    // that read the seeded Review row (offset +02:00) account for the divergence.
+
+    [Test]
+    public async Task SelectEvent_LaunchRow_UtcOffset_RoundTripsOnAllDialects()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Launch row is seeded with offset +00:00 on every dialect, so round-trip is identical
+        var expected = new DateTimeOffset(2024, 6, 15, 10, 30, 0, TimeSpan.Zero);
+
+        var ltLaunch = (await Lite.Events().Where(e => e.EventName == "Launch").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(ltLaunch.ScheduledAt.UtcDateTime, Is.EqualTo(expected.UtcDateTime), "SQLite: Launch round-trip");
+        Assert.That(ltLaunch.CancelledAt, Is.Null);
+
+        var pgLaunch = (await Pg.Events().Where(e => e.EventName == "Launch").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(pgLaunch.ScheduledAt.UtcDateTime, Is.EqualTo(expected.UtcDateTime), "PG: Launch round-trip");
+        Assert.That(pgLaunch.CancelledAt, Is.Null);
+
+        var myLaunch = (await My.Events().Where(e => e.EventName == "Launch").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(myLaunch.ScheduledAt.UtcDateTime, Is.EqualTo(expected.UtcDateTime), "MySQL: Launch round-trip");
+        Assert.That(myLaunch.CancelledAt, Is.Null);
+
+        var ssLaunch = (await Ss.Events().Where(e => e.EventName == "Launch").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(ssLaunch.ScheduledAt.UtcDateTime, Is.EqualTo(expected.UtcDateTime), "SS: Launch round-trip");
+        Assert.That(ssLaunch.CancelledAt, Is.Null);
+    }
+
+    [Test]
+    public async Task SelectEvent_ReviewRow_NonUtcOffset_PreservesUtcInstantExceptMySql()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, _, Ss) = t;
+
+        // Review row is seeded with `2024-07-01 14:00:00 +02:00` on SQLite/PG/SS (UTC instant
+        // 12:00). MySQL is excluded: its seed strips the offset (`'2024-07-01 14:00:00'`
+        // stored as DATETIME, no timezone) so the read-back value lands at 14:00 UTC instead
+        // of 12:00 UTC — a property of the seed/storage, not a Quarry round-trip bug.
+        var expectedUtc = new DateTimeOffset(2024, 7, 1, 12, 0, 0, TimeSpan.Zero).UtcDateTime;
+        var expectedCancelledUtc = new DateTimeOffset(2024, 6, 28, 7, 0, 0, TimeSpan.Zero).UtcDateTime;
+
+        var ltReview = (await Lite.Events().Where(e => e.EventName == "Review").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(ltReview.ScheduledAt.UtcDateTime, Is.EqualTo(expectedUtc), "SQLite: Review UTC instant");
+        Assert.That(ltReview.CancelledAt!.Value.UtcDateTime, Is.EqualTo(expectedCancelledUtc), "SQLite: Cancelled UTC instant");
+
+        var pgReview = (await Pg.Events().Where(e => e.EventName == "Review").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(pgReview.ScheduledAt.UtcDateTime, Is.EqualTo(expectedUtc), "PG: Review UTC instant (TIMESTAMPTZ normalized to UTC)");
+        Assert.That(pgReview.CancelledAt!.Value.UtcDateTime, Is.EqualTo(expectedCancelledUtc), "PG: Cancelled UTC instant");
+
+        var ssReview = (await Ss.Events().Where(e => e.EventName == "Review").Select(e => e).ExecuteFetchAllAsync()).Single();
+        Assert.That(ssReview.ScheduledAt.UtcDateTime, Is.EqualTo(expectedUtc), "SS: Review UTC instant");
+        Assert.That(ssReview.CancelledAt!.Value.UtcDateTime, Is.EqualTo(expectedCancelledUtc), "SS: Cancelled UTC instant");
+    }
+
+    [Test]
+    public async Task InsertThenSelect_DateTimeOffset_UtcOffset_RoundTripsOnAllDialects()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // UTC-zero offset chosen for cross-dialect parity (see region comment above).
+        var scheduled = new DateTimeOffset(2025, 3, 15, 9, 0, 0, TimeSpan.Zero);
+
+        await Lite.Events().Insert(new Event { EventName = "DeployLite", ScheduledAt = scheduled, CancelledAt = null }).ExecuteNonQueryAsync();
+        await Pg.Events().Insert(new Pg.Event { EventName = "DeployPg", ScheduledAt = scheduled, CancelledAt = null }).ExecuteNonQueryAsync();
+        await My.Events().Insert(new My.Event { EventName = "DeployMy", ScheduledAt = scheduled, CancelledAt = null }).ExecuteNonQueryAsync();
+        await Ss.Events().Insert(new Ss.Event { EventName = "DeploySs", ScheduledAt = scheduled, CancelledAt = null }).ExecuteNonQueryAsync();
+
+        var ltRow = await Lite.Events().Where(e => e.EventName == "DeployLite").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(ltRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "SQLite: insert→select round-trip");
+        Assert.That(ltRow.CancelledAt, Is.Null);
+
+        var pgRow = await Pg.Events().Where(e => e.EventName == "DeployPg").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(pgRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "PG: insert→select round-trip");
+        Assert.That(pgRow.CancelledAt, Is.Null);
+
+        var myRow = await My.Events().Where(e => e.EventName == "DeployMy").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(myRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "MySQL: insert→select round-trip");
+        Assert.That(myRow.CancelledAt, Is.Null);
+
+        var ssRow = await Ss.Events().Where(e => e.EventName == "DeploySs").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(ssRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "SS: insert→select round-trip");
+        Assert.That(ssRow.CancelledAt, Is.Null);
+    }
+
+    [Test]
+    public async Task InsertThenSelect_NullableDateTimeOffset_UtcOffset_RoundTripsOnAllDialects()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var scheduled = new DateTimeOffset(2025, 4, 1, 12, 0, 0, TimeSpan.Zero);
+        var cancelled = new DateTimeOffset(2025, 3, 28, 8, 30, 0, TimeSpan.Zero);
+
+        await Lite.Events().Insert(new Event { EventName = "CancelledLite", ScheduledAt = scheduled, CancelledAt = cancelled }).ExecuteNonQueryAsync();
+        await Pg.Events().Insert(new Pg.Event { EventName = "CancelledPg", ScheduledAt = scheduled, CancelledAt = cancelled }).ExecuteNonQueryAsync();
+        await My.Events().Insert(new My.Event { EventName = "CancelledMy", ScheduledAt = scheduled, CancelledAt = cancelled }).ExecuteNonQueryAsync();
+        await Ss.Events().Insert(new Ss.Event { EventName = "CancelledSs", ScheduledAt = scheduled, CancelledAt = cancelled }).ExecuteNonQueryAsync();
+
+        var ltRow = await Lite.Events().Where(e => e.EventName == "CancelledLite").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(ltRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "SQLite: scheduled");
+        Assert.That(ltRow.CancelledAt!.Value.UtcDateTime, Is.EqualTo(cancelled.UtcDateTime), "SQLite: cancelled");
+
+        var pgRow = await Pg.Events().Where(e => e.EventName == "CancelledPg").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(pgRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "PG: scheduled");
+        Assert.That(pgRow.CancelledAt!.Value.UtcDateTime, Is.EqualTo(cancelled.UtcDateTime), "PG: cancelled");
+
+        var myRow = await My.Events().Where(e => e.EventName == "CancelledMy").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(myRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "MySQL: scheduled");
+        Assert.That(myRow.CancelledAt!.Value.UtcDateTime, Is.EqualTo(cancelled.UtcDateTime), "MySQL: cancelled");
+
+        var ssRow = await Ss.Events().Where(e => e.EventName == "CancelledSs").Select(e => e).ExecuteFetchFirstAsync();
+        Assert.That(ssRow.ScheduledAt.UtcDateTime, Is.EqualTo(scheduled.UtcDateTime), "SS: scheduled");
+        Assert.That(ssRow.CancelledAt!.Value.UtcDateTime, Is.EqualTo(cancelled.UtcDateTime), "SS: cancelled");
+    }
+
+    #endregion
 }

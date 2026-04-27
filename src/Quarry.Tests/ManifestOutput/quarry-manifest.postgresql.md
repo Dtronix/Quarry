@@ -144,6 +144,44 @@ SELECT "Street" FROM "addresses" WHERE "AddressId" = $1
 
 ---
 
+### Events().Insert().ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO "events" ("EventName", "ScheduledAt", "CancelledAt") VALUES ($1, $2, $3)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `DateTimeOffset` |
+| `@p2` | `DateTimeOffset` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Events().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "EventId", "EventName", "ScheduledAt", "CancelledAt" FROM "events" WHERE "EventName" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
 ### OrderItems().Insert().Prepare().ToDiagnostics()
 
 ```sql
@@ -938,6 +976,18 @@ DELETE FROM "users"
 
 ---
 
+### Users().Delete().Where(...).ExecuteNonQueryAsync()
+
+```sql
+DELETE FROM "users" WHERE "UserId" IN ({__COL_P0__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+
+---
+
 ### Users().Delete().Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1450,6 +1500,30 @@ SELECT "t0"."UserName", "t1"."Total", "t1"."Status" FROM "users" AS "t0" INNER J
 
 ---
 
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."OrderId" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t0"."UserName", "t1"."Priority" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1461,7 +1535,31 @@ SELECT "t0"."UserName" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."
 ### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "t0"."UserName", "t1"."Status", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "t1"."OrderId", "t1"."UserId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate", "t1"."Notes" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId"
+```
+
+---
+
+### Users().LeftJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."Total" FROM "users" AS "t0" LEFT JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" WHERE "t0"."IsActive" = FALSE
 ```
 
 ---
@@ -1494,6 +1592,46 @@ SELECT "UserId", "UserName" FROM "users" EXCEPT SELECT "ProductId", "ProductName
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" EXCEPT ALL SELECT "ProductId", "ProductName" FROM "products"
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId" FROM "users"
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserId", "UserName" FROM "users"
+```
+
+---
+
+### Users().Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users"
+```
+
+---
+
+### Users().Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName" FROM "users"
+```
+
+---
+
+### Users().Select(...).ExecuteScalarAsync()
+
+```sql
+SELECT COUNT(*) FROM "users"
 ```
 
 ---
@@ -1747,6 +1885,14 @@ SELECT "UserName", (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" 
 
 ```sql
 SELECT UPPER("UserName") FROM "users"
+```
+
+---
+
+### Users().Select(...).ToAsyncEnumerable()
+
+```sql
+SELECT "UserName" FROM "users"
 ```
 
 ---
@@ -2436,12 +2582,76 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 ### Users().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
+SELECT "UserName" FROM "users" WHERE "UserId" <= $1 AND "UserId" IN ({__COL_P1__})
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+| `@p1` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = $1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
 SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__})
 ```
 
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `int[]` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" <= $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" >= $2
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
 
 ---
 
@@ -2482,6 +2692,28 @@ SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 1
 ```sql
 SELECT "UserName", "IsActive" FROM "users" WHERE "UserId" = 2
 ```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" = -999
+```
+
+---
+
+### Users().Where(...).Select(...).Limit(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > $2 LIMIT $3
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int[]` |
+| `@p1` | `int` |
+| `@p2` | `int` |
 
 ---
 
@@ -3693,7 +3925,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 487 |
+| Total discovered | 526 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 88 |
-| Rendered | 399 |
+| Consolidated (deduped) | 104 |
+| Rendered | 422 |

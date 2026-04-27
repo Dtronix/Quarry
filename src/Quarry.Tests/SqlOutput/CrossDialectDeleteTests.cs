@@ -218,6 +218,96 @@ internal class CrossDialectDeleteTests
         Assert.That(ssAffected, Is.EqualTo(2));
     }
 
+    [Test]
+    public async Task Delete_Where_ListContains_RuntimeExpansion()
+    {
+        // Local List<int> is NOT constant-inlined — generator emits the runtime-expansion
+        // path (one DbParameter per element). Mirrors the original GH-258 regression shape.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int> { 2, 3 };
+
+        var ltAffected = await Lite.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(ltAffected, Is.EqualTo(2));
+        var ltRemaining = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ltRemaining, Has.Count.EqualTo(1));
+        Assert.That(ltRemaining[0], Is.EqualTo("Alice"));
+
+        var pgAffected = await Pg.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
+        var pgRemaining = await Pg.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRemaining, Has.Count.EqualTo(1));
+        Assert.That(pgRemaining[0], Is.EqualTo("Alice"));
+
+        var myAffected = await My.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
+        var myRemaining = await My.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRemaining, Has.Count.EqualTo(1));
+        Assert.That(myRemaining[0], Is.EqualTo("Alice"));
+
+        var ssAffected = await Ss.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(2));
+        var ssRemaining = await Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRemaining, Has.Count.EqualTo(1));
+        Assert.That(ssRemaining[0], Is.EqualTo("Alice"));
+    }
+
+    [Test]
+    public async Task Delete_Where_EnumerableContains_RuntimeExpansion()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var sources = new[] { new { Id = 1 }, new { Id = 2 } };
+        IEnumerable<int> ids = sources.Select(s => s.Id);
+
+        var ltAffected = await Lite.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(ltAffected, Is.EqualTo(2));
+        var ltRemaining = await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ltRemaining, Has.Count.EqualTo(1));
+        Assert.That(ltRemaining[0], Is.EqualTo("Charlie"));
+
+        var pgAffected = await Pg.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(pgAffected, Is.EqualTo(2));
+        var pgRemaining = await Pg.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(pgRemaining, Has.Count.EqualTo(1));
+        Assert.That(pgRemaining[0], Is.EqualTo("Charlie"));
+
+        var myAffected = await My.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(myAffected, Is.EqualTo(2));
+        var myRemaining = await My.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(myRemaining, Has.Count.EqualTo(1));
+        Assert.That(myRemaining[0], Is.EqualTo("Charlie"));
+
+        var ssAffected = await Ss.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync();
+        Assert.That(ssAffected, Is.EqualTo(2));
+        var ssRemaining = await Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync();
+        Assert.That(ssRemaining, Has.Count.EqualTo(1));
+        Assert.That(ssRemaining[0], Is.EqualTo("Charlie"));
+    }
+
+    [Test]
+    public async Task Delete_Where_EmptyListContains_DeletesNothing()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ids = new List<int>();
+
+        Assert.That(await Lite.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await Lite.Users().Select(u => u.UserName).ExecuteFetchAllAsync(), Has.Count.EqualTo(3));
+
+        Assert.That(await Pg.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await Pg.Users().Select(u => u.UserName).ExecuteFetchAllAsync(), Has.Count.EqualTo(3));
+
+        Assert.That(await My.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await My.Users().Select(u => u.UserName).ExecuteFetchAllAsync(), Has.Count.EqualTo(3));
+
+        Assert.That(await Ss.Users().Delete().Where(u => ids.Contains(u.UserId)).ExecuteNonQueryAsync(), Is.EqualTo(0));
+        Assert.That(await Ss.Users().Select(u => u.UserName).ExecuteFetchAllAsync(), Has.Count.EqualTo(3));
+    }
+
     #endregion
 
     #region Other Entities
