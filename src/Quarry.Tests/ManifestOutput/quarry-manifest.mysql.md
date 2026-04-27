@@ -859,100 +859,10 @@ SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WH
 
 ---
 
-### Products().Insert().ExecuteNonQueryAsync()
-
-```sql
-INSERT INTO `products` (`ProductName`, `Price`, `Description`) VALUES (?, ?, ?)
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-| `@p1` | `decimal` |
-| `@p2` | `string?` |
-
----
-
 ### Products().Select(...).Products()
 
 ```sql
 SELECT `ProductId`, `ProductName` FROM `products`
-```
-
----
-
-### Products().Where(...).Products()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price` FROM `products` WHERE `ProductId` <= 3
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` <= 3
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 2
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductName` = ?
-```
-
-| Parameter | Type |
-|-----------|------|
-| `@p0` | `string` |
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductName` FROM `products` WHERE `ProductId` <= 3
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchFirstAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1
-```
-
----
-
-### Products().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
 ```
 
 ---
@@ -966,14 +876,6 @@ SELECT `ProductId`, `ProductName` FROM `products` WHERE `Price` <= ?
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `decimal` |
-
----
-
-### Products().Where(...).Union(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1 UNION SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
-```
 
 ---
 
@@ -1199,6 +1101,14 @@ SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t3`.`AccountName` FRO
 
 ---
 
+### Users().Join(...).Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t0`.`LastLogin`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate`, `t2`.`OrderItemId`, `t2`.`ProductName`, `t2`.`Quantity`, `t2`.`UnitPrice`, `t2`.`LineTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` ORDER BY `t2`.`OrderItemId` ASC
+```
+
+---
+
 ### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1219,6 +1129,30 @@ SELECT `t1`.`OrderId`, `t1`.`UserId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priorit
 
 ```sql
 SELECT `t0`.`UserName`, `t1`.`Status`, `t2`.`ProductName`, `t2`.`Quantity` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t2`.`UnitPrice` > 50.00
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
 ```
 
 ---
@@ -3620,14 +3554,6 @@ SELECT `WarehouseName` FROM `warehouses` WHERE `WarehouseName` = ? OR `Warehouse
 
 ---
 
-### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
-
-```sql
-WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `Product`
-```
-
----
-
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -3727,7 +3653,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 487 |
+| Total discovered | 479 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 85 |
-| Rendered | 402 |
+| Rendered | 394 |
