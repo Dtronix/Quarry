@@ -1038,6 +1038,14 @@ SELECT "ProductId", "ProductName" FROM "products"
 
 ---
 
+### Products().Where(...).Products()
+
+```sql
+SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 3
+```
+
+---
+
 ### Products().Where(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -1115,6 +1123,14 @@ SELECT "ProductId", "ProductName" FROM "products" WHERE "Price" <= @p0
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `decimal` |
+
+---
+
+### Products().Where(...).Union(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 1 UNION SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "products" WHERE "ProductId" = 3
+```
 
 ---
 
@@ -4264,6 +4280,14 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 ---
 
+### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+WITH "Product" AS (SELECT * FROM "products" WHERE "ProductId" <= 3) SELECT "ProductId", "ProductName", "Price", "Description", "DiscountedPrice" FROM "Product"
+```
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -4355,7 +4379,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 639 |
+| Total discovered | 641 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 178 |
-| Rendered | 461 |
+| Consolidated (deduped) | 177 |
+| Rendered | 464 |
