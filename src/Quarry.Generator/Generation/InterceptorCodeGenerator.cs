@@ -161,12 +161,17 @@ internal static partial class InterceptorCodeGenerator
     }
 
     /// <summary>
-    /// Collects all unique EntityReader class FQNs used across all usage sites.
+    /// Collects all unique EntityReader class FQNs used across all usage sites,
+    /// rewriting each schema-namespace FQN to a per-context FQN
+    /// (<c>contextNamespace + "." + simpleName</c>) so the emitted file references
+    /// the per-context reader class in the consuming context's namespace.
+    /// When <paramref name="contextNamespace"/> is null/empty, the original FQN is used.
     /// </summary>
     internal static Dictionary<string, string> CollectEntityReaderInstances(
         IReadOnlyList<TranslatedCallSite> usageSites,
         HashSet<string> chainMemberIds,
-        IReadOnlyList<IR.AssembledPlan>? chains = null)
+        IReadOnlyList<IR.AssembledPlan>? chains = null,
+        string? contextNamespace = null)
     {
         var readers = new Dictionary<string, string>(); // fieldName → FQN
 
@@ -174,7 +179,7 @@ internal static partial class InterceptorCodeGenerator
         {
             if (site.ProjectionInfo?.CustomEntityReaderClass != null)
             {
-                var fqn = site.ProjectionInfo.CustomEntityReaderClass;
+                var fqn = ResolvePerContextReaderFqn(site.ProjectionInfo.CustomEntityReaderClass, contextNamespace);
                 AddIfMissing(readers, GetEntityReaderFieldName(fqn), fqn);
             }
         }
@@ -186,13 +191,47 @@ internal static partial class InterceptorCodeGenerator
             {
                 if (chain.ProjectionInfo?.CustomEntityReaderClass != null)
                 {
-                    var fqn = chain.ProjectionInfo.CustomEntityReaderClass;
+                    var fqn = ResolvePerContextReaderFqn(chain.ProjectionInfo.CustomEntityReaderClass, contextNamespace);
                     AddIfMissing(readers, GetEntityReaderFieldName(fqn), fqn);
                 }
             }
         }
 
         return readers;
+    }
+
+    /// <summary>
+    /// Rewrites a schema-namespace reader FQN to a per-context FQN. The simple
+    /// reader class name is preserved; only the enclosing namespace is replaced
+    /// with the consuming <see cref="QuarryContext"/>'s namespace. When the
+    /// context namespace is null/empty (e.g. test scaffolding without a
+    /// namespace), the original FQN passes through unchanged.
+    /// </summary>
+    /// <remarks>
+    /// Per-context resolution is the default for [EntityReader]: each context
+    /// is expected to provide a per-context reader class at
+    /// <c>&lt;contextNamespace&gt;.&lt;readerSimpleName&gt;</c> inheriting
+    /// <c>EntityReader&lt;TPerContextEntity&gt;</c>. When schema and context
+    /// share a namespace, the per-context FQN equals the schema-namespace FQN —
+    /// preserving the existing single-context behavior.
+    /// <para>
+    /// Both <c>.</c> (namespace separator) and <c>+</c> (CLR nested-type
+    /// separator) are recognised: a reader at
+    /// <c>App.Schemas.Outer+ProductReader</c> resolves to a per-context simple
+    /// name of <c>ProductReader</c>, matching the convention that nested
+    /// readers don't replicate their outer-type containment across contexts.
+    /// </para>
+    /// </remarks>
+    internal static string ResolvePerContextReaderFqn(string schemaReaderFqn, string? contextNamespace)
+    {
+        if (string.IsNullOrEmpty(contextNamespace))
+            return schemaReaderFqn;
+
+        var lastDot = schemaReaderFqn.LastIndexOf('.');
+        var lastPlus = schemaReaderFqn.LastIndexOf('+');
+        var lastSeparator = lastDot > lastPlus ? lastDot : lastPlus;
+        var simpleName = lastSeparator >= 0 ? schemaReaderFqn.Substring(lastSeparator + 1) : schemaReaderFqn;
+        return contextNamespace + "." + simpleName;
     }
 
     /// <summary>

@@ -361,8 +361,11 @@ internal sealed class FileEmitter
         // Collect all unique TypeMapping classes
         var mappingInstances = InterceptorCodeGenerator.CollectMappingInstances(_sites, chainMemberIds);
 
-        // Collect all unique EntityReader classes
-        var entityReaderInstances = InterceptorCodeGenerator.CollectEntityReaderInstances(_sites, chainMemberIds, _chains);
+        // Collect all unique EntityReader classes — rewritten to per-context FQNs
+        // so the emitted file references the consuming context's reader class
+        // (`<contextNamespace>.<readerSimpleName>`) rather than the schema-namespace
+        // FQN. See InterceptorCodeGenerator.ResolvePerContextReaderFqn.
+        var entityReaderInstances = InterceptorCodeGenerator.CollectEntityReaderInstances(_sites, chainMemberIds, _chains, _contextNamespace);
 
         if (mappingInstances.Count > 0 || entityReaderInstances.Count > 0)
         {

@@ -62,13 +62,21 @@ internal static class ReaderCodeGenerator
     /// </summary>
     /// <param name="projection">The projection info.</param>
     /// <param name="entityTypeName">The entity type name.</param>
+    /// <param name="contextNamespace">
+    /// The namespace of the consuming <see cref="QuarryContext"/>. Used to rewrite
+    /// the schema-namespace [EntityReader] FQN to a per-context FQN
+    /// (<c>contextNamespace + "." + readerSimpleName</c>) so the generated reference
+    /// targets the per-context reader class. When null/empty, the schema-namespace
+    /// FQN is used unchanged.
+    /// </param>
     /// <returns>The C# code for the reader delegate.</returns>
-    public static string GenerateReaderDelegate(ProjectionInfo projection, string entityTypeName)
+    public static string GenerateReaderDelegate(ProjectionInfo projection, string entityTypeName, string? contextNamespace = null)
     {
         // When a custom EntityReader is active, delegate to its Read() method
         if (projection.Kind == ProjectionKind.Entity && projection.CustomEntityReaderClass != null)
         {
-            var fieldName = InterceptorCodeGenerator.GetEntityReaderFieldName(projection.CustomEntityReaderClass);
+            var fqn = InterceptorCodeGenerator.ResolvePerContextReaderFqn(projection.CustomEntityReaderClass, contextNamespace);
+            var fieldName = InterceptorCodeGenerator.GetEntityReaderFieldName(fqn);
             return $"static (DbDataReader r) => {fieldName}.Read(r)";
         }
 
