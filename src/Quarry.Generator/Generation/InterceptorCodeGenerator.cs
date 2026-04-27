@@ -214,6 +214,13 @@ internal static partial class InterceptorCodeGenerator
     /// <c>EntityReader&lt;TPerContextEntity&gt;</c>. When schema and context
     /// share a namespace, the per-context FQN equals the schema-namespace FQN —
     /// preserving the existing single-context behavior.
+    /// <para>
+    /// Both <c>.</c> (namespace separator) and <c>+</c> (CLR nested-type
+    /// separator) are recognised: a reader at
+    /// <c>App.Schemas.Outer+ProductReader</c> resolves to a per-context simple
+    /// name of <c>ProductReader</c>, matching the convention that nested
+    /// readers don't replicate their outer-type containment across contexts.
+    /// </para>
     /// </remarks>
     internal static string ResolvePerContextReaderFqn(string schemaReaderFqn, string? contextNamespace)
     {
@@ -221,7 +228,9 @@ internal static partial class InterceptorCodeGenerator
             return schemaReaderFqn;
 
         var lastDot = schemaReaderFqn.LastIndexOf('.');
-        var simpleName = lastDot >= 0 ? schemaReaderFqn.Substring(lastDot + 1) : schemaReaderFqn;
+        var lastPlus = schemaReaderFqn.LastIndexOf('+');
+        var lastSeparator = lastDot > lastPlus ? lastDot : lastPlus;
+        var simpleName = lastSeparator >= 0 ? schemaReaderFqn.Substring(lastSeparator + 1) : schemaReaderFqn;
         return contextNamespace + "." + simpleName;
     }
 

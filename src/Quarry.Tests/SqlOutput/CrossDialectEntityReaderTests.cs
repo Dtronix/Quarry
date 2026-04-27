@@ -207,6 +207,80 @@ internal class CrossDialectEntityReaderTests
 
     #endregion
 
+    #region Set operation — custom reader runs on identity projection over a UNION
+
+    [Test]
+    public async Task Union_IdentityProjection_UsesCustomReader()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // UNION of two identity-projection chains over the [EntityReader]-active
+        // Products schema. The terminal materialization must still route through
+        // the per-context custom reader on every dialect — DisplayLabel populated
+        // by ProductReader.Read proves it ran. Uses .Prepare() to match the
+        // established cross-dialect set-op pattern (see CrossDialectSetOperationTests).
+        var lt = await Lite.Products().Where(p => p.ProductId == 1).Union(Lite.Products().Where(p => p.ProductId == 3)).Prepare().ExecuteFetchAllAsync();
+        var pg = await Pg.Products().Where(p => p.ProductId == 1).Union(Pg.Products().Where(p => p.ProductId == 3)).Prepare().ExecuteFetchAllAsync();
+        var my = await My.Products().Where(p => p.ProductId == 1).Union(My.Products().Where(p => p.ProductId == 3)).Prepare().ExecuteFetchAllAsync();
+        var ss = await Ss.Products().Where(p => p.ProductId == 1).Union(Ss.Products().Where(p => p.ProductId == 3)).Prepare().ExecuteFetchAllAsync();
+
+        Assert.That(lt, Has.Count.EqualTo(2));
+        Assert.That(pg, Has.Count.EqualTo(2));
+        Assert.That(my, Has.Count.EqualTo(2));
+        Assert.That(ss, Has.Count.EqualTo(2));
+
+        foreach (var p in lt) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Lite: row {p.ProductId} DisplayLabel populated by reader after UNION");
+        foreach (var p in pg) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Pg: row {p.ProductId} DisplayLabel populated by per-context reader after UNION");
+        foreach (var p in my) Assert.That(p.DisplayLabel, Does.StartWith("["), $"My: row {p.ProductId} DisplayLabel populated by per-context reader after UNION");
+        foreach (var p in ss) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Ss: row {p.ProductId} DisplayLabel populated by per-context reader after UNION");
+    }
+
+    #endregion
+
+    #region CTE — custom reader runs on identity projection from a CTE source
+
+    [Test]
+    public async Task Cte_FromCte_IdentityProjection_UsesCustomReader()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // CTE with the [EntityReader]-active Products inner chain. The outer
+        // chain's identity projection from the CTE must still route through the
+        // per-context custom reader. This exercises the
+        // ChainAnalyzer lambda-inner path that propagates
+        // ProjectionInfo.CustomEntityReaderClass through the reduced inner plan.
+        var lt = await Lite.With<Product>(products => products.Where(p => p.ProductId <= 3))
+            .FromCte<Product>()
+            .Select(p => p)
+            .ExecuteFetchAllAsync();
+        var pg = await Pg.With<Pg.Product>(products => products.Where(p => p.ProductId <= 3))
+            .FromCte<Pg.Product>()
+            .Select(p => p)
+            .ExecuteFetchAllAsync();
+        var my = await My.With<My.Product>(products => products.Where(p => p.ProductId <= 3))
+            .FromCte<My.Product>()
+            .Select(p => p)
+            .ExecuteFetchAllAsync();
+        var ss = await Ss.With<Ss.Product>(products => products.Where(p => p.ProductId <= 3))
+            .FromCte<Ss.Product>()
+            .Select(p => p)
+            .ExecuteFetchAllAsync();
+
+        Assert.That(lt, Has.Count.EqualTo(3));
+        Assert.That(pg, Has.Count.EqualTo(3));
+        Assert.That(my, Has.Count.EqualTo(3));
+        Assert.That(ss, Has.Count.EqualTo(3));
+
+        foreach (var p in lt) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Lite: row {p.ProductId} DisplayLabel populated by reader after CTE");
+        foreach (var p in pg) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Pg: row {p.ProductId} DisplayLabel populated by per-context reader after CTE");
+        foreach (var p in my) Assert.That(p.DisplayLabel, Does.StartWith("["), $"My: row {p.ProductId} DisplayLabel populated by per-context reader after CTE");
+        foreach (var p in ss) Assert.That(p.DisplayLabel, Does.StartWith("["), $"Ss: row {p.ProductId} DisplayLabel populated by per-context reader after CTE");
+    }
+
+    #endregion
+
     #region Insert + Select round-trip — custom reader runs on materialization
 
     [Test]

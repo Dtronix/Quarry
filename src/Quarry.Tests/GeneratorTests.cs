@@ -1029,6 +1029,8 @@ namespace App.Queries
             "PgDb cached field should be typed as App.Pg.ProductReader");
         Assert.That(pgCode, Does.Not.Contain("_entityReader_App_Schemas_ProductReader"),
             "PgDb must not reference the schema-namespace reader");
+        Assert.That(pgCode, Does.Match(@"IQueryBuilder<App\.Pg\.Product,\s*App\.Pg\.Product>"),
+            "PgDb identity-projection chain shape must be IQueryBuilder<App.Pg.Product, App.Pg.Product> — TIn and TOut both per-context");
 
         var myInterceptors = result.GeneratedTrees
             .FirstOrDefault(t => t.FilePath.Contains("MyDb.Interceptors.") && t.FilePath.EndsWith(".g.cs"));
@@ -1041,6 +1043,8 @@ namespace App.Queries
             "MyDb cached field should be typed as App.My.ProductReader");
         Assert.That(myCode, Does.Not.Contain("_entityReader_App_Schemas_ProductReader"),
             "MyDb must not reference the schema-namespace reader");
+        Assert.That(myCode, Does.Match(@"IQueryBuilder<App\.My\.Product,\s*App\.My\.Product>"),
+            "MyDb identity-projection chain shape must be IQueryBuilder<App.My.Product, App.My.Product> — TIn and TOut both per-context");
     }
 
     [Test]
@@ -1097,6 +1101,84 @@ public static class Queries
             "Single-context-same-namespace should reference App.ProductReader (schema-namespace FQN)");
         Assert.That(code, Does.Contain("App.ProductReader _entityReader_App_ProductReader"),
             "Cached field should be typed as App.ProductReader");
+    }
+
+    [Test]
+    public void Generator_PerContextEntityReader_MissingPerContextReader_ProducesCompileError()
+    {
+        // Schema in App.Schemas with [EntityReader(typeof(ProductReader))] is referenced
+        // by PgDb in App.Pg, but App.Pg deliberately has NO per-context ProductReader.
+        // The emitted interceptor references App.Pg.ProductReader (per-context resolution
+        // is the default). The C# compiler must surface a "type or namespace not found"
+        // error against the generated reference — that's the load-bearing user-facing
+        // contract of the PR (no analyzer rule, no fallback, just an honest compile error).
+        var source = @"
+using Quarry;
+using System.Data.Common;
+using System.Linq;
+using System.Threading.Tasks;
+
+namespace App.Schemas
+{
+    public class ProductReader : EntityReader<Product>
+    {
+        public override Product Read(DbDataReader reader) => new Product
+        {
+            ProductId = reader.GetInt32(reader.GetOrdinal(""ProductId"")),
+        };
+    }
+
+    [EntityReader(typeof(ProductReader))]
+    public class ProductSchema : Schema
+    {
+        public static string Table => ""products"";
+        public Key<int> ProductId => Identity();
+    }
+}
+
+namespace App.Pg
+{
+    // Intentionally NO ProductReader class here — we want the per-context lookup
+    // at App.Pg.ProductReader to fail at C# compile time.
+
+    [QuarryContext(Dialect = SqlDialect.PostgreSQL)]
+    public partial class PgDb : QuarryContext
+    {
+        public partial IEntityAccessor<Product> Products();
+    }
+}
+
+namespace App.Queries
+{
+    public static class Q
+    {
+        public static async Task UsePg(App.Pg.PgDb db) =>
+            await db.Products().Select(p => p).ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var outputCompilation = RunGeneratorAndGetOutputCompilation(compilation);
+
+        // The generator itself emits successfully — the failure surface is the C# compiler
+        // running over the input source + the generated trees. Look for the CS0234/CS0246
+        // error specifically targeting App.Pg.ProductReader (the per-context name we emit
+        // unconditionally even when the user hasn't provided that class).
+        var allDiagnostics = outputCompilation.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        // CS0234: "The type or namespace name 'X' does not exist in the namespace 'Y'"
+        // CS0246: "The type or namespace name 'X' could not be found"
+        var readerLookupErrors = allDiagnostics
+            .Where(d => d.Id == "CS0234" || d.Id == "CS0246")
+            .Where(d => d.GetMessage().Contains("ProductReader"))
+            .ToList();
+
+        Assert.That(readerLookupErrors, Is.Not.Empty,
+            "Missing per-context reader must surface as a CS0234/CS0246 against App.Pg.ProductReader. " +
+            "All errors: " + string.Join("; ", allDiagnostics.Select(d => d.Id + ": " + d.GetMessage())));
     }
 
     [Test]
