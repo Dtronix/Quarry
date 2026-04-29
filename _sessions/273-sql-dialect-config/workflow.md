@@ -12,7 +12,7 @@ issue: #273
 pr:
 session: 1
 phases-total: 4
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 Quarry's generator threads a flat `SqlDialect` enum through every emit path. There is no way to express per-context dialect-mode flags (e.g. MySQL `sql_mode`, PG `standard_conforming_strings`).

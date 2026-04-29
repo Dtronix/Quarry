@@ -3787,6 +3787,22 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 
 ## MyDefaultDb
 
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%50\\%%' ESCAPE '\\'
+```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%user\\_name%' ESCAPE '\\'
+```
+
+---
+
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
@@ -3831,7 +3847,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 500 |
+| Total discovered | 502 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 85 |
-| Rendered | 415 |
+| Rendered | 417 |
