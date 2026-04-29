@@ -3660,6 +3660,30 @@ SELECT `WarehouseName` FROM `warehouses` WHERE `WarehouseName` = ? OR `Warehouse
 
 ---
 
+### With(...).FromCte(...).OrderBy(...).Limit(...).Offset(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 0) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC LIMIT 1 OFFSET 1
+```
+
+---
+
+### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `OrderId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order` ORDER BY `Total` DESC
+```
+
+---
+
+### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC
+```
+
+---
+
 ### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -3775,7 +3799,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 493 |
+| Total discovered | 496 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 85 |
-| Rendered | 408 |
+| Rendered | 411 |

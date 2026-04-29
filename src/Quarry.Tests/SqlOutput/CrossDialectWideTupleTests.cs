@@ -372,9 +372,9 @@ internal class CrossDialectWideTupleTests
 
         // Seed: Total > 100 keeps Order 1 (250.00, Alice, Notes='Express') and Order 3 (150.00, Bob, Notes=NULL).
         // Order 2 (75.50) is filtered out by the CTE inner WHERE.
-        // Sort results in-memory by OrderId for stable assertions: post-CTE chain doesn't
-        // support OrderBy directly (IEntityAccessor doesn't expose it; Quarry chain-continuation
-        // methods require a Where/Select/GroupBy first), so we order client-side.
+        // Sort client-side here to keep this test focused on the bare wide-tuple projection
+        // off FromCte<T>(); the in-chain OrderBy variant is covered by
+        // Tuple_PostCteWideProjection_OrderBy below (issue #281 made that form valid C#).
         var results = (await lt.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].OrderId, Is.EqualTo(1));
@@ -401,6 +401,78 @@ internal class CrossDialectWideTupleTests
         Assert.That(ssResults, Has.Count.EqualTo(2));
         Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
         Assert.That(ssResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(ssResults[1].Notes, Is.Null);
+    }
+
+    [Test]
+    public async Task Tuple_PostCteWideProjection_OrderBy()
+    {
+        // Issue #281 variant of Tuple_PostCteWideProjection: 8-element CTE-rooted tuple
+        // projection with OrderBy applied directly off FromCte<T>(). Before #281 this
+        // form did not compile because IEntityAccessor<T> did not declare OrderBy. Verifies
+        // that the late-rebuild tuple type-name path composes with the new IEntityAccessor
+        // → IQueryBuilder transition without losing column metadata.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Order>()
+            .OrderBy(o => o.Total, Direction.Descending)
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Pg.Order>()
+            .OrderBy(o => o.Total, Direction.Descending)
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<My.Order>()
+            .OrderBy(o => o.Total, Direction.Descending)
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Ss.Order>()
+            .OrderBy(o => o.Total, Direction.Descending)
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+
+        // SQL is now deterministic since OrderBy is in the chain — no client-side sort needed.
+        // OrderBy uses Total Desc (250.00 → 150.00 ⇒ OrderId=1, then OrderId=3) rather than
+        // OrderId, because the wide-tuple projection contains OrderId twice (`OrderId` and
+        // `Echo: o.OrderId`) and `ORDER BY OrderId` is rejected as ambiguous by SQL Server.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+        Assert.That(results[0].Echo, Is.EqualTo(1));
+        Assert.That(results[0].Total, Is.EqualTo(250.00m));
+        Assert.That(results[0].Notes, Is.EqualTo("Express"));   // ordinal 6 — Item7 (last flat slot)
+        Assert.That(results[0].Reorder, Is.EqualTo(1));         // ordinal 7 — Rest.Item1 (first nested slot)
+        Assert.That(results[1].OrderId, Is.EqualTo(3));
+        Assert.That(results[1].Notes, Is.Null);
+        Assert.That(results[1].Reorder, Is.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(pgResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(pgResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(pgResults[1].OrderId, Is.EqualTo(3));
+        Assert.That(pgResults[1].Notes, Is.Null);
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(myResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(myResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(myResults[1].OrderId, Is.EqualTo(3));
+        Assert.That(myResults[1].Notes, Is.Null);
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
+        Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(ssResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(ssResults[1].OrderId, Is.EqualTo(3));
         Assert.That(ssResults[1].Notes, Is.Null);
     }
 }
