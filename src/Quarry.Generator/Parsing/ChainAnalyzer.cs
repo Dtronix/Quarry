@@ -2153,6 +2153,45 @@ internal static class ChainAnalyzer
                     }
                 }
 
+                // EntityRef<T,K>.Id key-only access (issue #280): the column came in
+                // with the FK property name in ColumnName and IsRefKeyAccess=true.
+                // Look up the FK column by ColumnName, copy the key type (already TKey
+                // in the registry, not EntityRef), and explicitly suppress IsForeignKey
+                // so the reader emits Get<TKey>(ordinal) without the EntityRef wrap.
+                if (col.IsRefKeyAccess)
+                {
+                    ColumnInfo? fkCol = null;
+                    if (isJoined && perAliasLookup != null && col.TableAlias != null
+                        && perAliasLookup.TryGetValue(col.TableAlias, out var fkAliasLookup))
+                    {
+                        fkAliasLookup.TryGetValue(col.ColumnName, out fkCol);
+                    }
+                    else if (entityColumnLookup != null)
+                    {
+                        entityColumnLookup.TryGetValue(col.ColumnName, out fkCol);
+                    }
+
+                    if (fkCol != null)
+                    {
+                        columns.Add(col with
+                        {
+                            ColumnName = fkCol.ColumnName,
+                            ClrType = fkCol.ClrType,
+                            FullClrType = fkCol.FullClrType,
+                            IsNullable = fkCol.IsNullable,
+                            IsValueType = fkCol.IsValueType,
+                            ReaderMethodName = fkCol.DbReaderMethodName ?? fkCol.ReaderMethodName,
+                            IsForeignKey = false,
+                            ForeignKeyEntityName = null,
+                            IsJoinNullable = IsJoinNullable(col.TableAlias),
+                        });
+                        continue;
+                    }
+                    // FK column not found in registry; fall through to generic enrichment
+                    // and finally to the unenriched-column path. Better to emit a still-broken
+                    // column than to silently drop it.
+                }
+
                 if (NeedsEnrichment(col))
                 {
                     ColumnInfo? entityCol = null;

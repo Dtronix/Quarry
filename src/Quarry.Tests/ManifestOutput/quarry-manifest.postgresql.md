@@ -380,6 +380,14 @@ SELECT "OrderId", "Total" FROM "orders"
 ### Orders().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", "UserId", "Total" FROM "orders"
+```
+
+---
+
+### Orders().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders"
 ```
 
@@ -1340,6 +1348,14 @@ SELECT "t0"."UserId", "t0"."UserName", "t0"."Email", "t0"."IsActive", "t0"."Crea
 
 ```sql
 SELECT "t0"."UserId", "t0"."UserName", "t0"."Email", "t0"."IsActive", "t0"."CreatedAt", "t1"."OrderId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" ORDER BY "t1"."OrderId" ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."UserId", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" ORDER BY "t1"."OrderId" ASC
 ```
 
 ---
@@ -4040,6 +4056,14 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ```sql
 WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "UserId", "Total" FROM "Order"
 ```
 
 ---

@@ -1944,6 +1944,21 @@ internal static class ProjectionAnalyzer
                         readerMethodName: keyReaderMethod,
                         isRefKeyAccess: true);
                 }
+
+                // Syntactic fallback: when semantic resolution misses (the symbol/type
+                // for o.X resolves to an error or non-property), emit a placeholder
+                // anyway. Enrichment looks up the FK column by ColumnName in the
+                // registry; if that misses (X was not an FK), the column passes
+                // through unenriched so downstream stages can surface a coherent
+                // diagnostic instead of the silent "Id" + empty-type emission.
+                return new ProjectedColumn(
+                    propertyName: propertyName,
+                    columnName: refPropertyName,
+                    clrType: "",
+                    fullClrType: "",
+                    isNullable: false,
+                    ordinal: ordinal,
+                    isRefKeyAccess: true);
             }
 
             // Navigation access: o.User.UserName or o.User.Department.Name

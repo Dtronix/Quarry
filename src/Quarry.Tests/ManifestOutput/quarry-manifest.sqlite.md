@@ -398,6 +398,14 @@ SELECT "OrderId", "Total" FROM "orders"
 ### Orders().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", "UserId", "Total" FROM "orders"
+```
+
+---
+
+### Orders().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders"
 ```
 
@@ -721,14 +729,6 @@ SELECT "OrderId", FIRST_VALUE("Total") OVER (PARTITION BY "Status" ORDER BY "Ord
 
 ```sql
 SELECT "OrderId", LAG("Notes") OVER (ORDER BY "OrderDate") AS "PrevNotes" FROM "orders"
-```
-
----
-
-### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT "OrderId", LAG("OrderId") OVER (ORDER BY "OrderDate") AS "PrevId" FROM "orders"
 ```
 
 ---
@@ -1540,6 +1540,14 @@ SELECT "t0"."UserId", "t0"."UserName", "t0"."Email", "t0"."IsActive", "t0"."Crea
 
 ```sql
 SELECT "t0"."UserId", "t0"."UserName", "t0"."Email", "t0"."IsActive", "t0"."CreatedAt", "t1"."OrderId", "t1"."Total", "t1"."Status", "t1"."Priority", "t1"."OrderDate" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" ORDER BY "t1"."OrderId" ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "t0"."UserName", "t1"."UserId", "t1"."Total" FROM "users" AS "t0" INNER JOIN "orders" AS "t1" ON "t0"."UserId" = "t1"."UserId" ORDER BY "t1"."OrderId" ASC
 ```
 
 ---
@@ -4328,30 +4336,6 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 ---
 
-### With(...).FromCte(...).OrderBy(...).Limit(...).Offset(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 0) SELECT "OrderId", "Total" FROM "Order" ORDER BY "OrderId" ASC LIMIT 1 OFFSET 1
-```
-
----
-
-### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "OrderId", "Total", "Status", "Priority", "OrderDate", "Notes", "OrderId" FROM "Order" ORDER BY "Total" DESC
-```
-
----
-
-### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order" ORDER BY "OrderId" ASC
-```
-
----
-
 ### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -4384,6 +4368,14 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ```sql
 WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order"
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "UserId", "Total" FROM "Order"
 ```
 
 ---
@@ -4459,7 +4451,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 652 |
+| Total discovered | 651 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 178 |
-| Rendered | 474 |
+| Rendered | 473 |
