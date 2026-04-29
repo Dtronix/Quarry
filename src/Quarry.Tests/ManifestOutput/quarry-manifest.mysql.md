@@ -859,10 +859,100 @@ SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WH
 
 ---
 
+### Products().Insert().ExecuteNonQueryAsync()
+
+```sql
+INSERT INTO `products` (`ProductName`, `Price`, `Description`) VALUES (?, ?, ?)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+| `@p2` | `string?` |
+
+---
+
 ### Products().Select(...).Products()
 
 ```sql
 SELECT `ProductId`, `ProductName` FROM `products`
+```
+
+---
+
+### Products().Where(...).Products()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price` FROM `products` WHERE `ProductId` <= 3
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` <= 3
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 2
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductName` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductName` FROM `products` WHERE `ProductId` <= 3
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1
+```
+
+---
+
+### Products().Where(...).Select(...).ExecuteFetchFirstOrDefaultAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
 ```
 
 ---
@@ -876,6 +966,14 @@ SELECT `ProductId`, `ProductName` FROM `products` WHERE `Price` <= ?
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `decimal` |
+
+---
+
+### Products().Where(...).Union(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 1 UNION SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `products` WHERE `ProductId` = 3
+```
 
 ---
 
@@ -3562,6 +3660,14 @@ SELECT `WarehouseName` FROM `warehouses` WHERE `WarehouseName` = ? OR `Warehouse
 
 ---
 
+### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
+
+```sql
+WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `ProductId`, `ProductName`, `Price`, `Description`, `DiscountedPrice` FROM `Product`
+```
+
+---
+
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -3669,7 +3775,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 481 |
+| Total discovered | 493 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 85 |
-| Rendered | 396 |
+| Rendered | 408 |
