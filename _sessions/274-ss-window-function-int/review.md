@@ -7,7 +7,7 @@
 | 2 | Plan Compliance | LAG/LEAD/FirstValue/LastValue documented as excluded but gate is `clrType == "int"` only — Sql.Lag(o.IntCol, ...) gets wrapped | medium | A | A | Added `IsIntReturningWindowFunction` helper in ProjectionAnalyzer.cs; 4 flag-set sites switched to it |
 | 3 | Plan Compliance | Plan called for a LAG-no-CAST regression test; not present | low | B | B | Added `WindowFunction_Lag_IntColumn_NoCast` cross-dialect test |
 | 4 | Correctness | ChainAnalyzer late-enrichment of Min/Max OVER int doesn't re-evaluate the flag (defensive no-op anyway on Ss) | low | D | D | not valid — defensive no-op |
-| 5 | Correctness | RenderProjectionColumnRef now wraps with CAST while ORDER BY render does not — DISTINCT+window-on-Ss edge case may falsely trigger wrap | low-medium | C | C | pending — file separate issue |
+| 5 | Correctness | RenderProjectionColumnRef now wraps with CAST while ORDER BY render does not — DISTINCT+window-on-Ss edge case may falsely trigger wrap | low-medium | C | C | Filed as issue #286 |
 | 6 | Correctness | SQL interpolation `CAST({rendered} AS INT)` confirmed safe (generator-controlled input) | info | D | D | info, no action |
 | 7 | Correctness | Wrap sites all gated by null/empty SqlExpression check; RawSqlBodyEmitter unaffected | info | D | D | info, no action |
 | 8 | Test Quality | SqlServerWindowIntCastTests pin GenerateColumnList/GenerateColumnNamesArray which production never calls; SqlAssembler.AppendProjectionColumnSql has no direct unit coverage | medium | B | B | Added 2 production-path tests (`ProductionPath_RowNumber_OnSqlServer_WrapsWithCast`, `ProductionPath_RowNumber_OnNonSqlServer_DoesNotWrap`) that drive SqlAssembler end-to-end via QueryTestHarness; updated class-level XML doc to document the two-layer split |
@@ -67,4 +67,4 @@ No concerns.
 | Five-commit history is clean and per-phase as planned: model (6aad834), reader-helper wrap (4faa038), production wrap + analyzer flag-set (2e3f910), assertions/manifest update (37deb7e), un-skip executes (872a93d). Worth noting commit 2e3f910's title says "wrap int-typed window projections" but it actually does both the SqlAssembler wrap AND the four ProjectionAnalyzer flag-sets — the message is accurate but the SqlAssembler addition (which is the actual production path) isn't called out. | low | Reviewer of the squashed PR may not realize SqlAssembler was modified unless they read the diff carefully. |
 
 ## Issues Created
-- (none yet)
+- #286: DISTINCT wrap detection on Ss compares CAST-wrapped projection ref against unwrapped ORDER BY render
