@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #280
 pr:
 session: 1
-phases-total: 7
-phases-complete: 0
+phases-total: 6
+phases-complete: 6
 
 ## Problem Statement
 Projecting `o.UserId.Id` (an `EntityRef<TEntity, TKey>.Id` access) inside a `Select(...)` lambda on a chain rooted at `FromCte<T>()` produces invalid SQL (empty quoted identifier `""`) and an unfilled cast type (`(?)`) in the generated reader. Both surface as compile errors in the generated interceptor.
@@ -52,6 +52,30 @@ preferred this over sentinel ColumnName, navigation-hops marker, and implicit
 "IsForeignKey=false convention" alternatives — the explicit flag is clearest and
 matches existing `IsAggregateFunction`/`IsEnum`/`IsForeignKey` patterns.
 
+### 2026-04-29 — Phase 3 widened to syntactic fallback during implementation
+Original Phase 3 design called for FK structural detection from the property's
+type symbol via `semanticModel.GetSymbolInfo(nestedAccess).Symbol`. In practice,
+that symbol resolution fails for some discovery scenarios (particularly the
+non-CTE `Lite.Orders().Select(o => ...)` chain where the symbol returns
+neither `IPropertySymbol` nor a usable type), so the FK branch fell through to
+`TryParseNavigationChain` and the bug persisted.
+
+Widened the fallback: when the syntax matches `o.X.Id` and the lambda
+parameter check passes, emit `IsRefKeyAccess=true` with `ColumnName=X`
+unconditionally. Enrichment in `BuildProjection` validates by registry lookup;
+if `X` is not an FK column (e.g., a navigation property like `o.User.Id`), the
+column passes through unenriched — broken in the same way it was before, but
+at least loudly so in diagnostics. No existing tests exercise navigation
+`.Id` access; if such a case is added later, it will need its own discovery
+branch.
+
+### 2026-04-29 — Phase 6 dropped (subsumed by Phase 3 fallback)
+Original plan included a defensive guard in `TryParseNavigationChain` to
+return null when `finalProp == "Id"` and the first hop is in `columnLookup`.
+With the widened Phase 3 fallback, the FK `.Id` branch now always returns
+before `TryParseNavigationChain` is reached for `o.X.Id` syntax, making the
+guard unreachable. Skipping it keeps the diff narrow and avoids dead code.
+
 ### 2026-04-29 — Test coverage
 - Extend `Tuple_PostCteWideProjection` to use `UserKey: o.UserId.Id` per the
   issue's own suggestion (replaces the `Echo: o.OrderId` workaround).
@@ -66,3 +90,4 @@ matches existing `IsAggregateFunction`/`IsEnum`/`IsForeignKey` patterns.
 | # | Phase Start | Phase End | Summary |
 |---|-------------|-----------|---------|
 | 1 | INTAKE 2026-04-29 | IMPLEMENT 2026-04-29 | Loaded issue #280, created worktree, baseline 3364 tests green, design + plan approved |
+| 1 | IMPLEMENT 2026-04-29 | REVIEW 2026-04-29 | Phases 1-5 + 7 implemented (Phase 6 dropped — subsumed by Phase 3 widening); full suite 3368 tests green |
