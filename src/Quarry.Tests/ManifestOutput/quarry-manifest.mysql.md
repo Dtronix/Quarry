@@ -1199,6 +1199,14 @@ SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t3`.`AccountName` FRO
 
 ---
 
+### Users().Join(...).Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t0`.`LastLogin`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate`, `t2`.`OrderItemId`, `t2`.`ProductName`, `t2`.`Quantity`, `t2`.`UnitPrice`, `t2`.`LineTotal` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` ORDER BY `t2`.`OrderItemId` ASC
+```
+
+---
+
 ### Users().Join(...).Join(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1219,6 +1227,38 @@ SELECT `t1`.`OrderId`, `t1`.`UserId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priorit
 
 ```sql
 SELECT `t0`.`UserName`, `t1`.`Status`, `t2`.`ProductName`, `t2`.`Quantity` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` INNER JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` WHERE `t2`.`UnitPrice` > 50.00
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Notes` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
 ```
 
 ---
@@ -3631,6 +3671,14 @@ WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `Prod
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `OrderId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order`
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
 WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > ?) SELECT `OrderId`, `Total` FROM `Order`
 ```
 
@@ -3727,7 +3775,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 487 |
+| Total discovered | 493 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 85 |
-| Rendered | 402 |
+| Rendered | 408 |
