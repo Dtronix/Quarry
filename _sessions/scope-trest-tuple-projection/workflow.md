@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: discussion
 pr:
 session: 1
 phases-total: 3
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 
@@ -48,3 +48,7 @@ This workflow's deliverable is **scope-only + demonstrative tests**:
 |---|------------|-----------|---------|
 | 1 | INTAKE 2026-04-26 | DESIGN 2026-04-27 | Created branch `scope-trest-tuple-projection`, recorded baseline (3022 passing on master @ aebf88d), confirmed scope-only + failing-tests deliverable, explored ProjectionAnalyzer / ReaderCodeGenerator / TypeClassification, identified that reader emission is flat (C# folds to TRest) and likely works at runtime, found one inconsistency (`IsValidTupleTypeName:1650` uses naive `Split(',')` instead of depth-aware `SplitTupleElements`), transitioned to PLAN |
 | 2 | PLAN 2026-04-27 | IMPLEMENT 2026-04-27 | Wrote plan.md with three phases (tests → scope.md → commit). Rebased on origin/master (picked up f1968dc — cross-dialect coverage, baseline now 3024). Implemented `CrossDialectWideTupleTests.cs` with 4 tests at arities 7/8/10/16; first run failed all 4 due to author-side `ORDER BY` assertion-string bug (omitted explicit `ASC`); fixup made all 4 pass. Wrote scope.md with audit table verdicts filled in. Verdict: **TRest works at runtime today** — the rewrite path is unblocked modulo a small follow-up to harden `IsValidTupleTypeName` against nested generic args |
+| 3 | REVIEW 2026-04-27 | REMEDIATE 2026-04-27 | Agent review surfaced 24 findings: 6A/0B/0C/18D. As accepted: (#7) scope.md self-contradiction, (#13) tighten Pg/My/Ss assertions in 7-elem test, (#14) add nullable-inside-Rest test, (#16) add mid-Rest assertions in 16-elem test, (#17) add CTE wide-tuple test, (#24) update Integration framing once #17 lands |
+| 4 | REMEDIATE 2026-04-27 | DESIGN 2026-04-27 | Implemented #7, #13, #14, #16. Adding #17 (`Tuple_PostCteWideProjection`) surfaced TWO pre-existing generator bugs in the post-CTE wide-projection path: (Bug A) empty table alias `""."col"` emitted on every column when projection is wide, where the simple 2-col CTE case correctly emits unaliased `"col"`; (Bug B) empty column name and unfilled cast type `()r.GetValue(N)` for FK `.Id` projection in CTE context. Both are real generator bugs surfaced for the first time by this test. Per user direction, expanding workflow scope from "scope-only" to "scope + bug fixes" — going back to DESIGN to investigate root causes |
+| 5 | DESIGN 2026-04-27 | DESIGN 2026-04-28 | Investigation: Bug A root cause is `SqlAssembler.AppendProjectionColumnSql:1359` checking `col.TableAlias != null` instead of `IsNullOrEmpty` (the placeholder path in `ProjectionAnalyzer:213` deliberately sets `Alias=""` to mean "no alias"; `ReaderCodeGenerator` already used `IsNullOrEmpty`). Bug B turned out to be 3 intertwined issues across `BuildColumnInfoFromTypeSymbol`, `TryParseNavigationChain` (matches `o.UserId.Id` as if it were a navigation), and missing FK key-type extraction — much deeper than expected. Adding OrderBy to the CTE test also surfaced Bug C (`Order<Order>` malformed interceptor for `OrderBy` on `IEntityAccessor<T>`, which is invalid user-level C# anyway). Per user direction, scoped down: fix Bug A, defer B and C as separate issues |
+| 6 | DESIGN 2026-04-28 | REMEDIATE 2026-04-29 | Implemented Bug A fix (`SqlAssembler.cs:1359`). Restructured `Tuple_PostCteWideProjection` to use `Echo: o.OrderId` (non-FK) for the 8th element and to sort in-memory (no OrderBy in chain). All 6 wide-tuple tests pass. Updated scope.md to reflect Bug A fix in this PR + B/C deferred. Bug B and Bug C will be filed as separate GitHub issues during REMEDIATE |

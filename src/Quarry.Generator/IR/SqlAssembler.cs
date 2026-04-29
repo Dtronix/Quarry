@@ -1356,9 +1356,13 @@ internal static class SqlAssembler
             sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset));
             return;
         }
-        if (col.TableAlias != null)
+        // The placeholder analysis path for non-joined CTE post-Select chains assigns
+        // an empty-string TableAlias (per-param lookup is built with `Alias: ""` to
+        // mean "no alias"); empty-string must produce no prefix here, otherwise the
+        // emitted SQL contains a literal `""."col"` that fails parse.
+        if (!string.IsNullOrEmpty(col.TableAlias))
         {
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias));
+            sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.TableAlias!));
             sb.Append('.');
         }
         sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.ColumnName));

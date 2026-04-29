@@ -1192,6 +1192,14 @@ SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[Crea
 ### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[CreatedAt], [t1].[OrderId], [t1].[Total], [t1].[Status], [t1].[Notes] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] ORDER BY [t1].[OrderId] ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[CreatedAt], [t1].[OrderId], [t1].[Total], [t1].[Status], [t1].[Priority], [t1].[OrderDate] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] ORDER BY [t1].[OrderId] ASC
 ```
 
@@ -3681,6 +3689,14 @@ SELECT [WarehouseName] FROM [warehouses] WHERE [WarehouseName] = @p0 OR [Warehou
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
+WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [OrderId], [Total], [Status], [Priority], [OrderDate], [Notes], [OrderId] FROM [Order]
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
 WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > @p0) SELECT [OrderId], [Total] FROM [Order]
 ```
 
@@ -3769,7 +3785,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 495 |
+| Total discovered | 497 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 88 |
-| Rendered | 407 |
+| Rendered | 409 |

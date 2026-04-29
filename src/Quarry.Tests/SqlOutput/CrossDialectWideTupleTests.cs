@@ -60,17 +60,23 @@ internal class CrossDialectWideTupleTests
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].UserId, Is.EqualTo(1));
         Assert.That(pgResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(pgResults[0].OrderId, Is.EqualTo(1));
         Assert.That(pgResults[0].Total, Is.EqualTo(250.00m));
 
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].UserId, Is.EqualTo(1));
         Assert.That(myResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(myResults[0].OrderId, Is.EqualTo(1));
         Assert.That(myResults[0].Total, Is.EqualTo(250.00m));
 
         var ssResults = await ss.ExecuteFetchAllAsync();
         Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0].UserId, Is.EqualTo(1));
         Assert.That(ssResults[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(ssResults[0].OrderId, Is.EqualTo(1));
         Assert.That(ssResults[0].Total, Is.EqualTo(250.00m));
     }
 
@@ -248,6 +254,8 @@ internal class CrossDialectWideTupleTests
         Assert.That(results[0].Total, Is.EqualTo(250.00m));         // ordinal 7 → Rest.Item1
         Assert.That(results[0].Status, Is.EqualTo("Shipped"));       // ordinal 8 → Rest.Item2
         Assert.That(results[0].Priority, Is.EqualTo(OrderPriority.High));     // ordinal 9 → Rest.Item3
+        Assert.That(results[0].OrderDate, Is.EqualTo(new DateTime(2024, 6, 1))); // ordinal 10 → Rest.Item4 (mid-Rest)
+        Assert.That(results[0].OrderItemId, Is.EqualTo(1));          // ordinal 11 → Rest.Item5 (mid-Rest)
         Assert.That(results[0].ProductName, Is.EqualTo("Widget"));   // ordinal 12 → Rest.Item6
         Assert.That(results[0].Quantity, Is.EqualTo(2));             // ordinal 13 → Rest.Item7
         // Depth 2 (Rest.Rest.Item1..Item2, ordinals 14..15).
@@ -274,5 +282,125 @@ internal class CrossDialectWideTupleTests
         Assert.That(ssResults[0].Status, Is.EqualTo("Shipped"));
         Assert.That(ssResults[0].UnitPrice, Is.EqualTo(125.00m));
         Assert.That(ssResults[0].LineTotal, Is.EqualTo(250.00m));
+    }
+
+    [Test]
+    public async Task Tuple_NullableInsideRest()
+    {
+        // 9 elements with the nullable string `Order.Notes` at ordinal 8 (Rest.Item2).
+        // Verifies that the IsDBNull-guarded reader path resolves the right ordinal
+        // through Rest. Seed data: Order 1 has Notes='Express'; Order 2 has Notes=NULL —
+        // both must materialize without throwing, with results[1].Notes coming back as null.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .OrderBy((u, o) => o.OrderId)
+            .Select((u, o) => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, o.OrderId, o.Total, o.Status, o.Notes))
+            .Prepare();
+        var pg = Pg.Users().Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .OrderBy((u, o) => o.OrderId)
+            .Select((u, o) => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, o.OrderId, o.Total, o.Status, o.Notes))
+            .Prepare();
+        var my = My.Users().Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .OrderBy((u, o) => o.OrderId)
+            .Select((u, o) => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, o.OrderId, o.Total, o.Status, o.Notes))
+            .Prepare();
+        var ss = Ss.Users().Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .OrderBy((u, o) => o.OrderId)
+            .Select((u, o) => (u.UserId, u.UserName, u.Email, u.IsActive, u.CreatedAt, o.OrderId, o.Total, o.Status, o.Notes))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserId\", \"t0\".\"UserName\", \"t0\".\"Email\", \"t0\".\"IsActive\", \"t0\".\"CreatedAt\", \"t1\".\"OrderId\", \"t1\".\"Total\", \"t1\".\"Status\", \"t1\".\"Notes\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" ORDER BY \"t1\".\"OrderId\" ASC",
+            pg:     "SELECT \"t0\".\"UserId\", \"t0\".\"UserName\", \"t0\".\"Email\", \"t0\".\"IsActive\", \"t0\".\"CreatedAt\", \"t1\".\"OrderId\", \"t1\".\"Total\", \"t1\".\"Status\", \"t1\".\"Notes\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" ORDER BY \"t1\".\"OrderId\" ASC",
+            mysql:  "SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Notes` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC",
+            ss:     "SELECT [t0].[UserId], [t0].[UserName], [t0].[Email], [t0].[IsActive], [t0].[CreatedAt], [t1].[OrderId], [t1].[Total], [t1].[Status], [t1].[Notes] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] ORDER BY [t1].[OrderId] ASC");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(3));
+        Assert.That(results[0].Notes, Is.EqualTo("Express"));   // Order 1 has Notes='Express' — Rest.Item2 (ordinal 8), non-null path
+        Assert.That(results[1].Notes, Is.Null);                  // Order 2 has Notes=NULL — Rest.Item2 (ordinal 8), IsDBNull-guarded path
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(3));
+        Assert.That(pgResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(pgResults[1].Notes, Is.Null);
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(3));
+        Assert.That(myResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(myResults[1].Notes, Is.Null);
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(3));
+        Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(ssResults[1].Notes, Is.Null);
+    }
+
+    [Test]
+    public async Task Tuple_PostCteWideProjection()
+    {
+        // 8 elements projected from a CTE-rooted chain. Exercises the late-rebuild
+        // tuple type-name path in ChainAnalyzer.cs around lines 2258 / 2292 — the
+        // post-CTE Select runs through placeholder analysis without a SemanticModel
+        // at discovery time, then has its tuple type-name rebuilt from enriched columns.
+        // 8 elements crosses the TRest boundary, so this verifies the late rebuild emits
+        // a flat type-name string the C# compiler can fold to ValueTuple<…, ValueTuple<int>>.
+        // Element 8 (`Reorder`) is at Rest.Item1 — element 7 (`Notes`) is the last flat slot.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Order>()
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Pg.Order>()
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<My.Order>()
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Ss.Order>()
+            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Prepare();
+
+        // Seed: Total > 100 keeps Order 1 (250.00, Alice, Notes='Express') and Order 3 (150.00, Bob, Notes=NULL).
+        // Order 2 (75.50) is filtered out by the CTE inner WHERE.
+        // Sort results in-memory by OrderId for stable assertions: post-CTE chain doesn't
+        // support OrderBy directly (IEntityAccessor doesn't expose it; Quarry chain-continuation
+        // methods require a Where/Select/GroupBy first), so we order client-side.
+        var results = (await lt.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].OrderId, Is.EqualTo(1));
+        Assert.That(results[0].Echo, Is.EqualTo(1));
+        Assert.That(results[0].Total, Is.EqualTo(250.00m));
+        Assert.That(results[0].Notes, Is.EqualTo("Express"));   // ordinal 6 — Item7 (last flat slot)
+        Assert.That(results[0].Reorder, Is.EqualTo(1));         // ordinal 7 — Rest.Item1 (first nested slot)
+        Assert.That(results[1].Notes, Is.Null);                  // ordinal 6 — IsDBNull through Item7
+        Assert.That(results[1].Reorder, Is.EqualTo(3));         // ordinal 7 — Rest.Item1 for second row
+
+        var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(pgResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(pgResults[1].Notes, Is.Null);
+
+        var myResults = (await my.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(myResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(myResults[1].Notes, Is.Null);
+
+        var ssResults = (await ss.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
+        Assert.That(ssResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(ssResults[1].Notes, Is.Null);
     }
 }
