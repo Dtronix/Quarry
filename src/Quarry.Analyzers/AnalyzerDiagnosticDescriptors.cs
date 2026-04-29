@@ -181,6 +181,24 @@ internal static class AnalyzerDiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Multiple independent queries on the same table within a method could potentially be combined.");
 
+    public static readonly DiagnosticDescriptor ThenByWithoutOrderBy = new(
+        id: "QRA403",
+        title: "ThenBy without preceding OrderBy",
+        messageFormat: "ThenBy() called without a preceding OrderBy() in the chain; the emitted SQL is equivalent to OrderBy, consider OrderBy() instead",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "ThenBy implies a 'next sort key' but with no preceding OrderBy there is no first key. The emitted SQL is equivalent to OrderBy. Replace with OrderBy(...) or add an OrderBy(...) earlier in the chain.");
+
+    public static readonly DiagnosticDescriptor HavingWithoutGroupBy = new(
+        id: "QRA404",
+        title: "Having without preceding GroupBy",
+        messageFormat: "Having() called without a preceding GroupBy() in the chain; add a GroupBy(...) clause first or remove the Having",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: "HAVING is a post-aggregation filter and is meaningful only with a preceding GROUP BY. Without a GroupBy, most engines treat the result as a single group and the predicate filters the entire result set, which is rarely what callers intend.");
+
     // ── QRA5xx: Dialect-Specific ──
 
     public static readonly DiagnosticDescriptor DialectOptimization = new(
