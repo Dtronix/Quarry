@@ -33,6 +33,17 @@ internal static class SqlExprRenderer
     /// default <see cref="SqlDialectConfig"/> and forwards. Callers that don't yet have a
     /// <see cref="SqlDialectConfig"/> can keep passing the bare enum.
     /// </summary>
+    /// <remarks>
+    /// <b>Footgun:</b> the wrapper defaults <c>MySqlBackslashEscapes</c> to <c>true</c>
+    /// (matching the attribute default and stock MySQL). Calling this overload with
+    /// <see cref="SqlDialect.MySQL"/> will silently emit doubled-backslash LIKE patterns —
+    /// which is correct for stock MySQL but wrong for servers configured with
+    /// <c>NO_BACKSLASH_ESCAPES</c>. Prefer the
+    /// <see cref="Render(SqlExpr, SqlDialectConfig, int, bool, bool)"/> overload and pass
+    /// the per-context <c>SqlDialectConfig</c> from <c>BoundCallSite.DialectConfig</c>.
+    /// This overload exists for fragment-render paths that have no per-context dialect
+    /// (e.g. <c>TranslatedClause.SqlFragment</c>, which always uses PG).
+    /// </remarks>
     public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
         => Render(expr, new SqlDialectConfig(dialect), parameterBaseIndex, useGenericParamFormat, stripOuterParens);
 
@@ -64,7 +75,9 @@ internal static class SqlExprRenderer
 
     /// <summary>
     /// Backwards-compatible overload accepting a bare <see cref="SqlDialect"/>. Wraps it in a
-    /// default <see cref="SqlDialectConfig"/> and forwards.
+    /// default <see cref="SqlDialectConfig"/> and forwards. See the same-named
+    /// <see cref="Render(SqlExpr, SqlDialect, int, bool, bool)"/> overload for the
+    /// <c>MySqlBackslashEscapes</c> footgun warning that applies here too.
     /// </summary>
     public static void RenderTo(StringBuilder sb, SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
         => RenderTo(sb, expr, new SqlDialectConfig(dialect), parameterBaseIndex, useGenericParamFormat, stripOuterParens);
@@ -388,12 +401,16 @@ internal static class SqlExprRenderer
         if ((hasPrefix || hasSuffix) && like.Pattern is LiteralExpr literalPattern
             && literalPattern.ClrType == "string" && !literalPattern.IsNull)
         {
+            // Order matters: single-quote escape FIRST (to '' pairs), then backslash
+            // doubling. Reversing would let the backslash pass turn an emitted '' pair
+            // into '\\' '' (no real input contains that today, but the order keeps the
+            // pipeline correct under any future input).
             var escaped = literalPattern.SqlText.Replace("'", "''");
             if (doubleBackslashes) escaped = escaped.Replace("\\", "\\\\");
             sb.Append('\'');
-            if (hasPrefix) sb.Append(like.LikePrefix);
+            if (hasPrefix) sb.Append(MaybeDoubleBackslashes(like.LikePrefix!, doubleBackslashes));
             sb.Append(escaped);
-            if (hasSuffix) sb.Append(like.LikeSuffix);
+            if (hasSuffix) sb.Append(MaybeDoubleBackslashes(like.LikeSuffix!, doubleBackslashes));
             sb.Append('\'');
         }
         else if (!hasPrefix && !hasSuffix)
@@ -404,6 +421,7 @@ internal static class SqlExprRenderer
             if (doubleBackslashes && like.Pattern is LiteralExpr bareLit
                 && bareLit.ClrType == "string" && !bareLit.IsNull)
             {
+                // See comment above — same single-quote-first, backslash-double-second order.
                 var bareEscaped = bareLit.SqlText.Replace("'", "''").Replace("\\", "\\\\");
                 sb.Append('\'').Append(bareEscaped).Append('\'');
             }
@@ -415,13 +433,13 @@ internal static class SqlExprRenderer
         else
         {
             var parts = new List<string>();
-            if (hasPrefix) parts.Add($"'{like.LikePrefix}'");
+            if (hasPrefix) parts.Add($"'{MaybeDoubleBackslashes(like.LikePrefix!, doubleBackslashes)}'");
 
             var patternSb = new StringBuilder();
             RenderExpr(like.Pattern, config, paramBase, patternSb, genericParams);
             parts.Add(patternSb.ToString());
 
-            if (hasSuffix) parts.Add($"'{like.LikeSuffix}'");
+            if (hasSuffix) parts.Add($"'{MaybeDoubleBackslashes(like.LikeSuffix!, doubleBackslashes)}'");
 
             if (parts.Count == 1)
             {
@@ -449,6 +467,17 @@ internal static class SqlExprRenderer
             sb.Append(doubleBackslashes ? " ESCAPE '\\\\'" : " ESCAPE '\\'");
         }
     }
+
+    /// <summary>
+    /// When <paramref name="doubleBackslashes"/> is <c>true</c>, doubles every backslash
+    /// in <paramref name="text"/> so the SQL parser on default-mode MySQL collapses
+    /// the doubled form back to a single literal backslash. No-op otherwise.
+    /// Today's analyzer only emits LIKE prefix/suffix as <c>%</c>, so the doubling
+    /// is a defensive guard for a future code path that puts a backslash in
+    /// <see cref="LikeExpr.LikePrefix"/> or <see cref="LikeExpr.LikeSuffix"/>.
+    /// </summary>
+    private static string MaybeDoubleBackslashes(string text, bool doubleBackslashes)
+        => doubleBackslashes && text.IndexOf('\\') >= 0 ? text.Replace("\\", "\\\\") : text;
 
     private static void RenderSubquery(SubqueryExpr sub, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams)
     {

@@ -86,19 +86,8 @@ internal static class ContextParser
         if (attributeData == null)
             return null;
 
-        // Extract dialect configuration and Schema from attribute
-        var dialectConfig = SqlDialectConfig.FromAttribute(attributeData);
-        string? schema = null;
-
-        foreach (var namedArg in attributeData.NamedArguments)
-        {
-            switch (namedArg.Key)
-            {
-                case "Schema":
-                    schema = namedArg.Value.Value as string;
-                    break;
-            }
-        }
+        // Extract dialect configuration and Schema from attribute (single pass)
+        var (dialectConfig, schema) = SqlDialectConfig.ParseAttribute(attributeData);
 
         // Discover entities via partial QueryBuilder<T> properties
         var (entities, mappings) = DiscoverEntities(classDeclaration, semanticModel, cancellationToken);

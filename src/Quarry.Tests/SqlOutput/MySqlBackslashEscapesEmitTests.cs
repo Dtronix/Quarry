@@ -104,6 +104,30 @@ public class MySqlBackslashEscapesEmitTests
     }
 
     [Test]
+    public void Contains_ParameterBound_BackslashEscapesTrue_NoDoubling()
+    {
+        // Parameter-bound patterns bypass SQL string-literal parsing entirely —
+        // the value is bound through the driver's parameter marker (?) and the
+        // server reads it from the protocol, not from SQL text. So no
+        // backslash-doubling should be applied to the parameter placeholder, and
+        // no ESCAPE clause should be emitted (NeedsEscape stays false at parse
+        // time for non-literal patterns). Asserts the doubled-emit code path
+        // does NOT accidentally fire on parameter-bound patterns.
+        var captured = "user_name";
+        var sql = _myTrue.Users()
+            .Where(u => u.UserName.Contains(captured))
+            .Select(u => u.UserId)
+            .ToDiagnostics().Sql;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sql, Does.Contain("LIKE CONCAT('%', ?, '%')"));
+            Assert.That(sql, Does.Not.Contain("ESCAPE"));
+            Assert.That(sql, Does.Not.Contain("\\\\"));
+        });
+    }
+
+    [Test]
     public void Contains_NoMetacharacters_NoEscapeClause()
     {
         // Plain string with no LIKE-meta characters → no ESCAPE clause needed

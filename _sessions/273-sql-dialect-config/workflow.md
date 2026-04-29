@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #273
 pr:
@@ -56,4 +56,4 @@ Leave `NO_BACKSLASH_ESCAPES` in the main `MySqlTestContainer.cs` `--sql-mode` ar
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | INTAKE | IMPLEMENT | 2026-04-29: Loaded issue #273. Worktree/branch created. Baseline 3364 tests green. DESIGN: 7 decisions recorded (3.B mode-aware emit, refactor+fix scope, internal sealed record, MySqlBackslashEscapes default true, attribute-only-MySqlBackslashEscapes-this-PR, keep test mitigation+add focused container, generator-internal carrier). PLAN: 4 phases written and approved. |
+| 1 | INTAKE | REVIEW | 2026-04-29: Loaded issue #273. Worktree/branch created. Baseline 3364 tests green. DESIGN: 7 decisions recorded (3.B mode-aware emit, refactor+fix scope, internal sealed record, MySqlBackslashEscapes default true, attribute-only-MySqlBackslashEscapes-this-PR, keep test mitigation+add focused container, generator-internal carrier). PLAN: 4 phases written and approved. IMPLEMENT: 4 phases committed. Phase 1 introduced SqlDialectConfig carrier (3364 tests green). Phase 2 added MySqlBackslashEscapes attribute+carrier flag (3372 tests). Phase 3 threaded SqlDialectConfig through SqlExprRenderer + SqlAssembler and branched LIKE emit on the flag (3378 tests). Phase 4 added default-mode container + 3 integration regression tests (3381 tests). |

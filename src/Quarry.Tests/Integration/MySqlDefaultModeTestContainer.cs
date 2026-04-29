@@ -72,7 +72,7 @@ internal static class MySqlDefaultModeTestContainer
                     await container.StartAsync();
                     _container = container;
                 }
-                catch (Exception ex) when (IsDockerUnavailable(ex))
+                catch (Exception ex) when (TestContainerHelpers.IsDockerUnavailable(ex))
                 {
                     _dockerUnavailableReason =
                         "Docker is not available on this machine — MySQL-backed tests cannot run. " +
@@ -111,14 +111,14 @@ internal static class MySqlDefaultModeTestContainer
             await conn.OpenAsync();
 
             const string LockName = "quarry_test_default_baseline";
-            await ExecAsync(conn, $"SELECT GET_LOCK('{LockName}', 60);");
+            await TestContainerHelpers.ExecAsync(conn,$"SELECT GET_LOCK('{LockName}', 60);");
             try
             {
-                var alreadyReady = await TableExistsAsync(conn, DatabaseName, "users");
+                var alreadyReady = await TestContainerHelpers.TableExistsAsync(conn, DatabaseName, "users");
                 if (!alreadyReady)
                 {
-                    await ExecAsync(conn, $"USE `{DatabaseName}`;");
-                    await ExecAsync(conn, @"CREATE TABLE `users` (
+                    await TestContainerHelpers.ExecAsync(conn,$"USE `{DatabaseName}`;");
+                    await TestContainerHelpers.ExecAsync(conn,@"CREATE TABLE `users` (
                         `UserId` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
                         `UserName` TEXT NOT NULL
                     );");
@@ -142,7 +142,7 @@ internal static class MySqlDefaultModeTestContainer
             }
             finally
             {
-                await ExecAsync(conn, $"SELECT RELEASE_LOCK('{LockName}');");
+                await TestContainerHelpers.ExecAsync(conn,$"SELECT RELEASE_LOCK('{LockName}');");
             }
 
             _baselineReady = true;
@@ -153,39 +153,4 @@ internal static class MySqlDefaultModeTestContainer
         }
     }
 
-    private static async Task<bool> TableExistsAsync(MySqlConnection conn, string database, string table)
-    {
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText =
-            "SELECT 1 FROM information_schema.tables WHERE table_schema = @db AND table_name = @tb";
-        var p1 = cmd.CreateParameter(); p1.ParameterName = "@db"; p1.Value = database; cmd.Parameters.Add(p1);
-        var p2 = cmd.CreateParameter(); p2.ParameterName = "@tb"; p2.Value = table;    cmd.Parameters.Add(p2);
-        var result = await cmd.ExecuteScalarAsync();
-        return result is not null && result is not DBNull;
-    }
-
-    private static async Task ExecAsync(MySqlConnection conn, string sql)
-    {
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = sql;
-        await cmd.ExecuteNonQueryAsync();
-    }
-
-    private static bool IsDockerUnavailable(Exception ex)
-    {
-        for (var cur = ex; cur is not null; cur = cur.InnerException!)
-        {
-            var typeName = cur.GetType().FullName ?? "";
-            var message = cur.Message ?? "";
-            if (typeName.Contains("Docker", StringComparison.Ordinal) ||
-                typeName.Contains("Testcontainers", StringComparison.Ordinal))
-                return true;
-            if (message.Contains("docker", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("daemon", StringComparison.OrdinalIgnoreCase) ||
-                message.Contains("named pipe", StringComparison.OrdinalIgnoreCase))
-                return true;
-            if (cur.InnerException is null) break;
-        }
-        return false;
-    }
 }

@@ -1010,11 +1010,13 @@ internal static class SqlAssembler
 
     private static void AppendTableRef(StringBuilder sb, SqlDialectConfig config, TableRef table)
     {
-        sb.Append(SqlFormatting.FormatTableName(config.Dialect, table.TableName, table.SchemaName));
+        var dialect = config.Dialect;
+        sb.Append(SqlFormatting.FormatTableName(dialect, table.TableName, table.SchemaName));
     }
 
     private static void AppendSelectColumns(StringBuilder sb, SqlDialectConfig config, IReadOnlyList<ProjectedColumn> columns, int paramOffset = 0)
     {
+        var dialect = config.Dialect;
         for (int i = 0; i < columns.Count; i++)
         {
             if (i > 0) sb.Append(", ");
@@ -1025,7 +1027,7 @@ internal static class SqlAssembler
             if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.Alias))
             {
                 sb.Append(" AS ");
-                sb.Append(SqlFormatting.QuoteIdentifier(config.Dialect, col.Alias!));
+                sb.Append(SqlFormatting.QuoteIdentifier(dialect, col.Alias!));
             }
         }
     }

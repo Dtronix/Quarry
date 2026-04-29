@@ -38,8 +38,13 @@ public sealed class QuarryContextAttribute : Attribute
     /// generator emits LIKE patterns and ESCAPE clauses assuming backslash is a
     /// string-literal escape character (default <c>true</c>, matches stock MySQL
     /// <c>sql_mode</c>). Set to <c>false</c> if the target server has
-    /// <c>NO_BACKSLASH_ESCAPES</c> set in <c>sql_mode</c>. Ignored on non-MySQL dialects.
+    /// <c>NO_BACKSLASH_ESCAPES</c> set in <c>sql_mode</c>.
     /// </summary>
+    /// <remarks>
+    /// Setting this on a non-MySQL dialect (PostgreSQL, SQLite, SqlServer) is a
+    /// silent no-op — those dialects' LIKE emission is unaffected by the flag.
+    /// No diagnostic is currently raised; a future <c>QRY</c> rule may surface this.
+    /// </remarks>
     public bool MySqlBackslashEscapes { get; set; } = true;
 
     /// <summary>

@@ -13,3 +13,4 @@ public partial class MyDefaultDb : QuarryContext
 {
     public partial IEntityAccessor<User> Users();
 }
+
