@@ -336,6 +336,14 @@ SELECT `OrderId`, `Total` FROM `orders`
 ### Orders().Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `OrderId`, `UserId`, `Total` FROM `orders`
+```
+
+---
+
+### Orders().Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders`
 ```
 
@@ -1267,6 +1275,14 @@ SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`Crea
 
 ```sql
 SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
+```
+
+---
+
+### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`UserId`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
 ```
 
 ---
@@ -3703,7 +3719,7 @@ WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `Prod
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `OrderId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order`
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order`
 ```
 
 ---
@@ -3732,6 +3748,14 @@ WITH `OrderSummaryDto` AS (SELECT `OrderId`, `Total`, `Status` FROM `orders` WHE
 
 ```sql
 WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order`
+```
+
+---
+
+### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `UserId`, `Total` FROM `Order`
 ```
 
 ---
@@ -3807,7 +3831,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 498 |
+| Total discovered | 501 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 86 |
-| Rendered | 412 |
+| Rendered | 415 |

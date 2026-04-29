@@ -175,7 +175,8 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         SqlExpr? subqueryExpression = null,
         string? outerParameterName = null,
         DiagnosticLocation? subqueryInvocationLocation = null,
-        bool requiresSqlServerIntCast = false)
+        bool requiresSqlServerIntCast = false,
+        bool isRefKeyAccess = false)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -199,6 +200,7 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         OuterParameterName = outerParameterName;
         SubqueryInvocationLocation = subqueryInvocationLocation;
         RequiresSqlServerIntCast = requiresSqlServerIntCast;
+        IsRefKeyAccess = isRefKeyAccess;
     }
 
     /// <summary>
@@ -347,6 +349,16 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
     /// </summary>
     public bool RequiresSqlServerIntCast { get; init; }
 
+    /// <summary>
+    /// Gets whether this column projects only the foreign-key key value (TKey) via
+    /// <c>EntityRef&lt;TEntity, TKey&gt;.Id</c> access — for example, <c>o.UserId.Id</c>
+    /// where <c>UserId</c> is the FK column. The reader emits the raw key type
+    /// (e.g. <c>int</c>) without the surrounding <c>new EntityRef&lt;…&gt;(…)</c> wrap
+    /// that ordinary FK column projections produce. Distinguished from
+    /// <see cref="IsForeignKey"/>, which signals "project the whole FK column".
+    /// </summary>
+    public bool IsRefKeyAccess { get; init; }
+
     public bool Equals(ProjectedColumn? other)
     {
         if (other is null) return false;
@@ -372,12 +384,13 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
             && EqualityComparer<IR.SqlExpr?>.Default.Equals(SubqueryExpression, other.SubqueryExpression)
             && OuterParameterName == other.OuterParameterName
             && Nullable.Equals(SubqueryInvocationLocation, other.SubqueryInvocationLocation)
-            && RequiresSqlServerIntCast == other.RequiresSqlServerIntCast;
+            && RequiresSqlServerIntCast == other.RequiresSqlServerIntCast
+            && IsRefKeyAccess == other.IsRefKeyAccess;
     }
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable, RequiresSqlServerIntCast);
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable, RequiresSqlServerIntCast, IsRefKeyAccess);
     }
 }
 

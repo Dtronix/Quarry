@@ -350,27 +350,28 @@ internal class CrossDialectWideTupleTests
         // 8 elements crosses the TRest boundary, so this verifies the late rebuild emits
         // a flat type-name string the C# compiler can fold to ValueTuple<…, ValueTuple<int>>.
         // Element 8 (`Reorder`) is at Rest.Item1 — element 7 (`Notes`) is the last flat slot.
+        // Element 2 (`UserKey`) is an EntityRef<User, int>.Id key-only access — pins issue #280.
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
         var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Order>()
-            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Select(o => (o.OrderId, UserKey: o.UserId.Id, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
             .Prepare();
         var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Pg.Order>()
-            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Select(o => (o.OrderId, UserKey: o.UserId.Id, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
             .Prepare();
         var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<My.Order>()
-            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Select(o => (o.OrderId, UserKey: o.UserId.Id, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
             .Prepare();
         var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
             .FromCte<Ss.Order>()
-            .Select(o => (o.OrderId, Echo: o.OrderId, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
+            .Select(o => (o.OrderId, UserKey: o.UserId.Id, o.Total, o.Status, o.Priority, o.OrderDate, o.Notes, Reorder: o.OrderId))
             .Prepare();
 
-        // Seed: Total > 100 keeps Order 1 (250.00, Alice, Notes='Express') and Order 3 (150.00, Bob, Notes=NULL).
+        // Seed: Total > 100 keeps Order 1 (250.00, Alice/UserId=1, Notes='Express') and Order 3 (150.00, Bob/UserId=2, Notes=NULL).
         // Order 2 (75.50) is filtered out by the CTE inner WHERE.
         // Sort client-side here to keep this test focused on the bare wide-tuple projection
         // off FromCte<T>(); the in-chain OrderBy variant is covered by
@@ -378,29 +379,36 @@ internal class CrossDialectWideTupleTests
         var results = (await lt.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].OrderId, Is.EqualTo(1));
-        Assert.That(results[0].Echo, Is.EqualTo(1));
+        Assert.That(results[0].UserKey, Is.EqualTo(1));         // FK key value, not EntityRef — issue #280
         Assert.That(results[0].Total, Is.EqualTo(250.00m));
         Assert.That(results[0].Notes, Is.EqualTo("Express"));   // ordinal 6 — Item7 (last flat slot)
         Assert.That(results[0].Reorder, Is.EqualTo(1));         // ordinal 7 — Rest.Item1 (first nested slot)
+        Assert.That(results[1].UserKey, Is.EqualTo(2));         // FK key for Bob's order
         Assert.That(results[1].Notes, Is.Null);                  // ordinal 6 — IsDBNull through Item7
         Assert.That(results[1].Reorder, Is.EqualTo(3));         // ordinal 7 — Rest.Item1 for second row
 
         var pgResults = (await pg.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
         Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].UserKey, Is.EqualTo(1));
         Assert.That(pgResults[0].Notes, Is.EqualTo("Express"));
         Assert.That(pgResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(pgResults[1].UserKey, Is.EqualTo(2));
         Assert.That(pgResults[1].Notes, Is.Null);
 
         var myResults = (await my.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
         Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].UserKey, Is.EqualTo(1));
         Assert.That(myResults[0].Notes, Is.EqualTo("Express"));
         Assert.That(myResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(myResults[1].UserKey, Is.EqualTo(2));
         Assert.That(myResults[1].Notes, Is.Null);
 
         var ssResults = (await ss.ExecuteFetchAllAsync()).OrderBy(r => r.OrderId).ToList();
         Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0].UserKey, Is.EqualTo(1));
         Assert.That(ssResults[0].Notes, Is.EqualTo("Express"));
         Assert.That(ssResults[0].Reorder, Is.EqualTo(1));
+        Assert.That(ssResults[1].UserKey, Is.EqualTo(2));
         Assert.That(ssResults[1].Notes, Is.Null);
     }
 
