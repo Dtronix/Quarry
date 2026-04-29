@@ -27,7 +27,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (ORDER BY `OrderDate`) AS `RowNum` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS INT) AS [RowNum] FROM [orders]");
 
         // Verify execution — ordered by OrderDate: order 1 (2024-06-01), 2 (2024-06-15), 3 (2024-07-01)
         var results = await lt.ExecuteFetchAllAsync();
@@ -75,7 +75,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", RANK() OVER (PARTITION BY \"Status\" ORDER BY \"Total\") AS \"Rnk\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", RANK() OVER (PARTITION BY \"Status\" ORDER BY \"Total\") AS \"Rnk\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, RANK() OVER (PARTITION BY `Status` ORDER BY `Total`) AS `Rnk` FROM `orders`",
-            ss:     "SELECT [OrderId], RANK() OVER (PARTITION BY [Status] ORDER BY [Total]) AS [Rnk] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(RANK() OVER (PARTITION BY [Status] ORDER BY [Total]) AS INT) AS [Rnk] FROM [orders]");
     }
 
     [Test]
@@ -95,7 +95,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", DENSE_RANK() OVER (ORDER BY \"Total\" DESC) AS \"DRnk\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", DENSE_RANK() OVER (ORDER BY \"Total\" DESC) AS \"DRnk\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, DENSE_RANK() OVER (ORDER BY `Total` DESC) AS `DRnk` FROM `orders`",
-            ss:     "SELECT [OrderId], DENSE_RANK() OVER (ORDER BY [Total] DESC) AS [DRnk] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(DENSE_RANK() OVER (ORDER BY [Total] DESC) AS INT) AS [DRnk] FROM [orders]");
 
         // Descending order: 250 > 150 > 75.50 → ranks 1, 2, 3
         var results = await lt.ExecuteFetchAllAsync();
@@ -132,7 +132,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
-            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
     }
 
     #endregion
@@ -305,7 +305,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", COUNT(*) OVER (PARTITION BY \"Status\") AS \"Cnt\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", COUNT(*) OVER (PARTITION BY \"Status\") AS \"Cnt\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, COUNT(*) OVER (PARTITION BY `Status`) AS `Cnt` FROM `orders`",
-            ss:     "SELECT [OrderId], COUNT(*) OVER (PARTITION BY [Status]) AS [Cnt] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(COUNT(*) OVER (PARTITION BY [Status]) AS INT) AS [Cnt] FROM [orders]");
 
         // "Shipped" count = 2, "Pending" count = 1
         var results = await lt.ExecuteFetchAllAsync();
@@ -354,7 +354,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"UserId\" ORDER BY \"OrderDate\") AS \"Rnk\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"UserId\" ORDER BY \"OrderDate\") AS \"Rnk\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (PARTITION BY `Status`, `UserId` ORDER BY `OrderDate`) AS `Rnk` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (PARTITION BY [Status], [UserId] ORDER BY [OrderDate]) AS [Rnk] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER (PARTITION BY [Status], [UserId] ORDER BY [OrderDate]) AS INT) AS [Rnk] FROM [orders]");
     }
 
     [Test]
@@ -374,7 +374,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, `Total`, ROW_NUMBER() OVER (ORDER BY `OrderDate`) AS `RowNum` FROM `orders`",
-            ss:     "SELECT [OrderId], [Total], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum] FROM [orders]");
+            ss:     "SELECT [OrderId], [Total], CAST(ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS INT) AS [RowNum] FROM [orders]");
     }
 
     [Test]
@@ -394,7 +394,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\", RANK() OVER (ORDER BY \"Total\") AS \"Rnk\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"OrderDate\") AS \"RowNum\", RANK() OVER (ORDER BY \"Total\") AS \"Rnk\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (ORDER BY `OrderDate`) AS `RowNum`, RANK() OVER (ORDER BY `Total`) AS `Rnk` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS [RowNum], RANK() OVER (ORDER BY [Total]) AS [Rnk] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS INT) AS [RowNum], CAST(RANK() OVER (ORDER BY [Total]) AS INT) AS [Rnk] FROM [orders]");
     }
 
     #endregion
@@ -418,7 +418,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY \"t0\".\"UserName\" ORDER BY \"t1\".\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", ROW_NUMBER() OVER (PARTITION BY \"t0\".\"UserName\" ORDER BY \"t1\".\"Total\") AS \"RowNum\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
             mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, ROW_NUMBER() OVER (PARTITION BY `t0`.`UserName` ORDER BY `t1`.`Total`) AS `RowNum` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], ROW_NUMBER() OVER (PARTITION BY [t0].[UserName] ORDER BY [t1].[Total]) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+            ss:     "SELECT [t0].[UserName], [t1].[Total], CAST(ROW_NUMBER() OVER (PARTITION BY [t0].[UserName] ORDER BY [t1].[Total]) AS INT) AS [RowNum] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
 
         // Alice has 2 orders (250, 75.50), Bob has 1 (150)
         var results = await lt.ExecuteFetchAllAsync();
@@ -553,7 +553,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", NTILE(@p0) OVER (ORDER BY \"t1\".\"Total\") AS \"Grp\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
             pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", NTILE($1) OVER (ORDER BY \"t1\".\"Total\") AS \"Grp\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\"",
             mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, NTILE(?) OVER (ORDER BY `t1`.`Total`) AS `Grp` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId`",
-            ss:     "SELECT [t0].[UserName], [t1].[Total], NTILE(@p0) OVER (ORDER BY [t1].[Total]) AS [Grp] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
+            ss:     "SELECT [t0].[UserName], [t1].[Total], CAST(NTILE(@p0) OVER (ORDER BY [t1].[Total]) AS INT) AS [Grp] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId]");
     }
 
     #endregion
@@ -831,7 +831,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER () AS \"RowNum\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER () AS \"RowNum\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER () AS `RowNum` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER () AS [RowNum] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER () AS INT) AS [RowNum] FROM [orders]");
     }
 
     [Test]
@@ -851,7 +851,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"Status\", \"Total\" DESC) AS \"RowNum\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (ORDER BY \"Status\", \"Total\" DESC) AS \"RowNum\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (ORDER BY `Status`, `Total` DESC) AS `RowNum` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (ORDER BY [Status], [Total] DESC) AS [RowNum] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER (ORDER BY [Status], [Total] DESC) AS INT) AS [RowNum] FROM [orders]");
     }
 
     [Test]
@@ -871,7 +871,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\" WHERE \"Total\" > 100",
             pg:     "SELECT \"OrderId\", \"Total\", ROW_NUMBER() OVER (ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\" WHERE \"Total\" > 100",
             mysql:  "SELECT `OrderId`, `Total`, ROW_NUMBER() OVER (ORDER BY `Total`) AS `RowNum` FROM `orders` WHERE `Total` > 100",
-            ss:     "SELECT [OrderId], [Total], ROW_NUMBER() OVER (ORDER BY [Total]) AS [RowNum] FROM [orders] WHERE [Total] > 100");
+            ss:     "SELECT [OrderId], [Total], CAST(ROW_NUMBER() OVER (ORDER BY [Total]) AS INT) AS [RowNum] FROM [orders] WHERE [Total] > 100");
 
         // Seed data: 2 orders with Total > 100 (id=1 Total=250, id=3 Total=150)
         var results = await lt.ExecuteFetchAllAsync();
@@ -916,7 +916,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"OrderId\" ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", ROW_NUMBER() OVER (PARTITION BY \"Status\", \"OrderId\" ORDER BY \"Total\") AS \"RowNum\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, ROW_NUMBER() OVER (PARTITION BY `Status`, `OrderId` ORDER BY `Total`) AS `RowNum` FROM `orders`",
-            ss:     "SELECT [OrderId], ROW_NUMBER() OVER (PARTITION BY [Status], [OrderId] ORDER BY [Total]) AS [RowNum] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(ROW_NUMBER() OVER (PARTITION BY [Status], [OrderId] ORDER BY [Total]) AS INT) AS [RowNum] FROM [orders]");
 
         // Each partition has exactly one row since (Status, OrderId) is unique
         var results = await lt.ExecuteFetchAllAsync();
@@ -959,7 +959,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
-            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
@@ -993,7 +993,7 @@ internal class CrossDialectWindowFunctionTests
             sqlite: "SELECT \"OrderId\", NTILE(@p0) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", NTILE($1) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
-            ss:     "SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(NTILE(@p0) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(3));
