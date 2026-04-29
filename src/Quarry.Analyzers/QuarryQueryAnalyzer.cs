@@ -45,6 +45,8 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         // QRA4xx: Patterns
         new QueryInsideLoopRule(),
         new MultipleQueriesSameTableRule(),
+        new ThenByWithoutOrderByRule(),
+        new HavingWithoutGroupByRule(),
         // QRA5xx: Dialect
         new DialectOptimizationRule(),
         new SuboptimalForDialectRule(),
@@ -69,6 +71,8 @@ internal sealed class QuarryQueryAnalyzer : DiagnosticAnalyzer
         AnalyzerDiagnosticDescriptors.MutableArrayInClause,
         AnalyzerDiagnosticDescriptors.QueryInsideLoop,
         AnalyzerDiagnosticDescriptors.MultipleQueriesSameTable,
+        AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy,
+        AnalyzerDiagnosticDescriptors.HavingWithoutGroupBy,
         AnalyzerDiagnosticDescriptors.DialectOptimization,
         AnalyzerDiagnosticDescriptors.SuboptimalForDialect,
         AnalyzerDiagnosticDescriptors.UnsupportedForDialect);
