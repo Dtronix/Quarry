@@ -657,6 +657,14 @@ SELECT "OrderId", LAG("Notes") OVER (ORDER BY "OrderDate") AS "PrevNotes" FROM "
 ### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "OrderId", LAG("OrderId") OVER (ORDER BY "OrderDate") AS "PrevId" FROM "orders"
+```
+
+---
+
+### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "OrderId", LAG("Total") OVER (ORDER BY "OrderDate") AS "PrevTotal" FROM "orders"
 ```
 
@@ -4103,7 +4111,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 547 |
+| Total discovered | 549 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 104 |
-| Rendered | 443 |
+| Consolidated (deduped) | 105 |
+| Rendered | 444 |

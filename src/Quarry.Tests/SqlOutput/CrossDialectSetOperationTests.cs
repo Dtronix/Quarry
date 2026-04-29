@@ -1286,7 +1286,7 @@ internal class CrossDialectSetOperationTests
             sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" UNION ALL SELECT \"OrderId\", NTILE(@p0) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" UNION ALL SELECT \"OrderId\", NTILE($1) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` UNION ALL SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
-            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] UNION ALL SELECT [OrderId], NTILE(@p0) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders] UNION ALL SELECT [OrderId], CAST(NTILE(@p0) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders x 2 sides (UNION ALL keeps dupes)
@@ -1297,9 +1297,8 @@ internal class CrossDialectSetOperationTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
 
-        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
-        // NTILE(...) projection). SQL-string assertion above already
-        // covers the emit shape on Ss.
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
     }
 
     [Test]
@@ -1332,7 +1331,7 @@ internal class CrossDialectSetOperationTests
             sqlite: "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" WHERE \"OrderId\" > @p0 UNION ALL SELECT \"OrderId\", NTILE(@p1) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             pg:     "SELECT \"OrderId\", NTILE(2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\" WHERE \"OrderId\" > $1 UNION ALL SELECT \"OrderId\", NTILE($2) OVER (ORDER BY \"OrderDate\") AS \"Grp\" FROM \"orders\"",
             mysql:  "SELECT `OrderId`, NTILE(2) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders` WHERE `OrderId` > ? UNION ALL SELECT `OrderId`, NTILE(?) OVER (ORDER BY `OrderDate`) AS `Grp` FROM `orders`",
-            ss:     "SELECT [OrderId], NTILE(2) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], NTILE(@p1) OVER (ORDER BY [OrderDate]) AS [Grp] FROM [orders]");
+            ss:     "SELECT [OrderId], CAST(NTILE(2) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders] WHERE [OrderId] > @p0 UNION ALL SELECT [OrderId], CAST(NTILE(@p1) OVER (ORDER BY [OrderDate]) AS INT) AS [Grp] FROM [orders]");
 
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(6)); // 3 orders (all > 0) + 3 orders
@@ -1343,9 +1342,8 @@ internal class CrossDialectSetOperationTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
 
-        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
-        // NTILE(...) projection). SQL-string assertion above already
-        // covers the emit shape on Ss.
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
     }
 
     #endregion
