@@ -1898,25 +1898,51 @@ internal static class ProjectionAnalyzer
                 }
             }
 
-            // Ref<T,K>.Id access: u.Order.Id
+            // EntityRef<T,K>.Id key-only access: o.UserId.Id (issue #280).
+            // Detect the FK structurally from the property's *type symbol* — by name
+            // and arity, regardless of the column-lookup's Kind. BuildColumnInfoFromTypeSymbol
+            // can mis-classify the column as Standard when the EntityRef namespace check
+            // fails (partial generated-type resolution during discovery), and we want this
+            // branch to keep working in that case rather than falling through to
+            // TryParseNavigationChain (which produces empty clrType / wrong column name).
             if (memberAccess.Name.Identifier.Text == "Id" &&
                 memberAccess.Expression is MemberAccessExpressionSyntax nestedAccess &&
                 nestedAccess.Expression is IdentifierNameSyntax nestedId &&
                 nestedId.Identifier.Text == lambdaParameterName)
             {
                 var refPropertyName = nestedAccess.Name.Identifier.Text;
-                if (columnLookup.TryGetValue(refPropertyName, out var refColumn) &&
-                    refColumn.Kind == ColumnKind.ForeignKey)
+
+                // Pull the FK property's type symbol; unwrap Nullable<EntityRef<…>>.
+                ITypeSymbol? refType = null;
+                var refSymbol = semanticModel.GetSymbolInfo(nestedAccess).Symbol;
+                if (refSymbol is IPropertySymbol refProp)
+                    refType = refProp.Type;
+                if (refType is INamedTypeSymbol nullableWrap
+                    && nullableWrap.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T
+                    && nullableWrap.TypeArguments.Length == 1)
                 {
+                    refType = nullableWrap.TypeArguments[0];
+                }
+
+                if (refType is INamedTypeSymbol entityRefType
+                    && entityRefType.IsGenericType
+                    && entityRefType.Name == "EntityRef"
+                    && entityRefType.TypeArguments.Length == 2)
+                {
+                    var keyType = entityRefType.TypeArguments[1];
+                    var (keyIsValueType, keyReaderMethod, _) = ColumnInfo.GetTypeMetadata(keyType);
+
+                    columnLookup.TryGetValue(refPropertyName, out var refColumn);
                     return new ProjectedColumn(
                         propertyName: propertyName,
-                        columnName: refColumn.ColumnName,
-                        clrType: refColumn.ClrType,
-                        fullClrType: refColumn.FullClrType,
-                        isNullable: refColumn.IsNullable,
+                        columnName: refColumn?.ColumnName ?? refPropertyName,
+                        clrType: GetSimpleTypeName(keyType),
+                        fullClrType: keyType.ToDisplayString(),
+                        isNullable: refColumn?.IsNullable ?? false,
                         ordinal: ordinal,
-                        isValueType: refColumn.IsValueType,
-                        readerMethodName: refColumn.ReaderMethodName);
+                        isValueType: keyIsValueType,
+                        readerMethodName: keyReaderMethod,
+                        isRefKeyAccess: true);
                 }
             }
 
