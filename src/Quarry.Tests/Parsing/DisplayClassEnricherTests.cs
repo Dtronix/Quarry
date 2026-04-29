@@ -437,7 +437,7 @@ namespace App.Services
             NamingStyleKind.SnakeCase,
             new[] { new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
             Array.Empty<NavigationInfo>(), Array.Empty<IndexInfo>(), Location.None);
-        var contextInfo = new ContextInfo("AppDb", "App.Data", Generators.Sql.SqlDialect.PostgreSQL, null,
+        var contextInfo = new ContextInfo("AppDb", "App.Data", new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.PostgreSQL), null,
             new[] { fileEntity }, new[] { new EntityMapping("Files", fileEntity) }, Location.None);
         var entityRegistry = EntityRegistry.Build(ImmutableArray.Create(contextInfo), CancellationToken.None);
 
@@ -649,7 +649,7 @@ namespace App
             entityName.ToLower() + "s", NamingStyleKind.SnakeCase, cols,
             Array.Empty<NavigationInfo>(), Array.Empty<IndexInfo>(), Location.None);
         var context = new ContextInfo("AppDb", contextNamespace,
-            Generators.Sql.SqlDialect.PostgreSQL, null,
+            new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.PostgreSQL), null,
             new[] { entity }, new[] { new EntityMapping(accessorName, entity) }, Location.None);
         return EntityRegistry.Build(ImmutableArray.Create(context), CancellationToken.None);
     }
@@ -992,9 +992,9 @@ namespace App
             new[] { new ColumnInfo("Id", "id", "long", "long", false, ColumnKind.PrimaryKey, null, mods, isValueType: true) },
             Array.Empty<NavigationInfo>(), Array.Empty<IndexInfo>(), Location.None);
 
-        var ctx1 = new ContextInfo("TestDbContext", "Quarry.Tests.Samples", Generators.Sql.SqlDialect.SQLite, null,
+        var ctx1 = new ContextInfo("TestDbContext", "Quarry.Tests.Samples", new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.SQLite), null,
             new[] { userEntity }, new[] { new EntityMapping("Users", userEntity) }, Location.None);
-        var ctx2 = new ContextInfo("MyDb", "Quarry.Tests.Samples.My", Generators.Sql.SqlDialect.MySQL, null,
+        var ctx2 = new ContextInfo("MyDb", "Quarry.Tests.Samples.My", new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.MySQL), null,
             new[] { userEntity }, new[] { new EntityMapping("Users", userEntity) }, Location.None);
         var entityRegistry = EntityRegistry.Build(
             ImmutableArray.Create(ctx1, ctx2), CancellationToken.None);

@@ -3,6 +3,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Generators.Projection;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 
 namespace Quarry.Tests.Testing;
 
@@ -130,7 +131,7 @@ internal class TestCallSiteBuilder
             raw: raw,
             contextClassName: _contextClassName,
             contextNamespace: _contextNamespace ?? "",
-            dialect: _dialect,
+            dialectConfig: new GenSqlDialectConfig(_dialect),
             tableName: _tableName,
             schemaName: _schemaName,
             entity: entityRef,

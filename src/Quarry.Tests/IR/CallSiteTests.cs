@@ -6,6 +6,7 @@ using Quarry.Generators.Models;
 using Quarry.Generators.Translation;
 using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 
 namespace Quarry.Tests.IR;
 
@@ -176,8 +177,8 @@ public class CallSiteTests
         var raw = CreateRawCallSite("Where", "file.cs", 10, 5, "id1");
         var entity = EntityRef.FromEntityInfo(CreateTestEntity());
 
-        var a = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.SQLite, "users", null, entity);
-        var b = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.SQLite, "users", null, entity);
+        var a = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.SQLite), "users", null, entity);
+        var b = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.SQLite), "users", null, entity);
 
         Assert.That(a.Equals(b), Is.True);
     }
@@ -188,8 +189,8 @@ public class CallSiteTests
         var raw = CreateRawCallSite("Where", "file.cs", 10, 5, "id1");
         var entity = EntityRef.FromEntityInfo(CreateTestEntity());
 
-        var a = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.SQLite, "users", null, entity);
-        var b = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.PostgreSQL, "users", null, entity);
+        var a = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.SQLite), "users", null, entity);
+        var b = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.PostgreSQL), "users", null, entity);
 
         Assert.That(a.Equals(b), Is.False);
     }
@@ -203,7 +204,7 @@ public class CallSiteTests
     {
         var raw = CreateRawCallSite("Limit", "file.cs", 10, 5, "id1");
         var entity = EntityRef.FromEntityInfo(CreateTestEntity());
-        var bound = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.SQLite, "users", null, entity);
+        var bound = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.SQLite), "users", null, entity);
 
         var a = new TranslatedCallSite(bound);
         var b = new TranslatedCallSite(bound);
@@ -216,7 +217,7 @@ public class CallSiteTests
     {
         var raw = CreateRawCallSite("Where", "file.cs", 10, 5, "id1");
         var entity = EntityRef.FromEntityInfo(CreateTestEntity());
-        var bound = new BoundCallSite(raw, "TestContext", "TestApp", GenSqlDialect.SQLite, "users", null, entity);
+        var bound = new BoundCallSite(raw, "TestContext", "TestApp", new GenSqlDialectConfig(GenSqlDialect.SQLite), "users", null, entity);
 
         var resolvedExpr = new BinaryOpExpr(
             new ResolvedColumnExpr("\"age\""),

@@ -21,9 +21,15 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
     public string Namespace { get; }
 
     /// <summary>
+    /// The full dialect configuration (dialect identity + per-context mode flags).
+    /// Source of truth; <see cref="Dialect"/> is a convenience accessor.
+    /// </summary>
+    public SqlDialectConfig DialectConfig { get; }
+
+    /// <summary>
     /// The SQL dialect configured for this context.
     /// </summary>
-    public SqlDialect Dialect { get; }
+    public SqlDialect Dialect => DialectConfig.Dialect;
 
     /// <summary>
     /// The database schema name (e.g., "public", "dbo").
@@ -49,7 +55,7 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
     public ContextInfo(
         string className,
         string @namespace,
-        SqlDialect dialect,
+        SqlDialectConfig dialectConfig,
         string? schema,
         IReadOnlyList<EntityInfo> entities,
         IReadOnlyList<EntityMapping> entityMappings,
@@ -57,7 +63,7 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
     {
         ClassName = className;
         Namespace = @namespace;
-        Dialect = dialect;
+        DialectConfig = dialectConfig;
         Schema = schema;
         Entities = entities;
         EntityMappings = entityMappings;
@@ -70,7 +76,7 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
         if (ReferenceEquals(this, other)) return true;
         return ClassName == other.ClassName
             && Namespace == other.Namespace
-            && Dialect == other.Dialect
+            && DialectConfig == other.DialectConfig
             && Schema == other.Schema
             && EqualityHelpers.SequenceEqual(Entities, other.Entities)
             && EqualityHelpers.SequenceEqual(EntityMappings, other.EntityMappings);
@@ -80,6 +86,6 @@ internal sealed class ContextInfo : IEquatable<ContextInfo>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(ClassName, Namespace, Dialect, Schema, Entities.Count);
+        return HashCode.Combine(ClassName, Namespace, DialectConfig, Schema, Entities.Count);
     }
 }

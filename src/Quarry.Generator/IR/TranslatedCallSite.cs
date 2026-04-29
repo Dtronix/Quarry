@@ -61,6 +61,7 @@ internal sealed class TranslatedCallSite : IEquatable<TranslatedCallSite>
     public string? NonAnalyzableReason => Bound.Raw.NonAnalyzableReason;
     public string? InterceptableLocationData => Bound.Raw.InterceptableLocationData;
     public int InterceptableLocationVersion => Bound.Raw.InterceptableLocationVersion;
+    public SqlDialectConfig DialectConfig => Bound.DialectConfig;
     public SqlDialect Dialect => Bound.Dialect;
     public string? ContextClassName => Bound.ContextClassName;
     public string? ContextNamespace => Bound.ContextNamespace;

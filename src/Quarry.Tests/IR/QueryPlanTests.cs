@@ -5,6 +5,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 
 namespace Quarry.Tests.IR;
 
@@ -179,7 +180,7 @@ public class QueryPlanTests
         var plan = CreateSimpleSelectPlan();
         var raw = CreateMinimalRaw();
         var entity = Generators.IR.EntityRef.FromEntityInfo(CreateTestEntity());
-        var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
+        var bound = new BoundCallSite(raw, "Ctx", "App", new GenSqlDialectConfig(GenSqlDialect.PostgreSQL), "users", null, entity);
         var site = new TranslatedCallSite(bound);
 
         var variants1 = new Dictionary<int, AssembledSqlVariant>
@@ -203,7 +204,7 @@ public class QueryPlanTests
         var plan = CreateSimpleSelectPlan();
         var raw = CreateMinimalRaw();
         var entity = Generators.IR.EntityRef.FromEntityInfo(CreateTestEntity());
-        var bound = new BoundCallSite(raw, "Ctx", "App", GenSqlDialect.PostgreSQL, "users", null, entity);
+        var bound = new BoundCallSite(raw, "Ctx", "App", new GenSqlDialectConfig(GenSqlDialect.PostgreSQL), "users", null, entity);
         var site = new TranslatedCallSite(bound);
         var variants = new Dictionary<int, AssembledSqlVariant>();
 

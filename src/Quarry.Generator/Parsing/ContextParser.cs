@@ -86,18 +86,14 @@ internal static class ContextParser
         if (attributeData == null)
             return null;
 
-        // Extract Dialect and Schema from attribute
-        var dialect = SqlDialect.SQLite; // Default
+        // Extract dialect configuration and Schema from attribute
+        var dialectConfig = SqlDialectConfig.FromAttribute(attributeData);
         string? schema = null;
 
         foreach (var namedArg in attributeData.NamedArguments)
         {
             switch (namedArg.Key)
             {
-                case "Dialect":
-                    if (namedArg.Value.Value is int dialectValue)
-                        dialect = (SqlDialect)dialectValue;
-                    break;
                 case "Schema":
                     schema = namedArg.Value.Value as string;
                     break;
@@ -114,7 +110,7 @@ internal static class ContextParser
         return new ContextInfo(
             className: classSymbol.Name,
             @namespace: namespaceName,
-            dialect: dialect,
+            dialectConfig: dialectConfig,
             schema: schema,
             entities: entities,
             entityMappings: mappings,

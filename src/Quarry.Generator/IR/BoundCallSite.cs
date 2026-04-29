@@ -15,7 +15,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         RawCallSite raw,
         string contextClassName,
         string contextNamespace,
-        SqlDialect dialect,
+        SqlDialectConfig dialectConfig,
         string tableName,
         string? schemaName,
         EntityRef entity,
@@ -29,7 +29,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         Raw = raw;
         ContextClassName = contextClassName;
         ContextNamespace = contextNamespace;
-        Dialect = dialect;
+        DialectConfig = dialectConfig;
         TableName = tableName;
         SchemaName = schemaName;
         Entity = entity;
@@ -47,7 +47,12 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
     // Resolved bindings
     public string ContextClassName { get; }
     public string ContextNamespace { get; }
-    public SqlDialect Dialect { get; }
+
+    /// <summary>Full dialect configuration; source of truth for dialect identity + per-context mode flags.</summary>
+    public SqlDialectConfig DialectConfig { get; }
+
+    /// <summary>Convenience accessor for the dialect identity.</summary>
+    public SqlDialect Dialect => DialectConfig.Dialect;
     public string TableName { get; }
     public string? SchemaName { get; }
 
@@ -80,7 +85,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             raw: newRaw,
             contextClassName: ContextClassName,
             contextNamespace: ContextNamespace,
-            dialect: Dialect,
+            dialectConfig: DialectConfig,
             tableName: TableName,
             schemaName: SchemaName,
             entity: Entity,
@@ -104,7 +109,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
             raw: Raw,
             contextClassName: ContextClassName,
             contextNamespace: ContextNamespace,
-            dialect: Dialect,
+            dialectConfig: DialectConfig,
             tableName: TableName,
             schemaName: SchemaName,
             entity: Entity,
@@ -123,7 +128,7 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
         return Raw.Equals(other.Raw)
             && ContextClassName == other.ContextClassName
             && ContextNamespace == other.ContextNamespace
-            && Dialect == other.Dialect
+            && DialectConfig == other.DialectConfig
             && TableName == other.TableName
             && SchemaName == other.SchemaName
             && Entity.Equals(other.Entity)
@@ -139,6 +144,6 @@ internal sealed class BoundCallSite : IEquatable<BoundCallSite>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Raw.GetHashCode(), ContextClassName, Dialect, TableName);
+        return HashCode.Combine(Raw.GetHashCode(), ContextClassName, DialectConfig, TableName);
     }
 }
