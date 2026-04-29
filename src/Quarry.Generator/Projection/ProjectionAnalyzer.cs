@@ -441,7 +441,11 @@ internal static class ProjectionAnalyzer
             }
         }
 
-        // Ref<T,K>.Id access: u.OrderId.Id
+        // EntityRef<T,K>.Id key-only access: u.UserId.Id (issue #280).
+        // Stash the FK property name in ColumnName so BuildProjection's enrichment
+        // can locate the FK column in the entity registry by name. IsRefKeyAccess
+        // tells enrichment to copy the key type (TKey) and suppress the
+        // EntityRef wrap that ordinary FK column projections produce.
         if (memberAccess.Name.Identifier.Text == "Id" &&
             memberAccess.Expression is MemberAccessExpressionSyntax nestedAccess &&
             nestedAccess.Expression is IdentifierNameSyntax nestedId)
@@ -450,16 +454,15 @@ internal static class ProjectionAnalyzer
             if (perParamLookup.TryGetValue(paramName, out var info))
             {
                 var refPropertyName = nestedAccess.Name.Identifier.Text;
-                // Placeholder for FK reference
                 return new ProjectedColumn(
                     propertyName: propertyName,
-                    columnName: "",
+                    columnName: refPropertyName,
                     clrType: "",
                     fullClrType: "",
                     isNullable: false,
                     ordinal: ordinal,
                     tableAlias: info.Alias,
-                    isForeignKey: true);
+                    isRefKeyAccess: true);
             }
         }
 
