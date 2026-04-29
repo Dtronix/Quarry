@@ -810,6 +810,10 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
+                // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; flag int-typed
+                // window-function projections so GenerateColumnList wraps them with CAST(... AS INT)
+                // on Ss. See #274.
+                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
                 var column = new ProjectedColumn(
                     propertyName: "Value",
                     columnName: "",
@@ -820,7 +824,8 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true,
-                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    requiresSqlServerIntCast: requiresSqlServerIntCast);
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, aggregateClrType, new[] { column });
             }
@@ -955,6 +960,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
+                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
+                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
 
                 // Extract the table alias from the first column argument (e.g., o.Total → "t1")
                 // so enrichment can resolve unresolved types from entity column metadata.
@@ -980,7 +987,8 @@ internal static class ProjectionAnalyzer
                     isAggregateFunction: true,
                     isValueType: true,
                     readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
-                    tableAlias: tableAlias);
+                    tableAlias: tableAlias,
+                    requiresSqlServerIntCast: requiresSqlServerIntCast);
             }
         }
 
@@ -1771,6 +1779,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
+                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
+                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
                 var column = new ProjectedColumn(
                     propertyName: "Value", // Scalar result
                     columnName: "",
@@ -1781,7 +1791,8 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true, // Aggregate results are always value types
-                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    requiresSqlServerIntCast: requiresSqlServerIntCast);
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, resultType, new[] { column });
             }
@@ -1954,6 +1965,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
+                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
+                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
                 return new ProjectedColumn(
                     propertyName: propertyName,
                     columnName: "",
@@ -1965,7 +1978,8 @@ internal static class ProjectionAnalyzer
                     sqlExpression: sqlExpr,
                     isAggregateFunction: true,
                     isValueType: true, // Aggregate results are always value types
-                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType));
+                    readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    requiresSqlServerIntCast: requiresSqlServerIntCast);
             }
 
             // Sql.Raw specifically must fail loudly — the generic type-info fallback below would

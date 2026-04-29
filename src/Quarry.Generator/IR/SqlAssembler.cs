@@ -1353,7 +1353,13 @@ internal static class SqlAssembler
     {
         if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
         {
-            sb.Append(SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset));
+            var rendered = SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset);
+            // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; SqlDataReader.GetInt32
+            // does not auto-narrow. ProjectionAnalyzer flags int-typed window-function projections
+            // so the rendered expression is wrapped server-side, letting GetInt32 succeed. See #274.
+            if (col.RequiresSqlServerIntCast && dialect == SqlDialect.SqlServer)
+                rendered = $"CAST({rendered} AS INT)";
+            sb.Append(rendered);
             return;
         }
         // The placeholder analysis path for non-joined CTE post-Select chains assigns
