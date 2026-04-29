@@ -8,11 +8,14 @@ namespace Quarry.Generators.Sql;
 /// Generator-internal carrier; runtime code consumes <see cref="SqlDialect"/>
 /// directly.
 /// </summary>
-internal sealed record SqlDialectConfig(SqlDialect Dialect)
+internal sealed record SqlDialectConfig(
+    SqlDialect Dialect,
+    bool MySqlBackslashEscapes = true)
 {
     public static SqlDialectConfig FromAttribute(AttributeData attribute)
     {
         var dialect = SqlDialect.SQLite;
+        var mysqlBackslashEscapes = true;
 
         foreach (var named in attribute.NamedArguments)
         {
@@ -22,9 +25,13 @@ internal sealed record SqlDialectConfig(SqlDialect Dialect)
                     if (named.Value.Value is int dialectValue)
                         dialect = (SqlDialect)dialectValue;
                     break;
+                case "MySqlBackslashEscapes":
+                    if (named.Value.Value is bool b)
+                        mysqlBackslashEscapes = b;
+                    break;
             }
         }
 
-        return new SqlDialectConfig(dialect);
+        return new SqlDialectConfig(dialect, mysqlBackslashEscapes);
     }
 }
