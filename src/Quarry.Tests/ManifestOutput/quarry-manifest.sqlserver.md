@@ -3947,7 +3947,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 514 |
+| Total discovered | 517 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 89 |
-| Rendered | 425 |
+| Rendered | 428 |
