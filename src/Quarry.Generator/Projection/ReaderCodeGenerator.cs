@@ -35,7 +35,13 @@ internal static class ReaderCodeGenerator
             if (!string.IsNullOrEmpty(column.SqlExpression))
             {
                 // Computed expression or aggregate
-                sb.Append(SqlFormatting.QuoteSqlExpression(column.SqlExpression, dialect));
+                var rendered = SqlFormatting.QuoteSqlExpression(column.SqlExpression, dialect);
+                // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; SqlDataReader.GetInt32
+                // does not auto-narrow. ProjectionAnalyzer flags int-typed window-function projections
+                // so the rendered expression is wrapped server-side, letting GetInt32 succeed. See #274.
+                if (column.RequiresSqlServerIntCast && dialect == SqlDialect.SqlServer)
+                    rendered = $"CAST({rendered} AS INT)";
+                sb.Append(rendered);
                 if (!string.IsNullOrEmpty(column.Alias))
                 {
                     sb.Append(" AS ");
@@ -334,6 +340,10 @@ internal static class ReaderCodeGenerator
                 // Aggregate or computed expression — resolve {identifier} placeholders
                 // to dialect-quoted form, then escape for C# string literal.
                 var resolved = SqlFormatting.QuoteSqlExpression(column.SqlExpression!, dialect);
+                // Match the wrap applied in GenerateColumnList so dynamic-SQL paths emit the
+                // same shape as the static SELECT list. See #274.
+                if (column.RequiresSqlServerIntCast && dialect == SqlDialect.SqlServer)
+                    resolved = $"CAST({resolved} AS INT)";
                 var escapedExpr = resolved!.Replace("\"", "\\\"");
                 sb.Append($"\"{escapedExpr}\"");
             }
