@@ -30,32 +30,28 @@ public sealed class ThenByToOrderByCodeFix : CodeFixProvider
         var memberAccess = node.AncestorsAndSelf().OfType<MemberAccessExpressionSyntax>().FirstOrDefault();
         if (memberAccess == null) return;
 
-        var currentName = memberAccess.Name.Identifier.Text;
-        var newName = currentName switch
-        {
-            "ThenBy" => "OrderBy",
-            "ThenByDescending" => "OrderByDescending",
-            _ => null
-        };
-        if (newName == null) return;
+        if (memberAccess.Name.Identifier.Text != "ThenBy") return;
 
         context.RegisterCodeFix(
             CodeAction.Create(
-                $"Replace {currentName} with {newName}",
-                ct => ReplaceThenByAsync(context.Document, memberAccess, newName, ct),
+                "Replace ThenBy with OrderBy",
+                ct => ReplaceThenByAsync(context.Document, memberAccess, ct),
                 equivalenceKey: "QRA403_ThenByToOrderBy"),
             diagnostic);
     }
 
     private static async Task<Document> ReplaceThenByAsync(
-        Document document, MemberAccessExpressionSyntax memberAccess, string newName, CancellationToken cancellationToken)
+        Document document, MemberAccessExpressionSyntax memberAccess, CancellationToken cancellationToken)
     {
         var root = await document.GetSyntaxRootAsync(cancellationToken).ConfigureAwait(false);
         if (root == null) return document;
 
-        var newMemberAccess = memberAccess.WithName(
-            SyntaxFactory.IdentifierName(newName).WithTriviaFrom(memberAccess.Name));
+        // Use WithIdentifier on the existing Name node so that GenericNameSyntax
+        // (e.g. .ThenBy<TKey>(...)) preserves its TypeArgumentList and trivia.
+        var newName = memberAccess.Name.WithIdentifier(
+            SyntaxFactory.Identifier("OrderBy").WithTriviaFrom(memberAccess.Name.Identifier));
 
+        var newMemberAccess = memberAccess.WithName(newName);
         var newRoot = root.ReplaceNode(memberAccess, newMemberAccess);
         return document.WithSyntaxRoot(newRoot);
     }

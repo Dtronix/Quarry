@@ -84,35 +84,11 @@ public class PatternRuleTests
     }
 
     [Test]
-    public void QRA403_ThenByDescendingWithoutOrderBy_Reports()
-    {
-        var rule = new ThenByWithoutOrderByRule();
-        var context = CreateContextFromSource(
-            "class C { void M(dynamic db) { db.Users().{|ThenByDescending|}(x => x.Id); } }",
-            "ThenByDescending",
-            InterceptorKind.ThenBy);
-        var diagnostics = rule.Analyze(context).ToList();
-        Assert.That(diagnostics, Has.Count.EqualTo(1));
-    }
-
-    [Test]
     public void QRA403_OrderByThenBy_NoReport()
     {
         var rule = new ThenByWithoutOrderByRule();
         var context = CreateContextFromSource(
             "class C { void M(dynamic db) { db.Users().OrderBy(x => x.Name).{|ThenBy|}(x => x.Id); } }",
-            "ThenBy",
-            InterceptorKind.ThenBy);
-        var diagnostics = rule.Analyze(context).ToList();
-        Assert.That(diagnostics, Is.Empty);
-    }
-
-    [Test]
-    public void QRA403_OrderByDescendingThenBy_NoReport()
-    {
-        var rule = new ThenByWithoutOrderByRule();
-        var context = CreateContextFromSource(
-            "class C { void M(dynamic db) { db.Users().OrderByDescending(x => x.Name).{|ThenBy|}(x => x.Id); } }",
             "ThenBy",
             InterceptorKind.ThenBy);
         var diagnostics = rule.Analyze(context).ToList();
@@ -137,6 +113,36 @@ public class PatternRuleTests
         var rule = new ThenByWithoutOrderByRule();
         var context = CreateContextFromSource(
             "class C { void M(dynamic db) { db.With<int>(null).FromCte<int>().{|ThenBy|}(x => x.Id); } }",
+            "ThenBy",
+            InterceptorKind.ThenBy);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void QRA403_PostCte_InnerOrderByInArgument_StillReports()
+    {
+        // The inner OrderBy is on the argument to With<T>(...), not in the receiver chain
+        // of the outer ThenBy. The outer chain has no anchor, so the rule must still fire.
+        // This guards the documented "false positives across method-call argument boundaries"
+        // semantic from plan.md.
+        var rule = new ThenByWithoutOrderByRule();
+        var context = CreateContextFromSource(
+            "class C { void M(dynamic db, dynamic inner) { db.With<int>(inner.OrderBy(x => x.Id)).FromCte<int>().{|ThenBy|}(x => x.Id); } }",
+            "ThenBy",
+            InterceptorKind.ThenBy);
+        var diagnostics = rule.Analyze(context).ToList();
+        Assert.That(diagnostics, Has.Count.EqualTo(1));
+    }
+
+    [Test]
+    public void QRA403_GenericThenBy_StillReports()
+    {
+        // .ThenBy<int>(...) — explicit type argument on the call site. The rule must still
+        // fire and the diagnostic must locate on the Name (which is a GenericNameSyntax here).
+        var rule = new ThenByWithoutOrderByRule();
+        var context = CreateContextFromSource(
+            "class C { void M(dynamic db) { db.Users().{|ThenBy|}<int>(x => x.Id); } }",
             "ThenBy",
             InterceptorKind.ThenBy);
         var diagnostics = rule.Analyze(context).ToList();

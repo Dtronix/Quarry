@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #283
 pr:
@@ -42,4 +42,4 @@ Suggested fix: add two analyzer diagnostics in `src/Quarry.Analyzers/`. Both rul
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | 2026-04-29 | | INTAKE: created worktree/branch, recorded baseline (analyzer tests green; Quarry.Tests has pre-existing QRY900 build failure on master). DESIGN: confirmed QRA403/QRA404 IDs, Warning severity, set-op chains flagged, ThenBy→OrderBy code fix only. Rebased on origin/master to pick up #287 (now at 3be1cf2). Entering PLAN. |
+| 1 | 2026-04-29 | 2026-04-29 | INTAKE: created worktree/branch, recorded baseline (analyzer tests green; Quarry.Tests has pre-existing QRY900 build failure on master). DESIGN: confirmed QRA403/QRA404 IDs, Warning severity, set-op chains flagged, ThenBy→OrderBy code fix only. Rebased on origin/master to pick up #287 (now at 3be1cf2). PLAN: 2-phase plan written. IMPLEMENT: phase 1 (a6ca088 — descriptors+rules+13 tests, 141 pass), phase 2 (527687d — code fix + 5 tests, 146 pass). Entering REVIEW. |

@@ -6,15 +6,13 @@ using Quarry.Generators.Models;
 namespace Quarry.Analyzers.Rules.Patterns;
 
 /// <summary>
-/// QRA403: Detects ThenBy/ThenByDescending called without a preceding OrderBy/OrderByDescending
-/// in the same fluent chain.
+/// QRA403: Detects ThenBy called without a preceding OrderBy in the same fluent chain.
+/// Quarry uses an ascending/descending Direction parameter on a single OrderBy/ThenBy
+/// method, so the anchor and target method names are each single-valued.
 /// </summary>
 internal sealed class ThenByWithoutOrderByRule : IQueryAnalysisRule
 {
-    private static readonly HashSet<string> AnchorMethods = new()
-    {
-        "OrderBy", "OrderByDescending"
-    };
+    private const string AnchorMethod = "OrderBy";
 
     public string RuleId => "QRA403";
     public DiagnosticDescriptor Descriptor => AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy;
@@ -28,18 +26,15 @@ internal sealed class ThenByWithoutOrderByRule : IQueryAnalysisRule
             outer.Expression is not MemberAccessExpressionSyntax outerMember)
             yield break;
 
-        var methodName = outerMember.Name.Identifier.Text;
-
-        // Walk DOWN the receiver chain looking for an OrderBy/OrderByDescending anchor.
         SyntaxNode? current = outerMember.Expression;
         while (current is InvocationExpressionSyntax invocation &&
                invocation.Expression is MemberAccessExpressionSyntax memberAccess)
         {
-            if (AnchorMethods.Contains(memberAccess.Name.Identifier.Text))
+            if (memberAccess.Name.Identifier.Text == AnchorMethod)
                 yield break;
             current = memberAccess.Expression;
         }
 
-        yield return Diagnostic.Create(Descriptor, outerMember.Name.GetLocation(), methodName);
+        yield return Diagnostic.Create(Descriptor, outerMember.Name.GetLocation());
     }
 }

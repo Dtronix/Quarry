@@ -3,6 +3,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using Quarry.Analyzers.CodeFixes;
 
@@ -156,7 +157,7 @@ public class CodeFixTests
     }
 
     [Test]
-    public async Task ThenByToOrderByCodeFix_RegistersCodeFix_ThenBy()
+    public async Task ThenByToOrderByCodeFix_RegistersCodeFix()
     {
         var fix = new ThenByToOrderByCodeFix();
         var source = "class C { void M(dynamic db) { db.Users().ThenBy(x => x.Id); } }";
@@ -170,9 +171,9 @@ public class CodeFixTests
         var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy;
         var root = await tree.GetRootAsync();
         var memberAccess = root.DescendantNodes()
-            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax>()
+            .OfType<MemberAccessExpressionSyntax>()
             .First(m => m.Name.Identifier.Text == "ThenBy");
-        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation(), "ThenBy");
+        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation());
 
         var actions = new List<CodeAction>();
         var context = new CodeFixContext(document, diagnostic,
@@ -181,34 +182,6 @@ public class CodeFixTests
         await fix.RegisterCodeFixesAsync(context);
         Assert.That(actions, Has.Count.EqualTo(1));
         Assert.That(actions[0].Title, Is.EqualTo("Replace ThenBy with OrderBy"));
-    }
-
-    [Test]
-    public async Task ThenByToOrderByCodeFix_RegistersCodeFix_ThenByDescending()
-    {
-        var fix = new ThenByToOrderByCodeFix();
-        var source = "class C { void M(dynamic db) { db.Users().ThenByDescending(x => x.Id); } }";
-        var tree = CSharpSyntaxTree.ParseText(source);
-
-        var workspace = new AdhocWorkspace();
-        var project = workspace.AddProject("TestProject", LanguageNames.CSharp);
-        project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
-        var document = project.AddDocument("Test.cs", SourceText.From(source));
-
-        var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy;
-        var root = await tree.GetRootAsync();
-        var memberAccess = root.DescendantNodes()
-            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax>()
-            .First(m => m.Name.Identifier.Text == "ThenByDescending");
-        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation(), "ThenByDescending");
-
-        var actions = new List<CodeAction>();
-        var context = new CodeFixContext(document, diagnostic,
-            (action, _) => actions.Add(action), default);
-
-        await fix.RegisterCodeFixesAsync(context);
-        Assert.That(actions, Has.Count.EqualTo(1));
-        Assert.That(actions[0].Title, Is.EqualTo("Replace ThenByDescending with OrderByDescending"));
     }
 
     [Test]
@@ -226,9 +199,9 @@ public class CodeFixTests
         var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy;
         var root = await tree.GetRootAsync();
         var memberAccess = root.DescendantNodes()
-            .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax>()
+            .OfType<MemberAccessExpressionSyntax>()
             .First(m => m.Name.Identifier.Text == "ThenBy");
-        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation(), "ThenBy");
+        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation());
 
         var actions = new List<CodeAction>();
         var context = new CodeFixContext(document, diagnostic,
@@ -241,6 +214,41 @@ public class CodeFixTests
         var newText = (await newDoc.GetTextAsync()).ToString();
 
         Assert.That(newText, Does.Contain(".OrderBy(x => x.Id)"));
+        Assert.That(newText, Does.Not.Contain("ThenBy"));
+    }
+
+    [Test]
+    public async Task ThenByToOrderByCodeFix_GenericName_PreservesTypeArguments()
+    {
+        // Guards against silently dropping the explicit TypeArgumentList on the GenericNameSyntax
+        // form (.ThenBy<int>(...)). The fix must rewrite only the identifier, not the whole name.
+        var fix = new ThenByToOrderByCodeFix();
+        var source = "class C { void M(dynamic db) { db.Users().ThenBy<int>(x => x.Id); } }";
+        var tree = CSharpSyntaxTree.ParseText(source);
+
+        var workspace = new AdhocWorkspace();
+        var project = workspace.AddProject("TestProject", LanguageNames.CSharp);
+        project = project.AddMetadataReference(MetadataReference.CreateFromFile(typeof(object).Assembly.Location));
+        var document = project.AddDocument("Test.cs", SourceText.From(source));
+
+        var descriptor = Quarry.Analyzers.AnalyzerDiagnosticDescriptors.ThenByWithoutOrderBy;
+        var root = await tree.GetRootAsync();
+        var memberAccess = root.DescendantNodes()
+            .OfType<MemberAccessExpressionSyntax>()
+            .First(m => m.Name.Identifier.Text == "ThenBy");
+        var diagnostic = Diagnostic.Create(descriptor, memberAccess.Name.GetLocation());
+
+        var actions = new List<CodeAction>();
+        var context = new CodeFixContext(document, diagnostic,
+            (action, _) => actions.Add(action), default);
+
+        await fix.RegisterCodeFixesAsync(context);
+        var operations = await actions[0].GetOperationsAsync(default);
+        var applyChanges = operations.OfType<ApplyChangesOperation>().First();
+        var newDoc = applyChanges.ChangedSolution.GetDocument(document.Id)!;
+        var newText = (await newDoc.GetTextAsync()).ToString();
+
+        Assert.That(newText, Does.Contain(".OrderBy<int>(x => x.Id)"));
         Assert.That(newText, Does.Not.Contain("ThenBy"));
     }
 }
