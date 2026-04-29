@@ -2705,6 +2705,10 @@ public class GlobalOrderDto
             "Outer carrier must copy inner-CTE P0 parameter when DTO is in global namespace");
     }
 
+    #endregion
+
+    #region Post-CTE chain-continuation interceptor shape (issue #281)
+
     [Test]
     public void Cte_FromCte_OrderBy_EmitsWellFormedInterceptor()
     {
@@ -2761,6 +2765,165 @@ public static class Queries
         // anywhere in the generated source.
         Assert.That(code, Does.Not.Contain("Order<Order>"),
             "Malformed `Order<Order>` interceptor signature must not regress (issue #281)");
+
+        // Direct CS0308 regression check: re-add the generated trees to the original
+        // compilation and look for the literal bug symptom from #281 — CS0308 (non-
+        // generic type used with type arguments) in any generated file. The shape
+        // assertions above are indirect; this one would have caught the bug even if
+        // the emitter produced a different malformed shape that still tripped CS0308.
+        // We intentionally do NOT flag every error: the test compilation is missing
+        // the `<InterceptorsNamespaces>` MSBuild config (CS9137) and assembly refs
+        // for non-essential types like System.ComponentModel.Primitives (CS0012);
+        // those are harness-config issues, not generator-output bugs.
+        var combined = compilation.AddSyntaxTrees(result.GeneratedTrees);
+        var cs0308 = combined.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error && d.Id == "CS0308")
+            .Where(d => d.Location.SourceTree != null
+                && result.GeneratedTrees.Any(g => g.FilePath == d.Location.SourceTree.FilePath))
+            .ToList();
+        Assert.That(cs0308, Is.Empty,
+            "Generated source must not contain CS0308 (the literal symptom of issue #281). Found: " +
+            string.Join("; ", cs0308.Select(d => d.Id + " at " + d.Location + ": " + d.GetMessage())));
+    }
+
+    [Test]
+    public void Cte_FromCte_AllChainContinuations_BindAndEmitCleanly()
+    {
+        // Coverage for the rest of the IEntityAccessor surface added by issue #281:
+        // ThenBy, Having, and the six direct + six lambda set-op overloads. Issue #281
+        // tests above exercise OrderBy/Limit/Offset directly, but every member of the
+        // expanded surface is at risk of regressing the same malformed-interceptor bug
+        // if `IsEntityAccessorType` / `BuildReceiverType` ever stop matching the new
+        // builderTypeName="IEntityAccessor" path. One omnibus snippet exercises every
+        // post-FromCte<T>() form; CS0308 in any generated interceptor would fail the
+        // recompile check.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        // ThenBy directly off FromCte<T>() (semantically dubious without a prior OrderBy,
+        // but this is a binding/emission test, not a SQL-correctness test).
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .ThenBy(o => o.OrderId)
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+
+        // Having directly off FromCte<T>().
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Having(o => o.Total > 0)
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+
+        // Direct-form set-ops: feed an external IQueryBuilder<T> as the operand.
+        // Use Orders() to construct the operand so the chain is fully-typed.
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Union(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .UnionAll(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Intersect(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .IntersectAll(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Except(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .ExceptAll(db.Orders().Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+
+        // Lambda-form set-ops: build the operand off the IEntityAccessor<T> param.
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Union(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .UnionAll(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Intersect(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .IntersectAll(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .Except(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+        await db.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .ExceptAll(orders => orders.Where(o => o.Total > 100))
+            .Select(o => o.OrderId)
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, _) = RunGeneratorWithDiagnostics(compilation);
+
+        // Combined-compilation check: with the generator-emitted entity classes and
+        // interceptors added to the original compilation, the user snippet must bind
+        // and the generated interceptors must compile. Filter to two error classes:
+        //   - CS0308 anywhere in generated source (the literal #281 bug symptom)
+        //   - CS1061 / CS0117 in the user snippet (would mean an expected method on
+        //     IEntityAccessor<T> is missing — a regression of the new surface)
+        // Test-harness config artifacts (CS9137 missing InterceptorsNamespaces, CS0012
+        // missing System.ComponentModel.Primitives) are intentionally tolerated.
+        var combined = compilation.AddSyntaxTrees(result.GeneratedTrees);
+        var allErrors = combined.GetDiagnostics()
+            .Where(d => d.Severity == DiagnosticSeverity.Error)
+            .ToList();
+
+        var cs0308 = allErrors
+            .Where(d => d.Id == "CS0308"
+                && d.Location.SourceTree != null
+                && result.GeneratedTrees.Any(g => g.FilePath == d.Location.SourceTree.FilePath))
+            .ToList();
+        Assert.That(cs0308, Is.Empty,
+            "Generated interceptors for ThenBy/Having/set-ops on IEntityAccessor must not contain CS0308. Found: " +
+            string.Join("; ", cs0308.Select(d => d.Id + " at " + d.Location + ": " + d.GetMessage())));
+
+        var inputTree = compilation.SyntaxTrees.First();
+        var bindingErrors = allErrors
+            .Where(d => (d.Id == "CS1061" || d.Id == "CS0117")
+                && d.Location.SourceTree == inputTree)
+            .ToList();
+        Assert.That(bindingErrors, Is.Empty,
+            "User snippet must bind every chain-continuation method against IEntityAccessor<T>. Found: " +
+            string.Join("; ", bindingErrors.Select(d => d.Id + ": " + d.GetMessage())));
     }
 
     #endregion

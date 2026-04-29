@@ -5,11 +5,13 @@ namespace Quarry;
 /// Provides chain-starting methods for queries, deletes, updates, and inserts.
 /// </summary>
 /// <remarks>
-/// This is a slim interface — it does NOT extend <see cref="IQueryBuilder{T}"/>.
-/// Chain-continuation methods (OrderBy, ThenBy, Limit, Offset, Having, set operations)
-/// are exposed here so the natural fluent syntax compiles in chains where the static
-/// type is <see cref="IEntityAccessor{T}"/> (e.g., directly off <c>FromCte&lt;T&gt;()</c>).
-/// Calling any of these transitions the chain to <see cref="IQueryBuilder{T}"/>.
+/// Distinct from <see cref="IQueryBuilder{T}"/>: this interface exposes chain
+/// starters (Where, Select, Join, GroupBy, ...) plus modification entry points
+/// (Delete, Update, Insert, InsertBatch). It also re-exposes the chain-continuation
+/// methods (OrderBy, ThenBy, Limit, Offset, Having, set operations) so the natural
+/// fluent syntax compiles in chains where the static type is
+/// <see cref="IEntityAccessor{T}"/> (e.g., directly off <c>FromCte&lt;T&gt;()</c>);
+/// calling any of those transitions the chain to <see cref="IQueryBuilder{T}"/>.
 /// Default implementations throw <see cref="InvalidOperationException"/> so that
 /// generated carrier classes can implement this interface without providing stubs
 /// for every method — only intercepted methods need real implementations.

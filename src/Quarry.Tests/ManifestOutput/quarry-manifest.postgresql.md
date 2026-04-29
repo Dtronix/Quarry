@@ -3972,6 +3972,14 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 ---
 
+### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ExecuteFetchAllAsync()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "OrderId", "Total", "Status", "Priority", "OrderDate", "Notes", "OrderId" FROM "Order" ORDER BY "Total" DESC
+```
+
+---
+
 ### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -4095,7 +4103,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 546 |
+| Total discovered | 547 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 104 |
-| Rendered | 442 |
+| Rendered | 443 |
