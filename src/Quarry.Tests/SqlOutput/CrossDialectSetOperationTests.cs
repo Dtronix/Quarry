@@ -1297,9 +1297,8 @@ internal class CrossDialectSetOperationTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
 
-        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
-        // NTILE(...) projection). SQL-string assertion above already
-        // covers the emit shape on Ss.
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
     }
 
     [Test]
@@ -1343,9 +1342,8 @@ internal class CrossDialectSetOperationTests
         var myResults = await my.ExecuteFetchAllAsync();
         Assert.That(myResults, Has.Count.EqualTo(6));
 
-        // ss execution skipped — see #274 (BIGINT-vs-Int32 narrow on
-        // NTILE(...) projection). SQL-string assertion above already
-        // covers the emit shape on Ss.
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
     }
 
     #endregion

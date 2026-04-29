@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: DESIGN
+phase: REVIEW
 status: active
 issue: #274
 pr:
 session: 1
 phases-total: 5
-phases-complete: 0
+phases-complete: 5
 
 ## Problem Statement
 SQL Server window functions (`ROW_NUMBER`, `DENSE_RANK`, `NTILE`, `COUNT`-over-partition, etc.) return `BIGINT`, but the Quarry generator emits `SqlDataReader.GetInt32(i)` for `int`-typed projections. `Microsoft.Data.SqlClient.SqlDataReader.GetInt32` does not auto-narrow from BIGINT and throws `InvalidCastException`. PostgreSQL silently narrows, so the bug manifests only on Ss execution.
@@ -41,4 +41,4 @@ Baseline test status (this session): all green — Quarry.Tests 3035, Quarry.Ana
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|-------------|-----------|---------|
-| 1 | 2026-04-29 INTAKE |  | Created worktree, loaded issue #274, ran baseline tests (all green). |
+| 1 | 2026-04-29 INTAKE | 2026-04-29 IMPLEMENT | Created worktree, loaded issue #274, ran baseline (all green). DESIGN settled hybrid CAST(... AS INT) on Ss only. PLAN at plan.md (5 phases). IMPLEMENT all 5 phases shipped: model flag, GenerateColumnList wrap, SqlAssembler wrap (production path), ProjectionAnalyzer flag-set at 4 sites, Ss assertions + manifest updated, 9 Ss execute sites un-skipped. Full suite 3,373 tests green including Testcontainers MsSql exec. Moving to REVIEW. |
