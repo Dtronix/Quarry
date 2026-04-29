@@ -4,10 +4,18 @@ using Quarry.Generators.Projection;
 namespace Quarry.Tests;
 
 /// <summary>
-/// Tests that <see cref="ReaderCodeGenerator.GenerateColumnList"/> wraps the rendered SQL
-/// expression with <c>CAST(... AS INT)</c> on SQL Server when a <see cref="ProjectedColumn"/>
-/// sets <c>RequiresSqlServerIntCast = true</c>, and leaves the expression unwrapped on every
-/// other dialect. See issue #274.
+/// Tests for the SQL Server int-cast wrap on window-function projections (#274).
+///
+/// Two layers are covered:
+///   • Public helper methods <see cref="ReaderCodeGenerator.GenerateColumnList"/> and
+///     <see cref="ReaderCodeGenerator.GenerateColumnNamesArray"/> — direct unit tests
+///     against constructed <see cref="ProjectedColumn"/> instances.
+///   • The production SELECT-clause emit path
+///     (<c>SqlAssembler.AppendProjectionColumnSql</c>) — driven end-to-end via
+///     <see cref="QueryTestHarness"/> + <c>Prepare().ToDiagnostics()</c>. Cross-dialect
+///     tests in <c>CrossDialectWindowFunctionTests</c> exercise this path broadly; the
+///     production-path test here pins the wrap behaviour specifically as a regression
+///     anchor for the cast logic itself.
 /// </summary>
 [TestFixture]
 public class SqlServerWindowIntCastTests
@@ -132,5 +140,52 @@ public class SqlServerWindowIntCastTests
 
         Assert.That(arr, Does.Not.Contain("CAST("),
             $"Dialect {dialect} must not wrap with CAST in the column-names array");
+    }
+
+    /// <summary>
+    /// Production-path regression: a generated chain that selects ROW_NUMBER OVER produces
+    /// CAST(ROW_NUMBER() OVER (...) AS INT) on Ss and bare ROW_NUMBER on every other dialect.
+    /// Drives <c>SqlAssembler.AppendProjectionColumnSql</c> end-to-end via the test harness.
+    /// </summary>
+    [Test]
+    public async Task ProductionPath_RowNumber_OnSqlServer_WrapsWithCast()
+    {
+        await using var t = await Quarry.Tests.QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var ss = Ss.Orders().Where(o => true)
+            .Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.OrderDate))))
+            .Prepare();
+
+        var ssDiag = ss.ToDiagnostics();
+        Assert.That(ssDiag.Sql, Does.Contain("CAST(ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS INT) AS [RowNum]"),
+            "Production SELECT-clause emit on Ss must wrap the int-typed window projection with CAST(... AS INT)");
+    }
+
+    /// <summary>
+    /// Production-path regression: the same chain on PostgreSQL/MySQL/SQLite must NOT include CAST.
+    /// </summary>
+    [Test]
+    public async Task ProductionPath_RowNumber_OnNonSqlServer_DoesNotWrap()
+    {
+        await using var t = await Quarry.Tests.QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var pg = Pg.Orders().Where(o => true)
+            .Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.OrderDate))))
+            .Prepare();
+        var my = My.Orders().Where(o => true)
+            .Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.OrderDate))))
+            .Prepare();
+        var lt = Lite.Orders().Where(o => true)
+            .Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.OrderDate))))
+            .Prepare();
+
+        Assert.That(pg.ToDiagnostics().Sql, Does.Not.Contain("CAST("),
+            "PostgreSQL emit must not include CAST");
+        Assert.That(my.ToDiagnostics().Sql, Does.Not.Contain("CAST("),
+            "MySQL emit must not include CAST");
+        Assert.That(lt.ToDiagnostics().Sql, Does.Not.Contain("CAST("),
+            "SQLite emit must not include CAST");
     }
 }

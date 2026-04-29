@@ -160,6 +160,32 @@ internal class CrossDialectWindowFunctionTests
             ss:     "SELECT [OrderId], LAG([Total]) OVER (ORDER BY [OrderDate]) AS [PrevTotal] FROM [orders]");
     }
 
+    /// <summary>
+    /// Regression for #274: LAG/LEAD/FIRST_VALUE/LAST_VALUE inherit the source column's type,
+    /// so SQL Server returns INT (not BIGINT) when the source column is int. The fix's
+    /// CAST(... AS INT) wrap must NOT apply to these — verified here by projecting LAG over
+    /// an int column and asserting bare LAG on every dialect (no CAST anywhere).
+    /// </summary>
+    [Test]
+    public async Task WindowFunction_Lag_IntColumn_NoCast()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Orders().Where(o => true).Select(o => (o.OrderId, PrevId: Sql.Lag(o.OrderId, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var pg = Pg.Orders().Where(o => true).Select(o => (o.OrderId, PrevId: Sql.Lag(o.OrderId, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var my = My.Orders().Where(o => true).Select(o => (o.OrderId, PrevId: Sql.Lag(o.OrderId, over => over.OrderBy(o.OrderDate)))).Prepare();
+        var ss = Ss.Orders().Where(o => true).Select(o => (o.OrderId, PrevId: Sql.Lag(o.OrderId, over => over.OrderBy(o.OrderDate)))).Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"OrderId\", LAG(\"OrderId\") OVER (ORDER BY \"OrderDate\") AS \"PrevId\" FROM \"orders\"",
+            pg:     "SELECT \"OrderId\", LAG(\"OrderId\") OVER (ORDER BY \"OrderDate\") AS \"PrevId\" FROM \"orders\"",
+            mysql:  "SELECT `OrderId`, LAG(`OrderId`) OVER (ORDER BY `OrderDate`) AS `PrevId` FROM `orders`",
+            ss:     "SELECT [OrderId], LAG([OrderId]) OVER (ORDER BY [OrderDate]) AS [PrevId] FROM [orders]");
+    }
+
     [Test]
     public async Task WindowFunction_Lag_WithOffset()
     {

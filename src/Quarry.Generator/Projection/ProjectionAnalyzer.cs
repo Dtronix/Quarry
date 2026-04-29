@@ -810,10 +810,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
-                // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; flag int-typed
-                // window-function projections so GenerateColumnList wraps them with CAST(... AS INT)
-                // on Ss. See #274.
-                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
+                // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
+                var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
                 var column = new ProjectedColumn(
                     propertyName: "Value",
                     columnName: "",
@@ -960,8 +958,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
-                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
-                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
+                // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
+                var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
 
                 // Extract the table alias from the first column argument (e.g., o.Total → "t1")
                 // so enrichment can resolve unresolved types from entity column metadata.
@@ -1779,8 +1777,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
-                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
-                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
+                // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
+                var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
                 var column = new ProjectedColumn(
                     propertyName: "Value", // Scalar result
                     columnName: "",
@@ -1965,8 +1963,8 @@ internal static class ProjectionAnalyzer
             if (sqlExpr != null)
             {
                 var aggregateClrType = clrType ?? "int";
-                // See #274 — flag int-typed window-function projections for Ss CAST wrap.
-                var requiresSqlServerIntCast = HasOverClauseLambda(invocation) && aggregateClrType == "int";
+                // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
+                var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
                 return new ProjectedColumn(
                     propertyName: propertyName,
                     columnName: "",
@@ -2963,6 +2961,33 @@ internal static class ProjectionAnalyzer
         "RowNumber", "Rank", "DenseRank", "Ntile",
         "Lag", "Lead", "FirstValue", "LastValue"
     };
+
+    /// <summary>
+    /// Value-returning window functions whose CLR result type is the source column's type
+    /// (not synthesized to <c>int</c> by the function itself). Excluded from the
+    /// SQL-Server-int-cast wrap because SQL Server returns the source column type for these,
+    /// not <c>BIGINT</c>. See #274.
+    /// </summary>
+    private static readonly HashSet<string> ValueWindowFunctionNames = new(StringComparer.Ordinal)
+    {
+        "Lag", "Lead", "FirstValue", "LastValue"
+    };
+
+    /// <summary>
+    /// Checks if the invocation is a window-function whose CLR result type is forced to
+    /// <c>int</c> by the function (ROW_NUMBER/RANK/DENSE_RANK/NTILE) or by an aggregate-OVER
+    /// overload over an int-typed source (COUNT/SUM/MIN/MAX/AVG). Used by the four
+    /// ProjectedColumn construction sites to set <see cref="ProjectedColumn.RequiresSqlServerIntCast"/>.
+    /// Excludes LAG/LEAD/FIRST_VALUE/LAST_VALUE (their result inherits the source column's type).
+    /// See #274.
+    /// </summary>
+    private static bool IsIntReturningWindowFunction(InvocationExpressionSyntax invocation, string clrType)
+    {
+        if (!HasOverClauseLambda(invocation)) return false;
+        if (clrType != "int") return false;
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess) return false;
+        return !ValueWindowFunctionNames.Contains(memberAccess.Name.Identifier.Text);
+    }
 
     /// <summary>
     /// Checks if the last argument of an invocation is a lambda (the OVER clause lambda).
