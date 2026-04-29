@@ -2705,6 +2705,64 @@ public class GlobalOrderDto
             "Outer carrier must copy inner-CTE P0 parameter when DTO is in global namespace");
     }
 
+    [Test]
+    public void Cte_FromCte_OrderBy_EmitsWellFormedInterceptor()
+    {
+        // Regression for issue #281: chain-continuation methods called directly on
+        // FromCte<T>() previously synthesized a malformed interceptor where the
+        // entity name appeared as both receiver and return type (e.g. `Order<Order>`),
+        // triggering CS0308 in the generated `.g.cs`. With OrderBy/Limit/Offset/etc.
+        // now declared on IEntityAccessor<T>, Roslyn binds the call, normal discovery
+        // produces a site with builderTypeName="IEntityAccessor", and the existing
+        // BuildReceiverType helper emits `IQueryBuilder<T> OrderBy(this IEntityAccessor<T>, ...)`.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public static class Queries
+{
+    public static async Task Test(TestDbContext db)
+    {
+        await db.With<Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Order>()
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Total))
+            .ExecuteFetchAllAsync();
+    }
+}
+";
+
+        var compilation = CreateCompilation(source);
+        var (result, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        // No QRY900: prior bug surfaced as malformed source rather than a generator
+        // crash, but verify nothing else went sideways.
+        var qry900 = diagnostics.FirstOrDefault(d => d.Id == "QRY900");
+        Assert.That(qry900, Is.Null,
+            $"Post-CTE OrderBy must not produce QRY900. Got: {qry900?.GetMessage()}");
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+        var code = interceptorsTree!.GetText().ToString();
+
+        // The generated OrderBy interceptor must use IEntityAccessor<Order> as the
+        // receiver (the static type at the call site is IEntityAccessor<Order>) and
+        // return IQueryBuilder<Order>. The bug shape was `public static Order<Order>
+        // OrderBy_X(this Order<Order> builder, ...)` — entity name as a generic.
+        Assert.That(code, Does.Match(@"public static IQueryBuilder<Order>\s+OrderBy_\w+\(\s*this IEntityAccessor<Order>\s+builder,"),
+            "OrderBy interceptor must be `IQueryBuilder<Order> OrderBy_X(this IEntityAccessor<Order> builder, ...)`. " +
+            "Got: " + code);
+
+        // The malformed `Order<Order>` shape from the bug report must not appear
+        // anywhere in the generated source.
+        Assert.That(code, Does.Not.Contain("Order<Order>"),
+            "Malformed `Order<Order>` interceptor signature must not regress (issue #281)");
+    }
+
     #endregion
 
     #region Window function OVER clause failure modes (#223)

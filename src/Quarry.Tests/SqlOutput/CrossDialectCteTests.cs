@@ -552,4 +552,142 @@ internal class CrossDialectCteTests
     }
 
     #endregion
+
+    #region Post-CTE chain-continuation (issue #281)
+
+    /// <summary>
+    /// Regression test for issue #281: chain-continuation methods called directly on
+    /// the result of <c>FromCte&lt;T&gt;()</c> previously emitted a malformed C# 12
+    /// interceptor where the entity name appeared as both receiver and return type
+    /// (e.g. <c>Order&lt;Order&gt;</c>), triggering CS0308 in the generated file.
+    /// IEntityAccessor&lt;T&gt; now declares OrderBy/ThenBy/Limit/Offset/etc. so the
+    /// natural fluent syntax compiles and the generator emits a correctly typed
+    /// <c>this IEntityAccessor&lt;T&gt; → IQueryBuilder&lt;T&gt;</c> interceptor.
+    /// </summary>
+    [Test]
+    public async Task Cte_FromCte_OrderBy_Select()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Order>()
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Pg.Order>()
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<My.Order>()
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 100))
+            .FromCte<Ss.Order>()
+            .OrderBy(o => o.OrderId)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"Order\" ORDER BY \"OrderId\" ASC",
+            pg:     "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 100) SELECT \"OrderId\", \"Total\" FROM \"Order\" ORDER BY \"OrderId\" ASC",
+            mysql:  "WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC",
+            ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 100) SELECT [OrderId], [Total] FROM [Order] ORDER BY [OrderId] ASC");
+
+        // Seed data: OrderId=1 Total=250.00, OrderId=3 Total=150.00 match Total > 100.
+        // ORDER BY OrderId ASC fixes a deterministic order across dialects.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(results[1], Is.EqualTo((3, 150.00m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(pgResults[1], Is.EqualTo((3, 150.00m)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(myResults[1], Is.EqualTo((3, 150.00m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+        Assert.That(ssResults[0], Is.EqualTo((1, 250.00m)));
+        Assert.That(ssResults[1], Is.EqualTo((3, 150.00m)));
+    }
+
+    /// <summary>
+    /// Coverage for combining OrderBy + Limit + Offset directly off a FromCte&lt;T&gt;
+    /// accessor. Issue #281 enumerated all four (OrderBy, ThenBy, Limit, Offset) as
+    /// affected — chaining them in one expression confirms the new IEntityAccessor
+    /// surface composes correctly with each subsequent IQueryBuilder method.
+    /// </summary>
+    [Test]
+    public async Task Cte_FromCte_OrderBy_Limit_Offset()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.With<Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Order>()
+            .OrderBy(o => o.OrderId)
+            .Limit(1)
+            .Offset(1)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var pg = Pg.With<Pg.Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Pg.Order>()
+            .OrderBy(o => o.OrderId)
+            .Limit(1)
+            .Offset(1)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var my = My.With<My.Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<My.Order>()
+            .OrderBy(o => o.OrderId)
+            .Limit(1)
+            .Offset(1)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+        var ss = Ss.With<Ss.Order>(orders => orders.Where(o => o.Total > 0))
+            .FromCte<Ss.Order>()
+            .OrderBy(o => o.OrderId)
+            .Limit(1)
+            .Offset(1)
+            .Select(o => (o.OrderId, o.Total))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 0) SELECT \"OrderId\", \"Total\" FROM \"Order\" ORDER BY \"OrderId\" ASC LIMIT 1 OFFSET 1",
+            pg:     "WITH \"Order\" AS (SELECT \"OrderId\", \"UserId\", \"Total\", \"Status\", \"Priority\", \"OrderDate\", \"Notes\" FROM \"orders\" WHERE \"Total\" > 0) SELECT \"OrderId\", \"Total\" FROM \"Order\" ORDER BY \"OrderId\" ASC LIMIT 1 OFFSET 1",
+            mysql:  "WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 0) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC LIMIT 1 OFFSET 1",
+            ss:     "WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [OrderDate], [Notes] FROM [orders] WHERE [Total] > 0) SELECT [OrderId], [Total] FROM [Order] ORDER BY [OrderId] ASC OFFSET 1 ROWS FETCH NEXT 1 ROWS ONLY");
+
+        // Three orders sorted by OrderId ASC: skip 1, take 1 ⇒ OrderId=2 Total=75.50.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(1));
+        Assert.That(results[0], Is.EqualTo((2, 75.50m)));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(1));
+        Assert.That(pgResults[0], Is.EqualTo((2, 75.50m)));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(1));
+        Assert.That(myResults[0], Is.EqualTo((2, 75.50m)));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(1));
+        Assert.That(ssResults[0], Is.EqualTo((2, 75.50m)));
+    }
+
+    #endregion
 }

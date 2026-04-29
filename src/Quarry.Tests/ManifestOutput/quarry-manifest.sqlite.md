@@ -4320,6 +4320,22 @@ SELECT "WidgetId", "WidgetName", "Secret" FROM "widgets" WHERE "Secret" = @p0
 
 ---
 
+### With(...).FromCte(...).OrderBy(...).Limit(...).Offset(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 0) SELECT "OrderId", "Total" FROM "Order" ORDER BY "OrderId" ASC LIMIT 1 OFFSET 1
+```
+
+---
+
+### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "Total" FROM "Order" ORDER BY "OrderId" ASC
+```
+
+---
+
 ### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -4427,7 +4443,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 647 |
+| Total discovered | 649 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 177 |
-| Rendered | 470 |
+| Rendered | 472 |
