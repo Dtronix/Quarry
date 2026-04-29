@@ -4347,7 +4347,7 @@ WITH "Product" AS (SELECT * FROM "products" WHERE "ProductId" <= 3) SELECT "Prod
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "OrderId", "Total", "Status", "Priority", "OrderDate", "Notes", "OrderId" FROM "Order"
+WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes" FROM "orders" WHERE "Total" > 100) SELECT "OrderId", "UserId", "Total", "Status", "Priority", "OrderDate", "Notes", "OrderId" FROM "Order"
 ```
 
 ---
