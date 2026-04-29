@@ -12,7 +12,7 @@ issue: #283
 pr:
 session: 1
 phases-total: 2
-phases-complete: 0
+phases-complete: 2
 
 ## Problem Statement
 Issue #283: Add analyzer warnings for two semantically-dubious fluent chains that became newly legal after PR #281:
