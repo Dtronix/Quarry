@@ -2179,17 +2179,21 @@ internal static class ChainAnalyzer
                             ClrType = fkCol.ClrType,
                             FullClrType = fkCol.FullClrType,
                             IsNullable = fkCol.IsNullable,
+                            CustomTypeMapping = fkCol.CustomTypeMappingClass ?? col.CustomTypeMapping,
                             IsValueType = fkCol.IsValueType,
                             ReaderMethodName = fkCol.DbReaderMethodName ?? fkCol.ReaderMethodName,
                             IsForeignKey = false,
                             ForeignKeyEntityName = null,
+                            IsEnum = fkCol.IsEnum,
                             IsJoinNullable = IsJoinNullable(col.TableAlias),
                         });
                         continue;
                     }
-                    // FK column not found in registry; fall through to generic enrichment
-                    // and finally to the unenriched-column path. Better to emit a still-broken
-                    // column than to silently drop it.
+                    // FK column not found in registry — the placeholder ColumnName was
+                    // not actually a known FK property. Clear IsRefKeyAccess before
+                    // falling through so the generic enrichment block (or the unenriched
+                    // pass-through) sees a clean column without a stale invariant.
+                    col = col with { IsRefKeyAccess = false };
                 }
 
                 if (NeedsEnrichment(col))

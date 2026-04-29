@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: REVIEW
+phase: REMEDIATE
 status: active
 issue: #280
 pr:
@@ -76,6 +76,27 @@ With the widened Phase 3 fallback, the FK `.Id` branch now always returns
 before `TryParseNavigationChain` is reached for `o.X.Id` syntax, making the
 guard unreachable. Skipping it keeps the diff narrow and avoids dead code.
 
+### 2026-04-29 — REMEDIATE actions taken
+- **Finding #2** (dead code): Deleted `Analyze`, `AnalyzeJoined` and its private helpers
+  (`AnalyzeJoinedExpression`, `AnalyzeJoinedSingleColumn`, `AnalyzeJoinedInitializer`,
+  `AnalyzeJoinedTuple`, `ResolveJoinedProjectedExpression`, `ResolveJoinedColumn`) plus
+  the now-orphaned `BuildColumnLookup`. Restored `InferResultTypeFromSyntax` because two
+  live placeholder paths still use it.
+- **Finding #3** (fall-through): Cleared `IsRefKeyAccess=false` on the column before
+  falling through to generic enrichment, eliminating the latent invariant violation.
+- **Finding #7** (FK-not-found test): The path is unreachable in the existing test
+  infrastructure without source-generator unit-test scaffolding (no `Quarry.Generator.Tests`
+  project exists). Reproducing the path produces broken interceptor code that fails to
+  compile, so a runnable executing test isn't practical here. Documented the limitation;
+  the in-code comment at the fall-through site explains intent. Worth filing as a
+  test-infrastructure follow-up.
+- **Finding #8** (diagnostics shape assertions): Added `IsForeignKey == false` and
+  `ForeignKeyEntityName == null` assertions to `FkKeyProjection_DiagnosticsShape` to pin
+  the wrap-suppression contract.
+- **Finding #11** (enrichment alignment): Added `CustomTypeMapping = fkCol.CustomTypeMappingClass ?? col.CustomTypeMapping`
+  and `IsEnum = fkCol.IsEnum` to the IsRefKeyAccess enrichment branch so it carries the
+  same fields the generic enrichment block does.
+
 ### 2026-04-29 — Test coverage
 - Extend `Tuple_PostCteWideProjection` to use `UserKey: o.UserId.Id` per the
   issue's own suggestion (replaces the `Echo: o.OrderId` workaround).
@@ -91,3 +112,4 @@ guard unreachable. Skipping it keeps the diff narrow and avoids dead code.
 |---|-------------|-----------|---------|
 | 1 | INTAKE 2026-04-29 | IMPLEMENT 2026-04-29 | Loaded issue #280, created worktree, baseline 3364 tests green, design + plan approved |
 | 1 | IMPLEMENT 2026-04-29 | REVIEW 2026-04-29 | Phases 1-5 + 7 implemented (Phase 6 dropped — subsumed by Phase 3 widening); full suite 3368 tests green |
+| 1 | REVIEW 2026-04-29 | REMEDIATE 2026-04-29 | 14 findings — 5A (after C→A override), 9D; remediating dead code, fall-through cleanup, and test/enrichment alignment |

@@ -202,5 +202,9 @@ internal class FkKeyProjectionTests
             "FK key access must reference the FK column, not 'Id'");
         Assert.That(projCols[1].ClrType, Is.EqualTo("int"),
             "FK key access must project the key type (int), not EntityRef<…>");
+        Assert.That(projCols[1].IsForeignKey, Is.False,
+            "FK key access must not be flagged as a foreign-key column — would cause the reader to wrap in new EntityRef<…>(…)");
+        Assert.That(projCols[1].ForeignKeyEntityName, Is.Null,
+            "FK key access has no referenced entity name in its diagnostic shape — only the FK column projection does");
     }
 }

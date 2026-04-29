@@ -65,26 +65,6 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Analyzes a Select() invocation to extract projection information.
-    /// </summary>
-    /// <param name="invocation">The Select() invocation syntax.</param>
-    /// <param name="semanticModel">The semantic model for type resolution.</param>
-    /// <param name="entityInfo">The entity metadata.</param>
-    /// <param name="dialect">The SQL dialect for quoting.</param>
-    /// <returns>The analyzed projection information.</returns>
-    public static ProjectionInfo Analyze(
-        InvocationExpressionSyntax invocation,
-        SemanticModel semanticModel,
-        EntityInfo entityInfo,
-        SqlDialect dialect)
-    {
-        DrainSqlRawValidationErrors(); // discard any stale errors from an earlier aborted call
-        var columnLookup = BuildColumnLookup(entityInfo);
-        var result = AnalyzeCore(invocation, semanticModel, columnLookup, entityInfo.Columns, entityInfo.EntityName, dialect);
-        return AttachPendingSqlRawErrors(result);
-    }
-
-    /// <summary>
     /// Analyzes a Select() invocation using type symbol metadata.
     /// Use this when EntityInfo is not available (during usage site discovery).
     /// </summary>
@@ -145,7 +125,7 @@ internal static class ProjectionAnalyzer
         var resultType = InferResultTypeFromSyntax(body);
 
         // Analyze using placeholder resolution — column lookups are empty, so
-        // ResolveJoinedColumn will fall through. We use a dedicated placeholder path.
+        // direct property/Ref-key access falls through. We use a dedicated placeholder path.
         var projectionParams = new List<ParameterInfo>();
         var result = AnalyzeJoinedExpressionWithPlaceholders(body, perParamLookup, resultType, dialect, semanticModel, projectionParams);
 
@@ -497,60 +477,6 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Analyzes a joined Select() invocation using entity metadata.
-    /// Uses EntityInfo for column metadata. Does not require SemanticModel — result type
-    /// is inferred from the syntax (DTO type name, tuple structure, or column type).
-    /// </summary>
-    public static ProjectionInfo AnalyzeJoined(
-        InvocationExpressionSyntax invocation,
-        IReadOnlyList<EntityInfo> entities,
-        SqlDialect dialect)
-    {
-        if (invocation.ArgumentList.Arguments.Count == 0)
-            return ProjectionInfo.CreateFailed("object", "Select() requires a lambda argument");
-
-        var argument = invocation.ArgumentList.Arguments[0].Expression;
-        if (argument is not ParenthesizedLambdaExpressionSyntax lambda)
-            return ProjectionInfo.CreateFailed("object", "Joined Select() argument must be a parenthesized lambda");
-
-        if (lambda.Body is not ExpressionSyntax body)
-            return ProjectionInfo.CreateFailed("object", "Lambda body must be an expression");
-
-        var paramCount = lambda.ParameterList.Parameters.Count;
-        if (paramCount < entities.Count)
-            return ProjectionInfo.CreateFailed("object", $"Expected {entities.Count} lambda parameters, got {paramCount}");
-
-        // Build per-parameter column lookups and alias map
-        var perParamLookup = new Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)>(StringComparer.Ordinal);
-        var lambdaParamNames = new List<string>(entities.Count);
-        for (int i = 0; i < entities.Count; i++)
-        {
-            var paramName = lambda.ParameterList.Parameters[i].Identifier.Text;
-            var lookup = BuildColumnLookup(entities[i]);
-            perParamLookup[paramName] = (lookup, $"t{i}");
-            lambdaParamNames.Add(paramName);
-        }
-
-        // Infer result type from the lambda body syntax
-        var resultType = InferResultTypeFromSyntax(body);
-
-        // Analyze the body expression (no SemanticModel needed — uses EntityInfo column lookups)
-        var result = AnalyzeJoinedExpression(body, null, perParamLookup, resultType, dialect);
-
-        // Tuple type fixup
-        if (result.Kind == ProjectionKind.Tuple && result.Columns.Count > 0)
-        {
-            var tupleTypeName = TypeClassification.BuildTupleTypeName(result.Columns);
-            if (IsValidTupleTypeName(tupleTypeName) && !IsValidTupleTypeName(result.ResultTypeName))
-            {
-                result = new ProjectionInfo(result.Kind, tupleTypeName, result.Columns, result.IsOptimalPath, result.NonOptimalReason, result.FailureReason);
-            }
-        }
-
-        return AttachLambdaParameterNames(result, lambdaParamNames);
-    }
-
-    /// <summary>
     /// Infers the result type name from the lambda body syntax.
     /// </summary>
     private static string InferResultTypeFromSyntax(ExpressionSyntax body)
@@ -561,57 +487,6 @@ internal static class ProjectionAnalyzer
             ImplicitObjectCreationExpressionSyntax => "object", // Will be fixed during enrichment
             TupleExpressionSyntax => "object", // Will be rebuilt from columns
             _ => "object"
-        };
-    }
-
-    /// <summary>
-    /// Analyzes a joined projection body expression.
-    /// </summary>
-    private static ProjectionInfo AnalyzeJoinedExpression(
-        ExpressionSyntax expression,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string resultType,
-        SqlDialect dialect,
-        List<ParameterInfo>? projectionParams = null)
-    {
-        return expression switch
-        {
-            // Anonymous type: rejected
-            AnonymousObjectCreationExpressionSyntax =>
-                ProjectionInfo.CreateFailed(resultType,
-                    "Anonymous type projections are not supported. Use a named record, class, or tuple instead.",
-                    ProjectionFailureReason.AnonymousTypeNotSupported),
-
-            // DTO/Object initializer: (u, o) => new Dto { Name = u.Name, Total = o.Total }
-            ObjectCreationExpressionSyntax objectCreation when objectCreation.Initializer != null =>
-                AnalyzeJoinedInitializer(objectCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect, projectionParams),
-
-            // Implicit object creation
-            ImplicitObjectCreationExpressionSyntax implicitCreation when implicitCreation.Initializer != null =>
-                AnalyzeJoinedInitializer(implicitCreation.Initializer.Expressions, semanticModel, perParamLookup, resultType, ProjectionKind.Dto, dialect, projectionParams),
-
-            // Tuple: (u, o) => (u.Name, o.Total)
-            TupleExpressionSyntax tuple =>
-                AnalyzeJoinedTuple(tuple, semanticModel, perParamLookup, resultType, dialect, projectionParams),
-
-            // Single column: (u, o) => u.Name
-            MemberAccessExpressionSyntax memberAccess when IsJoinedMemberAccess(memberAccess, perParamLookup) =>
-                AnalyzeJoinedSingleColumn(memberAccess, semanticModel, perParamLookup, resultType, dialect),
-
-            // Navigation member access: o.User.UserName (chained member access rooted on a parameter)
-            MemberAccessExpressionSyntax memberAccess when IsNavigationMemberAccess(memberAccess, perParamLookup) =>
-                AnalyzeJoinedSingleColumn(memberAccess, semanticModel, perParamLookup, resultType, dialect),
-
-            // Aggregate function: (u, o) => Sql.Count()
-            InvocationExpressionSyntax invocation when IsAggregateCall(invocation) =>
-                AnalyzeJoinedInvocation(invocation, perParamLookup, resultType, dialect, semanticModel, projectionParams),
-
-            // Whole entity: (s, u) => u
-            IdentifierNameSyntax identifier when perParamLookup.ContainsKey(identifier.Identifier.Text) =>
-                AnalyzeJoinedEntityProjection(identifier.Identifier.Text, perParamLookup, resultType, dialect),
-
-            _ => ProjectionInfo.CreateFailed(resultType, $"Unsupported joined projection expression: {expression.Kind()}")
         };
     }
 
@@ -775,26 +650,6 @@ internal static class ProjectionAnalyzer
     }
 
     /// <summary>
-    /// Analyzes a single column projection in a joined context.
-    /// </summary>
-    private static ProjectionInfo AnalyzeJoinedSingleColumn(
-        MemberAccessExpressionSyntax memberAccess,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string resultType,
-        SqlDialect dialect)
-    {
-        var col = ResolveJoinedColumn(memberAccess, semanticModel, perParamLookup, memberAccess.Name.Identifier.Text, 0);
-        if (col == null)
-            return ProjectionInfo.CreateFailed(resultType, "Could not resolve joined single column");
-
-        // Always derive result type from the resolved column — syntax-inferred "object" is wrong
-        var actualResultType = col.IsNullable ? $"{col.FullClrType}?" : col.FullClrType;
-
-        return new ProjectionInfo(ProjectionKind.SingleColumn, actualResultType, new[] { col });
-    }
-
-    /// <summary>
     /// Analyzes a standalone aggregate invocation in a joined context: (u, o) => Sql.Count()
     /// </summary>
     private static ProjectionInfo AnalyzeJoinedInvocation(
@@ -842,103 +697,6 @@ internal static class ProjectionAnalyzer
         }
 
         return ProjectionInfo.CreateFailed(resultType, "Unsupported invocation in joined projection");
-    }
-
-    /// <summary>
-    /// Analyzes an object initializer in a joined context.
-    /// </summary>
-    private static ProjectionInfo AnalyzeJoinedInitializer(
-        SeparatedSyntaxList<ExpressionSyntax> expressions,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string resultType,
-        ProjectionKind kind,
-        SqlDialect dialect,
-        List<ParameterInfo>? projectionParams = null)
-    {
-        var columns = new List<ProjectedColumn>();
-        var ordinal = 0;
-
-        foreach (var expr in expressions)
-        {
-            if (expr is not AssignmentExpressionSyntax assignment)
-                return ProjectionInfo.CreateFailed(resultType, "Object initializer must use property assignments");
-
-            var propertyName = (assignment.Left as IdentifierNameSyntax)?.Identifier.Text;
-            if (propertyName == null)
-                return ProjectionInfo.CreateFailed(resultType, "Could not determine property name in initializer");
-
-            var col = ResolveJoinedProjectedExpression(assignment.Right, semanticModel, perParamLookup, propertyName, ordinal++, dialect, projectionParams);
-            if (col == null)
-                return ProjectionInfo.CreateFailed(resultType, $"Could not analyze projection for property '{propertyName}'");
-
-            columns.Add(col);
-        }
-
-        return new ProjectionInfo(kind, resultType, columns);
-    }
-
-    /// <summary>
-    /// Analyzes a tuple projection in a joined context.
-    /// </summary>
-    private static ProjectionInfo AnalyzeJoinedTuple(
-        TupleExpressionSyntax tuple,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string resultType,
-        SqlDialect dialect,
-        List<ParameterInfo>? projectionParams = null)
-    {
-        var columns = new List<ProjectedColumn>();
-        var ordinal = 0;
-
-        foreach (var argument in tuple.Arguments)
-        {
-            var propertyName = argument.NameColon?.Name.Identifier.Text
-                ?? GetImplicitPropertyName(argument.Expression)
-                ?? $"Item{ordinal + 1}";
-
-            var col = ResolveJoinedProjectedExpression(argument.Expression, semanticModel, perParamLookup, propertyName, ordinal++, dialect, projectionParams);
-            if (col == null)
-                return ProjectionInfo.CreateFailed(resultType, $"Could not analyze tuple element at position {ordinal}");
-
-            columns.Add(col);
-        }
-
-        return new ProjectionInfo(ProjectionKind.Tuple, resultType, columns);
-    }
-
-    /// <summary>
-    /// Resolves a projected expression in a joined context (dispatches to column, Ref, or aggregate resolution).
-    /// </summary>
-    private static ProjectedColumn? ResolveJoinedProjectedExpression(
-        ExpressionSyntax expression,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string propertyName,
-        int ordinal,
-        SqlDialect dialect,
-        List<ParameterInfo>? projectionParams = null)
-    {
-        if (expression is MemberAccessExpressionSyntax memberAccess)
-            return ResolveJoinedColumn(memberAccess, semanticModel, perParamLookup, propertyName, ordinal);
-
-        if (expression is InvocationExpressionSyntax invocation)
-        {
-            // Sql.* aggregates: Sql.Count(), Sql.Sum(u.Amount)
-            if (IsAggregateCall(invocation))
-                return ResolveJoinedAggregate(invocation, perParamLookup, propertyName, ordinal, dialect, semanticModel, projectionParams);
-
-            // Navigation aggregates: u.Orders.Sum(o => o.Total), u.Addresses.Count()
-            if (IsNavigationAggregateCall(invocation, perParamLookup.ContainsKey))
-            {
-                var navCol = TryParseNavigationAggregateColumn(
-                    invocation, perParamLookup.Keys, propertyName, ordinal, tableAlias: null);
-                if (navCol != null) return navCol;
-            }
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -991,104 +749,6 @@ internal static class ProjectionAnalyzer
                     tableAlias: tableAlias,
                     requiresSqlServerIntCast: requiresSqlServerIntCast);
             }
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Resolves a member access expression (u.Name or u.OrderId.Id) against the per-parameter column lookup.
-    /// </summary>
-    private static ProjectedColumn? ResolveJoinedColumn(
-        MemberAccessExpressionSyntax memberAccess,
-        SemanticModel? semanticModel,
-        Dictionary<string, (Dictionary<string, ColumnInfo> Lookup, string Alias)> perParamLookup,
-        string propertyName,
-        int ordinal)
-    {
-        // Direct property access: u.Name
-        if (memberAccess.Expression is IdentifierNameSyntax identifier)
-        {
-            var paramName = identifier.Identifier.Text;
-            if (perParamLookup.TryGetValue(paramName, out var info))
-            {
-                var colName = memberAccess.Name.Identifier.Text;
-                if (info.Lookup.TryGetValue(colName, out var columnInfo))
-                {
-                    return new ProjectedColumn(
-                        propertyName: propertyName,
-                        columnName: columnInfo.ColumnName,
-                        clrType: columnInfo.ClrType,
-                        fullClrType: columnInfo.FullClrType,
-                        isNullable: columnInfo.IsNullable,
-                        ordinal: ordinal,
-                        customTypeMapping: columnInfo.CustomTypeMappingClass,
-                        isValueType: columnInfo.IsValueType,
-                        readerMethodName: columnInfo.DbReaderMethodName ?? columnInfo.ReaderMethodName,
-                        tableAlias: info.Alias);
-                }
-
-                // Fallback to semantic model (when available)
-                if (semanticModel == null)
-                    return null;
-                var memberSymbol = semanticModel.GetSymbolInfo(memberAccess).Symbol;
-                if (memberSymbol is IPropertySymbol propSymbol)
-                {
-                    var propType = propSymbol.Type;
-                    var (isValueType, readerMethodName, _) = ColumnInfo.GetTypeMetadata(propType);
-                    return new ProjectedColumn(
-                        propertyName: propertyName,
-                        columnName: colName,
-                        clrType: GetSimpleTypeName(propType),
-                        fullClrType: propType.ToDisplayString(),
-                        isNullable: propType.NullableAnnotation == NullableAnnotation.Annotated,
-                        ordinal: ordinal,
-                        isValueType: isValueType,
-                        readerMethodName: readerMethodName,
-                        tableAlias: info.Alias);
-                }
-            }
-        }
-
-        // Ref<T,K>.Id access: u.OrderId.Id
-        if (memberAccess.Name.Identifier.Text == "Id" &&
-            memberAccess.Expression is MemberAccessExpressionSyntax nestedAccess &&
-            nestedAccess.Expression is IdentifierNameSyntax nestedId)
-        {
-            var paramName = nestedId.Identifier.Text;
-            if (perParamLookup.TryGetValue(paramName, out var info))
-            {
-                var refPropertyName = nestedAccess.Name.Identifier.Text;
-                if (info.Lookup.TryGetValue(refPropertyName, out var refColumn) &&
-                    refColumn.Kind == ColumnKind.ForeignKey)
-                {
-                    return new ProjectedColumn(
-                        propertyName: propertyName,
-                        columnName: refColumn.ColumnName,
-                        clrType: refColumn.ClrType,
-                        fullClrType: refColumn.FullClrType,
-                        isNullable: refColumn.IsNullable,
-                        ordinal: ordinal,
-                        isValueType: refColumn.IsValueType,
-                        readerMethodName: refColumn.ReaderMethodName,
-                        tableAlias: info.Alias);
-                }
-            }
-        }
-
-        // Navigation access: o.User.UserName
-        var navChainJ = TryParseNavigationChainJoined(memberAccess, perParamLookup);
-        if (navChainJ != null)
-        {
-            return new ProjectedColumn(
-                propertyName: propertyName,
-                columnName: navChainJ.Value.FinalProp,
-                clrType: "",
-                fullClrType: "",
-                isNullable: false,
-                ordinal: ordinal,
-                tableAlias: navChainJ.Value.SourceAlias,
-                navigationHops: navChainJ.Value.Hops);
         }
 
         return null;
@@ -1327,19 +987,6 @@ internal static class ProjectionAnalyzer
             current = current.ContainingNamespace;
         }
         return false;
-    }
-
-    /// <summary>
-    /// Builds a dictionary for fast column lookup by property name.
-    /// </summary>
-    private static Dictionary<string, ColumnInfo> BuildColumnLookup(EntityInfo entityInfo)
-    {
-        var lookup = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
-        foreach (var column in entityInfo.Columns)
-        {
-            lookup[column.PropertyName] = column;
-        }
-        return lookup;
     }
 
     /// <summary>
