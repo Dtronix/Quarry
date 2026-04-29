@@ -174,7 +174,8 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         bool isJoinNullable = false,
         SqlExpr? subqueryExpression = null,
         string? outerParameterName = null,
-        DiagnosticLocation? subqueryInvocationLocation = null)
+        DiagnosticLocation? subqueryInvocationLocation = null,
+        bool requiresSqlServerIntCast = false)
     {
         PropertyName = propertyName;
         ColumnName = columnName;
@@ -197,6 +198,7 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
         SubqueryExpression = subqueryExpression;
         OuterParameterName = outerParameterName;
         SubqueryInvocationLocation = subqueryInvocationLocation;
+        RequiresSqlServerIntCast = requiresSqlServerIntCast;
     }
 
     /// <summary>
@@ -333,6 +335,18 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
     /// </summary>
     public DiagnosticLocation? SubqueryInvocationLocation { get; init; }
 
+    /// <summary>
+    /// True for window-function projections whose CLR type is <c>int</c>. SQL Server's
+    /// <c>ROW_NUMBER</c>, <c>RANK</c>, <c>DENSE_RANK</c>, and <c>NTILE</c> return
+    /// <c>BIGINT</c>, and <c>Microsoft.Data.SqlClient.SqlDataReader.GetInt32</c> does not
+    /// auto-narrow. When the column-list emitter renders this column on
+    /// <see cref="SqlDialect.SqlServer"/>, it wraps <see cref="SqlExpression"/> with
+    /// <c>CAST(... AS INT)</c> so the value comes back as INT and the existing
+    /// <c>GetInt32</c> reader call works. Other dialects ignore this flag. Set by
+    /// <c>ProjectionAnalyzer</c> at window-function emit sites; see issue #274.
+    /// </summary>
+    public bool RequiresSqlServerIntCast { get; init; }
+
     public bool Equals(ProjectedColumn? other)
     {
         if (other is null) return false;
@@ -357,12 +371,13 @@ internal sealed record ProjectedColumn : IEquatable<ProjectedColumn>
             && EqualityHelpers.SequenceEqual(NavigationHops, other.NavigationHops)
             && EqualityComparer<IR.SqlExpr?>.Default.Equals(SubqueryExpression, other.SubqueryExpression)
             && OuterParameterName == other.OuterParameterName
-            && Nullable.Equals(SubqueryInvocationLocation, other.SubqueryInvocationLocation);
+            && Nullable.Equals(SubqueryInvocationLocation, other.SubqueryInvocationLocation)
+            && RequiresSqlServerIntCast == other.RequiresSqlServerIntCast;
     }
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable);
+        return HashCode.Combine(PropertyName, ColumnName, ClrType, Ordinal, IsNullable, IsJoinNullable, RequiresSqlServerIntCast);
     }
 }
 
