@@ -15,26 +15,34 @@ internal static class SqlExprRenderer
     /// Renders an expression to a SQL string.
     /// </summary>
     /// <param name="expr">The bound expression to render.</param>
-    /// <param name="dialect">SQL dialect for formatting.</param>
+    /// <param name="config">Dialect configuration for formatting.</param>
     /// <param name="parameterBaseIndex">Base index for parameter placeholders.</param>
     /// <param name="useGenericParamFormat">When true, always uses @p{n} format for parameters
     /// regardless of dialect. Used by SqlExprClauseTranslator where dialect-specific parameter
     /// formatting is deferred to the SQL assembly stage.</param>
     /// <returns>The rendered SQL string.</returns>
-    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
+    public static string Render(SqlExpr expr, SqlDialectConfig config, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
     {
         var sb = new StringBuilder();
-        RenderTo(sb, expr, dialect, parameterBaseIndex, useGenericParamFormat, stripOuterParens);
+        RenderTo(sb, expr, config, parameterBaseIndex, useGenericParamFormat, stripOuterParens);
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Backwards-compatible overload accepting a bare <see cref="SqlDialect"/>. Wraps it in a
+    /// default <see cref="SqlDialectConfig"/> and forwards. Callers that don't yet have a
+    /// <see cref="SqlDialectConfig"/> can keep passing the bare enum.
+    /// </summary>
+    public static string Render(SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
+        => Render(expr, new SqlDialectConfig(dialect), parameterBaseIndex, useGenericParamFormat, stripOuterParens);
 
     /// <summary>
     /// Renders a SqlExpr tree into an existing StringBuilder, avoiding an intermediate string allocation.
     /// Callers that already have a StringBuilder (e.g., SqlAssembler) can use this overload directly.
     /// </summary>
-    public static void RenderTo(StringBuilder sb, SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
+    public static void RenderTo(StringBuilder sb, SqlExpr expr, SqlDialectConfig config, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
     {
-        RenderExpr(expr, dialect, parameterBaseIndex, sb, useGenericParamFormat);
+        RenderExpr(expr, config, parameterBaseIndex, sb, useGenericParamFormat);
         if (stripOuterParens && sb.Length >= 2 && sb[0] == '(' && sb[sb.Length - 1] == ')')
         {
             // Verify the outer parens are matching (not just coincidental)
@@ -53,6 +61,13 @@ internal static class SqlExprRenderer
             }
         }
     }
+
+    /// <summary>
+    /// Backwards-compatible overload accepting a bare <see cref="SqlDialect"/>. Wraps it in a
+    /// default <see cref="SqlDialectConfig"/> and forwards.
+    /// </summary>
+    public static void RenderTo(StringBuilder sb, SqlExpr expr, SqlDialect dialect, int parameterBaseIndex = 0, bool useGenericParamFormat = false, bool stripOuterParens = false)
+        => RenderTo(sb, expr, new SqlDialectConfig(dialect), parameterBaseIndex, useGenericParamFormat, stripOuterParens);
 
     /// <summary>
     /// Collects all ParamSlotExpr nodes from an expression tree (in order).
@@ -120,7 +135,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderExpr(SqlExpr expr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderExpr(SqlExpr expr, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         switch (expr)
         {
@@ -134,39 +149,39 @@ internal static class SqlExprRenderer
                 break;
 
             case ParamSlotExpr param:
-                AppendParameterPlaceholder(param, dialect, paramBase, sb, genericParams);
+                AppendParameterPlaceholder(param, config, paramBase, sb, genericParams);
                 break;
 
             case LiteralExpr literal:
-                RenderLiteral(literal, dialect, sb);
+                RenderLiteral(literal, config, sb);
                 break;
 
             case BinaryOpExpr bin:
-                RenderBinary(bin, dialect, paramBase, sb, genericParams);
+                RenderBinary(bin, config, paramBase, sb, genericParams);
                 break;
 
             case UnaryOpExpr unary:
-                RenderUnary(unary, dialect, paramBase, sb, genericParams);
+                RenderUnary(unary, config, paramBase, sb, genericParams);
                 break;
 
             case FunctionCallExpr func:
-                RenderFunction(func, dialect, paramBase, sb, genericParams);
+                RenderFunction(func, config, paramBase, sb, genericParams);
                 break;
 
             case InExpr inExpr:
-                RenderIn(inExpr, dialect, paramBase, sb, genericParams);
+                RenderIn(inExpr, config, paramBase, sb, genericParams);
                 break;
 
             case IsNullCheckExpr isNull:
-                RenderIsNull(isNull, dialect, paramBase, sb, genericParams);
+                RenderIsNull(isNull, config, paramBase, sb, genericParams);
                 break;
 
             case LikeExpr like:
-                RenderLike(like, dialect, paramBase, sb, genericParams);
+                RenderLike(like, config, paramBase, sb, genericParams);
                 break;
 
             case SubqueryExpr subquery:
-                RenderSubquery(subquery, dialect, paramBase, sb, genericParams);
+                RenderSubquery(subquery, config, paramBase, sb, genericParams);
                 break;
 
             case CapturedValueExpr:
@@ -191,7 +206,7 @@ internal static class SqlExprRenderer
                 for (int i = 0; i < rawCall.Arguments.Count; i++)
                 {
                     var argSb = new StringBuilder();
-                    RenderExpr(rawCall.Arguments[i], dialect, paramBase, argSb, genericParams);
+                    RenderExpr(rawCall.Arguments[i], config, paramBase, argSb, genericParams);
                     renderedArgs[i] = argSb.ToString();
                 }
 
@@ -226,21 +241,21 @@ internal static class SqlExprRenderer
                 for (int i = 0; i < list.Expressions.Count; i++)
                 {
                     if (i > 0) sb.Append(", ");
-                    RenderExpr(list.Expressions[i], dialect, paramBase, sb, genericParams);
+                    RenderExpr(list.Expressions[i], config, paramBase, sb, genericParams);
                 }
                 break;
 
         }
     }
 
-    private static void AppendParameterPlaceholder(ParamSlotExpr param, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void AppendParameterPlaceholder(ParamSlotExpr param, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         var idx = paramBase + param.LocalIndex;
-        if (!genericParams && dialect == SqlDialect.PostgreSQL)
+        if (!genericParams && config.Dialect == SqlDialect.PostgreSQL)
         {
             sb.Append('$').Append(idx + 1); // PostgreSQL uses 1-based $1, $2, ...
         }
-        else if (!genericParams && dialect == SqlDialect.MySQL)
+        else if (!genericParams && config.Dialect == SqlDialect.MySQL)
         {
             sb.Append('?'); // MySQL uses positional ? parameters
         }
@@ -250,7 +265,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderLiteral(LiteralExpr literal, SqlDialect dialect, StringBuilder sb)
+    private static void RenderLiteral(LiteralExpr literal, SqlDialectConfig config, StringBuilder sb)
     {
         if (literal.IsNull)
         {
@@ -263,7 +278,7 @@ internal static class SqlExprRenderer
             case "bool":
                 // Normalize boolean literals to dialect-specific format
                 var isTrueish = literal.SqlText == "TRUE" || literal.SqlText == "true" || literal.SqlText == "1";
-                sb.Append(SqlExprBinder.FormatBoolean(isTrueish, dialect));
+                sb.Append(SqlExprBinder.FormatBoolean(isTrueish, config.Dialect));
                 break;
 
             case "string":
@@ -284,7 +299,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void RenderBinary(BinaryOpExpr bin, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderBinary(BinaryOpExpr bin, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         // Handle string concatenation for different dialects
         if (bin.Operator == SqlBinaryOperator.Add)
@@ -295,65 +310,75 @@ internal static class SqlExprRenderer
         }
 
         sb.Append('(');
-        RenderExpr(bin.Left, dialect, paramBase, sb, genericParams);
+        RenderExpr(bin.Left, config, paramBase, sb, genericParams);
         sb.Append(' ');
         sb.Append(GetSqlOperator(bin.Operator));
         sb.Append(' ');
-        RenderExpr(bin.Right, dialect, paramBase, sb, genericParams);
+        RenderExpr(bin.Right, config, paramBase, sb, genericParams);
         sb.Append(')');
     }
 
-    private static void RenderUnary(UnaryOpExpr unary, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderUnary(UnaryOpExpr unary, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         switch (unary.Operator)
         {
             case SqlUnaryOperator.Not:
                 sb.Append("NOT (");
-                RenderExpr(unary.Operand, dialect, paramBase, sb, genericParams);
+                RenderExpr(unary.Operand, config, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
 
             case SqlUnaryOperator.Negate:
                 sb.Append('-');
-                RenderExpr(unary.Operand, dialect, paramBase, sb, genericParams);
+                RenderExpr(unary.Operand, config, paramBase, sb, genericParams);
                 break;
         }
     }
 
-    private static void RenderFunction(FunctionCallExpr func, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderFunction(FunctionCallExpr func, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
         sb.Append(func.FunctionName);
         sb.Append('(');
         for (int i = 0; i < func.Arguments.Count; i++)
         {
             if (i > 0) sb.Append(", ");
-            RenderExpr(func.Arguments[i], dialect, paramBase, sb, genericParams);
+            RenderExpr(func.Arguments[i], config, paramBase, sb, genericParams);
         }
         sb.Append(')');
     }
 
-    private static void RenderIn(InExpr inExpr, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderIn(InExpr inExpr, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(inExpr.Operand, dialect, paramBase, sb, genericParams);
+        RenderExpr(inExpr.Operand, config, paramBase, sb, genericParams);
         sb.Append(inExpr.IsNegated ? " NOT IN (" : " IN (");
         for (int i = 0; i < inExpr.Values.Count; i++)
         {
             if (i > 0) sb.Append(", ");
-            RenderExpr(inExpr.Values[i], dialect, paramBase, sb, genericParams);
+            RenderExpr(inExpr.Values[i], config, paramBase, sb, genericParams);
         }
         sb.Append(')');
     }
 
-    private static void RenderIsNull(IsNullCheckExpr isNull, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderIsNull(IsNullCheckExpr isNull, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(isNull.Operand, dialect, paramBase, sb, genericParams);
+        RenderExpr(isNull.Operand, config, paramBase, sb, genericParams);
         sb.Append(isNull.IsNegated ? " IS NOT NULL" : " IS NULL");
     }
 
-    private static void RenderLike(LikeExpr like, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams = false)
+    private static void RenderLike(LikeExpr like, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams = false)
     {
-        RenderExpr(like.Operand, dialect, paramBase, sb, genericParams);
+        RenderExpr(like.Operand, config, paramBase, sb, genericParams);
         sb.Append(like.IsNegated ? " NOT LIKE " : " LIKE ");
+
+        // On default-mode MySQL (sql_mode does NOT include NO_BACKSLASH_ESCAPES),
+        // backslash inside a string literal is itself an escape character. Single-
+        // backslash forms — e.g. '\_' or ESCAPE '\' — get parsed as the escaped
+        // character, which either drops the backslash semantically (the LIKE-meta
+        // escape collapses) or causes a 1064 syntax error (the ESCAPE clause's
+        // closing quote gets consumed as an escaped char). Doubling the backslashes
+        // emits e.g. '\\_' / ESCAPE '\\' which MySQL parses to a single literal '\',
+        // matching what consumers would write by hand for that server config.
+        var doubleBackslashes = config.Dialect == SqlDialect.MySQL && config.MySqlBackslashEscapes;
 
         // Build the pattern with prefix/suffix using dialect-appropriate concatenation
         var hasPrefix = !string.IsNullOrEmpty(like.LikePrefix);
@@ -364,6 +389,7 @@ internal static class SqlExprRenderer
             && literalPattern.ClrType == "string" && !literalPattern.IsNull)
         {
             var escaped = literalPattern.SqlText.Replace("'", "''");
+            if (doubleBackslashes) escaped = escaped.Replace("\\", "\\\\");
             sb.Append('\'');
             if (hasPrefix) sb.Append(like.LikePrefix);
             sb.Append(escaped);
@@ -372,7 +398,19 @@ internal static class SqlExprRenderer
         }
         else if (!hasPrefix && !hasSuffix)
         {
-            RenderExpr(like.Pattern, dialect, paramBase, sb, genericParams);
+            // Bare literal pattern (no prefix/suffix folding) still needs backslash
+            // doubling for MySQL+default. Parameter-bound and column-ref patterns
+            // bypass string-literal parsing, so they need no transformation.
+            if (doubleBackslashes && like.Pattern is LiteralExpr bareLit
+                && bareLit.ClrType == "string" && !bareLit.IsNull)
+            {
+                var bareEscaped = bareLit.SqlText.Replace("'", "''").Replace("\\", "\\\\");
+                sb.Append('\'').Append(bareEscaped).Append('\'');
+            }
+            else
+            {
+                RenderExpr(like.Pattern, config, paramBase, sb, genericParams);
+            }
         }
         else
         {
@@ -380,7 +418,7 @@ internal static class SqlExprRenderer
             if (hasPrefix) parts.Add($"'{like.LikePrefix}'");
 
             var patternSb = new StringBuilder();
-            RenderExpr(like.Pattern, dialect, paramBase, patternSb, genericParams);
+            RenderExpr(like.Pattern, config, paramBase, patternSb, genericParams);
             parts.Add(patternSb.ToString());
 
             if (hasSuffix) parts.Add($"'{like.LikeSuffix}'");
@@ -391,7 +429,7 @@ internal static class SqlExprRenderer
             }
             else
             {
-                switch (dialect)
+                switch (config.Dialect)
                 {
                     case SqlDialect.MySQL:
                         sb.Append("CONCAT(").Append(string.Join(", ", parts)).Append(')');
@@ -408,11 +446,11 @@ internal static class SqlExprRenderer
 
         if (like.NeedsEscape)
         {
-            sb.Append(" ESCAPE '\\'");
+            sb.Append(doubleBackslashes ? " ESCAPE '\\\\'" : " ESCAPE '\\'");
         }
     }
 
-    private static void RenderSubquery(SubqueryExpr sub, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams)
+    private static void RenderSubquery(SubqueryExpr sub, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams)
     {
         if (!sub.IsResolved)
         {
@@ -427,10 +465,10 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
-                AppendImplicitJoins(sub, dialect, sb);
+                AppendImplicitJoins(sub, config, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
-                AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
+                AppendSubqueryPredicate(sub.Predicate, " AND ", config, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
 
@@ -439,10 +477,10 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
-                AppendImplicitJoins(sub, dialect, sb);
+                AppendImplicitJoins(sub, config, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
-                AppendSubqueryPredicate(sub.Predicate, " AND NOT ", dialect, paramBase, sb, genericParams);
+                AppendSubqueryPredicate(sub.Predicate, " AND NOT ", config, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
 
@@ -451,10 +489,10 @@ internal static class SqlExprRenderer
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
-                AppendImplicitJoins(sub, dialect, sb);
+                AppendImplicitJoins(sub, config, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
-                AppendSubqueryPredicate(sub.Predicate, " AND ", dialect, paramBase, sb, genericParams);
+                AppendSubqueryPredicate(sub.Predicate, " AND ", config, paramBase, sb, genericParams);
                 sb.Append(')');
                 break;
 
@@ -474,14 +512,14 @@ internal static class SqlExprRenderer
                 sb.Append(aggFunc);
                 sb.Append('(');
                 if (sub.Selector != null)
-                    RenderExpr(sub.Selector, dialect, paramBase, sb, genericParams);
+                    RenderExpr(sub.Selector, config, paramBase, sb, genericParams);
                 else
                     sb.Append('*');
                 sb.Append(") FROM ");
                 sb.Append(sub.InnerTableQuoted);
                 sb.Append(" AS ");
                 sb.Append(sub.InnerAliasQuoted);
-                AppendImplicitJoins(sub, dialect, sb);
+                AppendImplicitJoins(sub, config, sb);
                 sb.Append(" WHERE ");
                 sb.Append(sub.CorrelationSql);
                 sb.Append(')');
@@ -489,7 +527,7 @@ internal static class SqlExprRenderer
         }
     }
 
-    private static void AppendImplicitJoins(SubqueryExpr sub, SqlDialect dialect, StringBuilder sb)
+    private static void AppendImplicitJoins(SubqueryExpr sub, SqlDialectConfig config, StringBuilder sb)
     {
         if (sub.ImplicitJoins == null || sub.ImplicitJoins.Count == 0)
             return;
@@ -501,19 +539,19 @@ internal static class SqlExprRenderer
             sb.Append(' ');
             sb.Append(join.TargetTableQuoted);
             sb.Append(" AS ");
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.TargetAlias));
+            sb.Append(SqlFormatting.QuoteIdentifier(config.Dialect, join.TargetAlias));
             sb.Append(" ON ");
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.SourceAlias));
+            sb.Append(SqlFormatting.QuoteIdentifier(config.Dialect, join.SourceAlias));
             sb.Append('.');
             sb.Append(join.FkColumnQuoted);
             sb.Append(" = ");
-            sb.Append(SqlFormatting.QuoteIdentifier(dialect, join.TargetAlias));
+            sb.Append(SqlFormatting.QuoteIdentifier(config.Dialect, join.TargetAlias));
             sb.Append('.');
             sb.Append(join.TargetPkColumnQuoted);
         }
     }
 
-    private static void AppendSubqueryPredicate(SqlExpr? predicate, string conjunction, SqlDialect dialect, int paramBase, StringBuilder sb, bool genericParams)
+    private static void AppendSubqueryPredicate(SqlExpr? predicate, string conjunction, SqlDialectConfig config, int paramBase, StringBuilder sb, bool genericParams)
     {
         if (predicate == null) return;
 
@@ -521,12 +559,12 @@ internal static class SqlExprRenderer
         if (predicate is BinaryOpExpr)
         {
             // BinaryOp already renders with outer parens: (left op right)
-            RenderExpr(predicate, dialect, paramBase, sb, genericParams);
+            RenderExpr(predicate, config, paramBase, sb, genericParams);
         }
         else
         {
             sb.Append('(');
-            RenderExpr(predicate, dialect, paramBase, sb, genericParams);
+            RenderExpr(predicate, config, paramBase, sb, genericParams);
             sb.Append(')');
         }
     }

@@ -336,14 +336,6 @@ SELECT `OrderId`, `Total` FROM `orders`
 ### Orders().Select(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT `OrderId`, `UserId`, `Total` FROM `orders`
-```
-
----
-
-### Orders().Select(...).Prepare().ToDiagnostics()
-
-```sql
 SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders`
 ```
 
@@ -549,14 +541,6 @@ SELECT `OrderId`, FIRST_VALUE(`Total`) OVER (PARTITION BY `Status` ORDER BY `Ord
 
 ```sql
 SELECT `OrderId`, LAG(`Notes`) OVER (ORDER BY `OrderDate`) AS `PrevNotes` FROM `orders`
-```
-
----
-
-### Orders().Where(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `OrderId`, LAG(`OrderId`) OVER (ORDER BY `OrderDate`) AS `PrevId` FROM `orders`
 ```
 
 ---
@@ -1275,14 +1259,6 @@ SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`Crea
 
 ```sql
 SELECT `t0`.`UserId`, `t0`.`UserName`, `t0`.`Email`, `t0`.`IsActive`, `t0`.`CreatedAt`, `t1`.`OrderId`, `t1`.`Total`, `t1`.`Status`, `t1`.`Priority`, `t1`.`OrderDate` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
-```
-
----
-
-### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-SELECT `t0`.`UserName`, `t1`.`UserId`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` ORDER BY `t1`.`OrderId` ASC
 ```
 
 ---
@@ -3387,6 +3363,22 @@ SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`
 ### Users().Where(...).Select(...).ToDiagnostics()
 
 ```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%50\%%' ESCAPE '\'
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%john%'
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
 SELECT `UserId`, `UserName` FROM `users` WHERE (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId` AND (`sq0`.`Priority` = 3)) > 2
 ```
 
@@ -3403,6 +3395,14 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND (?
 | `@p0` | `int[]` |
 | `@p1` | `DateTime?` |
 | `@p2` | `DateTime?` |
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%user\_name%' ESCAPE '\'
+```
 
 ---
 
@@ -3684,30 +3684,6 @@ SELECT `WarehouseName` FROM `warehouses` WHERE `WarehouseName` = ? OR `Warehouse
 
 ---
 
-### With(...).FromCte(...).OrderBy(...).Limit(...).Offset(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 0) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC LIMIT 1 OFFSET 1
-```
-
----
-
-### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ExecuteFetchAllAsync()
-
-```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `OrderId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order` ORDER BY `Total` DESC
-```
-
----
-
-### With(...).FromCte(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order` ORDER BY `OrderId` ASC
-```
-
----
-
 ### With(...).FromCte(...).Select(...).ExecuteFetchAllAsync()
 
 ```sql
@@ -3719,7 +3695,7 @@ WITH `Product` AS (SELECT * FROM `products` WHERE `ProductId` <= 3) SELECT `Prod
 ### With(...).FromCte(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order`
+WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `OrderId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes`, `OrderId` FROM `Order`
 ```
 
 ---
@@ -3748,14 +3724,6 @@ WITH `OrderSummaryDto` AS (SELECT `OrderId`, `Total`, `Status` FROM `orders` WHE
 
 ```sql
 WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `Total` FROM `Order`
-```
-
----
-
-### With(...).FromCte(...).Select(...).Prepare().ToDiagnostics()
-
-```sql
-WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `OrderDate`, `Notes` FROM `orders` WHERE `Total` > 100) SELECT `OrderId`, `UserId`, `Total` FROM `Order`
 ```
 
 ---
@@ -3817,6 +3785,38 @@ WITH `Order` AS (SELECT `OrderId`, `UserId`, `Total`, `Status`, `Priority`, `Ord
 | `@p1` | `bool` |
 | `@p2` | `int` |
 
+## MyDefaultDb
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%50\\%%' ESCAPE '\\'
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%a\\\\b%' ESCAPE '\\'
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId` FROM `users` WHERE `UserName` LIKE '%john%'
+```
+
+---
+
+### Users().Where(...).Select(...).ToDiagnostics()
+
+```sql
+SELECT `UserId`, `UserName` FROM `users` WHERE `UserName` LIKE '%user\\_name%' ESCAPE '\\'
+```
+
 ## SchemaMyDb
 
 ### Users().ToDiagnostics()
@@ -3831,7 +3831,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 501 |
+| Total discovered | 500 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 86 |
+| Consolidated (deduped) | 85 |
 | Rendered | 415 |
