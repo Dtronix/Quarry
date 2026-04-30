@@ -42,12 +42,47 @@ public partial class HarnessDb : QuarryContext
         Assert.That(entityTree, Is.Not.Null, "Expected entity class User.g.cs to be generated.");
     }
 
+    [Test]
+    public void Fixture_Compiles_AndGeneratesEntityClasses()
+    {
+        var fixtureFiles = new[]
+        {
+            "Fixture/UserSchema",
+            "Fixture/OrderSchema",
+            "Fixture/OrderItemSchema",
+            "Fixture/ProductSchema",
+            "Fixture/AddressSchema",
+            "Fixture/BenchDbContext",
+        };
+
+        var trees = fixtureFiles
+            .Select(name => HarnessProxy.Parse(HarnessProxy.LoadCorpus(name), name + ".cs"))
+            .ToArray();
+
+        var compilation = HarnessProxy.BuildCompilation(trees);
+        var result = HarnessProxy.RunGenerator(compilation);
+
+        var generatedFileNames = result.GeneratedTrees
+            .Select(t => System.IO.Path.GetFileName(t.FilePath))
+            .ToArray();
+
+        foreach (var entity in new[] { "User.g.cs", "Order.g.cs", "OrderItem.g.cs", "Product.g.cs", "Address.g.cs" })
+        {
+            Assert.That(generatedFileNames, Has.Some.EndsWith(entity),
+                $"Expected entity class ending in {entity} from the fixture corpus. " +
+                $"Got: {string.Join(", ", generatedFileNames)}");
+        }
+    }
+
     /// <summary>
     /// Exposes the protected static surface of <see cref="GeneratorBenchmarkBase"/> so
     /// tests can drive it without instantiating a real benchmark class.
     /// </summary>
     private sealed class HarnessProxy : GeneratorBenchmarkBase
     {
+        public static new string LoadCorpus(string relativePath) =>
+            GeneratorBenchmarkBase.LoadCorpus(relativePath);
+
         public static new Microsoft.CodeAnalysis.SyntaxTree Parse(string source, string path) =>
             GeneratorBenchmarkBase.Parse(source, path);
 

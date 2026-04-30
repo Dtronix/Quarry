@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 7
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 Add benchmarks for the QuarryGenerator source-generation pipeline. The runtime benchmarks in `Quarry.Benchmarks` measure already-generated code; we have no signal on the generator's own cost.
@@ -39,7 +39,7 @@ Baseline test run (2026-04-29): 3385 tests passing across Quarry.Tests (3056), Q
   - `GeneratorThroughputBenchmarks` — three discrete `[Benchmark]` methods (Quarry_Throughput_Small/Medium/Large) over hand-curated corpora of 10 / 50 / 200 query call sites. Separate methods (not `[Params]`) so each gets its own gh-pages time-series.
   - `GeneratorPipelineSplitBenchmarks` — three `[Benchmark]` methods over cumulative corpora: SchemaOnly (contexts+schemas), PlusQueries (+~50 queries), PlusMigrations (+~10 migrations). Cost differences attribute to Pipeline 2 (Interceptors) and Pipeline 3 (Migrations); SchemaOnly = Pipeline 1 baseline.
 - **2026-04-29** — All benchmark methods prefixed `Quarry_*` so they land in the published gh-pages time-series.
-- **2026-04-29** — Corpora live under `src/Quarry.Benchmarks/Corpora/v1/` as `.cs.txt` files (extension prevents the bench project itself from compiling them) and are loaded as embedded resources at `[GlobalSetup]`. Layout: `Corpora/v1/Fixture/*` (shared), `Corpora/v1/Throughput/{Small,Medium,Large}.cs.txt`, `Corpora/v1/PipelineSplit/{SchemaOnly,PlusQueries,PlusMigrations}.cs.txt`.
+- **2026-04-29** — Corpora live under `src/Quarry.Benchmarks/Corpora/v1/` as `.cs` files. Originally planned as `.cs.txt`, but MSBuild's resource pipeline interprets the inner `.cs.` as a Czech locale suffix and routes such files into a satellite `cs/Quarry.Benchmarks.resources.dll`, leaving the main assembly with zero embedded resources. Real `.cs` extension + `<Compile Remove>` + `<EmbeddedResource Include>` is the cleanest pattern: full editor support, no locale collision, deterministic resource names.
 - **2026-04-29** — Verified `scripts/benchmark-pages/` and `Quarry.Benchmarks.Reporter` require **no changes**. Both are fully data-driven over BenchmarkDotNet output:
   - `Reporter/Program.cs:24,151,158` groups by `Type` (FQN of bench class) into a `SortedDictionary` and renders one `<section>` + sidebar entry per type, with anchor from `AnchorFor(type)` (lowercased letters/digits, everything else → `-`).
   - `dashboard.html:129,316` iterates `data.entries` and renders one chart per unique `bench.name` (FQN). `deriveSectionAnchor` (line 122-126) extracts the second-to-last token (class name) and applies the same `anchorFor` algorithm — chart click navigates to `runs/<date>-<sha>.html#<class-anchor>` which matches the Reporter's section anchor exactly.

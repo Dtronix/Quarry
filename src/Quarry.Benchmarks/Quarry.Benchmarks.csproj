@@ -33,7 +33,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Corpora\v1\**\*.cs.txt" />
+    <!--
+      Corpus files are real .cs so editors apply C# syntax highlighting,
+      but they are inputs to the source generator under test — not
+      compiled into Quarry.Benchmarks itself. Remove from Compile and
+      embed as resources for [GlobalSetup] to load.
+    -->
+    <Compile Remove="Corpora\v1\**\*.cs" />
+    <EmbeddedResource Include="Corpora\v1\**\*.cs" />
   </ItemGroup>
 
 </Project>

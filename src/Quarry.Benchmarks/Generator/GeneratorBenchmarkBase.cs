@@ -15,10 +15,10 @@ public abstract class GeneratorBenchmarkBase
 
     protected static IReadOnlyList<MetadataReference> References => ReferencesCache.Value;
 
-    protected static string LoadCorpus(string resourceName)
+    protected static string LoadCorpus(string relativePath)
     {
         var asm = typeof(GeneratorBenchmarkBase).Assembly;
-        var fullName = CorpusResourcePrefix + resourceName;
+        var fullName = CorpusResourcePrefix + relativePath.Replace('/', '.') + ".cs";
         using var stream = asm.GetManifestResourceStream(fullName)
             ?? throw new InvalidOperationException(
                 $"Embedded corpus '{fullName}' not found. Available: " +
