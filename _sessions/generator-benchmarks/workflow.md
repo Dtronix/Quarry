@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 7
-phases-complete: 6
+phases-complete: 7
 
 ## Problem Statement
 Add benchmarks for the QuarryGenerator source-generation pipeline. The runtime benchmarks in `Quarry.Benchmarks` measure already-generated code; we have no signal on the generator's own cost.
@@ -53,3 +53,4 @@ Baseline test run (2026-04-29): 3385 tests passing across Quarry.Tests (3056), Q
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-04-29 INTAKE | DESIGN (in progress) | Created branch+worktree, baseline tests green (3385/0), workflow.md initialized, scope confirmed: generator benchmarks inside existing Quarry.Benchmarks, frozen corpus, no incremental, single dialect v1. |
+| 1 | 2026-04-29 IMPLEMENT | REVIEW (pending) | All 7 phases committed: csproj plumbing, GeneratorBenchmarkBase harness, fixture corpus (5 schemas + PG context), ColdCompile bench, Throughput bench (Small/Medium/Large = 10/50/200 queries), PipelineSplit bench (SchemaOnly / PlusQueries / PlusMigrations), end-to-end verification. Test suite 3393/0. End-to-end run produces 7 Quarry_*-prefixed methods, all with non-zero MemoryDiagnoser allocations. Pipeline split signal: P1 baseline ~1 ms / 306 KB; P2 (Interceptors) +56 ms / +11 MB at Medium-size; P3 (Migrations) negligible at 10 trivial migrations. |
