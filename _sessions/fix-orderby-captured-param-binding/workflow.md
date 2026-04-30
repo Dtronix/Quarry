@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 5
-phases-complete: 3
+phases-complete: 4
 
 ## Problem Statement
 Generator-emitted clause interceptors silently drop captured-variable extraction for OrderBy/ThenBy/GroupBy/Join when the clause's lambda contains captured locals (e.g. `OrderBy((u, o) => o.Total + bias)`). Symptom: `CS0649 Field 'Chain_N.Px' is never assigned to, and will always have its default value 0` on the carrier P-fields backing those parameters. Root cause is symmetric across four emitters:

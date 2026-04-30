@@ -4218,5 +4218,131 @@ public class Queries
             + "regression of pre-fix CS0649 / silent default(T) binding bug");
     }
 
+    [Test]
+    public void CarrierGeneration_OrderBy_SingleTable_WithCapturedVariable_EmitsExtractionAndAssignment()
+    {
+        // Single-table OrderBy goes through ClauseBodyEmitter.EmitOrderBy — same defect
+        // shape as the joined path. Guards the latent fix.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        int offset = 7;
+        return _db.Users()
+                  .Where(u => u.IsActive)
+                  .OrderBy(u => u.UserId + offset)
+                  .Select(u => u.UserName)
+                  .ToDiagnostics().Sql;
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("PrebuiltDispatch"),
+            "Single-table OrderBy with a captured local must remain on the prebuilt-dispatch path");
+        Assert.That(code, Does.Contain("__ExtractVar_offset_"),
+            "Single-table OrderBy interceptor must emit the captured-variable extractor invocation");
+        Assert.That(code, Does.Match(@"__c\.P\d+\s*=\s*offset!"),
+            "Single-table OrderBy interceptor must assign the captured value to a carrier P-field");
+    }
+
+    [Test]
+    public void CarrierGeneration_GroupBy_WithCapturedVariable_EmitsExtractionAndAssignment()
+    {
+        // GroupBy goes through ClauseBodyEmitter.EmitGroupBy — same defect shape.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        int bucketOffset = 3;
+        return _db.Orders()
+                  .GroupBy(o => o.UserId + bucketOffset)
+                  .Select(o => (Key: o.UserId + bucketOffset, Sum: Sql.Sum(o.Total)))
+                  .ToDiagnostics().Sql;
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("PrebuiltDispatch"),
+            "GroupBy with a captured local must remain on the prebuilt-dispatch path");
+        Assert.That(code, Does.Contain("__ExtractVar_bucketOffset_"),
+            "GroupBy interceptor must emit the captured-variable extractor invocation");
+        Assert.That(code, Does.Match(@"__c\.P\d+\s*=\s*bucketOffset!"),
+            "GroupBy interceptor must assign the captured value to a carrier P-field");
+    }
+
+    [Test]
+    public void CarrierGeneration_Join_ConditionWithCapturedVariable_EmitsExtractionAndAssignment()
+    {
+        // Join condition goes through JoinBodyEmitter.EmitJoin — same defect shape on
+        // both first-in-chain and chained branches.
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        decimal minTotal = 100m;
+        return _db.Users().Join<Order>((u, o) => u.UserId == o.UserId && o.Total > minTotal)
+                  .Select((u, o) => (u.UserName, o.Total))
+                  .ToDiagnostics().Sql;
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("PrebuiltDispatch"),
+            "Join with a captured local in the condition must remain on the prebuilt-dispatch path");
+        Assert.That(code, Does.Contain("__ExtractVar_minTotal_"),
+            "Join interceptor must emit the captured-variable extractor invocation");
+        Assert.That(code, Does.Match(@"__c\.P\d+\s*=\s*minTotal!"),
+            "Join interceptor must assign the captured value to a carrier P-field");
+    }
+
     #endregion
 }
