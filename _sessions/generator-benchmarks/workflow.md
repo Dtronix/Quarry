@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: PLAN
+phase: IMPLEMENT
 status: active
 issue: discussion
 pr:
 session: 1
 phases-total: 7
-phases-complete: 0
+phases-complete: 2
 
 ## Problem Statement
 Add benchmarks for the QuarryGenerator source-generation pipeline. The runtime benchmarks in `Quarry.Benchmarks` measure already-generated code; we have no signal on the generator's own cost.

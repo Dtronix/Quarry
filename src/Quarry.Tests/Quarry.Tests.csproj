@@ -40,7 +40,7 @@
     <PackageReference Include="Microsoft.Build.Tasks.Core" Version="17.*" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.Build.Utilities.Core" Version="17.*" ExcludeAssets="runtime" PrivateAssets="all" />
     <PackageReference Include="Microsoft.NET.StringTools" Version="17.*" ExcludeAssets="runtime" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.5" />
     <PackageReference Include="Npgsql" Version="10.*" />
     <PackageReference Include="Testcontainers.PostgreSql" Version="4.*" />
     <PackageReference Include="Testcontainers.MySql" Version="4.*" />
@@ -56,6 +56,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Quarry\Quarry.csproj" />
     <ProjectReference Include="..\Quarry.Generator\Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\Quarry.Benchmarks\Quarry.Benchmarks.csproj" />
   </ItemGroup>
 
   <!-- SQL manifest emission: generator writes per-dialect .md files here during build -->
