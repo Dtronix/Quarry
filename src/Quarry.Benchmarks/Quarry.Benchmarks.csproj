@@ -24,11 +24,16 @@
     <PackageReference Include="Dapper" Version="2.1.72" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.5" />
     <PackageReference Include="SqlKata" Version="4.0.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Quarry\Quarry.csproj" />
     <ProjectReference Include="..\Quarry.Generator\Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Corpora\v1\**\*.cs.txt" />
   </ItemGroup>
 
 </Project>
