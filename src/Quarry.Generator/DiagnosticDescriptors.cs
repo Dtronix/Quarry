@@ -522,6 +522,31 @@ internal static class DiagnosticDescriptors
         description: "A .Prepare() call that produces a PreparedQuery with no terminal invocations is dead code. " +
                      "Either invoke at least one terminal on the prepared variable, or remove the .Prepare() call.");
 
+    // ─── Generator self-check (QRY037) ────────────────────────────────
+
+    /// <summary>
+    /// QRY037: Carrier parameter field has no assignment in any emitted interceptor body.
+    /// Severity: Error
+    /// </summary>
+    /// <remarks>
+    /// CS0649 only catches a subset of this class: it is silenced for non-nullable reference-type
+    /// fields because the carrier emits them with `= null!` to suppress CS8618. QRY037 closes
+    /// that hole by checking the structural invariant directly: every declared `P{i}` field
+    /// must have at least one `__c.P{i} = ...` assignment in some emitted clause body.
+    /// </remarks>
+    public static readonly DiagnosticDescriptor CarrierParameterFieldUnassigned = new(
+        id: "QRY037",
+        title: "Carrier parameter field unassigned",
+        messageFormat: "Generator defect: carrier '{0}' declares parameter field 'P{1}' but no clause interceptor body assigns it. The corresponding SQL parameter would silently bind default(T). Please file an issue.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Every Px field on a generated carrier class must be assigned by at least one " +
+                     "clause interceptor body. If this diagnostic fires, an emitter has skipped the " +
+                     "per-clause extraction plan for a captured-variable parameter. The query would " +
+                     "silently bind the parameter's default value at runtime — CS0649 would catch " +
+                     "value-type cases but is suppressed for non-nullable reference-type P-fields.");
+
     // ─── Manifest diagnostics ──────────────────────────────────────────
 
     /// <summary>

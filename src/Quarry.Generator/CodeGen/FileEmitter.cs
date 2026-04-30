@@ -36,11 +36,46 @@ internal sealed class FileEmitter
     private readonly IReadOnlyList<AssembledPlan>? _chains;
     private readonly IReadOnlyList<CarrierPlan>? _carrierPlans;
     private readonly List<Models.DiagnosticInfo> _emitDiagnostics = new();
+    private readonly CarrierAssignmentRecorder _carrierAssignmentRecorder = new();
 
     /// <summary>
     /// Diagnostics collected during <see cref="Emit"/>. Populated after Emit() returns.
     /// </summary>
     public IReadOnlyList<Models.DiagnosticInfo> EmitDiagnostics => _emitDiagnostics;
+
+    /// <summary>
+    /// Returns the indices of <c>P{i}</c> fields declared on <paramref name="carrier"/> that
+    /// were not recorded as assigned by <paramref name="recorder"/>. Pure logic — no I/O,
+    /// no model construction. Used by <see cref="Emit"/> to enforce the QRY037 invariant
+    /// and exposed internal so the rule can be tested in isolation without spinning up the
+    /// full generator pipeline.
+    /// </summary>
+    /// <remarks>
+    /// A P-field is identified by name pattern: <c>P&lt;digits&gt;</c>. Numbering is
+    /// produced by <see cref="CarrierEmitter"/> and matches the carrier-global parameter
+    /// index used in emitted assignments (<c>__c.P{globalIdx} = ...</c>).
+    /// </remarks>
+    internal static IEnumerable<int> ComputeUnassignedPIndices(CarrierPlan carrier, CarrierAssignmentRecorder recorder)
+    {
+        var assigned = recorder.GetAssigned(carrier.ClassName);
+        foreach (var field in carrier.Fields)
+        {
+            var name = field.Name;
+            if (name.Length < 2 || name[0] != 'P') continue;
+            // Digit-only suffix check — guards against future fields like "Ptr" and
+            // also rejects leading whitespace / sign that NumberStyles.Integer would
+            // accept. TryParse provides the overflow guard for pathological inputs.
+            var allDigits = true;
+            for (int i = 1; i < name.Length; i++)
+            {
+                if (name[i] < '0' || name[i] > '9') { allDigits = false; break; }
+            }
+            if (!allDigits) continue;
+            if (!int.TryParse(name.Substring(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var idx)) continue;
+            if (!assigned.Contains(idx))
+                yield return idx;
+        }
+    }
 
     public FileEmitter(
         string contextClassName,
@@ -468,7 +503,7 @@ internal sealed class FileEmitter
             }
             foreach (var site in sites)
             {
-                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames, rawSqlResolvedColumns, operandCarrierNames);
+                EmitInterceptorMethod(sb, site, staticFields, staticFieldsByMethod, chainLookup, clauseBitMap, chainClauseLookup, firstClauseIds, carrierLookup, carrierClauseLookup, carrierFirstClauseIds, rawSqlStructNames, rawSqlResolvedColumns, operandCarrierNames, _carrierAssignmentRecorder);
             }
             sb.AppendLine($"    #endregion");
             sb.AppendLine();
@@ -477,7 +512,88 @@ internal sealed class FileEmitter
         sb.AppendLine("}"); // Close interceptor class
         sb.AppendLine("}"); // Close namespace
 
+        // QRY037: every Px field on a generated carrier must have at least one
+        // corresponding `__c.P{i} = ...` assignment in the emitted interceptor bodies.
+        // CS0649 covers the value-type and nullable-ref-type subset only; non-nullable
+        // reference-type P-fields carry a `= null!` initializer that suppresses CS0649.
+        // This check enforces the structural invariant directly so a missing emitter
+        // assignment fails the build (Error severity) rather than silently binding null.
+        EmitCarrierAssignmentDiagnostics();
+
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Walks every emitted carrier and reports QRY037 for any Px field declared on the
+    /// carrier but never recorded as assigned during interceptor body emission.
+    /// </summary>
+    private void EmitCarrierAssignmentDiagnostics()
+    {
+        if (_carrierPlans == null || _chains == null) return;
+
+        // Map carrier class name → first owning chain. A carrier may be deduplicated
+        // across multiple chains (CarrierStructuralKey-based dedup); the FIRST chain
+        // owning a given carrier class name is sufficient for diagnostic location.
+        var carrierToChain = new Dictionary<string, AssembledPlan>();
+        for (int i = 0; i < _chains.Count; i++)
+        {
+            var carrier = i < _carrierPlans.Count ? _carrierPlans[i] : null;
+            if (carrier == null || !carrier.IsEligible || string.IsNullOrEmpty(carrier.ClassName)) continue;
+            if (!carrierToChain.ContainsKey(carrier.ClassName))
+                carrierToChain[carrier.ClassName] = _chains[i];
+        }
+
+        Models.DiagnosticLocation ResolveLocation(string carrierClassName)
+        {
+            // Defensive fallback to default DiagnosticLocation if lookup fails — the
+            // dedup logic above ensures every eligible carrier has at least one owning
+            // chain, but silently dropping a real defect would defeat the self-check.
+            return carrierToChain.TryGetValue(carrierClassName, out var owningChain)
+                ? owningChain.ExecutionSite.Bound.Raw.Location
+                : default;
+        }
+
+        foreach (var diag in ProduceCarrierAssignmentDiagnostics(_carrierPlans, _carrierAssignmentRecorder, ResolveLocation))
+            _emitDiagnostics.Add(diag);
+    }
+
+    /// <summary>
+    /// Pure, testable form of the QRY037 self-check: given the eligible carriers, a
+    /// recorder of P-field assignments, and a callback that resolves a source location
+    /// from a carrier class name, yield one <see cref="Models.DiagnosticInfo"/> per
+    /// (carrier, unassigned-P-index) pair.
+    /// </summary>
+    /// <remarks>
+    /// Pulled out of <see cref="EmitCarrierAssignmentDiagnostics"/> so unit tests can
+    /// drive the rule end-to-end with synthetic <see cref="CarrierPlan"/> inputs
+    /// without spinning up the rest of FileEmitter or constructing a full
+    /// <see cref="AssembledPlan"/>.
+    /// </remarks>
+    internal static IEnumerable<Models.DiagnosticInfo> ProduceCarrierAssignmentDiagnostics(
+        IReadOnlyList<CarrierPlan> carrierPlans,
+        CarrierAssignmentRecorder recorder,
+        Func<string, Models.DiagnosticLocation> resolveLocation)
+    {
+        var reportedCarriers = new HashSet<string>();
+        foreach (var carrier in carrierPlans)
+        {
+            if (carrier == null || !carrier.IsEligible || string.IsNullOrEmpty(carrier.ClassName)) continue;
+            // Dedup: deduplicated carriers share a class name — only check once per name.
+            if (!reportedCarriers.Add(carrier.ClassName)) continue;
+
+            var unassigned = ComputeUnassignedPIndices(carrier, recorder).ToList();
+            if (unassigned.Count == 0) continue;
+
+            var location = resolveLocation(carrier.ClassName);
+            foreach (var idx in unassigned)
+            {
+                yield return new Models.DiagnosticInfo(
+                    "QRY037",
+                    location,
+                    carrier.ClassName,
+                    idx.ToString());
+            }
+        }
     }
 
     /// <summary>
@@ -499,7 +615,8 @@ internal sealed class FileEmitter
         HashSet<string>? carrierFirstClauseIds = null,
         Dictionary<string, string>? rawSqlStructNames = null,
         Dictionary<string, IReadOnlyList<RawSqlColumnResolver.ResolvedColumn>>? rawSqlResolvedColumns = null,
-        Dictionary<QueryPlan, string>? operandCarrierNames = null)
+        Dictionary<QueryPlan, string>? operandCarrierNames = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         // Trace sites are compile-time-only signals — no interceptor generated
         if (site.Kind == InterceptorKind.Trace)
@@ -615,39 +732,39 @@ internal sealed class FileEmitter
         {
             case InterceptorKind.Select:
                 if (isJoinedBuilder)
-                    JoinBodyEmitter.EmitJoinedSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    JoinBodyEmitter.EmitJoinedSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 else
-                    ClauseBodyEmitter.EmitSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    ClauseBodyEmitter.EmitSelect(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 break;
 
             case InterceptorKind.Where:
                 {
                     staticFieldsByMethod.TryGetValue(methodName, out var methodFields);
                     if (isJoinedBuilder)
-                        JoinBodyEmitter.EmitJoinedWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                        JoinBodyEmitter.EmitJoinedWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                     else
-                        ClauseBodyEmitter.EmitWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                        ClauseBodyEmitter.EmitWhere(sb, site, methodName, methodFields, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 }
                 break;
 
             case InterceptorKind.OrderBy:
             case InterceptorKind.ThenBy:
                 if (isJoinedBuilder)
-                    JoinBodyEmitter.EmitJoinedOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    JoinBodyEmitter.EmitJoinedOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 else
-                    ClauseBodyEmitter.EmitOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                    ClauseBodyEmitter.EmitOrderBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 break;
 
             case InterceptorKind.GroupBy:
-                ClauseBodyEmitter.EmitGroupBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                ClauseBodyEmitter.EmitGroupBy(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 break;
 
             case InterceptorKind.Having:
-                ClauseBodyEmitter.EmitHaving(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                ClauseBodyEmitter.EmitHaving(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 break;
 
             case InterceptorKind.Set:
-                ClauseBodyEmitter.EmitSet(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                ClauseBodyEmitter.EmitSet(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;
 
             case InterceptorKind.Join:
@@ -655,7 +772,7 @@ internal sealed class FileEmitter
             case InterceptorKind.RightJoin:
             case InterceptorKind.CrossJoin:
             case InterceptorKind.FullOuterJoin:
-                JoinBodyEmitter.EmitJoin(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo);
+                JoinBodyEmitter.EmitJoin(sb, site, methodName, prebuiltClauseChain, isFirstClauseInChain, carrierInfo, recorder);
                 break;
 
             case InterceptorKind.ExecuteFetchAll:
@@ -699,26 +816,26 @@ internal sealed class FileEmitter
             case InterceptorKind.DeleteWhere:
                 {
                     staticFieldsByMethod.TryGetValue(methodName, out var deleteMethodFields);
-                    ClauseBodyEmitter.EmitModificationWhere(sb, site, methodName, deleteMethodFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                    ClauseBodyEmitter.EmitModificationWhere(sb, site, methodName, deleteMethodFields, isDelete: true, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 }
                 break;
 
             case InterceptorKind.UpdateSet:
-                ClauseBodyEmitter.EmitUpdateSet(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                ClauseBodyEmitter.EmitUpdateSet(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;
 
             case InterceptorKind.UpdateSetAction:
-                ClauseBodyEmitter.EmitUpdateSetAction(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                ClauseBodyEmitter.EmitUpdateSetAction(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;
 
             case InterceptorKind.UpdateSetPoco:
-                ClauseBodyEmitter.EmitUpdateSetPoco(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                ClauseBodyEmitter.EmitUpdateSetPoco(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;
 
             case InterceptorKind.UpdateWhere:
                 {
                     staticFieldsByMethod.TryGetValue(methodName, out var updateMethodFields);
-                    ClauseBodyEmitter.EmitModificationWhere(sb, site, methodName, updateMethodFields, isDelete: false, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo);
+                    ClauseBodyEmitter.EmitModificationWhere(sb, site, methodName, updateMethodFields, isDelete: false, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 }
                 break;
 
@@ -793,7 +910,7 @@ internal sealed class FileEmitter
 
             case InterceptorKind.CteDefinition:
                 if (carrierInfo != null && carrierChain != null)
-                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames);
+                    TransitionBodyEmitter.EmitCteDefinition(sb, site, methodName, carrierInfo, carrierChain, operandCarrierNames, recorder);
                 break;
 
             case InterceptorKind.FromCte:
@@ -871,7 +988,7 @@ internal sealed class FileEmitter
                         if (clause.Site.UniqueId == site.UniqueId) break;
                         if (clause.Role == ClauseRole.SetOperation) setOpIndex++;
                     }
-                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain, setOpIndex, operandCarrierNames);
+                    SetOperationBodyEmitter.EmitSetOperation(sb, site, methodName, carrierInfo, carrierChain, setOpIndex, operandCarrierNames, recorder);
                 }
                 break;
 

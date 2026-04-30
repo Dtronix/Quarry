@@ -105,7 +105,8 @@ internal static class TransitionBodyEmitter
     public static void EmitCteDefinition(
         StringBuilder sb, TranslatedCallSite site, string methodName, CarrierPlan carrier,
         AssembledPlan chain,
-        Dictionary<QueryPlan, string>? operandCarrierNames)
+        Dictionary<QueryPlan, string>? operandCarrierNames,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var contextClass = site.ContextClassName ?? "QuarryContext";
         var raw = site.Bound.Raw;
@@ -181,7 +182,7 @@ internal static class TransitionBodyEmitter
                 var cteDef = chain.Plan.CteDefinitions[i];
                 if (cteDef.Name != siteCteName) continue;
                 if (cteDef.InnerParameters.Count > 0)
-                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, cteDef.InnerParameters, cteDef.ParameterOffset);
+                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, cteDef.InnerParameters, cteDef.ParameterOffset, recorder);
                 break;
             }
         }
@@ -214,6 +215,7 @@ internal static class TransitionBodyEmitter
                 {
                     var targetIdx = cteDef.ParameterOffset + p;
                     sb.AppendLine($"        __c.P{targetIdx} = __inner.P{p};");
+                    recorder?.Record(carrier.ClassName, targetIdx);
                 }
                 break;
             }

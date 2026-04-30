@@ -341,7 +341,11 @@ internal class CrossDialectDistinctOrderByTests
         var (Lite, Pg, My, Ss) = t;
 
         decimal threshold = 50.00m;
-        decimal bias = 0.00m;
+        // Non-zero bias is load-bearing for the regression assertion below: a prior
+        // generator defect (CS0649 on Chain_N.P1) silently bound default(decimal) (= 0)
+        // to the OrderBy parameter, masked by bias=0 here. With bias=100, an unassigned
+        // P-field would bind 0 — the AllParameters.Value check catches that immediately.
+        decimal bias = 100.00m;
 
         var lt = Lite.Users().Join<Order>((u, o) => u.UserId == o.UserId.Id)
                 .Where((u, o) => o.Total > threshold)
@@ -376,12 +380,32 @@ internal class CrossDialectDistinctOrderByTests
             mysql:  "SELECT `d`.`UserName` FROM (SELECT DISTINCT `t0`.`UserName` AS `UserName`, (`t1`.`Total` + ?) AS `_o0` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > ?) AS `d` ORDER BY `d`.`_o0` ASC",
             ss:     "SELECT [d].[UserName] FROM (SELECT DISTINCT [t0].[UserName] AS [UserName], ([t1].[Total] + @p1) AS [_o0] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] WHERE [t1].[Total] > @p0) AS [d] ORDER BY [d].[_o0] ASC");
 
-        // threshold=50.00 keeps all 3 orders; bias=0 leaves Total unchanged for ordering.
+        // Regression guard: the OrderBy capture (@p1) must bind the captured `bias` value,
+        // not default(decimal). Pre-fix, the four affected emitters skipped the per-clause
+        // extraction plan and Chain_N.P1 stayed at its default — undetectable by SQL-shape
+        // assertion alone. AllParameters surfaces the bound values from the carrier fields.
+        AssertOrderByCapturedParamBound(lt.ToDiagnostics(), threshold, bias, "sqlite");
+        AssertOrderByCapturedParamBound(pg.ToDiagnostics(), threshold, bias, "postgres");
+        AssertOrderByCapturedParamBound(my.ToDiagnostics(), threshold, bias, "mysql");
+        AssertOrderByCapturedParamBound(ss.ToDiagnostics(), threshold, bias, "sqlserver");
+
+        // threshold=50.00 keeps all 3 orders; bias is a constant offset that doesn't
+        // change row order (Total + bias preserves Total's relative ordering).
         var liteResults = await lt.ExecuteFetchAllAsync();
         Assert.That(liteResults, Has.Count.EqualTo(3));
 
         var pgResults = await pg.ExecuteFetchAllAsync();
         Assert.That(pgResults, Has.Count.EqualTo(3));
+    }
+
+    private static void AssertOrderByCapturedParamBound(QueryDiagnostics diag, decimal expectedThreshold, decimal expectedBias, string dialect)
+    {
+        Assert.That(diag.AllParameters, Has.Count.EqualTo(2),
+            $"[{dialect}] expected exactly two bound parameters (threshold, bias)");
+        Assert.That(diag.AllParameters[0].Value, Is.EqualTo(expectedThreshold),
+            $"[{dialect}] @p0 must bind the captured threshold value");
+        Assert.That(diag.AllParameters[1].Value, Is.EqualTo(expectedBias),
+            $"[{dialect}] @p1 must bind the captured bias value, not default(decimal). Pre-fix bug bound 0.");
     }
 
     #endregion
