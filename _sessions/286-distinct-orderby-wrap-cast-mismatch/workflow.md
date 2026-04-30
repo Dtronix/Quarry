@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: #286
 pr:
 session: 1
 phases-total: 3
-phases-complete: 1
+phases-complete: 3
 
 ## Problem Statement
 After PR #283 (fix for #274), `SqlAssembler.NeedsDistinctOrderByWrap` and `MayNeedDistinctOrderByWrap` on SQL Server compare projection-column-reference SQL (rendered via `RenderProjectionColumnRef` → `AppendProjectionColumnSql`, which now wraps window-function int projections with `CAST(... AS INT)`) against ORDER-BY-term SQL rendered via `SqlExprRenderer.Render` (no cast). The strings won't match, so `Distinct() + window-function projection + ORDER BY (window function)` triggers an unnecessary derived-table wrap on Ss only. Output is functionally correct, just less efficient than necessary.
@@ -30,4 +30,4 @@ Baseline test run (2026-04-29): 3423 tests passing across Quarry.Tests (3076), Q
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | 2026-04-29 INTAKE | IMPLEMENT (in progress) | Created branch+worktree from master, baseline tests green (3423/0), workflow.md initialized for issue #286. Explored SqlAssembler wrap paths. DESIGN approved: Option 1 forComparison flag + extend CrossDialectDistinctOrderByTests with ROW_NUMBER and RANK cases. PLAN written and approved (3 phases). |
+| 1 | 2026-04-29 INTAKE | REVIEW (in progress) | Created branch+worktree, baseline 3423/0. Explored wrap paths. DESIGN: Option 1 forComparison flag. PLAN: 3 phases. IMPLEMENT P1 (forComparison flag in AppendProjectionColumnSql + RenderProjectionColumnRef + doc-comment guard) committed abfa17d. Probe revealed bug is unreachable through chain API today (Sql.RowNumber in OrderBy hits QRY019, runtime LINQ fallback) — fix is preventive. P2 revised: skip tests, bundle one-line QRY019 messageFormat fix to remove doubled phrasing. P2 committed b96375e. P3 full-suite green (3423/0). |
