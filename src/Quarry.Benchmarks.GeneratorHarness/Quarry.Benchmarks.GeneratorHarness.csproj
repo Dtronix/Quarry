@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+
+    <!-- BenchmarkDotNet (in the consumer Quarry.Benchmarks) transitively pulls
+         an older Microsoft.CodeAnalysis. Same suppression as the consumer. -->
+    <NoWarn>$(NoWarn);MSB3277</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Quarry\Quarry.csproj" />
+    <ProjectReference Include="..\Quarry.Generator\Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Corpus files are real .cs so editors apply C# syntax highlighting, but
+      they are inputs to the source generator under test — not compiled into
+      this assembly. Remove from Compile and embed as resources for
+      [GlobalSetup] to load. The .cs.txt extension would have triggered
+      MSBuild's Czech-locale routing (`cs/*.resources.dll`) so we keep a
+      real .cs and exclude it from compilation.
+    -->
+    <Compile Remove="Corpora\v1\**\*.cs" />
+    <EmbeddedResource Include="Corpora\v1\**\*.cs" />
+  </ItemGroup>
+
+</Project>

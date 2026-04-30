@@ -29,6 +29,12 @@
   <ItemGroup>
     <ProjectReference Include="..\Quarry\Quarry.csproj" />
     <ProjectReference Include="..\Quarry.Generator\Quarry.Generator.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <!--
+      The generator-pipeline harness lives in its own minimal-deps project so
+      Quarry.Tests can consume it without dragging BenchmarkDotNet/Dapper/
+      EFCore/SqlKata into the test project's runtime closure.
+    -->
+    <ProjectReference Include="..\Quarry.Benchmarks.GeneratorHarness\Quarry.Benchmarks.GeneratorHarness.csproj" />
   </ItemGroup>
 
 </Project>
