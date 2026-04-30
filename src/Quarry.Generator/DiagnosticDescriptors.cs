@@ -346,6 +346,8 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ClauseNotTranslatable = new(
         id: "QRY019",
         title: "Clause not translatable at compile time",
+        // {0} must be a complete clause without trailing punctuation; see
+        // CallSiteTranslator errorMessage callsites.
         messageFormat: "{0}. The original runtime method will be used instead.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
