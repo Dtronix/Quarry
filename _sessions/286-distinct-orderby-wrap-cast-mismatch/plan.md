@@ -61,53 +61,24 @@ The inner-projection emission at `SqlAssembler.cs:1609` continues to call with t
 
 **Commit:** `Fix: DISTINCT wrap detection compares CAST-wrapped projection ref against unwrapped ORDER BY on Ss (#286)`
 
-### Phase 2 — Cross-dialect regression tests
+### Phase 2 — Bundle one-line QRY019 message-format fix
 
-Add four new tests to `src/Quarry.Tests/SqlOutput/CrossDialectDistinctOrderByTests.cs`. They focus on the wrap-detection symmetry around `RequiresSqlServerIntCast`-flagged projections.
+**Discovery during planning:** The original test plan required reproducing the bug through a chain like `.OrderBy(o => Sql.RowNumber(...))`. A probe showed this construct currently triggers `QRY019: ClauseNotTranslatable` (window functions are recognized only in `ProjectionAnalyzer`, not in `SqlExprBinder` for general expression contexts) and falls back to runtime LINQ — the SQL emitted has no `ORDER BY` clause at all. Therefore the cross-path string mismatch is **unreachable through the public chain API today**. The Phase 1 fix is preventive: it preserves wrap-detection symmetry for any future emit-only wrapper added to `AppendProjectionColumnSql`, or if `SqlExprBinder` ever gains window-function support.
 
-**Test A — `Distinct_OrderBy_WindowFunction_InProjection_NoWrap_AcrossAllDialects`**
+**No test phase.** The fix is preventive; existing tests already cover all reachable paths and would fail if Phase 1 broke emit-side behavior:
+- `SqlServerWindowIntCastTests` (production CAST-emit path).
+- `CrossDialectDistinctOrderByTests` (DISTINCT wrap path).
+- `CrossDialectWindowFunctionTests` (window-function emission across dialects).
 
-Chain shape (one per dialect):
-```csharp
-.Orders().Where(o => true)
-    .OrderBy(o => Sql.RowNumber(over => over.OrderBy(o.OrderDate)))
-    .Distinct()
-    .Select(o => (o.OrderId, RowNum: Sql.RowNumber(over => over.OrderBy(o.OrderDate))))
-```
+A white-box unit test of `RenderProjectionColumnRef` was considered and rejected — it would pin a private implementation detail without representing a real reachable bug. The doc-comment update on `AppendProjectionColumnSql.forComparison` (in Phase 1) is the durable guard: future maintainers adding emit-only wrappers to that method are explicitly told to gate them on `!forComparison`.
 
-Expected: NO wrap on any dialect. Flat shape:
-- PG/My/Lite: `SELECT DISTINCT "OrderId", ROW_NUMBER() OVER (ORDER BY "OrderDate") AS "RowNum" FROM "orders" ORDER BY ROW_NUMBER() OVER (ORDER BY "OrderDate") ASC`
-- Ss: `SELECT DISTINCT [OrderId], CAST(ROW_NUMBER() OVER (ORDER BY [OrderDate]) AS INT) AS [RowNum] FROM [orders] ORDER BY ROW_NUMBER() OVER (ORDER BY [OrderDate]) ASC`
+**Bundled glitch fix:** the QRY019 diagnostic surfaced during the probe with doubled phrasing — `"OrderBy clause contains an expression that cannot be translated to SQL clause could not be translated to SQL at compile time."` This is because `CallSiteTranslator` already substitutes a verbose ErrorMessage like `"OrderBy clause contains an expression that cannot be translated to SQL"` into `messageFormat: "{0} clause could not be translated to SQL at compile time. The original runtime method will be used instead."`, producing the duplication.
 
-Note the Ss SELECT clause keeps the CAST (production emit path) but ORDER BY does NOT have CAST (canonical SQL Server form — ordering by the un-wrapped expression is fine for sort). This is exactly what production wants: the reader needs INT for `GetInt32`, but the ORDER BY doesn't need to be wrapped.
+**Edit:** `src/Quarry.Generator/DiagnosticDescriptors.cs` — change `messageFormat` to `"{0}. The original runtime method will be used instead."`. The `{0}` substitution from `CallSiteTranslator.ErrorMessage` already contains the meaningful clause-kind context. Result: `"OrderBy clause contains an expression that cannot be translated to SQL. The original runtime method will be used instead."` (no duplication).
 
-This is the regression case that fails on master before the fix. Asserts `ToDiagnostics().Sql` against the expected string per dialect using the existing `QueryTestHarness.AssertDialects` pattern.
+**Tests for this phase:** none — the change is purely cosmetic. No tests assert on QRY019 message text in the existing suite (verified via grep). If any hidden test does fail, that would be a finding to update.
 
-**Test B — `Distinct_OrderBy_WindowFunction_NotInProjection_WrapsAcrossAllDialects`**
-
-Chain shape (one per dialect):
-```csharp
-.Orders().Where(o => true)
-    .OrderBy(o => Sql.RowNumber(over => over.OrderBy(o.OrderDate)))
-    .Distinct()
-    .Select(o => o.OrderId)
-```
-
-Expected: wrap fires on all dialects (the ORDER BY window function isn't in the SELECT list). Inner SELECT carries `_o0` for the window expression; on Ss the inner `_o0` column is emitted as the bare window expression (NOT `CAST(... AS INT)`), because the ORDER BY render path produces canonical SQL — `_o0` is an internal sort key, not a column the reader maps. This pins current behavior.
-
-**Test C — `Distinct_OrderBy_Rank_InProjection_NoWrap_AcrossAllDialects`**
-
-Same shape as Test A but with `Sql.Rank` instead of `Sql.RowNumber`. Confirms the fix is not function-specific to ROW_NUMBER — RANK / DENSE_RANK / NTILE all carry the same `RequiresSqlServerIntCast` flag and must benefit equally.
-
-**Test D — `Distinct_OrderBy_WindowFunction_NotInProjection_AndDifferentWindowFunction_InProjection_Ss`**
-
-Mixed-function variant on Ss only — projects `Sql.RowNumber(...)` but orders by `Sql.Rank(...)`. Expected: wrap fires (different window functions render to different SQL), inner SELECT keeps CAST on the projected RowNum (`CAST(ROW_NUMBER() OVER (...) AS INT) AS [RowNum]`), inner SELECT does NOT cast the `_o0` ORDER BY sort key. Pins the asymmetry: the cast applies to projection-side reader columns only, not ORDER BY sort keys.
-
-This test is single-dialect (Ss) because the asymmetry is Ss-only; cross-dialect would just duplicate Test B's wrap shape.
-
-**No `ExecuteFetchAllAsync` results assertions** — these tests are SQL-shape assertions only. Existing `Distinct_OrderBy_NonProjectedColumn_WrapsAcrossAllDialects` already pins runtime behavior for the wrap path on Lite/PG. Adding runtime assertions here would cross into integration territory and the seed fixtures don't cover window-function ordering meaningfully.
-
-**Commit:** `Test: cross-dialect coverage for DISTINCT + window-function ORDER BY wrap-detection (#286)`
+**Commit:** `Fix: QRY019 diagnostic message duplicated 'translated to SQL' phrase (#286)`
 
 ### Phase 3 — Verify no regressions across the existing suite
 
@@ -127,3 +98,4 @@ Phase 3 is verification-only — no commit unless an existing test legitimately 
 - **Non-risk: emit path.** The CAST wrap on the SELECT side is preserved bit-for-bit because direct `AppendProjectionColumnSql` callers don't pass `forComparison`. `SqlServerWindowIntCastTests` (production-path regression for #274/#283) will continue to pass without modification.
 - **Non-risk: non-Ss dialects.** The cast branch is dialect-gated; non-Ss codepaths are unchanged.
 - **Risk: future emit-only wrappers.** If a future change adds another `[dialect]-only emit wrapper` to `AppendProjectionColumnSql`, it must also be gated on `!forComparison` or the comparison-side will drift again. Doc-comment update in Phase 1 should call this out so the next maintainer doesn't miss it.
+- **Risk: hidden QRY019 message asserts.** Phase 2 changes a diagnostic format string. If any test pins the exact pre-fix wording, it will fail. Grep showed no such tests in the current suite, but the full-suite run in Phase 3 will surface anything missed.
