@@ -21,7 +21,8 @@ internal static class SetOperationBodyEmitter
     public static void EmitSetOperation(
         StringBuilder sb, TranslatedCallSite site, string methodName,
         CarrierPlan carrier, AssembledPlan chain, int setOpIndex,
-        Dictionary<QueryPlan, string>? operandCarrierNames = null)
+        Dictionary<QueryPlan, string>? operandCarrierNames = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var receiverType = CarrierEmitter.ResolveCarrierReceiverType(site, entityType, chain);
@@ -76,7 +77,7 @@ internal static class SetOperationBodyEmitter
                 if (setOp.Operand.Parameters.Count > 0)
                 {
                     sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, setOp.Operand.Parameters, setOp.ParameterOffset);
+                    CarrierEmitter.EmitLambdaInnerChainCapture(sb, carrier, site, setOp.Operand.Parameters, setOp.ParameterOffset, recorder);
                 }
             }
             else
@@ -93,6 +94,7 @@ internal static class SetOperationBodyEmitter
                     {
                         var targetIdx = setOp.ParameterOffset + i;
                         sb.AppendLine($"        __c.P{targetIdx} = __op.P{i};");
+                        recorder?.Record(carrier.ClassName, targetIdx);
                     }
                 }
             }

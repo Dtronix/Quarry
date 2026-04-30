@@ -766,6 +766,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.SqlRawPlaceholderMismatch,
         DiagnosticDescriptors.PreparedQueryEscapesScope,
         DiagnosticDescriptors.PreparedQueryNoTerminals,
+        DiagnosticDescriptors.CarrierParameterFieldUnassigned,
         DiagnosticDescriptors.RawSqlUnresolvableColumn,
         DiagnosticDescriptors.CteInnerChainNotAnalyzable,
         DiagnosticDescriptors.FromCteWithoutWith,

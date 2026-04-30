@@ -28,7 +28,8 @@ internal static class JoinBodyEmitter
         string methodName,
         AssembledPlan? prebuiltChain = null,
         bool isFirstInChain = false,
-        CarrierPlan? carrier = null)
+        CarrierPlan? carrier = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -40,6 +41,13 @@ internal static class JoinBodyEmitter
         var isChainedJoin = joinedEntityTypeNames != null && joinedEntityTypeNames.Count >= 2;
 
         var isCrossJoin = site.Kind == InterceptorKind.CrossJoin;
+
+        // Captured-variable parameters in the join condition require the lambda to be
+        // named (so func.Target is reachable in the body). Without this, carrier P-fields
+        // backing the ON clause would never be assigned and silently bind their default.
+        var hasResolvableCapturedParams = !isCrossJoin && !site.IsNavigationJoin
+            && clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
         if (isChainedJoin && site.JoinedEntityTypeName != null)
         {
@@ -56,11 +64,16 @@ internal static class JoinBodyEmitter
 
             if (prebuiltChain != null && clauseInfo != null && clauseInfo.IsSuccess)
             {
+                if (hasResolvableCapturedParams)
+                {
+                    sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
+                    sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
+                }
                 // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
                 sb.AppendLine($"    public static {returnBuilderName}<{returnTypeArgs}> {methodName}(");
                 sb.AppendLine($"        this {receiverBuilderName}<{receiverTypeArgs}> builder{(isCrossJoin ? ")" : ",")}");
                 if (!isCrossJoin)
-                    sb.AppendLine($"        Func<{funcTypeArgs}> _)");
+                    sb.AppendLine($"        Func<{funcTypeArgs}> {funcParamName})");
                 sb.AppendLine($"    {{");
 
                 // Compute carrier site params
@@ -71,7 +84,24 @@ internal static class JoinBodyEmitter
                 {
                     // For chained join first-in-chain, the incoming builder is the pre-join type
                     var preJoinBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(priorTypes.Length, priorTypes);
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, preJoinBuilderType, joinReturnType, null, siteParams, globalParamOffset, recorder);
+                }
+                else if (siteParams.Count > 0)
+                {
+                    // Captured params in the join condition need extraction + binding even
+                    // when this is not the chain root. Funnel through EmitCarrierClauseBody
+                    // so the per-clause extraction plan is honored.
+                    //
+                    // Implicit invariant: EmitCarrierClauseBody re-derives params from
+                    // site.Clause.Parameters rather than the siteParams list passed here.
+                    // Both originate from the same translated clause data, so their counts
+                    // match in practice. If a future divergence between Clause.Parameters
+                    // and TerminalEmitHelpers.ResolveSiteParams is introduced, QRY037 will
+                    // catch the resulting unassigned-P-field at generation time.
+                    CarrierEmitter.EmitCarrierClauseBody(sb, carrier!, prebuiltChain, site, null, false,
+                        carrier!.ClassName, joinReturnType, hasResolvableCapturedParams,
+                        new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                        recorder: recorder);
                 }
                 else
                 {
@@ -85,6 +115,12 @@ internal static class JoinBodyEmitter
         {
             // Prebuilt path: AsJoined<T>() — type conversion only, no state mutation
             var joinedEntityName = InterceptorCodeGenerator.GetShortTypeName(site.JoinedEntityTypeName ?? site.EntityTypeName);
+
+            if (hasResolvableCapturedParams)
+            {
+                sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
+                sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
+            }
 
             if (isCrossJoin)
             {
@@ -101,7 +137,7 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static IJoinedQueryBuilder<{entityType}, {joinedEntityName}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Func<{entityType}, {joinedEntityName}, bool> _)");
+                sb.AppendLine($"        Func<{entityType}, {joinedEntityName}, bool> {funcParamName})");
             }
             sb.AppendLine($"    {{");
 
@@ -112,7 +148,16 @@ internal static class JoinBodyEmitter
             if (isFirstInChain)
             {
                 // For first join, the incoming builder is the carrier (from ChainRoot)
-                CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, carrier!.ClassName, joinReturnType, null, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier!, prebuiltChain, site, carrier!.ClassName, joinReturnType, null, siteParams, globalParamOffset, recorder);
+            }
+            else if (siteParams.Count > 0)
+            {
+                // Captured params in the join condition need extraction + binding even
+                // when this is not the chain root.
+                CarrierEmitter.EmitCarrierClauseBody(sb, carrier!, prebuiltChain, site, null, false,
+                    carrier!.ClassName, joinReturnType, hasResolvableCapturedParams,
+                    new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             else
             {
@@ -134,7 +179,8 @@ internal static class JoinBodyEmitter
         int? clauseBit = null,
         AssembledPlan? prebuiltChain = null,
         bool isFirstInChain = false,
-        CarrierPlan? carrier = null)
+        CarrierPlan? carrier = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
         var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
@@ -144,8 +190,12 @@ internal static class JoinBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
@@ -196,11 +246,11 @@ internal static class JoinBodyEmitter
 
             if (isFirstInChain)
             {
-                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset, recorder);
             }
             else if (siteParams.Count > 0)
             {
-                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site, recorder: recorder);
             }
             else
             {
@@ -220,7 +270,8 @@ internal static class JoinBodyEmitter
         int? clauseBit = null,
         AssembledPlan? prebuiltChain = null,
         bool isFirstInChain = false,
-        CarrierPlan? carrier = null)
+        CarrierPlan? carrier = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
         var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
@@ -229,6 +280,19 @@ internal static class JoinBodyEmitter
 
         // Use concrete key type (arity 0) when available
         var keyType = site.KeyTypeName != null ? InterceptorCodeGenerator.GetShortTypeName(site.KeyTypeName) : null;
+
+        // Captured-variable parameters require the lambda to be named (so func.Target
+        // is reachable in the body). Without this, the carrier P-fields backing the
+        // ORDER BY expression would never be assigned and silently bind their default.
+        var clauseInfo = site.Clause;
+        var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
+
+        if (hasResolvableCapturedParams)
+        {
+            sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
+        }
 
         if (site.ResultTypeName != null)
         {
@@ -244,7 +308,7 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}, {resultType}> builder,");
-                sb.AppendLine($"        Func<{typeArgs}, {keyType}> _,");
+                sb.AppendLine($"        Func<{typeArgs}, {keyType}> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -255,7 +319,7 @@ internal static class JoinBodyEmitter
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}, TResult> {methodName}<{allTypeParams}, TResult, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}, TResult> builder,");
-                sb.AppendLine($"        Func<{allTypeParams}, TKey> _,");
+                sb.AppendLine($"        Func<{allTypeParams}, TKey> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
             }
         }
@@ -265,7 +329,7 @@ internal static class JoinBodyEmitter
             {
                 sb.AppendLine($"    public static {builderName}<{typeArgs}> {methodName}(");
                 sb.AppendLine($"        this {thisBuilderName}<{typeArgs}> builder,");
-                sb.AppendLine($"        Func<{typeArgs}, {keyType}> _,");
+                sb.AppendLine($"        Func<{typeArgs}, {keyType}> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -274,7 +338,7 @@ internal static class JoinBodyEmitter
                 var constraints = string.Join(" ", Enumerable.Range(1, entityTypes.Length).Select(i => $"where T{i} : class"));
                 sb.AppendLine($"    public static {builderName}<{allTypeParams}> {methodName}<{allTypeParams}, TKey>(");
                 sb.AppendLine($"        this {thisBuilderName}<{allTypeParams}> builder,");
-                sb.AppendLine($"        Func<{allTypeParams}, TKey> _,");
+                sb.AppendLine($"        Func<{allTypeParams}, TKey> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) {constraints}");
             }
         }
@@ -284,13 +348,13 @@ internal static class JoinBodyEmitter
         // Carrier-optimized path: bypass concrete type cast entirely
         if (carrier != null && prebuiltChain != null && keyType == null)
         {
-            // Generic key type — emit passthrough with clause mask bit set
-            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-            if (clauseBit.HasValue)
-                sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
             var allTypeP = string.Join(", ", Enumerable.Range(1, entityTypes.Length).Select(i => $"T{i}"));
             var castTarget = site.ResultTypeName != null ? $"{builderName}<{allTypeP}, TResult>" : $"{builderName}<{allTypeP}>";
-            sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+            // Funnel through EmitCarrierClauseBody so captured-variable extraction and
+            // P-field assignment happen exactly as on the keyType-known path.
+            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -306,11 +370,11 @@ internal static class JoinBodyEmitter
 
             if (isFirstInChain)
             {
-                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset);
+                CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderTypeName, returnInterface, clauseBit, siteParams, globalParamOffset, recorder);
             }
             else if (siteParams.Count > 0)
             {
-                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site);
+                CarrierEmitter.EmitCarrierParamBind(sb, carrier, prebuiltChain, clauseBit, siteParams, globalParamOffset, site: site, recorder: recorder);
             }
             else
             {
@@ -329,7 +393,8 @@ internal static class JoinBodyEmitter
         string methodName,
         AssembledPlan? prebuiltChain = null,
         bool isFirstInChain = false,
-        CarrierPlan? carrier = null)
+        CarrierPlan? carrier = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityTypes = site.JoinedEntityTypeNames!.Select(InterceptorCodeGenerator.GetShortTypeName).ToArray();
         var builderName = InterceptorCodeGenerator.GetJoinedBuilderTypeName(entityTypes.Length);
@@ -359,11 +424,11 @@ internal static class JoinBodyEmitter
                     var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     var joinedBuilderType = CarrierEmitter.GetJoinedConcreteBuilderTypeName(entityTypes.Length, entityTypes);
                     int? clauseBit = null;
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, joinedBuilderType, targetInterface, clauseBit, siteParams, globalParamOffset, recorder);
                 }
                 else
                 {
-                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site, recorder);
                 }
                 sb.AppendLine($"    }}");
             }

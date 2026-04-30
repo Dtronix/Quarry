@@ -258,7 +258,7 @@ internal static class CarrierEmitter
         TranslatedCallSite site, int? clauseBit, bool isFirstInChain,
         string concreteBuilderType, string returnInterface,
         bool hasResolvableCapturedParams, List<InterceptorCodeGenerator.CachedExtractorField> methodFields,
-        string delegateParamName = "func")
+        string delegateParamName = "func", CarrierAssignmentRecorder? recorder = null)
     {
         // Compute global parameter offset for this clause's params
         var (_, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(chain, site.UniqueId);
@@ -303,7 +303,7 @@ internal static class CarrierEmitter
 
                 if (p.ExpressionPath == "__CONTAINS_COLLECTION__")
                 {
-                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier);
+                    EmitCollectionContainsExtraction(sb, globalIdx, carrierParam, carrier, recorder);
                 }
                 else
                 {
@@ -312,15 +312,18 @@ internal static class CarrierEmitter
                     {
                         var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                         sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType})value!;");
+                        recorder?.Record(carrier.ClassName, globalIdx);
                     }
                     else if (hasExtraction && p.IsCaptured)
                     {
                         sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, p.ValueExpression));
+                        recorder?.Record(carrier.ClassName, globalIdx);
                     }
                     else
                     {
                         var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);
                         sb.AppendLine($"        __c.P{globalIdx} = ({effectiveCastType}){p.ValueExpression}!;");
+                        recorder?.Record(carrier.ClassName, globalIdx);
                     }
                 }
             }
@@ -441,14 +444,15 @@ internal static class CarrierEmitter
     internal static void EmitCarrierChainEntry(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         TranslatedCallSite site, string builderTypeName, string returnInterface,
-        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
+        CarrierAssignmentRecorder? recorder = null)
     {
         // In the carrier-only architecture, the builder is already the carrier
         // (created by the ChainRoot interceptor). Just cast to it.
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         // Emit per-variable extraction locals and bind parameters
-        EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
+        EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset, recorder);
 
         // Set clause bit if conditional
         if (bitIndex.HasValue)
@@ -465,14 +469,14 @@ internal static class CarrierEmitter
     internal static void EmitCarrierParamBind(
         StringBuilder sb, CarrierPlan carrier, AssembledPlan chain,
         int? bitIndex, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
-        TranslatedCallSite? site = null)
+        TranslatedCallSite? site = null, CarrierAssignmentRecorder? recorder = null)
     {
         sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
 
         if (site != null)
-            EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
+            EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset, recorder);
         else
-            EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset);
+            EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset, recorder: recorder);
 
         if (bitIndex.HasValue)
         {
@@ -487,7 +491,8 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitExtractionLocalsAndBindParams(
         StringBuilder sb, CarrierPlan carrier, TranslatedCallSite site,
-        IReadOnlyList<QueryParameter> siteParams, int globalParamOffset)
+        IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
@@ -501,7 +506,7 @@ internal static class CarrierEmitter
         }
 
         var hasExtraction = extractionPlan != null && extractionPlan.Extractors.Count > 0;
-        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset, hasExtraction);
+        EmitCarrierParamBindings(sb, carrier, siteParams, globalParamOffset, hasExtraction, recorder);
     }
 
     /// <summary>
@@ -511,7 +516,8 @@ internal static class CarrierEmitter
     /// </summary>
     internal static void EmitLambdaInnerChainCapture(
         StringBuilder sb, CarrierPlan carrier, TranslatedCallSite site,
-        IReadOnlyList<QueryParameter> innerParams, int parameterOffset)
+        IReadOnlyList<QueryParameter> innerParams, int parameterOffset,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var extractionPlan = carrier.GetExtractionPlan(site.UniqueId);
         if (extractionPlan != null && extractionPlan.Extractors.Count > 0)
@@ -525,7 +531,7 @@ internal static class CarrierEmitter
         }
 
         var hasExtraction = extractionPlan != null && extractionPlan.Extractors.Count > 0;
-        EmitCarrierParamBindings(sb, carrier, innerParams, parameterOffset, hasExtraction);
+        EmitCarrierParamBindings(sb, carrier, innerParams, parameterOffset, hasExtraction, recorder);
     }
 
     /// <summary>
@@ -550,7 +556,8 @@ internal static class CarrierEmitter
     internal static void EmitCarrierSelect(
         StringBuilder sb, string targetInterface,
         CarrierPlan? carrier = null, AssembledPlan? chain = null,
-        TranslatedCallSite? site = null)
+        TranslatedCallSite? site = null,
+        CarrierAssignmentRecorder? recorder = null)
     {
         if (carrier != null && chain != null && site != null)
         {
@@ -558,7 +565,7 @@ internal static class CarrierEmitter
             if (siteParams.Count > 0)
             {
                 sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-                EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset);
+                EmitExtractionLocalsAndBindParams(sb, carrier, site, siteParams, globalParamOffset, recorder);
                 sb.AppendLine($"        return Unsafe.As<{targetInterface}>(__c);");
                 return;
             }
@@ -1032,7 +1039,7 @@ internal static class CarrierEmitter
     /// </summary>
     private static void EmitCollectionContainsExtraction(
         StringBuilder sb, int globalIdx, QueryParameter carrierParam,
-        CarrierPlan carrier)
+        CarrierPlan carrier, CarrierAssignmentRecorder? recorder = null)
     {
         string fieldType;
         if (carrierParam.ElementTypeName != null)
@@ -1049,18 +1056,20 @@ internal static class CarrierEmitter
         if (carrierParam.IsDirectAccessible && carrierParam.CollectionAccessExpression != null)
         {
             sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierParam.CollectionAccessExpression};");
+            recorder?.Record(carrier.ClassName, globalIdx);
         }
         else if (carrierParam.ValueExpression != null)
         {
             // Per-variable extraction locals bring captured variables into scope,
             // so ValueExpression is valid C# in the generated context
             sb.AppendLine($"        __c.P{globalIdx} = ({fieldType}){carrierParam.ValueExpression}!;");
+            recorder?.Record(carrier.ClassName, globalIdx);
         }
     }
 
     private static void EmitCarrierParamBindings(
         StringBuilder sb, CarrierPlan carrier, IReadOnlyList<QueryParameter> siteParams, int globalParamOffset,
-        bool hasExtraction = false)
+        bool hasExtraction = false, CarrierAssignmentRecorder? recorder = null)
     {
         // Bind parameters to carrier fields using ValueExpression — per-variable locals are in scope
         for (int i = 0; i < siteParams.Count; i++)
@@ -1069,16 +1078,18 @@ internal static class CarrierEmitter
             var globalIdx = globalParamOffset + i;
             if (param.IsCollection)
             {
-                EmitCollectionContainsExtraction(sb, globalIdx, param, carrier);
+                EmitCollectionContainsExtraction(sb, globalIdx, param, carrier, recorder);
             }
             else if (hasExtraction && param.IsCaptured)
             {
                 sb.AppendLine(FormatCarrierFieldAssignment(globalIdx, param.ValueExpression));
+                recorder?.Record(carrier.ClassName, globalIdx);
             }
             else
             {
                 var castType = GetEffectiveCastType(globalIdx, param, carrier);
                 sb.AppendLine($"        __c.P{globalIdx} = ({castType}){param.ValueExpression}!;");
+                recorder?.Record(carrier.ClassName, globalIdx);
             }
         }
     }

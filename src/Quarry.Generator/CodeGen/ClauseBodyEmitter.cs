@@ -28,7 +28,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -36,8 +37,12 @@ internal static class ClauseBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
@@ -79,7 +84,8 @@ internal static class ClauseBodyEmitter
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields);
+                concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields,
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -95,7 +101,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -103,6 +110,19 @@ internal static class ClauseBodyEmitter
 
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
+
+        // Captured-variable parameters require the lambda to be named (so func.Target
+        // is reachable in the body). Without this, the carrier P-fields backing the
+        // ORDER BY expression would never be assigned and silently bind their default.
+        var clauseInfo = site.Clause;
+        var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
+
+        if (hasResolvableCapturedParams)
+        {
+            sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
+        }
 
         if (site.ResultTypeName != null)
         {
@@ -116,7 +136,7 @@ internal static class ClauseBodyEmitter
                 var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {receiverType} builder,");
-                sb.AppendLine($"        Func<{entityType}, {keyType}> _,");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
@@ -126,7 +146,7 @@ internal static class ClauseBodyEmitter
                 var genericReturn = $"{returnType}<T, TResult>";
                 sb.AppendLine($"    public static {genericReturn} {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {genericReceiver} builder,");
-                sb.AppendLine($"        Func<T, TKey> _,");
+                sb.AppendLine($"        Func<T, TKey> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
             }
         }
@@ -136,14 +156,14 @@ internal static class ClauseBodyEmitter
             {
                 sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Func<{entityType}, {keyType}> _,");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending)");
             }
             else
             {
                 sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
-                sb.AppendLine($"        Func<T, TKey> _,");
+                sb.AppendLine($"        Func<T, TKey> {funcParamName},");
                 sb.AppendLine($"        Direction direction = Direction.Ascending) where T : class");
             }
         }
@@ -160,16 +180,17 @@ internal static class ClauseBodyEmitter
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             else
             {
-                // Generic key type — emit passthrough with clause mask bit set
-                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-                if (clauseBit.HasValue)
-                    sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
+                // Generic key type — funnel through EmitCarrierClauseBody so captured-variable
+                // extraction and P-field assignment happen exactly as on the keyType-known path.
                 var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
-                sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+                CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             sb.AppendLine($"    }}");
             return;
@@ -185,7 +206,8 @@ internal static class ClauseBodyEmitter
         string methodName,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         // Prefer chain's enriched ProjectionInfo over site's discovery-time projection
@@ -214,11 +236,11 @@ internal static class ClauseBodyEmitter
                 {
                     var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     int? clauseBit = null;
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, carrier.ClassName, targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, carrier.ClassName, targetInterface, clauseBit, siteParams, globalParamOffset, recorder);
                 }
                 else
                 {
-                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site, recorder);
                 }
                 sb.AppendLine($"    }}");
                 return;
@@ -236,7 +258,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -246,6 +269,18 @@ internal static class ClauseBodyEmitter
         var thisType = site.BuilderTypeName;
         var returnType = InterceptorCodeGenerator.ToReturnTypeName(thisType);
         var concreteType = InterceptorCodeGenerator.ToConcreteTypeName(returnType);
+
+        // Captured-variable parameters require the lambda to be named (so func.Target
+        // is reachable in the body). Without this, carrier P-fields backing the GROUP BY
+        // expression would never be assigned and silently bind their default.
+        var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
+        var funcParamName = hasResolvableCapturedParams ? "func" : "_";
+
+        if (hasResolvableCapturedParams)
+        {
+            sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
+            sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
+        }
 
         if (site.ResultTypeName != null)
         {
@@ -259,7 +294,7 @@ internal static class ClauseBodyEmitter
                 var receiverType = InterceptorCodeGenerator.BuildReceiverType(thisType, entityType, resultType);
                 sb.AppendLine($"    public static {returnType}<{entityType}, {resultType}> {methodName}(");
                 sb.AppendLine($"        this {receiverType} builder,");
-                sb.AppendLine($"        Func<{entityType}, {keyType}> _)");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> {funcParamName})");
             }
             else
             {
@@ -267,7 +302,7 @@ internal static class ClauseBodyEmitter
                 var genericReceiver = isAccessor ? $"{thisType}<T>" : $"{thisType}<T, TResult>";
                 sb.AppendLine($"    public static {returnType}<T, TResult> {methodName}<T, TResult, TKey>(");
                 sb.AppendLine($"        this {genericReceiver} builder,");
-                sb.AppendLine($"        Func<T, TKey> _) where T : class");
+                sb.AppendLine($"        Func<T, TKey> {funcParamName}) where T : class");
             }
         }
         else
@@ -276,13 +311,13 @@ internal static class ClauseBodyEmitter
             {
                 sb.AppendLine($"    public static {returnType}<{entityType}> {methodName}(");
                 sb.AppendLine($"        this {thisType}<{entityType}> builder,");
-                sb.AppendLine($"        Func<{entityType}, {keyType}> _)");
+                sb.AppendLine($"        Func<{entityType}, {keyType}> {funcParamName})");
             }
             else
             {
                 sb.AppendLine($"    public static {returnType}<T> {methodName}<T, TKey>(");
                 sb.AppendLine($"        this {thisType}<T> builder,");
-                sb.AppendLine($"        Func<T, TKey> _) where T : class");
+                sb.AppendLine($"        Func<T, TKey> {funcParamName}) where T : class");
             }
         }
 
@@ -306,16 +341,17 @@ internal static class ClauseBodyEmitter
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             else
             {
-                // Generic key type — emit passthrough with clause mask bit set
-                sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
-                if (clauseBit.HasValue)
-                    sb.AppendLine($"        __c.Mask |= unchecked(({carrier.MaskType})(1 << {clauseBit.Value}));");
+                // Generic key type — funnel through EmitCarrierClauseBody so captured-variable
+                // extraction and P-field assignment happen exactly as on the keyType-known path.
                 var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
-                sb.AppendLine($"        return Unsafe.As<{castTarget}>(builder);");
+                CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
+                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             sb.AppendLine($"    }}");
             return;
@@ -332,7 +368,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -377,7 +414,8 @@ internal static class ClauseBodyEmitter
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -393,7 +431,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -414,7 +453,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnType}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -432,7 +472,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -441,8 +482,12 @@ internal static class ClauseBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
@@ -472,7 +517,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"IExecutable{modKind}Builder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
+                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields,
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -488,7 +534,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -509,7 +556,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -525,7 +573,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -550,7 +599,7 @@ internal static class ClauseBodyEmitter
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
-                delegateParamName: actionParamName);
+                delegateParamName: actionParamName, recorder: recorder);
 
             sb.AppendLine($"    }}");
             return;
@@ -567,7 +616,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var updateInfo = site.UpdateInfo;
