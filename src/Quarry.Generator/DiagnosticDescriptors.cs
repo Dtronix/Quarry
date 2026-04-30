@@ -346,7 +346,7 @@ internal static class DiagnosticDescriptors
     public static readonly DiagnosticDescriptor ClauseNotTranslatable = new(
         id: "QRY019",
         title: "Clause not translatable at compile time",
-        messageFormat: "{0} clause could not be translated to SQL at compile time. The original runtime method will be used instead.",
+        messageFormat: "{0}. The original runtime method will be used instead.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
