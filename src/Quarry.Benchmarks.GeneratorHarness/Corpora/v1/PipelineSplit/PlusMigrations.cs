@@ -1,3 +1,4 @@
+// CORPUS — embedded resource for QuarryGenerator benchmarks; not compiled into Quarry.Benchmarks.
 // PipelineSplit + queries + migrations: PlusQueries content + 10 minimal
 // migrations and 1 snapshot. Migration bodies are intentionally trivial —
 // the goal is to fire Pipeline 3 (migration discovery + MigrateAsync emit)

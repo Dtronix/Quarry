@@ -1,7 +1,4 @@
-// PipelineSplit + queries: same query set as Throughput/Medium at v1, but
-// kept as a separate file so a future Medium edit does NOT silently shift
-// the per-pipeline split numbers. Update both deliberately when bumping
-// the corpus version.
+// CORPUS — embedded resource for QuarryGenerator benchmarks; not compiled into Quarry.Benchmarks.
 using Quarry;
 
 namespace BenchHarness;

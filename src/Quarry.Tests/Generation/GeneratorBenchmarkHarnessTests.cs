@@ -1,4 +1,4 @@
-using Quarry.Benchmarks.Generator;
+using Quarry.Benchmarks.GeneratorHarness;
 
 namespace Quarry.Tests.Generation;
 
@@ -158,8 +158,11 @@ public partial class HarnessDb : QuarryContext
             $"Corpus '{corpus}' interceptor expectation. Generated files: " +
             string.Join(", ", generatedFileNames));
 
-        var hasMigrateAsync = result.GeneratedTrees
-            .Any(t => t.GetText().ToString().Contains("MigrateAsync", StringComparison.Ordinal));
+        // Filename pattern, not text-search: the migration generator emits a file named
+        // <Context>.MigrateAsync.g.cs. String-searching tree text would false-positive
+        // on any unrelated generated file that mentions MigrateAsync in a comment.
+        var hasMigrateAsync = generatedFileNames
+            .Any(n => n.EndsWith(".MigrateAsync.g.cs", StringComparison.Ordinal));
         Assert.That(hasMigrateAsync, Is.EqualTo(expectMigrationOutput),
             $"Corpus '{corpus}' migration-output expectation. Generated files: " +
             string.Join(", ", generatedFileNames));

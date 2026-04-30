@@ -1,3 +1,4 @@
+// CORPUS — embedded resource for QuarryGenerator benchmarks; not compiled into Quarry.Benchmarks.
 using Quarry;
 
 namespace BenchHarness;
