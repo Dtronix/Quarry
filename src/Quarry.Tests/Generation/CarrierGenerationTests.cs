@@ -4164,4 +4164,59 @@ public static class Queries
         // And the dispatch arrows must still all resolve.
         AssertEveryDispatchArrowResolves(code);
     }
+
+    #region Captured-variable emission for OrderBy / GroupBy / Join — regression coverage
+
+    // These tests guard against a class of silent-correctness defect where a clause
+    // emitter declares a carrier P-field for a captured parameter but no interceptor
+    // body actually assigns it. The C# compiler surfaces this as CS0649; at runtime
+    // the parameter would silently bind default(T). Each test below asserts the
+    // generated interceptor body extracts the captured variable AND assigns it to
+    // a P-field on the carrier.
+
+    [Test]
+    public void CarrierGeneration_OrderByOnJoinedBuilder_WithCapturedVariable_EmitsExtractionAndAssignment()
+    {
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        decimal bias = 5.0m;
+        return _db.Users().Join<Order>((u, o) => u.UserId == o.UserId)
+                  .Where((u, o) => o.Total > 0)
+                  .OrderBy((u, o) => o.Total + bias)
+                  .Distinct()
+                  .Select((u, o) => u.UserName)
+                  .ToDiagnostics().Sql;
+    }
+}";
+
+        var compilation = CreateCompilation(source);
+        var result = RunGenerator(compilation);
+
+        var interceptorsTree = result.GeneratedTrees
+            .FirstOrDefault(t => t.FilePath.Contains(".Interceptors.") && t.FilePath.EndsWith(".g.cs"));
+        Assert.That(interceptorsTree, Is.Not.Null, "Should generate interceptors file");
+
+        var code = interceptorsTree!.GetText().ToString();
+        Assert.That(code, Does.Contain("PrebuiltDispatch"),
+            "Joined OrderBy with a captured local must remain on the prebuilt-dispatch path");
+        Assert.That(code, Does.Contain("__ExtractVar_bias_"),
+            "Joined OrderBy interceptor must emit the captured-variable extractor invocation");
+        Assert.That(code, Does.Match(@"__c\.P\d+\s*=\s*bias!"),
+            "Joined OrderBy interceptor must assign the captured value to a carrier P-field — "
+            + "regression of pre-fix CS0649 / silent default(T) binding bug");
+    }
+
+    #endregion
 }
