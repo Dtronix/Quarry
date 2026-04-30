@@ -58,7 +58,7 @@ internal static class CallSiteBinder
         EntityRef entity;
         string contextClassName;
         string contextNamespace;
-        SqlDialect dialect;
+        SqlDialectConfig dialectConfig;
         string tableName;
         string? schemaName;
 
@@ -67,7 +67,7 @@ internal static class CallSiteBinder
             entity = EntityRef.FromEntityInfo(entry.Entity);
             contextClassName = raw.ContextClassName ?? entry.Context.ClassName;
             contextNamespace = raw.ContextNamespace ?? entry.Context.Namespace ?? "";
-            dialect = entry.Context.Dialect;
+            dialectConfig = entry.Context.DialectConfig;
             tableName = entry.Entity.TableName;
             schemaName = entry.Context.Schema;
 
@@ -121,14 +121,14 @@ internal static class CallSiteBinder
             entity = EntityRef.Empty(raw.EntityTypeName);
             contextClassName = raw.ContextClassName ?? "";
             contextNamespace = raw.ContextNamespace ?? "";
-            dialect = SqlDialect.PostgreSQL; // placeholder
+            dialectConfig = new SqlDialectConfig(SqlDialect.PostgreSQL); // placeholder
             if (!string.IsNullOrEmpty(raw.ContextClassName))
             {
                 foreach (var ctx in registry.AllContexts)
                 {
                     if (ctx.ClassName == raw.ContextClassName)
                     {
-                        dialect = ctx.Dialect;
+                        dialectConfig = ctx.DialectConfig;
                         break;
                     }
                 }
@@ -138,7 +138,7 @@ internal static class CallSiteBinder
                 // Single-context project: when raw.ContextClassName is missing (e.g.,
                 // discovery couldn't walk back to the chain root), there's only one
                 // possible answer — use it instead of the PostgreSQL placeholder.
-                dialect = registry.AllContexts[0].Dialect;
+                dialectConfig = registry.AllContexts[0].DialectConfig;
             }
             tableName = "";
             schemaName = null;
@@ -160,7 +160,7 @@ internal static class CallSiteBinder
                 foreach (var name in raw.InitializedPropertyNames.Value)
                     propNames.Add(name);
             }
-            insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialect, propNames);
+            insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialectConfig.Dialect, propNames);
         }
 
         // Build InsertInfo for batch insert sites (column names come from lambda selector)
@@ -178,7 +178,7 @@ internal static class CallSiteBinder
                 foreach (var name in raw.BatchInsertColumnNames.Value)
                     propNames.Add(name);
             }
-            insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialect, propNames);
+            insertInfo = InsertInfo.FromEntityInfo(entry.Entity, dialectConfig.Dialect, propNames);
         }
 
         // Build UpdateInfo for UpdateSetPoco
@@ -192,7 +192,7 @@ internal static class CallSiteBinder
                 foreach (var name in raw.InitializedPropertyNames.Value)
                     propNames.Add(name);
             }
-            updateInfo = InsertInfo.FromEntityInfo(entry.Entity, dialect, propNames);
+            updateInfo = InsertInfo.FromEntityInfo(entry.Entity, dialectConfig.Dialect, propNames);
         }
 
         // Resolve joined entity for join sites
@@ -245,7 +245,7 @@ internal static class CallSiteBinder
             raw: raw,
             contextClassName: contextClassName,
             contextNamespace: contextNamespace,
-            dialect: dialect,
+            dialectConfig: dialectConfig,
             tableName: tableName,
             schemaName: schemaName,
             entity: entity,

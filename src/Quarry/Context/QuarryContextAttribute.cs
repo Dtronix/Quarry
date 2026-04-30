@@ -34,6 +34,20 @@ public sealed class QuarryContextAttribute : Attribute
     public SqlDialect Dialect { get; set; }
 
     /// <summary>
+    /// When the target dialect is <see cref="SqlDialect.MySQL"/>, controls whether the
+    /// generator emits LIKE patterns and ESCAPE clauses assuming backslash is a
+    /// string-literal escape character (default <c>true</c>, matches stock MySQL
+    /// <c>sql_mode</c>). Set to <c>false</c> if the target server has
+    /// <c>NO_BACKSLASH_ESCAPES</c> set in <c>sql_mode</c>.
+    /// </summary>
+    /// <remarks>
+    /// Setting this on a non-MySQL dialect (PostgreSQL, SQLite, SqlServer) is a
+    /// silent no-op — those dialects' LIKE emission is unaffected by the flag.
+    /// No diagnostic is currently raised; a future <c>QRY</c> rule may surface this.
+    /// </remarks>
+    public bool MySqlBackslashEscapes { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets the database schema name for qualified table references.
     /// </summary>
     /// <remarks>

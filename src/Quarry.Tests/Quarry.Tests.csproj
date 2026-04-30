@@ -8,7 +8,7 @@
     <IsPackable>false</IsPackable>
 
     <!-- Enable interceptors for the generated code -->
-    <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Tests.Samples;Quarry.Generated</InterceptorsNamespaces>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Quarry.Tests.Samples;Quarry.Tests.Samples.MyDefault;Quarry.Tests.Samples.MyAnsi;Quarry.Generated</InterceptorsNamespaces>
 
     <!-- Suppress CS9177: arity mismatch in generated interceptors for entity-projection fallback paths -->
     <NoWarn>$(NoWarn);CS9177</NoWarn>

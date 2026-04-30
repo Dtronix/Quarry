@@ -6,6 +6,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 
 namespace Quarry.Tests.IR;
 
@@ -110,7 +111,7 @@ public class EntityRegistryTests
         var context = new ContextInfo(
             className: "TestContext",
             @namespace: "TestApp",
-            dialect: GenSqlDialect.SQLite,
+            dialectConfig: new GenSqlDialectConfig(GenSqlDialect.SQLite),
             schema: null,
             entities: new[] { userEntity, orderEntity },
             entityMappings: System.Array.Empty<EntityMapping>(),

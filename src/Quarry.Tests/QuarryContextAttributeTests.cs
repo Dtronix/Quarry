@@ -39,6 +39,21 @@ public class QuarryContextAttributeTests
     }
 
     [Test]
+    public void MySqlBackslashEscapes_DefaultsToTrue()
+    {
+        var attr = new QuarryContextAttribute();
+        Assert.That(attr.MySqlBackslashEscapes, Is.True);
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void MySqlBackslashEscapes_CanBeSetAndRetrieved(bool value)
+    {
+        var attr = new QuarryContextAttribute { MySqlBackslashEscapes = value };
+        Assert.That(attr.MySqlBackslashEscapes, Is.EqualTo(value));
+    }
+
+    [Test]
     public void Attribute_HasCorrectUsage()
     {
         var usage = typeof(QuarryContextAttribute)

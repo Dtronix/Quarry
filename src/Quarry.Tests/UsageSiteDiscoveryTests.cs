@@ -1453,7 +1453,7 @@ public class Service
 
         var prepareSiteBound = new Generators.IR.BoundCallSite(
             prepareSiteRaw, "TestDbContext", "TestApp",
-            Generators.Sql.SqlDialect.SQLite, "users", null,
+            new Generators.Sql.SqlDialectConfig(Generators.Sql.SqlDialect.SQLite), "users", null,
             Generators.IR.EntityRef.Empty("TestApp.User"));
 
         var prepareSite = new Generators.IR.TranslatedCallSite(prepareSiteBound);

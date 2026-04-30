@@ -377,7 +377,13 @@ internal sealed class LikeExpr : SqlExpr
     public string? LikePrefix { get; }
     /// <summary>Suffix for LIKE pattern (e.g., "%" for Contains).</summary>
     public string? LikeSuffix { get; }
-    /// <summary>Whether the pattern needs ESCAPE '\'.</summary>
+    /// <summary>
+    /// Whether the pattern needs an ESCAPE clause. Set at parse time when the
+    /// literal pattern contained LIKE metacharacters that <see cref="Translation.SqlLikeHelpers.EscapeLikeMetaChars"/>
+    /// escaped. The actual ESCAPE character emitted is dialect-aware: ANSI single
+    /// backslash (`'\'`) by default, doubled (`'\\'`) when the renderer's
+    /// <c>SqlDialectConfig</c> targets MySQL with <c>MySqlBackslashEscapes=true</c>.
+    /// </summary>
     public bool NeedsEscape { get; }
 
     public LikeExpr(SqlExpr operand, SqlExpr pattern, bool isNegated = false,

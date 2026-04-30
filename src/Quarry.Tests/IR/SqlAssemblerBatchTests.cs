@@ -5,6 +5,7 @@ using NUnit.Framework;
 using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 using IRQueryPlan = Quarry.Generators.IR.QueryPlan;
 
 namespace Quarry.Tests.IR;
@@ -429,9 +430,9 @@ public class SqlAssemblerBatchTests
             "RenderSelectSql",
             BindingFlags.NonPublic | BindingFlags.Static,
             null,
-            new[] { typeof(IRQueryPlan), typeof(int), typeof(GenSqlDialect), typeof(int) },
+            new[] { typeof(IRQueryPlan), typeof(int), typeof(GenSqlDialectConfig), typeof(int) },
             null)!;
-        return (AssembledSqlVariant)method.Invoke(null, new object[] { plan, mask, dialect, 0 })!;
+        return (AssembledSqlVariant)method.Invoke(null, new object[] { plan, mask, new GenSqlDialectConfig(dialect), 0 })!;
     }
 
     private static Dictionary<int, AssembledSqlVariant> InvokeRenderSelectSqlBatch(
@@ -441,7 +442,7 @@ public class SqlAssemblerBatchTests
             "RenderSelectSqlBatch",
             BindingFlags.NonPublic | BindingFlags.Static)!;
         var results = new Dictionary<int, AssembledSqlVariant>();
-        method.Invoke(null, new object[] { plan, dialect, masks, results });
+        method.Invoke(null, new object[] { plan, new GenSqlDialectConfig(dialect), masks, results });
         return results;
     }
 
@@ -450,7 +451,7 @@ public class SqlAssemblerBatchTests
         var method = typeof(SqlAssembler).GetMethod(
             "RenderDeleteSql",
             BindingFlags.NonPublic | BindingFlags.Static)!;
-        return (AssembledSqlVariant)method.Invoke(null, new object[] { plan, mask, dialect })!;
+        return (AssembledSqlVariant)method.Invoke(null, new object[] { plan, mask, new GenSqlDialectConfig(dialect) })!;
     }
 
     private static Dictionary<int, AssembledSqlVariant> InvokeRenderDeleteSqlBatch(
@@ -460,7 +461,7 @@ public class SqlAssemblerBatchTests
             "RenderDeleteSqlBatch",
             BindingFlags.NonPublic | BindingFlags.Static)!;
         var results = new Dictionary<int, AssembledSqlVariant>();
-        method.Invoke(null, new object[] { plan, dialect, masks, results });
+        method.Invoke(null, new object[] { plan, new GenSqlDialectConfig(dialect), masks, results });
         return results;
     }
 

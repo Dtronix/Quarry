@@ -1,4 +1,5 @@
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -18,7 +19,7 @@ public class DialectRuleTests
         return new ContextInfo(
             className: "TestDbContext",
             @namespace: "Test",
-            dialect: dialect,
+            dialectConfig: new GenSqlDialectConfig(dialect),
             schema: null,
             entities: new List<EntityInfo>(),
             entityMappings: new List<EntityMapping>(),

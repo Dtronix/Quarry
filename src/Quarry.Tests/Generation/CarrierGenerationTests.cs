@@ -7,6 +7,7 @@ using Quarry.Generators.IR;
 using Quarry.Generators.Models;
 using Quarry.Shared.Migration;
 using GenSqlDialect = Quarry.Generators.Sql.SqlDialect;
+using GenSqlDialectConfig = Quarry.Generators.Sql.SqlDialectConfig;
 
 namespace Quarry.Tests.Generation;
 
@@ -1763,7 +1764,7 @@ public static class Queries
             location: Location.None));
 
         var bound = new BoundCallSite(
-            raw, "Ctx", "App", GenSqlDialect.SQLite,
+            raw, "Ctx", "App", new GenSqlDialectConfig(GenSqlDialect.SQLite),
             "t0", null, entity,
             joinedEntityTypeNames: entityTypeNames);
 

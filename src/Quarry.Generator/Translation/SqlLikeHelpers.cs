@@ -11,7 +11,11 @@ namespace Quarry.Generators.Translation;
 internal static class SqlLikeHelpers
 {
     /// <summary>
-    /// Escapes LIKE metacharacters using backslash escaping (cross-dialect with ESCAPE '\').
+    /// Escapes LIKE metacharacters (<c>%</c>, <c>_</c>, <c>\</c>) using ANSI single-backslash
+    /// form. Runs at parse time before context binding, so the result is dialect-agnostic.
+    /// The renderer (<see cref="IR.SqlExprRenderer"/>) applies dialect-aware doubling at
+    /// emit time when targeting MySQL with <c>MySqlBackslashEscapes=true</c> — this layer
+    /// always produces ANSI form (single backslash escapes).
     /// </summary>
     public static string EscapeLikeMetaChars(string value)
     {

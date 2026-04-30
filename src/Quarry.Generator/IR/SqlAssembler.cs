@@ -32,7 +32,8 @@ internal static class SqlAssembler
     {
         var plan = chain.Plan;
         var executionSite = chain.ExecutionSite;
-        var dialect = executionSite.Bound.Dialect;
+        var dialectConfig = executionSite.Bound.DialectConfig;
+        var dialect = dialectConfig.Dialect;
         var resultTypeName = ResolveResultTypeName(executionSite, plan);
 
         var sqlVariants = new Dictionary<int, AssembledSqlVariant>();
@@ -73,15 +74,15 @@ internal static class SqlAssembler
         // batch path's prefix/middle/suffix decomposition. When the plan can need the
         // wrap on any mask, fall back to per-mask single rendering.
         var canBatch = plan.PossibleMasks.Count > 1 && plan.Kind is QueryKind.Select or QueryKind.Delete;
-        if (canBatch && plan.Kind == QueryKind.Select && MayNeedDistinctOrderByWrap(plan, dialect))
+        if (canBatch && plan.Kind == QueryKind.Select && MayNeedDistinctOrderByWrap(plan, dialectConfig))
             canBatch = false;
         if (canBatch)
         {
             // Batch rendering: pre-render shared segments once and assemble per mask
             if (plan.Kind == QueryKind.Select)
-                RenderSelectSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+                RenderSelectSqlBatch(plan, dialectConfig, plan.PossibleMasks, sqlVariants);
             else
-                RenderDeleteSqlBatch(plan, dialect, plan.PossibleMasks, sqlVariants);
+                RenderDeleteSqlBatch(plan, dialectConfig, plan.PossibleMasks, sqlVariants);
             foreach (var v in sqlVariants.Values)
             {
                 if (v.ParameterCount > maxParamCount)
@@ -92,7 +93,7 @@ internal static class SqlAssembler
         {
             foreach (var mask in plan.PossibleMasks)
             {
-                var result = RenderSqlForMask(plan, mask, dialect, insertInfo);
+                var result = RenderSqlForMask(plan, mask, dialectConfig, insertInfo);
                 sqlVariants[mask] = result;
                 if (result.ParameterCount > maxParamCount)
                     maxParamCount = result.ParameterCount;
@@ -129,7 +130,7 @@ internal static class SqlAssembler
             batchColumnsPerRow = insertInfo.Columns.Count;
             if (needsIdentityReturning && insertInfo.IdentityColumnName != null && dialect != SqlDialect.SqlServer)
             {
-                batchReturningSuffix = RenderReturningSuffix(dialect, insertInfo.IdentityColumnName);
+                batchReturningSuffix = RenderReturningSuffix(dialectConfig, insertInfo.IdentityColumnName);
             }
         }
 
@@ -156,28 +157,30 @@ internal static class SqlAssembler
     /// <summary>
     /// Renders the complete SQL for a given mask value.
     /// </summary>
-    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderSqlForMask(QueryPlan plan, int mask, SqlDialectConfig config, Models.InsertInfo? insertInfo = null)
     {
         return plan.Kind switch
         {
-            QueryKind.Select => RenderSelectSql(plan, mask, dialect),
-            QueryKind.Delete => RenderDeleteSql(plan, mask, dialect),
-            QueryKind.Update => RenderUpdateSql(plan, mask, dialect),
-            QueryKind.Insert => RenderInsertSql(plan, mask, dialect, insertInfo),
-            QueryKind.BatchInsert => RenderBatchInsertSql(plan, mask, dialect, insertInfo),
+            QueryKind.Select => RenderSelectSql(plan, mask, config),
+            QueryKind.Delete => RenderDeleteSql(plan, mask, config),
+            QueryKind.Update => RenderUpdateSql(plan, mask, config),
+            QueryKind.Insert => RenderInsertSql(plan, mask, config, insertInfo),
+            QueryKind.BatchInsert => RenderBatchInsertSql(plan, mask, config, insertInfo),
             _ => new AssembledSqlVariant("", 0)
         };
     }
 
-    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset = 0)
+    private static AssembledSqlVariant RenderSelectSql(QueryPlan plan, int mask, SqlDialectConfig config, int paramBaseOffset = 0)
     {
+        var dialect = config.Dialect;
+
         // DISTINCT + ORDER BY on a non-projected column: wrap in a derived table so the
         // ORDER BY columns appear in the inner SELECT list. PG/SS reject the flat form
         // (42P10 / equivalent); SQLite/MySQL accept it but with implementation-defined
         // semantics. Unifying on the wrap gives all four dialects the same standard-SQL
         // semantic. See #267.
-        if (NeedsDistinctOrderByWrap(plan, mask, dialect))
-            return RenderSelectSqlWithDistinctOrderByWrap(plan, mask, dialect, paramBaseOffset);
+        if (NeedsDistinctOrderByWrap(plan, mask, config))
+            return RenderSelectSqlWithDistinctOrderByWrap(plan, mask, config, paramBaseOffset);
 
         var sb = new StringBuilder();
         var paramIndex = paramBaseOffset;
@@ -221,7 +224,7 @@ internal static class SqlAssembler
                     System.Diagnostics.Debug.Assert(
                         cte.InnerPlan.PossibleMasks.Count <= 1,
                         $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0. Extend RenderSelectSql to render per outer mask if this triggers.");
-                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, config, paramBaseOffset: cte.ParameterOffset);
                     sb.Append(rebased.Sql);
                 }
                 else
@@ -243,16 +246,16 @@ internal static class SqlAssembler
 
         if (plan.Projection.Columns.Count > 0)
         {
-            AppendSelectColumns(sb, dialect, plan.Projection.Columns, paramIndex);
+            AppendSelectColumns(sb, config, plan.Projection.Columns, paramIndex);
         }
         else
         {
             sb.Append('*');
         }
 
-        AppendFromAndJoinsForPlan(sb, plan, dialect, ref paramIndex);
-        AppendWhereForMask(sb, plan.WhereTerms, mask, dialect, ref paramIndex);
-        AppendGroupByAndHaving(sb, plan, dialect, ref paramIndex);
+        AppendFromAndJoinsForPlan(sb, plan, config, ref paramIndex);
+        AppendWhereForMask(sb, plan.WhereTerms, mask, config, ref paramIndex);
+        AppendGroupByAndHaving(sb, plan, config, ref paramIndex);
 
         // SET OPERATIONS (UNION, INTERSECT, EXCEPT)
         if (plan.SetOperations.Count > 0)
@@ -263,7 +266,7 @@ internal static class SqlAssembler
                 sb.Append(GetSetOperatorKeyword(setOp.Kind));
                 sb.Append(' ');
                 // Render the operand's SELECT SQL inline with global parameter offset
-                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect, paramIndex);
+                var operandSql = RenderSelectSql(setOp.Operand, 0, config, paramIndex);
                 sb.Append(operandSql.Sql);
                 // ParameterCount includes the base offset, so compute the delta
                 paramIndex = operandSql.ParameterCount;
@@ -302,7 +305,7 @@ internal static class SqlAssembler
                         if (i > 0) sb.Append(" AND ");
                         var (w, termOffset) = postWhereNonTrivialActive[i];
                         if (postWhereNonTrivialActive.Count > 1) sb.Append('(');
-                        sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                        sb.Append(RenderWhereCondition(w.Condition, config, termOffset));
                         if (postWhereNonTrivialActive.Count > 1) sb.Append(')');
                     }
                 }
@@ -316,7 +319,7 @@ internal static class SqlAssembler
                     {
                         if (i > 0) sb.Append(", ");
                         var paramsBefore = CountParameters(plan.PostUnionGroupByExprs[i]);
-                        sb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                        sb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], config, paramIndex));
                         paramIndex += paramsBefore;
                     }
                 }
@@ -329,7 +332,7 @@ internal static class SqlAssembler
                     {
                         if (i > 0) sb.Append(" AND ");
                         var paramsBefore = CountParameters(plan.PostUnionHavingExprs[i]);
-                        sb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], dialect, paramIndex));
+                        sb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], config, paramIndex));
                         paramIndex += paramsBefore;
                     }
                 }
@@ -347,7 +350,7 @@ internal static class SqlAssembler
             var termParamCount = CountParameters(o.Expression);
             if (activeOrderSet.Contains(o))
             {
-                var rendered = SqlExprRenderer.Render(o.Expression, dialect, orderParamOffset);
+                var rendered = SqlExprRenderer.Render(o.Expression, config, orderParamOffset);
                 activeOrderRendered.Add(rendered + (o.IsDescending ? " DESC" : " ASC"));
             }
             orderParamOffset += termParamCount;
@@ -360,7 +363,7 @@ internal static class SqlAssembler
         paramIndex = orderParamOffset;
 
         // PAGINATION (applies to combined result when set operations present)
-        AppendPagination(sb, plan, dialect, activeOrderRendered.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, config, activeOrderRendered.Count > 0, ref paramIndex);
 
         // Ensure returned ParameterCount includes projection params.  Projection
         // column {@N} placeholders are resolved by AppendSelectColumns (rendered in
@@ -381,10 +384,11 @@ internal static class SqlAssembler
     /// (GROUP BY, HAVING), and suffix (pagination) for each mask.
     /// </summary>
     private static void RenderSelectSqlBatch(
-        QueryPlan plan, SqlDialect dialect,
+        QueryPlan plan, SqlDialectConfig config,
         IReadOnlyList<int> masks,
         Dictionary<int, AssembledSqlVariant> results)
     {
+        var dialect = config.Dialect;
         var paramIndex = 0;
 
         // ── Shared prefix: CTE + SELECT + FROM + JOINs ──
@@ -406,7 +410,7 @@ internal static class SqlAssembler
                     System.Diagnostics.Debug.Assert(
                         cte.InnerPlan.PossibleMasks.Count <= 1,
                         $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0.");
-                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, config, paramBaseOffset: cte.ParameterOffset);
                     prefixSb.Append(rebased.Sql);
                 }
                 else
@@ -426,7 +430,7 @@ internal static class SqlAssembler
 
         if (plan.Projection.Columns.Count > 0)
         {
-            AppendSelectColumns(prefixSb, dialect, plan.Projection.Columns, paramIndex);
+            AppendSelectColumns(prefixSb, config, plan.Projection.Columns, paramIndex);
         }
         else
         {
@@ -435,7 +439,7 @@ internal static class SqlAssembler
 
         // FROM
         prefixSb.Append(" FROM ");
-        AppendTableRef(prefixSb, dialect, plan.PrimaryTable);
+        AppendTableRef(prefixSb, config, plan.PrimaryTable);
 
         // Join aliases
         if (plan.Joins.Count > 0 || plan.ImplicitJoins.Count > 0)
@@ -451,7 +455,7 @@ internal static class SqlAssembler
             prefixSb.Append(' ');
             prefixSb.Append(GetJoinKeyword(join.Kind));
             prefixSb.Append(' ');
-            AppendTableRef(prefixSb, dialect, join.Table);
+            AppendTableRef(prefixSb, config, join.Table);
             var alias = join.Table.Alias ?? $"t{i + 1}";
             prefixSb.Append(" AS ");
             prefixSb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
@@ -459,7 +463,7 @@ internal static class SqlAssembler
             {
                 prefixSb.Append(" ON ");
                 var paramsBefore = CountParameters(join.OnCondition);
-                prefixSb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
+                prefixSb.Append(SqlExprRenderer.Render(join.OnCondition, config, paramIndex, stripOuterParens: true));
                 paramIndex += paramsBefore;
             }
         }
@@ -488,7 +492,7 @@ internal static class SqlAssembler
 
         // ── Pre-render WHERE terms ──
 
-        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, dialect, paramIndex);
+        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, config, paramIndex);
         foreach (var w in plan.WhereTerms)
             paramIndex += CountParameters(w.Condition);
 
@@ -503,7 +507,7 @@ internal static class SqlAssembler
             {
                 if (i > 0) middleSb.Append(", ");
                 var paramsBefore = CountParameters(plan.GroupByExprs[i]);
-                middleSb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                middleSb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], config, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -515,7 +519,7 @@ internal static class SqlAssembler
             {
                 if (i > 0) middleSb.Append(" AND ");
                 var paramsBefore = CountParameters(plan.HavingExprs[i]);
-                middleSb.Append(RenderWhereCondition(plan.HavingExprs[i], dialect, paramIndex));
+                middleSb.Append(RenderWhereCondition(plan.HavingExprs[i], config, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -538,7 +542,7 @@ internal static class SqlAssembler
                 setOpsSb.Append(' ');
                 setOpsSb.Append(GetSetOperatorKeyword(setOp.Kind));
                 setOpsSb.Append(' ');
-                var operandSql = RenderSelectSql(setOp.Operand, 0, dialect, paramIndex);
+                var operandSql = RenderSelectSql(setOp.Operand, 0, config, paramIndex);
                 setOpsSb.Append(operandSql.Sql);
                 paramIndex = operandSql.ParameterCount;
             }
@@ -554,7 +558,7 @@ internal static class SqlAssembler
                 quotedSetAlias = SqlFormatting.QuoteIdentifier(dialect, "__set");
 
                 // Pre-render post-union WHERE terms
-                postUnionWhereTerms = PreRenderWhereTerms(plan.PostUnionWhereTerms, dialect, paramIndex);
+                postUnionWhereTerms = PreRenderWhereTerms(plan.PostUnionWhereTerms, config, paramIndex);
                 foreach (var w in plan.PostUnionWhereTerms)
                     paramIndex += CountParameters(w.Condition);
 
@@ -567,7 +571,7 @@ internal static class SqlAssembler
                     {
                         if (i > 0) postUnionMiddleSb.Append(", ");
                         var paramsBefore = CountParameters(plan.PostUnionGroupByExprs[i]);
-                        postUnionMiddleSb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], dialect, paramIndex));
+                        postUnionMiddleSb.Append(SqlExprRenderer.Render(plan.PostUnionGroupByExprs[i], config, paramIndex));
                         paramIndex += paramsBefore;
                     }
                 }
@@ -578,7 +582,7 @@ internal static class SqlAssembler
                     {
                         if (i > 0) postUnionMiddleSb.Append(" AND ");
                         var paramsBefore = CountParameters(plan.PostUnionHavingExprs[i]);
-                        postUnionMiddleSb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], dialect, paramIndex));
+                        postUnionMiddleSb.Append(RenderWhereCondition(plan.PostUnionHavingExprs[i], config, paramIndex));
                         paramIndex += paramsBefore;
                     }
                 }
@@ -588,7 +592,7 @@ internal static class SqlAssembler
 
         // ── Pre-render ORDER BY terms ──
 
-        var orderTerms = PreRenderOrderByTerms(plan.OrderTerms, dialect, paramIndex);
+        var orderTerms = PreRenderOrderByTerms(plan.OrderTerms, config, paramIndex);
         foreach (var o in plan.OrderTerms)
             paramIndex += CountParameters(o.Expression);
 
@@ -601,7 +605,7 @@ internal static class SqlAssembler
             needsSqlServerOrderByFallback = dialect == SqlDialect.SqlServer;
             // Render pagination without SQL Server ORDER BY fallback — handled per mask
             var pagSb = new StringBuilder();
-            AppendPagination(pagSb, plan, dialect, hasOrderBy: true, ref paramIndex);
+            AppendPagination(pagSb, plan, config, hasOrderBy: true, ref paramIndex);
             paginationStr = pagSb.ToString();
         }
 
@@ -654,13 +658,13 @@ internal static class SqlAssembler
         }
     }
 
-    private static AssembledSqlVariant RenderDeleteSql(QueryPlan plan, int mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderDeleteSql(QueryPlan plan, int mask, SqlDialectConfig config)
     {
         var sb = new StringBuilder();
         var paramIndex = 0;
 
         sb.Append("DELETE FROM ");
-        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        AppendTableRef(sb, config, plan.PrimaryTable);
 
         // WHERE — compute each term's global parameter offset from ALL terms (not just active),
         // so conditional variants reference the correct carrier parameter slots.
@@ -684,7 +688,7 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var (w, termOffset) = nonTrivialActive[i];
                 if (nonTrivialActive.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                sb.Append(RenderWhereCondition(w.Condition, config, termOffset));
                 if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
@@ -698,18 +702,18 @@ internal static class SqlAssembler
     /// shared prefix and WHERE terms, then assembling per mask via string concatenation.
     /// </summary>
     private static void RenderDeleteSqlBatch(
-        QueryPlan plan, SqlDialect dialect,
+        QueryPlan plan, SqlDialectConfig config,
         IReadOnlyList<int> masks,
         Dictionary<int, AssembledSqlVariant> results)
     {
         // Shared prefix: DELETE FROM table
         var prefixSb = new StringBuilder();
         prefixSb.Append("DELETE FROM ");
-        AppendTableRef(prefixSb, dialect, plan.PrimaryTable);
+        AppendTableRef(prefixSb, config, plan.PrimaryTable);
         var prefixStr = prefixSb.ToString();
 
         // Pre-render WHERE terms (paramBaseOffset = 0 for DELETE)
-        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, dialect, 0);
+        var whereTerms = PreRenderWhereTerms(plan.WhereTerms, config, 0);
         var paramIndex = 0;
         foreach (var w in plan.WhereTerms)
             paramIndex += CountParameters(w.Condition);
@@ -725,13 +729,13 @@ internal static class SqlAssembler
         }
     }
 
-    private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, int mask, SqlDialect dialect)
+    private static AssembledSqlVariant RenderUpdateSql(QueryPlan plan, int mask, SqlDialectConfig config)
     {
         var sb = new StringBuilder();
         var paramIndex = 0;
 
         sb.Append("UPDATE ");
-        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        AppendTableRef(sb, config, plan.PrimaryTable);
 
         // SET
         var activeSetTerms = GetActiveTerms(plan.SetTerms, mask);
@@ -742,10 +746,10 @@ internal static class SqlAssembler
             {
                 if (i > 0) sb.Append(", ");
                 var s = activeSetTerms[i];
-                sb.Append(SqlExprRenderer.Render(s.Column, dialect));
+                sb.Append(SqlExprRenderer.Render(s.Column, config));
                 sb.Append(" = ");
                 var paramsBefore = CountParameters(s.Value);
-                sb.Append(SqlExprRenderer.Render(s.Value, dialect, paramIndex));
+                sb.Append(SqlExprRenderer.Render(s.Value, config, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -772,7 +776,7 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var (w, termOffset) = nonTrivialActive[i];
                 if (nonTrivialActive.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                sb.Append(RenderWhereCondition(w.Condition, config, termOffset));
                 if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
@@ -781,12 +785,13 @@ internal static class SqlAssembler
         return new AssembledSqlVariant(sb.ToString(), paramIndex);
     }
 
-    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderInsertSql(QueryPlan plan, int mask, SqlDialectConfig config, Models.InsertInfo? insertInfo = null)
     {
+        var dialect = config.Dialect;
         var sb = new StringBuilder();
 
         sb.Append("INSERT INTO ");
-        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        AppendTableRef(sb, config, plan.PrimaryTable);
 
         if (plan.InsertColumns.Count > 0)
         {
@@ -850,12 +855,13 @@ internal static class SqlAssembler
     /// trailing returning suffix. Other dialects still emit RETURNING /
     /// LAST_INSERT_ID() as a suffix appended after the row tuples.
     /// </remarks>
-    private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, int mask, SqlDialect dialect, Models.InsertInfo? insertInfo = null)
+    private static AssembledSqlVariant RenderBatchInsertSql(QueryPlan plan, int mask, SqlDialectConfig config, Models.InsertInfo? insertInfo = null)
     {
+        var dialect = config.Dialect;
         var sb = new StringBuilder();
 
         sb.Append("INSERT INTO ");
-        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        AppendTableRef(sb, config, plan.PrimaryTable);
 
         if (plan.InsertColumns.Count > 0)
         {
@@ -889,7 +895,7 @@ internal static class SqlAssembler
     /// (active + inactive) to match the carrier's GlobalIndex assignment.
     /// </summary>
     private static List<(WhereTerm Term, string Rendered)> PreRenderWhereTerms(
-        IReadOnlyList<WhereTerm> terms, SqlDialect dialect, int startParamOffset)
+        IReadOnlyList<WhereTerm> terms, SqlDialectConfig config, int startParamOffset)
     {
         var result = new List<(WhereTerm, string)>();
         var paramOffset = startParamOffset;
@@ -898,7 +904,7 @@ internal static class SqlAssembler
             var termParamCount = CountParameters(w.Condition);
             if (!IsTrivialTrueCondition(w.Condition))
             {
-                var rendered = RenderWhereCondition(w.Condition, dialect, paramOffset);
+                var rendered = RenderWhereCondition(w.Condition, config, paramOffset);
                 result.Add((w, rendered));
             }
             paramOffset += termParamCount;
@@ -911,14 +917,14 @@ internal static class SqlAssembler
     /// Parameter offsets are computed from ALL terms to match the carrier's GlobalIndex assignment.
     /// </summary>
     private static List<(OrderTerm Term, string Rendered)> PreRenderOrderByTerms(
-        IReadOnlyList<OrderTerm> terms, SqlDialect dialect, int startParamOffset)
+        IReadOnlyList<OrderTerm> terms, SqlDialectConfig config, int startParamOffset)
     {
         var result = new List<(OrderTerm, string)>();
         var paramOffset = startParamOffset;
         foreach (var o in terms)
         {
             var termParamCount = CountParameters(o.Expression);
-            var rendered = SqlExprRenderer.Render(o.Expression, dialect, paramOffset);
+            var rendered = SqlExprRenderer.Render(o.Expression, config, paramOffset);
             result.Add((o, rendered + (o.IsDescending ? " DESC" : " ASC")));
             paramOffset += termParamCount;
         }
@@ -987,8 +993,9 @@ internal static class SqlAssembler
     /// <summary>
     /// Renders the RETURNING/OUTPUT suffix for identity column retrieval.
     /// </summary>
-    private static string? RenderReturningSuffix(SqlDialect dialect, string identityColumnName)
+    private static string? RenderReturningSuffix(SqlDialectConfig config, string identityColumnName)
     {
+        var dialect = config.Dialect;
         return dialect switch
         {
             SqlDialect.SQLite or SqlDialect.PostgreSQL
@@ -1001,18 +1008,20 @@ internal static class SqlAssembler
         };
     }
 
-    private static void AppendTableRef(StringBuilder sb, SqlDialect dialect, TableRef table)
+    private static void AppendTableRef(StringBuilder sb, SqlDialectConfig config, TableRef table)
     {
+        var dialect = config.Dialect;
         sb.Append(SqlFormatting.FormatTableName(dialect, table.TableName, table.SchemaName));
     }
 
-    private static void AppendSelectColumns(StringBuilder sb, SqlDialect dialect, IReadOnlyList<ProjectedColumn> columns, int paramOffset = 0)
+    private static void AppendSelectColumns(StringBuilder sb, SqlDialectConfig config, IReadOnlyList<ProjectedColumn> columns, int paramOffset = 0)
     {
+        var dialect = config.Dialect;
         for (int i = 0; i < columns.Count; i++)
         {
             if (i > 0) sb.Append(", ");
             var col = columns[i];
-            AppendProjectionColumnSql(sb, col, dialect, paramOffset);
+            AppendProjectionColumnSql(sb, col, config, paramOffset);
             // Aggregates carry an explicit user-given alias (e.g., "Item2") that the flat
             // path emits as `AS "Item2"`. Non-aggregate columns flow through unaliased.
             if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.Alias))
@@ -1023,10 +1032,11 @@ internal static class SqlAssembler
         }
     }
 
-    private static void AppendPagination(StringBuilder sb, QueryPlan plan, SqlDialect dialect, bool hasOrderBy, ref int paramIndex)
+    private static void AppendPagination(StringBuilder sb, QueryPlan plan, SqlDialectConfig config, bool hasOrderBy, ref int paramIndex)
     {
         if (plan.Pagination == null) return;
 
+        var dialect = config.Dialect;
         var pag = plan.Pagination;
 
         // SQL Server requires ORDER BY for OFFSET/FETCH
@@ -1158,7 +1168,7 @@ internal static class SqlAssembler
     /// AND/OR expressions (which are redundant in WHERE context) but keeping them
     /// for comparison operators like = > < etc.
     /// </summary>
-    private static string RenderWhereCondition(SqlExpr condition, SqlDialect dialect, int paramIndex)
+    private static string RenderWhereCondition(SqlExpr condition, SqlDialectConfig config, int paramIndex)
     {
         // For AND/OR at the WHERE top level, recursively flatten and strip inner comparison parens.
         // RenderBinary wraps ALL BinaryOpExpr in parens, but WHERE context doesn't need them
@@ -1170,33 +1180,33 @@ internal static class SqlAssembler
         // double-count and produce gaps (e.g., @p0, @p2 instead of @p0, @p1).
         if (condition is BinaryOpExpr bin && (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or))
         {
-            var left = RenderWhereChild(bin.Left, dialect, paramIndex, bin.Operator);
-            var right = RenderWhereChild(bin.Right, dialect, paramIndex, bin.Operator);
+            var left = RenderWhereChild(bin.Left, config, paramIndex, bin.Operator);
+            var right = RenderWhereChild(bin.Right, config, paramIndex, bin.Operator);
             var op = bin.Operator == SqlBinaryOperator.And ? " AND " : " OR ";
             return left + op + right;
         }
         if (condition is BinaryOpExpr)
-            return SqlExprRenderer.Render(condition, dialect, paramIndex, stripOuterParens: true);
-        return SqlExprRenderer.Render(condition, dialect, paramIndex);
+            return SqlExprRenderer.Render(condition, config, paramIndex, stripOuterParens: true);
+        return SqlExprRenderer.Render(condition, config, paramIndex);
     }
 
-    private static string RenderWhereChild(SqlExpr child, SqlDialect dialect, int paramIndex, SqlBinaryOperator parentOp)
+    private static string RenderWhereChild(SqlExpr child, SqlDialectConfig config, int paramIndex, SqlBinaryOperator parentOp)
     {
         if (child is BinaryOpExpr bin)
         {
             if (bin.Operator == SqlBinaryOperator.And || bin.Operator == SqlBinaryOperator.Or)
             {
                 // Recursively flatten same or compatible logical ops
-                var inner = RenderWhereCondition(child, dialect, paramIndex);
+                var inner = RenderWhereCondition(child, config, paramIndex);
                 // Wrap OR inside AND for correct precedence
                 if (parentOp == SqlBinaryOperator.And && bin.Operator == SqlBinaryOperator.Or)
                     return "(" + inner + ")";
                 return inner;
             }
             // Comparison operator: strip outer parens
-            return SqlExprRenderer.Render(child, dialect, paramIndex, stripOuterParens: true);
+            return SqlExprRenderer.Render(child, config, paramIndex, stripOuterParens: true);
         }
-        return SqlExprRenderer.Render(child, dialect, paramIndex);
+        return SqlExprRenderer.Render(child, config, paramIndex);
     }
 
     /// <summary>
@@ -1226,10 +1236,11 @@ internal static class SqlAssembler
     /// the wrap path (<see cref="RenderSelectSqlWithDistinctOrderByWrap"/>).
     /// </summary>
     private static void AppendFromAndJoinsForPlan(
-        StringBuilder sb, QueryPlan plan, SqlDialect dialect, ref int paramIndex)
+        StringBuilder sb, QueryPlan plan, SqlDialectConfig config, ref int paramIndex)
     {
+        var dialect = config.Dialect;
         sb.Append(" FROM ");
-        AppendTableRef(sb, dialect, plan.PrimaryTable);
+        AppendTableRef(sb, config, plan.PrimaryTable);
         if (plan.Joins.Count > 0 || plan.ImplicitJoins.Count > 0)
         {
             sb.Append(" AS ");
@@ -1241,7 +1252,7 @@ internal static class SqlAssembler
             sb.Append(' ');
             sb.Append(GetJoinKeyword(join.Kind));
             sb.Append(' ');
-            AppendTableRef(sb, dialect, join.Table);
+            AppendTableRef(sb, config, join.Table);
             var alias = join.Table.Alias ?? $"t{i + 1}";
             sb.Append(" AS ");
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
@@ -1249,7 +1260,7 @@ internal static class SqlAssembler
             {
                 sb.Append(" ON ");
                 var paramsBefore = CountParameters(join.OnCondition);
-                sb.Append(SqlExprRenderer.Render(join.OnCondition, dialect, paramIndex, stripOuterParens: true));
+                sb.Append(SqlExprRenderer.Render(join.OnCondition, config, paramIndex, stripOuterParens: true));
                 paramIndex += paramsBefore;
             }
         }
@@ -1281,7 +1292,7 @@ internal static class SqlAssembler
     /// trivial-true. Shared by flat and wrap paths.
     /// </summary>
     private static void AppendWhereForMask(
-        StringBuilder sb, IReadOnlyList<WhereTerm> terms, int mask, SqlDialect dialect, ref int paramIndex)
+        StringBuilder sb, IReadOnlyList<WhereTerm> terms, int mask, SqlDialectConfig config, ref int paramIndex)
     {
         var activeWhereSet = new HashSet<WhereTerm>(GetActiveTerms(terms, mask));
         var nonTrivialActive = new List<(WhereTerm Term, int ParamOffset)>();
@@ -1301,7 +1312,7 @@ internal static class SqlAssembler
                 if (i > 0) sb.Append(" AND ");
                 var (w, termOffset) = nonTrivialActive[i];
                 if (nonTrivialActive.Count > 1) sb.Append('(');
-                sb.Append(RenderWhereCondition(w.Condition, dialect, termOffset));
+                sb.Append(RenderWhereCondition(w.Condition, config, termOffset));
                 if (nonTrivialActive.Count > 1) sb.Append(')');
             }
         }
@@ -1314,7 +1325,7 @@ internal static class SqlAssembler
     /// wrap paths.
     /// </summary>
     private static void AppendGroupByAndHaving(
-        StringBuilder sb, QueryPlan plan, SqlDialect dialect, ref int paramIndex)
+        StringBuilder sb, QueryPlan plan, SqlDialectConfig config, ref int paramIndex)
     {
         if (plan.GroupByExprs.Count > 0)
         {
@@ -1323,7 +1334,7 @@ internal static class SqlAssembler
             {
                 if (i > 0) sb.Append(", ");
                 var paramsBefore = CountParameters(plan.GroupByExprs[i]);
-                sb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], dialect, paramIndex));
+                sb.Append(SqlExprRenderer.Render(plan.GroupByExprs[i], config, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -1334,7 +1345,7 @@ internal static class SqlAssembler
             {
                 if (i > 0) sb.Append(" AND ");
                 var paramsBefore = CountParameters(plan.HavingExprs[i]);
-                sb.Append(RenderWhereCondition(plan.HavingExprs[i], dialect, paramIndex));
+                sb.Append(RenderWhereCondition(plan.HavingExprs[i], config, paramIndex));
                 paramIndex += paramsBefore;
             }
         }
@@ -1349,8 +1360,9 @@ internal static class SqlAssembler
     /// wrap's inner-projection emission so both paths produce byte-identical output.
     /// </summary>
     private static void AppendProjectionColumnSql(
-        StringBuilder sb, ProjectedColumn col, SqlDialect dialect, int paramOffset)
+        StringBuilder sb, ProjectedColumn col, SqlDialectConfig config, int paramOffset)
     {
+        var dialect = config.Dialect;
         if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
         {
             var rendered = SqlFormatting.QuoteSqlExpression(col.SqlExpression!, dialect, paramOffset);
@@ -1383,10 +1395,10 @@ internal static class SqlAssembler
     /// absolute global indices via <c>{N}</c> substitution rather than the running
     /// paramIndex, so the comparison string doesn't depend on the chain's current offset.
     /// </summary>
-    private static string RenderProjectionColumnRef(ProjectedColumn col, SqlDialect dialect)
+    private static string RenderProjectionColumnRef(ProjectedColumn col, SqlDialectConfig config)
     {
         var sb = new StringBuilder();
-        AppendProjectionColumnSql(sb, col, dialect, paramOffset: 0);
+        AppendProjectionColumnSql(sb, col, config, paramOffset: 0);
         return sb.ToString();
     }
 
@@ -1423,7 +1435,7 @@ internal static class SqlAssembler
     /// entity's columns via the identity-projection path. So this guard is defensive
     /// against malformed plans rather than a routinely-hit branch.
     /// </remarks>
-    private static bool NeedsDistinctOrderByWrap(QueryPlan plan, int mask, SqlDialect dialect)
+    private static bool NeedsDistinctOrderByWrap(QueryPlan plan, int mask, SqlDialectConfig config)
     {
         if (!plan.IsDistinct) return false;
         if (plan.SetOperations.Count > 0) return false;
@@ -1443,12 +1455,12 @@ internal static class SqlAssembler
 
         var projColumnSqls = new HashSet<string>();
         foreach (var c in plan.Projection.Columns)
-            projColumnSqls.Add(RenderProjectionColumnRef(c, dialect));
+            projColumnSqls.Add(RenderProjectionColumnRef(c, config));
 
         foreach (var t in plan.OrderTerms)
         {
             if (t.BitIndex != null && (mask & (1 << t.BitIndex.Value)) == 0) continue;
-            var rendered = SqlExprRenderer.Render(t.Expression, dialect, parameterBaseIndex: 0);
+            var rendered = SqlExprRenderer.Render(t.Expression, config, parameterBaseIndex: 0);
             if (!projColumnSqls.Contains(rendered)) return true;
         }
         return false;
@@ -1460,7 +1472,7 @@ internal static class SqlAssembler
     /// the batch dispatch in <see cref="Assemble"/> to decide whether to bypass the
     /// batch fast path.
     /// </summary>
-    private static bool MayNeedDistinctOrderByWrap(QueryPlan plan, SqlDialect dialect)
+    private static bool MayNeedDistinctOrderByWrap(QueryPlan plan, SqlDialectConfig config)
     {
         if (!plan.IsDistinct) return false;
         if (plan.SetOperations.Count > 0) return false;
@@ -1469,11 +1481,11 @@ internal static class SqlAssembler
 
         var projColumnSqls = new HashSet<string>();
         foreach (var c in plan.Projection.Columns)
-            projColumnSqls.Add(RenderProjectionColumnRef(c, dialect));
+            projColumnSqls.Add(RenderProjectionColumnRef(c, config));
 
         foreach (var t in plan.OrderTerms)
         {
-            var rendered = SqlExprRenderer.Render(t.Expression, dialect, parameterBaseIndex: 0);
+            var rendered = SqlExprRenderer.Render(t.Expression, config, parameterBaseIndex: 0);
             if (!projColumnSqls.Contains(rendered)) return true;
         }
         return false;
@@ -1489,8 +1501,9 @@ internal static class SqlAssembler
     /// <see cref="NeedsDistinctOrderByWrap"/> already excludes them.
     /// </summary>
     private static AssembledSqlVariant RenderSelectSqlWithDistinctOrderByWrap(
-        QueryPlan plan, int mask, SqlDialect dialect, int paramBaseOffset)
+        QueryPlan plan, int mask, SqlDialectConfig config, int paramBaseOffset)
     {
+        var dialect = config.Dialect;
         var sb = new StringBuilder();
         var paramIndex = paramBaseOffset;
 
@@ -1509,7 +1522,7 @@ internal static class SqlAssembler
                     System.Diagnostics.Debug.Assert(
                         cte.InnerPlan.PossibleMasks.Count <= 1,
                         $"CTE inner chain '{cte.Name}' has {cte.InnerPlan.PossibleMasks.Count} mask variants; placeholder rebasing only handles mask=0.");
-                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, dialect, paramBaseOffset: cte.ParameterOffset);
+                    var rebased = RenderSelectSql(cte.InnerPlan, mask: 0, config, paramBaseOffset: cte.ParameterOffset);
                     sb.Append(rebased.Sql);
                 }
                 else
@@ -1545,7 +1558,7 @@ internal static class SqlAssembler
         // and record its pre-allocated global offset.
         var projColIndexBySql = new Dictionary<string, int>();
         for (int i = 0; i < plan.Projection.Columns.Count; i++)
-            projColIndexBySql[RenderProjectionColumnRef(plan.Projection.Columns[i], dialect)] = i;
+            projColIndexBySql[RenderProjectionColumnRef(plan.Projection.Columns[i], config)] = i;
 
         var extraOrderRendered = new List<(string Sql, string Alias)>();
         var outerOrderByEntries = new List<(string Alias, bool IsDescending)>();
@@ -1558,7 +1571,7 @@ internal static class SqlAssembler
             bool isActive = term.BitIndex == null || (mask & (1 << term.BitIndex.Value)) != 0;
             if (isActive)
             {
-                var renderedRef = SqlExprRenderer.Render(term.Expression, dialect, parameterBaseIndex: 0);
+                var renderedRef = SqlExprRenderer.Render(term.Expression, config, parameterBaseIndex: 0);
                 if (projColIndexBySql.TryGetValue(renderedRef, out var projIdx))
                 {
                     outerOrderByEntries.Add((GetInnerProjectionAlias(plan.Projection.Columns[projIdx], projIdx), term.IsDescending));
@@ -1566,7 +1579,7 @@ internal static class SqlAssembler
                 else
                 {
                     var alias = "_o" + nextO++;
-                    extraOrderRendered.Add((SqlExprRenderer.Render(term.Expression, dialect, perTermOffset), alias));
+                    extraOrderRendered.Add((SqlExprRenderer.Render(term.Expression, config, perTermOffset), alias));
                     outerOrderByEntries.Add((alias, term.IsDescending));
                 }
             }
@@ -1593,7 +1606,7 @@ internal static class SqlAssembler
         {
             if (i > 0) sb.Append(", ");
             var col = plan.Projection.Columns[i];
-            AppendProjectionColumnSql(sb, col, dialect, paramIndex);
+            AppendProjectionColumnSql(sb, col, config, paramIndex);
             sb.Append(" AS ");
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, GetInnerProjectionAlias(col, i)));
         }
@@ -1605,9 +1618,9 @@ internal static class SqlAssembler
             sb.Append(SqlFormatting.QuoteIdentifier(dialect, alias));
         }
 
-        AppendFromAndJoinsForPlan(sb, plan, dialect, ref paramIndex);
-        AppendWhereForMask(sb, plan.WhereTerms, mask, dialect, ref paramIndex);
-        AppendGroupByAndHaving(sb, plan, dialect, ref paramIndex);
+        AppendFromAndJoinsForPlan(sb, plan, config, ref paramIndex);
+        AppendWhereForMask(sb, plan.WhereTerms, mask, config, ref paramIndex);
+        AppendGroupByAndHaving(sb, plan, config, ref paramIndex);
 
         // Close inner, name the derived table, then outer ORDER BY + pagination.
         // paramIndex is post-HAVING; advance past pre-allocated ORDER BY slots so
@@ -1629,7 +1642,7 @@ internal static class SqlAssembler
         }
 
         paramIndex = paramIndexAfterOrderBy;
-        AppendPagination(sb, plan, dialect, hasOrderBy: outerOrderByEntries.Count > 0, ref paramIndex);
+        AppendPagination(sb, plan, config, hasOrderBy: outerOrderByEntries.Count > 0, ref paramIndex);
 
         var totalPlanParams = paramBaseOffset + plan.Parameters.Count;
         paramIndex = Math.Max(paramIndex, totalPlanParams);

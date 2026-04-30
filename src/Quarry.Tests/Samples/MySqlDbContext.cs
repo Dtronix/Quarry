@@ -2,7 +2,11 @@ using Quarry;
 
 namespace Quarry.Tests.Samples.My;
 
-[QuarryContext(Dialect = SqlDialect.MySQL)]
+// MySqlBackslashEscapes = false matches MySqlTestContainer.cs, which sets
+// NO_BACKSLASH_ESCAPES in --sql-mode. The default-mode (MySqlBackslashEscapes = true)
+// path is exercised separately in MySqlBackslashEscapesTests.cs against
+// MySqlDefaultModeTestContainer.
+[QuarryContext(Dialect = SqlDialect.MySQL, MySqlBackslashEscapes = false)]
 public partial class MyDb : QuarryContext
 {
     public partial IEntityAccessor<User> Users();
@@ -17,3 +21,4 @@ public partial class MyDb : QuarryContext
     public partial IEntityAccessor<Shipment> Shipments();
     public partial IEntityAccessor<Event> Events();
 }
+
