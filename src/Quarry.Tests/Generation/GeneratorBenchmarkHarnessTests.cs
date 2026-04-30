@@ -74,6 +74,48 @@ public partial class HarnessDb : QuarryContext
         }
     }
 
+    [TestCase("Throughput/Small", 10)]
+    [TestCase("Throughput/Medium", 50)]
+    [TestCase("Throughput/Large", 200)]
+    public void Throughput_Corpora_CompileCleanly_AndProduceInterceptors(string corpus, int expectedQueryCount)
+    {
+        var trees = new[]
+        {
+            "Fixture/UserSchema",
+            "Fixture/OrderSchema",
+            "Fixture/OrderItemSchema",
+            "Fixture/ProductSchema",
+            "Fixture/AddressSchema",
+            "Fixture/BenchDbContext",
+            corpus,
+        }.Select(name => HarnessProxy.Parse(HarnessProxy.LoadCorpus(name), name + ".cs")).ToArray();
+
+        var compilation = HarnessProxy.BuildCompilation(trees);
+        var result = HarnessProxy.RunGenerator(compilation);
+
+        // Post-generation: include generated trees, then check error diagnostics.
+        // Pre-generation errors like CS8795 (partial method needs implementation)
+        // are expected — the generator supplies the implementations.
+        var withGenerated = compilation.AddSyntaxTrees(result.GeneratedTrees);
+        var errors = withGenerated.GetDiagnostics()
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(errors, Is.Empty,
+            $"Corpus '{corpus}' must compile cleanly after generator runs. Errors:\n" +
+            string.Join("\n", errors.Select(d => d.ToString())));
+
+        var corpusSource = HarnessProxy.LoadCorpus(corpus);
+        var actualQueryCount = System.Text.RegularExpressions.Regex.Matches(
+            corpusSource, @"public static object Q\d+\(BenchDb db\)").Count;
+        Assert.That(actualQueryCount, Is.EqualTo(expectedQueryCount),
+            $"Corpus '{corpus}' should declare exactly {expectedQueryCount} Q-methods.");
+
+        var interceptorFiles = result.GeneratedTrees
+            .Count(t => t.FilePath.Contains("Interceptors", StringComparison.Ordinal));
+        Assert.That(interceptorFiles, Is.GreaterThan(0),
+            $"Corpus '{corpus}' should drive at least one interceptor file generation.");
+    }
+
     /// <summary>
     /// Exposes the protected static surface of <see cref="GeneratorBenchmarkBase"/> so
     /// tests can drive it without instantiating a real benchmark class.
