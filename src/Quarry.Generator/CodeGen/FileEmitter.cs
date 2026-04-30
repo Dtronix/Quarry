@@ -62,14 +62,16 @@ internal sealed class FileEmitter
         {
             var name = field.Name;
             if (name.Length < 2 || name[0] != 'P') continue;
-            // Verify the suffix is purely numeric — guards against future fields like "Ptr".
+            // Digit-only suffix check — guards against future fields like "Ptr" and
+            // also rejects leading whitespace / sign that NumberStyles.Integer would
+            // accept. TryParse provides the overflow guard for pathological inputs.
             var allDigits = true;
             for (int i = 1; i < name.Length; i++)
             {
                 if (name[i] < '0' || name[i] > '9') { allDigits = false; break; }
             }
             if (!allDigits) continue;
-            var idx = int.Parse(name.Substring(1));
+            if (!int.TryParse(name.Substring(1), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var idx)) continue;
             if (!assigned.Contains(idx))
                 yield return idx;
         }
@@ -529,8 +531,7 @@ internal sealed class FileEmitter
     {
         if (_carrierPlans == null || _chains == null) return;
 
-        // Map carrier class name → owning chain so we can attribute the diagnostic to
-        // the chain's execution-site source location. A carrier may be deduplicated
+        // Map carrier class name → first owning chain. A carrier may be deduplicated
         // across multiple chains (CarrierStructuralKey-based dedup); the FIRST chain
         // owning a given carrier class name is sufficient for diagnostic location.
         var carrierToChain = new Dictionary<string, AssembledPlan>();
@@ -542,28 +543,55 @@ internal sealed class FileEmitter
                 carrierToChain[carrier.ClassName] = _chains[i];
         }
 
-        var reportedCarriers = new HashSet<string>();
-        for (int i = 0; i < _chains.Count; i++)
+        Models.DiagnosticLocation ResolveLocation(string carrierClassName)
         {
-            var carrier = i < _carrierPlans.Count ? _carrierPlans[i] : null;
+            // Defensive fallback to default DiagnosticLocation if lookup fails — the
+            // dedup logic above ensures every eligible carrier has at least one owning
+            // chain, but silently dropping a real defect would defeat the self-check.
+            return carrierToChain.TryGetValue(carrierClassName, out var owningChain)
+                ? owningChain.ExecutionSite.Bound.Raw.Location
+                : default;
+        }
+
+        foreach (var diag in ProduceCarrierAssignmentDiagnostics(_carrierPlans, _carrierAssignmentRecorder, ResolveLocation))
+            _emitDiagnostics.Add(diag);
+    }
+
+    /// <summary>
+    /// Pure, testable form of the QRY037 self-check: given the eligible carriers, a
+    /// recorder of P-field assignments, and a callback that resolves a source location
+    /// from a carrier class name, yield one <see cref="Models.DiagnosticInfo"/> per
+    /// (carrier, unassigned-P-index) pair.
+    /// </summary>
+    /// <remarks>
+    /// Pulled out of <see cref="EmitCarrierAssignmentDiagnostics"/> so unit tests can
+    /// drive the rule end-to-end with synthetic <see cref="CarrierPlan"/> inputs
+    /// without spinning up the rest of FileEmitter or constructing a full
+    /// <see cref="AssembledPlan"/>.
+    /// </remarks>
+    internal static IEnumerable<Models.DiagnosticInfo> ProduceCarrierAssignmentDiagnostics(
+        IReadOnlyList<CarrierPlan> carrierPlans,
+        CarrierAssignmentRecorder recorder,
+        Func<string, Models.DiagnosticLocation> resolveLocation)
+    {
+        var reportedCarriers = new HashSet<string>();
+        foreach (var carrier in carrierPlans)
+        {
             if (carrier == null || !carrier.IsEligible || string.IsNullOrEmpty(carrier.ClassName)) continue;
             // Dedup: deduplicated carriers share a class name — only check once per name.
             if (!reportedCarriers.Add(carrier.ClassName)) continue;
 
-            var unassigned = ComputeUnassignedPIndices(carrier, _carrierAssignmentRecorder).ToList();
+            var unassigned = ComputeUnassignedPIndices(carrier, recorder).ToList();
             if (unassigned.Count == 0) continue;
 
-            // Source location: chain root site for the owning chain.
-            if (!carrierToChain.TryGetValue(carrier.ClassName, out var owningChain)) continue;
-            var raw = owningChain.ExecutionSite.Bound.Raw;
-            var location = raw.Location;
+            var location = resolveLocation(carrier.ClassName);
             foreach (var idx in unassigned)
             {
-                _emitDiagnostics.Add(new Models.DiagnosticInfo(
+                yield return new Models.DiagnosticInfo(
                     "QRY037",
                     location,
                     carrier.ClassName,
-                    idx.ToString()));
+                    idx.ToString());
             }
         }
     }

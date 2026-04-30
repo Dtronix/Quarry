@@ -91,6 +91,13 @@ internal static class JoinBodyEmitter
                     // Captured params in the join condition need extraction + binding even
                     // when this is not the chain root. Funnel through EmitCarrierClauseBody
                     // so the per-clause extraction plan is honored.
+                    //
+                    // Implicit invariant: EmitCarrierClauseBody re-derives params from
+                    // site.Clause.Parameters rather than the siteParams list passed here.
+                    // Both originate from the same translated clause data, so their counts
+                    // match in practice. If a future divergence between Clause.Parameters
+                    // and TerminalEmitHelpers.ResolveSiteParams is introduced, QRY037 will
+                    // catch the resulting unassigned-P-field at generation time.
                     CarrierEmitter.EmitCarrierClauseBody(sb, carrier!, prebuiltChain, site, null, false,
                         carrier!.ClassName, joinReturnType, hasResolvableCapturedParams,
                         new List<InterceptorCodeGenerator.CachedExtractorField>(),
@@ -183,8 +190,12 @@ internal static class JoinBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");

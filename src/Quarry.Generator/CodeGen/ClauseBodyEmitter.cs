@@ -37,8 +37,12 @@ internal static class ClauseBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");
@@ -478,8 +482,12 @@ internal static class ClauseBodyEmitter
         var hasResolvableCapturedParams = clauseInfo?.Parameters.Any(p => p.IsCaptured && p.CanGenerateDirectPath) == true;
         var funcParamName = hasResolvableCapturedParams ? "func" : "_";
 
+        // Suppress IL2075 whenever the body emits [UnsafeAccessor]-mediated field access.
+        // hasResolvableCapturedParams is the structural signal — methodFields.Count > 0
+        // (from CollectStaticFields) is a strict subset (excludes captured collections),
+        // so the broader signal also covers Where(u => ids.Contains(u.Id)) and similar.
         methodFields ??= new List<InterceptorCodeGenerator.CachedExtractorField>();
-        if (methodFields.Count > 0)
+        if (hasResolvableCapturedParams)
         {
             sb.AppendLine($"    [UnconditionalSuppressMessage(\"Trimming\", \"IL2075\",");
             sb.AppendLine($"        Justification = \"Closure field access via UnsafeAccessor is AOT-safe.\")]");

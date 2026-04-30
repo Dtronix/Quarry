@@ -4498,5 +4498,115 @@ public class Queries
             fields: fields);
     }
 
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_OneCarrierWithGap_YieldsOneDiagnostic()
+    {
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "decimal", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "decimal", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 0); // P1 unassigned
+
+        var location = new Quarry.Generators.Models.DiagnosticLocation("Test.cs", 10, 5, default);
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrier }, rec, _ => location)
+            .ToList();
+
+        Assert.That(diags, Has.Count.EqualTo(1));
+        Assert.That(diags[0].DiagnosticId, Is.EqualTo("QRY037"));
+        Assert.That(diags[0].Location.FilePath, Is.EqualTo("Test.cs"));
+        Assert.That(diags[0].MessageArgs, Is.EquivalentTo(new[] { "Chain_0", "1" }));
+    }
+
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_MultipleGaps_YieldsOnePerGap()
+    {
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P2", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        // All three P-fields unassigned — three diagnostics should fire.
+
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrier }, rec, _ => default)
+            .ToList();
+
+        Assert.That(diags, Has.Count.EqualTo(3));
+        var indices = diags.Select(d => d.MessageArgs[1]).ToList();
+        Assert.That(indices, Is.EquivalentTo(new[] { "0", "1", "2" }));
+        Assert.That(diags.All(d => d.DiagnosticId == "QRY037"), Is.True);
+        Assert.That(diags.All(d => d.MessageArgs[0] == "Chain_0"), Is.True);
+    }
+
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_DeduplicatedCarrier_ReportedOnce()
+    {
+        // Carriers with the same ClassName (CarrierStructuralKey-based dedup in Pass 1)
+        // must be reported once, not once per occurrence.
+        var carrierA = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var carrierB = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        // P0 unassigned
+
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrierA, carrierB }, rec, _ => default)
+            .ToList();
+
+        Assert.That(diags, Has.Count.EqualTo(1),
+            "Deduplicated carriers should produce a single diagnostic, not one per occurrence");
+    }
+
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_IneligibleCarrier_Skipped()
+    {
+        // Ineligible carriers don't get classes emitted, so no P-fields exist in
+        // generated source — the rule must skip them.
+        var carrier = Quarry.Generators.CodeGen.CarrierPlan.Ineligible("test-only");
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrier }, rec, _ => default)
+            .ToList();
+
+        Assert.That(diags, Is.Empty);
+    }
+
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_AllAssigned_NoDiagnostics()
+    {
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 0);
+        rec.Record("Chain_0", 1);
+
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrier }, rec, _ => default)
+            .ToList();
+
+        Assert.That(diags, Is.Empty);
+    }
+
+    [Test]
+    public void ProduceCarrierAssignmentDiagnostics_LocationResolverInvoked_WithCarrierClassName()
+    {
+        var carrier = BuildCarrierPlan("Chain_42",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+
+        string? observedCarrierName = null;
+        var diags = Quarry.Generators.CodeGen.FileEmitter
+            .ProduceCarrierAssignmentDiagnostics(new[] { carrier }, rec, name => { observedCarrierName = name; return default; })
+            .ToList();
+
+        Assert.That(diags, Has.Count.EqualTo(1));
+        Assert.That(observedCarrierName, Is.EqualTo("Chain_42"),
+            "Location resolver must receive the carrier class name");
+    }
+
     #endregion
 }
