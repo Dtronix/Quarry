@@ -1357,10 +1357,22 @@ internal static class SqlAssembler
     /// template (which may contain <c>{N}</c> parameter placeholders resolved against
     /// <paramref name="paramOffset"/>); other columns render <c>"alias"."col"</c> or just
     /// <c>"col"</c>. Shared by detection (<see cref="RenderProjectionColumnRef"/>) and the
-    /// wrap's inner-projection emission so both paths produce byte-identical output.
+    /// wrap's inner-projection emission.
     /// </summary>
+    /// <param name="forComparison">
+    /// When <c>true</c>, suppresses emit-only wrappers so the rendered string matches
+    /// <c>SqlExprRenderer.Render</c>'s ORDER BY rendering for use in DISTINCT + ORDER BY
+    /// wrap-detection comparisons. Currently this means the SQL Server window-function
+    /// <c>CAST(... AS INT)</c> wrap (per #274) is omitted; the cast lives on the column
+    /// (not on <c>SqlExpr</c>) so the ORDER BY render path can never produce it.
+    /// Future emit-only wrappers added to this method MUST also be gated on
+    /// <c>!forComparison</c> or wrap detection on Ss will produce the same false-positive
+    /// described in #286. Inner-projection emission inside the wrap renderer still passes
+    /// the default <c>false</c>, so the cast is preserved when the wrap genuinely fires.
+    /// </param>
     private static void AppendProjectionColumnSql(
-        StringBuilder sb, ProjectedColumn col, SqlDialectConfig config, int paramOffset)
+        StringBuilder sb, ProjectedColumn col, SqlDialectConfig config, int paramOffset,
+        bool forComparison = false)
     {
         var dialect = config.Dialect;
         if (col.IsAggregateFunction && !string.IsNullOrEmpty(col.SqlExpression))
@@ -1369,7 +1381,9 @@ internal static class SqlAssembler
             // SQL Server's ROW_NUMBER/RANK/DENSE_RANK/NTILE return BIGINT; SqlDataReader.GetInt32
             // does not auto-narrow. ProjectionAnalyzer flags int-typed window-function projections
             // so the rendered expression is wrapped server-side, letting GetInt32 succeed. See #274.
-            if (col.RequiresSqlServerIntCast && dialect == SqlDialect.SqlServer)
+            // Skipped on the comparison path (#286) so wrap detection matches SqlExprRenderer's
+            // un-wrapped ORDER BY rendering.
+            if (!forComparison && col.RequiresSqlServerIntCast && dialect == SqlDialect.SqlServer)
                 rendered = $"CAST({rendered} AS INT)";
             sb.Append(rendered);
             return;
@@ -1394,11 +1408,14 @@ internal static class SqlAssembler
     /// <paramref name="paramOffset"/>=0 — projection-clause params are rendered with
     /// absolute global indices via <c>{N}</c> substitution rather than the running
     /// paramIndex, so the comparison string doesn't depend on the chain's current offset.
+    /// Passes <c>forComparison: true</c> so the SQL Server <c>CAST(... AS INT)</c>
+    /// emit-only wrap is suppressed, since the ORDER BY render path cannot produce it
+    /// (#286).
     /// </summary>
     private static string RenderProjectionColumnRef(ProjectedColumn col, SqlDialectConfig config)
     {
         var sb = new StringBuilder();
-        AppendProjectionColumnSql(sb, col, config, paramOffset: 0);
+        AppendProjectionColumnSql(sb, col, config, paramOffset: 0, forComparison: true);
         return sb.ToString();
     }
 
