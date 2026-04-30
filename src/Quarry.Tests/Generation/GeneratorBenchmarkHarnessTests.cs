@@ -116,6 +116,55 @@ public partial class HarnessDb : QuarryContext
             $"Corpus '{corpus}' should drive at least one interceptor file generation.");
     }
 
+    [TestCase("PipelineSplit/SchemaOnly", false, false)]
+    [TestCase("PipelineSplit/PlusQueries", true, false)]
+    [TestCase("PipelineSplit/PlusMigrations", true, true)]
+    public void PipelineSplit_Corpora_FireExpectedPipelines(string corpus, bool expectInterceptors, bool expectMigrationOutput)
+    {
+        var trees = new[]
+        {
+            "Fixture/UserSchema",
+            "Fixture/OrderSchema",
+            "Fixture/OrderItemSchema",
+            "Fixture/ProductSchema",
+            "Fixture/AddressSchema",
+            "Fixture/BenchDbContext",
+            corpus,
+        }.Select(name => HarnessProxy.Parse(HarnessProxy.LoadCorpus(name), name + ".cs")).ToArray();
+
+        var compilation = HarnessProxy.BuildCompilation(trees);
+        var result = HarnessProxy.RunGenerator(compilation);
+
+        var withGenerated = compilation.AddSyntaxTrees(result.GeneratedTrees);
+        var errors = withGenerated.GetDiagnostics()
+            .Where(d => d.Severity == Microsoft.CodeAnalysis.DiagnosticSeverity.Error)
+            .ToArray();
+        Assert.That(errors, Is.Empty,
+            $"Corpus '{corpus}' must compile cleanly after generator runs. Errors:\n" +
+            string.Join("\n", errors.Select(d => d.ToString())));
+
+        var generatedFileNames = result.GeneratedTrees
+            .Select(t => System.IO.Path.GetFileName(t.FilePath))
+            .ToArray();
+
+        // Pipeline 1 always fires — entity classes for the fixture types.
+        foreach (var entity in new[] { "User.g.cs", "Order.g.cs" })
+            Assert.That(generatedFileNames, Has.Some.EndsWith(entity),
+                $"Pipeline 1 (Schema/Entity) must always emit {entity}.");
+
+        var hasInterceptor = result.GeneratedTrees
+            .Any(t => t.FilePath.Contains("Interceptors", StringComparison.Ordinal));
+        Assert.That(hasInterceptor, Is.EqualTo(expectInterceptors),
+            $"Corpus '{corpus}' interceptor expectation. Generated files: " +
+            string.Join(", ", generatedFileNames));
+
+        var hasMigrateAsync = result.GeneratedTrees
+            .Any(t => t.GetText().ToString().Contains("MigrateAsync", StringComparison.Ordinal));
+        Assert.That(hasMigrateAsync, Is.EqualTo(expectMigrationOutput),
+            $"Corpus '{corpus}' migration-output expectation. Generated files: " +
+            string.Join(", ", generatedFileNames));
+    }
+
     /// <summary>
     /// Exposes the protected static surface of <see cref="GeneratorBenchmarkBase"/> so
     /// tests can drive it without instantiating a real benchmark class.
