@@ -4345,4 +4345,158 @@ public class Queries
     }
 
     #endregion
+
+    #region QRY037 — generator self-check (carrier P-field unassigned)
+
+    // QRY037 fires when an emitter declares a carrier P-field but no interceptor body
+    // assigns it. Pure end-to-end testing is not feasible after the Phase-1 fix because
+    // no real chain produces an unassigned P-field. Instead the gap-detection logic is
+    // exposed as an internal helper and unit-tested directly. The "no false positives"
+    // side is covered free by the rest of the test suite — any QRY037 firing on a real
+    // chain would break the build (Error severity).
+
+    [Test]
+    public void CarrierAssignmentRecorder_RecordAndGetAssigned_RoundTrip()
+    {
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 0);
+        rec.Record("Chain_0", 2);
+        rec.Record("Chain_1", 5);
+
+        var chain0 = rec.GetAssigned("Chain_0");
+        Assert.That(chain0, Is.EquivalentTo(new[] { 0, 2 }));
+
+        var chain1 = rec.GetAssigned("Chain_1");
+        Assert.That(chain1, Is.EquivalentTo(new[] { 5 }));
+
+        // Unrecorded carrier returns an empty set rather than null
+        var chainMissing = rec.GetAssigned("Chain_99");
+        Assert.That(chainMissing, Is.Empty);
+    }
+
+    [Test]
+    public void CarrierAssignmentRecorder_DuplicateRecord_IsIdempotent()
+    {
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 1);
+        rec.Record("Chain_0", 1);
+        rec.Record("Chain_0", 1);
+
+        Assert.That(rec.GetAssigned("Chain_0"), Is.EquivalentTo(new[] { 1 }));
+    }
+
+    [Test]
+    public void ComputeUnassignedPIndices_AllAssigned_ReturnsEmpty()
+    {
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "decimal", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "string", Quarry.Generators.Models.FieldRole.Parameter, isReferenceType: true));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 0);
+        rec.Record("Chain_0", 1);
+
+        var missing = Quarry.Generators.CodeGen.FileEmitter.ComputeUnassignedPIndices(carrier, rec).ToList();
+        Assert.That(missing, Is.Empty);
+    }
+
+    [Test]
+    public void ComputeUnassignedPIndices_OneUnassigned_ReturnsThatIndex()
+    {
+        // The exact bug shape that triggered the original CS0649: P-field declared,
+        // some emitter forgets to write to it.
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "decimal", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "decimal", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 0);
+        // Note: P1 is NOT recorded — simulates the pre-fix bug where the OrderBy
+        // interceptor declared the P1 field but never assigned it.
+
+        var missing = Quarry.Generators.CodeGen.FileEmitter.ComputeUnassignedPIndices(carrier, rec).ToList();
+        Assert.That(missing, Is.EquivalentTo(new[] { 1 }));
+    }
+
+    [Test]
+    public void ComputeUnassignedPIndices_ManyUnassigned_ReturnsAllInOrder()
+    {
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("P0", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P1", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P2", "int", Quarry.Generators.Models.FieldRole.Parameter),
+            new Quarry.Generators.Models.CarrierField("P3", "int", Quarry.Generators.Models.FieldRole.Parameter));
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+        rec.Record("Chain_0", 1);
+        // P0, P2, P3 unassigned
+
+        var missing = Quarry.Generators.CodeGen.FileEmitter.ComputeUnassignedPIndices(carrier, rec).ToList();
+        Assert.That(missing, Is.EquivalentTo(new[] { 0, 2, 3 }));
+    }
+
+    [Test]
+    public void ComputeUnassignedPIndices_NoPFields_ReturnsEmpty()
+    {
+        // Carrier with only non-Px fields (Mask, Limit, Offset, Timeout, etc.).
+        // The rule must not false-fire on these.
+        var carrier = BuildCarrierPlan("Chain_0",
+            new Quarry.Generators.Models.CarrierField("Mask", "byte", Quarry.Generators.Models.FieldRole.ClauseMask),
+            new Quarry.Generators.Models.CarrierField("Limit", "int?", Quarry.Generators.Models.FieldRole.Limit),
+            new Quarry.Generators.Models.CarrierField("Ptr", "object", Quarry.Generators.Models.FieldRole.Parameter)); // non-numeric P-suffix
+        var rec = new Quarry.Generators.CodeGen.CarrierAssignmentRecorder();
+
+        var missing = Quarry.Generators.CodeGen.FileEmitter.ComputeUnassignedPIndices(carrier, rec).ToList();
+        Assert.That(missing, Is.Empty);
+    }
+
+    [Test]
+    public void RealChains_DoNotTriggerQRY037_NoFalsePositives()
+    {
+        // Sanity-check that the real generator pipeline produces no QRY037 for a chain
+        // shape representative of the codebase: Where + OrderBy with captures + Select.
+        // The full Quarry.Tests suite (3,088 tests) is the broader implicit coverage —
+        // any false-positive regression there breaks the build via QRY037 (Error).
+        var source = SharedSchema + @"
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{
+    public partial IEntityAccessor<User> Users();
+}
+
+public class Queries
+{
+    private readonly TestDbContext _db;
+    public Queries(TestDbContext db) { _db = db; }
+    public string Test()
+    {
+        int minId = 5;
+        int offset = 2;
+        return _db.Users()
+                  .Where(u => u.UserId > minId)
+                  .OrderBy(u => u.UserId + offset)
+                  .Select(u => u.UserName)
+                  .ToDiagnostics().Sql;
+    }
+}";
+        var compilation = CreateCompilation(source);
+        var (_, diagnostics) = RunGeneratorWithDiagnostics(compilation);
+
+        var qry037 = diagnostics.Where(d => d.Id == "QRY037").ToList();
+        Assert.That(qry037, Is.Empty,
+            "QRY037 must not fire on a well-formed chain. Diagnostics: "
+            + string.Join("; ", qry037.Select(d => d.GetMessage())));
+    }
+
+    /// <summary>
+    /// Helper to build a synthetic CarrierPlan with the given carrier name and fields.
+    /// Bypasses the full pipeline so the gap-detection logic can be tested in isolation.
+    /// </summary>
+    private static Quarry.Generators.CodeGen.CarrierPlan BuildCarrierPlan(
+        string className, params Quarry.Generators.Models.CarrierField[] fields)
+    {
+        return new Quarry.Generators.CodeGen.CarrierPlan(
+            isEligible: true,
+            className: className,
+            fields: fields);
+    }
+
+    #endregion
 }

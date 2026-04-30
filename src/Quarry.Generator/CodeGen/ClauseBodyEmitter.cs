@@ -28,7 +28,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -79,7 +80,8 @@ internal static class ClauseBodyEmitter
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields);
+                concreteBuilder, retInterface, hasResolvableCapturedParams, methodFields,
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -95,7 +97,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -173,7 +176,8 @@ internal static class ClauseBodyEmitter
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             else
             {
@@ -181,7 +185,8 @@ internal static class ClauseBodyEmitter
                 // extraction and P-field assignment happen exactly as on the keyType-known path.
                 var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             sb.AppendLine($"    }}");
             return;
@@ -197,7 +202,8 @@ internal static class ClauseBodyEmitter
         string methodName,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         // Prefer chain's enriched ProjectionInfo over site's discovery-time projection
@@ -226,11 +232,11 @@ internal static class ClauseBodyEmitter
                 {
                     var (siteParams, globalParamOffset) = TerminalEmitHelpers.ResolveSiteParams(prebuiltChain, site.UniqueId);
                     int? clauseBit = null;
-                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, carrier.ClassName, targetInterface, clauseBit, siteParams, globalParamOffset);
+                    CarrierEmitter.EmitCarrierChainEntry(sb, carrier, prebuiltChain, site, carrier.ClassName, targetInterface, clauseBit, siteParams, globalParamOffset, recorder);
                 }
                 else
                 {
-                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site);
+                    CarrierEmitter.EmitCarrierSelect(sb, targetInterface, carrier, prebuiltChain, site, recorder);
                 }
                 sb.AppendLine($"    }}");
                 return;
@@ -248,7 +254,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -330,7 +337,8 @@ internal static class ClauseBodyEmitter
                     ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                     : $"IQueryBuilder<{entityType}>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    concreteBuilder, retInterface, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             else
             {
@@ -338,7 +346,8 @@ internal static class ClauseBodyEmitter
                 // extraction and P-field assignment happen exactly as on the keyType-known path.
                 var castTarget = site.ResultTypeName != null ? $"{returnType}<T, TResult>" : $"{returnType}<T>";
                 CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                    carrier.ClassName, castTarget, hasResolvableCapturedParams, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                    recorder: recorder);
             }
             sb.AppendLine($"    }}");
             return;
@@ -355,7 +364,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -400,7 +410,8 @@ internal static class ClauseBodyEmitter
                 ? $"IQueryBuilder<{entityType}, {InterceptorCodeGenerator.GetShortTypeName(site.ResultTypeName)}>"
                 : $"IQueryBuilder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, retInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -416,7 +427,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -437,7 +449,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnType}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -455,7 +468,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var clauseInfo = site.Clause;
@@ -495,7 +509,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"IExecutable{modKind}Builder<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields);
+                concreteBuilder, returnInterface, hasResolvableCapturedParams, methodFields,
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -511,7 +526,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -532,7 +548,8 @@ internal static class ClauseBodyEmitter
             var concreteBuilder = carrier.ClassName;
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>());
+                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
+                recorder: recorder);
             sb.AppendLine($"    }}");
             return;
         }
@@ -548,7 +565,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
 
@@ -573,7 +591,7 @@ internal static class ClauseBodyEmitter
             var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
             CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
                 concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
-                delegateParamName: actionParamName);
+                delegateParamName: actionParamName, recorder: recorder);
 
             sb.AppendLine($"    }}");
             return;
@@ -590,7 +608,8 @@ internal static class ClauseBodyEmitter
         int? clauseBit,
         AssembledPlan? prebuiltChain,
         bool isFirstInChain,
-        CarrierPlan? carrier)
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
     {
         var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
         var updateInfo = site.UpdateInfo;

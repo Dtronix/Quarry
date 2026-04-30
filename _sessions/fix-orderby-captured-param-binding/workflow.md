@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 5
-phases-complete: 4
+phases-complete: 5
 
 ## Problem Statement
 Generator-emitted clause interceptors silently drop captured-variable extraction for OrderBy/ThenBy/GroupBy/Join when the clause's lambda contains captured locals (e.g. `OrderBy((u, o) => o.Total + bias)`). Symptom: `CS0649 Field 'Chain_N.Px' is never assigned to, and will always have its default value 0` on the carrier P-fields backing those parameters. Root cause is symmetric across four emitters:
@@ -63,9 +63,17 @@ Once for each of the four `*Db.Interceptors.*CrossDialectDistinctOrderByTests.g.
 **Rationale:** Self-check that fails fast on regressions of this exact class. Error severity prevents shipping silently-wrong queries. Error message includes carrier class name + missing P-index + chain location for clear diagnosis.
 **Edge case decision:** Any-branch assignment counts; do NOT require per-mask coverage. Rationale: keeps the rule simple and avoids false positives on legitimate conditional chains where the SQL guarantees the parameter is only referenced when its bit is set.
 
+### 2026-04-30 — CS0649 coverage gap motivates QRY037 (revisited during IMPLEMENT)
+**Finding:** CS0649 does NOT fire on every unassigned carrier P-field. `CarrierEmitter.EmitCarrierClass` (line 385) emits `internal {Type} P{i} = null!;` for non-nullable reference-type fields (to silence CS8618). The C# rule: any explicit initializer counts as "assigned" for CS0649. Therefore CS0649 covers value-type and nullable-ref-type captures (caught the original `decimal bias` bug) but is silenced for non-nullable reference-type captures (`string`, custom classes, etc.). A `string keyword` capture pre-fix would have shipped silently — null binding at runtime, no compile-time signal.
+**Implication:** QRY037 closes a real coverage hole, not a redundant check. The plumbing cost (`CarrierAssignmentRecorder` threaded through ~14 methods in `CarrierEmitter` / `ClauseBodyEmitter` / `JoinBodyEmitter`) is paying for class-of-bug coverage, not just the value-type subset.
+**Decision confirmed:** Implement QRY037 with during-emission tracking as planned. Implementation strategy: introduce internal `CarrierAssignmentRecorder` class; add optional `CarrierAssignmentRecorder? recorder = null` parameter to every emit method that writes `__c.P{i} = ...` and to every emit method that delegates to one. Default `null` preserves callsite ergonomics outside `FileEmitter`'s orchestration (e.g., during unit tests that call emit helpers directly).
+
 ## Suspend State
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | INTAKE     | DESIGN    | Stashed pre-applied fix, created worktree off origin/master, popped stash, ran baseline (3,084 + 146 passing). Scaffolded workflow.md. |
+| 1 | DESIGN     | PLAN      | Iteratively clarified: regression test strategy (tighten existing + generation assertions), latent-path coverage (generation tests only), QRY037 diagnostic (Error severity, during-emission tracking). |
+| 1 | PLAN       | IMPLEMENT | Authored plan.md with 5 phases. CS0649 coverage gap analysis surfaced during DESIGN motivated keeping QRY037 in scope. |
+| 1 | IMPLEMENT  | (active)  | Phase 1 (fix) + Phase 2 (tightened test) + Phase 3 (OrderBy generation test) + Phase 4 (latent-path generation tests) + Phase 5 (QRY037 self-check) committed. Final state: 3,095 + 146 = 3,241 tests passing. |

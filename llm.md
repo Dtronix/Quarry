@@ -542,7 +542,7 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 
 **Sql.Raw:** QRY029 (warn): placeholder mismatch.
 
-**Chain (QRY030–036):** QRY030 (info): prebuilt dispatch applied. QRY031 (error): unresolvable RawSql `T` generic parameter. QRY032 (error): chain not analyzable. QRY033 (error): forked chain (multiple terminals). QRY034 (warn): Trace without QUARRY_TRACE. QRY035 (error): PreparedQuery escapes scope. QRY036 (error): Prepare with no terminals.
+**Chain (QRY030–037):** QRY030 (info): prebuilt dispatch applied. QRY031 (error): unresolvable RawSql `T` generic parameter. QRY032 (error): chain not analyzable. QRY033 (error): forked chain (multiple terminals). QRY034 (warn): Trace without QUARRY_TRACE. QRY035 (error): PreparedQuery escapes scope. QRY036 (error): Prepare with no terminals. QRY037 (error): generator self-check — carrier `P{i}` field declared but no clause interceptor body assigns it (CS0649 only catches the value-type / nullable-ref-type subset; non-nullable reference-type P-fields carry `= null!` initializers that suppress CS0649). Implementation: `FileEmitter.ComputeUnassignedPIndices` compares declared P-fields on each `CarrierPlan` against assignments tracked by `CarrierAssignmentRecorder` during emission. Any-branch assignment counts; per-mask coverage is not required.
 
 **Manifest (QRY040):** QRY040 (warn): SQL manifest write failure.
 
