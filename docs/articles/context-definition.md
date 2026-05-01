@@ -59,6 +59,22 @@ When set, generated SQL uses qualified table names:
 
 If `Schema` is omitted or null, tables are referenced without schema qualification. This property allows the same schema classes to be reused across multiple contexts targeting different database schemas -- for example, a multi-tenant application where each tenant maps to a separate PostgreSQL schema.
 
+## MySqlBackslashEscapes (MySQL)
+
+The optional `MySqlBackslashEscapes` property (default `true`) controls how Quarry emits `LIKE` patterns on MySQL. The default matches stock MySQL where backslash inside string literals is an escape character; the generator emits doubled backslashes in literal patterns and `ESCAPE '\\'` so the resulting SQL parses to a literal `\`.
+
+```csharp
+// Default: matches stock MySQL sql_mode
+[QuarryContext(Dialect = SqlDialect.MySQL)]
+public partial class MyDb : QuarryContext { ... }
+
+// Opt out for sessions/servers running NO_BACKSLASH_ESCAPES in sql_mode
+[QuarryContext(Dialect = SqlDialect.MySQL, MySqlBackslashEscapes = false)]
+public partial class MyAnsiDb : QuarryContext { ... }
+```
+
+Set the flag to `false` only when the consuming process configures MySQL's `sql_mode` to include `NO_BACKSLASH_ESCAPES`. The property has no effect on PostgreSQL, SQLite, or SQL Server. Mismatching the flag against the actual `sql_mode` produces either a `1064` syntax error (default mode without the flag) or doubled backslashes in matched data (`NO_BACKSLASH_ESCAPES` with the flag enabled).
+
 ## Typed Accessor Chains (`QuarryContext<TSelf>`)
 
 To chain entity accessors after a CTE-producing `With<TDto>()` call (`db.With<Dto>(…).Users()…`), derive from the generic base class instead:

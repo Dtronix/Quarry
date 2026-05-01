@@ -50,7 +50,7 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY014 | Error | Anonymous type unsupported in this context |
 | QRY015 | Warning | Ambiguous context resolution |
 | QRY016 | Error | Unbound parameter |
-| QRY019 | Warning | Clause not translatable |
+| QRY019 | Warning | Clause not translatable. The message format is `"<clause-context>. The original runtime method will be used instead."` — the clause-context substitution is supplied complete by the call-site translator, so contributors adding new translator error messages must not include trailing punctuation in the substituted text |
 
 ### Subquery (QRY020--QRY025)
 
@@ -70,7 +70,7 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY026 | Info | Custom entity reader active |
 | QRY027 | Error | Invalid entity reader type |
 
-### Chain (QRY028--QRY036)
+### Chain (QRY028--QRY037)
 
 | Code | Severity | Description |
 |---|---|---|
@@ -83,6 +83,7 @@ No additional configuration is required. All QRA rules are enabled by default an
 | QRY034 | Warning | `.Trace()` without `QUARRY_TRACE` symbol |
 | QRY035 | Error | PreparedQuery escapes method scope |
 | QRY036 | Error | `.Prepare()` with no terminal calls |
+| QRY037 | Error | Generator carrier-assignment gap (internal self-check). Fires when the generator produces a carrier with a `Px` field but no matching `__c.Px = ...` assignment. By design — closes the silent `default(T)` parameter-binding hole the CS0649 warning could not catch on non-nullable reference-type captures. Should never surface in user code; if it does, file an issue — the generator regressed |
 
 ### SQL Manifest (QRY040)
 
@@ -132,9 +133,11 @@ Analyzer-only diagnostic (ships in `Quarry.Analyzers`); no code fix, because the
 
 | Code | Severity | Description |
 |---|---|---|
-| QRY070 | Warning | `IntersectAll` not supported on this dialect (e.g., SQLite) |
-| QRY071 | Warning | `ExceptAll` not supported on this dialect (e.g., SQLite) |
+| QRY070 | Error | `IntersectAll` not supported on this dialect (e.g., SQLite, MySQL, SQL Server) |
+| QRY071 | Error | `ExceptAll` not supported on this dialect (e.g., SQLite, MySQL, SQL Server) |
 | QRY072 | Error | Set operation projection mismatch (column count or type) |
+
+QRY070, QRY071, and QRY072 were silently dropped by the generator before v0.4.0 due to a missing entry in `s_deferredDescriptors`; chains that previously compiled and produced runtime-failing SQL now fail at compile time.
 
 QRY073 was introduced in v0.3.0 for cross-entity set-ops and retired in the same release when cross-entity support landed. Remove any `#pragma warning disable QRY073` directives. The ID is intentionally skipped going forward so those pragmas keep their warning-free meaning.
 
@@ -283,23 +286,28 @@ Rules that flag potential performance concerns, primarily around index usage.
 | QRA303 | Info | OR across different columns -- `col1 == x \|\| col2 == y` prevents single-index scan |
 | QRA304 | Info | WHERE on non-indexed column -- filtering on a column not covered by any declared schema index |
 
-### Pattern Issues (QRA401--QRA402)
+### Pattern Issues (QRA401--QRA404)
 
 Rules that detect common anti-patterns in how queries are used.
 
-| Code | Severity | Description |
-|---|---|---|
-| QRA401 | Warning | Query inside loop -- execution method called inside `for`/`foreach`/`while` or LINQ `.Select()`, indicating an N+1 risk |
-| QRA402 | Info | Multiple queries on same table -- multiple independent queries on the same entity within one method; consider combining |
+| Code | Severity | Description | Code Fix |
+|---|---|---|---|
+| QRA401 | Warning | Query inside loop -- execution method called inside `for`/`foreach`/`while` or LINQ `.Select()`, indicating an N+1 risk | |
+| QRA402 | Info | Multiple queries on same table -- multiple independent queries on the same entity within one method; consider combining | |
+| QRA403 | Warning | `ThenBy` without preceding `OrderBy` -- the receiver chain has no `.OrderBy(...)`, so `.ThenBy(...)` emits `ORDER BY <key>` in isolation. Walks the receiver chain backward, transparent to intervening calls (`Where`, `Select`, `Distinct`, `Limit`, `Offset`, `Trace`, set ops) | Yes |
+| QRA404 | Warning | `Having` without preceding `GroupBy` -- the receiver chain has no `.GroupBy(...)`, so `.Having(...)` applies `HAVING <pred>` to the whole result | |
 
-### Dialect (QRA501--QRA502)
+**QRA403 code fix** (`ThenByToOrderByCodeFix`) renames the method-name token from `ThenBy` to `OrderBy`, preserving any `TypeArgumentList` on a generic-name call.
+
+### Dialect (QRA501--QRA503)
 
 Rules that detect dialect-specific issues or missed optimizations.
 
 | Code | Severity | Description |
 |---|---|---|
 | QRA501 | Info | Dialect-specific optimization available -- e.g., PostgreSQL `ILIKE` instead of `LOWER() + LIKE`, SQLite `COLLATE NOCASE` |
-| QRA502 | Warning | Suboptimal for dialect -- feature unsupported or problematic for the target dialect (e.g., SQLite `RIGHT JOIN` / `FULL OUTER JOIN`, SQL Server `OFFSET` without `ORDER BY`) |
+| QRA502 | Warning | Suboptimal for dialect -- feature is supported but produces a worse plan than an alternative on the target dialect |
+| QRA503 | Error | Capability gap for dialect -- feature is unsupported or produces engine-rejected SQL on the target dialect. Fires for MySQL `FullOuterJoin<T>(...)` and SQL Server `.Offset(N)` without `.OrderBy(...)` at every execution terminal (`ExecuteFetchAllAsync`, `ToAsyncEnumerable`, etc.). Promoted from QRA502 Warning in v0.4.0 — the rule produces SQL the engine physically rejects, not merely a perf hint |
 
 ---
 
