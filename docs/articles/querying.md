@@ -144,7 +144,7 @@ public class OrderSchema : Schema
 {
     public Key<int> OrderId => Identity();
     public Ref<UserSchema, int> UserId { get; }
-    public One<User> User => HasOne<User>();
+    public One<UserSchema> User => HasOne<UserSchema>();
 }
 ```
 
@@ -157,12 +157,16 @@ db.Orders().Where(o => o.User!.IsActive)
 
 ### HasManyThrough — many-to-many skip navigation
 
-Declare a many-to-many relationship through a junction table with `HasManyThrough<TTarget, TJunction>()`:
+Declare a many-to-many relationship through a junction table with `HasManyThrough<TTarget, TJunction, TSelf>(junctionNav, targetNav)`:
 
 ```csharp
 public class OrderSchema : Schema
 {
-    public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();
+    public Many<OrderTagSchema> OrderTags => HasMany<OrderTagSchema>(ot => ot.OrderId);
+    public Many<TagSchema> Tags
+        => HasManyThrough<TagSchema, OrderTagSchema, OrderSchema>(
+            o => o.OrderTags,
+            ot => ot.Tag);
 }
 ```
 

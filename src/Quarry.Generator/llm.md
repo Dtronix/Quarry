@@ -241,7 +241,7 @@ Subquery aliases are generated as `sq0`, `sq1`, etc. Correlation is always `inne
 
 ### Navigation Joins and 6-Table Explicit Joins
 
-`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav; `HasManyThrough<TTarget, TJunction>()` emits many-to-many skip nav with an implicit junction→target JOIN. Schema-level diagnostics: QRY060–065. The `NavigationAccessExpr` node threads through parse → bind → translate → assemble → emit; `KnownDotNetMembers` excludes `.ToString()` / `.Equals()` etc. from being parsed as nav access. Implicit joins from nav lambdas are deduplicated against explicit joins.
+`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav; `HasManyThrough<TTarget, TJunction, TSelf>(junctionNav, targetNav)` emits many-to-many skip nav with an implicit junction→target JOIN. All type parameters are Schema classes, not generated entity types. Schema-level diagnostics: QRY060–065. The `NavigationAccessExpr` node threads through parse → bind → translate → assemble → emit; `KnownDotNetMembers` excludes `.ToString()` / `.Equals()` etc. from being parsed as nav access. Implicit joins from nav lambdas are deduplicated against explicit joins.
 
 Explicit joins support 2–6 tables via T4-generated `IJoinedQueryBuilder5/6` and `JoinedCarrierBase5/6`. New join kinds: `CrossJoin<T>()` (no condition), `FullOuterJoin<T>(condition)`. **Join-aware nullable readers:** the projection analyzer inspects join-side nullability and wraps reader column reads on LEFT/RIGHT/FULL OUTER nullable sides with `IsDBNull` guards. Declared tuple types unchanged; only generated reader code is affected.
 

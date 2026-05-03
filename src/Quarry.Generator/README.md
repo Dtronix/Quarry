@@ -270,13 +270,17 @@ Columns projected from the nullable side of a LEFT/RIGHT/FULL OUTER join are `Is
 
 ### Navigation Joins
 
-`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav property. `HasManyThrough<TTarget, TJunction>()` emits many-to-many skip navigation with the junction→target JOIN implicit in `Count()`, `Any()`, and aggregates.
+`One<T>` with `HasOne<T>()` emits a reverse-side nullable nav property. `HasManyThrough<TTarget, TJunction, TSelf>(junctionNav, targetNav)` emits many-to-many skip navigation with the junction→target JOIN implicit in `Count()`, `Any()`, and aggregates. All type parameters are Schema classes (e.g. `UserSchema`), not generated entity types.
 
 ```csharp
 public class OrderSchema : Schema
 {
-    public One<User> User => HasOne<User>();
-    public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();
+    public One<UserSchema> User => HasOne<UserSchema>();
+    public Many<OrderTagSchema> OrderTags => HasMany<OrderTagSchema>(ot => ot.OrderId);
+    public Many<TagSchema> Tags
+        => HasManyThrough<TagSchema, OrderTagSchema, OrderSchema>(
+            o => o.OrderTags,
+            ot => ot.Tag);
 }
 
 db.Orders().Where(o => o.User!.IsActive);

@@ -47,10 +47,10 @@ public class UserSchema : Schema
 Column types: `Key<T>` PK, `Col<T>` standard, `Ref<TSchema,TKey>` FK, `Many<T>` 1:N nav, `One<T>` reverse-side 1:1 nav, `Index`, `CompositeKey`. Generated entities use `EntityRef<TEntity,TKey>` for FKs.
 Modifiers: `Identity()`, `ClientGenerated()`, `Computed()`, `Length(n)`, `Precision(p,s)`, `Default(v)`, `Default(()=>v)`, `MapTo("name")`, `Mapped<TMapping>()`, `Sensitive()`.
 
-**Navigation declarations:**
-- `public Many<Order> Orders => HasMany<Order>(o => o.UserId);` — 1:N
-- `public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();` — M:N skip navigation (junction→target JOIN is implicit in terminals)
-- `public One<User> User => HasOne<User>();` — reverse One<T> navigation, produces nullable `T?` property on generated entity; lambdas need `!.` (e.g. `o.User!.IsActive`)
+**Navigation declarations** (type parameters are always Schema classes, not generated entity types):
+- `public Many<OrderSchema> Orders => HasMany<OrderSchema>(o => o.UserId);` — 1:N
+- `public Many<TagSchema> Tags => HasManyThrough<TagSchema, OrderTagSchema, OrderSchema>(o => o.OrderTags, ot => ot.Tag);` — M:N skip navigation; requires a `Many<JunctionSchema>` and a `One<TargetSchema>` on the junction (junction→target JOIN is implicit in terminals)
+- `public One<UserSchema> User => HasOne<UserSchema>();` — reverse One<T> navigation, produces nullable `T?` property on generated entity; lambdas need `!.` (e.g. `o.User!.IsActive`)
 
 Navigation diagnostics: QRY060 (no FK for One<T>), QRY061 (ambiguous FK), QRY062 (HasOne references invalid column), QRY063 (target entity not found), QRY064/065 (HasManyThrough invalid junction/target navigation).
 NamingStyle: `Exact` (default), `SnakeCase`, `CamelCase`, `LowerCase`.

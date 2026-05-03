@@ -11,7 +11,7 @@ _Released 2026-04-21_
 - **Common Table Expressions** — `.With<TDto>(dto => …)` / `.FromCte<TDto>()` across all four dialects, including multi-CTE chains and lambda-form set-op inputs. Enabled by a new `QuarryContext<TSelf>` base class that types the accessor chain.
 - **Window functions** — `Sql.RowNumber/Rank/DenseRank/Ntile/Lag/Lead/FirstValue/LastValue` plus `Sum/Count/Avg/Min/Max(col, over => …)` aggregate-OVER overloads with fluent `PartitionBy`/`OrderBy`. Non-column arguments are parameterized at compile time.
 - **Set operations** — `Union/UnionAll/Intersect/IntersectAll/Except/ExceptAll` on query and joined-query builders, with automatic subquery wrapping for post-union `Where`/`GroupBy`/`Having` and cross-entity support.
-- **Navigation joins** — `One<T>` + `HasOne<T>()` schema declaration and `HasManyThrough<TTarget, TJunction>` many-to-many skip navigation. Explicit joins extended from 4 to **6 tables**. New `CrossJoin<T>()` and `FullOuterJoin<T>()`.
+- **Navigation joins** — `One<T>` + `HasOne<T>()` schema declaration and `HasManyThrough<TTarget, TJunction, TSelf>(junctionNav, targetNav)` many-to-many skip navigation. Explicit joins extended from 4 to **6 tables**. New `CrossJoin<T>()` and `FullOuterJoin<T>()`.
 - **`Many<T>` aggregate subqueries** — `Sum`, `Min`, `Max`, `Avg`/`Average` on `Many<T>` properties, following the existing `Count()` pattern.
 - **`RawSqlAsync<T>` now streams** — returns `IAsyncEnumerable<T>` with compile-time column resolution, ordinal-cached readers, case-insensitive column matching, and a new `QRY042` analyzer + code fix that detects Raw SQL convertible to the chain API.
 - **SQL manifest emission** — opt-in `<QuarrySqlManifestPath>` property produces per-dialect markdown manifests documenting every generated SQL statement, parameter table, and conditional variant. Zero overhead when disabled.
@@ -128,14 +128,18 @@ public class OrderSchema : Schema
 {
     public Key<int> OrderId => Identity();
     public Ref<UserSchema, int> UserId { get; }
-    public One<User> User => HasOne<User>();                    // reverse One<T> navigation
-    public Many<OrderLine> Lines => Has<OrderLine>();            // existing
-    public Many<Tag> Tags => HasManyThrough<Tag, OrderTag>();    // many-to-many skip
+    public One<UserSchema> User => HasOne<UserSchema>();                              // reverse One<T> navigation
+    public Many<OrderLineSchema> Lines => HasMany<OrderLineSchema>(l => l.OrderId);   // existing
+    public Many<OrderTagSchema> OrderTags => HasMany<OrderTagSchema>(ot => ot.OrderId);
+    public Many<TagSchema> Tags
+        => HasManyThrough<TagSchema, OrderTagSchema, OrderSchema>(                    // many-to-many skip
+            o => o.OrderTags,
+            ot => ot.Tag);
 }
 ```
 
-- `One<T>` + `HasOne<T>()` produces a nullable `T?` navigation property; generated readers are `IsDBNull`-guarded on the nullable join side.
-- `HasManyThrough<TTarget, TJunction>` compiles to correlated subqueries with the junction-to-target join implicit in `Count()`/`Any()` terminals.
+- `One<T>` + `HasOne<T>()` produces a nullable `T?` navigation property; generated readers are `IsDBNull`-guarded on the nullable join side. The type parameter `T` is the target Schema class (e.g. `UserSchema`).
+- `HasManyThrough<TTarget, TJunction, TSelf>(junctionNav, targetNav)` compiles to correlated subqueries with the junction-to-target join implicit in `Count()`/`Any()` terminals. All three type parameters are Schema classes.
 - Navigation lambdas need null-forgiving for now: `u.Profile!.DisplayName`.
 - Explicit joins extended from 4 to 6 tables (`IJoinedQueryBuilder5`, `IJoinedQueryBuilder6`).
 - `CrossJoin<T>()` and `FullOuterJoin<T>(condition)` on entity/query/joined-query builders.
