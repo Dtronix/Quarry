@@ -572,6 +572,16 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             """);
 
         await SqlAsync("""
+            CREATE TABLE "tags" (
+                "TagId" INTEGER PRIMARY KEY AUTOINCREMENT,
+                "OrderItemId" INTEGER NOT NULL,
+                "TagName" TEXT NOT NULL,
+                "TagValue" TEXT NOT NULL,
+                FOREIGN KEY ("OrderItemId") REFERENCES "order_items"("OrderItemId")
+            )
+            """);
+
+        await SqlAsync("""
             CREATE TABLE "products" (
                 "ProductId" INTEGER PRIMARY KEY,
                 "ProductName" TEXT NOT NULL,
@@ -653,6 +663,15 @@ internal sealed class QueryTestHarness : IAsyncDisposable
             INSERT INTO "shipments" ("ShipmentId", "OrderId", "WarehouseId", "ReturnWarehouseId", "ShipDate") VALUES
                 (1, 1, 1, 2, '2024-06-02 00:00:00'),
                 (2, 3, 2, NULL, '2024-07-02 00:00:00')
+            """);
+
+        await SqlAsync("""
+            INSERT INTO "tags" ("TagId", "OrderItemId", "TagName", "TagValue") VALUES
+                (1, 1, 'urgent',   'P1'),
+                (2, 1, 'fragile',  'yes'),
+                (3, 2, 'urgent',   'P1'),
+                (4, 3, 'urgent',   'P1'),
+                (5, 3, 'bulky',    'yes')
             """);
     }
 }

@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 4
-phases-complete: 2
+phases-complete: 3
 
 ## Problem Statement
 
@@ -38,6 +38,7 @@ phases-complete: 2
 - 2026-05-03: Phase 4 expanded — adding compile-time `QRY075` diagnostic for `Update().Set` targeting a computed column. Reason: current behavior emits invalid SQL (DB rejects at runtime) while INSERT silently drops; QRY075 fixes the asymmetry at compile time, consistent with other QRY error codes. Includes diagnostic registration, translator detection, llm.md doc update, and tests.
 - 2026-05-03: Phase 2 conditional-Having test deferred. Pattern `var grouped = q.GroupBy(...); if (true) grouped = grouped.Having(...);` triggers a generator misattribution where the chain binds to `Cte.CteDb` instead of `TestDbContext` because both expose `IEntityAccessor<Order>`. Single-line GroupBy chains work fine (see CrossDialectAggregateTests). Filed as follow-up; non-blocking. Test left as a comment in CrossDialectConditionalMaskTests.cs explaining the deferral.
 - 2026-05-03: Discovered SQL renderer behavior worth recording — multiple conditional `Where` predicates are wrapped in parentheses (`WHERE (a) AND (b) AND (c)`); `OrderBy` without explicit direction renders as `ASC` explicitly. Both are stable conventions the new tests now lock in.
+- 2026-05-03: Phase 3 SQL conventions discovered — nested subquery EXISTS clauses (depth ≥ 2) are wrapped in parentheses, e.g. `AND (EXISTS (...))`; nested predicate comparisons inside such EXISTS bodies are also parenthesized; literal string constants are inlined (`'urgent'` rather than `@p0`); captured variables are parameterized as expected; sibling projection-side scalar subqueries each maintain their own alias namespace and reuse `sq0` (not monotonic across columns).
 
 ## Suspend State
 

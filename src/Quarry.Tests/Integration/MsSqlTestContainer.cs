@@ -548,6 +548,13 @@ internal static class MsSqlTestContainer
             [DiscountedPrice] AS ([Price] * 0.9) PERSISTED
         )");
 
+        await ExecAsync(conn, $@"CREATE TABLE [{schema}].[tags] (
+            [TagId] INT IDENTITY(1,1) PRIMARY KEY,
+            [OrderItemId] INT NOT NULL,
+            [TagName] NVARCHAR(50) {CS} NOT NULL,
+            [TagValue] NVARCHAR(100) {CS} NOT NULL
+        )");
+
         // CREATE VIEW must be the only statement in its batch — separate
         // command keeps that invariant satisfied.
         await ExecAsync(conn, $"CREATE VIEW [{schema}].[Order] AS SELECT * FROM [{schema}].[orders]");
@@ -618,6 +625,14 @@ internal static class MsSqlTestContainer
             INSERT INTO [{schema}].[shipments] ([ShipmentId], [OrderId], [WarehouseId], [ReturnWarehouseId], [ShipDate]) VALUES
                 (1, 1, 1, 2, '2024-06-02T00:00:00'),
                 (2, 3, 2, NULL, '2024-07-02T00:00:00')");
+
+        await SeedTableAsync(conn, schema, "tags", $@"
+            INSERT INTO [{schema}].[tags] ([TagId], [OrderItemId], [TagName], [TagValue]) VALUES
+                (1, 1, 'urgent',  'P1'),
+                (2, 1, 'fragile', 'yes'),
+                (3, 2, 'urgent',  'P1'),
+                (4, 3, 'urgent',  'P1'),
+                (5, 3, 'bulky',   'yes')");
     }
 
     private static async Task SeedTableAsync(SqlConnection conn, string schema, string table, string insertSql)

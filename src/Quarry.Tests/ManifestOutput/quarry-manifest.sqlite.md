@@ -3141,6 +3141,14 @@ SELECT "UserName" FROM "users" WHERE "UserId" IN ({__COL_P0__}) AND "UserId" > @
 
 ---
 
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal", (SELECT COUNT(*) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderCount" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserId" ASC
+```
+
+---
+
 ### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -3597,6 +3605,14 @@ SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS
 ### Users().Where(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND ((SELECT SUM("sq1"."UnitPrice") FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId") > 100))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND ("sq1"."UnitPrice" > 100))))
 ```
 
@@ -3606,6 +3622,34 @@ SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS
 
 ```sql
 SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND ("sq1"."UnitPrice" > 50))))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND (EXISTS (SELECT 1 FROM "tags" AS "sq2" WHERE "sq2"."OrderItemId" = "sq1"."OrderItemId" AND ("sq2"."TagName" = 'urgent'))))))
+```
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND (EXISTS (SELECT 1 FROM "tags" AS "sq2" WHERE "sq2"."OrderItemId" = "sq1"."OrderItemId" AND ("sq2"."TagValue" = @p0))))))
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+
+---
+
+### Users().Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserId", "UserName" FROM "users" WHERE EXISTS (SELECT 1 FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId" AND (EXISTS (SELECT 1 FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId" AND (NOT EXISTS (SELECT 1 FROM "tags" AS "sq2" WHERE "sq2"."OrderItemId" = "sq1"."OrderItemId" AND NOT ("sq2"."TagName" = 'urgent'))))))
 ```
 
 ---
@@ -5325,7 +5369,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 669 |
+| Total discovered | 674 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 184 |
-| Rendered | 485 |
+| Rendered | 490 |

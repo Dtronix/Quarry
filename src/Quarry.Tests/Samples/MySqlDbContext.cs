@@ -20,5 +20,6 @@ public partial class MyDb : QuarryContext
     public partial IEntityAccessor<Warehouse> Warehouses();
     public partial IEntityAccessor<Shipment> Shipments();
     public partial IEntityAccessor<Event> Events();
+    public partial IEntityAccessor<Tag> Tags();
 }
 
