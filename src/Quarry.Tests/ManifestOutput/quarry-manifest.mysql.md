@@ -1255,6 +1255,34 @@ SELECT `t0`.`UserName`, `t1`.`Status`, `t2`.`ProductName`, `t2`.`Quantity` FROM 
 
 ---
 
+### Users().Join(...).LeftJoin(...).RightJoin(...).CrossJoin(...).Join(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName`, `t5`.`AccountName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4` INNER JOIN `accounts` AS `t5` ON `t0`.`UserId` = `t5`.`UserId`
+```
+
+---
+
+### Users().Join(...).LeftJoin(...).RightJoin(...).CrossJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4`
+```
+
+---
+
+### Users().Join(...).LeftJoin(...).RightJoin(...).CrossJoin(...).Where(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4` WHERE `t1`.`Total` > ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `decimal` |
+
+---
+
 ### Users().Join(...).OrderBy(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -1593,6 +1621,14 @@ SELECT `t0`.`UserName`, `t1`.`Total` FROM `users` AS `t0` INNER JOIN `orders` AS
 
 ```sql
 SELECT `t0`.`UserName`, `t1`.`Total`, `t1`.`Status` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` WHERE `t1`.`Total` > 50
+```
+
+---
+
+### Users().LeftJoin(...).LeftJoin(...).LeftJoin(...).LeftJoin(...).LeftJoin(...).Select(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName`, `t5`.`AccountName` FROM `users` AS `t0` LEFT JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` LEFT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` LEFT JOIN `warehouses` AS `t4` ON `t3`.`WarehouseId` = `t4`.`WarehouseId` LEFT JOIN `accounts` AS `t5` ON `t0`.`UserId` = `t5`.`UserId`
 ```
 
 ---
@@ -3931,7 +3967,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 513 |
+| Total discovered | 517 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 86 |
-| Rendered | 427 |
+| Rendered | 431 |
