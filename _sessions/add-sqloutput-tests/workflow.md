@@ -12,7 +12,7 @@ issue: discussion
 pr:
 session: 1
 phases-total: 4
-phases-complete: 0
+phases-complete: 2
 
 ## Problem Statement
 
@@ -36,6 +36,8 @@ phases-complete: 0
 - 2026-05-03: Docker started mid-DESIGN; switched test execution from CI-only to local cross-dialect smoke after each phase.
 - 2026-05-03: Phase 3 schema additions (`TagSchema`) and tests in a single commit (avoid orphaned-schema commit).
 - 2026-05-03: Phase 4 expanded — adding compile-time `QRY075` diagnostic for `Update().Set` targeting a computed column. Reason: current behavior emits invalid SQL (DB rejects at runtime) while INSERT silently drops; QRY075 fixes the asymmetry at compile time, consistent with other QRY error codes. Includes diagnostic registration, translator detection, llm.md doc update, and tests.
+- 2026-05-03: Phase 2 conditional-Having test deferred. Pattern `var grouped = q.GroupBy(...); if (true) grouped = grouped.Having(...);` triggers a generator misattribution where the chain binds to `Cte.CteDb` instead of `TestDbContext` because both expose `IEntityAccessor<Order>`. Single-line GroupBy chains work fine (see CrossDialectAggregateTests). Filed as follow-up; non-blocking. Test left as a comment in CrossDialectConditionalMaskTests.cs explaining the deferral.
+- 2026-05-03: Discovered SQL renderer behavior worth recording — multiple conditional `Where` predicates are wrapped in parentheses (`WHERE (a) AND (b) AND (c)`); `OrderBy` without explicit direction renders as `ASC` explicitly. Both are stable conventions the new tests now lock in.
 
 ## Suspend State
 
