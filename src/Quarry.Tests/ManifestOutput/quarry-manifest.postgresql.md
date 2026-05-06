@@ -954,6 +954,32 @@ INSERT INTO "products" ("ProductName", "Price", "Description") VALUES ($1, $2, $
 
 ---
 
+### Products().Insert().ToDiagnostics()
+
+```sql
+INSERT INTO "products" ("ProductName", "Price") VALUES ($1, $2) RETURNING "ProductId"
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
+### Products().InsertBatch(...).Values(...).ToDiagnostics()
+
+```sql
+INSERT INTO "products" ("ProductName", "Price") VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
 ### Products().Select(...).Products()
 
 ```sql
@@ -5033,7 +5059,7 @@ SELECT "UserId", "UserName", "Email", "IsActive", "CreatedAt", "LastLogin" FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 570 |
+| Total discovered | 572 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 109 |
-| Rendered | 461 |
+| Rendered | 463 |

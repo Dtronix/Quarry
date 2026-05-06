@@ -897,6 +897,32 @@ INSERT INTO `products` (`ProductName`, `Price`, `Description`) VALUES (?, ?, ?)
 
 ---
 
+### Products().Insert().ToDiagnostics()
+
+```sql
+INSERT INTO `products` (`ProductName`, `Price`) VALUES (?, ?); SELECT LAST_INSERT_ID()
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
+### Products().InsertBatch(...).Values(...).ToDiagnostics()
+
+```sql
+INSERT INTO `products` (`ProductName`, `Price`) VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
 ### Products().Select(...).Products()
 
 ```sql
@@ -4821,7 +4847,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 530 |
+| Total discovered | 532 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 90 |
-| Rendered | 440 |
+| Rendered | 442 |

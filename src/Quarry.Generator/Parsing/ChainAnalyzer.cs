@@ -1008,6 +1008,12 @@ internal static class ChainAnalyzer
                     case ClauseKind.Set:
                         if (clause.SetAssignments != null)
                         {
+                            // QRY075: Reject SET on a computed column. Without this gate the
+                            // generator would emit `SET "Computed" = @p0`, which the DB engine
+                            // rejects at execution time with a confusing driver error.
+                            EmitComputedColumnSetDiagnostics(clause.SetAssignments,
+                                site.Bound.Entity, site.Location, diagnostics);
+
                             // Enrich Set parameters with column metadata (IsEnum, IsSensitive)
                             // that EnrichParametersFromColumns missed because Set assignments
                             // use a different expression structure than Where comparisons.
@@ -1057,6 +1063,11 @@ internal static class ChainAnalyzer
                             // The value parameter is the second arg to Set(), handled at runtime
                             // by the emitter via SetClauseInfo.ValueParameterIndex.
                             var col = new ResolvedColumnExpr(SqlExprRenderer.Render(expr, site.Bound.Dialect));
+
+                            // QRY075: Reject Set(p => p.Computed, value).
+                            EmitComputedColumnSetDiagnosticForSingleColumn(expr, site.Bound.Entity,
+                                site.Location, diagnostics);
+
                             // LocalIndex=0 within this SetTerm — assembler computes global index
                             var valueIdx = clauseParams.Count > 0 ? paramGlobalIndex - 1 : paramGlobalIndex;
                             var valExpr = new ParamSlotExpr(0, "object", "@p" + valueIdx);
@@ -1096,6 +1107,12 @@ internal static class ChainAnalyzer
                 // When column expressions are present, bound assignments and parameters come from
                 // the TranslatedClause (bound+extracted in CallSiteTranslator); otherwise from RawCallSite.
                 var clauseAssignments = site.Clause?.SetAssignments ?? raw.SetActionAssignments;
+
+                // QRY075: Reject SetAction lambda assignments to computed columns.
+                // The generated entity already declares computed properties as `init`-only,
+                // so direct mutation in the lambda fails to compile, but the discovery layer
+                // can still pick up entries via column expressions or other paths.
+                EmitComputedColumnSetDiagnostics(clauseAssignments, site.Bound.Entity, site.Location, diagnostics);
                 var hasColumnExprs = clauseAssignments.Any(a => a.HasColumnExpression);
                 var clauseParamSource = hasColumnExprs && site.Clause?.Parameters != null
                     ? site.Clause.Parameters
@@ -1885,6 +1902,88 @@ internal static class ChainAnalyzer
             subquery.NavigationPropertyName,
             subquery.OuterParameterName,
             subquery.SubqueryKind.ToString()));
+    }
+
+    /// <summary>
+    /// QRY075: emits a diagnostic for each <see cref="SetActionAssignment"/> that
+    /// targets a computed column on the entity. The Insert path filters computed
+    /// columns silently (<see cref="Models.InsertInfo"/>); UPDATE has no equivalent
+    /// filter, so without this gate the SQL emitter would render
+    /// <c>SET "Computed" = @p0</c> and the database engine would reject it at
+    /// execution time.
+    /// </summary>
+    private static void EmitComputedColumnSetDiagnostics(
+        IReadOnlyList<SetActionAssignment> assignments,
+        EntityRef entity,
+        DiagnosticLocation location,
+        List<DiagnosticInfo>? diagnostics)
+    {
+        if (diagnostics == null) return;
+        foreach (var assignment in assignments)
+        {
+            var col = FindEntityColumnBySql(entity, assignment.ColumnSql);
+            if (col != null && col.Modifiers.IsComputed)
+            {
+                diagnostics.Add(new DiagnosticInfo(
+                    DiagnosticDescriptors.ComputedColumnSetForbidden.Id,
+                    location,
+                    col.PropertyName,
+                    entity.EntityName));
+            }
+        }
+    }
+
+    /// <summary>
+    /// QRY075 variant for single <c>Set(p =&gt; p.X, value)</c> calls: walks the bound
+    /// expression for a <see cref="ResolvedColumnExpr"/> and matches it against entity
+    /// columns. Quoting is already applied to the resolved expression, so the lookup
+    /// strips quote characters before comparison.
+    /// </summary>
+    private static void EmitComputedColumnSetDiagnosticForSingleColumn(
+        SqlExpr expr,
+        EntityRef entity,
+        DiagnosticLocation location,
+        List<DiagnosticInfo>? diagnostics)
+    {
+        if (diagnostics == null) return;
+        var quotedColumn = SqlExprRenderer.Render(expr, Sql.SqlDialect.PostgreSQL, useGenericParamFormat: true, stripOuterParens: true);
+        var unquoted = StripQuoting(quotedColumn);
+        var col = FindEntityColumnByName(entity, unquoted);
+        if (col != null && col.Modifiers.IsComputed)
+        {
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.ComputedColumnSetForbidden.Id,
+                location,
+                col.PropertyName,
+                entity.EntityName));
+        }
+    }
+
+    private static ColumnInfo? FindEntityColumnBySql(EntityRef entity, string columnSql)
+    {
+        var unquoted = StripQuoting(columnSql);
+        return FindEntityColumnByName(entity, unquoted);
+    }
+
+    private static ColumnInfo? FindEntityColumnByName(EntityRef entity, string name)
+    {
+        foreach (var col in entity.Columns)
+        {
+            if (col.PropertyName == name || col.ColumnName == name)
+                return col;
+        }
+        return null;
+    }
+
+    private static string StripQuoting(string identifier)
+    {
+        // Remove dialect-specific quote chars: ", `, [, ]. Also strip any leading
+        // table-qualified prefix (e.g., t0."Col" -> Col, "t0"."Col" -> Col) before
+        // returning the bare identifier.
+        var s = identifier.Trim();
+        var lastDot = s.LastIndexOf('.');
+        if (lastDot >= 0) s = s.Substring(lastDot + 1);
+        return s.Trim('"', '`', '[', ']');
     }
 
     /// <summary>

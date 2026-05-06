@@ -921,6 +921,32 @@ INSERT INTO [products] ([ProductName], [Price], [Description]) VALUES (@p0, @p1,
 
 ---
 
+### Products().Insert().ToDiagnostics()
+
+```sql
+INSERT INTO [products] ([ProductName], [Price]) OUTPUT INSERTED.[ProductId] VALUES (@p0, @p1)
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
+### Products().InsertBatch(...).Values(...).ToDiagnostics()
+
+```sql
+INSERT INTO [products] ([ProductName], [Price]) OUTPUT INSERTED.[ProductId] VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
 ### Products().Select(...).Products()
 
 ```sql
@@ -4845,7 +4871,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 535 |
+| Total discovered | 537 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 93 |
-| Rendered | 442 |
+| Rendered | 444 |

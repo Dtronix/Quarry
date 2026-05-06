@@ -1046,6 +1046,19 @@ INSERT INTO "products" ("ProductName", "Price") VALUES (@p0, @p1) RETURNING "Pro
 
 ---
 
+### Products().InsertBatch(...).Values(...).ToDiagnostics()
+
+```sql
+INSERT INTO "products" ("ProductName", "Price") VALUES (@p0, @p1), ...
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `decimal` |
+
+---
+
 ### Products().Select(...).Products()
 
 ```sql
@@ -5369,7 +5382,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 674 |
+| Total discovered | 675 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 184 |
-| Rendered | 490 |
+| Rendered | 491 |
