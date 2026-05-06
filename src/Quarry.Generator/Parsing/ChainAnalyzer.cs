@@ -1056,23 +1056,9 @@ internal static class ChainAnalyzer
                                 setTerms.Add(new SetTerm(col, valueExpr, assignment.CustomTypeMappingClass, clauseBitIndex));
                             }
                         }
-                        else
-                        {
-                            // Single Set: column = value from the expression
-                            // The lambda u => u.Column produces the column reference only.
-                            // The value parameter is the second arg to Set(), handled at runtime
-                            // by the emitter via SetClauseInfo.ValueParameterIndex.
-                            var col = new ResolvedColumnExpr(SqlExprRenderer.Render(expr, site.Bound.Dialect));
-
-                            // QRY075: Reject Set(p => p.Computed, value).
-                            EmitComputedColumnSetDiagnosticForSingleColumn(expr, site.Bound.Entity,
-                                site.Location, diagnostics);
-
-                            // LocalIndex=0 within this SetTerm — assembler computes global index
-                            var valueIdx = clauseParams.Count > 0 ? paramGlobalIndex - 1 : paramGlobalIndex;
-                            var valExpr = new ParamSlotExpr(0, "object", "@p" + valueIdx);
-                            setTerms.Add(new SetTerm(col, valExpr, clause.CustomTypeMappingClass, clauseBitIndex));
-                        }
+                        // No else: ClauseKind.Set with null SetAssignments is unreachable —
+                        // only UpdateSetAction/UpdateSetPoco produce Set clauses, and both
+                        // populate SetAssignments via CallSiteTranslator.
                         break;
 
                     case ClauseKind.Join:
@@ -1930,32 +1916,6 @@ internal static class ChainAnalyzer
                     col.PropertyName,
                     entity.EntityName));
             }
-        }
-    }
-
-    /// <summary>
-    /// QRY075 variant for single <c>Set(p =&gt; p.X, value)</c> calls: walks the bound
-    /// expression for a <see cref="ResolvedColumnExpr"/> and matches it against entity
-    /// columns. Quoting is already applied to the resolved expression, so the lookup
-    /// strips quote characters before comparison.
-    /// </summary>
-    private static void EmitComputedColumnSetDiagnosticForSingleColumn(
-        SqlExpr expr,
-        EntityRef entity,
-        DiagnosticLocation location,
-        List<DiagnosticInfo>? diagnostics)
-    {
-        if (diagnostics == null) return;
-        var quotedColumn = SqlExprRenderer.Render(expr, Sql.SqlDialect.PostgreSQL, useGenericParamFormat: true, stripOuterParens: true);
-        var unquoted = StripQuoting(quotedColumn);
-        var col = FindEntityColumnByName(entity, unquoted);
-        if (col != null && col.Modifiers.IsComputed)
-        {
-            diagnostics.Add(new DiagnosticInfo(
-                DiagnosticDescriptors.ComputedColumnSetForbidden.Id,
-                location,
-                col.PropertyName,
-                entity.EntityName));
         }
     }
 
@@ -2818,7 +2778,6 @@ internal static class ChainAnalyzer
             InterceptorKind.FullOuterJoin => ClauseRole.Join,
             InterceptorKind.Set => ClauseRole.Set,
             InterceptorKind.DeleteWhere => ClauseRole.DeleteWhere,
-            InterceptorKind.UpdateSet => ClauseRole.UpdateSet,
             InterceptorKind.UpdateSetAction => ClauseRole.UpdateSet,
             InterceptorKind.UpdateSetPoco => ClauseRole.UpdateSet,
             InterceptorKind.UpdateWhere => ClauseRole.UpdateWhere,

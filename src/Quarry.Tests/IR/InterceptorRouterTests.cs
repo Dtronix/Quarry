@@ -28,7 +28,6 @@ public class InterceptorRouterTests
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.GroupBy), Is.EqualTo(EmitterCategory.Clause));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Having), Is.EqualTo(EmitterCategory.Clause));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Set), Is.EqualTo(EmitterCategory.Clause));
-        Assert.That(InterceptorRouter.Categorize(InterceptorKind.UpdateSet), Is.EqualTo(EmitterCategory.Clause));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Select), Is.EqualTo(EmitterCategory.Clause));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Distinct), Is.EqualTo(EmitterCategory.Clause));
         Assert.That(InterceptorRouter.Categorize(InterceptorKind.Limit), Is.EqualTo(EmitterCategory.Clause));

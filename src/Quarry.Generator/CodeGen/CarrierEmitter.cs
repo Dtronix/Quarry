@@ -307,7 +307,7 @@ internal static class CarrierEmitter
                 }
                 else
                 {
-                    var isSetClause = site.Kind == InterceptorKind.Set || site.Kind == InterceptorKind.UpdateSet;
+                    var isSetClause = site.Kind == InterceptorKind.Set;
                     if (isSetClause)
                     {
                         var effectiveCastType = GetEffectiveCastType(globalIdx, carrierParam, carrier);

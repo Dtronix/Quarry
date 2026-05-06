@@ -23,7 +23,6 @@ internal static class InterceptorRouter
             case InterceptorKind.GroupBy:
             case InterceptorKind.Having:
             case InterceptorKind.Set:
-            case InterceptorKind.UpdateSet:
             case InterceptorKind.UpdateSetPoco:
             case InterceptorKind.UpdateSetAction:
             case InterceptorKind.DeleteWhere:

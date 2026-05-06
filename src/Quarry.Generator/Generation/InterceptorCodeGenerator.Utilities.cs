@@ -150,7 +150,6 @@ internal static partial class InterceptorCodeGenerator
                 return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.Set:
-            case InterceptorKind.UpdateSet:
                 return site.Clause == null || !site.Clause.IsSuccess;
 
             case InterceptorKind.UpdateSetAction:

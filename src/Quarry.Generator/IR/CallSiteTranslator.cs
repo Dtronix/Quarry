@@ -788,7 +788,6 @@ internal static class CallSiteTranslator
             InterceptorKind.GroupBy => true,
             InterceptorKind.Having => true,
             InterceptorKind.Set => true,
-            InterceptorKind.UpdateSet => true,
             InterceptorKind.UpdateSetAction => true,
             InterceptorKind.Join => true,
             InterceptorKind.LeftJoin => true,

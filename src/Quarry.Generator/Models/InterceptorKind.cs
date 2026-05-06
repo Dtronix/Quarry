@@ -131,11 +131,6 @@ internal enum InterceptorKind
     DeleteWhere,
 
     /// <summary>
-    /// Set() on UpdateBuilder or ExecutableUpdateBuilder - generates SET clause for UPDATE operations.
-    /// </summary>
-    UpdateSet,
-
-    /// <summary>
     /// Where() on UpdateBuilder or ExecutableUpdateBuilder - generates WHERE clause for UPDATE operations.
     /// </summary>
     UpdateWhere,

@@ -525,45 +525,6 @@ internal static class ClauseBodyEmitter
     }
 
     /// <summary>
-    /// Emits an UpdateSet interceptor for UpdateBuilder or ExecutableUpdateBuilder.
-    /// </summary>
-    public static void EmitUpdateSet(
-        StringBuilder sb,
-        TranslatedCallSite site,
-        string methodName,
-        int? clauseBit,
-        AssembledPlan? prebuiltChain,
-        bool isFirstInChain,
-        CarrierPlan? carrier,
-        CarrierAssignmentRecorder? recorder = null)
-    {
-        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
-
-        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
-        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
-        var returnInterfaceBaseName = "I" + concreteBaseName;
-
-        // Carrier-optimized path
-        var resolvedValueType = site.ValueTypeName;
-        if (carrier != null && prebuiltChain != null && resolvedValueType != null)
-        {
-            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
-            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
-            sb.AppendLine($"        Func<{entityType}, {resolvedValueType}> _,");
-            sb.AppendLine($"        {resolvedValueType} value)");
-            sb.AppendLine($"    {{");
-
-            var concreteBuilder = carrier.ClassName;
-            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
-            CarrierEmitter.EmitCarrierClauseBody(sb, carrier, prebuiltChain, site, clauseBit, isFirstInChain,
-                concreteBuilder, returnInterface, false, new List<InterceptorCodeGenerator.CachedExtractorField>(),
-                recorder: recorder);
-            sb.AppendLine($"    }}");
-            return;
-        }
-    }
-
-    /// <summary>
     /// Emits an UpdateSetAction interceptor (Set with Action&lt;T&gt; lambda).
     /// </summary>
     public static void EmitUpdateSetAction(

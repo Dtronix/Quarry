@@ -320,7 +320,7 @@ For chains with N conditional terms (up to 8 bits = 256 variants), shared prefix
 | `CarrierEmitter.cs` | Emits carrier class + carrier-path method bodies (clause binding, terminal execution). |
 | `InterceptorRouter.cs` | Routes InterceptorKind → EmitterCategory (Clause, Terminal, Join, Transition, RawSql). |
 | `FileEmitter.cs` | Per-file orchestrator. Pass 1: carrier classes. Pass 2: interceptor methods via dispatcher. |
-| `ClauseBodyEmitter.cs` | Emits Where/OrderBy/GroupBy/Having/Set/Select/UpdateSet clause bodies. |
+| `ClauseBodyEmitter.cs` | Emits Where/OrderBy/GroupBy/Having/Set/Select clause bodies. |
 | `JoinBodyEmitter.cs` | Emits Join/LeftJoin/RightJoin + joined clause bodies. |
 | `TerminalBodyEmitter.cs` | Emits execution terminals (FetchAll, FetchFirst, Insert, BatchInsert, NonQuery, Diagnostics, Prepare). |
 | `TerminalEmitHelpers.cs` | Shared: ResolveSiteParams, parameter locals, collection expansion, diagnostic arrays, return type/executor resolution. |
@@ -392,7 +392,7 @@ All pipeline models implement `IEquatable<T>` for incremental caching.
 
 | Category | Kinds |
 |----------|-------|
-| Clause | Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, DeleteWhere, UpdateWhere, UpdateSet, UpdateSetAction, UpdateSetPoco |
+| Clause | Select, Where, OrderBy, ThenBy, GroupBy, Having, Set, DeleteWhere, UpdateWhere, UpdateSetAction, UpdateSetPoco |
 | Terminal | ExecuteFetchAll, ExecuteFetchFirst, ExecuteFetchFirstOrDefault, ExecuteFetchSingle, ExecuteFetchSingleOrDefault, ExecuteScalar, ExecuteNonQuery, ToAsyncEnumerable, ToDiagnostics, Prepare |
 | Insert Terminal | InsertExecuteNonQuery, InsertExecuteScalar, InsertToDiagnostics |
 | Batch Insert | BatchInsertExecuteNonQuery, BatchInsertExecuteScalar, BatchInsertToDiagnostics, BatchInsertColumnSelector, BatchInsertValues |

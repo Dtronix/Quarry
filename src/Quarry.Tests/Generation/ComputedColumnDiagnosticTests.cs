@@ -12,11 +12,10 @@ namespace Quarry.Tests.Generation;
 ///
 /// Computed columns are populated by the database from a stored expression
 /// (Computed&lt;T&gt;()); INSERT silently filters them via InsertInfo, but UPDATE has no
-/// equivalent filter. Without QRY075 the SQL emitter would render
-/// <c>SET "Computed" = @p0</c> and the database engine would reject the statement
-/// at execution time. This test fixture asserts the diagnostic fires for the three
-/// Update SET surface forms (typed lambda, Action&lt;T&gt; lambda, POCO) and stays silent
-/// for non-computed columns.
+/// equivalent filter. The Action&lt;T&gt; lambda form (<c>Set(p =&gt; p.X = v)</c>) is
+/// the surface API users could reach if init-only enforcement on generated entities
+/// was bypassed; QRY075 backstops it. The POCO form (<c>Set(new T { ... })</c>)
+/// already filters computed columns via UpdateInfo, so QRY075 must stay silent.
 /// </summary>
 [TestFixture]
 public class ComputedColumnDiagnosticTests
@@ -86,56 +85,6 @@ public partial class TestDbContext : QuarryContext
         var interceptorTree = run.GeneratedTrees.FirstOrDefault(t => t.FilePath.Contains(".Interceptors."));
         var interceptorSource = interceptorTree?.GetText().ToString() ?? "";
         return (diagnostics, files, interceptorSource);
-    }
-
-    [Test]
-    public void QRY075_UpdateSet_TypedLambda_OnComputedColumn_Reports()
-    {
-        var (diags, files, interceptorSource) = RunGenerator(@"
-public class Svc
-{
-    private readonly TestApp.TestDbContext _db;
-    public Svc(TestApp.TestDbContext db) { _db = db; }
-    public async Task Run()
-    {
-        await _db.Products().Update().Set(p => p.DiscountedPrice, 99m).Where(p => p.ProductId == 1).ExecuteNonQueryAsync();
-    }
-}
-");
-        // DEBUG: dump every diagnostic and generated file so we can see the pipeline output.
-        foreach (var d in diags)
-            TestContext.Progress.WriteLine($"[DIAG] {d.Id}: {d.GetMessage()}");
-        foreach (var f in files)
-            TestContext.Progress.WriteLine($"[FILE] {f}");
-        TestContext.Progress.WriteLine("[INTERCEPTOR-SRC]\n" + interceptorSource);
-
-        var qry075 = diags.Where(d => d.Id == "QRY075").ToList();
-        Assert.That(qry075, Is.Not.Empty, "Update().Set on a Computed<T>() column must report QRY075");
-        var msg = qry075[0].GetMessage();
-        Assert.That(msg, Does.Contain("DiscountedPrice"));
-        Assert.That(msg, Does.Contain("Product"));
-    }
-
-    [Test]
-    public void QRY075_UpdateSet_NonComputedColumn_DoesNotReport()
-    {
-        var (diags, files, interceptorSource) = RunGenerator(@"
-public class Svc
-{
-    private readonly TestApp.TestDbContext _db;
-    public Svc(TestApp.TestDbContext db) { _db = db; }
-    public async Task Run()
-    {
-        await _db.Products().Update().Set(p => p.Price, 99m).Where(p => p.ProductId == 1).ExecuteNonQueryAsync();
-    }
-}
-");
-        foreach (var d in diags)
-            TestContext.Progress.WriteLine($"[DIAG-NC] {d.Id}: {d.GetMessage()}");
-        foreach (var f in files)
-            TestContext.Progress.WriteLine($"[FILE-NC] {f}");
-        var qry075 = diags.Where(d => d.Id == "QRY075").ToList();
-        Assert.That(qry075, Is.Empty, "Update().Set on a non-computed column must not report QRY075");
     }
 
     [Test]
