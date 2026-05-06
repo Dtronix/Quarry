@@ -227,5 +227,78 @@ internal class CrossDialectNestedSubqueryTests
         Assert.That(results[1].OrderCount, Is.EqualTo(1));
     }
 
+    [Test]
+    public async Task Select_ProjectionMixedNestingDepths_OrderTotalAndItemTotal()
+    {
+        // Two simultaneous projection-side subqueries with mixed nesting depths:
+        //   - OrderTotal: 1-level Sum over u.Orders
+        //   - ItemTotal:  2-level Sum/Sum traversal u.Orders → o.Items.LineTotal
+        // Each top-level projection scalar subquery owns its own alias namespace,
+        // so both start at sq0; the nested one extends to sq1 inside its own
+        // tree. Closes the deep-projection-side gap that the sibling 1-level
+        // test (Select_TwoSiblingProjectionSubqueries_AliasReusesPerColumn) does
+        // not exercise. The plan originally called for a 3-level Sum/Sum/Count
+        // (Orders → Items → Tags), but the generator projection-type resolver
+        // does not propagate `int` through nested aggregates (it resolves nested
+        // Sum<int>/Count() as decimal, so interceptor signatures mismatch with
+        // CS9144). Holding ItemTotal at decimal sidesteps that resolver gap;
+        // tracked separately in #294.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var lt = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                OrderTotal: u.Orders.Sum(o => o.Total),
+                ItemTotal: u.Orders.Sum(o => o.Items.Sum(i => i.LineTotal))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var pg = Pg.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                OrderTotal: u.Orders.Sum(o => o.Total),
+                ItemTotal: u.Orders.Sum(o => o.Items.Sum(i => i.LineTotal))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var my = My.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                OrderTotal: u.Orders.Sum(o => o.Total),
+                ItemTotal: u.Orders.Sum(o => o.Items.Sum(i => i.LineTotal))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var ss = Ss.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                OrderTotal: u.Orders.Sum(o => o.Total),
+                ItemTotal: u.Orders.Sum(o => o.Items.Sum(i => i.LineTotal))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\", (SELECT SUM((SELECT SUM(\"sq1\".\"LineTotal\") FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemTotal\" FROM \"users\" WHERE \"IsActive\" = 1 ORDER BY \"UserId\" ASC",
+            pg:     "SELECT \"UserName\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\", (SELECT SUM((SELECT SUM(\"sq1\".\"LineTotal\") FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemTotal\" FROM \"users\" WHERE \"IsActive\" = TRUE ORDER BY \"UserId\" ASC",
+            mysql:  "SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal`, (SELECT SUM((SELECT SUM(`sq1`.`LineTotal`) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC",
+            ss:     "SELECT [UserName], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal], (SELECT SUM((SELECT SUM([sq1].[LineTotal]) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC");
+
+        // Active users:
+        //   Alice  → orders 1+2 (Total=250+75.50=325.50; Items LineTotal: 250+75.50=325.50)
+        //   Bob    → order 3    (Total=150;             Items LineTotal: 150)
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(results[0].ItemTotal, Is.EqualTo(325.50m));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
+        Assert.That(results[1].ItemTotal, Is.EqualTo(150.00m));
+    }
+
     #endregion
 }

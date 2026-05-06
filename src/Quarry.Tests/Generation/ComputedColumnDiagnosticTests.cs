@@ -107,4 +107,53 @@ public class Svc
         var qry075 = diags.Where(d => d.Id == "QRY075").ToList();
         Assert.That(qry075, Is.Empty, "POCO Update().Set must not report QRY075 — UpdateInfo already filters computed columns");
     }
+
+    [Test]
+    public void QRY075_UpdateSetAction_AssignToComputedColumn_Reports()
+    {
+        // The generator runs on the parse tree before C# semantic analysis
+        // surfaces the init-only assignment error, so the synthesized lambda
+        // body `p.DiscountedPrice = 99m` reaches the analyzer's UpdateSetAction
+        // hook. QRY075 must fire with the schema's property name and entity
+        // name in the message. (The synthesized compilation also produces a CS
+        // error for the init-only assignment; we only assert the generator
+        // diagnostic here.)
+        var (diags, _, _) = RunGenerator(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Products().Update().Set(p => p.DiscountedPrice = 99m).Where(p => p.ProductId == 1).ExecuteNonQueryAsync();
+    }
+}
+");
+        var qry075 = diags.Where(d => d.Id == "QRY075").ToList();
+        Assert.That(qry075, Is.Not.Empty, "Update().Set lambda assigning a Computed<T>() column must report QRY075");
+        var msg = qry075[0].GetMessage();
+        Assert.That(msg, Does.Contain("DiscountedPrice"), "Diagnostic should name the offending column");
+        Assert.That(msg, Does.Contain("Product"), "Diagnostic should name the offending entity");
+    }
+
+    [Test]
+    public void QRY075_UpdateSetAction_AssignToWritableColumn_DoesNotReport()
+    {
+        // Sanity check the negative case: assigning a writable column from the
+        // same Action lambda must not trigger QRY075. Guards against the hook
+        // over-firing on every UpdateSetAction.
+        var (diags, _, _) = RunGenerator(@"
+public class Svc
+{
+    private readonly TestApp.TestDbContext _db;
+    public Svc(TestApp.TestDbContext db) { _db = db; }
+    public async Task Run()
+    {
+        await _db.Products().Update().Set(p => p.Price = 99m).Where(p => p.ProductId == 1).ExecuteNonQueryAsync();
+    }
+}
+");
+        var qry075 = diags.Where(d => d.Id == "QRY075").ToList();
+        Assert.That(qry075, Is.Empty, "Update().Set lambda assigning a writable column must not report QRY075");
+    }
 }

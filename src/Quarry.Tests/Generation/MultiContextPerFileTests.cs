@@ -10,10 +10,12 @@ namespace Quarry.Tests.Generation;
 /// file each get their own interceptor <c>.g.cs</c> output. Per llm.md
 /// §"Caching Boundaries", <c>FileInterceptorGroup</c> is keyed by
 /// (context class name, source file path), so two contexts in one file must
-/// produce two distinct interceptor files. Carrier classes are emitted as
-/// <c>file sealed class Chain_N</c>, which makes <c>Chain_0</c> in each file
-/// independently scoped — but the test still asserts that the two interceptor
-/// files don't share the same generated path.
+/// produce two distinct interceptor files. The test asserts only that file
+/// separation: that the generator emits two `.g.cs` paths, one prefixed with
+/// each context name, and that each contains its own carrier emission. Carrier
+/// name non-collision (each file having its own <c>Chain_0</c>) is enforced by
+/// C# <c>file</c>-scoped accessibility rather than by anything this test
+/// observes — language semantics, not generator behavior, guarantees that.
 /// </summary>
 [TestFixture]
 public class MultiContextPerFileTests

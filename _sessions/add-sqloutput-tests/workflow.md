@@ -6,7 +6,7 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REMEDIATE
 status: active
 issue: discussion
 pr:
@@ -42,6 +42,7 @@ phases-complete: 4
 - 2026-05-06: Phase 4 QRY075 audit — the 341c895 commit added a 2-arg typed-lambda Set form `Set(p => p.X, value)` that doesn't exist in `IUpdateBuilder<T>`/`IExecutableUpdateBuilder<T>` (only `Set(T entity)` and `Set(Action<T>)` exist). The QRY075 typed-lambda test always failed; CI never ran on the branch so it wasn't caught. Eliminated the phantom form: removed the `else { kind = InterceptorKind.UpdateSet; }` discovery branch, the unreachable single-set `else` branch in ChainAnalyzer, the `EmitComputedColumnSetDiagnosticForSingleColumn` helper, the `InterceptorKind.UpdateSet` enum value and all table references, the `EmitUpdateSet` emitter, and the failing test. QRY075 retained for `UpdateSetAction` and `SetActionAssignments` paths. Action-lambda `Set(p => p.X = v)` covers every legitimate use case.
 - 2026-05-06: Phase 4 Gap A — streaming SQL is asserted via parallel `.ToDiagnostics()` chain (same clauses, different terminal); cancellation is exercised via `break` inside `await foreach` rather than CancellationToken (loop control is enough to verify short-circuit). Discovered `WHERE bool-col` renders dialect-specific: SQLite/MySQL/SS use `= 1`, PostgreSQL uses `= TRUE`.
 - 2026-05-06: Phase 4 Gap C — `FileInterceptorGroup` keying on (ContextClassName, FilePath) confirmed by emitting two `[QuarryContext]` partial classes in a single synthesized syntax tree and asserting two interceptor `.g.cs` files emit. Carrier classes are `file sealed`, so `Chain_0` in each file is naturally non-colliding.
+- 2026-05-06: REMEDIATE — addressed REVIEW findings #1, #3/9, #7, #8 (2A + 2B from 2A/3B/0C/11D classification). Discovered during Finding #1 remediation: the generator's projection-type resolver does not propagate `int` correctly through nested aggregate subqueries (e.g., `Sum(o => o.Items.Count())` resolves the projection element type as decimal instead of int, causing interceptor signature mismatch CS9144). Worked around by holding the new projection test at decimal-typed nested Sums (`Sum(o => o.Items.Sum(i => i.LineTotal))`); the int-aggregate path is a follow-up.
 
 ## Suspend State
 
@@ -50,4 +51,4 @@ phases-complete: 4
 | # | Phase Start | Phase End | Summary |
 |---|-------------|-----------|---------|
 | 1 | 2026-05-03 INTAKE | — | Worktree + branch created. Baseline skipped (no Docker). Moved to DESIGN. |
-| 2 | 2026-05-06 IMPLEMENT | — | Resumed from remote (no local worktree existed). Worktree recreated from origin/add-sqloutput-tests at 341c895. Phase 4 partially done (Gap B + QRY075 landed in 341c895); Gap A (ToAsyncEnumerable streaming) and Gap C (multi-context-per-file) still TODO. |
+| 2 | 2026-05-06 IMPLEMENT | 2026-05-06 IMPLEMENT | Resumed from remote (no local worktree existed). Worktree recreated from origin/add-sqloutput-tests at 341c895. Audited 341c895 and discovered the QRY075 typed-lambda Set form was phantom; eliminated InterceptorKind.UpdateSet and dead hooks in 1abdd63. Added Gap A (CrossDialectStreamingTests) and Gap C (MultiContextPerFileTests) in ceb2b03. All 3125 tests pass. Transitioning to REVIEW. |

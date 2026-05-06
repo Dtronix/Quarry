@@ -2765,6 +2765,14 @@ SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`
 
 ---
 
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal`, (SELECT SUM((SELECT SUM(`sq1`.`LineTotal`) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
+```
+
+---
+
 ### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -4887,7 +4895,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 537 |
+| Total discovered | 538 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 91 |
-| Rendered | 446 |
+| Rendered | 447 |

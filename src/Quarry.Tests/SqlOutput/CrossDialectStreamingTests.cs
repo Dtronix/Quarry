@@ -57,21 +57,25 @@ internal class CrossDialectStreamingTests
     }
 
     [Test]
-    public async Task ToAsyncEnumerable_BreakEarly_StopsAfterFirstRow()
+    public async Task ToAsyncEnumerable_BreakAfterFirst_YieldsOrderedFirstRow()
     {
-        // Confirms the streaming terminal honors enumeration control: break out
-        // after one yielded row and verify only that single row materialized,
-        // i.e., the underlying reader is short-circuited rather than buffered.
+        // Verifies `break` inside `await foreach` over `ToAsyncEnumerable()` is
+        // well-formed and surfaces the OrderBy'd first row across all four
+        // dialects. Note: this is a behavioral assertion on what the consumer
+        // observes, not a proof of streaming vs. buffering — the underlying
+        // implementation could materialize all rows and still pass. A true
+        // streaming proof would require observing reader-side row reads (see
+        // CrossDialectLoggingTests for the logger-based pattern).
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        await AssertStopsAfterFirstAsync(Lite.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQLite");
-        await AssertStopsAfterFirstAsync(Pg.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "PostgreSQL");
-        await AssertStopsAfterFirstAsync(My.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "MySQL");
-        await AssertStopsAfterFirstAsync(Ss.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQL Server");
+        await AssertFirstRowIsAliceAsync(Lite.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQLite");
+        await AssertFirstRowIsAliceAsync(Pg.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "PostgreSQL");
+        await AssertFirstRowIsAliceAsync(My.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "MySQL");
+        await AssertFirstRowIsAliceAsync(Ss.Users().OrderBy(u => u.UserId).Select(u => u.UserName).ToAsyncEnumerable(), "SQL Server");
     }
 
-    private static async Task AssertStopsAfterFirstAsync(IAsyncEnumerable<string> source, string label)
+    private static async Task AssertFirstRowIsAliceAsync(IAsyncEnumerable<string> source, string label)
     {
         var seen = new List<string>();
         await foreach (var n in source)
@@ -79,7 +83,7 @@ internal class CrossDialectStreamingTests
             seen.Add(n);
             break;
         }
-        Assert.That(seen, Has.Count.EqualTo(1), $"{label}: expected exactly one row before break");
+        Assert.That(seen, Has.Count.EqualTo(1), $"{label}: enumeration should surface exactly one row before break");
         Assert.That(seen[0], Is.EqualTo("Alice"), $"{label}: ordered first row should be Alice");
     }
 
