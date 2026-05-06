@@ -1771,6 +1771,14 @@ SELECT [t0].[UserName], [t1].[Total] FROM [users] AS [t0] LEFT JOIN [orders] AS 
 
 ---
 
+### Users().OrderBy(...).Select(...).ToAsyncEnumerable()
+
+```sql
+SELECT [UserName] FROM [users] ORDER BY [UserId] ASC
+```
+
+---
+
 ### Users().RightJoin(...).Select(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2073,6 +2081,14 @@ SELECT [UserName], [UserId] FROM [users]
 ---
 
 ### Users().Select(...).ToAsyncEnumerable()
+
+```sql
+SELECT [UserName] FROM [users]
+```
+
+---
+
+### Users().Select(...).ToDiagnostics()
 
 ```sql
 SELECT [UserName] FROM [users]
@@ -3919,6 +3935,30 @@ SELECT [UserName], [Email] FROM [users] WHERE ([Email] IS NOT NULL) AND ([IsActi
 
 ---
 
+### Users().Where(...).Where(...).Select(...).ToAsyncEnumerable() — 2 variants
+
+```sql
+-- base
+SELECT [UserName] FROM [users]
+
+-- +true
+SELECT [UserName] FROM [users] WHERE [IsActive] = 1
+```
+
+---
+
+### Users().Where(...).Where(...).Select(...).ToDiagnostics() — 2 variants
+
+```sql
+-- base
+SELECT [UserName] FROM [users]
+
+-- +true
+SELECT [UserName] FROM [users] WHERE [IsActive] = 1
+```
+
+---
+
 ### Users().Where(...).Where(...).ToDiagnostics() — 2 variants
 
 ```sql
@@ -4871,7 +4911,7 @@ WITH [Order] AS (SELECT [OrderId], [UserId], [Total], [Status], [Priority], [Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 537 |
+| Total discovered | 542 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 93 |
-| Rendered | 444 |
+| Consolidated (deduped) | 94 |
+| Rendered | 448 |
