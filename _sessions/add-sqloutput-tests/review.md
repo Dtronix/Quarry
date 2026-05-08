@@ -24,6 +24,7 @@
 ## Issues Created
 
 - #294: Generator: nested int-aggregate projections resolve as decimal (CS9144)
+- #296: Audit — are `MaxConditionalBits=8` / `MaxIfNestingDepth=2` justified by real usage?
 
 ## Plan Compliance
 
