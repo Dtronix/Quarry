@@ -319,6 +319,13 @@ internal static class MySqlTestContainer
             `DiscountedPrice` DECIMAL(18, 2) GENERATED ALWAYS AS (`Price` * 0.9) STORED
         );");
 
+        await TestContainerHelpers.ExecAsync(conn,@"CREATE TABLE `tags` (
+            `TagId` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+            `OrderItemId` INT NOT NULL,
+            `TagName` VARCHAR(50) NOT NULL,
+            `TagValue` VARCHAR(100) NOT NULL
+        );");
+
         await TestContainerHelpers.ExecAsync(conn,@"CREATE VIEW `Order` AS SELECT * FROM `orders`;");
     }
 
@@ -383,5 +390,12 @@ internal static class MySqlTestContainer
         await TestContainerHelpers.ExecAsync(conn,@"INSERT INTO `shipments` (`ShipmentId`, `OrderId`, `WarehouseId`, `ReturnWarehouseId`, `ShipDate`) VALUES
             (1, 1, 1, 2, '2024-06-02 00:00:00'),
             (2, 3, 2, NULL, '2024-07-02 00:00:00');");
+
+        await TestContainerHelpers.ExecAsync(conn,@"INSERT INTO `tags` (`TagId`, `OrderItemId`, `TagName`, `TagValue`) VALUES
+            (1, 1, 'urgent',  'P1'),
+            (2, 1, 'fragile', 'yes'),
+            (3, 2, 'urgent',  'P1'),
+            (4, 3, 'urgent',  'P1'),
+            (5, 3, 'bulky',   'yes');");
     }
 }

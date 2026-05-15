@@ -136,10 +136,58 @@ internal class CrossDialectSchemaTests
         await using var t = await QueryTestHarness.CreateAsync();
         var (Lite, Pg, My, Ss) = t;
 
-        // DiscountedPrice is Computed() — should be excluded even if set
-        Assert.That(
-            Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics().Sql,
-            Is.EqualTo("INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\""));
+        // DiscountedPrice is Computed() — InsertInfo filters computed columns silently,
+        // so the column list and VALUES tuple omit it across all four dialects.
+        QueryTestHarness.AssertDialects(
+            Lite.Products().Insert(new Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics(),
+            Pg.Products().Insert(new Pg.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics(),
+            My.Products().Insert(new My.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics(),
+            Ss.Products().Insert(new Ss.Product { ProductName = "x", Price = 10m, DiscountedPrice = 5m }).ToDiagnostics(),
+            sqlite: "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\"",
+            pg:     "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES ($1, $2) RETURNING \"ProductId\"",
+            mysql:  "INSERT INTO `products` (`ProductName`, `Price`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [products] ([ProductName], [Price]) OUTPUT INSERTED.[ProductId] VALUES (@p0, @p1)");
+    }
+
+    [Test]
+    public async Task BatchInsert_ComputedColumnNotInColumnSelector_StillExcludedInValues()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var batch = new[]
+        {
+            new Product { ProductName = "x", Price = 10m },
+            new Product { ProductName = "y", Price = 20m },
+        };
+        var batchPg = new[]
+        {
+            new Pg.Product { ProductName = "x", Price = 10m },
+            new Pg.Product { ProductName = "y", Price = 20m },
+        };
+        var batchMy = new[]
+        {
+            new My.Product { ProductName = "x", Price = 10m },
+            new My.Product { ProductName = "y", Price = 20m },
+        };
+        var batchSs = new[]
+        {
+            new Ss.Product { ProductName = "x", Price = 10m },
+            new Ss.Product { ProductName = "y", Price = 20m },
+        };
+
+        QueryTestHarness.AssertDialects(
+            Lite.Products().InsertBatch(p => (p.ProductName, p.Price)).Values(batch).ToDiagnostics(),
+            Pg.Products().InsertBatch(p => (p.ProductName, p.Price)).Values(batchPg).ToDiagnostics(),
+            My.Products().InsertBatch(p => (p.ProductName, p.Price)).Values(batchMy).ToDiagnostics(),
+            Ss.Products().InsertBatch(p => (p.ProductName, p.Price)).Values(batchSs).ToDiagnostics(),
+            // BatchInsert .ToDiagnostics() returns the per-row SQL TEMPLATE — the runtime
+            // engine repeats the VALUES tuple per element. The template still proves the
+            // computed column is excluded from the column list and value template.
+            sqlite: "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES (@p0, @p1) RETURNING \"ProductId\"",
+            pg:     "INSERT INTO \"products\" (\"ProductName\", \"Price\") VALUES ($1, $2) RETURNING \"ProductId\"",
+            mysql:  "INSERT INTO `products` (`ProductName`, `Price`) VALUES (?, ?); SELECT LAST_INSERT_ID()",
+            ss:     "INSERT INTO [products] ([ProductName], [Price]) OUTPUT INSERTED.[ProductId] VALUES (@p0, @p1)");
     }
 
     #endregion

@@ -772,6 +772,7 @@ public sealed class QuarryGenerator : IIncrementalGenerator
         DiagnosticDescriptors.FromCteWithoutWith,
         DiagnosticDescriptors.DuplicateCteName,
         DiagnosticDescriptors.ProjectionSubqueryUnresolved,
+        DiagnosticDescriptors.ComputedColumnSetForbidden,
         // Set-operation diagnostics emitted by PipelineOrchestrator. Without these
         // entries, GetDescriptorById would return null and the diagnostics would be
         // silently dropped at QuarryGenerator.cs:524.

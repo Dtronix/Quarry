@@ -820,10 +820,6 @@ internal sealed class FileEmitter
                 }
                 break;
 
-            case InterceptorKind.UpdateSet:
-                ClauseBodyEmitter.EmitUpdateSet(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
-                break;
-
             case InterceptorKind.UpdateSetAction:
                 ClauseBodyEmitter.EmitUpdateSetAction(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;

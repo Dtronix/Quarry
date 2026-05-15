@@ -1082,4 +1082,319 @@ internal class CrossDialectJoinTests
     }
 
     #endregion
+
+    #region Mixed-Kind 5/6-Table Joins
+
+    [Test]
+    public async Task Join_FiveTable_Mixed_InnerLeftRightCross()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Users INNER Order LEFT OrderItem RIGHT Shipment CROSS Warehouse
+        // - INNER Users-Order: Alice (2), Bob (1), drops Charlie -> 3 rows
+        // - LEFT Order-OrderItem: each order has 1 item -> 3 rows
+        // - RIGHT Order-Shipment: keeps shipments 1, 2 (orders 1, 3); drops order 2 -> 2 rows
+        // - CROSS Warehouse: 2 warehouses -> 4 rows
+        var lt = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Warehouse>()
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var pg = Pg.Users()
+            .Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Pg.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Pg.Warehouse>()
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var my = My.Users()
+            .Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<My.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<My.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<My.Warehouse>()
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var ss = Ss.Users()
+            .Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Ss.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Ss.Warehouse>()
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t2].[ProductName], [t4].[WarehouseName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] LEFT JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] RIGHT JOIN [shipments] AS [t3] ON [t1].[OrderId] = [t3].[OrderId] CROSS JOIN [warehouses] AS [t4]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(4));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(4));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(4));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(4));
+    }
+
+    [Test]
+    public async Task Join_SixTable_Mixed_WithCrossJoin()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Build on the 5-table mixed chain and INNER-join Account on User.
+        // - 5-table base produces 4 rows (2 alice/widget × 2 warehouses, 2 bob/widget × 2 warehouses).
+        // - Alice has 2 accounts, Bob has 1: 2*2 + 2*1 = 6 rows.
+        var lt = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Warehouse>()
+            .Join<Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var pg = Pg.Users()
+            .Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Pg.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Pg.Warehouse>()
+            .Join<Pg.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var my = My.Users()
+            .Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<My.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<My.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<My.Warehouse>()
+            .Join<My.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var ss = Ss.Users()
+            .Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Ss.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Ss.Warehouse>()
+            .Join<Ss.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\", \"t5\".\"AccountName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\" INNER JOIN \"accounts\" AS \"t5\" ON \"t0\".\"UserId\" = \"t5\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\", \"t5\".\"AccountName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\" INNER JOIN \"accounts\" AS \"t5\" ON \"t0\".\"UserId\" = \"t5\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName`, `t5`.`AccountName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4` INNER JOIN `accounts` AS `t5` ON `t0`.`UserId` = `t5`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t2].[ProductName], [t4].[WarehouseName], [t5].[AccountName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] LEFT JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] RIGHT JOIN [shipments] AS [t3] ON [t1].[OrderId] = [t3].[OrderId] CROSS JOIN [warehouses] AS [t4] INNER JOIN [accounts] AS [t5] ON [t0].[UserId] = [t5].[UserId]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(6));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(6));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(6));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
+    }
+
+    [Test]
+    public async Task Join_FiveTable_Mixed_WithFullOuter()
+    {
+        // MySQL is intentionally excluded: it has no FULL OUTER JOIN support, and the
+        // analyzer (QRA503) makes a `My....FullOuterJoin(...)` call site fail compilation —
+        // see DialectRuleTests.QRA503_MysqlFullOuterJoin_Reports.
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, _, Ss) = t;
+
+        // Users INNER Order INNER OrderItem INNER Shipment FULLOUTER Warehouse
+        // - INNER through 4 tables: orders 1, 3 have shipments -> 2 rows (Alice/widget/ship1, Bob/widget/ship2)
+        // - FULLOUTER Warehouse: shipments 1, 2 match warehouses 1, 2 - all warehouses matched, no extra rows
+        // - Result: 2 rows
+        var lt = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .Join<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .Join<Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .FullOuterJoin<Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var pg = Pg.Users()
+            .Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Join<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .Join<Pg.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .FullOuterJoin<Pg.Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var ss = Ss.Users()
+            .Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .Join<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .Join<Ss.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .FullOuterJoin<Ss.Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+
+        var litDiag = lt.ToDiagnostics();
+        var pgDiag = pg.ToDiagnostics();
+        var ssDiag = ss.ToDiagnostics();
+
+        Assert.That(litDiag.Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" INNER JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" FULL OUTER JOIN \"warehouses\" AS \"t4\" ON \"t3\".\"WarehouseId\" = \"t4\".\"WarehouseId\""));
+        Assert.That(pgDiag.Sql, Is.EqualTo(
+            "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" INNER JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" INNER JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" FULL OUTER JOIN \"warehouses\" AS \"t4\" ON \"t3\".\"WarehouseId\" = \"t4\".\"WarehouseId\""));
+        Assert.That(ssDiag.Sql, Is.EqualTo(
+            "SELECT [t0].[UserName], [t1].[Total], [t2].[ProductName], [t4].[WarehouseName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] INNER JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] INNER JOIN [shipments] AS [t3] ON [t1].[OrderId] = [t3].[OrderId] FULL OUTER JOIN [warehouses] AS [t4] ON [t3].[WarehouseId] = [t4].[WarehouseId]"));
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Join_SixTable_AllLeftJoin()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Six LEFT JOINs preserve every row on the left side at each step.
+        // - 3 users -> LEFT Order: Alice (2), Bob (1), Charlie (1 with null) -> 4 rows
+        // - LEFT OrderItem: each order has 1 item; null-order keeps null item -> 4 rows
+        // - LEFT Shipment: orders 1, 3 have shipments; orders 2 and null-order get null -> 4 rows
+        // - LEFT Warehouse: matched shipments hit warehouses 1, 2; unmatched stays null -> 4 rows
+        // - LEFT Account on User: Alice (2 accounts) -> 2*2 = 4 rows; Bob (1 account) -> 1 row;
+        //   Charlie (0 accounts) -> 1 row with null account. Total: 4+1+1 = 6 rows.
+        var lt = Lite.Users()
+            .LeftJoin<Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .LeftJoin<Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .LeftJoin<Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .LeftJoin<Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var pg = Pg.Users()
+            .LeftJoin<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .LeftJoin<Pg.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .LeftJoin<Pg.Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .LeftJoin<Pg.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var my = My.Users()
+            .LeftJoin<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<My.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .LeftJoin<My.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .LeftJoin<My.Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .LeftJoin<My.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+        var ss = Ss.Users()
+            .LeftJoin<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .LeftJoin<Ss.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .LeftJoin<Ss.Warehouse>((u, o, oi, s, w) => s.WarehouseId.Id == w.WarehouseId)
+            .LeftJoin<Ss.Account>((u, o, oi, s, w, a) => u.UserId == a.UserId.Id)
+            .Select((u, o, oi, s, w, a) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName, a.AccountName))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\", \"t5\".\"AccountName\" FROM \"users\" AS \"t0\" LEFT JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" LEFT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" LEFT JOIN \"warehouses\" AS \"t4\" ON \"t3\".\"WarehouseId\" = \"t4\".\"WarehouseId\" LEFT JOIN \"accounts\" AS \"t5\" ON \"t0\".\"UserId\" = \"t5\".\"UserId\"",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\", \"t5\".\"AccountName\" FROM \"users\" AS \"t0\" LEFT JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" LEFT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" LEFT JOIN \"warehouses\" AS \"t4\" ON \"t3\".\"WarehouseId\" = \"t4\".\"WarehouseId\" LEFT JOIN \"accounts\" AS \"t5\" ON \"t0\".\"UserId\" = \"t5\".\"UserId\"",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName`, `t5`.`AccountName` FROM `users` AS `t0` LEFT JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` LEFT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` LEFT JOIN `warehouses` AS `t4` ON `t3`.`WarehouseId` = `t4`.`WarehouseId` LEFT JOIN `accounts` AS `t5` ON `t0`.`UserId` = `t5`.`UserId`",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t2].[ProductName], [t4].[WarehouseName], [t5].[AccountName] FROM [users] AS [t0] LEFT JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] LEFT JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] LEFT JOIN [shipments] AS [t3] ON [t1].[OrderId] = [t3].[OrderId] LEFT JOIN [warehouses] AS [t4] ON [t3].[WarehouseId] = [t4].[WarehouseId] LEFT JOIN [accounts] AS [t5] ON [t0].[UserId] = [t5].[UserId]");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(6));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(6));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(6));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(6));
+    }
+
+    [Test]
+    public async Task Join_FiveTable_Mixed_WithWhere_CapturedParam()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        var minTotal = 200m;
+        // Same Inner/Left/Right/Cross chain as the 5-table mixed test, plus a WHERE on captured minTotal.
+        // - Base 5-table chain produces 4 rows (alice/order1/widget × 2 warehouses, bob/order3/widget × 2 warehouses)
+        // - Filter o.Total > 200: only alice/order1 (Total 250). Result: 2 rows.
+        var lt = Lite.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Warehouse>()
+            .Where((u, o, oi, s, w) => o.Total > minTotal)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var pg = Pg.Users()
+            .Join<Pg.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Pg.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Pg.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Pg.Warehouse>()
+            .Where((u, o, oi, s, w) => o.Total > minTotal)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var my = My.Users()
+            .Join<My.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<My.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<My.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<My.Warehouse>()
+            .Where((u, o, oi, s, w) => o.Total > minTotal)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+        var ss = Ss.Users()
+            .Join<Ss.Order>((u, o) => u.UserId == o.UserId.Id)
+            .LeftJoin<Ss.OrderItem>((u, o, oi) => o.OrderId == oi.OrderId.Id)
+            .RightJoin<Ss.Shipment>((u, o, oi, s) => o.OrderId == s.OrderId.Id)
+            .CrossJoin<Ss.Warehouse>()
+            .Where((u, o, oi, s, w) => o.Total > minTotal)
+            .Select((u, o, oi, s, w) => (u.UserName, o.Total, oi.ProductName, w.WarehouseName))
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\" WHERE \"t1\".\"Total\" > @p0",
+            pg:     "SELECT \"t0\".\"UserName\", \"t1\".\"Total\", \"t2\".\"ProductName\", \"t4\".\"WarehouseName\" FROM \"users\" AS \"t0\" INNER JOIN \"orders\" AS \"t1\" ON \"t0\".\"UserId\" = \"t1\".\"UserId\" LEFT JOIN \"order_items\" AS \"t2\" ON \"t1\".\"OrderId\" = \"t2\".\"OrderId\" RIGHT JOIN \"shipments\" AS \"t3\" ON \"t1\".\"OrderId\" = \"t3\".\"OrderId\" CROSS JOIN \"warehouses\" AS \"t4\" WHERE \"t1\".\"Total\" > $1",
+            mysql:  "SELECT `t0`.`UserName`, `t1`.`Total`, `t2`.`ProductName`, `t4`.`WarehouseName` FROM `users` AS `t0` INNER JOIN `orders` AS `t1` ON `t0`.`UserId` = `t1`.`UserId` LEFT JOIN `order_items` AS `t2` ON `t1`.`OrderId` = `t2`.`OrderId` RIGHT JOIN `shipments` AS `t3` ON `t1`.`OrderId` = `t3`.`OrderId` CROSS JOIN `warehouses` AS `t4` WHERE `t1`.`Total` > ?",
+            ss:     "SELECT [t0].[UserName], [t1].[Total], [t2].[ProductName], [t4].[WarehouseName] FROM [users] AS [t0] INNER JOIN [orders] AS [t1] ON [t0].[UserId] = [t1].[UserId] LEFT JOIN [order_items] AS [t2] ON [t1].[OrderId] = [t2].[OrderId] RIGHT JOIN [shipments] AS [t3] ON [t1].[OrderId] = [t3].[OrderId] CROSS JOIN [warehouses] AS [t4] WHERE [t1].[Total] > @p0");
+
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+
+        var ssResults = await ss.ExecuteFetchAllAsync();
+        Assert.That(ssResults, Has.Count.EqualTo(2));
+    }
+
+    #endregion
 }

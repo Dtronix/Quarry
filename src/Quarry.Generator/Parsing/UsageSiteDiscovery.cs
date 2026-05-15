@@ -470,24 +470,19 @@ internal static class UsageSiteDiscovery
             kind = InterceptorKind.DeleteWhere;
         }
 
-        if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder"))
+        if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
+            && invocation.ArgumentList.Arguments.Count == 1
+            && !methodSymbol.IsGenericMethod)
         {
-            if (invocation.ArgumentList.Arguments.Count == 1 && !methodSymbol.IsGenericMethod)
+            var singleArg = invocation.ArgumentList.Arguments[0].Expression;
+            if (singleArg is LambdaExpressionSyntax)
             {
-                var singleArg = invocation.ArgumentList.Arguments[0].Expression;
-                if (singleArg is LambdaExpressionSyntax)
-                {
-                    kind = InterceptorKind.UpdateSetAction;
-                }
-                else
-                {
-                    kind = InterceptorKind.UpdateSetPoco;
-                    initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
-                }
+                kind = InterceptorKind.UpdateSetAction;
             }
             else
             {
-                kind = InterceptorKind.UpdateSet;
+                kind = InterceptorKind.UpdateSetPoco;
+                initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
             }
         }
         if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
@@ -1453,7 +1448,6 @@ internal static class UsageSiteDiscovery
             InterceptorKind.Where => ClauseKind.Where,
             InterceptorKind.DeleteWhere => ClauseKind.Where,
             InterceptorKind.UpdateWhere => ClauseKind.Where,
-            InterceptorKind.UpdateSet => ClauseKind.Set,
             InterceptorKind.UpdateSetAction => ClauseKind.Set,
             InterceptorKind.UpdateSetPoco => ClauseKind.Set,
             InterceptorKind.OrderBy => ClauseKind.OrderBy,
@@ -2241,7 +2235,6 @@ internal static class UsageSiteDiscovery
             InterceptorKind.Having => true,
             InterceptorKind.Set => true,
             InterceptorKind.DeleteWhere => true,
-            InterceptorKind.UpdateSet => true,
             InterceptorKind.UpdateSetAction => true,
             InterceptorKind.UpdateWhere => true,
             _ => false

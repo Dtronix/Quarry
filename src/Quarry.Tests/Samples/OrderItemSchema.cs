@@ -21,4 +21,10 @@ public class OrderItemSchema : Schema
     /// FK inferred automatically from single Ref&lt;OrderSchema, int&gt;.
     /// </summary>
     public One<OrderSchema> Order { get; }
+
+    /// <summary>
+    /// Many-to-one inverse of TagSchema.OrderItemId — the line-item's tags.
+    /// Enables 3-level nested navigation chains (User.Orders.Items.Tags).
+    /// </summary>
+    public Many<TagSchema> Tags => HasMany<TagSchema>(t => t.OrderItemId);
 }

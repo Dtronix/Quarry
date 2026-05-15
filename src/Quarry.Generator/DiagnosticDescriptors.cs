@@ -813,6 +813,25 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: "Aggregate methods on Many<T> navigation properties (Sum, Min, Max, Avg, Average, Count) require the navigation to be discoverable on the outer entity at compile time. If the navigation appears valid, ensure it is declared on the schema class and that the Select() lambda parameter matches the outer entity.");
 
+    /// <summary>
+    /// QRY075: Update assignment targets a computed column.
+    /// Severity: Error
+    /// Computed columns (declared via <c>Computed&lt;T&gt;()</c>) are read-only — the
+    /// database engine populates them from the column expression and rejects any
+    /// SET clause that supplies a value. The corresponding INSERT path silently
+    /// drops computed columns (see <see cref="Models.InsertInfo"/>); UPDATE has
+    /// no equivalent filter, so the previous behavior was to emit invalid SQL
+    /// and surface a runtime error from the database driver.
+    /// </summary>
+    public static readonly DiagnosticDescriptor ComputedColumnSetForbidden = new(
+        id: "QRY075",
+        title: "Cannot SET a computed column",
+        messageFormat: "Cannot SET computed column '{0}' on entity '{1}'. Computed columns are read-only — remove the assignment or change the schema if the column should be writable.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Columns declared with Computed<T>() are populated by the database from a stored expression and cannot be assigned via Update().Set(...). Remove the assignment, or remove the Computed<T>() modifier if the column is meant to be writable.");
+
     // ─── CTE diagnostics (QRY080–QRY082) ────────────────────────────────
 
     /// <summary>
