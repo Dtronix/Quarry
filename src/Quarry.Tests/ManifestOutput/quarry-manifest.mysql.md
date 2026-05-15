@@ -2092,6 +2092,52 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 ---
 
+### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- +activate
+UPDATE `users` SET `UserName` = 'Flipped', `IsActive` = 1 WHERE `UserId` = 3
+
+-- +activate
+UPDATE `users` SET `UserName` = 'Flipped', `IsActive` = 0 WHERE `UserId` = 3
+```
+
+---
+
+### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 4 variants
+
+```sql
+-- base
+UPDATE `users` SET `UserName` = 'Updated' WHERE `UserId` = 1
+
+-- +setEmail
+UPDATE `users` SET `UserName` = 'Updated', `Email` = 'new@test.com' WHERE `UserId` = 1
+
+-- +deactivate
+UPDATE `users` SET `UserName` = 'Updated', `IsActive` = 0 WHERE `UserId` = 1
+
+-- +setEmail, +deactivate
+UPDATE `users` SET `UserName` = 'Updated', `Email` = 'new@test.com', `IsActive` = 0 WHERE `UserId` = 1
+```
+
+---
+
+### Users().Update().Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+UPDATE `users` SET `IsActive` = 0 WHERE `UserId` = 2
+
+-- +overrideName
+UPDATE `users` SET `IsActive` = 0, `UserName` = ? WHERE `UserId` = 2
+```
+
+| Parameter | Type | Conditional |
+|-----------|------|-------------|
+| `@p0` | `string` | overrideName |
+
+---
+
 ### Users().Update().Set(...).Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
@@ -2178,6 +2224,18 @@ UPDATE `users` SET `UserName` = ?, `IsActive` = ? WHERE `UserId` = 1
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Update().Set(...).Where(...).Set(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+UPDATE `users` SET `UserName` = 'Updated' WHERE `UserId` = 1
+
+-- +deactivate
+UPDATE `users` SET `UserName` = 'Updated', `IsActive` = 0 WHERE `UserId` = 1
+```
 
 ---
 
@@ -2716,6 +2774,18 @@ SELECT `UserName` FROM `users` WHERE `UserId` IN ({__COL_P0__}) AND `UserId` >= 
 |-----------|------|
 | `@p0` | `int[]` |
 | `@p1` | `int` |
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT `UserName`, `Email`, `IsActive` FROM `users` WHERE `UserId` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -4895,7 +4965,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 538 |
+| Total discovered | 543 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 91 |
-| Rendered | 447 |
+| Rendered | 452 |

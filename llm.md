@@ -602,7 +602,7 @@ Snapshot lifecycle: compile previous snapshot via Roslyn in collectible `Assembl
 
 ### Test Infrastructure
 
-**QueryTestHarness** (`Quarry.Tests/QueryTestHarness.cs`): Disposable harness providing 4 dialect contexts — `Lite` (SQLite, real in-memory DB), `Pg`/`My`/`Ss` (mock connections, SQL verification only). `CreateAsync()` seeds default schema (users, orders, order_items, accounts) + test data. `AssertDialects()` verifies SQL across all 4 dialects.
+**QueryTestHarness** (`Quarry.Tests/QueryTestHarness.cs`): Disposable harness providing 4 dialect contexts — `Lite` (SQLite, in-memory) plus `Pg`/`My`/`Ss` backed by **real Testcontainers** connections to PostgreSQL 17, MySQL 8.4, and SQL Server 2022. All four contexts execute SQL against live databases; Pg/My/Ss tests are transaction-wrapped per-harness and rolled back on dispose for isolation. `CreateAsync()` seeds the same default schema (users, orders, order_items, accounts, …) + test data across all four backends. `AssertDialects()` verifies SQL strings across all 4 dialects in one `Assert.Multiple`. See `llm-testing.md` for the full testing reference (isolation modes, per-dialect connection quirks, baseline architecture, codegen-test recipe).
 
 **Test pattern (per-dialect):**
 ```csharp
@@ -615,7 +615,9 @@ var ss = Ss.Users().Select(u => (u.UserId, u.UserName)).Prepare();
 QueryTestHarness.AssertDialects(
     lt.ToDiagnostics(), pg.ToDiagnostics(), my.ToDiagnostics(), ss.ToDiagnostics(),
     sqlite: "...", pg: "...", mysql: "...", ss: "...");
-var results = await lt.ExecuteFetchAllAsync(); // execute on SQLite only
+// Execute against any of the 4 live backends:
+var results = await lt.ExecuteFetchAllAsync();
+Assert.That(await pg.ExecuteNonQueryAsync(), Is.EqualTo(1));
 ```
 
 **Test files:** `SqlOutput/CrossDialect*.cs` (18+ files, 4-dialect SQL verification), `SqlOutput/PrepareTests.cs` (Prepare single/multi-terminal), `SqlOutput/JoinedEntityProjectionTests.cs` (joined entity projection), `Generation/CarrierGenerationTests.cs` (carrier class emission), `Generation/ConditionalCarrierTests.cs` (mask-gated parameter binding), `Integration/PrepareIntegrationTests.cs` (Prepare execution), `Integration/JoinedCarrierIntegrationTests.cs`, `IR/SqlExprAnnotatorInliningTests.cs` (constant inlining), `Parsing/DisplayClassEnricherTests.cs`, `DialectTests.cs` (pagination formatting), `UsageSiteDiscoveryTests.cs`, `VariableTracerTests.cs`.

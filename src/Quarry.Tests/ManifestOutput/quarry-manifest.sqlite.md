@@ -2492,6 +2492,36 @@ UPDATE "users" SET "IsActive" = @p0
 
 ---
 
+### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- +activate
+UPDATE "users" SET "UserName" = 'Flipped', "IsActive" = 1 WHERE "UserId" = 3
+
+-- +activate
+UPDATE "users" SET "UserName" = 'Flipped', "IsActive" = 0 WHERE "UserId" = 3
+```
+
+---
+
+### Users().Update().Set(...).Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 4 variants
+
+```sql
+-- base
+UPDATE "users" SET "UserName" = 'Updated' WHERE "UserId" = 1
+
+-- +setEmail
+UPDATE "users" SET "UserName" = 'Updated', "Email" = 'new@test.com' WHERE "UserId" = 1
+
+-- +deactivate
+UPDATE "users" SET "UserName" = 'Updated', "IsActive" = 0 WHERE "UserId" = 1
+
+-- +setEmail, +deactivate
+UPDATE "users" SET "UserName" = 'Updated', "Email" = 'new@test.com', "IsActive" = 0 WHERE "UserId" = 1
+```
+
+---
+
 ### Users().Update().Set(...).Set(...).Where(...).ExecuteNonQueryAsync()
 
 ```sql
@@ -2501,6 +2531,22 @@ UPDATE "users" SET "UserName" = @p0, "IsActive" = 0 WHERE "UserId" = 1
 | Parameter | Type |
 |-----------|------|
 | `@p0` | `string` |
+
+---
+
+### Users().Update().Set(...).Set(...).Where(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+UPDATE "users" SET "IsActive" = 0 WHERE "UserId" = 2
+
+-- +overrideName
+UPDATE "users" SET "IsActive" = 0, "UserName" = @p0 WHERE "UserId" = 2
+```
+
+| Parameter | Type | Conditional |
+|-----------|------|-------------|
+| `@p0` | `string` | overrideName |
 
 ---
 
@@ -2685,6 +2731,18 @@ UPDATE "users" SET "UserName" = @p0, "IsActive" = @p1 WHERE "UserId" = 1
 |-----------|------|
 | `@p0` | `string` |
 | `@p1` | `bool` |
+
+---
+
+### Users().Update().Set(...).Where(...).Set(...).Prepare().ToDiagnostics() — 2 variants
+
+```sql
+-- base
+UPDATE "users" SET "UserName" = 'Updated' WHERE "UserId" = 1
+
+-- +deactivate
+UPDATE "users" SET "UserName" = 'Updated', "IsActive" = 0 WHERE "UserId" = 1
+```
 
 ---
 
@@ -3099,6 +3157,18 @@ SELECT "UserName" FROM "users" WHERE "UserId" = 2
 ```sql
 SELECT "UserName", "Email" FROM "users" WHERE "UserId" = 1
 ```
+
+---
+
+### Users().Where(...).Select(...).ExecuteFetchFirstAsync()
+
+```sql
+SELECT "UserName", "Email", "IsActive" FROM "users" WHERE "UserId" = @p0
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `int` |
 
 ---
 
@@ -5418,7 +5488,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 681 |
+| Total discovered | 686 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 186 |
-| Rendered | 495 |
+| Rendered | 500 |
