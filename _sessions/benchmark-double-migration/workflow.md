@@ -180,8 +180,8 @@ before applying the rename.
 5. Rerun the 5 unit tests; they must still pass (rename should be behavior-
    preserving).
 
-**WIP commit hash:** see "Test status" below. The full diff has been preserved
-in the WIP commit on this branch.
+**WIP commit hash:** `892312d` on branch `benchmark-double-migration`. The full
+diff (generator fix + 5 new tests + this session directory) is preserved there.
 
 **Test status:** all 3482 tests passed before suspend. Phase 1 changes
 (reorder/gate + decimal→object default flip + 5 new tests) are committed as
@@ -204,4 +204,4 @@ WIP; the typed-marker rename is the only remaining work for Phase 1.
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | 2026-05-18 | | INTAKE: worktree created from 62c3a81 (later rebased on 08d8323 master); stashed work applied cleanly; baseline tests green (3477/3477). |
+| 1 | 2026-05-18 | 2026-05-19 | INTAKE → DESIGN → PLAN → IMPLEMENT Phase 1 (90% — reorder/gate + decimal→object default + 5 new tests, all green at 3482/3482). Suspended before applying the typed-marker rename pushed back on by user. WIP commit: `892312d`. Plan revised; handoff.md written. |
