@@ -43,7 +43,11 @@ public class JoinInnerBenchmarks : BenchmarkBase
     {
         return await EfContext.Users.AsNoTracking()
             .Join(EfContext.Orders, u => u.UserId, o => o.UserId,
-                (u, o) => new UserOrderDto { UserName = u.UserName, Total = o.Total })
+                (u, o) => new UserOrderDto
+                {
+                    UserName = u.UserName,
+                    Total = o.Total
+                })
             .ToListAsync();
     }
 

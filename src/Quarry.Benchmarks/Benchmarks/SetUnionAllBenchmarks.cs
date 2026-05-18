@@ -48,12 +48,20 @@ public class SetUnionAllBenchmarks : BenchmarkBase
     {
         return await EfContext.Users.AsNoTracking()
             .Where(u => u.IsActive)
-            .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName })
+            .Select(u => new UserIdNameDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName
+            })
             .AsQueryable()
             .Concat(
                 EfContext.Users.AsNoTracking()
                     .Where(u => u.UserId == 1)
-                    .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName }))
+                    .Select(u => new UserIdNameDto
+                    {
+                        UserId = u.UserId,
+                        UserName = u.UserName
+                    }))
             .ToListAsync();
     }
 

@@ -45,7 +45,11 @@ public class SubqueryFilteredExistsBenchmarks : BenchmarkBase
     {
         return await EfContext.Users.AsNoTracking()
             .Where(u => u.Orders.Any(o => o.Total > 50))
-            .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName })
+            .Select(u => new UserIdNameDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName
+            })
             .ToListAsync();
     }
 

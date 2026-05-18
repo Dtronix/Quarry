@@ -48,11 +48,19 @@ public class SetExceptBenchmarks : BenchmarkBase
     {
         return await EfContext.Users.AsNoTracking()
             .Where(u => u.IsActive)
-            .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName })
+            .Select(u => new UserIdNameDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName
+            })
             .Except(
                 EfContext.Users.AsNoTracking()
                     .Where(u => u.UserId <= 10)
-                    .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName }))
+                    .Select(u => new UserIdNameDto
+                    {
+                        UserId = u.UserId,
+                        UserName = u.UserName
+                    }))
             .ToListAsync();
     }
 

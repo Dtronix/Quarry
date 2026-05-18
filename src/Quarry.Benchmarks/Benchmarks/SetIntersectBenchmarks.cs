@@ -48,11 +48,19 @@ public class SetIntersectBenchmarks : BenchmarkBase
     {
         return await EfContext.Users.AsNoTracking()
             .Where(u => u.IsActive)
-            .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName })
+            .Select(u => new UserIdNameDto
+            {
+                UserId = u.UserId,
+                UserName = u.UserName
+            })
             .Intersect(
                 EfContext.Users.AsNoTracking()
                     .Where(u => u.Email != null)
-                    .Select(u => new UserIdNameDto { UserId = u.UserId, UserName = u.UserName }))
+                    .Select(u => new UserIdNameDto
+                    {
+                        UserId = u.UserId,
+                        UserName = u.UserName
+                    }))
             .ToListAsync();
     }
 
