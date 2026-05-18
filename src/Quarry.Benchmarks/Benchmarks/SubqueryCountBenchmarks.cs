@@ -21,7 +21,7 @@ public class SubqueryCountBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = CountSubquerySql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserIdNameDto>();
         while (await reader.ReadAsync())
         {

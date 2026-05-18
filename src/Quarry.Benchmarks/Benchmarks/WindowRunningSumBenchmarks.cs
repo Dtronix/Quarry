@@ -9,6 +9,8 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
+// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
+// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class WindowRunningSumBenchmarks : BenchmarkBase
 {
     // ── SUM(Total) OVER (PARTITION BY Status) — Running Sum ──
@@ -21,7 +23,7 @@ public class WindowRunningSumBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = RunningSumSql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<OrderRunningSumDto>();
         while (await reader.ReadAsync())
         {

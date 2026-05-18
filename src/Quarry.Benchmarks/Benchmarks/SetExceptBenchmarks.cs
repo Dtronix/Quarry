@@ -24,7 +24,7 @@ public class SetExceptBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = ExceptSql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserIdNameDto>();
         while (await reader.ReadAsync())
         {

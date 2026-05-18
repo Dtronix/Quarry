@@ -16,7 +16,7 @@ public class FilterWhereActiveBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, Email, IsActive, CreatedAt, LastLogin FROM users WHERE IsActive = 1";
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {

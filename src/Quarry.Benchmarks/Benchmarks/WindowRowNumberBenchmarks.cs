@@ -21,7 +21,7 @@ public class WindowRowNumberBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = RowNumberSql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<OrderRowNumberDto>();
         while (await reader.ReadAsync())
         {

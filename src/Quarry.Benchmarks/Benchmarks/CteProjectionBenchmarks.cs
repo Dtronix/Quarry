@@ -9,6 +9,8 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
+// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
+// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class CteProjectionBenchmarks : BenchmarkBase
 {
     private const string CteProjectionSql = """
@@ -24,7 +26,7 @@ public class CteProjectionBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = CteProjectionSql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<OrderIdTotalDto>();
         while (await reader.ReadAsync())
         {

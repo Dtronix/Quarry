@@ -9,6 +9,8 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
+// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
+// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class ComplexJoinFilterPaginateBenchmarks : BenchmarkBase
 {
     [Benchmark(Baseline = true)]
@@ -22,7 +24,7 @@ public class ComplexJoinFilterPaginateBenchmarks : BenchmarkBase
             WHERE u.IsActive = 1
             LIMIT 10 OFFSET 5
             """;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserOrderDto>();
         while (await reader.ReadAsync())
         {

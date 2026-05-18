@@ -18,7 +18,7 @@ public class StringContainsBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users WHERE UserName LIKE '%User05%'";
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserSummaryDto>();
         while (await reader.ReadAsync())
         {

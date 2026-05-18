@@ -16,7 +16,7 @@ public class FilterWhereCompoundBenchmarks : BenchmarkBase
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT UserId, UserName, IsActive FROM users WHERE IsActive = 1 AND Email IS NOT NULL";
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserSummaryDto>();
         while (await reader.ReadAsync())
         {

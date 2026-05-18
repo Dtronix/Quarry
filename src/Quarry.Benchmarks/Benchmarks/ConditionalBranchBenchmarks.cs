@@ -41,7 +41,7 @@ public class ConditionalBranchBenchmarks : BenchmarkBase
 
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = sql;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<RawUser>();
         while (await reader.ReadAsync())
         {

@@ -9,6 +9,8 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
+// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
+// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class JoinThreeTableBenchmarks : BenchmarkBase
 {
     [Benchmark(Baseline = true)]
@@ -21,7 +23,7 @@ public class JoinThreeTableBenchmarks : BenchmarkBase
             INNER JOIN orders o ON u.UserId = o.UserId
             INNER JOIN order_items oi ON o.OrderId = oi.OrderId
             """;
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult | CommandBehavior.SequentialAccess);
+        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SingleResult);
         var results = new List<UserOrderItemDto>();
         while (await reader.ReadAsync())
         {
