@@ -1966,7 +1966,7 @@ internal static class ChainAnalyzer
         }
 
         var targetEntity = ResolveSubqueryTargetEntity(subquery, outerEntity, registry);
-        var selectorType = TryResolveSelectorClrType(subquery.Selector, targetEntity);
+        var selectorType = TryResolveSelectorClrType(subquery.Selector, targetEntity, registry);
         selectorTypeIsKnown = selectorType != null;
 
         return subquery.SubqueryKind switch
@@ -2007,18 +2007,32 @@ internal static class ChainAnalyzer
     }
 
     /// <summary>
-    /// Walks an unbound aggregate selector down to the leaf <see cref="ColumnRefExpr"/>
-    /// and looks up its CLR type in the target entity's columns. Returns null when the
-    /// selector is missing, isn't a column reference, or the property is not on the target.
+    /// Walks an unbound aggregate selector to its CLR result type. For a leaf
+    /// <see cref="ColumnRefExpr"/>, looks up the property's type on the target entity.
+    /// For a nested <see cref="SubqueryExpr"/> selector (e.g. the inner Count in
+    /// <c>u.Orders.Sum(o => o.Items.Count())</c>), recurses into
+    /// <see cref="ResolveSubqueryResultType"/> with the parent's target entity as the
+    /// nested call's outer entity — the nested target is then walked from there via
+    /// <see cref="ResolveSubqueryTargetEntity"/>. This keeps the inferred CLR type
+    /// aligned with the user's lambda at any nesting depth (Issue #294).
+    /// Returns null when the selector is missing, isn't a supported shape, or the
+    /// property cannot be located on the target.
     /// </summary>
-    private static string? TryResolveSelectorClrType(SqlExpr? selector, EntityInfo? targetEntity)
+    private static string? TryResolveSelectorClrType(SqlExpr? selector, EntityInfo? targetEntity, EntityRegistry? registry)
     {
         if (selector == null || targetEntity == null) return null;
-        if (selector is not ColumnRefExpr colRef) return null;
-        foreach (var col in targetEntity.Columns)
+        if (selector is ColumnRefExpr colRef)
         {
-            if (col.PropertyName == colRef.PropertyName)
-                return col.ClrType;
+            foreach (var col in targetEntity.Columns)
+            {
+                if (col.PropertyName == colRef.PropertyName)
+                    return col.ClrType;
+            }
+            return null;
+        }
+        if (selector is SubqueryExpr nestedSubquery && registry != null)
+        {
+            return ResolveSubqueryResultType(nestedSubquery, targetEntity, registry, out _);
         }
         return null;
     }
