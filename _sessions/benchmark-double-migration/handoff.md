@@ -60,8 +60,8 @@
 | 1 — generator fix + tests | **Complete** | Reorder/gate + typed-marker `UnresolvedTypeMarker` landed; all 5 unit tests + full suite green. |
 | 2 — schema/entity/DTO/seed → double | **Complete** | OrderSchema/OrderItemSchema → `Col<double>`; EfOrder/EfOrderItem → `double`; 5 DTOs migrated + `DapperOrderLagDto` deleted; DatabaseSetup seed literals → `double`. Quarry.Benchmarks does not compile until Phase 3 (expected per plan). |
 | 3 — reader call updates + DapperOrderLagDto removal | **Complete** | 13 `GetDecimal(1)` → `GetDouble(1)` across 8 reader benchmarks; `WindowLagBenchmarks.Dapper_Lag` switched to `OrderLagDto`; `AggregateSum/Avg` `Task<decimal>` → `Task<double>` and `Convert.ToDecimal` → `Convert.ToDouble`. Benchmark project builds clean. (Note: original handoff entry about restoring `.cs.disabled` files was stale — the three aggregate/window-running-sum files already existed as `.cs` on the branch from master.) |
-| 4 — remove obsolete comments | Not started | Depends on Phase 3. |
-| 5 — full suite validation | Not started | Depends on Phases 1–4. |
+| 4 — remove obsolete comments | **Complete** | Dropped the canonical 22-line NOTE block at the top of `CteSimpleBenchmarks.cs` and the 7 cross-reference 2-line blocks in the other benchmark files; no `GetDecimal`/`DapperOrderLagDto`/`decimal` references remain in the benchmark project. |
+| 5 — full suite validation | In progress | Depends on Phases 1–4. |
 
 ## Current State
 

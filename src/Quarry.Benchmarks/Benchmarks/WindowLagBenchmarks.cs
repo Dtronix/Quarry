@@ -9,8 +9,6 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
-// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
-// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class WindowLagBenchmarks : BenchmarkBase
 {
     // ── LAG(Total, 1) OVER (ORDER BY OrderDate) ──
