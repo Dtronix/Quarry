@@ -30,7 +30,7 @@ public class JoinThreeTableBenchmarks : BenchmarkBase
             results.Add(new UserOrderItemDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1),
+                Total = reader.GetDouble(1),
                 ProductName = reader.GetString(2)
             });
         }
@@ -100,7 +100,7 @@ public class JoinThreeTableBenchmarks : BenchmarkBase
             results.Add(new UserOrderItemDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1),
+                Total = reader.GetDouble(1),
                 ProductName = reader.GetString(2)
             });
         }

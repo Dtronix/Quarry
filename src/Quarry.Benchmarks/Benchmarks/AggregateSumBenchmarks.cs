@@ -10,36 +10,36 @@ namespace Quarry.Benchmarks.Benchmarks;
 public class AggregateSumBenchmarks : BenchmarkBase
 {
     [Benchmark(Baseline = true)]
-    public async Task<decimal> Raw_Sum()
+    public async Task<double> Raw_Sum()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT SUM(Total) FROM orders";
         var result = await cmd.ExecuteScalarAsync();
-        return Convert.ToDecimal(result);
+        return Convert.ToDouble(result);
     }
 
     [Benchmark]
-    public async Task<decimal> Dapper_Sum()
+    public async Task<double> Dapper_Sum()
     {
-        return await Connection.ExecuteScalarAsync<decimal>("SELECT SUM(Total) FROM orders");
+        return await Connection.ExecuteScalarAsync<double>("SELECT SUM(Total) FROM orders");
     }
 
     [Benchmark]
-    public async Task<decimal> EfCore_Sum()
+    public async Task<double> EfCore_Sum()
     {
         return await EfContext.Orders.AsNoTracking().SumAsync(o => o.Total);
     }
 
     [Benchmark]
-    public async Task<decimal> Quarry_Sum()
+    public async Task<double> Quarry_Sum()
     {
         return await QuarryDb.Orders()
             .Select(o => Sql.Sum(o.Total))
-            .ExecuteScalarAsync<decimal>();
+            .ExecuteScalarAsync<double>();
     }
 
     [Benchmark]
-    public async Task<decimal> SqlKata_Sum()
+    public async Task<double> SqlKata_Sum()
     {
         var query = new Query("orders").AsSum("Total");
         var compiled = SqlKataCompiler.Compile(query);
@@ -51,6 +51,6 @@ public class AggregateSumBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         var result = await cmd.ExecuteScalarAsync();
-        return Convert.ToDecimal(result);
+        return Convert.ToDouble(result);
     }
 }

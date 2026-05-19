@@ -25,7 +25,7 @@ public class JoinInnerBenchmarks : BenchmarkBase
             results.Add(new UserOrderDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;
@@ -85,7 +85,7 @@ public class JoinInnerBenchmarks : BenchmarkBase
             results.Add(new UserOrderDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;

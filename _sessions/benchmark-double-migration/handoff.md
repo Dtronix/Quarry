@@ -59,7 +59,7 @@
 |-------|--------|-------|
 | 1 — generator fix + tests | **Complete** | Reorder/gate + typed-marker `UnresolvedTypeMarker` landed; all 5 unit tests + full suite green. |
 | 2 — schema/entity/DTO/seed → double | **Complete** | OrderSchema/OrderItemSchema → `Col<double>`; EfOrder/EfOrderItem → `double`; 5 DTOs migrated + `DapperOrderLagDto` deleted; DatabaseSetup seed literals → `double`. Quarry.Benchmarks does not compile until Phase 3 (expected per plan). |
-| 3 — reader call updates + restore disabled files | In progress | Depends on Phase 2. |
+| 3 — reader call updates + DapperOrderLagDto removal | **Complete** | 13 `GetDecimal(1)` → `GetDouble(1)` across 8 reader benchmarks; `WindowLagBenchmarks.Dapper_Lag` switched to `OrderLagDto`; `AggregateSum/Avg` `Task<decimal>` → `Task<double>` and `Convert.ToDecimal` → `Convert.ToDouble`. Benchmark project builds clean. (Note: original handoff entry about restoring `.cs.disabled` files was stale — the three aggregate/window-running-sum files already existed as `.cs` on the branch from master.) |
 | 4 — remove obsolete comments | Not started | Depends on Phase 3. |
 | 5 — full suite validation | Not started | Depends on Phases 1–4. |
 

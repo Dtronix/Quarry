@@ -37,7 +37,7 @@ public class CteMultiBenchmarks : BenchmarkBase
             results.Add(new OrderIdTotalDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;
@@ -84,7 +84,7 @@ public class CteMultiBenchmarks : BenchmarkBase
             results.Add(new OrderIdTotalDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;

@@ -30,8 +30,8 @@ public class WindowRunningSumBenchmarks : BenchmarkBase
             results.Add(new OrderRunningSumDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1),
-                RunningSum = reader.GetDecimal(2)
+                Total = reader.GetDouble(1),
+                RunningSum = reader.GetDouble(2)
             });
         }
         return results;
@@ -80,8 +80,8 @@ public class WindowRunningSumBenchmarks : BenchmarkBase
             results.Add(new OrderRunningSumDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1),
-                RunningSum = reader.GetDecimal(2)
+                Total = reader.GetDouble(1),
+                RunningSum = reader.GetDouble(2)
             });
         }
         return results;

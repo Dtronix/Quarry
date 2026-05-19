@@ -30,17 +30,17 @@ public class WindowLagBenchmarks : BenchmarkBase
             results.Add(new OrderLagDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1),
-                PrevTotal = reader.IsDBNull(2) ? null : reader.GetDecimal(2)
+                Total = reader.GetDouble(1),
+                PrevTotal = reader.IsDBNull(2) ? null : reader.GetDouble(2)
             });
         }
         return results;
     }
 
     [Benchmark]
-    public async Task<List<DapperOrderLagDto>> Dapper_Lag()
+    public async Task<List<OrderLagDto>> Dapper_Lag()
     {
-        return (await Connection.QueryAsync<DapperOrderLagDto>(LagSql)).AsList();
+        return (await Connection.QueryAsync<OrderLagDto>(LagSql)).AsList();
     }
 
     [Benchmark]
@@ -80,8 +80,8 @@ public class WindowLagBenchmarks : BenchmarkBase
             results.Add(new OrderLagDto
             {
                 OrderId = reader.GetInt32(0),
-                Total = reader.GetDecimal(1),
-                PrevTotal = reader.IsDBNull(2) ? null : reader.GetDecimal(2)
+                Total = reader.GetDouble(1),
+                PrevTotal = reader.IsDBNull(2) ? null : reader.GetDouble(2)
             });
         }
         return results;
