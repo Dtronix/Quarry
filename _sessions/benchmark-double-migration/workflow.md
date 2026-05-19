@@ -7,12 +7,12 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: suspended
+status: active
 issue: discussion
 pr:
-session: 1
+session: 2
 phases-total: 5
-phases-complete: 0
+phases-complete: 1
 
 ## Problem Statement
 
@@ -146,6 +146,8 @@ This branch fixes the aggregate path where the actual bug lives.
 
 ## Suspend State
 
+_(no active suspend — session 2 resumed work and completed Phase 1)_
+
 ### As of 2026-05-19, end of session 1
 **Phase:** IMPLEMENT, Phase 1 (revised — typed sentinel + reorder/gate + tests).
 Phase 1 was about to be committed when the user pushed back on the use of
@@ -205,3 +207,4 @@ WIP; the typed-marker rename is the only remaining work for Phase 1.
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-05-18 | 2026-05-19 | INTAKE → DESIGN → PLAN → IMPLEMENT Phase 1 (90% — reorder/gate + decimal→object default + 5 new tests, all green at 3482/3482). Suspended before applying the typed-marker rename pushed back on by user. WIP commit: `892312d`. Plan revised; handoff.md written. |
+| 2 | 2026-05-19 |           | Resume from suspend; apply typed-marker rename to finish Phase 1, then Phases 2–5 (benchmark schema migration). |

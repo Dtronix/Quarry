@@ -11,6 +11,23 @@ namespace Quarry.Generators.Utilities;
 /// </summary>
 internal static class TypeClassification
 {
+    /// <summary>
+    /// Canonical sentinel for a CLR type produced by Stage 1 syntax-only analysis when
+    /// column metadata isn't yet available — e.g., aggregate type resolution in
+    /// <c>ProjectionAnalyzer</c> during <c>UsageSiteDiscovery</c>, where the empty
+    /// <c>columnLookup</c> and an Error-typed SemanticModel argument both fail to yield
+    /// a real type. Stage 4 (<c>ChainAnalyzer.BuildProjection</c>) walks aggregate
+    /// columns whose ClrType passes <see cref="IsUnresolvedTypeName"/> and enriches
+    /// them via <c>TryResolveAggregateTypeFromSql</c>, using the schema-backed
+    /// EntityRegistry that isn't in scope during Stage 1.
+    ///
+    /// Prefer this constant over the bare string at every site that produces an
+    /// unresolved CLR-type sentinel for aggregates. The bare string <c>"object"</c>
+    /// is still tolerated by the IsUnresolved helpers for legacy call sites that
+    /// haven't been migrated; new code should use this constant.
+    /// </summary>
+    public const string UnresolvedTypeMarker = "?";
+
     private static readonly HashSet<string> s_valueTypes = new(StringComparer.Ordinal)
     {
         // C# keyword types

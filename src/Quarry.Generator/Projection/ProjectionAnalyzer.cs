@@ -1807,15 +1807,15 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
-                    // Default "object" (not "decimal") because in Stage 1 syntax-only discovery
-                    // the columnLookup is empty and the SemanticModel can't see Quarry-generated
-                    // entity types yet. ChainAnalyzer enriches aggregate columns whose ClrType
-                    // is unresolved by walking the SQL expression back to the column metadata —
-                    // but only when the type is still unresolved ("object"). Hardcoding "decimal"
-                    // here used to short-circuit that enrichment and silently miscompile any
-                    // schema where the summed column wasn't decimal.
+                    // Default to the unresolved-type sentinel (not "decimal") because in Stage 1
+                    // syntax-only discovery the columnLookup is empty and the SemanticModel can't
+                    // see Quarry-generated entity types yet. ChainAnalyzer enriches aggregate
+                    // columns whose ClrType is unresolved by walking the SQL expression back to
+                    // the column metadata. Hardcoding "decimal" here used to short-circuit that
+                    // enrichment and silently miscompile any schema where the summed column
+                    // wasn't decimal.
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
-                        columnLookup, lambdaParameterName, "object");
+                        columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -1825,7 +1825,7 @@ internal static class ProjectionAnalyzer
                 {
                     var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
-                        columnLookup, lambdaParameterName, "object");
+                        columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -2562,10 +2562,10 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
-                    // "object" (not "decimal") so ChainAnalyzer's aggregate-type enrichment
-                    // kicks in when the per-param lookup misses. See note on the single-entity
-                    // case in GetSqlAggregateInfo for full rationale.
-                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
+                    // Unresolved-type sentinel (not "decimal") so ChainAnalyzer's aggregate-type
+                    // enrichment kicks in when the per-param lookup misses. See note on the
+                    // single-entity case in GetSqlAggregateInfo for full rationale.
+                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -2574,7 +2574,7 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
-                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object");
+                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -2777,10 +2777,10 @@ internal static class ProjectionAnalyzer
                 BuildAggregateOverSql("COUNT", arguments[0].Expression, columnLookup, lambdaParameterName, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
                 BuildAggregateOverSql("SUM", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
-                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker)),
             "Avg" when arguments.Count == 2 =>
                 BuildAggregateOverSql("AVG", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
-                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker)),
             "Min" when arguments.Count == 2 =>
                 BuildAggregateOverSql("MIN", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
@@ -2839,10 +2839,10 @@ internal static class ProjectionAnalyzer
                 BuildJoinedAggregateOverSql("COUNT", arguments[0].Expression, perParamLookup, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("SUM", arguments[0].Expression, perParamLookup, overClause,
-                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker)),
             "Avg" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("AVG", arguments[0].Expression, perParamLookup, overClause,
-                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker)),
             "Min" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("MIN", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),

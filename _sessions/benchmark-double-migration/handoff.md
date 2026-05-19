@@ -24,6 +24,19 @@
 
 ## Completions (This Session)
 
+- IMPLEMENT Phase 1 (complete):
+  - Added `TypeClassification.UnresolvedTypeMarker = "?"` with XML-doc
+    explaining the Stage 1 → Stage 4 enrichment contract.
+  - Replaced all 8 Sum/Avg `"object"` defaults at the aggregate call sites
+    (`GetSqlAggregateInfo` Sum/Avg, `GetJoinedAggregateInfo` Sum/Avg,
+    `GetWindowFunctionInfo` Sum/Avg, `GetJoinedWindowFunctionInfo` Sum/Avg)
+    with the named constant.
+  - Min/Max defaults left as `"object"` (deferred per plan Known Follow-Ups #1).
+  - All 5 `AggregateTypeResolutionTests` still green; full suite green
+    (146 + 201 + 3143 = 3490).
+
+## Previous Session Completions
+
 - INTAKE: worktree created from `master@08d8323`; baseline tests green
   (3477/3477); workflow.md initialized with problem statement, baseline,
   and decisions.
@@ -34,21 +47,17 @@
 - PLAN: 5 phases written.
 - IMPLEMENT Phase 1 (partial):
   - Applied reorder + gate to `ResolveAggregateClrType`.
-  - Changed 6 Sum/Avg default arguments from `"decimal"` to `"object"`
+  - Changed 8 Sum/Avg default arguments from `"decimal"` to `"object"`
     across regular aggregates, joined aggregates, window aggregates, and
     joined window aggregates.
   - Added `AggregateTypeResolutionTests.cs` (5 tests).
-  - Full suite 3482/3482 passing.
-
-## Previous Session Completions
-
-(none — first session)
+  - Full suite green.
 
 ## Progress
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| 1 — generator fix + tests | **In progress (~90%)** | Reorder/gate + bare-string fix landed; typed-marker rename remaining. |
+| 1 — generator fix + tests | **Complete** | Reorder/gate + typed-marker `UnresolvedTypeMarker` landed; all 5 unit tests + full suite green. |
 | 2 — schema/entity/DTO/seed → double | Not started | Stashed work was reverted at INTAKE. |
 | 3 — reader call updates + restore disabled files | Not started | Depends on Phase 2. |
 | 4 — remove obsolete comments | Not started | Depends on Phase 3. |
@@ -56,16 +65,18 @@
 
 ## Current State
 
-Working tree has uncommitted Phase 1 (interim) changes:
+Phase 1 is complete and ready to commit:
 
-- `src/Quarry.Generator/Projection/ProjectionAnalyzer.cs` — modified
-  (`ResolveAggregateClrType` body + 6 default-argument changes).
-- `src/Quarry.Tests/Generation/AggregateTypeResolutionTests.cs` — new file.
-- `_sessions/benchmark-double-migration/` — new directory with workflow.md,
-  plan.md, handoff.md (this file).
+- `src/Quarry.Generator/Utilities/TypeClassification.cs` — added
+  `UnresolvedTypeMarker = "?"` constant with XML-doc.
+- `src/Quarry.Generator/Projection/ProjectionAnalyzer.cs` — reorder/gate
+  on `ResolveAggregateClrType` (prior WIP) + 8 Sum/Avg call sites now
+  reference `TypeClassification.UnresolvedTypeMarker` instead of `"object"`.
+- `src/Quarry.Tests/Generation/AggregateTypeResolutionTests.cs` — 5 tests.
 
-All staged together in the WIP commit (see commit hash recorded in
-workflow.md Suspend State).
+The Phase 1 work spans two prior WIP commits (`892312d`, `3d9eb46`) plus
+the rename made in session 2. The rename will be a follow-up commit on
+top of the WIP; the squash merge in FINALIZE collapses them all.
 
 **Failed approaches** noted from the session:
 
