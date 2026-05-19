@@ -128,6 +128,36 @@ The minimal correctness fix changes Sum/Avg defaults from `"decimal"` to
 `"object"`. Confirmed: all 5 new aggregate-type-resolution tests pass, full
 suite 3482/3482.
 
+### 2026-05-19 — REMEDIATE: extend Stage 4 enrichment to joined scalar aggregates
+Writing the joined-aggregate / joined-window-aggregate unit tests required by
+review finding #10 (medium, B) surfaced a latent bug deeper than the original
+scope: `ProjectionAnalyzer.AnalyzeJoinedInvocation` (the entry point for
+`(u, o) => Sql.Sum(o.Total)` scalar joined projections) constructs a
+`ProjectedColumn` **without** populating `TableAlias`. Stage 4
+`ChainAnalyzer.BuildProjection`'s aggregate enrichment then calls
+`TryResolveAggregateTypeFromSql` with a null `tableAlias`, the alias-keyed
+lookup in `perAliasLookup` falls through, and the `?` unresolved marker
+leaks all the way through to the carrier interface
+(`IJoinedQueryBuilder<User, Order, ?>`) and reader Func type — uncompilable.
+
+`ResolveJoinedAggregate` (the sibling tuple-element handler) already extracts
+and sets `TableAlias` correctly. The fix mirrors that logic in
+`AnalyzeJoinedInvocation` — extract the alias from the first column argument
+(`o.Total → "t1"`) and pass it through to the `ProjectedColumn` constructor.
+
+Per-user-decision: address in-branch rather than partial-revert + follow-up.
+The fix is local (one helper), behavior-preserving for all paths except the
+previously-broken joined scalar aggregate, and unblocks the joined / joined-
+window unit-test additions. All three new tests now pass; full suite
+3493/3493.
+
+This deeper fix is in scope because the typed-marker rename (recorded
+2026-05-19) made the latent gap newly observable: with the prior `"object"`
+default, joined scalar Sum emitted `Func<DbDataReader, object>` and
+`(object)r.GetValue(0)` — compilable but semantically wrong (boxing,
+type-cast at consumer). The marker change forced the latent bug into the
+foreground rather than introducing it.
+
 ### 2026-05-19 — User pushback: introduce typed unresolved sentinel
 Using the bare string `"object"` as an "unresolved — please enrich" sentinel is
 a code smell. It collides with the legitimate `"object"` CLR type and is the

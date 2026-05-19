@@ -175,4 +175,155 @@ public static class Queries
         Assert.That(code, Does.Not.Contain("IQueryBuilder<Order, decimal>"),
             "must NOT fall back to decimal default for a Col<double> column");
     }
+
+    // ── Joined-aggregate path (GetJoinedAggregateInfo): Sql.Sum inside a multi-entity Select. ──
+
+    private static string JoinedAggregateSource(string columnType) => $@"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}}
+
+public class OrderSchema : Schema
+{{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<int> UserId {{ get; }}
+    public Col<{columnType}> Total {{ get; }}
+}}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}}
+
+public static class Queries
+{{
+    public static async Task<{columnType}> Test(TestDbContext db)
+    {{
+        return await db.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => Sql.Sum(o.Total))
+            .ExecuteScalarAsync<{columnType}>();
+    }}
+}}
+";
+
+    [Test]
+    public void JoinedSum_OverDoubleColumn_ResolvesToDouble()
+    {
+        var code = RunAndGetInterceptors(CreateCompilation(JoinedAggregateSource("double")));
+
+        Assert.That(code, Does.Contain("GetDouble"),
+            "joined Sum over a Col<double> column must emit GetDouble in the reader");
+        Assert.That(code, Does.Not.Contain("GetDecimal"),
+            "must NOT fall back to GetDecimal for a Col<double> column in a joined aggregate");
+    }
+
+    // ── Window-aggregate path (GetWindowFunctionInfo): Sql.Sum with an OVER lambda. ──
+
+    private static string WindowAggregateSource(string columnType) => $@"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class OrderSchema : Schema
+{{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<string> Status {{ get; }}
+    public Col<{columnType}> Total {{ get; }}
+}}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{{
+    public partial IEntityAccessor<Order> Orders();
+}}
+
+public static class Queries
+{{
+    public static async Task<{columnType}> Test(TestDbContext db)
+    {{
+        return await db.Orders()
+            .Select(o => Sql.Sum(o.Total, over => over.PartitionBy(o.Status)))
+            .ExecuteScalarAsync<{columnType}>();
+    }}
+}}
+";
+
+    [Test]
+    public void WindowSum_OverDoubleColumn_ResolvesToDouble()
+    {
+        var code = RunAndGetInterceptors(CreateCompilation(WindowAggregateSource("double")));
+
+        Assert.That(code, Does.Contain("GetDouble"),
+            "window Sum (Sql.Sum with OVER lambda) over a Col<double> column must emit GetDouble in the reader");
+        Assert.That(code, Does.Not.Contain("GetDecimal"),
+            "must NOT fall back to GetDecimal for a Col<double> column in a window aggregate");
+    }
+
+    // ── Joined-window-aggregate path (GetJoinedWindowFunctionInfo): Sql.Sum with OVER in joined Select. ──
+
+    private static string JoinedWindowAggregateSource(string columnType) => $@"
+using Quarry;
+using System.Threading.Tasks;
+
+namespace TestApp;
+
+public class UserSchema : Schema
+{{
+    public static string Table => ""users"";
+    public Key<int> UserId => Identity();
+    public Col<string> UserName => Length(100);
+}}
+
+public class OrderSchema : Schema
+{{
+    public static string Table => ""orders"";
+    public Key<int> OrderId => Identity();
+    public Col<int> UserId {{ get; }}
+    public Col<string> Status {{ get; }}
+    public Col<{columnType}> Total {{ get; }}
+}}
+
+[QuarryContext(Dialect = SqlDialect.SQLite)]
+public partial class TestDbContext : QuarryContext
+{{
+    public partial IEntityAccessor<User> Users();
+    public partial IEntityAccessor<Order> Orders();
+}}
+
+public static class Queries
+{{
+    public static async Task<{columnType}> Test(TestDbContext db)
+    {{
+        return await db.Users()
+            .Join<Order>((u, o) => u.UserId == o.UserId)
+            .Select((u, o) => Sql.Sum(o.Total, over => over.PartitionBy(o.Status)))
+            .ExecuteScalarAsync<{columnType}>();
+    }}
+}}
+";
+
+    [Test]
+    public void JoinedWindowSum_OverDoubleColumn_ResolvesToDouble()
+    {
+        var code = RunAndGetInterceptors(CreateCompilation(JoinedWindowAggregateSource("double")));
+
+        Assert.That(code, Does.Contain("GetDouble"),
+            "joined window Sum (Sql.Sum with OVER lambda in joined Select) over a Col<double> column must emit GetDouble in the reader");
+        Assert.That(code, Does.Not.Contain("GetDecimal"),
+            "must NOT fall back to GetDecimal for a Col<double> column in a joined window aggregate");
+    }
 }

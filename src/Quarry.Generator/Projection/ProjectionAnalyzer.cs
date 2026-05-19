@@ -670,6 +670,23 @@ internal static class ProjectionAnalyzer
                 var aggregateClrType = clrType ?? "int";
                 // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
                 var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
+
+                // Extract the table alias from the first column argument (e.g., o.Total → "t1")
+                // so ChainAnalyzer's Stage 4 enrichment can resolve unresolved types via
+                // perAliasLookup[alias][propName]. Without this, the alias-keyed lookup in
+                // TryResolveAggregateTypeFromSql falls through and the unresolved-marker
+                // ("?") leaks into the carrier interface and reader Func type. Mirrors the
+                // logic in ResolveJoinedAggregate.
+                string? tableAlias = null;
+                var args = invocation.ArgumentList.Arguments;
+                if (args.Count > 0 &&
+                    args[0].Expression is MemberAccessExpressionSyntax colAccess &&
+                    colAccess.Expression is IdentifierNameSyntax paramId &&
+                    perParamLookup.TryGetValue(paramId.Identifier.Text, out var paramInfo))
+                {
+                    tableAlias = paramInfo.Alias;
+                }
+
                 var column = new ProjectedColumn(
                     propertyName: "Value",
                     columnName: "",
@@ -681,6 +698,7 @@ internal static class ProjectionAnalyzer
                     isAggregateFunction: true,
                     isValueType: true,
                     readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    tableAlias: tableAlias,
                     requiresSqlServerIntCast: requiresSqlServerIntCast);
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, aggregateClrType, new[] { column });

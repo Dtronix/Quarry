@@ -26,7 +26,7 @@ internal static class TypeClassification
     /// is still tolerated by the IsUnresolved helpers for legacy call sites that
     /// haven't been migrated; new code should use this constant.
     /// </summary>
-    public const string UnresolvedTypeMarker = "?";
+    internal const string UnresolvedTypeMarker = "?";
 
     private static readonly HashSet<string> s_valueTypes = new(StringComparer.Ordinal)
     {
