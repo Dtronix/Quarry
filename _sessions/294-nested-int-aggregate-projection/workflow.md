@@ -6,13 +6,13 @@ remote: https://github.com/Dtronix/Quarry.git
 base-branch: master
 
 ## State
-phase: IMPLEMENT
+phase: REVIEW
 status: active
 issue: #294
 pr:
 session: 1
 phases-total: 4
-phases-complete: 2
+phases-complete: 4
 
 ## Problem Statement
 Generator's projection-type resolver mis-resolves nested int aggregates as `decimal`, emitting an interceptor signature that doesn't match the user lambda's return tuple. Compilation fails with CS9144.
@@ -45,4 +45,4 @@ No pre-existing failures.
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
-| 1 | 2026-05-15 | | INTAKE: loaded issue #294, created worktree, baseline 3485/3485 green. Entering DESIGN. |
+| 1 | 2026-05-15 | 2026-05-19 | INTAKE→DESIGN→PLAN→IMPLEMENT (4 phases, 3 commits) →REVIEW. Full suite 3488/3488 (baseline 3485 + 3 new int-aggregate tests). |
