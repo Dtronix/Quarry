@@ -58,8 +58,8 @@
 | Phase | Status | Notes |
 |-------|--------|-------|
 | 1 — generator fix + tests | **Complete** | Reorder/gate + typed-marker `UnresolvedTypeMarker` landed; all 5 unit tests + full suite green. |
-| 2 — schema/entity/DTO/seed → double | Not started | Stashed work was reverted at INTAKE. |
-| 3 — reader call updates + restore disabled files | Not started | Depends on Phase 2. |
+| 2 — schema/entity/DTO/seed → double | **Complete** | OrderSchema/OrderItemSchema → `Col<double>`; EfOrder/EfOrderItem → `double`; 5 DTOs migrated + `DapperOrderLagDto` deleted; DatabaseSetup seed literals → `double`. Quarry.Benchmarks does not compile until Phase 3 (expected per plan). |
+| 3 — reader call updates + restore disabled files | In progress | Depends on Phase 2. |
 | 4 — remove obsolete comments | Not started | Depends on Phase 3. |
 | 5 — full suite validation | Not started | Depends on Phases 1–4. |
 

@@ -61,7 +61,7 @@ public static class DatabaseSetup
             cmd.CommandText = "INSERT INTO orders (UserId, Total, Status, OrderDate) VALUES (@userId, @total, @status, @date)";
             cmd.Parameters.Clear();
             cmd.Parameters.AddWithValue("@userId", i);
-            cmd.Parameters.AddWithValue("@total", Math.Round(10.0m + (i * 1.5m), 2));
+            cmd.Parameters.AddWithValue("@total", Math.Round(10.0 + (i * 1.5), 2));
             cmd.Parameters.AddWithValue("@status", Statuses[i % Statuses.Length]);
             cmd.Parameters.AddWithValue("@date", DateTime.UtcNow.AddDays(-i).ToString("yyyy-MM-dd HH:mm:ss"));
             cmd.ExecuteNonQuery();
@@ -75,7 +75,7 @@ public static class DatabaseSetup
             for (int j = 1; j <= itemCount; j++)
             {
                 itemId++;
-                decimal unitPrice = Math.Round(5.0m + (itemId % 20) * 2.5m, 2);
+                double unitPrice = Math.Round(5.0 + (itemId % 20) * 2.5, 2);
                 int qty = 1 + (itemId % 5);
                 cmd.CommandText = "INSERT INTO order_items (OrderId, ProductName, Quantity, UnitPrice, LineTotal) VALUES (@orderId, @name, @qty, @price, @total)";
                 cmd.Parameters.Clear();
