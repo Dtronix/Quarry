@@ -3256,6 +3256,30 @@ SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"
 
 ---
 
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserName", (SELECT SUM((SELECT COUNT(*) FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "ItemCount" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserId" ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserName", (SELECT SUM((SELECT COUNT(*) FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "ItemCount", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserId" ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT "UserName", (SELECT SUM((SELECT SUM("sq1"."Quantity") FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "QuantityTotal" FROM "users" WHERE "IsActive" = 1 ORDER BY "UserId" ASC
+```
+
+---
+
 ### Users().Where(...).Select(...).Prepare().ExecuteFetchAllAsync()
 
 ```sql
@@ -5488,7 +5512,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 686 |
+| Total discovered | 689 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 186 |
-| Rendered | 500 |
+| Rendered | 503 |

@@ -12,7 +12,7 @@ issue: #294
 pr:
 session: 1
 phases-total: 4
-phases-complete: 0
+phases-complete: 1
 
 ## Problem Statement
 Generator's projection-type resolver mis-resolves nested int aggregates as `decimal`, emitting an interceptor signature that doesn't match the user lambda's return tuple. Compilation fails with CS9144.

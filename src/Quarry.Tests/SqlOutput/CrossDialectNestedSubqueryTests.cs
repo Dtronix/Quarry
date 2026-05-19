@@ -228,6 +228,178 @@ internal class CrossDialectNestedSubqueryTests
     }
 
     [Test]
+    public async Task Select_ProjectionNestedSumCount_TwoLevel_ItemCountPerUser()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // 2-level nested int aggregate: Sum over Orders of Items.Count(). Inner Count
+        // returns int; the outer Sum binds to Many<T>.Sum(Func<T, int>) -> int. Before
+        // the #294 fix, the generator inferred the projection element as decimal,
+        // mismatching the user-tuple's int element and producing CS9144 at compile time.
+        var lt = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, ItemCount: u.Orders.Sum(o => o.Items.Count())))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var pg = Pg.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, ItemCount: u.Orders.Sum(o => o.Items.Count())))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var my = My.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, ItemCount: u.Orders.Sum(o => o.Items.Count())))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var ss = Ss.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, ItemCount: u.Orders.Sum(o => o.Items.Count())))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM((SELECT COUNT(*) FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemCount\" FROM \"users\" WHERE \"IsActive\" = 1 ORDER BY \"UserId\" ASC",
+            pg:     "SELECT \"UserName\", (SELECT SUM((SELECT COUNT(*) FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemCount\" FROM \"users\" WHERE \"IsActive\" = TRUE ORDER BY \"UserId\" ASC",
+            mysql:  "SELECT `UserName`, (SELECT SUM((SELECT COUNT(*) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemCount` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC",
+            ss:     "SELECT [UserName], (SELECT SUM((SELECT COUNT(*) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemCount] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC");
+
+        // Active users:
+        //   Alice → orders 1, 2 → items 1 (in order 1), 2 (in order 2). Count per order: 1, 1. Outer sum = 2.
+        //   Bob   → order 3 → item 3. Count per order: 1. Outer sum = 1.
+        // Execution: SQLite only — SQL Server rejects nested aggregate-in-aggregate
+        // ("Cannot perform an aggregate function on an expression containing an aggregate
+        // or a subquery"). Same convention as Select_ProjectionMixedNestingDepths_*.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].ItemCount, Is.EqualTo(2));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[1].ItemCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public async Task Select_ProjectionNestedSumSum_TwoLevel_QuantityPerUser()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // 2-level nested int Sum-of-Sum: outer Sum over Orders of inner Sum of Items.Quantity.
+        // Quantity is Col<int>; inner Sum binds to Many<T>.Sum(Func<T, int>) -> int, and the
+        // outer Sum binds to the same int overload. Confirms the #294 fix propagates the
+        // inner ColumnRef-int type through the outer aggregate (not just through Count).
+        var lt = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, QuantityTotal: u.Orders.Sum(o => o.Items.Sum(i => i.Quantity))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var pg = Pg.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, QuantityTotal: u.Orders.Sum(o => o.Items.Sum(i => i.Quantity))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var my = My.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, QuantityTotal: u.Orders.Sum(o => o.Items.Sum(i => i.Quantity))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var ss = Ss.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (u.UserName, QuantityTotal: u.Orders.Sum(o => o.Items.Sum(i => i.Quantity))))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM((SELECT SUM(\"sq1\".\"Quantity\") FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"QuantityTotal\" FROM \"users\" WHERE \"IsActive\" = 1 ORDER BY \"UserId\" ASC",
+            pg:     "SELECT \"UserName\", (SELECT SUM((SELECT SUM(\"sq1\".\"Quantity\") FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"QuantityTotal\" FROM \"users\" WHERE \"IsActive\" = TRUE ORDER BY \"UserId\" ASC",
+            mysql:  "SELECT `UserName`, (SELECT SUM((SELECT SUM(`sq1`.`Quantity`) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `QuantityTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC",
+            ss:     "SELECT [UserName], (SELECT SUM((SELECT SUM([sq1].[Quantity]) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [QuantityTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC");
+
+        // Active users:
+        //   Alice → order 1 → item 1 qty 2; order 2 → item 2 qty 1. Outer = 2 + 1 = 3.
+        //   Bob   → order 3 → item 3 qty 3. Outer = 3.
+        // Execution: SQLite only — see SumCount sibling test for SQL Server nested
+        // aggregate limitation.
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].QuantityTotal, Is.EqualTo(3));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[1].QuantityTotal, Is.EqualTo(3));
+    }
+
+    [Test]
+    public async Task Select_ProjectionMixedSumIntCountDecimal_SiblingColumns()
+    {
+        await using var t = await QueryTestHarness.CreateAsync();
+        var (Lite, Pg, My, Ss) = t;
+
+        // Sibling projection columns with different CLR types: an int nested Sum-of-Count
+        // alongside a decimal Sum over Orders.Total. Both subqueries are top-level scalar
+        // subqueries, so each owns its own alias namespace (both start at sq0). Confirms
+        // the #294 fix doesn't disturb sibling decimal paths and that mixed-type tuples
+        // bind correctly.
+        var lt = Lite.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                ItemCount: u.Orders.Sum(o => o.Items.Count()),
+                OrderTotal: u.Orders.Sum(o => o.Total)))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var pg = Pg.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                ItemCount: u.Orders.Sum(o => o.Items.Count()),
+                OrderTotal: u.Orders.Sum(o => o.Total)))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var my = My.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                ItemCount: u.Orders.Sum(o => o.Items.Count()),
+                OrderTotal: u.Orders.Sum(o => o.Total)))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+        var ss = Ss.Users()
+            .Where(u => u.IsActive)
+            .Select(u => (
+                u.UserName,
+                ItemCount: u.Orders.Sum(o => o.Items.Count()),
+                OrderTotal: u.Orders.Sum(o => o.Total)))
+            .OrderBy(u => u.UserId)
+            .Prepare();
+
+        QueryTestHarness.AssertDialects(
+            lt.ToDiagnostics(), pg.ToDiagnostics(),
+            my.ToDiagnostics(), ss.ToDiagnostics(),
+            sqlite: "SELECT \"UserName\", (SELECT SUM((SELECT COUNT(*) FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemCount\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE \"IsActive\" = 1 ORDER BY \"UserId\" ASC",
+            pg:     "SELECT \"UserName\", (SELECT SUM((SELECT COUNT(*) FROM \"order_items\" AS \"sq1\" WHERE \"sq1\".\"OrderId\" = \"sq0\".\"OrderId\")) FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"ItemCount\", (SELECT SUM(\"sq0\".\"Total\") FROM \"orders\" AS \"sq0\" WHERE \"sq0\".\"UserId\" = \"users\".\"UserId\") AS \"OrderTotal\" FROM \"users\" WHERE \"IsActive\" = TRUE ORDER BY \"UserId\" ASC",
+            mysql:  "SELECT `UserName`, (SELECT SUM((SELECT COUNT(*) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemCount`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC",
+            ss:     "SELECT [UserName], (SELECT SUM((SELECT COUNT(*) FROM [order_items] AS [sq1] WHERE [sq1].[OrderId] = [sq0].[OrderId])) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [ItemCount], (SELECT SUM([sq0].[Total]) FROM [orders] AS [sq0] WHERE [sq0].[UserId] = [users].[UserId]) AS [OrderTotal] FROM [users] WHERE [IsActive] = 1 ORDER BY [UserId] ASC");
+
+        // Active users (same seed as the surrounding tests):
+        //   Alice → ItemCount=2 (1 item per order, 2 orders),  OrderTotal=325.50 (250.00 + 75.50)
+        //   Bob   → ItemCount=1 (1 item, 1 order),             OrderTotal=150.00
+        // Execution: SQLite only — the int sibling embeds a nested aggregate that
+        // SQL Server rejects (see SumCount sibling test).
+        var results = await lt.ExecuteFetchAllAsync();
+        Assert.That(results, Has.Count.EqualTo(2));
+        Assert.That(results[0].UserName, Is.EqualTo("Alice"));
+        Assert.That(results[0].ItemCount, Is.EqualTo(2));
+        Assert.That(results[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(results[1].UserName, Is.EqualTo("Bob"));
+        Assert.That(results[1].ItemCount, Is.EqualTo(1));
+        Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
+    }
+
+    [Test]
     public async Task Select_ProjectionMixedNestingDepths_OrderTotalAndItemTotal()
     {
         // Two simultaneous projection-side subqueries with mixed nesting depths:

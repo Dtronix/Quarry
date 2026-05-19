@@ -2830,6 +2830,30 @@ SELECT `UserId`, `UserName` FROM `users` WHERE `IsActive` = 1 LIMIT 5
 ### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
+SELECT `UserName`, (SELECT SUM((SELECT COUNT(*) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemCount` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserName`, (SELECT SUM((SELECT COUNT(*) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `ItemCount`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
+SELECT `UserName`, (SELECT SUM((SELECT SUM(`sq1`.`Quantity`) FROM `order_items` AS `sq1` WHERE `sq1`.`OrderId` = `sq0`.`OrderId`)) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `QuantityTotal` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
+```
+
+---
+
+### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
+
+```sql
 SELECT `UserName`, (SELECT SUM(`sq0`.`Total`) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderTotal`, (SELECT COUNT(*) FROM `orders` AS `sq0` WHERE `sq0`.`UserId` = `users`.`UserId`) AS `OrderCount` FROM `users` WHERE `IsActive` = 1 ORDER BY `UserId` ASC
 ```
 
@@ -4965,7 +4989,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 543 |
+| Total discovered | 546 |
 | Skipped (errors) | 0 |
 | Consolidated (deduped) | 91 |
-| Rendered | 452 |
+| Rendered | 455 |
