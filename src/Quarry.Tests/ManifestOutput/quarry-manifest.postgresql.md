@@ -3074,7 +3074,7 @@ SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"
 ### Users().Where(...).Select(...).OrderBy(...).Prepare().ToDiagnostics()
 
 ```sql
-SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal", (SELECT SUM((SELECT SUM("sq1"."LineTotal") FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "ItemTotal" FROM "users" WHERE "IsActive" = TRUE ORDER BY "UserId" ASC
+SELECT "UserName", (SELECT SUM("sq0"."Total") FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "OrderTotal", (SELECT SUM((SELECT SUM((SELECT COUNT(*) FROM "tags" AS "sq2" WHERE "sq2"."OrderItemId" = "sq1"."OrderItemId" AND ("sq2"."TagName" = 'urgent'))) FROM "order_items" AS "sq1" WHERE "sq1"."OrderId" = "sq0"."OrderId")) FROM "orders" AS "sq0" WHERE "sq0"."UserId" = "users"."UserId") AS "UrgentTagCount" FROM "users" WHERE "IsActive" = TRUE ORDER BY "UserId" ASC
 ```
 
 ---
