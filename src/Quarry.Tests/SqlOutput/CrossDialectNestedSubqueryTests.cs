@@ -269,15 +269,27 @@ internal class CrossDialectNestedSubqueryTests
         // Active users:
         //   Alice → orders 1, 2 → items 1 (in order 1), 2 (in order 2). Count per order: 1, 1. Outer sum = 2.
         //   Bob   → order 3 → item 3. Count per order: 1. Outer sum = 1.
-        // Execution: SQLite only — SQL Server rejects nested aggregate-in-aggregate
-        // ("Cannot perform an aggregate function on an expression containing an aggregate
-        // or a subquery"). Same convention as Select_ProjectionMixedNestingDepths_*.
+        // Execution: SQLite, Postgres, MySQL. SQL Server rejects the resulting
+        // SUM((SELECT COUNT(*) ...)) shape with "Cannot perform an aggregate
+        // function on an expression containing an aggregate or a subquery" — a
+        // platform-level constraint, not a generator/runtime issue. SQL string
+        // is still asserted for all four dialects via AssertDialects above.
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
         Assert.That(results[0].ItemCount, Is.EqualTo(2));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[1].ItemCount, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].ItemCount, Is.EqualTo(2));
+        Assert.That(pgResults[1].ItemCount, Is.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].ItemCount, Is.EqualTo(2));
+        Assert.That(myResults[1].ItemCount, Is.EqualTo(1));
     }
 
     [Test]
@@ -322,14 +334,24 @@ internal class CrossDialectNestedSubqueryTests
         // Active users:
         //   Alice → order 1 → item 1 qty 2; order 2 → item 2 qty 1. Outer = 2 + 1 = 3.
         //   Bob   → order 3 → item 3 qty 3. Outer = 3.
-        // Execution: SQLite only — see SumCount sibling test for SQL Server nested
-        // aggregate limitation.
+        // Execution: SQLite, Postgres, MySQL. SQL Server rejects nested
+        // aggregate-in-aggregate (see SumCount sibling test for details).
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
         Assert.That(results[0].QuantityTotal, Is.EqualTo(3));
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[1].QuantityTotal, Is.EqualTo(3));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].QuantityTotal, Is.EqualTo(3));
+        Assert.That(pgResults[1].QuantityTotal, Is.EqualTo(3));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].QuantityTotal, Is.EqualTo(3));
+        Assert.That(myResults[1].QuantityTotal, Is.EqualTo(3));
     }
 
     [Test]
@@ -387,8 +409,8 @@ internal class CrossDialectNestedSubqueryTests
         // Active users (same seed as the surrounding tests):
         //   Alice → ItemCount=2 (1 item per order, 2 orders),  OrderTotal=325.50 (250.00 + 75.50)
         //   Bob   → ItemCount=1 (1 item, 1 order),             OrderTotal=150.00
-        // Execution: SQLite only — the int sibling embeds a nested aggregate that
-        // SQL Server rejects (see SumCount sibling test).
+        // Execution: SQLite, Postgres, MySQL. SQL Server rejects the int
+        // sibling's nested aggregate (see SumCount sibling test).
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
@@ -397,6 +419,20 @@ internal class CrossDialectNestedSubqueryTests
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[1].ItemCount, Is.EqualTo(1));
         Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].ItemCount, Is.EqualTo(2));
+        Assert.That(pgResults[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(pgResults[1].ItemCount, Is.EqualTo(1));
+        Assert.That(pgResults[1].OrderTotal, Is.EqualTo(150.00m));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].ItemCount, Is.EqualTo(2));
+        Assert.That(myResults[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(myResults[1].ItemCount, Is.EqualTo(1));
+        Assert.That(myResults[1].OrderTotal, Is.EqualTo(150.00m));
     }
 
     [Test]
@@ -466,8 +502,8 @@ internal class CrossDialectNestedSubqueryTests
         //   Bob    → order 3 (Total=150).
         //          order 3 → item 3 → tags 4,5 → 1 'urgent' (tag 4) → order 3 sum = 1.
         //          Outer UrgentTagCount = 1.
-        // Execution: SQLite only — same nested-aggregate-in-aggregate constraint as
-        // the other projection-side tests in this file.
+        // Execution: SQLite, Postgres, MySQL. SQL Server rejects nested
+        // aggregate-in-aggregate (see SumCount sibling test for details).
         var results = await lt.ExecuteFetchAllAsync();
         Assert.That(results, Has.Count.EqualTo(2));
         Assert.That(results[0].UserName, Is.EqualTo("Alice"));
@@ -476,6 +512,20 @@ internal class CrossDialectNestedSubqueryTests
         Assert.That(results[1].UserName, Is.EqualTo("Bob"));
         Assert.That(results[1].OrderTotal, Is.EqualTo(150.00m));
         Assert.That(results[1].UrgentTagCount, Is.EqualTo(1));
+
+        var pgResults = await pg.ExecuteFetchAllAsync();
+        Assert.That(pgResults, Has.Count.EqualTo(2));
+        Assert.That(pgResults[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(pgResults[0].UrgentTagCount, Is.EqualTo(2));
+        Assert.That(pgResults[1].OrderTotal, Is.EqualTo(150.00m));
+        Assert.That(pgResults[1].UrgentTagCount, Is.EqualTo(1));
+
+        var myResults = await my.ExecuteFetchAllAsync();
+        Assert.That(myResults, Has.Count.EqualTo(2));
+        Assert.That(myResults[0].OrderTotal, Is.EqualTo(325.50m));
+        Assert.That(myResults[0].UrgentTagCount, Is.EqualTo(2));
+        Assert.That(myResults[1].OrderTotal, Is.EqualTo(150.00m));
+        Assert.That(myResults[1].UrgentTagCount, Is.EqualTo(1));
     }
 
     #endregion
