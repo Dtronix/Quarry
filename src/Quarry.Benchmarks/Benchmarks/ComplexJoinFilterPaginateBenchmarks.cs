@@ -9,8 +9,6 @@ using SqlKata.Compilers;
 
 namespace Quarry.Benchmarks.Benchmarks;
 
-// Reader floor here is bounded by Microsoft.Data.Sqlite.GetDecimal (string-parse path).
-// See CteSimpleBenchmarks.cs for the full explanation of why Dapper appears faster.
 public class ComplexJoinFilterPaginateBenchmarks : BenchmarkBase
 {
     [Benchmark(Baseline = true)]
@@ -31,7 +29,7 @@ public class ComplexJoinFilterPaginateBenchmarks : BenchmarkBase
             results.Add(new UserOrderDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;
@@ -105,7 +103,7 @@ public class ComplexJoinFilterPaginateBenchmarks : BenchmarkBase
             results.Add(new UserOrderDto
             {
                 UserName = reader.GetString(0),
-                Total = reader.GetDecimal(1)
+                Total = reader.GetDouble(1)
             });
         }
         return results;

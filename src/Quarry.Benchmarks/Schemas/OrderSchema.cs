@@ -8,7 +8,7 @@ public class OrderSchema : Schema
 
     public Key<int> OrderId => Identity();
     public Ref<UserSchema, int> UserId => ForeignKey<UserSchema, int>();
-    public Col<decimal> Total => Precision(18, 2);
+    public Col<double> Total { get; }
     public Col<string> Status { get; }
     public Col<DateTime> OrderDate => Default(() => DateTime.UtcNow);
     public Col<string?> Notes { get; }

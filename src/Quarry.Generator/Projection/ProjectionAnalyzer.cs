@@ -670,6 +670,23 @@ internal static class ProjectionAnalyzer
                 var aggregateClrType = clrType ?? "int";
                 // See #274. Wrapped by SqlAssembler.AppendProjectionColumnSql on Ss.
                 var requiresSqlServerIntCast = IsIntReturningWindowFunction(invocation, aggregateClrType);
+
+                // Extract the table alias from the first column argument (e.g., o.Total → "t1")
+                // so ChainAnalyzer's Stage 4 enrichment can resolve unresolved types via
+                // perAliasLookup[alias][propName]. Without this, the alias-keyed lookup in
+                // TryResolveAggregateTypeFromSql falls through and the unresolved-marker
+                // ("?") leaks into the carrier interface and reader Func type. Mirrors the
+                // logic in ResolveJoinedAggregate.
+                string? tableAlias = null;
+                var args = invocation.ArgumentList.Arguments;
+                if (args.Count > 0 &&
+                    args[0].Expression is MemberAccessExpressionSyntax colAccess &&
+                    colAccess.Expression is IdentifierNameSyntax paramId &&
+                    perParamLookup.TryGetValue(paramId.Identifier.Text, out var paramInfo))
+                {
+                    tableAlias = paramInfo.Alias;
+                }
+
                 var column = new ProjectedColumn(
                     propertyName: "Value",
                     columnName: "",
@@ -681,6 +698,7 @@ internal static class ProjectionAnalyzer
                     isAggregateFunction: true,
                     isValueType: true,
                     readerMethodName: TypeClassification.GetReaderMethod(aggregateClrType),
+                    tableAlias: tableAlias,
                     requiresSqlServerIntCast: requiresSqlServerIntCast);
 
                 return new ProjectionInfo(ProjectionKind.SingleColumn, aggregateClrType, new[] { column });
@@ -1807,8 +1825,15 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
+                    // Default to the unresolved-type sentinel (not "decimal") because in Stage 1
+                    // syntax-only discovery the columnLookup is empty and the SemanticModel can't
+                    // see Quarry-generated entity types yet. ChainAnalyzer enriches aggregate
+                    // columns whose ClrType is unresolved by walking the SQL expression back to
+                    // the column metadata. Hardcoding "decimal" here used to short-circuit that
+                    // enrichment and silently miscompile any schema where the summed column
+                    // wasn't decimal.
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
-                        columnLookup, lambdaParameterName, "decimal");
+                        columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -1818,7 +1843,7 @@ internal static class ProjectionAnalyzer
                 {
                     var columnSql = GetColumnSql(arguments[0].Expression, columnLookup, lambdaParameterName);
                     var clrType = ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel,
-                        columnLookup, lambdaParameterName, "decimal");
+                        columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -1875,9 +1900,23 @@ internal static class ProjectionAnalyzer
 
     /// <summary>
     /// Resolves the CLR type for an aggregate function argument.
-    /// Tries the argument type first, then the invocation return type, then falls back to the default.
-    /// This handles generated entity types where the semantic model may return error types.
     /// </summary>
+    /// <remarks>
+    /// Resolution priority:
+    /// <list type="number">
+    /// <item>Schema column lookup (authoritative for direct entity-property access — works
+    /// even when the SemanticModel cannot yet see a regenerated entity class, e.g. in
+    /// Stage 1 <c>UsageSiteDiscovery</c> for a freshly changed schema).</item>
+    /// <item>SemanticModel argument type (handles computed expressions, captured locals,
+    /// and resolved-entity scenarios).</item>
+    /// <item>SemanticModel invocation return type — gated on the argument being resolvable
+    /// in step 2. Without this gate, Roslyn's overload resolution against an Error-typed
+    /// argument silently picks an arbitrary "best applicable candidate" (typically the
+    /// <c>decimal</c> overload of <c>Sql.Sum</c>/<c>Sql.Avg</c>) and returns a non-error
+    /// ReturnType that looks like a real answer but isn't.</item>
+    /// <item>Default fallback supplied by the caller.</item>
+    /// </list>
+    /// </remarks>
     private static string ResolveAggregateClrType(
         ExpressionSyntax argumentExpression,
         InvocationExpressionSyntax invocation,
@@ -1886,34 +1925,45 @@ internal static class ProjectionAnalyzer
         string lambdaParameterName,
         string defaultType)
     {
-        // Try 1: argument type (e.g., o.Total → decimal)
-        var argTypeInfo = semanticModel.GetTypeInfo(argumentExpression);
-        if (argTypeInfo.Type != null && argTypeInfo.Type.TypeKind != TypeKind.Error)
-        {
-            var name = GetSimpleTypeName(argTypeInfo.Type);
-            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
-                return name;
-        }
-
-        // Try 2: invocation return type (e.g., Sql.Sum(decimal) → decimal)
-        var invMethodSymbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
-        if (invMethodSymbol?.ReturnType != null && invMethodSymbol.ReturnType.TypeKind != TypeKind.Error)
-        {
-            var name = GetSimpleTypeName(invMethodSymbol.ReturnType);
-            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
-                return name;
-        }
-
-        // Try 3: column lookup (handles generated entity types where the semantic model
-        // returns error types but the column metadata is available from schema analysis)
+        // Try 1: schema-driven column lookup. Authoritative for direct entity-property
+        // access. Works even when the SemanticModel can't resolve the entity yet
+        // (e.g., Stage 1 UsageSiteDiscovery on a freshly changed schema).
         if (argumentExpression is MemberAccessExpressionSyntax memberAccess &&
             memberAccess.Expression is IdentifierNameSyntax identifier &&
             identifier.Identifier.Text == lambdaParameterName)
         {
             var propertyName = memberAccess.Name.Identifier.Text;
-            if (columnLookup.TryGetValue(propertyName, out var column) && !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
+            if (columnLookup.TryGetValue(propertyName, out var column) &&
+                !TypeClassification.IsUnresolvedTypeNameLenient(column.ClrType))
             {
                 return column.ClrType;
+            }
+        }
+
+        // Try 2: argument type via SemanticModel. Handles computed expressions,
+        // captured locals, and any case where Roslyn has resolved the entity.
+        var argTypeInfo = semanticModel.GetTypeInfo(argumentExpression);
+        var argResolved = argTypeInfo.Type != null && argTypeInfo.Type.TypeKind != TypeKind.Error;
+        if (argResolved)
+        {
+            var name = GetSimpleTypeName(argTypeInfo.Type!);
+            if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
+                return name;
+        }
+
+        // Try 3 (gated): invocation return type. Only trust this when the argument was
+        // resolvable above — Roslyn's overload resolution against an Error-typed argument
+        // silently picks an arbitrary candidate (currently the decimal overload of
+        // Sql.Sum/Avg, but implementation-defined). Without the gate, we'd fabricate
+        // a wrong type for entity-property aggregates whose entity isn't visible yet.
+        if (argResolved)
+        {
+            var invMethodSymbol = semanticModel.GetSymbolInfo(invocation).Symbol as IMethodSymbol;
+            if (invMethodSymbol?.ReturnType != null && invMethodSymbol.ReturnType.TypeKind != TypeKind.Error)
+            {
+                var name = GetSimpleTypeName(invMethodSymbol.ReturnType);
+                if (!TypeClassification.IsUnresolvedTypeNameLenient(name))
+                    return name;
             }
         }
 
@@ -2530,7 +2580,10 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
-                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal");
+                    // Unresolved-type sentinel (not "decimal") so ChainAnalyzer's aggregate-type
+                    // enrichment kicks in when the per-param lookup misses. See note on the
+                    // single-entity case in GetSqlAggregateInfo for full rationale.
+                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"SUM({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -2539,7 +2592,7 @@ internal static class ProjectionAnalyzer
                 if (arguments.Count > 0)
                 {
                     var columnSql = GetJoinedColumnSql(arguments[0].Expression, perParamLookup);
-                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal");
+                    var clrType = ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker);
                     return columnSql != null ? ($"AVG({columnSql})", clrType) : (null, null);
                 }
                 break;
@@ -2742,10 +2795,10 @@ internal static class ProjectionAnalyzer
                 BuildAggregateOverSql("COUNT", arguments[0].Expression, columnLookup, lambdaParameterName, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
                 BuildAggregateOverSql("SUM", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
-                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker)),
             "Avg" when arguments.Count == 2 =>
                 BuildAggregateOverSql("AVG", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
-                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "decimal")),
+                    ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, TypeClassification.UnresolvedTypeMarker)),
             "Min" when arguments.Count == 2 =>
                 BuildAggregateOverSql("MIN", arguments[0].Expression, columnLookup, lambdaParameterName, overClause,
                     ResolveAggregateClrType(arguments[0].Expression, invocation, semanticModel, columnLookup, lambdaParameterName, "object")),
@@ -2804,10 +2857,10 @@ internal static class ProjectionAnalyzer
                 BuildJoinedAggregateOverSql("COUNT", arguments[0].Expression, perParamLookup, overClause, "int"),
             "Sum" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("SUM", arguments[0].Expression, perParamLookup, overClause,
-                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker)),
             "Avg" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("AVG", arguments[0].Expression, perParamLookup, overClause,
-                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "decimal")),
+                    ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, TypeClassification.UnresolvedTypeMarker)),
             "Min" when arguments.Count == 2 =>
                 BuildJoinedAggregateOverSql("MIN", arguments[0].Expression, perParamLookup, overClause,
                     ResolveJoinedAggregateClrType(arguments[0].Expression, perParamLookup, "object")),

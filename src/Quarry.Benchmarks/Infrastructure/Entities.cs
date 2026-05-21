@@ -16,7 +16,7 @@ public class EfOrder
 {
     public int OrderId { get; set; }
     public int UserId { get; set; }
-    public decimal Total { get; set; }
+    public double Total { get; set; }
     public string Status { get; set; } = "";
     public DateTime OrderDate { get; set; }
     public string? Notes { get; set; }
@@ -31,8 +31,8 @@ public class EfOrderItem
     public int OrderId { get; set; }
     public string ProductName { get; set; } = "";
     public int Quantity { get; set; }
-    public decimal UnitPrice { get; set; }
-    public decimal LineTotal { get; set; }
+    public double UnitPrice { get; set; }
+    public double LineTotal { get; set; }
 
     public EfOrder Order { get; set; } = null!;
 }

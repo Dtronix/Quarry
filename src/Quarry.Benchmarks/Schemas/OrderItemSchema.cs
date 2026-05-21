@@ -10,6 +10,6 @@ public class OrderItemSchema : Schema
     public Ref<OrderSchema, int> OrderId => ForeignKey<OrderSchema, int>();
     public Col<string> ProductName => Length(200);
     public Col<int> Quantity { get; }
-    public Col<decimal> UnitPrice => Precision(18, 2);
-    public Col<decimal> LineTotal { get; }
+    public Col<double> UnitPrice { get; }
+    public Col<double> LineTotal { get; }
 }

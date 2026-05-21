@@ -10,36 +10,36 @@ namespace Quarry.Benchmarks.Benchmarks;
 public class AggregateAvgBenchmarks : BenchmarkBase
 {
     [Benchmark(Baseline = true)]
-    public async Task<decimal> Raw_Avg()
+    public async Task<double> Raw_Avg()
     {
         await using var cmd = Connection.CreateCommand();
         cmd.CommandText = "SELECT AVG(Total) FROM orders";
         var result = await cmd.ExecuteScalarAsync();
-        return Convert.ToDecimal(result);
+        return Convert.ToDouble(result);
     }
 
     [Benchmark]
-    public async Task<decimal> Dapper_Avg()
+    public async Task<double> Dapper_Avg()
     {
-        return await Connection.ExecuteScalarAsync<decimal>("SELECT AVG(Total) FROM orders");
+        return await Connection.ExecuteScalarAsync<double>("SELECT AVG(Total) FROM orders");
     }
 
     [Benchmark]
-    public async Task<decimal> EfCore_Avg()
+    public async Task<double> EfCore_Avg()
     {
         return await EfContext.Orders.AsNoTracking().AverageAsync(o => o.Total);
     }
 
     [Benchmark]
-    public async Task<decimal> Quarry_Avg()
+    public async Task<double> Quarry_Avg()
     {
         return await QuarryDb.Orders()
             .Select(o => Sql.Avg(o.Total))
-            .ExecuteScalarAsync<decimal>();
+            .ExecuteScalarAsync<double>();
     }
 
     [Benchmark]
-    public async Task<decimal> SqlKata_Avg()
+    public async Task<double> SqlKata_Avg()
     {
         var query = new Query("orders").AsAverage("Total");
         var compiled = SqlKataCompiler.Compile(query);
@@ -51,6 +51,6 @@ public class AggregateAvgBenchmarks : BenchmarkBase
             cmd.Parameters.AddWithValue($"@p{cmd.Parameters.Count}", binding);
         }
         var result = await cmd.ExecuteScalarAsync();
-        return Convert.ToDecimal(result);
+        return Convert.ToDouble(result);
     }
 }
