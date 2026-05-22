@@ -568,6 +568,90 @@ internal static class ClauseBodyEmitter
     }
 
     /// <summary>
+    /// Emits an UpdateSetPatch interceptor (<c>Set(TEntity.Patch)</c> value form).
+    /// Copies the Patch value into the carrier and mirrors <c>patch.__mask</c> into a
+    /// carrier field so downstream terminal emission can use it without re-reading the
+    /// (potentially struct-copy-modified) Patch value.
+    /// </summary>
+    public static void EmitUpdateSetPatch(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        bool isFirstInChain,
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
+        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
+        var returnInterfaceBaseName = "I" + concreteBaseName;
+
+        if (carrier != null && prebuiltChain != null)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
+            sb.AppendLine($"        {entityType}.Patch patch)");
+            sb.AppendLine($"    {{");
+
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            sb.AppendLine($"        __c.Patch = patch;");
+            sb.AppendLine($"        __c.PatchMask = patch.__mask;");
+
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+            sb.AppendLine($"    }}");
+        }
+    }
+
+    /// <summary>
+    /// Emits an UpdateSetPatchAction interceptor (<c>Set(PatchAction&lt;TEntity.Patch&gt;)</c>
+    /// lambda form). Invokes the user lambda against the carrier's Patch field by ref so
+    /// any property writes flip mask bits in-place; then mirrors the resulting mask to
+    /// the carrier's <c>PatchMask</c> field for terminal-side consumption.
+    /// </summary>
+    public static void EmitUpdateSetPatchAction(
+        StringBuilder sb,
+        TranslatedCallSite site,
+        string methodName,
+        int? clauseBit,
+        AssembledPlan? prebuiltChain,
+        bool isFirstInChain,
+        CarrierPlan? carrier,
+        CarrierAssignmentRecorder? recorder = null)
+    {
+        var entityType = InterceptorCodeGenerator.GetShortTypeName(site.EntityTypeName);
+
+        var isExecutable = site.BuilderKind is BuilderKind.ExecutableUpdate;
+        var concreteBaseName = isExecutable ? "ExecutableUpdateBuilder" : "UpdateBuilder";
+        var returnInterfaceBaseName = "I" + concreteBaseName;
+
+        if (carrier != null && prebuiltChain != null)
+        {
+            sb.AppendLine($"    public static {returnInterfaceBaseName}<{entityType}> {methodName}(");
+            sb.AppendLine($"        this {returnInterfaceBaseName}<{entityType}> builder,");
+            sb.AppendLine($"        Quarry.PatchAction<{entityType}.Patch> action)");
+            sb.AppendLine($"    {{");
+
+            sb.AppendLine($"        var __c = Unsafe.As<{carrier.ClassName}>(builder);");
+            sb.AppendLine($"        action(ref __c.Patch);");
+            sb.AppendLine($"        __c.PatchMask = __c.Patch.__mask;");
+
+            if (clauseBit.HasValue)
+                sb.AppendLine($"        __c.Mask |= unchecked(({CarrierEmitter.GetMaskType(prebuiltChain)})(1 << {clauseBit.Value}));");
+
+            var returnInterface = $"{returnInterfaceBaseName}<{entityType}>";
+            sb.AppendLine($"        return Unsafe.As<{returnInterface}>(builder);");
+            sb.AppendLine($"    }}");
+        }
+    }
+
+    /// <summary>
     /// Emits an UpdateSetPoco interceptor (Set with entity POCO).
     /// </summary>
     public static void EmitUpdateSetPoco(

@@ -227,6 +227,17 @@ internal static class CarrierAnalyzer
             fields.Add(new Models.CarrierField("Entity", entityType + "?", Models.FieldRole.Entity, isReferenceType: true));
         }
 
+        // Patch + PatchMask fields for chains with Set(Patch) or Set(PatchAction) sites
+        var hasSetPatch = assembled.ClauseSites.Any(cs =>
+            cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatch
+            || cs.Bound.Raw.Kind == InterceptorKind.UpdateSetPatchAction);
+        if (hasSetPatch)
+        {
+            var entityType = InterceptorCodeGenerator.GetShortTypeName(assembled.EntityTypeName);
+            fields.Add(new Models.CarrierField("Patch", entityType + ".Patch", Models.FieldRole.Patch, isReferenceType: false));
+            fields.Add(new Models.CarrierField("PatchMask", "ulong", Models.FieldRole.Patch, isReferenceType: false));
+        }
+
         // BatchEntities field for batch insert chains
         if (plan.Kind == QueryKind.BatchInsert)
         {

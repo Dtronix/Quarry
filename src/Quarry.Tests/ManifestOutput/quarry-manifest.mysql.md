@@ -2205,6 +2205,39 @@ UPDATE `users` SET `UserName` = ? WHERE `UserId` = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
+UPDATE `users` SET `UserName` = ?, `Email` = ?, `IsActive` = ?, `CreatedAt` = ?, `LastLogin` = ? WHERE `UserId` = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE `users` SET `UserName` = ?, `Email` = ?, `IsActive` = ?, `CreatedAt` = ?, `LastLogin` = ? WHERE `UserId` = ?
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
+| `@p5` | `int` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
 UPDATE `users` SET `UserName` = ?, `IsActive` = 0 WHERE `UserId` = 1
 ```
 
@@ -4989,7 +5022,7 @@ SELECT `UserId`, `UserName`, `Email`, `IsActive`, `CreatedAt`, `LastLogin` FROM 
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 546 |
+| Total discovered | 550 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 91 |
-| Rendered | 455 |
+| Consolidated (deduped) | 93 |
+| Rendered | 457 |

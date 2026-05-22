@@ -25,6 +25,8 @@ internal static class InterceptorRouter
             case InterceptorKind.Set:
             case InterceptorKind.UpdateSetPoco:
             case InterceptorKind.UpdateSetAction:
+            case InterceptorKind.UpdateSetPatch:
+            case InterceptorKind.UpdateSetPatchAction:
             case InterceptorKind.DeleteWhere:
             case InterceptorKind.UpdateWhere:
             case InterceptorKind.Select:

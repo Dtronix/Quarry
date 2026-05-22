@@ -473,34 +473,55 @@ internal static class UsageSiteDiscovery
         if (methodName == "Set" && containingType.Name.Contains("UpdateBuilder")
             && invocation.ArgumentList.Arguments.Count == 1)
         {
-            // Inspect the resolved overload's parameter type to discriminate among the
-            // four Set forms — Patch overloads are generic in TPatch with an
-            // IPatchFor<T> constraint, so methodSymbol.IsGenericMethod is true for
-            // them and false for the non-generic UpdateSetPoco / UpdateSetAction
-            // overloads.
-            var paramType = methodSymbol.Parameters.Length > 0 ? methodSymbol.Parameters[0].Type : null;
-            if (IsPatchActionDelegateType(paramType))
-            {
-                kind = InterceptorKind.UpdateSetPatchAction;
-            }
-            else if (IsPatchType(paramType))
+            // Classification priority for the four Set forms:
+            // 1. Containing type identity. The new Patch overloads live on the
+            //    <c>UpdateBuilderPatchExtensions</c> static class — when Roslyn binds
+            //    the call to one of those overloads, containing-type identity is a
+            //    direct signal even if the substituted TPatch is unrecognized.
+            // 2. Argument type. The receiver-method resolution may pick a wrong DIM
+            //    overload when the generated <c>Entity.Patch</c> nested struct isn't
+            //    yet visible (Phase 2 output is added back into a later compilation,
+            //    but the SyntaxProvider running this discovery may see a stale
+            //    snapshot). In that case the *argument expression's* type still
+            //    resolves to <c>User.Patch</c> (the variable's declared type is
+            //    inferred from <c>new User.Patch { ... }</c>), and <c>IsPatchType</c>
+            //    detects the struct's <c>IPatchFor&lt;T&gt;</c> interface.
+            // 3. Lambda syntax fallback for the non-Patch instance forms.
+            var singleArg = invocation.ArgumentList.Arguments[0].Expression;
+            var argTypeInfo = semanticModel.GetTypeInfo(singleArg, cancellationToken);
+            var argType = argTypeInfo.Type ?? argTypeInfo.ConvertedType;
+
+            if (containingType.Name == "UpdateBuilderPatchExtensions"
+                || IsPatchType(argType))
             {
                 kind = InterceptorKind.UpdateSetPatch;
             }
-            else if (!methodSymbol.IsGenericMethod)
+            else if (IsPatchActionDelegateType(argType))
             {
-                var singleArg = invocation.ArgumentList.Arguments[0].Expression;
-                if (singleArg is LambdaExpressionSyntax)
+                kind = InterceptorKind.UpdateSetPatchAction;
+            }
+            else if (singleArg is LambdaExpressionSyntax)
+            {
+                // PatchAction<TPatch> lambdas are syntactically `(ref TPatch p) => ...`
+                // — the `ref` parameter is the discriminator. Action<T> lambdas have
+                // no `ref` on their parameter; check the lambda's parameter list.
+                if (singleArg is ParenthesizedLambdaExpressionSyntax parLambda
+                    && parLambda.ParameterList.Parameters.Count == 1
+                    && parLambda.ParameterList.Parameters[0].Modifiers.Any(m => m.IsKind(Microsoft.CodeAnalysis.CSharp.SyntaxKind.RefKeyword)))
                 {
-                    kind = InterceptorKind.UpdateSetAction;
+                    kind = InterceptorKind.UpdateSetPatchAction;
                 }
                 else
                 {
-                    kind = InterceptorKind.UpdateSetPoco;
-                    initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+                    kind = InterceptorKind.UpdateSetAction;
                 }
             }
-            // Other generic Set overloads fall through with kind unchanged.
+            else if (!methodSymbol.IsGenericMethod)
+            {
+                kind = InterceptorKind.UpdateSetPoco;
+                initializedPropertyNames = ExtractInitializedPropertyNamesFromSetPoco(invocation);
+            }
+            // Other generic Set overloads on UpdateBuilder fall through with kind unchanged.
         }
         if (methodName == "Where" && containingType.Name.Contains("UpdateBuilder"))
         {
@@ -2641,6 +2662,12 @@ internal static class UsageSiteDiscovery
     /// struct. Covers both the constructed form (e.g. <c>User.Patch</c>) and the
     /// unconstrained type parameter form (TPatch with an <c>IPatchFor</c>
     /// constraint) returned by Roslyn for the reduced extension-method symbol.
+    /// Also accepts an unresolved-interface fallback: any value-type nested
+    /// struct named <c>Patch</c> — needed because the generated struct's
+    /// <c>IPatchFor&lt;T&gt;</c> interface list is sometimes empty in the
+    /// SemanticModel snapshot the generator's own SyntaxProvider sees (the
+    /// nested struct's metadata can lag the outer entity's by one compilation
+    /// pass). Outside the generator, the IPatchFor check covers the same cases.
     /// </summary>
     private static bool IsPatchType(ITypeSymbol? type)
     {
@@ -2654,6 +2681,15 @@ internal static class UsageSiteDiscovery
             {
                 if (IsIPatchForInterface(iface)) return true;
             }
+
+            // Fallback for the generator-time SemanticModel: a nested struct
+            // literally named "Patch" inside another type matches the generator's
+            // emission pattern (<c>partial class Entity { public struct Patch ... }</c>).
+            // Narrow heuristic — won't fire for an unrelated user type because the
+            // double constraint (nested + IsValueType + name == "Patch") is rare
+            // outside the generator's own emission shape.
+            if (named.Name == "Patch" && named.ContainingType != null)
+                return true;
         }
 
         // Type-parameter case (e.g. TPatch in the un-substituted extension

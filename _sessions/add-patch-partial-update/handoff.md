@@ -10,15 +10,47 @@
 - **`__setShift` runtime shift variable**: joins existing `__colShift` in `ComputeShiftExprForIndex` to renumber WHERE / collection placeholders behind the runtime-assembled SET clause.
 - **Carrier fields**: chains with Patch SET get `Patch` + `PatchMask` fields on the generated carrier class.
 
-## Completions (This Session)
+## Completions (This Session — Session 4)
 
-- INTAKE: worktree created (`add-patch-partial-update` branch). Baseline tests green: 3,149 + 201 + 146 = **3,496 pass / 0 fail**.
-- DESIGN: full exploration of `EntityCodeGenerator`, `UsageSiteDiscovery` (UpdateSetPoco path at lines 473–486, 2611), `CallSiteBinder` (UpdateInfo at line 184), `ChainAnalyzer` (line 1150), `SqlAssembler.RenderUpdateSql` (line 732), and `TerminalEmitHelpers.ParseSqlSegments` / `EmitInlineSqlBuilder` / `ComputeShiftExprForIndex`. All decisions recorded in workflow.md `## Decisions`.
-- PLAN: `plan.md` written with 10 phases. User approved; suspended before implementation.
+- Resumed from session-3 suspend. Verified baseline 3,552/0.
+- Phase 7 generator wiring landed (partial):
+  - `FieldRole.Patch` enum value; `CarrierAnalyzer` adds `Patch` + `PatchMask` carrier fields when chain has Patch sites.
+  - `CarrierEmitter`: `EmitPatchSqlDispatch` (bypasses `_sqlCache`, declares outer `int __setShift = 0;`/`int __colShift = 0;`, routes Patch chains through the inline SQL builder with `patchFragmentsRef: {carrier}._PatchFragments`); `EmitPatchSupport` emits the per-chain `_PatchFragments` `(ulong Bit, string Prefix)[]` table and the unrolled `_BindPatchParams(DbCommand, in Entity.Patch, ulong mask, int startIdx)` static method (FK `.Id` extraction, enum cast, custom mapper hook, sensitive-redaction-ready); `EmitCarrierCommandBinding` calls `_BindPatchParams` BEFORE the existing scalar/collection binding loop with `startIdx: 0`, and uses a composed `whereShiftExpr` (`__bindShift + __setShift` / `__setShift` / `__bindShift` / `null`) for every WHERE-side parameter name (collections and pagination too).
+  - `ClauseBodyEmitter.EmitUpdateSetPatch` (value-form interceptor body: `__c.Patch = patch; __c.PatchMask = patch.__mask;`) and `EmitUpdateSetPatchAction` (lambda form: `action(ref __c.Patch); __c.PatchMask = __c.Patch.__mask;`).
+  - `FileEmitter` dispatches `UpdateSetPatch` / `UpdateSetPatchAction` to the new emitters; `InterceptorRouter.Categorize` routes both kinds to `EmitterCategory.Clause`.
+  - `TerminalEmitHelpers.EmitInlineSqlBuilder` no longer declares `int __setShift = 0;` itself — caller owns the declaration so its post-build value survives into the parameter-binding scope. Phase 6 tests (`EmitInlineSqlBuilderPatchTests`) updated to assert `__setShift = 0;` reset rather than the declaration.
+- Cross-dialect Patch tests added to `CrossDialectUpdateTests.cs` (`Update_SetPatch_SingleColumn`, `Update_SetPatch_TwoColumns`, `Update_SetPatch_ThreeColumns`, `Update_SetPatch_CapturedWhereParam_NamesShiftPastSetParams`, `Update_SetPatch_EmptyMask_Throws`). These FAIL to compile because of the discovery bug below.
+
+## Bug Surfaced This Session
+
+**CS9144 at every `Set(somePatch)` call site.** Root cause: Phase 3's `UsageSiteDiscovery` classifies via Roslyn-resolved `methodSymbol.Parameters[0].Type` and detects `IPatchFor<T>`. In the real `IIncrementalGenerator` pipeline, the SyntaxProvider's `SemanticModel` sees the pre-generator compilation; Roslyn binds `Set(somePatch)` to the SetPoco DIM (`Set(User entity)`) rather than the `UpdateBuilderPatchExtensions.Set<T, TPatch>` extension; discovery emits a `User entity`-shaped interceptor; the final user-code compilation (which DOES see User.Patch) rejects the interceptor at the call site.
+
+The Phase 3 `UsageSiteDiscoveryPatchTests` only pass because they call `RunGeneratorsAndUpdateCompilation` first, merging User.Patch into the compilation before running discovery — a different code path than the real generator takes.
+
+Three semantic-fix attempts left in `UsageSiteDiscovery.cs` as commented experiments (semantic `IsPatchType(argType)`, `containingType.Name == "UpdateBuilderPatchExtensions"`, relaxed `IsPatchType` `Name == "Patch"` fallback). None work because Roslyn never produces the Patch extension as the resolved symbol.
+
+## Decision Made (Session 4)
+
+**Syntax-only Patch classification.** Inspect the argument expression directly: `Set(new X.Patch { … })` direct construction, `Set(somePatchVar)` walk back to the variable declarator and check its initializer for the same shape, `Set((ref X.Patch p) => …)` lambda `ref` modifier. Falls back to UpdateSetPoco for unsupported exotic shapes (factory methods, ternaries) — produces a clean CS9144 at the user's call site, which is actionable.
+
+Rejected alternatives: two `IIncrementalGenerator` instances (Roslyn doesn't sequence them or fold outputs between them) and supplemental compilation (heavyweight, brittle cache invalidation, regresses every call-site classification on failure).
+
+See `workflow.md ## Decisions` 2026-05-22 entry and `plan.md` Phase 3 for full implementation specifics.
+
+## Resume Path (Next Session — Session 5)
+
+1. Implement syntax-only classification in `UsageSiteDiscovery.cs` per Phase 3 of plan.md. Drop the failed semantic experiments.
+2. Add a regression test in `UsageSiteDiscoveryPatchTests` that does NOT call `RunGeneratorsAndUpdateCompilation` — exposes the real-generator scenario.
+3. Verify `Update_SetPatch_*` cross-dialect tests pass; verify baseline tests still pass.
+4. Phase 8: `Update_SetPatchAction_*` tests + verify `EmitUpdateSetPatchAction` body works end-to-end.
+5. Phase 9: integration matrix (Patch + Where(captured), Patch + Where(ids.Contains), FK, enum, custom mapper, sensitive, ExecutableUpdateBuilder path).
+6. Phase 10: docs.
 
 ## Previous Session Completions
 
-None — first session.
+- **Session 1 (INTAKE → PLAN):** worktree, baseline 3,496/0, all design decisions, plan.md with 10 phases approved.
+- **Session 2 (IMPLEMENT Phases 1–3):** IR foundations (PatchInfo, InterceptorKind values, runtime `PatchAction<T>` delegate); WriteColumnInfo rename; Patch struct emission in EntityCodeGenerator; call-site discovery via overload-resolved `methodSymbol.Parameters[0].Type` (later revealed broken in real generator — see session 4 bug). Initial DIM attempt failed for existing interceptor binding; pivoted to `UpdateBuilderPatchExtensions` static extensions + `IPatchFor<T>` marker. Tests 3,522/0.
+- **Session 3 (IMPLEMENT Phases 4–6):** CallSiteBinder populates PatchInfo; ChainAnalyzer emits sentinel SetTerm + `PatchSetPlaceholderExpr`; SqlAssembler renders `{__PATCH_SET__}` placeholder; `TerminalEmitHelpers.ParseSqlSegments` adds `SqlSegmentKind.PatchSet`; `EmitInlineSqlBuilder` PatchSet case (empty-mask guard + ` SET ` literal + per-fragment runtime loop with dialect-correct placeholders). Locked Phase 7 fragment-table shape `(ulong Bit, string Prefix)[]` + separate `_BindPatchParams` (Action<DbCommand,Patch,int> was unworkable: can't take `in TPatch`, `__cmd` doesn't exist during SQL builder). Tests 3,552/0.
 
 ## Progress
 

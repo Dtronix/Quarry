@@ -828,6 +828,14 @@ internal sealed class FileEmitter
                 ClauseBodyEmitter.EmitUpdateSetPoco(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
                 break;
 
+            case InterceptorKind.UpdateSetPatch:
+                ClauseBodyEmitter.EmitUpdateSetPatch(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
+                break;
+
+            case InterceptorKind.UpdateSetPatchAction:
+                ClauseBodyEmitter.EmitUpdateSetPatchAction(sb, site, methodName, clauseBit, prebuiltClauseChain, isFirstClauseInChain, carrier: carrierInfo, recorder: recorder);
+                break;
+
             case InterceptorKind.UpdateWhere:
                 {
                     staticFieldsByMethod.TryGetValue(methodName, out var updateMethodFields);

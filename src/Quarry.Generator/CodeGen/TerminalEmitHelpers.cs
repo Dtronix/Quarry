@@ -880,15 +880,16 @@ internal static class TerminalEmitHelpers
 
         // SET comes before WHERE in SQL, so `__setShift` (count of active Patch SET
         // params) dominates downstream `__colShift` and the original scalar index.
-        // Declared once at the top so it is in scope for both the PatchSet case and
-        // any subsequent scalar segments referencing it.
+        // `__setShift` is declared by the caller (mirrors the `__colShift` pattern) so
+        // its final value survives into the post-build parameter-binding scope.
+        // We reset it here in case the same scope reuses the builder.
         var hasPatchSet = false;
         foreach (var s in segments)
         {
             if (s.Kind == SqlSegmentKind.PatchSet) { hasPatchSet = true; break; }
         }
         if (hasPatchSet)
-            sb.AppendLine($"{indent}int __setShift = 0;");
+            sb.AppendLine($"{indent}__setShift = 0;");
         var setShiftSuffix = hasPatchSet ? " + __setShift" : "";
 
         foreach (var seg in segments)

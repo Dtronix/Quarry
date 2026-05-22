@@ -124,26 +124,57 @@ Reuses `Quarry.Internal.ParameterNames.AtP` / `Dollar` for runtime parameter-nam
 
 ### Phase 3 — Discovery: detect `Set(*.Patch)` and `Set(PatchAction<*.Patch>)`
 
-**Goal:** Classify Set call sites as the right InterceptorKind based on argument type.
+**Goal:** Classify Set call sites as the right InterceptorKind based on argument *syntax* — not on semantic overload resolution.
+
+**Implementation note (revised 2026-05-22 mid-Phase-7):** The original Phase 3 implementation used Roslyn's overload-resolved `methodSymbol.Parameters[0].Type` to detect the Patch struct. That approach works in the isolated `UsageSiteDiscoveryPatchTests` harness (which calls `RunGeneratorsAndUpdateCompilation` to pre-merge the Patch struct into the compilation) but **fails in the real `IIncrementalGenerator` pipeline**: the SyntaxProvider's `SemanticModel` sees the pre-generator compilation, so Roslyn binds `Set(somePatch)` to the SetPoco DIM (`Set(User entity)`) instead of `UpdateBuilderPatchExtensions.Set<T, TPatch>`. Discovery then emits a `User entity`-shaped interceptor at the call site, and the final build fails with **CS9144** because the user's compilation (which *does* see User.Patch) expects a `User.Patch` parameter.
+
+Two `IIncrementalGenerator` instances would not help — they each receive the same pre-generator compilation. A supplemental-compilation approach (manually constructing a `Compilation` with the entity outputs added and re-binding) is heavyweight, brittle, and forces every discovery to re-parse N entity sources. **Decision: classify Patch sites by argument syntax only** (recorded in workflow.md `## Decisions`).
 
 **Changes:**
-- In `UsageSiteDiscovery.cs` ~line 473–486, extend the existing UpdateBuilder `Set` classification:
-  - If single arg is a lambda with `ref Patch` parameter → `UpdateSetPatchAction`.
-  - If single arg is a value with type ending in `.Patch` and the containing type is a known entity → `UpdateSetPatch`.
-  - Else fall through to existing `UpdateSetAction` (other lambdas) / `UpdateSetPoco` (entity).
-- Helper `IsPatchType(ITypeSymbol)` checks: type is a struct, containing type is in `EntityRegistry` (or is a known entity by name — same check the entity-form path uses).
-- For `UpdateSetPatch`: leave `InitializedPropertyNames` null (we want all updatable columns).
-- For `UpdateSetPatchAction`: same — no initializer to inspect.
+- In `UsageSiteDiscovery.cs` ~line 473–520, restructure the UpdateBuilder `Set` classification to syntax-only Patch detection:
+  - **`Set(new X.Patch { ... })` — direct construction.** The argument is an `ObjectCreationExpressionSyntax` whose `Type` is a `QualifiedNameSyntax` (or `MemberAccessExpression`) ending in `.Patch`. Classify → `UpdateSetPatch`.
+  - **`Set(somePatchVar)` — pre-built variable.** The argument is an `IdentifierNameSyntax`. Walk back to the variable's `VariableDeclaratorSyntax` in the same method (typical .NET source-generator pattern — same method body, single declarator). If its initializer matches the direct-construction shape above (`new X.Patch { ... }`), classify → `UpdateSetPatch`. If the declarator isn't found or the initializer is anything else (factory method call, ternary, captured parameter), fall through.
+  - **`Set((ref X.Patch p) => …)` — lambda with `ref`.** Detect by `ParenthesizedLambdaExpressionSyntax` with `ref` modifier on its single parameter. Classify → `UpdateSetPatchAction`. (Already implemented.)
+  - **`Set(other lambda)` → `UpdateSetAction`** (existing path).
+  - **`Set(any other arg) where !methodSymbol.IsGenericMethod` → `UpdateSetPoco`** (existing path).
+- Out-of-scope syntactic patterns (call later when supported):
+  - `Set(Patch.From(entity))` — factory return; needs deferred `Patch.From` API.
+  - `Set(cond ? a : b)` — ternary over patches; rare, can fall back to error.
+  - `Set(GetPatch())` — method returning a patch; user can convert to local variable.
+  Falling through to `UpdateSetPoco` for these yields a clean CS9144 at build time pointing at the call site, which is actionable for users.
+- Drop the `IsPatchType(ITypeSymbol)` semantic check from the classification path. The relaxed `Name == "Patch"` fallback added during the Phase 7 investigation may remain dead-code or be removed — leave to author preference.
+- For `UpdateSetPatch` and `UpdateSetPatchAction`: leave `InitializedPropertyNames` null (we want all updatable columns).
+
+**Helper to add:**
+
+```csharp
+private static bool IsPatchObjectCreation(ExpressionSyntax expr)
+{
+    if (expr is not ObjectCreationExpressionSyntax oc) return false;
+    return oc.Type switch
+    {
+        QualifiedNameSyntax q => q.Right.Identifier.Text == "Patch",
+        // `Type.Patch` parsed as MemberAccess in some positions
+        _ => false,
+    };
+}
+
+private static bool IsPatchVariableReference(
+    IdentifierNameSyntax id,
+    SemanticModel semanticModel)
+{
+    // Walk up to the enclosing method/block, find the VariableDeclarator for `id.Identifier.Text`.
+    // If its initializer satisfies IsPatchObjectCreation, return true.
+    // Fail-soft: any failure → return false (falls through to UpdateSetPoco).
+}
+```
 
 **Tests:**
-- New: tests in `UsageSiteDiscoveryTests` (or similar) that classify each form correctly:
-  - `Set(new User { X = v })` → UpdateSetPoco (unchanged)
-  - `Set(u => u.X = v)` → UpdateSetAction (unchanged)
-  - `Set(somePatchVariable)` → UpdateSetPatch
-  - `Set((ref User.Patch p) => p.X = v)` → UpdateSetPatchAction
-  - `Set(p => p.X = v)` where p is inferred as `User.Patch` → also UpdateSetPatchAction (lambda discrimination by ref parameter)
+- `UsageSiteDiscoveryPatchTests` (Phase 3 tests) must continue to pass — they already exercise `Set(new User.Patch { … })`, `Set(patchVar)`, and `Set((ref User.Patch p) => …)`. The harness's `RunGeneratorsAndUpdateCompilation` setup is now redundant (the new classifier doesn't need User.Patch in the compilation) but harmless; leave as-is.
+- New: a regression test that calls discovery against a compilation **without** running the generator first — proving classification works against the same SemanticModel snapshot the real generator sees. This is what catches the bug Phase 7 surfaced.
+- Cross-dialect Patch tests in `CrossDialectUpdateTests.cs` (added in Phase 7) provide the end-to-end coverage.
 
-**Commit:** `feat(generator): discover UpdateSetPatch + UpdateSetPatchAction call sites`
+**Commit:** `feat(generator): discover UpdateSetPatch via argument-syntax inspection`
 
 ### Phase 4 — Binder: build `PatchInfo` from `EntityInfo`
 

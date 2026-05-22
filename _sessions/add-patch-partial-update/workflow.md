@@ -10,7 +10,7 @@ phase: IMPLEMENT
 status: suspended
 issue: discussion
 pr:
-session: 3
+session: 4
 phases-total: 10
 phases-complete: 6
 
@@ -81,20 +81,33 @@ The plan's original shape `(ulong Bit, string Prefix, Action<DbCommand, Patch, i
 
 Revised shape (confirmed 2026-05-22): `_PatchFragments` is `(ulong Bit, string Prefix)[]` consumed by the inline SQL builder, plus a separate static `_BindPatchParams(DbCommand cmd, in {EntityType}.Patch patch, ulong mask, int startIdx)` method with unrolled per-column if-blocks called from the post-`__cmd` binding loop. Matches Quarry's existing post-command binding pattern (UpdateSetPoco does the same). Trade: walks the active bits twice (once for SQL, once for binding); negligible for the 64-column max; in exchange, zero allocation, no delegate dispatch, and reviewer-familiar shape.
 
+### 2026-05-22 — Phase 3 discovery: syntax-only Patch classification (rewrite)
+The Phase 3 implementation that classifies via Roslyn's overload-resolved `methodSymbol.Parameters[0].Type` works in the isolated `UsageSiteDiscoveryPatchTests` harness (which pre-runs the generator via `RunGeneratorsAndUpdateCompilation`) but **fails in the real generator pipeline**: the SyntaxProvider's `SemanticModel` sees the pre-generator compilation, so Roslyn binds `Set(somePatch)` to the SetPoco DIM and discovery emits the wrong interceptor — the final build fails with CS9144 when the user compilation (which DOES see the generated `User.Patch`) tries to apply it.
+
+Two `IIncrementalGenerator` instances don't help — they each receive the same pre-generator compilation and don't see each other's outputs. A supplemental-compilation approach (manually building a `Compilation` containing the entity outputs and re-binding) works but is heavyweight: re-parses N entity sources on every discovery pass, cascades cache invalidation through Stage 3/4, and risks regressing every other call-site classification.
+
+**Decision:** classify Patch sites by argument SYNTAX. Detect `Set(new X.Patch { … })` directly, walk back to the variable declarator for `Set(somePatchVar)`, and detect `Set((ref X.Patch p) => …)` via the lambda's `ref` modifier. No semantic-model dependency on the Patch type.
+
+**Why:** Cheap (no Compilation rebuild), local (only `UsageSiteDiscovery` changes), correct for the documented v1 patterns (object initializer + pre-built variable + ref lambda). Out-of-scope exotic patterns (e.g. `Patch.From(entity)`, ternary over patches) fall through to UpdateSetPoco and produce a clean CS9144 at the user's call site — actionable. The `UsageSiteDiscoveryPatchTests` harness can be augmented with a regression test that DOES NOT pre-run the generator, exposing the real-generator scenario.
+
+**How to apply:** see updated Phase 3 in plan.md for the exact classifier shape and helper signatures. Phase 3 should be re-implemented before Phase 7's remaining work — the wrong-overload binding currently propagates through Stages 4–6 and produces broken interceptors.
+
 ### 2026-05-22 — Patch Set overloads as extension methods (not DIMs)
 Initially tried adding the new patch overloads as default interface methods (DIMs) alongside the existing `Set(T)` and `Set(Action<T>)` on `IUpdateBuilder<T>` / `IExecutableUpdateBuilder<T>`. With the generic DIMs in place, the existing `Set(T entity)` interceptors stopped binding — Roslyn no longer routed the user's `.Set(new User { ... })` call through the emitted `Set_<id>(this IUpdateBuilder<User>, User entity)` interceptor, even though overload resolution clearly picked the non-generic Set(T) DIM and the interceptor signature matched. Switched to extension methods in a static helper class (`UpdateBuilderPatchExtensions`) — instance-method lookup still picks up the existing DIMs for non-Patch args (interceptor binds fine), and extension lookup finds the Patch overloads when DIMs aren't applicable (User.Patch isn't a User, lambdas with `ref TPatch` parameter aren't `Action<T>`). Same compile-time enforcement via `IPatchFor<T>` constraint; no impact on the existing UpdateSetPoco / UpdateSetAction paths.
 
 ## Suspend State
 
-**Current phase:** IMPLEMENT — about to start phase 7 of 10. Phases 1–6 complete and committed.
+**Current phase:** IMPLEMENT — mid Phase 7 of 10. Phases 1–6 complete and committed.
 
-**Status at suspend:** Working tree clean. Branch `add-patch-partial-update` is **10 commits ahead of origin** (Phases 1–6 + suspend-state commits not yet pushed — push is a user decision and was not authorized).
+**Status at suspend:** Working tree has uncommitted WIP — partially-implemented Phase 7 plus an unsuccessful Phase 3 discovery experiment that needs to be rewritten as syntax-only classification. Branch `add-patch-partial-update` is **10 commits ahead of origin** at the last good commit (Phases 1–6 + suspend-state commits not yet pushed — push is a user decision and was not authorized). The session-3 WIP commit on top adds Phase 7 carrier/binder code, the syntax-only-classification plan update, and the failing-test scaffolding that surfaced the discovery bug.
 
-**Last commit (HEAD):** `8db3bb8 chore(session): confirm Phase 7 fragment-table shape revision`.
+**Last clean commit (before session 4 WIP):** `3942aa6 chore(session): refresh suspend state`. The session-4 WIP commit adds Phase 7 progress on top.
 
-**Test status:** All passing — 146 + 201 + 3205 = **3,552 / 0** (3,496 baseline + 56 new across Phases 1–6).
+**Test status:** **Build is broken** at the session-4 WIP commit — six new tests in `CrossDialectUpdateTests.cs` (`Update_SetPatch_*`) fail to compile with CS9144 (interceptor signature mismatch). All previously passing tests still pass (146 + 201 + 3205 = 3,552). The CS9144 failures are the symptom that drove the syntax-only-classification decision.
 
-**Immediate next step:** Resume into IMPLEMENT phase 7 — **end-to-end value-form `Set(User.Patch)`**. This is the largest remaining phase and requires:
+**Immediate next step on resume:** Implement the syntax-only Patch classification in `UsageSiteDiscovery.cs` (see Phase 3 in plan.md, "Implementation note (revised 2026-05-22 mid-Phase-7)" and the 2026-05-22 syntax-only decision in `## Decisions`). Once `Update_SetPatch_*` tests compile cleanly, resume the Phase 7 work below from step 1 — most of it is already partially in place.
+
+**Sub-step breakdown for Phase 7 once discovery is fixed:**
 
 1. **`FieldRole` enum** (`src/Quarry.Generator/Models/CarrierField.cs`): add `Patch` value alongside Entity/Limit/Mask/etc.
 
@@ -132,9 +145,17 @@ Initially tried adding the new patch overloads as default interface methods (DIM
    - `src/Quarry.Tests/SqlOutput/EndToEndSqlTests.cs` (or similar): end-to-end SQLite test that builds a Patch, executes the update, asserts row state.
    - `User.Patch` already emits in Phase 2; entity sample schemas in `Quarry.Tests.Samples` are the right place to exercise new overloads if existing samples don't already.
 
-**No WIP commit needed** — working tree was clean at suspend.
+**WIP commit:** session-4 work is captured in a `[WIP]` commit on top of `3942aa6` — includes the Phase 7 generator changes (FieldRole.Patch, CarrierAnalyzer Patch fields, CarrierEmitter EmitPatchSqlDispatch + EmitPatchSupport, EmitCarrierCommandBinding shift-aware names, ClauseBodyEmitter EmitUpdateSetPatch + EmitUpdateSetPatchAction, FileEmitter dispatch, InterceptorRouter Clause entries, EmitInlineSqlBuilder caller-declared __setShift), the failing cross-dialect Patch tests in `CrossDialectUpdateTests.cs`, the unsuccessful semantic-based discovery experiments in `UsageSiteDiscovery.cs`, the EmitInlineSqlBuilderPatchTests assertion update, the plan.md Phase 3 rewrite, and this workflow.md update.
 
-**Unrecorded context:** None. All design decisions through Phase 6 + the Phase 7 fragment-table shape revision are recorded in `## Decisions` (the latter dated 2026-05-22, locked after a user-confirmed discussion of the failure discoveries). Phase 7 is fully unblocked.
+**Order of work on resume:**
+1. Implement syntax-only Patch classification in `UsageSiteDiscovery.cs` per the updated Phase 3 in plan.md. Drop the experimental semantic checks (`IsPatchType(argType)`, `containingType.Name == "UpdateBuilderPatchExtensions"`). Keep the lambda `ref`-modifier detection.
+2. Add a regression test to `UsageSiteDiscoveryPatchTests` that DOES NOT call `RunGeneratorsAndUpdateCompilation` — proves discovery classifies correctly against the pre-generator SemanticModel.
+3. Verify `Update_SetPatch_*` cross-dialect tests compile and pass.
+4. Verify the previously-passing Phase 1–6 tests still pass (~3,552 baseline).
+5. Continue Phase 7 sub-steps (most of the carrier/binder/emitter wiring is already in place from the WIP commit; once classification routes to the right path, the existing generator code should produce correct interceptors).
+6. Continue to Phase 8, 9, 10.
+
+**Unrecorded context:** None. The syntax-only-classification decision and rationale are in `## Decisions` (2026-05-22). Plan.md Phase 3 carries the implementation specifics. The CS9144 build error pinpoints the root cause for the next session.
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
@@ -142,3 +163,4 @@ Initially tried adding the new patch overloads as default interface methods (DIM
 | 1 | 2026-05-22 INTAKE | 2026-05-22 PLAN (approved, suspended before IMPLEMENT) | Bootstrapped from in-session discussion. Worktree created. Baseline tests green (3,496/0). All design decisions recorded. plan.md written with 10 phases (originally 11, phases 5–6 combined per user). Approved by user; suspended for next session. |
 | 2 | 2026-05-22 IMPLEMENT (resume) | 2026-05-22 IMPLEMENT (suspended after Phase 3) | Resumed from suspend. Completed Phases 1–3 of 10. Phase 1 (IR foundations) + a follow-on refactor renaming `InsertColumnInfo` → `WriteColumnInfo`. Phase 2 (Patch struct emission) — mid-phase fix to use `ColumnInfo.IsValueType` instead of name-heuristic for non-nullable-reference detection (custom-mapped value types like `Money` broke otherwise). Phase 3 (call-site discovery) — initial DIM attempt broke existing `Set(T entity)` interceptor binding; pivoted to extension methods (`UpdateBuilderPatchExtensions` + `IPatchFor<T>` marker), discovery classifies via `methodSymbol.Parameters[0].Type`. WIP commit `3432ac2` left as predecessor (FINALIZE squash-merge will collapse it). Tests: 3,522/0. Branch +4 unpushed commits at suspend. |
 | 3 | 2026-05-22 IMPLEMENT (resume Phase 4) | 2026-05-22 IMPLEMENT Phase 6 complete (suspended before Phase 7) | Resumed from suspend. Baseline reverified: 3,522/0. Phase 4 complete: `CallSiteBinder` populates `PatchInfo` for UpdateSetPatch/UpdateSetPatchAction kinds; added `CallSiteBinderPatchTests` (7). Phase 5 complete: new `SqlExprKind.PatchSetPlaceholder` + `PatchSetPlaceholderExpr` node renders as literal `{__PATCH_SET__}`; ChainAnalyzer emits a single sentinel SetTerm for Patch sites (zero per-column QueryParameters); `SqlAssembler.RenderUpdateSql` detects the placeholder and skips the ` SET ` keyword (runtime emitter owns it); `TerminalEmitHelpers.ParseSqlSegments` adds `SqlSegmentKind.PatchSet` recognition. Added `SqlAssemblerPatchTests` (7) + `ParseSqlSegmentsPatchTests` (6). Phase 6 complete: `EmitInlineSqlBuilder` handles `SqlSegmentKind.PatchSet` — declares `int __setShift = 0;` at top when any PatchSet segment exists, scalar segments add `+ __setShift` to their index expression, PatchSet case emits the empty-mask guard + ` SET ` literal + per-fragment runtime loop (dialect-correct placeholder via `__setShift + __colShift`, or `__setShift + 1 + __colShift` for PG, or `?` for MySQL). New `patchFragmentsRef` parameter (default `__patchFragments`) lets Phase 7 wire in the real per-chain table reference. `ComputeShiftExprForIndex` Patch-awareness deferred to Phase 9 (diagnostic-path concern). Added `EmitInlineSqlBuilderPatchTests` (10). Tests: 3,552/0. Post-suspend: discussed failure discoveries with user (OptimizationTier.Opaque mismatch + Phase 7 fragment-table shape problem); locked revised fragment-table shape — `(ulong Bit, string Prefix)[]` + separate `_BindPatchParams` static method — in `## Decisions` (`8db3bb8`). |
+| 4 | 2026-05-22 IMPLEMENT (resume Phase 7) | 2026-05-22 IMPLEMENT mid-Phase-7 (suspended after discovery rewrite decision) | Resumed from suspend. Baseline verified 3,552/0. Implemented the Phase 7 fragment-table + binder emission (`FieldRole.Patch`, CarrierAnalyzer Patch fields, `EmitPatchSqlDispatch`, `EmitPatchSupport` with `_PatchFragments[]` and unrolled `_BindPatchParams`, shift-aware WHERE-side parameter names in `EmitCarrierCommandBinding`, `ClauseBodyEmitter.EmitUpdateSetPatch` / `EmitUpdateSetPatchAction`, `FileEmitter` dispatch, `InterceptorRouter` Clause entries) and refactored `EmitInlineSqlBuilder` so the caller owns `int __setShift = 0;` (updated Phase 6 test assertions accordingly). Added cross-dialect `Update_SetPatch_*` tests in `CrossDialectUpdateTests.cs`; build fails with CS9144 because Phase 3 discovery emits a SetPoco-shaped interceptor at Patch call sites. Investigated three semantic fixes (containing-type check, GetTypeInfo on argument, relaxed `IsPatchType` name fallback) — none worked because the SyntaxProvider's `SemanticModel` doesn't see the generator-emitted `Entity.Patch` struct at discovery time, so Roslyn binds `Set(somePatch)` to the SetPoco DIM. Discussed three architectural fixes with user (two generators — ruled out, generators don't see each other's outputs; supplemental compilation — too heavy; syntax-only classification — small, local, cheap). Decision: **syntax-only classification** locked in `## Decisions` and Phase 3 of plan.md rewritten. Suspended to hand off the rewrite to the next session. |

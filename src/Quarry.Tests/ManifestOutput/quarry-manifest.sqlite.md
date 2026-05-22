@@ -2712,6 +2712,39 @@ UPDATE "users" SET "UserName" = @p0 WHERE "UserId" = 1
 ### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
 
 ```sql
+UPDATE "users" SET "UserName" = @p0, "Email" = @p1, "IsActive" = @p2, "CreatedAt" = @p3, "LastLogin" = @p4 WHERE "UserId" = 1
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
+UPDATE "users" SET "UserName" = @p0, "Email" = @p1, "IsActive" = @p2, "CreatedAt" = @p3, "LastLogin" = @p4 WHERE "UserId" = @p5
+```
+
+| Parameter | Type |
+|-----------|------|
+| `@p0` | `string` |
+| `@p1` | `string` |
+| `@p2` | `bool` |
+| `@p3` | `DateTime` |
+| `@p4` | `DateTime` |
+| `@p5` | `int` |
+
+---
+
+### Users().Update().Set(...).Where(...).Prepare().ToDiagnostics()
+
+```sql
 UPDATE "users" SET "UserName" = @p0, "IsActive" = 0 WHERE "UserId" = 1
 ```
 
@@ -5512,7 +5545,7 @@ WITH "Order" AS (SELECT "OrderId", "UserId", "Total", "Status", "Priority", "Ord
 
 | Metric | Count |
 |--------|------:|
-| Total discovered | 689 |
+| Total discovered | 693 |
 | Skipped (errors) | 0 |
-| Consolidated (deduped) | 186 |
-| Rendered | 503 |
+| Consolidated (deduped) | 188 |
+| Rendered | 505 |

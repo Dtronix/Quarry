@@ -28,7 +28,11 @@ public class EmitInlineSqlBuilderPatchTests
             Literal(" WHERE \"UserId\" = "),
             Scalar(0));
 
-        Assert.That(code, Does.Contain("int __setShift = 0;"));
+        // The builder resets __setShift at entry — it does NOT declare it. The caller
+        // (CarrierEmitter for Patch chains) owns the declaration so the final value is
+        // visible from the post-build parameter-binding scope.
+        Assert.That(code, Does.Contain("__setShift = 0;"));
+        Assert.That(code, Does.Not.Contain("int __setShift = 0;"));
         Assert.That(code, Does.Contain("if (__c.PatchMask == 0UL)"));
         Assert.That(code, Does.Contain("throw new System.InvalidOperationException"));
         Assert.That(code, Does.Contain("__sb.Append(\" SET \");"));
