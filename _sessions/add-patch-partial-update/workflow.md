@@ -7,7 +7,7 @@ base-branch: master
 
 ## State
 phase: IMPLEMENT
-status: active
+status: suspended
 issue: discussion
 pr:
 session: 3
@@ -81,23 +81,59 @@ Initially tried adding the new patch overloads as default interface methods (DIM
 
 ## Suspend State
 
-**Current phase:** IMPLEMENT — about to start phase 4 of 10. Phases 1–3 complete and committed.
+**Current phase:** IMPLEMENT — about to start phase 7 of 10. Phases 1–6 complete and committed.
 
-**Status at suspend:** Working tree clean. Branch `add-patch-partial-update` is **4 commits ahead of origin** (commits `09ad46a`, `63278f6`, `0fae28c`, `c276b0b` not yet pushed — push is a user decision and was not authorized).
+**Status at suspend:** Working tree clean. Branch `add-patch-partial-update` is **8 commits ahead of origin** (Phases 1–6 not yet pushed — push is a user decision and was not authorized).
 
-**Last commit (HEAD):** `c276b0b feat(generator): discover UpdateSetPatch + UpdateSetPatchAction call sites`.
+**Last commit (HEAD):** `973e7db feat(generator): emit runtime SET assembly + __setShift for Patch`.
 
-**Test status:** All passing — 146 + 201 + 3175 = **3,522 / 0** (3,496 baseline + 26 new across Phases 1–3).
+**Test status:** All passing — 146 + 201 + 3205 = **3,552 / 0** (3,496 baseline + 56 new across Phases 1–6).
 
-**Immediate next step:** Resume into IMPLEMENT phase 4 — **bind `PatchInfo` from `EntityInfo` in `CallSiteBinder`**. Plan/handoff describe the change: in `CallSiteBinder.cs` (~line 184), add a branch parallel to the existing `UpdateInfo` build — when `raw.Kind` is `UpdateSetPatch` or `UpdateSetPatchAction`, populate `BoundCallSite.PatchInfo` via `PatchInfo.FromEntityInfo(entry.Entity, dialect, isLambdaForm: raw.Kind == UpdateSetPatchAction)`. Add binder tests asserting `PatchInfo.Columns.Count` matches expected updatable count and that Identity / Computed columns are excluded.
+**Immediate next step:** Resume into IMPLEMENT phase 7 — **end-to-end value-form `Set(User.Patch)`**. This is the largest remaining phase and requires:
+
+1. **`FieldRole` enum** (`src/Quarry.Generator/Models/CarrierField.cs`): add `Patch` value alongside Entity/Limit/Mask/etc.
+
+2. **`CarrierAnalyzer.AnalyzeNew`** (~line 222 alongside `hasSetPoco` detection): when chain has any `UpdateSetPatch` or `UpdateSetPatchAction` site, add two carrier fields:
+   - `Patch` typed `{EntityType}.Patch` (value type, role `FieldRole.Patch`, isReferenceType: false)
+   - `PatchMask` typed `ulong` (role `FieldRole.Patch`)
+
+3. **`CarrierEmitter`** (per-chain emission):
+   - Emit a static readonly `_PatchFragments` field of type `(ulong Bit, string Prefix)[]` populated from `chain.ClauseSites`' `BoundCallSite.PatchInfo.Columns`. Prefix is `"\"col\" = "` (dialect-quoted column + ` = `).
+   - Emit a static `_BindPatchParams(System.Data.Common.DbCommand cmd, in {EntityType}.Patch patch, ulong mask, int startIdx)` method with unrolled if-blocks per column. Each block: bit check, create parameter (dialect-correct name via `Quarry.Internal.ParameterNames.AtP(startIdx + offset)` for SQLite/SqlServer/MySQL, empty for PG), bind typed value (FK `.Id` extraction, enum cast, custom mapper, sensitive redaction — same logic as `GetInsertColumnBinding` in TerminalEmitHelpers), add to `cmd.Parameters`, increment local offset.
+
+4. **`CarrierEmitter.EmitCarrierSqlDispatch`** (~line 1102): extend the `hasCollections` check to ALSO detect Patch chains (any segment kind = PatchSet) and route Patch chains through the inline-builder path. Patch chains bypass the `_sqlCache` (since SQL varies with `__c.PatchMask` and per-mask caching is a follow-up optimization). When calling `EmitInlineSqlBuilder`, pass the carrier-qualified fragment table reference: `patchFragmentsRef: $"{carrier.ClassName}._PatchFragments"`.
+
+5. **`ClauseBodyEmitter.EmitUpdateSetPatch`**: emit the value-form interceptor body. Signature (extension method on the Patch overload):
+   ```csharp
+   public static IUpdateBuilder<User> Set(this IUpdateBuilder<User> b, User.Patch patch)
+   {
+       var __c = Unsafe.As<Chain_N>(b);
+       __c.Patch = patch;
+       __c.PatchMask = patch.__mask;
+       return Unsafe.As<IUpdateBuilder<User>>(b);
+   }
+   ```
+   The `patch.__mask` access works only because the Patch struct's `__mask` field is `internal` and we're in the same assembly. Update the existing Patch struct emission in Phase 2 if needed to confirm `internal ulong __mask;`.
+
+6. **`FileEmitter`** (~line 827): add `case InterceptorKind.UpdateSetPatch:` dispatch → `ClauseBodyEmitter.EmitUpdateSetPatch(...)`.
+
+7. **`InterceptorRouter.Categorize`** (~line 26 in the Clause group): add `case InterceptorKind.UpdateSetPatch:` and `case InterceptorKind.UpdateSetPatchAction:` to the Clause category.
+
+8. **Parameter binding loop**: in `TerminalBodyEmitter` execution-terminal emit paths (e.g. `EmitNonQueryTerminal`), after `__cmd` creation and the existing scalar param binding loop, when the chain has Patch, emit: `{carrier.ClassName}._BindPatchParams(__cmd, in __c.Patch, __c.PatchMask, __setShift /* or 0 */);`. The `startIdx` argument: 0 for chains where SET is the only param source; offset for chains that intermix (Phase 9 — but value-form Set(Patch) has no compile-time scalar SET params, so 0 is correct).
+   - The current __cmd-binding code in CarrierEmitter (around `EmitCarrierSqlDispatch` callers) is where this hook lands; identify the right insertion point with care because there are multiple terminal emit paths.
+
+9. **Tests**:
+   - `src/Quarry.Tests/SqlOutput/CrossDialectUpdateTests.cs`: new tests for `Set(User.Patch)` value form across 4 dialects (1, 2, 3 columns set).
+   - `src/Quarry.Tests/SqlOutput/EndToEndSqlTests.cs` (or similar): end-to-end SQLite test that builds a Patch, executes the update, asserts row state.
+   - `User.Patch` already emits in Phase 2; entity sample schemas in `Quarry.Tests.Samples` are the right place to exercise new overloads if existing samples don't already.
 
 **No WIP commit needed** — working tree was clean at suspend.
 
-**Unrecorded context:** None. All design decisions for Phases 1–3 are recorded in `## Decisions` (incl. the mid-Phase-3 DIM-vs-extension pivot, the `WriteColumnInfo` rename, and the Phase 7 binder-shape lock-in). Plan and handoff are current. Phase-4 open question carry-over: none — the column model is settled (`WriteColumnInfo`), the lambda/value discrimination is settled (covered by `IsPatchType` / `IsPatchActionDelegateType` in Phase 3), and `PatchInfo.FromEntityInfo` already exists.
+**Unrecorded context:** None. All design decisions through Phase 6 are recorded in `## Decisions` and `handoff.md`. Phase 7 has one open architectural call worth noting: the plan suggested a fragment table shape of `(ulong Bit, string Prefix, Action<DbCommand, Patch, int> Bind)`, but `Action<>` doesn't support `in` parameters on value-type Patch, and the SQL-builder phase runs before `__cmd` exists. The cleaner shape decided during Phase 6 → 7 transition: split the fragment table into `(ulong Bit, string Prefix)[]` used by the inline SQL builder, plus a separate static `_BindPatchParams(DbCommand, in Patch, ulong mask, int startIdx)` method with unrolled per-column bindings invoked from the post-`__cmd` binding loop. This avoids the delegate-with-`in` limitation and matches Quarry's existing post-command binding pattern.
 
 ## Session Log
 | # | Phase Start | Phase End | Summary |
 |---|------------|-----------|---------|
 | 1 | 2026-05-22 INTAKE | 2026-05-22 PLAN (approved, suspended before IMPLEMENT) | Bootstrapped from in-session discussion. Worktree created. Baseline tests green (3,496/0). All design decisions recorded. plan.md written with 10 phases (originally 11, phases 5–6 combined per user). Approved by user; suspended for next session. |
 | 2 | 2026-05-22 IMPLEMENT (resume) | 2026-05-22 IMPLEMENT (suspended after Phase 3) | Resumed from suspend. Completed Phases 1–3 of 10. Phase 1 (IR foundations) + a follow-on refactor renaming `InsertColumnInfo` → `WriteColumnInfo`. Phase 2 (Patch struct emission) — mid-phase fix to use `ColumnInfo.IsValueType` instead of name-heuristic for non-nullable-reference detection (custom-mapped value types like `Money` broke otherwise). Phase 3 (call-site discovery) — initial DIM attempt broke existing `Set(T entity)` interceptor binding; pivoted to extension methods (`UpdateBuilderPatchExtensions` + `IPatchFor<T>` marker), discovery classifies via `methodSymbol.Parameters[0].Type`. WIP commit `3432ac2` left as predecessor (FINALIZE squash-merge will collapse it). Tests: 3,522/0. Branch +4 unpushed commits at suspend. |
-| 3 | 2026-05-22 IMPLEMENT (resume Phase 4) | 2026-05-22 IMPLEMENT Phase 6 complete | Resumed from suspend. Baseline reverified: 3,522/0. Phase 4 complete: `CallSiteBinder` populates `PatchInfo` for UpdateSetPatch/UpdateSetPatchAction kinds; added `CallSiteBinderPatchTests` (7). Phase 5 complete: new `SqlExprKind.PatchSetPlaceholder` + `PatchSetPlaceholderExpr` node renders as literal `{__PATCH_SET__}`; ChainAnalyzer emits a single sentinel SetTerm for Patch sites (zero per-column QueryParameters); `SqlAssembler.RenderUpdateSql` detects the placeholder and skips the ` SET ` keyword (runtime emitter owns it); `TerminalEmitHelpers.ParseSqlSegments` adds `SqlSegmentKind.PatchSet` recognition. Added `SqlAssemblerPatchTests` (7) + `ParseSqlSegmentsPatchTests` (6). Phase 6 complete: `EmitInlineSqlBuilder` handles `SqlSegmentKind.PatchSet` — declares `int __setShift = 0;` at top when any PatchSet segment exists, scalar segments add `+ __setShift` to their index expression, PatchSet case emits the empty-mask guard + ` SET ` literal + per-fragment runtime loop (dialect-correct placeholder via `__setShift + __colShift`, or `__setShift + 1 + __colShift` for PG, or `?` for MySQL). New `patchFragmentsRef` parameter (default `__patchFragments`) lets Phase 7 wire in the real per-chain table reference. `ComputeShiftExprForIndex` Patch-awareness deferred to Phase 9 (diagnostic-path concern). Added `EmitInlineSqlBuilderPatchTests` (10). Tests: 3,552/0. |
+| 3 | 2026-05-22 IMPLEMENT (resume Phase 4) | 2026-05-22 IMPLEMENT Phase 6 complete (suspended before Phase 7) | Resumed from suspend. Baseline reverified: 3,522/0. Phase 4 complete: `CallSiteBinder` populates `PatchInfo` for UpdateSetPatch/UpdateSetPatchAction kinds; added `CallSiteBinderPatchTests` (7). Phase 5 complete: new `SqlExprKind.PatchSetPlaceholder` + `PatchSetPlaceholderExpr` node renders as literal `{__PATCH_SET__}`; ChainAnalyzer emits a single sentinel SetTerm for Patch sites (zero per-column QueryParameters); `SqlAssembler.RenderUpdateSql` detects the placeholder and skips the ` SET ` keyword (runtime emitter owns it); `TerminalEmitHelpers.ParseSqlSegments` adds `SqlSegmentKind.PatchSet` recognition. Added `SqlAssemblerPatchTests` (7) + `ParseSqlSegmentsPatchTests` (6). Phase 6 complete: `EmitInlineSqlBuilder` handles `SqlSegmentKind.PatchSet` — declares `int __setShift = 0;` at top when any PatchSet segment exists, scalar segments add `+ __setShift` to their index expression, PatchSet case emits the empty-mask guard + ` SET ` literal + per-fragment runtime loop (dialect-correct placeholder via `__setShift + __colShift`, or `__setShift + 1 + __colShift` for PG, or `?` for MySQL). New `patchFragmentsRef` parameter (default `__patchFragments`) lets Phase 7 wire in the real per-chain table reference. `ComputeShiftExprForIndex` Patch-awareness deferred to Phase 9 (diagnostic-path concern). Added `EmitInlineSqlBuilderPatchTests` (10). Tests: 3,552/0. |

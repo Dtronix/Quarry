@@ -60,19 +60,21 @@ None.
 
 - (Resolved 2026-05-22) Phase 4/5 column model: reused the existing model and renamed it `WriteColumnInfo` so the name reflects shared use across insert + patch.
 - (Resolved 2026-05-22) Phase 7 binder shape: per-column static binder methods (matches the per-column reader delegates pattern in `ReaderCodeGenerator`).
+- (Resolved 2026-05-22, Phase 6→7 transition) Fragment-table shape revised: the plan's original `(ulong Bit, string Prefix, Action<DbCommand, Patch, int> Bind)` is unworkable — `Action<>` cannot take `in TPatch` and `__cmd` does not exist during the inline SQL builder. New shape: `_PatchFragments` is `(ulong Bit, string Prefix)[]` used purely by the SQL builder; binding is done by a separate static `_BindPatchParams(DbCommand cmd, in Patch patch, ulong mask, int startIdx)` method (unrolled per-column ifs) called from the post-`__cmd` binding loop. Matches Quarry's existing post-command binding pattern.
 
 ## Next Work (Priority Order)
 
-1. **Phase 1: IR foundations** — `PatchInfo` model, `InterceptorKind.UpdateSetPatch`/`UpdateSetPatchAction`, `BoundCallSite.PatchInfo` property, `Quarry.PatchAction<T>` delegate, `QRY045` diagnostic descriptor. No behavior changes yet — just structural additions. Tests: `PatchInfo` equality round-trip.
-2. **Phase 2: Patch struct emission** — extend `EntityCodeGenerator.GenerateEntityClass` to emit nested `Patch` struct after navigation properties, before the closing brace. Apply Identity + Computed exclusion. Emit QRY045 if updatable count > 64.
-3. Subsequent phases proceed per `plan.md`.
+1. **Phase 7: end-to-end value-form `Set(Patch)`** — carrier fields (`Patch`, `PatchMask`), `_PatchFragments` static field, `_BindPatchParams` static method, `EmitCarrierSqlDispatch` Patch detection, `EmitUpdateSetPatch` interceptor body, `FileEmitter` dispatch, `InterceptorRouter` Clause category entries, terminal binding hook, cross-dialect + end-to-end tests. See `## Suspend State` in `workflow.md` for the detailed 9-step breakdown including the fragment-table shape revision.
+2. **Phase 8: lambda-form `Set(PatchAction<Patch>)`** — `ClauseBodyEmitter.EmitUpdateSetPatchAction` is the only new piece; reuses everything from Phase 7. Interceptor body invokes `action(ref __c.Patch)` then mirrors `__c.PatchMask = __c.Patch.__mask`. Add cross-dialect + end-to-end SQLite tests with runtime conditional toggling.
+3. **Phase 9: integration edge cases** — Patch + Where(captured) shift composition, Patch + Where(ids.Contains) collection-expansion composition, FK column update, enum cast, custom type mapping, sensitive redaction, IExecutableUpdateBuilder path. Also revisits `ComputeShiftExprForIndex` Patch-awareness for diagnostic-emit consistency.
+4. **Phase 10: docs** — `docs/articles/modifications.md` adds a Patch subsection; `src/Quarry.Generator/llm.md` adds Patch to InterceptorKind table + a "Partial Updates via Patch" section + QRY045.
 
 For phase-by-phase details, see `plan.md`.
 
 ## Resume Checklist
 
 When resuming:
-1. Bootstrap finds this active suspended workflow, reads workflow.md and handoff.md, increments `session` to 2, sets `status: active`.
-2. Verify baseline: `dotnet test --nologo --verbosity minimal` — should still be 3,496/0.
-3. Recreate IMPLEMENT phase tasks (one per remaining phase in plan.md).
-4. Start Phase 1.
+1. Bootstrap finds this active suspended workflow, reads workflow.md and handoff.md, increments `session` to 4, sets `status: active`.
+2. Verify baseline: `dotnet test --nologo --verbosity minimal` — should still be **3,552 / 0** (146 + 201 + 3205).
+3. Recreate IMPLEMENT tasks for Phases 7–10.
+4. Start Phase 7 — see `## Suspend State` in `workflow.md` for the 9-step breakdown. Begin with step 1 (FieldRole enum value) so subsequent steps' code references compile.
